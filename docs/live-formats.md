@@ -1,6 +1,6 @@
 # Live formats
 
-A live format is a file type that opens as a collaborative document. Its content lives in a Y.Doc synced over the document socket, the same way Markdown documents work, and a codec converts it to and from the file's bytes. Downloads, agent `pull`, and agent `push` therefore still deal in real files. Markdown, text/code, and Jupyter notebooks are live today. The sheet, document, and presentation engines plug in the same way.
+A live format is a file type that opens as a collaborative document. Its content lives in a Y.Doc synced over the document socket, the same way Markdown documents work, and a codec converts it to and from the file's bytes. Downloads, agent `pull`, and agent `push` therefore still deal in real files. Markdown, text/code, Jupyter notebooks, and presentations are live today. The sheet and document engines plug in the same way.
 
 This page covers the model and the integration steps. [Files](./files.md) describes the user-facing behavior.
 
@@ -23,6 +23,7 @@ This page covers the model and the integration steps. [Files](./files.md) descri
 | `markdown` | `md`, `markdown` | `DOC_SCHEMA_VERSION` | after a preview | TipTap schema in `doc-schema`, unchanged. The codec is an adapter (`office/markdown`). |
 | `text` | most text and code extensions (`office/text/layout.ts`), plus names such as `Dockerfile` and `.gitignore` | 1 | at once | `csv`/`tsv` (sheets), `ipynb` (notebooks), and `svg` (previews as an image) are excluded. |
 | `notebook` | `ipynb` | 1 | at once | nbformat 4 (any minor version); nbformat 3 is upgraded to 4.5. See [The notebook format](#the-notebook-format). |
+| `presentation` | `pptx`, `potx`, `ppsx`, `pptm`, `potm`, `ppsm` | 1 | at once | Lossless: untouched parts are written back byte for byte. Pictures and media are assets. See [Presentations](./presentations.md). |
 
 `liveFormatOfName(name)` decides a name's format, and nothing else does: the server, web, and mobile all call it. This list duplicates the text extension lists in `agent/versions.ts`, `files/display.ts`, `lib/attachment-previews.ts`, and mobile `attachmentExperience.ts`, which decide how an uploaded file previews. Once the shared file-type module lands, those should read the catalog.
 

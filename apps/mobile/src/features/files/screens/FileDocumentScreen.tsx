@@ -7,6 +7,7 @@ import { sessionColor, type DocSessionSnapshot, type DocSyncStatus } from '@pulp
 import type { NativeStackHeaderItem, NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
+import { StatusBar } from 'expo-status-bar'
 import * as WebBrowser from 'expo-web-browser'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ActivityIndicator, Alert, Keyboard, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
@@ -33,6 +34,10 @@ import { editorBundleFor, type MobileEditorFormat } from '../editor/bundles'
 import { docEditorAvailable, DocEditorView, type DocEditorHandle } from '../editor/DocEditorView'
 import { NOTEBOOK_TOOLBAR, notebookToolbarState } from '../editor/notebookToolbar'
 import { TEXT_TOOLBAR, textToolbarState } from '../editor/textToolbar'
+import { PRESENTATION_TOOLBAR, presentationToolbarState } from '../editor/presentationToolbar'
+import type { PresentationCommand } from '../editor/protocol'
+import { PRESENTATION_BAR_HEIGHT, PresentationBar } from '../components/PresentationBar'
+import { apiUrl, nativeAuthorizationHeaders } from '../../../api/client'
 import { deviceSessionLabel } from '../editor/presentation'
 import { fetchDocMarkdown, fetchFileAsset } from '../api'
 import { filesErrorMessage } from '../display'
@@ -102,11 +107,13 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   // The document's live format picks its editor; text and code files have no suggestions inline.
   const formatId = node?.format ?? 'markdown'
   const schemaSupported = useDocSchemaSupported(formatId) && Boolean(editorBundleFor(formatId))
-  const editorFormat: MobileEditorFormat = formatId === 'text' || formatId === 'notebook' ? formatId : 'markdown'
+  const editorFormat: MobileEditorFormat = formatId === 'text' || formatId === 'notebook' || formatId === 'presentation' ? formatId : 'markdown'
   const isText = editorFormat === 'text'
   const isNotebook = editorFormat === 'notebook'
   /** Formats other than Markdown keep their extension, have no inline suggestions, and fall back to their text. */
   const isLive = editorFormat !== 'markdown'
+  const isDeck = editorFormat === 'presentation'
+  const isMarkdown = editorFormat === 'markdown'
   const editor = useRef<DocEditorHandle>(null)
   const [handle, setHandle] = useState<DocHandle | null>(null)
   const [editorState, setEditorState] = useState<EditorBridgeState | null>(null)
@@ -154,10 +161,10 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const focusedNew = useRef(false)
   useEffect(() => {
     const ready = editorState?.loaded && (isText ? editorState.text && !editorState.text.readOnly : isNotebook ? editorState.notebook && !editorState.notebook.readOnly : editorState.formatting?.editable)
-    if (!route.params.created || focusedNew.current || !ready) return
+    if (isDeck || !route.params.created || focusedNew.current || !ready) return
     focusedNew.current = true
     editor.current?.focus('start')
-  }, [editorState, isNotebook, isText, route.params.created])
+  }, [editorState, isDeck, isNotebook, isText, route.params.created])
 
   // A copy of an earlier document under this id was dropped; start over without it.
   useEffect(() => {
@@ -203,7 +210,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
       }
       // A name of another type turns the document into an ordinary file; say so first.
       if (liveFormatOfName(name)?.id === node.format) void operations.rename(node, name)
-      else Alert.alert('Rename to another type?', `“${name}” isn’t a text or code file name, so it would become an ordinary file you can’t edit here.`, [
+      else Alert.alert('Rename to another type?', `“${name}” is a different type of file, so it would become an ordinary file you can’t edit here.`, [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Rename', style: 'destructive', onPress: () => { void operations.rename(node, name) } },
       ])
@@ -221,6 +228,11 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const exportDocument = useCallback(async () => {
     if (!node) return
     try {
+      // Decks export through the server, which holds their pictures.
+      if (isDeck) {
+        await shareFileItem(node)
+        return
+      }
       // An open editor exports its own copy, which includes edits not yet synced.
       if (isNotebook) {
         // The open copy includes edits not yet synced; without it (or its images) the server exports.
@@ -245,7 +257,14 @@ export function FileDocumentScreen({ navigation, route }: Props) {
     } catch (error) {
       operations.fail(error, node.name)
     }
-  }, [editorState?.loaded, handle, isNotebook, isText, node, operations, status.state, usable])
+  }, [editorState?.loaded, handle, isDeck, isNotebook, isText, node, operations, status.state, usable])
+  /** A deck's pictures, fetched for the editor page (which has no network of its own). */
+  const fetchAsset = useCallback(async (hash: string) => {
+    const url = apiUrl(`/api/files/${fileId}/assets/${hash}`)
+    const response = await fetch(url, { headers: nativeAuthorizationHeaders(url) })
+    if (!response.ok) throw new Error(`The picture could not be loaded (${response.status})`)
+    return new Uint8Array(await response.arrayBuffer())
+  }, [fileId])
   const trash = useCallback(() => {
     if (!node) return
     Alert.alert(`Move “${node.name}” to the trash?`, undefined, [
@@ -269,6 +288,8 @@ export function FileDocumentScreen({ navigation, route }: Props) {
       items: [
         isNotebook
           ? { type: 'action', label: 'Clear All Outputs', icon: { type: 'sfSymbol', name: 'eye.slash' }, disabled: !editorState?.loaded || !editable, onPress: () => editor.current?.command('clearAllOutputs') }
+          : isDeck
+          ? { type: 'action', label: 'Present', icon: { type: 'sfSymbol', name: 'play.rectangle' }, disabled: !editorState?.loaded, onPress: () => editor.current?.command('present') }
           : { type: 'action', label: isText ? 'Find and Replace' : 'Find in Document', icon: { type: 'sfSymbol', name: 'magnifyingglass' }, disabled: !editorState?.loaded, onPress: () => { if (isText) editor.current?.command('find'); else editor.current?.showFind() } },
         { type: 'action', label: 'Export…', icon: { type: 'sfSymbol', name: 'square.and.arrow.up' }, disabled: !node, onPress: () => { void exportDocument() } },
         {
@@ -286,12 +307,12 @@ export function FileDocumentScreen({ navigation, route }: Props) {
         { type: 'action', label: 'Move to Trash', icon: { type: 'sfSymbol', name: 'trash' }, destructive: true, disabled: !node || Boolean(node.trashedAt), onPress: trash },
       ],
     },
-  }), [editable, editorState?.loaded, exportDocument, isNotebook, isText, navigation, node, nodeQuery.data?.ancestors, operations, rename, trash])
+  }), [editable, editorState?.loaded, exportDocument, isNotebook, isDeck, isText, navigation, node, nodeQuery.data?.ancestors, operations, rename, trash])
 
   useLayoutEffect(() => {
     navigation.setOptions({
       title: shownTitle,
-      headerShown: Platform.OS === 'ios',
+      headerShown: Platform.OS === 'ios' && !presenting,
       headerLargeTitle: false,
       headerBackTitle: 'Back',
       unstable_headerRightItems: Platform.OS === 'ios' && filesEnabled ? () => [
@@ -316,8 +337,12 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const reviewBarHeight = reviewVisible ? 116 : 0
   // Android draws its formatting bar above the keyboard; the editor keeps the caret clear of it.
   const formattingBarVisible = Platform.OS === 'android' && keyboardVisible && editable && Boolean(editorState?.loaded)
-  const editorBottomPadding = reviewBarHeight + (formattingBarVisible ? FORMATTING_BAR_HEIGHT : 0)
+  // A running slide show gets the whole screen: no header, status bar, or deck bar.
+  const presenting = isDeck && editorState?.presentation?.presenting === true
+  const presentationBarVisible = isDeck && editable && Boolean(editorState?.loaded) && !presenting
+  const editorBottomPadding = reviewBarHeight + (formattingBarVisible && !isDeck ? FORMATTING_BAR_HEIGHT : 0) + (presentationBarVisible ? PRESENTATION_BAR_HEIGHT + insets.bottom : 0)
   const showAndroidMenu = () => showActions(title, [
+    ...(isDeck ? [{ label: 'Present', icon: 'play.rectangle', onPress: () => editor.current?.command('present') }] : []),
     { label: 'Export', icon: 'square.and.arrow.up', onPress: () => { void exportDocument() } },
     { label: 'Rename', icon: 'pencil', onPress: rename },
     { label: 'Move', icon: 'folder', onPress: () => setMoving(true) },
@@ -378,16 +403,17 @@ export function FileDocumentScreen({ navigation, route }: Props) {
       ref={editor}
       format={editorFormat}
       name={node?.name}
-      fetchAsset={(hash) => fetchFileAsset(fileId, hash)}
       acquire={() => accountDocSessions(namespace).acquire(fileId)}
       editable={editable}
       placeholder="Start writing…"
       sessionLabel={deviceSessionLabel()}
       sessionColor={sessionColor(handle.controller.doc.clientID)}
       bottomPadding={editorBottomPadding}
+      pageBackground={presenting ? '#000000' : undefined}
       style={styles.flex}
       onStateChange={setEditorState}
       onResolved={onResolved}
+      fetchAsset={fetchAsset}
       onLink={(href) => {
         // Files links on this instance open here, as on the web.
         if (openFilesLinkInApp(href, useSessionStore.getState().instanceUrl)) return
@@ -443,8 +469,9 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   }
 
   return (
-    <View style={[styles.flex, { backgroundColor: theme.isDark ? theme.background : theme.elevated, paddingTop: Platform.OS === 'android' ? insets.top : 0 }]}>
-      {Platform.OS === 'android' ? (
+    <View style={[styles.flex, { backgroundColor: presenting ? '#000' : theme.isDark ? theme.background : theme.elevated, paddingTop: Platform.OS === 'android' && !presenting ? insets.top : 0 }]}>
+      {presenting ? <StatusBar hidden style="light" /> : null}
+      {Platform.OS === 'android' && !presenting ? (
         <PageHeader
           title={shownTitle}
           onBack={() => navigation.goBack()}
@@ -459,10 +486,28 @@ export function FileDocumentScreen({ navigation, route }: Props) {
       <FormattingBar
         formatting={isText ? (editorState?.text ? textToolbarState(editorState) : null) : isNotebook ? (editorState?.notebook ? notebookToolbarState(editorState) : null) : editorState?.formatting ?? null}
         items={isText ? TEXT_TOOLBAR : isNotebook ? NOTEBOOK_TOOLBAR : undefined}
-        visible={formattingBarVisible}
+        visible={formattingBarVisible && !isDeck}
         onCommand={(command) => editor.current?.toolbar(command as never)}
         onDismissKeyboard={() => editor.current?.dismissKeyboard()}
       />
+      <PresentationBar
+        items={PRESENTATION_TOOLBAR}
+        state={editorState ? presentationToolbarState(editorState) : { active: [], disabled: [] }}
+        visible={presentationBarVisible}
+        onCommand={(command) => editor.current?.command(command as PresentationCommand)}
+      />
+      {presenting ? (
+        <Pressable
+          accessibilityLabel="End Slide Show"
+          accessibilityRole="button"
+          hitSlop={10}
+          onPress={() => editor.current?.command('endShow')}
+          style={[styles.endShow, { top: insets.top + 8 }]}
+          testID="end-slide-show"
+        >
+          <SymbolView name="xmark" size={14} tintColor="#fff" />
+        </Pressable>
+      ) : null}
       {reviewBar}
       <FilesToastHost bottomOffset={reviewBarHeight} />
       {moving && node ? (
@@ -487,6 +532,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
+  endShow: { position: 'absolute', right: 16, width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.18)' },
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 10 },
   centerTitle: { fontSize: 20, fontWeight: '600', textAlign: 'center' },

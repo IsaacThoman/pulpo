@@ -13,6 +13,7 @@ import {
   FolderArchive,
   MessageSquare,
   PanelLeft,
+  Presentation,
   Trash2,
   type LucideIcon,
 } from 'lucide-react'
@@ -20,6 +21,9 @@ import { cn } from '@/lib/utils'
 import { TRASH_FOLDER_ID } from '@/features/trash/folder'
 import { FILE_COLOR_CLASSES, FILE_ICON_GLYPHS } from './appearance'
 import { ARCHIVE_EXTENSIONS, CODE_EXTENSIONS, fileExtension, SHEET_EXTENSIONS } from './file-display'
+
+/** Slide decks: PowerPoint's own formats and the ones that convert to them. */
+const PRESENTATION_EXTENSIONS = new Set(['pptx', 'pptm', 'potx', 'potm', 'ppsx', 'ppsm', 'ppt', 'pps', 'pot', 'odp', 'key'])
 
 type IconNode = Pick<FileNode, 'kind' | 'name' | 'mimeType'> & Partial<Pick<FileNode, 'id' | 'systemRole' | 'target' | 'color' | 'icon'>>
 
@@ -74,6 +78,7 @@ function fileGlyph(node: IconNode): [LucideIcon, string] {
   if (mime.startsWith('audio/')) return [FileAudio, 'text-amber-500']
   if (mime === 'application/pdf' || extension === 'pdf') return [FileText, 'text-red-500']
   if (SHEET_EXTENSIONS.has(extension)) return [FileSpreadsheet, 'text-emerald-600']
+  if (PRESENTATION_EXTENSIONS.has(extension)) return [Presentation, 'text-orange-500']
   if (ARCHIVE_EXTENSIONS.has(extension)) return [FileArchive, 'text-muted-foreground']
   if (CODE_EXTENSIONS.has(extension)) return [FileCode, 'text-muted-foreground']
   if (extension === 'md' || mime.startsWith('text/')) return [FileText, 'text-muted-foreground']

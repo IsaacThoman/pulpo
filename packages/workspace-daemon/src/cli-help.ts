@@ -5,7 +5,7 @@ Read and change the user's Pulpo Files that are attached to this chat.
 Files paths look like "Projects/Plan.md" (no leading slash; names are
 case-insensitive). Some files are live documents that people may be editing
 in Pulpo while you work: Markdown (.md), text or code files (.txt, .py,
-.json, .html, …), and Jupyter notebooks (.ipynb). You still pull and push
+.json, .html, …), Jupyter notebooks (.ipynb), and PowerPoint decks (.pptx). You still pull and push
 them as ordinary files, and your push merges with their edits. Other files
 are stored as uploaded bytes.
 
@@ -31,7 +31,10 @@ Edit a document or file:
   (edit /workspace/files/Projects/Plan.md with your usual tools)
   pulpo files push
 Office files work the same way: edit a pulled .docx with python-docx, .xlsx
-with openpyxl, or .pptx with python-pptx, save it in place, then push.
+with openpyxl, or .pptx with python-pptx, save it in place, then push. For a
+.pptx, change only the slides and shapes you mean to (python-pptx keeps their
+ids, which is how your push merges with people editing other slides); \`cat\`
+prints each slide's text, tables, chart data, and speaker notes.
 
 Run a notebook: pull it, execute it in place, and push the outputs back.
   pulpo files pull Projects/analysis.ipynb

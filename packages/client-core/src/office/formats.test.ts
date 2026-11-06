@@ -41,7 +41,7 @@ describe('live format catalog', () => {
   })
 
   it('announces each format schema version, Markdown keeping the document schema version', () => {
-    expect(liveSchemaVersions()).toEqual({ markdown: DOC_SCHEMA_VERSION, text: 1, notebook: 1 })
+    expect(liveSchemaVersions()).toEqual({ markdown: DOC_SCHEMA_VERSION, text: 1, notebook: 1, presentation: 1 })
     expect(liveFormatOfName('Analysis.IPYNB')?.id).toBe('notebook')
   })
 
@@ -69,7 +69,8 @@ describe('live format catalog', () => {
       expect(format.hasContent(doc)).toBe(false)
       const codec = liveFormatCodec(format.id)
       const sample = format.id === 'notebook' ? '{"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}' : '# Title\n\nbody\n'
-      await codec.importFile(doc, new TextEncoder().encode(sample), { name: `a.${format.extensions[0]}`, assets: new MemoryLiveAssetStore() })
+      if (format.id === 'presentation') await codec.createEmpty(doc, { name: 'a.pptx', assets: new MemoryLiveAssetStore() })
+      else await codec.importFile(doc, new TextEncoder().encode(sample), { name: `a.${format.extensions[0]}`, assets: new MemoryLiveAssetStore() })
       expect(format.hasContent(doc)).toBe(true)
     }
   })

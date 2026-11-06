@@ -11,7 +11,8 @@ import { EditorBridge, type EditorBridgeState } from './bridge'
 import { EDITOR_BUNDLES, type MobileEditorFormat } from './bundles'
 import { editorTheme, normalizeHref } from './presentation'
 import { notebookToolbarState, NOTEBOOK_TOOLBAR } from './notebookToolbar'
-import type { NotebookCommand, ReviewAction, TextCommand } from './protocol'
+import type { NotebookCommand, PresentationCommand, ReviewAction, TextCommand } from './protocol'
+import { presentationToolbarState } from './presentationToolbar'
 import { TEXT_TOOLBAR, textToolbarState, type NativeToolbarItem } from './textToolbar'
 
 type NativeToolbar = { visible: boolean; active: string[]; disabled: string[]; tint: string; items: NativeToolbarItem[] }
@@ -39,6 +40,10 @@ const NativeDocEditor = PulpoDocEditor
 /** Whether this binary has the native editor host (older binaries and other platforms do not). */
 export const docEditorAvailable = NativeDocEditor !== null
 
+/** The native web view host itself, for pages that are not a document session (a deck's review diff). */
+export { NativeDocEditor }
+export type { NativeProps as NativeDocEditorProps, NativeRef as NativeDocEditorRef }
+
 /**
  * Sessions whose editor is closing: the native host pulls the page's whole state one last time,
  * and the session is held until it is merged (or a short wait passes).
@@ -62,13 +67,13 @@ PulpoDocEditor?.addListener('onFinalState', ({ instanceId, state }) => {
 })
 
 const noSubscription = () => () => {}
-const INITIAL: EditorBridgeState = { loaded: false, formatting: null, focused: false, suggestions: { count: 0, index: null, active: null }, text: null, notebook: null, incompatible: false }
+const INITIAL: EditorBridgeState = { loaded: false, formatting: null, focused: false, suggestions: { count: 0, index: null, active: null }, text: null, notebook: null, presentation: null, incompatible: false }
 const initialState = () => INITIAL
 
 export interface DocEditorHandle {
   format(command: FormatCommand, href?: string): void
   /** A text or notebook editor's command. */
-  command(command: TextCommand | NotebookCommand): void
+  command(command: TextCommand | NotebookCommand | PresentationCommand): void
   /** A formatting bar's command, asking for a link's address where needed. */
   toolbar(command: FormatCommand): void
   review(action: ReviewAction): void
@@ -97,12 +102,13 @@ interface Props {
   onStateChange?: (state: EditorBridgeState) => void
   onLink?: (href: string) => void
   onResolved?: () => void
+  /** Overrides the web view's background (black while a deck's slide show runs). */
+  pageBackground?: string
 }
 
 export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEditorView({
   format = 'markdown',
   name,
-  fetchAsset,
   acquire,
   editable,
   placeholder,
@@ -113,6 +119,8 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
   onStateChange,
   onLink,
   onResolved,
+  fetchAsset,
+  pageBackground,
 }, ref) {
   const native = useRef<NativeRef>(null)
   const theme = useAppTheme()
@@ -180,8 +188,8 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
 
   const runToolbar = (command: string) => {
     if (!bridge) return
-    if (format === 'text' || format === 'notebook') {
-      bridge.command(command as TextCommand | NotebookCommand)
+    if (format === 'text' || format === 'notebook' || format === 'presentation') {
+      bridge.command(command as TextCommand | NotebookCommand | PresentationCommand)
       return
     }
     if (command !== 'link') {
@@ -222,16 +230,17 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
   }), [bridge])
 
   if (!NativeDocEditor || !instance || !bridge) return null
-  const formatting = format === 'text' ? textToolbarState(state) : format === 'notebook' ? notebookToolbarState(state) : state.formatting
+  const formatting = format === 'text' ? textToolbarState(state) : format === 'notebook' ? notebookToolbarState(state) : format === 'presentation' ? presentationToolbarState(state) : state.formatting
   return (
     <NativeDocEditor
       ref={native}
       style={style}
       instanceId={instance.id}
       html={bundle.html}
-      pageBackground={editorTheme(theme).background}
+      pageBackground={pageBackground ?? editorTheme(theme).background}
       toolbar={{
-        visible: editable && state.loaded,
+        // Decks have an always-on bar of their own (PresentationBar), not a keyboard accessory.
+        visible: editable && state.loaded && format !== 'presentation',
         active: formatting?.active ?? [],
         disabled: formatting?.disabled ?? [],
         tint: theme.blue,

@@ -20,7 +20,9 @@
     "capture:landing": "node scripts/capture-landing-screenshots.mjs",
     "test:live-text": "node tests/live-text.browser.mjs",
     "test:office-conversion": "node tests/office-conversion.browser.mjs",
-    "test:live-notebook": "node tests/live-notebook.browser.mjs"
+    "test:live-notebook": "node tests/live-notebook.browser.mjs",
+    "test:presentation-editor": "node tests/presentation-editor.browser.mjs",
+    "test:presentation-files": "node tests/presentation-files.browser.mjs"
   },
   "dependencies": {
     "@pulpo/client-core": "0.1.0",

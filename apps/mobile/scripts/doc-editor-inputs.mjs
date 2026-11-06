@@ -66,6 +66,21 @@ export const EDITOR_BUNDLES = {
     ],
     packages: new RegExp(`^node_modules/(@codemirror/[^/]+|@lezer/[^/]+|y-codemirror\\.next|${SYNC_PACKAGES}|style-mod|crelt|w3c-keyname|@marijn/find-cluster-break|marked|lowlight|highlight\\.js)$`),
   },
+  presentation: {
+    root: join(editorRoot, 'presentation'),
+    entry: 'main.ts',
+    output: generated('presentationEditorBundle.generated.ts'),
+    exportName: 'PRESENTATION_EDITOR_BUNDLE',
+    // Deck pictures and media are object URLs the page makes from bytes the app hands it.
+    blobMedia: true,
+    schemaVersion: { file: join(clientCoreSource, 'office/presentation/layout.ts'), pattern: /PRESENTATION_SCHEMA_VERSION = (\d+)/ },
+    sources: [
+      join(editorRoot, 'presentation'),
+      join(clientCoreSource, 'office/presentation'), join(clientCoreSource, 'office/ooxml'), join(clientCoreSource, 'office/assets.ts'),
+      join(clientCoreSource, 'office/live-format.ts'),
+    ],
+    packages: new RegExp(`^node_modules/(@tiptap/(pm|y-tiptap)|prosemirror-[^/]+|${SYNC_PACKAGES}|fflate|@xmldom/xmldom|orderedmap|rope-sequence|w3c-keyname)$`),
+  },
 }
 
 function walk(path) {

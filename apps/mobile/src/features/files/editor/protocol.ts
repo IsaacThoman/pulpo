@@ -64,11 +64,19 @@ export type HostMessage =
   /** Asks for the document's Markdown, without pending suggestions (the base view). */
   | { type: 'export'; session: number; requestId: string }
   /** A text or notebook editor command from the app's toolbar or menu. */
-  | { type: 'command'; session: number; command: TextCommand | NotebookCommand }
+  | { type: 'command'; session: number; command: TextCommand | NotebookCommand | PresentationCommand }
   /** The file was renamed; text editors pick their language from the name. */
   | { type: 'name'; session: number; name: string }
   /** An asset the page asked for (base64), or null when it can't be had (offline, missing). */
   | { type: 'asset'; session: number; hash: string; data: string | null }
+
+  /** The answer to the editor's `asset` request: the bytes (base64), or why there are none. */
+  | { type: 'asset'; session: number; requestId: string; data?: string; error?: string }
+  /**
+   * Shows an agent's proposed deck against the current one instead of an editor: both versions
+   * as .pptx bytes (base64). The page answers `loaded`, or `error` when a version cannot be read.
+   */
+  | { type: 'presentationDiff'; session: number; before: string; after: string; theme: EditorTheme }
 
 export type TextCommand = 'undo' | 'redo' | 'indentMore' | 'indentLess' | 'find' | 'wrap'
 
@@ -86,6 +94,26 @@ export interface NotebookToolbarState {
   outputsCollapsed: boolean
   readOnly: boolean
   cells: number
+}
+
+/** The presentation editor's toolbar. */
+export type PresentationCommand = 'undo' | 'redo' | 'newSlide' | 'textBox' | 'shape' | 'bold' | 'italic' | 'bullets' | 'delete' | 'present' | 'endShow'
+
+/** What a presentation editor's toolbar shows. */
+export interface PresentationEditorState {
+  canUndo: boolean
+  canRedo: boolean
+  bold: boolean
+  italic: boolean
+  bullets: boolean
+  /** Text formatting applies (text is being edited, or a shape with text is selected). */
+  canFormatText: boolean
+  /** Shapes are selected, so Delete removes them (otherwise it removes the slide). */
+  hasSelection: boolean
+  slideCount: number
+  readOnly: boolean
+  /** The slide show is running: the app gives the page the whole screen. Older pages omit it. */
+  presenting?: boolean
 }
 
 export interface ActiveSuggestion {
@@ -111,9 +139,16 @@ export type EditorMessage =
   | { type: 'notebookState'; session: number; state: NotebookToolbarState }
   | { type: 'suggestions'; session: number; count: number; index: number | null; active: ActiveSuggestion | null }
   /** The editor's own cursor, as Yjs relative positions, for other sessions' awareness; notebooks add the cell it is on. */
-  | { type: 'cursor'; session: number; cursor: { anchor: unknown; head: unknown } | null; notebook?: unknown }
+  | { type: 'cursor'; session: number; cursor: { anchor: unknown; head: unknown } | null; notebook?: unknown; presentation?: { slide: string | null; shapes: string[]; editing?: string | null } | null }
   /** Asks the app for a document asset (an image in a notebook's outputs) by hash. */
   | { type: 'asset'; session: number; hash: string }
+  /** What a presentation editor's toolbar shows. */
+  | { type: 'presentationState'; session: number; state: PresentationEditorState }
+  /**
+   * Asks the app for an asset's bytes (an image in a deck): the page has no network access, so the
+   * app fetches them from the document's assets.
+   */
+  | { type: 'asset'; session: number; requestId: string; hash: string }
   /** The owner resolved suggestions in the editor (review buttons, undo, or typing). */
   | { type: 'resolved'; session: number }
   | { type: 'link'; session: number; href: string }

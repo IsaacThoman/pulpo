@@ -12,6 +12,8 @@ import {
   type HostMessage,
   type NotebookCommand,
   type NotebookToolbarState,
+  type PresentationCommand,
+  type PresentationEditorState,
   type ReviewAction,
   type TextCommand,
 } from './protocol'
@@ -35,6 +37,8 @@ export interface EditorBridgeState {
   text: TextEditorState | null
   /** What a notebook editor reports. */
   notebook: NotebookToolbarState | null
+  /** What a presentation editor reports. */
+  presentation: PresentationEditorState | null
   /** The editor's page reported a protocol or schema this app cannot use. */
   incompatible: boolean
 }
@@ -69,6 +73,7 @@ const INITIAL_STATE: EditorBridgeState = {
   suggestions: { count: 0, index: null, active: null },
   text: null,
   notebook: null,
+  presentation: null,
   incompatible: false,
 }
 
@@ -140,7 +145,7 @@ export class EditorBridge {
   }
 
   /** A text editor's toolbar command. */
-  command(command: TextCommand | NotebookCommand): void {
+  command(command: TextCommand | NotebookCommand | PresentationCommand): void {
     this.post({ type: 'command', session: this.session, command })
   }
 
@@ -194,6 +199,7 @@ export class EditorBridge {
     if (this.options.awareness.getLocalState()) {
       this.options.awareness.setLocalStateField('cursor', null)
       if (this.options.format === 'notebook') this.options.awareness.setLocalStateField('notebook', null)
+      this.options.awareness.setLocalStateField('presentation', null)
     }
     this.rejectExports(new Error('The editor closed'))
     this.listeners.clear()
@@ -243,14 +249,22 @@ export class EditorBridge {
       case 'notebookState':
         this.setState({ ...this.state, notebook: message.state, focused: message.state.editing })
         break
+      case 'presentationState':
+        this.setState({ ...this.state, presentation: message.state })
+        break
       case 'suggestions':
         this.setState({ ...this.state, suggestions: { count: message.count, index: message.index, active: message.active } })
         break
       case 'cursor':
         this.options.awareness.setLocalStateField('cursor', message.cursor)
         if (message.notebook !== undefined) this.options.awareness.setLocalStateField('notebook', message.notebook)
+        if (message.presentation !== undefined) this.options.awareness.setLocalStateField('presentation', message.presentation)
         break
       case 'asset': {
+        if ('requestId' in message) {
+          void this.sendAsset(message.requestId, message.hash)
+          break
+        }
         const { session } = this
         const hash = message.hash
         const fetchAsset = this.options.fetchAsset
@@ -276,6 +290,22 @@ export class EditorBridge {
         else pending?.resolve(message.markdown)
         break
       }
+    }
+  }
+
+  /** Answers the page's request for an asset, from the app's own fetch (the page has no network). */
+  private async sendAsset(requestId: string, hash: string): Promise<void> {
+    const session = this.session
+    const fetchAsset = this.options.fetchAsset
+    if (!/^[0-9a-f]{64}$/.test(hash) || !fetchAsset) {
+      this.post({ type: 'asset', session, requestId, error: 'Unavailable' })
+      return
+    }
+    try {
+      const bytes = await fetchAsset(hash)
+      if (session === this.session) this.post({ type: 'asset', session, requestId, data: bytesToBase64(bytes) })
+    } catch (error) {
+      if (session === this.session) this.post({ type: 'asset', session, requestId, error: error instanceof Error ? error.message : 'Unavailable' })
     }
   }
 

@@ -703,7 +703,7 @@ function receive(raw: string): void {
       applyTheme(message.theme)
       break
     case 'asset':
-      open.assets.receive(message.hash, message.data)
+      if ('hash' in message) open.assets.receive(message.hash, message.data)
       break
     case 'command':
       run(message.command)

@@ -12,7 +12,7 @@ export interface LiveEditorProps {
   /** Rendered at the end of the editor's toolbar. */
   toolbarSlot?: React.ReactNode
   /** The document's binary parts (images in notebooks), fetched and uploaded by hash. */
-  assets?: LiveAssetStore
+  assets: LiveAssetStore
   /** Opens a chat with this file attached (with edit access) and a request to run it, for formats that run. */
   onRunWithAgent?: () => void
 }

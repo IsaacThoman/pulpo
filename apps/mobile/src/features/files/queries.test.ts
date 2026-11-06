@@ -55,10 +55,12 @@ describe('Files query keys', () => {
       filesQueryKeys.changes('ns'),
       filesQueryKeys.responseChanges('ns', 'reply'),
       filesQueryKeys.changeText('ns', 'reply', 'change'),
+      filesQueryKeys.changeContent('ns', 'reply', 'change'),
     ]
     for (const key of keys) expect(key.slice(0, prefix.length)).toEqual([...prefix])
-    // A reply's change list refetches its changes' text with it.
+    // A reply's change list refetches its changes' text and binary content with it.
     const changes = filesQueryKeys.responseChanges('ns', 'reply')
     expect(filesQueryKeys.changeText('ns', 'reply', 'change').slice(0, changes.length)).toEqual([...changes])
+    expect(filesQueryKeys.changeContent('ns', 'reply', 'change').slice(0, changes.length)).toEqual([...changes])
   })
 })

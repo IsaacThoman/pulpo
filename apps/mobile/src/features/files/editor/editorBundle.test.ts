@@ -42,6 +42,8 @@ describe.each(BUNDLES)('the bundled $format editor', ({ format, bundle, schemaVe
     expect(csp).toContain("default-src 'none'")
     expect(csp).toMatch(/script-src 'sha256-[A-Za-z0-9+/=]+'(;|$)/)
     expect(bundle.html).not.toMatch(/<script[^>]+src=/)
+    // Only data: and (for decks' pictures and media) blob: URLs the page makes itself.
+    expect(csp).not.toMatch(/https?:|\*|'self'|connect-src/)
   })
 })
 

@@ -31,6 +31,8 @@ export async function buildEditorPage(format) {
         { find: /^@pulpo\/client-core\/office$/, replacement: join(clientCoreSource, 'office/index.ts') },
         { find: /^@pulpo\/client-core\/office\/notebook$/, replacement: join(clientCoreSource, 'office/notebook/index.ts') },
         { find: /^@pulpo\/client-core\/office\/notebook\/view$/, replacement: join(clientCoreSource, 'office/notebook/view/index.ts') },
+        { find: /^@pulpo\/client-core\/office\/presentation$/, replacement: join(clientCoreSource, 'office/presentation/index.ts') },
+        { find: /^@pulpo\/client-core\/office\/presentation\/view$/, replacement: join(clientCoreSource, 'office/presentation/view/index.ts') },
       ],
     },
     define: { 'process.env.NODE_ENV': JSON.stringify('production') },
@@ -57,7 +59,9 @@ export async function buildEditorPage(format) {
     "default-src 'none'",
     `script-src 'sha256-${scriptHash}'`,
     "style-src 'unsafe-inline'",
-    'img-src data:',
+    // `blob:` URLs come only from bytes the page already holds (a deck's pictures), never the network.
+    spec.blobMedia ? 'img-src data: blob:' : 'img-src data:',
+    ...(spec.blobMedia ? ['media-src blob:'] : []),
     "base-uri 'none'",
     "form-action 'none'",
   ].join('; ')
