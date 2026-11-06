@@ -85,4 +85,9 @@ export interface LiveFormatCodec {
   applyFile(doc: Y.Doc, bytes: Uint8Array, context: LiveFormatContext, origin?: unknown): Promise<{ changed: boolean }>
   /** Plain text of the document, for search, grep, `cat`, and previews. */
   toText(doc: Y.Doc): string
+  /**
+   * The asset hashes the document refers to. Optional: servers delete a document's assets that
+   * nothing refers to any more (after a grace period) only for codecs that implement it.
+   */
+  referencedAssets?(doc: Y.Doc): string[]
 }

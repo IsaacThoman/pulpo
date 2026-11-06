@@ -1,15 +1,19 @@
 import type { DocSocket } from '@pulpo/client-core/doc-sync'
 import { AppState } from 'react-native'
 import { cacheNamespace, withMobileDatabase } from '../../../data/database'
+import { MOBILE_SCHEMA_VERSIONS } from '../editor/bundles'
 import { EDITOR_BUNDLE } from '../editor/editorBundle.generated'
 import { closeDocSessions, docSessions, DocSessionRegistry } from './sessions'
 import { DocStore, type DocDatabase } from './store'
 
 const store = new DocStore((operation) => withMobileDatabase((database) => operation(database as unknown as DocDatabase)))
 
-/** The account's open documents. Their schema is the bundled editor's, which the server checks on join. */
+/**
+ * The account's open documents. Joins announce the schema of every editor the app bundles, which
+ * the server checks against each document's format; stored copies record the Markdown editor's.
+ */
 export function accountDocSessions(namespace: string): DocSessionRegistry {
-  return docSessions(namespace, () => new DocSessionRegistry(namespace, store, EDITOR_BUNDLE.schemaVersion))
+  return docSessions(namespace, () => new DocSessionRegistry(namespace, store, EDITOR_BUNDLE.schemaVersion, MOBILE_SCHEMA_VERSIONS))
 }
 
 /** How many of the account's documents have edits not uploaded yet (signing out deletes them). */

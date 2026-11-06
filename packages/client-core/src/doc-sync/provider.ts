@@ -2,7 +2,7 @@ import type { ClientToServerEvents, DocClosedEvent, DocSyncError, DocUpdateMessa
 import type { Socket } from 'socket.io-client'
 import { applyAwarenessUpdate, Awareness, encodeAwarenessUpdate, removeAwarenessStates } from 'y-protocols/awareness'
 import * as Y from 'yjs'
-import { DOC_SCHEMA_VERSION } from '../doc-schema/version.js'
+import { DOC_GENERATION_KEY, DOC_META_MAP, DOC_SCHEMA_VERSION } from '../doc-schema/version.js'
 
 /** The part of the account's Socket.IO connection that documents use. */
 export type DocSocket = Pick<Socket<ServerToClientEvents, ClientToServerEvents>, 'connected' | 'on' | 'off' | 'emit'>
@@ -15,6 +15,12 @@ export interface SocketIOYProviderOptions {
    * clients that ship their editor separately (mobile) pass the version that editor was built with.
    */
   schemaVersion?: number
+  /**
+   * The schema version of each live format this client can edit (`liveSchemaVersions()`), checked
+   * against the document's format. Without it the client is taken to edit only Markdown at
+   * `schemaVersion`, as clients from before live formats do.
+   */
+  schemaVersions?: Record<string, number>
 }
 
 export type DocSyncStatus =
@@ -24,6 +30,15 @@ export type DocSyncStatus =
   | { state: 'offline' }
   | { state: 'closed'; reason: DocClosedEvent['reason'] }
   | { state: 'error'; error: DocSyncError }
+
+/**
+ * Whether `doc` holds content of a document other than the generation the server has. Copies
+ * without a generation (documents from before it) are only stale when the server has one.
+ */
+export function isStaleCopy(doc: Y.Doc, generation: string | undefined): boolean {
+  if (!generation || doc.store.clients.size === 0) return false
+  return doc.getMap(DOC_META_MAP).get(DOC_GENERATION_KEY) !== generation
+}
 
 /** Local edits are coalesced for this long before one merged update is sent. */
 const SEND_DELAY_MS = 50
@@ -59,13 +74,23 @@ export class SocketIOYProvider {
   readonly docId: string
   readonly doc: Y.Doc
   private readonly ignoredOrigins: unknown[]
+  /**
+   * Whether the document holds state from before this session: what it held when the provider
+   * started, or what the offline cache loaded into it since. Only such state can be a stale copy
+   * of an earlier document; edits made before the first handshake, and updates other sessions
+   * relayed meanwhile, belong to the document the server has.
+   */
+  private hasPriorState: boolean
   private readonly schemaVersion: number
+  private readonly schemaVersions: Record<string, number> | undefined
 
-  constructor(docId: string, doc: Y.Doc, { ignoredOrigins = [], schemaVersion = DOC_SCHEMA_VERSION }: SocketIOYProviderOptions = {}) {
+  constructor(docId: string, doc: Y.Doc, { ignoredOrigins = [], schemaVersion = DOC_SCHEMA_VERSION, schemaVersions }: SocketIOYProviderOptions = {}) {
     this.docId = docId.toLowerCase()
     this.doc = doc
     this.ignoredOrigins = ignoredOrigins
-    this.schemaVersion = schemaVersion
+    this.hasPriorState = doc.store.clients.size > 0
+    this.schemaVersion = schemaVersions?.markdown ?? schemaVersion
+    this.schemaVersions = schemaVersions
     this.awareness = new Awareness(doc)
     doc.on('update', this.onDocUpdate)
     this.awareness.on('update', this.onAwarenessUpdate)
@@ -191,6 +216,7 @@ export class SocketIOYProvider {
       stateVector: Y.encodeStateVector(this.doc),
       awarenessClientId: this.doc.clientID,
       schemaVersion: this.schemaVersion,
+      ...this.schemaVersions ? { schemaVersions: this.schemaVersions } : {},
     }, (result) => {
       if (generation !== this.generation || this.isFinal()) return
       clearTimeout(this.ackTimer)
@@ -200,7 +226,16 @@ export class SocketIOYProvider {
         this.setStatus(result.error === 'not_found' ? { state: 'closed', reason: 'deleted' } : { state: 'error', error: result.error })
         return
       }
+      // A copy (from this device's cache) of an earlier document made under the same id would
+      // merge its content into this one. Nothing is exchanged; the owner drops the copy.
+      if (this.hasPriorState && isStaleCopy(this.doc, result.generation)) {
+        this.setStatus({ state: 'error', error: 'stale_copy' })
+        return
+      }
       Y.applyUpdate(this.doc, bytes(result.update), this)
+      // This server state belongs to a generation too; future joins must check it, even when
+      // the first join started without a cached copy.
+      this.hasPriorState = true
       this.joined = true
       this.inflight = false
       // Everything the server lacks, including edits made offline, in one update.
@@ -213,7 +248,11 @@ export class SocketIOYProvider {
   }
 
   private readonly onDocUpdate = (update: Uint8Array, origin: unknown) => {
-    if (origin === this || this.ignoredOrigins.includes(origin)) return
+    if (origin === this) return
+    if (this.ignoredOrigins.includes(origin)) {
+      this.hasPriorState = true
+      return
+    }
     // Offline and joining edits live in the Y.Doc; the next handshake includes them all.
     if (!this.joined || this.isFinal()) return
     this.pending.push(update)

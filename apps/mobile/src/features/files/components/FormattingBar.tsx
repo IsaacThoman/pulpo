@@ -1,4 +1,4 @@
-import type { FormatCommand, FormattingState } from '@pulpo/client-core/doc-editor'
+import type { FormatCommand } from '@pulpo/client-core/doc-editor'
 import * as Haptics from 'expo-haptics'
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native'
 import { KeyboardStickyView } from 'react-native-keyboard-controller'
@@ -44,21 +44,27 @@ const ITEMS: Item[] = [
   { command: 'divider', label: 'Divider', symbol: 'minus' },
 ]
 
+/** A live format's own button (text and code), in place of the document editor's. */
+export type FormattingBarItem = { command: string; label: string; systemImage: string }
+
 /**
  * The formatting bar above the keyboard where the platform has no keyboard accessory for web
- * content (Android). iOS shows the native SwiftUI bar inside the editor host instead.
+ * content (Android). iOS shows the native SwiftUI bar inside the editor host instead. Formats
+ * with their own bar pass `items`; without them it is the document editor's.
  */
-export function FormattingBar({ formatting, visible, onCommand, onDismissKeyboard }: {
-  formatting: FormattingState | null
+export function FormattingBar({ formatting, items: formatItems, visible, onCommand, onDismissKeyboard }: {
+  formatting: { active: readonly string[]; disabled: readonly string[] } | null
+  items?: readonly FormattingBarItem[]
   visible: boolean
-  onCommand: (command: FormatCommand) => void
+  onCommand: (command: string) => void
   onDismissKeyboard: () => void
 }) {
   const theme = useAppTheme()
   if (Platform.OS !== 'android' || !visible || !formatting) return null
-  const active = new Set(formatting.active)
-  const disabled = new Set(formatting.disabled)
-  const run = (command: FormatCommand) => {
+  const items: Item[] = formatItems?.length ? formatItems.map((item) => ({ command: item.command as FormatCommand, label: item.label, symbol: item.systemImage })) : ITEMS
+  const active = new Set<string>(formatting.active)
+  const disabled = new Set<string>(formatting.disabled)
+  const run = (command: string) => {
     Haptics.selectionAsync()
     onCommand(command)
   }
@@ -66,7 +72,7 @@ export function FormattingBar({ formatting, visible, onCommand, onDismissKeyboar
     <KeyboardStickyView style={styles.sticky}>
       <View style={[styles.bar, { backgroundColor: theme.elevated, borderTopColor: theme.separator }]} testID="formatting-bar">
         <ScrollView horizontal keyboardShouldPersistTaps="always" showsHorizontalScrollIndicator={false} contentContainerStyle={styles.items}>
-          {ITEMS.map((item, index) => {
+          {items.map((item, index) => {
             if ('separator' in item) return <View key={`separator-${index}`} style={[styles.separator, { backgroundColor: theme.separator }]} />
             if ('menu' in item) {
               const on = item.options.some((option) => option.command !== 'paragraph' && active.has(option.command))

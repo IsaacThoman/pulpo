@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { FILE_SCOPE_ROOT } from '@pulpo/contracts'
 import { FilePlus2, FolderPlus, Link2, PanelRight, SquarePen, Upload } from 'lucide-react'
+import { LIVE_WEB_FORMATS } from './live/registry'
 import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import { ui } from '@/i18n/ui'
 import { useAuth } from '@/stores/auth'
@@ -31,6 +32,9 @@ export function FilesNavMenu({ point, onClose, go }: {
     <>
       <FileContextMenu point={point} onClose={onClose}>
         <DropdownMenuItem onSelect={() => request({ kind: 'newFile' })}><FilePlus2 /> {ui("New file")}</DropdownMenuItem>
+        {LIVE_WEB_FORMATS.map((entry) => (
+          <DropdownMenuItem key={entry.format.id} onSelect={() => request({ kind: 'newFile', name: entry.newName() })}><entry.icon /> {entry.newLabel()}</DropdownMenuItem>
+        ))}
         <DropdownMenuItem onSelect={() => request({ kind: 'newFolder' })}><FolderPlus /> {ui("New folder")}</DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => fileInput.current?.click()}><Upload /> {ui("Upload files")}</DropdownMenuItem>

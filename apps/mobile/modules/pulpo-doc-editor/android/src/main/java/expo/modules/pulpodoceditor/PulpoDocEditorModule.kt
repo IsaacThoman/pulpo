@@ -10,6 +10,8 @@ class DocEditorToolbarState : Record {
   @Field var active: List<String> = emptyList()
   @Field var disabled: List<String> = emptyList()
   @Field var tint: String = "#007AFF"
+  // A live format's own buttons (iOS draws them natively; Android's bar is drawn in JavaScript).
+  @Field var items: List<Map<String, String>> = emptyList()
 }
 
 class PulpoDocEditorModule : Module() {

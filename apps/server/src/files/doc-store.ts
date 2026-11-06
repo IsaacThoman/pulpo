@@ -1,14 +1,18 @@
 import { and, asc, eq, gt, inArray, lt, sql } from 'drizzle-orm'
 import * as Y from 'yjs'
-import { DOC_SCHEMA_VERSION, ydocToMarkdown } from '@pulpo/client-core/doc-schema'
-import { isMarkdownName, type FileNode } from '@pulpo/contracts'
+import { liveMimeType } from '@pulpo/client-core/office'
+import { liveFormatCodec } from '@pulpo/client-core/office/codecs'
+import type { FileNode } from '@pulpo/contracts'
+import { assertStorageCapacity, assertWithinStorageAllowance, lockAccountStorage } from '../attachments/storage-quota.js'
 import { db } from '../database/client.js'
-import { fileDocs, fileDocUpdates, fileNodes } from '../database/schema.js'
+import { fileDocAssets, fileDocs, fileDocUpdates, fileNodes } from '../database/schema.js'
 import { fileDocQueue } from '../jobs.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { resolveFileAccess, type FileNodeRow } from './access.js'
-import { docTooLarge, initialDocState, MAX_DOC_STATE_BYTES } from './doc-state.js'
+import { docTooLarge, initialDocState, MAX_DOC_STATE_BYTES, mergedDocState } from './doc-state.js'
+import { ASSET_GRACE_MS, collectUnusedAssets } from './asset-gc.js'
+import { deleteObjects, docFormat, formatForName, initialLiveDoc } from './live-docs.js'
 import { assertDestination, assertNameAvailable, availableName, lockFileTree, mutateFileTree, toFileNode } from './tree-service.js'
 import { topSortOrder } from './order.js'
 
@@ -31,44 +35,58 @@ export type DocUpdateOrigin = 'client' | 'agent' | 'import' | 'restore'
 export const invalidDocUpdate = () => new AppError(400, 'invalid_update', 'The document update is invalid')
 
 /**
- * Creates a document inside a tree transaction. A taken name gets a ` (n)` suffix unless
- * `exactName` is set, in which case it fails.
+ * Creates a document inside a tree transaction, in the live format its name's extension picks: an
+ * empty one, or one holding `markdown` (Markdown documents) or the file `bytes`. A taken name gets
+ * a ` (n)` suffix unless `exactName` is set, in which case it fails.
  */
 export async function createDocInTx(tx: DatabaseTransaction, userId: string, input: {
   parentId: string | null
   name?: string
   markdown?: string
+  bytes?: Uint8Array
   exactName?: boolean
   suggestionChangeId?: string | null
+  /** Collects asset objects as they are stored, for the caller to delete if the transaction fails. */
+  writtenKeys?: string[]
 }): Promise<FileNodeRow> {
-  // Only Markdown names are editable documents; any other name is an ordinary file.
-  if (input.name !== undefined && !isMarkdownName(input.name)) {
-    throw new AppError(400, 'file_not_markdown', 'Only files named .md or .markdown can be edited')
-  }
-  const initial = initialDocState(input.markdown)
-  await assertDestination(tx, userId, input.parentId)
   const desired = input.name ?? DEFAULT_DOC_NAME
+  // Only names of a live format are documents; any other name is an ordinary file.
+  const format = formatForName(desired)
+  if (input.markdown !== undefined && format.id !== 'markdown') throw new AppError(400, 'validation_error', 'Only Markdown documents start from Markdown')
+  const initial = await initialLiveDoc(tx, format, desired, { bytes: input.bytes, markdown: input.markdown })
+  await assertDestination(tx, userId, input.parentId)
   if (input.exactName) await assertNameAvailable(tx, userId, input.parentId, desired)
   const name = input.exactName ? desired : await availableName(tx, userId, input.parentId, desired)
   const [node] = await tx.insert(fileNodes).values({
-    id: newId(), ownerUserId: userId, parentId: input.parentId, kind: 'doc', name,
-    mimeType: 'text/markdown', sizeBytes: initial.state.byteLength,
+    id: newId(), ownerUserId: userId, parentId: input.parentId, kind: 'doc', name, format: format.id,
+    mimeType: liveMimeType(format, name), sizeBytes: initial.state.byteLength,
     sortOrder: await topSortOrder(tx, userId, input.parentId), suggestionChangeId: input.suggestionChangeId ?? null,
   }).returning()
   await tx.insert(fileDocs).values({
     nodeId: node!.id, state: initial.state, stateBytes: initial.state.byteLength,
-    markdown: initial.markdown, schemaVersion: DOC_SCHEMA_VERSION,
+    markdown: initial.text, schemaVersion: format.schemaVersion, generation: initial.generation,
   })
+  const written = await initial.assets.flush(tx, userId, node!.id)
+  input.writtenKeys?.push(...written)
   return node!
 }
 
 export async function createDoc(userId: string, input: { parentId: string | null; name?: string; markdown?: string }): Promise<FileNode> {
-  return mutateFileTree(userId, async (tx) => toFileNode(await createDocInTx(tx, userId, input)))
+  return mutateFileTree(userId, async (tx) => {
+    const node = await createDocInTx(tx, userId, input)
+    await assertWithinStorageAllowance(tx, userId)
+    return toFileNode(node)
+  })
 }
 
 export async function scheduleDocCompaction(nodeId: string, delay = COMPACT_DELAY_MS): Promise<void> {
   // One queued compaction per document per window; later updates are picked up by the same run.
   await fileDocQueue.add('compact', { nodeId }, { delay, deduplication: { id: `compact:${nodeId}`, ttl: delay || 1_000 } })
+}
+
+/** Revisit uploads after their grace period, even if nobody edits the document again. */
+export async function scheduleDocAssetCollection(nodeId: string, delay = ASSET_GRACE_MS + 1_000): Promise<void> {
+  await fileDocQueue.add('compact', { nodeId }, { delay, deduplication: { id: `assets:${nodeId}`, ttl: 1_000 } })
 }
 
 export interface DocUpdateInput {
@@ -93,9 +111,22 @@ export async function appendDocUpdateInTx(tx: DatabaseTransaction, input: DocUpd
   } catch {
     throw invalidDocUpdate()
   }
-  const [doc] = await tx.select({ stateBytes: fileDocs.stateBytes }).from(fileDocs).where(eq(fileDocs.nodeId, input.nodeId))
-  if (!doc) throw notFound('Document')
-  if (doc.stateBytes > MAX_DOC_STATE_BYTES) throw docTooLarge()
+  const [node] = await tx.select({ ownerUserId: fileNodes.ownerUserId, sizeBytes: fileNodes.sizeBytes }).from(fileNodes).where(eq(fileNodes.id, input.nodeId))
+  if (!node) throw notFound('Document')
+  // Callers hold storage → tree → document locks. Charge the resulting state now rather than
+  // waiting for compaction, which otherwise allows unlimited growth between worker runs.
+  const doc = new Y.Doc()
+  try {
+    Y.applyUpdate(doc, await mergedDocState(tx, input.nodeId))
+    Y.applyUpdate(doc, input.update)
+    const sizeBytes = Y.encodeStateAsUpdate(doc).byteLength
+    if (sizeBytes > MAX_DOC_STATE_BYTES) throw docTooLarge()
+    await assertStorageCapacity(tx, node.ownerUserId, Math.max(0, sizeBytes - node.sizeBytes), { perFileLimit: false })
+    // Keep the old charge until compaction actually discards the larger snapshot.
+    await tx.update(fileNodes).set({ sizeBytes: Math.max(node.sizeBytes, sizeBytes) }).where(eq(fileNodes.id, input.nodeId))
+  } finally {
+    doc.destroy()
+  }
   // Insert before touching the doc row: compaction holds that row lock, and an uncommitted
   // log row is invisible to it, so compaction can never delete an update it did not fold in.
   await tx.insert(fileDocUpdates).values({
@@ -117,8 +148,11 @@ export async function scheduleCompactionAfterUpdate(nodeId: string, pendingUpdat
 /** Durably records one Yjs update. Callers broadcast it only after this resolves. */
 export async function appendDocUpdate(input: DocUpdateInput): Promise<void> {
   const pending = await db.transaction(async (tx) => {
+    const [node] = await tx.select({ ownerUserId: fileNodes.ownerUserId }).from(fileNodes).where(eq(fileNodes.id, input.nodeId))
+    if (!node) throw notFound('Document')
+    await lockAccountStorage(tx, node.ownerUserId)
+    await lockFileTree(tx, node.ownerUserId)
     if (input.ownerUserId) {
-      await lockFileTree(tx, input.ownerUserId)
       const access = await resolveFileAccess(tx, input.ownerUserId, input.nodeId)
       if (!access || access.node.kind !== 'doc' || access.node.trashedAt || access.node.status !== 'ready') throw notFound('Document')
     }
@@ -141,6 +175,12 @@ export async function loadDocUpdate(nodeId: string): Promise<Uint8Array> {
   }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
 }
 
+/** The document's generation (see `DOC_META_MAP`), or null for documents made before them. */
+export async function docGeneration(nodeId: string): Promise<string | null> {
+  const [doc] = await db.select({ generation: fileDocs.generation }).from(fileDocs).where(eq(fileDocs.nodeId, nodeId))
+  return doc?.generation ?? null
+}
+
 export async function loadYDoc(nodeId: string): Promise<Y.Doc> {
   const doc = new Y.Doc()
   Y.applyUpdate(doc, await loadDocUpdate(nodeId))
@@ -148,40 +188,61 @@ export async function loadYDoc(nodeId: string): Promise<Y.Doc> {
 }
 
 /** Worker: folds logged updates into the snapshot, then deletes exactly the rows it folded. */
-export async function compactDoc(nodeId: string): Promise<void> {
-  await db.transaction(async (tx) => {
-    const [node] = await tx.select({ ownerUserId: fileNodes.ownerUserId }).from(fileNodes).where(eq(fileNodes.id, nodeId))
-    if (!node) return
+export async function compactDoc(nodeId: string, now = new Date()): Promise<void> {
+  let collectAfter: number | undefined
+  const unusedAssets = await db.transaction(async (tx): Promise<string[]> => {
+    const [node] = await tx.select({ ownerUserId: fileNodes.ownerUserId, format: fileNodes.format }).from(fileNodes).where(eq(fileNodes.id, nodeId))
+    if (!node) return []
     // Tree mutations can lock the node before deleting/converting its document. Match their
     // tree → document → node order so compaction cannot deadlock a rename or subtree purge.
+    await lockAccountStorage(tx, node.ownerUserId)
     await lockFileTree(tx, node.ownerUserId)
     const [doc] = await tx.select().from(fileDocs).where(eq(fileDocs.nodeId, nodeId)).for('update')
-    if (!doc) return
+    if (!doc) return []
     const rows = await tx.select({ seq: fileDocUpdates.seq, update: fileDocUpdates.update }).from(fileDocUpdates)
       .where(eq(fileDocUpdates.nodeId, nodeId)).orderBy(asc(fileDocUpdates.seq))
-    if (!rows.length) return
     const ydoc = new Y.Doc()
     Y.applyUpdate(ydoc, doc.state)
     for (const row of rows) Y.applyUpdate(ydoc, row.update)
     const state = Y.encodeStateAsUpdate(ydoc)
     let markdown = doc.markdown
     try {
-      markdown = ydocToMarkdown(ydoc)
+      markdown = liveFormatCodec(docFormat(node)).toText(ydoc)
     } catch (error) {
-      // The snapshot is still authoritative; stale Markdown only affects previews and export.
+      // The snapshot is still authoritative; stale text only affects previews and search.
       console.error(JSON.stringify({ level: 'error', event: 'file_doc.markdown_failed', nodeId, error: error instanceof Error ? error.message : String(error) }))
     }
-    await tx.update(fileDocs).set({
-      state,
-      stateBytes: state.byteLength,
-      pendingUpdates: sql`greatest(${fileDocs.pendingUpdates} - ${rows.length}, 0)`,
-      markdown,
-      updatedAt: new Date(),
-    }).where(eq(fileDocs.nodeId, nodeId))
-    // A seq watermark would be unsafe: identity values can commit out of order.
-    await tx.delete(fileDocUpdates).where(inArray(fileDocUpdates.seq, rows.map((row) => row.seq)))
-    await tx.update(fileNodes).set({ sizeBytes: state.byteLength, updatedAt: doc.lastEditedAt }).where(eq(fileNodes.id, nodeId))
+    if (rows.length) {
+      await tx.update(fileDocs).set({
+        state,
+        stateBytes: state.byteLength,
+        pendingUpdates: sql`greatest(${fileDocs.pendingUpdates} - ${rows.length}, 0)`,
+        markdown,
+        updatedAt: new Date(),
+      }).where(eq(fileDocs.nodeId, nodeId))
+      // A seq watermark would be unsafe: identity values can commit out of order.
+      await tx.delete(fileDocUpdates).where(inArray(fileDocUpdates.seq, rows.map((row) => row.seq)))
+      await tx.update(fileNodes).set({ sizeBytes: state.byteLength, updatedAt: doc.lastEditedAt }).where(eq(fileNodes.id, nodeId))
+    }
+    // Parts the document no longer refers to (a mixed-line-break original replaced, say) stop
+    // costing storage.
+    try {
+      const codec = liveFormatCodec(docFormat(node))
+      const unused = await collectUnusedAssets(tx, nodeId, codec, ydoc, now)
+      if (codec.referencedAssets) {
+        const [youngAsset] = await tx.select({ createdAt: fileDocAssets.createdAt }).from(fileDocAssets).where(and(
+          eq(fileDocAssets.nodeId, nodeId), gt(fileDocAssets.createdAt, new Date(now.getTime() - ASSET_GRACE_MS)),
+        )).orderBy(asc(fileDocAssets.createdAt)).limit(1)
+        if (youngAsset) collectAfter = Math.max(1_000, youngAsset.createdAt.getTime() + ASSET_GRACE_MS + 1 - now.getTime())
+      }
+      return unused
+    } catch (error) {
+      console.error(JSON.stringify({ level: 'error', event: 'file_doc.asset_gc_failed', nodeId, error: error instanceof Error ? error.message : String(error) }))
+      return []
+    }
   })
+  await deleteObjects(unusedAssets)
+  if (collectAfter !== undefined) await scheduleDocAssetCollection(nodeId, collectAfter)
 }
 
 /** Maintenance safety net for compactions a deduplicated schedule may have skipped. */
@@ -193,12 +254,17 @@ export async function scheduleStaleDocCompactions(now = new Date()): Promise<voi
   for (const doc of stale) await scheduleDocCompaction(doc.nodeId, 0)
 }
 
-export async function readDocMarkdown(userId: string, nodeId: string): Promise<{ name: string; markdown: string }> {
+/**
+ * A document's plain text (`codec.toText`): Markdown for Markdown documents, which is what this
+ * route has always answered with, and the content of text files.
+ */
+export async function readDocMarkdown(userId: string, nodeId: string): Promise<{ name: string; markdown: string; format: string }> {
   const access = await resolveFileAccess(db, userId, nodeId)
   if (!access || access.node.kind !== 'doc') throw notFound('Document')
+  const format = docFormat(access.node)
   const [doc] = await db.select({ markdown: fileDocs.markdown, pendingUpdates: fileDocs.pendingUpdates })
     .from(fileDocs).where(eq(fileDocs.nodeId, nodeId))
   if (!doc) throw notFound('Document')
-  if (!doc.pendingUpdates) return { name: access.node.name, markdown: doc.markdown }
-  return { name: access.node.name, markdown: ydocToMarkdown(await loadYDoc(nodeId)) }
+  if (!doc.pendingUpdates) return { name: access.node.name, markdown: doc.markdown, format: format.id }
+  return { name: access.node.name, markdown: liveFormatCodec(format).toText(await loadYDoc(nodeId)), format: format.id }
 }

@@ -1,4 +1,6 @@
 import type { FileNode } from '@pulpo/contracts'
+import { liveFormat, liveFormatOfName } from '@pulpo/client-core/office'
+import { exportTextFile, textFileFacts } from '@pulpo/client-core/office/text'
 import { describeHunkSummary } from '@pulpo/client-core/doc-editor/summary'
 import { sessionColor, type DocSessionSnapshot, type DocSyncStatus } from '@pulpo/client-core/doc-sync'
 import type { NativeStackHeaderItem, NativeStackScreenProps } from '@react-navigation/native-stack'
@@ -26,7 +28,9 @@ import { FolderPickerSheet } from '../components/FolderPickerSheet'
 import { accountDocSessions } from '../doc/accountSessions'
 import type { DocHandle } from '../doc/sessions'
 import type { EditorBridgeState } from '../editor/bridge'
+import { editorBundleFor, type MobileEditorFormat } from '../editor/bundles'
 import { docEditorAvailable, DocEditorView, type DocEditorHandle } from '../editor/DocEditorView'
+import { TEXT_TOOLBAR, textToolbarState } from '../editor/textToolbar'
 import { deviceSessionLabel } from '../editor/presentation'
 import { fetchDocMarkdown } from '../api'
 import { filesErrorMessage } from '../display'
@@ -52,13 +56,14 @@ function documentProblem(status: DocSyncStatus, node: FileNode | undefined, sche
     return { title: 'This document is in the trash', detail: 'Restore it to edit it again.', action: 'restore' }
   }
   if (status.state === 'closed' && status.reason === 'deleted') return { title: 'This document was deleted', detail: 'It’s no longer in Files.', action: 'back' }
-  if (status.state === 'closed' && status.reason === 'converted') return { title: 'This is now an ordinary file', detail: 'It was renamed without a Markdown extension.', action: 'back' }
+  if (status.state === 'closed' && status.reason === 'converted') return { title: 'This is now an ordinary file', detail: 'It was renamed to another type of file.', action: 'back' }
   if (status.state === 'error') {
     switch (status.error) {
       case 'unauthorized': return { title: 'You can’t edit this document', detail: 'Files may have been turned off.', action: 'back' }
       case 'doc_too_large': return { title: 'This document is too large', detail: 'Edits can’t be saved until some content is removed on another device.', action: 'retry' }
       case 'not_found': return { title: 'This document was deleted', detail: 'It’s no longer in Files.', action: 'back' }
       case 'rate_limited': return null
+      case 'stale_copy': return null
       default: return { title: 'Changes aren’t being saved', detail: 'Pulpo couldn’t sync this document. Your edits are kept on this device.', action: 'retry' }
     }
   }
@@ -88,11 +93,15 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const queryClient = useQueryClient()
   const namespace = useFilesNamespace()
   const filesEnabled = useFilesEnabled()
-  const schemaSupported = useDocSchemaSupported()
   const operations = useFileOperations(namespace)
   const fileId = route.params.fileId
   const nodeQuery = useQuery({ ...fileNodeQuery(namespace, fileId), enabled: Boolean(namespace) && filesEnabled })
   const node = nodeQuery.data?.node
+  // The document's live format picks its editor; text and code files have no suggestions inline.
+  const formatId = node?.format ?? 'markdown'
+  const schemaSupported = useDocSchemaSupported(formatId) && Boolean(editorBundleFor(formatId))
+  const editorFormat: MobileEditorFormat = formatId === 'text' ? 'text' : 'markdown'
+  const isText = editorFormat === 'text'
   const editor = useRef<DocEditorHandle>(null)
   const [handle, setHandle] = useState<DocHandle | null>(null)
   const [editorState, setEditorState] = useState<EditorBridgeState | null>(null)
@@ -139,10 +148,16 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   // A document just created opens ready to type in, once.
   const focusedNew = useRef(false)
   useEffect(() => {
-    if (!route.params.created || focusedNew.current || !editorState?.loaded || !editorState.formatting?.editable) return
+    const ready = editorState?.loaded && (isText ? editorState.text && !editorState.text.readOnly : editorState.formatting?.editable)
+    if (!route.params.created || focusedNew.current || !ready) return
     focusedNew.current = true
     editor.current?.focus('start')
-  }, [editorState?.formatting?.editable, editorState?.loaded, route.params.created])
+  }, [editorState, isText, route.params.created])
+
+  // A copy of an earlier document under this id was dropped; start over without it.
+  useEffect(() => {
+    if (status.state === 'error' && status.error === 'stale_copy') restartSession()
+  }, [restartSession, status])
 
   // A document turned into an ordinary file opens as one.
   useEffect(() => {
@@ -158,10 +173,12 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   useEffect(() => { setLoadedOnce(false) }, [handle])
   const problem = documentProblem(status, node, schemaSupported)
   // A session still in memory from earlier (e.g. lingering after closing) holds the document too.
-  const inMemory = Boolean(handle && handle.controller.doc.getXmlFragment('default').length > 0)
+  const inMemory = Boolean(handle && liveFormat(formatId)?.hasContent(handle.controller.doc))
   const usable = Boolean(session) && (loadedOnce || inMemory || status.state === 'synced' || status.state === 'syncing' || session?.hasCachedContent === true)
   const editable = filesEnabled && !problem && usable && node?.kind === 'doc' && docEditorAvailable
   const title = node?.name ?? route.params.name ?? 'Document'
+  // Markdown documents read without their extension; code files keep theirs, which says what they are.
+  const shownTitle = isText ? title : title.replace(/\.(md|markdown)$/i, '')
   // Without a usable copy (an outdated app, or offline before the first sync) the server's Markdown is shown.
   const readOnlyFallback = !docEditorAvailable || (!usable && (problem?.action === 'update' || status.state === 'offline'))
   const fallback = useQuery({
@@ -173,10 +190,22 @@ export function FileDocumentScreen({ navigation, route }: Props) {
 
   const rename = useCallback(() => {
     if (!node) return
-    const submit = (name: string) => { void operations.rename(node, name.endsWith('.md') || name.endsWith('.markdown') ? name : `${name}.md`) }
-    const base = node.name.replace(/\.(md|markdown)$/i, '')
+    const text = (node.format ?? 'markdown') !== 'markdown'
+    const submit = (name: string) => {
+      if (!text) {
+        void operations.rename(node, name.endsWith('.md') || name.endsWith('.markdown') ? name : `${name}.md`)
+        return
+      }
+      // A name of another type turns the document into an ordinary file; say so first.
+      if (liveFormatOfName(name)?.id === node.format) void operations.rename(node, name)
+      else Alert.alert('Rename to another type?', `“${name}” isn’t a text or code file name, so it would become an ordinary file you can’t edit here.`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Rename', style: 'destructive', onPress: () => { void operations.rename(node, name) } },
+      ])
+    }
+    const base = text ? node.name : node.name.replace(/\.(md|markdown)$/i, '')
     if (Platform.OS === 'ios') {
-      Alert.prompt('Rename', 'Documents keep their .md extension.', [
+      Alert.prompt('Rename', text ? undefined : 'Documents keep their .md extension.', [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Rename', isPreferred: true, onPress: (value?: string) => { if (value?.trim()) submit(value.trim()) } },
       ], 'plain-text', base)
@@ -188,12 +217,20 @@ export function FileDocumentScreen({ navigation, route }: Props) {
     if (!node) return
     try {
       // An open editor exports its own copy, which includes edits not yet synced.
+      if (isText) {
+        // A file kept with its original bytes (mixed line breaks, a legacy encoding) is exported
+        // exactly by the server, which holds them; while edits wait to sync, this copy has more.
+        const serverExact = handle && textFileFacts(handle.controller.doc).original && status.state === 'synced'
+        const bytes = handle && usable && !serverExact ? await exportTextFile(handle.controller.doc, { assets: { put: () => Promise.reject(new Error('Read only')), get: () => Promise.reject(new Error('Not on this device')) } }) : undefined
+        await shareFileItem(node, undefined, bytes)
+        return
+      }
       const markdown = editorState?.loaded ? await editor.current?.exportMarkdown() : undefined
       await shareFileItem(node, markdown)
     } catch (error) {
       operations.fail(error, node.name)
     }
-  }, [editorState?.loaded, node, operations])
+  }, [editorState?.loaded, handle, isText, node, operations, status.state, usable])
   const trash = useCallback(() => {
     if (!node) return
     Alert.alert(`Move “${node.name}” to the trash?`, undefined, [
@@ -215,7 +252,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
     identifier: 'doc-menu',
     menu: {
       items: [
-        { type: 'action', label: 'Find in Document', icon: { type: 'sfSymbol', name: 'magnifyingglass' }, disabled: !editorState?.loaded, onPress: () => editor.current?.showFind() },
+        { type: 'action', label: isText ? 'Find and Replace' : 'Find in Document', icon: { type: 'sfSymbol', name: 'magnifyingglass' }, disabled: !editorState?.loaded, onPress: () => { if (isText) editor.current?.command('find'); else editor.current?.showFind() } },
         { type: 'action', label: 'Export…', icon: { type: 'sfSymbol', name: 'square.and.arrow.up' }, disabled: !node, onPress: () => { void exportDocument() } },
         {
           type: 'submenu',
@@ -232,11 +269,11 @@ export function FileDocumentScreen({ navigation, route }: Props) {
         { type: 'action', label: 'Move to Trash', icon: { type: 'sfSymbol', name: 'trash' }, destructive: true, disabled: !node || Boolean(node.trashedAt), onPress: trash },
       ],
     },
-  }), [editorState?.loaded, exportDocument, navigation, node, nodeQuery.data?.ancestors, operations, rename, trash])
+  }), [editorState?.loaded, exportDocument, isText, navigation, node, nodeQuery.data?.ancestors, operations, rename, trash])
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: title.replace(/\.(md|markdown)$/i, ''),
+      title: shownTitle,
       headerShown: Platform.OS === 'ios',
       headerLargeTitle: false,
       headerBackTitle: 'Back',
@@ -258,7 +295,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   })
 
   const suggestions = editorState?.suggestions
-  const reviewVisible = Boolean(suggestions?.count) && !keyboardVisible && editorState?.loaded
+  const reviewVisible = !isText && Boolean(suggestions?.count) && !keyboardVisible && editorState?.loaded
   const reviewBarHeight = reviewVisible ? 116 : 0
   // Android draws its formatting bar above the keyboard; the editor keeps the caret clear of it.
   const formattingBarVisible = Platform.OS === 'android' && keyboardVisible && editable && Boolean(editorState?.loaded)
@@ -306,7 +343,9 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const body = readOnlyFallback ? (
     fallback.data ? (
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={[styles.fallback, { paddingBottom: insets.bottom + 24 }]}>
-        <SafeMarkdown>{fallback.data.markdown}</SafeMarkdown>
+        {isText
+          ? <Text selectable style={[styles.code, { color: theme.text }]}>{fallback.data.markdown}</Text>
+          : <SafeMarkdown>{fallback.data.markdown}</SafeMarkdown>}
       </ScrollView>
     ) : fallback.isError || (!fallback.isFetching && !fallback.data) ? (
       <View style={styles.center}>
@@ -315,10 +354,13 @@ export function FileDocumentScreen({ navigation, route }: Props) {
         <Text style={[styles.centerBody, { color: theme.secondary }]}>Open this document once while connected to keep a copy on this device.</Text>
       </View>
     ) : <View style={styles.center}><ActivityIndicator color={theme.secondary} /></View>
-  ) : handle && session ? (
+    // The node says which editor the document needs; wait for it rather than guess Markdown.
+  ) : handle && session && node ? (
     <DocEditorView
-      key={generation}
+      key={`${generation}:${editorFormat}`}
       ref={editor}
+      format={editorFormat}
+      name={node?.name}
       acquire={() => accountDocSessions(namespace).acquire(fileId)}
       editable={editable}
       placeholder="Start writing…"
@@ -376,7 +418,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   if (!filesEnabled) {
     return (
       <View style={[styles.flex, { backgroundColor: theme.background, paddingTop: Platform.OS === 'android' ? insets.top : 0 }]}>
-        {Platform.OS === 'android' ? <PageHeader title={title.replace(/\.(md|markdown)$/i, '')} onBack={() => navigation.goBack()} /> : null}
+        {Platform.OS === 'android' ? <PageHeader title={shownTitle} onBack={() => navigation.goBack()} /> : null}
         <FilesTurnedOff />
       </View>
     )
@@ -386,7 +428,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
     <View style={[styles.flex, { backgroundColor: theme.isDark ? theme.background : theme.elevated, paddingTop: Platform.OS === 'android' ? insets.top : 0 }]}>
       {Platform.OS === 'android' ? (
         <PageHeader
-          title={title.replace(/\.(md|markdown)$/i, '')}
+          title={shownTitle}
           onBack={() => navigation.goBack()}
           right={<View style={styles.androidActions}>
             <SyncIndicator status={status} />
@@ -397,9 +439,10 @@ export function FileDocumentScreen({ navigation, route }: Props) {
       {banner}
       {Platform.OS === 'android' ? <KeyboardAvoidingView behavior="padding" style={styles.flex}>{body}</KeyboardAvoidingView> : body}
       <FormattingBar
-        formatting={editorState?.formatting ?? null}
+        formatting={isText ? (editorState?.text ? textToolbarState(editorState) : null) : editorState?.formatting ?? null}
+        items={isText ? TEXT_TOOLBAR : undefined}
         visible={formattingBarVisible}
-        onCommand={(command) => editor.current?.toolbar(command)}
+        onCommand={(command) => editor.current?.toolbar(command as never)}
         onDismissKeyboard={() => editor.current?.dismissKeyboard()}
       />
       {reviewBar}
@@ -431,6 +474,7 @@ const styles = StyleSheet.create({
   centerTitle: { fontSize: 20, fontWeight: '600', textAlign: 'center' },
   centerBody: { fontSize: 15, lineHeight: 21, textAlign: 'center' },
   fallback: { paddingHorizontal: 20, paddingTop: 12 },
+  code: { fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 13, lineHeight: 19 },
   syncIndicator: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   androidActions: { flexDirection: 'row', alignItems: 'center' },
   peers: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 },

@@ -13,6 +13,11 @@ export interface CommitEffects {
   closedDocs: Array<{ ids: string[]; reason: DocClosedEvent['reason'] }>
   /** Objects nothing refers to any more. */
   deletedKeys: string[]
+  /**
+   * Objects stored during the transaction ahead of the rows that refer to them (a document's
+   * assets). They are deleted if the transaction does not commit, since nothing refers to them then.
+   */
+  writtenKeys: string[]
 }
 
 /** Trashing, restoring, and purging can move chats, so those refresh chat lists too. */
@@ -33,11 +38,17 @@ export async function mutateAgentFiles<T>(
     guard?: (tx: DatabaseTransaction) => Promise<void>
   } = {},
 ): Promise<T> {
-  const effects: CommitEffects = { docUpdates: [], closedDocs: [], deletedKeys: [] }
-  const result = await mutateFileTree(userId, async (tx) => {
-    await options.guard?.(tx)
-    return work(tx, effects)
-  }, options.scopes, { reserveBytes: options.reserveBytes })
+  const effects: CommitEffects = { docUpdates: [], closedDocs: [], deletedKeys: [], writtenKeys: [] }
+  let result: T
+  try {
+    result = await mutateFileTree(userId, async (tx) => {
+      await options.guard?.(tx)
+      return work(tx, effects)
+    }, options.scopes, { reserveBytes: options.reserveBytes })
+  } catch (error) {
+    await deleteObjects(effects.writtenKeys)
+    throw error
+  }
   await runCommitEffects(effects)
   return result
 }

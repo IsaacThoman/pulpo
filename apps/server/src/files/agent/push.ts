@@ -1,12 +1,17 @@
 import { eq } from 'drizzle-orm'
 import { formatAttachmentSizeLimit } from '@pulpo/client-core'
-import { FILE_DOC_MAX_MARKDOWN_LENGTH, isMarkdownName } from '@pulpo/contracts'
+import { liveFormatOfName, type LiveFormatInfo } from '@pulpo/client-core/office'
+import { FILE_DOC_MAX_MARKDOWN_LENGTH } from '@pulpo/contracts'
 import { db } from '../../database/client.js'
 import { applicationSettings } from '../../database/schema.js'
 import { parseAuthSettings } from '../../settings/application-settings.js'
 import type { FileNodeRow } from '../access.js'
 import { guardedReply, readOnlyMessage, workspacePath, type CommandContext, type CommandOutput } from './command-context.js'
-import { createBlobChange, createDocChange, updateBlobChange, updateDocChange, type ContentResult } from './mutations.js'
+import { docFormat } from '../live-docs.js'
+import { isLiveDoc } from './live.js'
+import { createBlobChange, createDocChange, createLiveDocChange, updateBlobChange, updateDocChange, updateLiveDocChange, type ChangeMode, type ContentResult } from './mutations.js'
+import type { ReplyContext } from './changes.js'
+import { AppError } from '../../lib/errors.js'
 import { failureMessage } from './failures.js'
 import { FilesCommandError, locateParent, locateOptional, modeFor } from './scope.js'
 import { agentBlobView, blobVersion, contentChecksum } from './versions.js'
@@ -71,6 +76,12 @@ async function readUpload(ctx: CommandContext, local: string, limits: PushLimits
   return readLocal(ctx, local, limits.fileBytes, limits, ` (uploaded files can be at most ${formatAttachmentSizeLimit(limits.fileBytes)})`)
 }
 
+/** A file for a live document of `format`, within what that format edits. */
+async function readLiveFile(ctx: CommandContext, local: string, limits: PushLimits, format: LiveFormatInfo): Promise<Uint8Array> {
+  const maxBytes = Math.min(format.maxFileBytes, limits.fileBytes)
+  return readLocal(ctx, local, maxBytes, limits, ` (documents of this kind can be at most ${formatAttachmentSizeLimit(maxBytes)})`)
+}
+
 function conflict(path: string, version?: string): Outcome {
   return {
     status: 'conflict', version,
@@ -103,6 +114,10 @@ async function pushExisting(ctx: CommandContext, node: FileNodeRow, path: string
   }
   const expected = item.force ? null : item.base!.version
   const reply = guardedReply(ctx, mode, (executor) => modeFor(ctx.scope, node.id, executor))
+  if (isLiveDoc(node)) {
+    const bytes = await readLiveFile(ctx, local, limits, docFormat(node))
+    return contentOutcome(await updateLiveDocChange(reply, node.id, bytes, mode, expected), path, node.id)
+  }
   if (node.kind === 'doc') {
     const markdown = await readMarkdown(ctx, local, limits)
     return contentOutcome(await updateDocChange(reply, node.id, markdown, mode, expected), path, node.id)
@@ -113,6 +128,24 @@ async function pushExisting(ctx: CommandContext, node: FileNodeRow, path: string
   const bytes = await readUpload(ctx, local, limits)
   if (contentChecksum(bytes) === view.checksum) return contentOutcome({ status: 'unchanged', version: blobVersion(view) }, path, node.id)
   return contentOutcome(await updateBlobChange(reply, node, bytes, mode, expected), path, node.id)
+}
+
+/** Codec refusals of a file's content: such a file is kept as uploaded bytes instead. */
+const NOT_EDITABLE = new Set(['file_not_editable', 'file_unreadable', 'file_too_large_to_edit', 'file_encrypted'])
+
+/**
+ * A new file named as a live format becomes a document of it, unless it is too large for the
+ * format or its content is not what the name says (a binary `.plist`, a video `.ts`): then it is
+ * an uploaded file, as it was before the format was live.
+ */
+async function createLiveOrUpload(reply: ReplyContext, parentId: string | null, name: string, bytes: Uint8Array, mode: ChangeMode, format: LiveFormatInfo) {
+  if (bytes.byteLength > format.maxFileBytes) return createBlobChange(reply, parentId, name, bytes, mode)
+  try {
+    return await createLiveDocChange(reply, parentId, name, bytes, mode)
+  } catch (error) {
+    if (error instanceof AppError && NOT_EDITABLE.has(error.code)) return createBlobChange(reply, parentId, name, bytes, mode)
+    throw error
+  }
 }
 
 async function pushNew(ctx: CommandContext, local: string, item: PushItem, limits: PushLimits): Promise<Outcome> {
@@ -127,9 +160,13 @@ async function pushNew(ctx: CommandContext, local: string, item: PushItem, limit
   const mode = await modeFor(ctx.scope, parentId)
   if (mode !== 'write' && mode !== 'suggest') return { status: 'denied', message: readOnlyMessage(parent.path) }
   const reply = guardedReply(ctx, mode, (executor) => modeFor(ctx.scope, parentId, executor))
-  const created = isMarkdownName(name)
+  // A name of a live format becomes a live document; any other name an uploaded file.
+  const format = liveFormatOfName(name)
+  const created = format?.id === 'markdown'
     ? await createDocChange(reply, parentId, name, await readMarkdown(ctx, local, limits), mode)
-    : await createBlobChange(reply, parentId, name, await readUpload(ctx, local, limits), mode)
+    : format
+      ? await createLiveOrUpload(reply, parentId, name, await readUpload(ctx, local, limits), mode, format)
+      : await createBlobChange(reply, parentId, name, await readUpload(ctx, local, limits), mode)
   const message = created.status === 'created' ? `Created "${path}"` : `Suggested the new file "${path}"; it waits for the user to accept it`
   return { status: created.status, message, nodeId: created.node.id, version: created.version }
 }

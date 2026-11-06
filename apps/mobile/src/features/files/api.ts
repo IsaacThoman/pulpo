@@ -270,6 +270,26 @@ export function exportFile(name: string, content: string | Uint8Array): File {
   return file
 }
 
+/** Writes bytes to a shareable temporary file with the given name. */
+export function bytesExportFile(name: string, bytes: Uint8Array): File {
+  return exportFile(name, bytes)
+}
+
+/** A live document as its real file, exported by the server, in a shareable temporary file. */
+export async function liveExportFile(node: FileNode): Promise<File> {
+  const directory = new Directory(Paths.cache, EXPORT_DIRECTORY)
+  directory.create({ idempotent: true, intermediates: true })
+  const destination = new File(directory, safeName(node.name))
+  if (destination.exists) destination.delete()
+  const url = apiUrl(`/api/files/${node.id}/export`)
+  return File.downloadFileAsync(url, destination, { idempotent: true, headers: nativeAuthorizationHeaders(url) })
+}
+
+/** Both versions of a live document's agent change as plain text, for the review diff. */
+export function fetchChangeText(changeId: string): Promise<{ name: string; format: string; before: string; after: string }> {
+  return apiRequest(`/api/file-changes/${changeId}/text`)
+}
+
 /** Writes text to a shareable temporary file with the given name. */
 export function textExportFile(name: string, text: string): File {
   return exportFile(name, text)

@@ -1,6 +1,7 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, sql, type SQL } from 'drizzle-orm'
-import { FILE_TREE_MAX_DEPTH, isMarkdownName, nextAvailableName, type FileColor, type FileIcon, type FileListing, type FileNode, type FileNodeKind, type FileSystemRole, type StateInvalidationScope } from '@pulpo/contracts'
-import { assertStorageCapacity } from '../attachments/storage-quota.js'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm'
+import { LIVE_FORMATS, liveFormatOfName, liveMimeType, type LiveFormatInfo } from '@pulpo/client-core/office'
+import { FILE_TREE_MAX_DEPTH, nextAvailableName, type FileColor, type FileIcon, type FileListing, type FileNode, type FileNodeKind, type FileSystemRole, type StateInvalidationScope } from '@pulpo/contracts'
+import { assertStorageCapacity, lockAccountStorage } from '../attachments/storage-quota.js'
 import { db } from '../database/client.js'
 import { chats, fileNodes, fileVersions, userPreferences } from '../database/schema.js'
 import { bumpAccountRevisions, publishScopedStateChanges, type AccountRevisionChange } from '../friends/sync.js'
@@ -10,6 +11,7 @@ import { getBlobStore } from '../storage/index.js'
 import { resolveFileAccess, type FileExecutor, type FileNodeRow } from './access.js'
 import { convertDocToBlobInTx } from './conversion.js'
 import { publishDocsClosed } from './doc-events.js'
+import { deleteObjects, docAssetKeys, docFormat } from './live-docs.js'
 import { chatsFolderIdOf, chatToFileNode, liveChatIds, listFolderChats, moveChatsInTx } from './chat-items.js'
 import { recoverChats, trashChats } from '../chats/trash-service.js'
 import { fileTrashRetentionSql, legacyFileTrashKeptSql } from '../chats/trash.js'
@@ -41,6 +43,7 @@ export function toFileNode(row: FileNodeRow): FileNode {
     sortOrder: row.sortOrder,
     pinned: row.pinned,
     suggestion: row.suggestionChangeId ? { changeId: row.suggestionChangeId } : null,
+    format: row.kind === 'doc' ? row.format ?? 'markdown' : null,
   }
 }
 
@@ -59,7 +62,8 @@ export async function lockFileTree(tx: DatabaseTransaction, userId: string): Pro
 
 /**
  * Runs a tree mutation under the account's Files lock, then tells the account's other sessions to
- * refetch. With `reserveBytes`, the account's storage lock is taken first and the allowance checked.
+ * refetch. Takes storage before tree so document writers can check growth under the same locks.
+ * With `reserveBytes`, the requested allowance is checked before the mutation.
  */
 export async function mutateFileTree<T>(
   userId: string,
@@ -70,13 +74,19 @@ export async function mutateFileTree<T>(
   let changes: AccountRevisionChange[] = []
   const result = await db.transaction(async (tx) => {
     // Storage before tree, matching upload reservations, so the two locks cannot deadlock.
+    await lockAccountStorage(tx, userId)
     if (options.reserveBytes !== undefined) await assertStorageCapacity(tx, userId, options.reserveBytes, { perFileLimit: false })
     await lockFileTree(tx, userId)
     const value = await mutation(tx)
     changes = await bumpAccountRevisions(tx, [userId])
     return value
   })
-  await publishScopedStateChanges(changes, scopes)
+  // Committed: a failed notification must not report the change as failed (callers clean up
+  // after failures, and would delete what the change just stored). Clients catch up on the
+  // account revision at their next sync.
+  await publishScopedStateChanges(changes, scopes).catch((error: unknown) => {
+    console.error(JSON.stringify({ level: 'error', event: 'files.publish_failed', error: error instanceof Error ? error.message : String(error) }))
+  })
   return result
 }
 
@@ -219,11 +229,11 @@ export async function moveNodeInTx(tx: DatabaseTransaction, userId: string, node
   parentId: string | null
   name: string
   onConflict: 'fail' | 'rename'
-}): Promise<{ row: FileNodeRow; converted: boolean }> {
+}): Promise<{ row: FileNodeRow; converted: boolean; releasedKeys: string[] }> {
   if (node.status !== 'ready') throw notFound('File')
   if (node.systemRole && (target.parentId !== node.parentId || target.name !== node.name)) throw systemFolderLocked()
   await assertMovable(tx, userId, node, target.parentId)
-  if (target.parentId === node.parentId && target.name === node.name) return { row: node, converted: false }
+  if (target.parentId === node.parentId && target.name === node.name) return { row: node, converted: false, releasedKeys: [] }
   const taken = await liveSiblingNames(tx, userId, target.parentId, node.id)
   let name = target.name
   if (taken.has(name.toLowerCase())) {
@@ -236,8 +246,17 @@ export async function moveNodeInTx(tx: DatabaseTransaction, userId: string, node
     name, parentId: target.parentId, revision: sql`${fileNodes.revision} + 1`, updatedAt: new Date(),
     ...target.parentId !== node.parentId && !node.pinned ? { sortOrder: await topSortOrder(tx, userId, target.parentId) } : {},
   }).where(eq(fileNodes.id, node.id)).returning()
-  if (updated!.kind === 'doc' && !isMarkdownName(name)) return { row: await convertDocToBlobInTx(tx, userId, updated!), converted: true }
-  return { row: updated!, converted: false }
+  if (updated!.kind !== 'doc') return { row: updated!, converted: false, releasedKeys: [] }
+  // A document keeps its format: a name of another format (or none) makes it an ordinary file.
+  const format = liveFormatOfName(name)
+  if (format?.id !== docFormat(updated!).id) {
+    const converted = await convertDocToBlobInTx(tx, userId, updated!)
+    return { row: converted.row, converted: true, releasedKeys: converted.releasedKeys }
+  }
+  const mimeType = liveMimeType(format, name)
+  if (mimeType === updated!.mimeType) return { row: updated!, converted: false, releasedKeys: [] }
+  const [retyped] = await tx.update(fileNodes).set({ mimeType }).where(eq(fileNodes.id, node.id)).returning()
+  return { row: retyped!, converted: false, releasedKeys: [] }
 }
 
 /**
@@ -269,7 +288,7 @@ export async function updateFileNode(userId: string, id: string, input: {
     if (restyled) throw new AppError(400, 'validation_error', 'Chats cannot be given a color or icon')
     return updateChatItem(userId, id, input)
   }
-  const { node, converted } = await mutateFileTree(userId, async (tx) => {
+  const { node, converted, releasedKeys } = await mutateFileTree(userId, async (tx) => {
     let current = await liveNode(tx, userId, id)
     if (input.expectedRevision !== undefined && input.expectedRevision !== current.revision) throw revisionConflict()
     if (restyled) {
@@ -287,9 +306,10 @@ export async function updateFileNode(userId: string, id: string, input: {
       name: input.name ?? current.name,
       onConflict: input.onConflict ?? 'fail',
     })
-    return { node: toFileNode(result.row), converted: result.converted }
+    return { node: toFileNode(result.row), converted: result.converted, releasedKeys: result.releasedKeys }
   })
   if (converted) await publishDocsClosed([node.id], 'converted')
+  await deleteObjects(releasedKeys)
   return node
 }
 
@@ -309,9 +329,10 @@ async function updateChatItem(userId: string, id: string, input: { name?: string
 /** Moves several items atomically. Name clashes keep both items; the response has the final names. */
 export async function moveFileNodes(userId: string, items: Array<{ id: string; parentId: string | null; name?: string }>): Promise<FileNode[]> {
   const chatIds = await liveChatIds(db, userId, items.map((item) => item.id))
-  const { moved, converted } = await mutateFileTree(userId, async (tx) => {
+  const { moved, converted, releasedKeys } = await mutateFileTree(userId, async (tx) => {
     const moved: FileNode[] = []
     const converted: string[] = []
+    const releasedKeys: string[] = []
     const chatItems = items.filter((item) => chatIds.has(item.id))
     if (chatItems.length) moved.push(...await moveChatsInTx(tx, userId, chatItems, await chatsFolderIdOf(tx, userId)))
     const nodeItems = items.filter((item) => !chatIds.has(item.id))
@@ -322,10 +343,12 @@ export async function moveFileNodes(userId: string, items: Array<{ id: string; p
       const result = await moveNodeInTx(tx, userId, node, { parentId: item.parentId, name: item.name ?? node.name, onConflict: 'rename' })
       moved.push(toFileNode(result.row))
       if (result.converted) converted.push(node.id)
+      releasedKeys.push(...result.releasedKeys)
     }
-    return { moved, converted }
+    return { moved, converted, releasedKeys }
   }, chatIds.size ? CHAT_SCOPES : undefined)
   await publishDocsClosed(converted, 'converted')
+  await deleteObjects(releasedKeys)
   return moved
 }
 
@@ -489,12 +512,13 @@ export async function purgeNodesInTx(tx: DatabaseTransaction, userId: string, ro
     .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, [...ids])))
   const versions = await tx.select({ key: fileVersions.objectKey }).from(fileVersions)
     .where(and(eq(fileVersions.userId, userId), inArray(fileVersions.nodeId, [...ids])))
-  const keys = [...rows.flatMap((row) => row.key ?? []), ...versions.map((version) => version.key)]
+  const docIds = rows.filter((row) => row.kind === 'doc').map((row) => row.id)
+  const keys = [...rows.flatMap((row) => row.key ?? []), ...versions.map((version) => version.key), ...await docAssetKeys(tx, docIds)]
   if (deferredKeys) deferredKeys.push(...keys)
   else for (const key of keys) await getBlobStore().delete(key)
-  // Children, document state, update logs, versions, and change rows cascade from their nodes.
+  // Children, document state and assets, update logs, versions, and change rows cascade from their nodes.
   await tx.delete(fileNodes).where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, rootIds)))
-  return rows.filter((row) => row.kind === 'doc').map((row) => row.id)
+  return docIds
 }
 
 /** Permanently deletes trashed items, or cancels uploads that were never confirmed. */
@@ -565,26 +589,46 @@ export async function cleanupFiles(now = new Date(), userId?: string): Promise<v
   }
 }
 
+/** SQL matching names of a live format, as `liveFormatOfName` reads them. */
+function namedAs(format: LiveFormatInfo): SQL {
+  const pattern = `\\.(${format.extensions.join('|')})$`
+  const names = format.fileNames ?? []
+  return names.length
+    ? sql`(lower(${fileNodes.name}) ~ ${pattern} or lower(${fileNodes.name}) in (${sql.join(names.map((name) => sql`${name}`), sql`, `)}))`
+    : sql`lower(${fileNodes.name}) ~ ${pattern}`
+}
+
 /**
- * Maintenance repair: documents whose names lack a Markdown extension (created before renames
- * converted them) become ordinary files holding their Markdown, so the extension alone decides.
+ * Maintenance repair: documents whose names are not of their format (Markdown documents named
+ * before renames converted them) become ordinary files holding their exported bytes, so the
+ * extension alone decides.
  */
 export async function convertMisnamedDocs(limit = 200): Promise<number> {
   const rows = await db.select({ id: fileNodes.id, userId: fileNodes.ownerUserId }).from(fileNodes).where(and(
     eq(fileNodes.kind, 'doc'),
-    sql`${fileNodes.name} !~* '\\.(md|markdown)$'`,
+    or(...LIVE_FORMATS.map((format) => and(eq(fileNodes.format, format.id), sql`not ${namedAs(format)}`))),
   )).limit(limit)
   let converted = 0
   for (const row of rows) {
     const done = await mutateFileTree(row.userId, async (tx) => {
       const [node] = await tx.select().from(fileNodes).where(eq(fileNodes.id, row.id)).for('update')
-      if (!node || node.kind !== 'doc' || isMarkdownName(node.name)) return false
-      await convertDocToBlobInTx(tx, row.userId, node)
-      return true
-    }).catch(() => false)
-    if (done) {
+      if (!node || node.kind !== 'doc' || liveFormatOfName(node.name)?.id === docFormat(node).id) return null
+      try {
+        return { converted: true, releasedKeys: (await convertDocToBlobInTx(tx, row.userId, node)).releasedKeys }
+      } catch (error) {
+        if (!(error instanceof AppError) || error.code !== 'storage_quota_exceeded') throw error
+        // Preserve the live document when its export cannot fit. Repair the name instead so
+        // future maintenance passes no longer select this unaffordable conversion.
+        const extension = docFormat(node).extensions[0]!
+        const name = `${node.name.slice(0, 254 - extension.length)}.${extension}`
+        await moveNodeInTx(tx, row.userId, node, { parentId: node.parentId, name, onConflict: 'rename' })
+        return { converted: false, releasedKeys: [] }
+      }
+    }).catch(() => null)
+    if (done?.converted) {
       converted += 1
       await publishDocsClosed([row.id], 'converted')
+      await deleteObjects(done.releasedKeys)
     }
   }
   return converted

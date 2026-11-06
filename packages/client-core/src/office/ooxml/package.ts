@@ -1,6 +1,8 @@
 import { DOMParser, XMLSerializer, type Document as XmlDocument } from '@xmldom/xmldom'
-import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate'
+import { strFromU8, strToU8 } from 'fflate'
 import { LiveFormatError } from '../live-format.js'
+import { readZip } from './zip.js'
+import { writeZip } from './zip-writer.js'
 
 /**
  * Open Packaging Conventions (the zip container of .docx, .xlsx, and .pptx): parts, content types,
@@ -116,6 +118,9 @@ export class OoxmlPackage {
   /** Part bytes by normalized path, in the order they were read or added. */
   private readonly parts: Map<string, Uint8Array>
   private readonly xmlCache = new Map<string, XmlDocument>()
+  // Compare DOM serialization, not source bytes: merely reading UTF-16 or differently formatted
+  // XML must not rewrite it. Mutable DOMs are flushed only after their serialization changes.
+  private readonly xmlSerialized = new Map<string, string>()
 
   constructor(parts: Map<string, Uint8Array> = new Map()) {
     this.parts = parts
@@ -128,47 +133,39 @@ export class OoxmlPackage {
       throw new LiveFormatError('encrypted', 'This file is password protected or in a legacy binary format')
     }
     if (!startsWith(bytes, ZIP_SIGNATURE)) throw new LiveFormatError('corrupt', 'This is not an Office Open XML package')
-    let entries = 0
-    let declared = 0
-    let files: Record<string, Uint8Array>
+    const parts = new Map<string, Uint8Array>()
+    const names = new Set<string>()
     try {
-      files = unzipSync(bytes, {
-        filter: (file) => {
-          entries++
-          declared += file.originalSize
-          if (entries > limits.maxEntries) throw new LiveFormatError('too_large', 'This file has too many parts')
-          if (declared > limits.maxUncompressedBytes) throw new LiveFormatError('too_large', 'This file expands to too much data')
-          return !file.name.endsWith('/')
-        },
-      })
+      for (const [name, data] of readZip(bytes, limits)) {
+        if (name.endsWith('/')) continue
+        const path = normalizePartPath(name)
+        // OPC part names are case-insensitive; aliases must not overwrite another part.
+        if (!path || names.has(path.toLowerCase())) throw new LiveFormatError('corrupt', 'This zip package has duplicate part names')
+        names.add(path.toLowerCase())
+        parts.set(path, data)
+      }
     } catch (error) {
       if (error instanceof LiveFormatError) throw error
       throw new LiveFormatError('corrupt', 'This file is not a readable zip package', { cause: error })
-    }
-    let actual = 0
-    const parts = new Map<string, Uint8Array>()
-    for (const [name, data] of Object.entries(files)) {
-      actual += data.byteLength
-      if (actual > limits.maxUncompressedBytes) throw new LiveFormatError('too_large', 'This file expands to too much data')
-      parts.set(normalizePartPath(name), data)
     }
     if (!parts.has(CONTENT_TYPES_PATH)) throw new LiveFormatError('corrupt', 'This package has no [Content_Types].xml')
     return new OoxmlPackage(parts)
   }
 
-  /** Writes the package. `[Content_Types].xml` goes first, as some readers expect. */
+  /**
+   * Writes the package. `[Content_Types].xml` goes first, as some readers expect. Entries carry a
+   * fixed time, so the same content always writes the same bytes: versions are checksums of
+   * exports, and an export that changed with the clock would look like an edit.
+   */
   write(): Uint8Array {
     this.flushXml()
-    const files: Zippable = {}
+    const entries: [string, Uint8Array][] = []
     const contentTypes = this.parts.get(CONTENT_TYPES_PATH)
-    if (contentTypes) files[CONTENT_TYPES_PATH] = [contentTypes, { level: 6 }]
+    if (contentTypes) entries.push([CONTENT_TYPES_PATH, contentTypes])
     for (const [path, data] of this.parts) {
-      if (path === CONTENT_TYPES_PATH) continue
-      // Media is usually compressed already; storing it saves time without growing the file.
-      const stored = /\.(png|jpe?g|gif|mp4|mp3|m4a|wdp|zip)$/i.test(path)
-      files[path] = [data, { level: stored ? 0 : 6 }]
+      if (path !== CONTENT_TYPES_PATH) entries.push([path, data])
     }
-    return zipSync(files)
+    return writeZip(entries, DEFAULT_PACKAGE_LIMITS)
   }
 
   paths(): string[] {
@@ -183,20 +180,21 @@ export class OoxmlPackage {
 
   get(path: string): Uint8Array | undefined {
     const normalized = normalizePartPath(path)
-    const cached = this.xmlCache.get(normalized)
-    if (cached) this.parts.set(normalized, strToU8(serializeXml(cached)))
+    this.flushXmlPart(normalized)
     return this.parts.get(normalized)
   }
 
   set(path: string, data: Uint8Array): void {
     const normalized = normalizePartPath(path)
     this.xmlCache.delete(normalized)
+    this.xmlSerialized.delete(normalized)
     this.parts.set(normalized, data)
   }
 
   delete(path: string): void {
     const normalized = normalizePartPath(path)
     this.xmlCache.delete(normalized)
+    this.xmlSerialized.delete(normalized)
     this.parts.delete(normalized)
   }
 
@@ -217,6 +215,7 @@ export class OoxmlPackage {
     if (text === undefined) return undefined
     const document = parseXml(text)
     this.xmlCache.set(normalized, document)
+    this.xmlSerialized.set(normalized, serializeXml(document))
     return document
   }
 
@@ -227,11 +226,21 @@ export class OoxmlPackage {
       return
     }
     this.parts.set(normalized, new Uint8Array())
+    this.xmlSerialized.delete(normalized)
     this.xmlCache.set(normalized, document)
   }
 
   private flushXml(): void {
-    for (const [path, document] of this.xmlCache) this.parts.set(path, strToU8(serializeXml(document)))
+    for (const path of this.xmlCache.keys()) this.flushXmlPart(path)
+  }
+
+  private flushXmlPart(path: string): void {
+    const document = this.xmlCache.get(path)
+    if (!document) return
+    const serialized = serializeXml(document)
+    if (this.xmlSerialized.get(path) === serialized) return
+    this.parts.set(path, strToU8(serialized))
+    this.xmlSerialized.set(path, serialized)
   }
 
   /** The content type of a part: its Override, else the Default for its extension. */

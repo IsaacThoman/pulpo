@@ -1,4 +1,5 @@
 import type { FormatCommand, FormattingState, HunkSummary } from '@pulpo/client-core/doc-editor'
+import type { TextEditorState } from '@pulpo/client-core/office/text/view'
 
 /**
  * Messages between the app and the document editor running in its web view.
@@ -8,6 +9,11 @@ import type { FormatCommand, FormattingState, HunkSummary } from '@pulpo/client-
  * loses edits the app has seen. Every message after `ready` carries the `session` it belongs to;
  * the editor reloads with a new session, and both sides drop messages from earlier ones.
  * Updates are idempotent CRDT merges, and either side can ask for what it lacks with `sync`.
+ *
+ * Each live format ships its own page (Markdown's TipTap editor, text's CodeMirror editor) that
+ * speaks this protocol: the sync messages are shared, and each format adds its own commands and
+ * state (`format`/`review`/`formatting` for Markdown, `command`/`textState` for text). A page says
+ * which format and schema version it edits in `ready`.
  */
 export const EDITOR_PROTOCOL_VERSION = 1
 
@@ -42,6 +48,8 @@ export type HostMessage =
     theme: EditorTheme
     /** Other sessions' awareness (base64), so their carets show at once. */
     awareness?: string
+    /** The file name, for formats whose editor depends on it (a code file's language). */
+    name?: string
   }
   | { type: 'update'; session: number; update: string }
   /** Asks the editor for every update the app lacks, given the app's state vector (base64). */
@@ -55,6 +63,12 @@ export type HostMessage =
   | { type: 'blur'; session: number }
   /** Asks for the document's Markdown, without pending suggestions (the base view). */
   | { type: 'export'; session: number; requestId: string }
+  /** A text editor command from the app's toolbar. */
+  | { type: 'command'; session: number; command: TextCommand }
+  /** The file was renamed; text editors pick their language from the name. */
+  | { type: 'name'; session: number; name: string }
+
+export type TextCommand = 'undo' | 'redo' | 'indentMore' | 'indentLess' | 'find' | 'wrap'
 
 export interface ActiveSuggestion {
   id: string
@@ -65,13 +79,16 @@ export interface ActiveSuggestion {
 /** The editor to the app. */
 export type EditorMessage =
   /** The page loaded; the app answers with `init` for a new session. */
-  | { type: 'ready'; protocolVersion: number; schemaVersion: number }
+  /** `format` is the live format the page edits; pages from before it are Markdown. */
+  | { type: 'ready'; protocolVersion: number; schemaVersion: number; format?: string }
   | { type: 'loaded'; session: number }
   /** A local edit, or what the app lacked after `sync` (base64). */
   | { type: 'update'; session: number; update: string }
   /** Asks the app for what the editor lacks (state vector, base64). */
   | { type: 'sync'; session: number; stateVector: string }
   | { type: 'formatting'; session: number; formatting: FormattingState; focused: boolean }
+  /** What a text editor's toolbar shows: undo state, cursor position, wrapping. */
+  | { type: 'textState'; session: number; state: TextEditorState }
   | { type: 'suggestions'; session: number; count: number; index: number | null; active: ActiveSuggestion | null }
   /** The editor's own cursor, as Yjs relative positions, for other sessions' awareness. */
   | { type: 'cursor'; session: number; cursor: { anchor: unknown; head: unknown } | null }

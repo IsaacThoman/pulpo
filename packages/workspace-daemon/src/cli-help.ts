@@ -3,8 +3,10 @@ export const FILES_HELP = `Usage: pulpo files <command> [options]
 
 Read and change the user's Pulpo Files that are attached to this chat.
 Files paths look like "Projects/Plan.md" (no leading slash; names are
-case-insensitive). Markdown documents (.md) are live documents in Pulpo; other
-files are stored as uploaded bytes.
+case-insensitive). Some files are live documents that people may be editing
+in Pulpo while you work: Markdown (.md) and text or code files (.txt, .py,
+.json, .html, …). You still pull and push them as ordinary files, and your
+push merges with their edits. Other files are stored as uploaded bytes.
 
 Browse:
   ls [path] [-R]                list a folder (-R: include subfolders)
@@ -25,6 +27,8 @@ Edit a document or file:
   pulpo files pull Projects/Plan.md
   (edit /workspace/files/Projects/Plan.md with your usual tools)
   pulpo files push
+Office files work the same way: edit a pulled .docx with python-docx, .xlsx
+with openpyxl, or .pptx with python-pptx, save it in place, then push.
 
 Create a file: write it under /workspace/files/<folder>/ and run
 \`pulpo files push\`, or push any workspace file to a chosen path:
@@ -56,9 +60,10 @@ Example:
 `,
   cat: `Usage: pulpo files cat <path>...
 
-Print documents (as Markdown) or text files. Documents show pending suggestions
-as if they were accepted. Binary or very large files cannot be printed: pull
-them and inspect the local copy instead.
+Print documents or text files: Markdown documents as Markdown, other live
+documents as their plain text. Documents show pending suggestions as if they
+were accepted. Binary or very large files cannot be printed: pull them and
+inspect the local copy instead.
 
 Example:
   pulpo files cat Projects/Plan.md
@@ -79,8 +84,9 @@ Examples:
 
 Copy a file or folder from Files into the workspace so you can read or edit it
 with normal tools. The default destination is /workspace/files/<path>; an
-existing directory given as dest receives the item inside it. Documents arrive
-as Markdown (.md). Pulling again overwrites the local copies.
+existing directory given as dest receives the item inside it. Markdown
+documents arrive as Markdown (.md); other live documents arrive as the real
+file (a .py stays a .py). Pulling again overwrites the local copies.
 Limits: 1000 files and 500 MiB per pull.
 
 Examples:

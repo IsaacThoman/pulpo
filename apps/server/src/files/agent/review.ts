@@ -9,6 +9,7 @@ import { moveNodeInTx, topLevelIds, toFileNode, trashNodeInTx } from '../tree-se
 import { listFileChanges, parsePlace, setChangeStatus, type FileChangeRow } from './changes.js'
 import { mutateAgentFiles, TREE_AND_CHAT_SCOPES, type CommitEffects, type DatabaseTransaction } from './commit.js'
 import { loadDocInTx, lockDocs, writeDocInTx } from './docs.js'
+import { acceptLiveProposal, isLiveDoc, parseLiveSnapshot, releaseLiveSnapshot } from './live.js'
 import { purgeSuggestedInTx } from './mutations.js'
 import { blobSnapshot, dropVersion, parseBlobSnapshot, releaseBlob, setBlobContent } from './versions.js'
 
@@ -29,6 +30,24 @@ async function reviewDoc({ tx, effects, userId, row, node, action }: Review): Pr
   const doc = await loadDocInTx(tx, node.id)
   const resolved = resolveSuggestions(new Transform(ydocToNode(doc)), (ref) => ref.changeId === row.id, action)
   if (resolved.docChanged) await writeDocInTx(tx, effects, { nodeId: node.id, doc, node: resolved.doc, actorUserId: userId, origin: 'client' })
+}
+
+/**
+ * A live document's proposed version is applied (merged with what users wrote since it was
+ * proposed), or dropped. Either way its stored versions are released.
+ */
+async function reviewLive({ tx, effects, userId, row, node, action }: Review): Promise<void> {
+  const proposed = parseLiveSnapshot(row.after)
+  if (!proposed) return
+  const before = parseLiveSnapshot(row.before)
+  // These rows are settled already. Release their quota before applying growth; object deletion
+  // still waits for commit, and any failed acceptance rolls the releases back with the review.
+  await releaseLiveSnapshot(tx, effects, proposed)
+  await releaseLiveSnapshot(tx, effects, before)
+  if (action === 'accept') {
+    if (!isLiveDoc(node) || node.trashedAt) throw stale(`"${node.name}" is no longer a document that can take the suggested version`)
+    await acceptLiveProposal(tx, effects, node, userId, before, proposed)
+  }
 }
 
 /** The proposed content becomes the file's (the replaced content is not kept), or is dropped. */
@@ -73,7 +92,7 @@ async function reviewTrash({ tx, effects, userId, node, action }: Review): Promi
 
 const REVIEWS: Record<FileChangeKind, (review: Review) => Promise<void>> = {
   create: (review) => reviewCreation(review.tx, review.effects, review.userId, review.row.id, review.action),
-  update: (review) => review.row.after ? reviewBlob(review) : reviewDoc(review),
+  update: (review) => parseLiveSnapshot(review.row.after) ? reviewLive(review) : review.row.after ? reviewBlob(review) : reviewDoc(review),
   move: reviewMove,
   trash: reviewTrash,
 }
