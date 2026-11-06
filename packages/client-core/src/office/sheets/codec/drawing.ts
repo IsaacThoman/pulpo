@@ -1,3 +1,4 @@
+import { keepReferencePart } from './reference-xml.js'
 import { MAX_COLS, MAX_ROWS } from '../address.js'
 import { randomId } from '../model/axis.js'
 import type { AnchorPoint, DrawingKind, DrawingObject } from '../model/schema.js'
@@ -97,6 +98,8 @@ export function readDrawing(sheet: SheetModel, path: string, context: ReadContex
         if (id && target) {
           links[id] = target
           drawing.chart ??= target
+          const xml = context.pkg.text(target)
+          if (xml) keepReferencePart(sheet, target, xml)
         }
       }
       if (Object.keys(links).length) drawing.links = links

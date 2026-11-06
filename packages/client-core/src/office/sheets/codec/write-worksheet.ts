@@ -1,3 +1,4 @@
+import { resolveXml } from './reference-xml.js'
 import { orderedEntries } from './order.js'
 import { columnIntervals, columnIntervalProps } from '../model/column-intervals.js'
 import { parseXml, type XmlDocument } from '../../ooxml/package.js'
@@ -108,7 +109,7 @@ function columnTailXf(sheet: SheetModel, colId: string): number | undefined {
 }
 
 export function writeWorksheet(sheet: SheetModel, context: WorksheetWriteContext): string {
-  const document = parseXml((sheet.raw.get('xml') as string | undefined) ?? DEFAULT_WORKSHEET_XML)
+  const document = parseXml(resolveXml((sheet.raw.get('xml') as string | undefined) ?? DEFAULT_WORKSHEET_XML, sheet))
   const root = document.documentElement!
   // Some writers prefix every element (`<x:worksheet>`); declaring the namespace as the default
   // too lets the unprefixed rows and elements written here sit in it.
@@ -137,7 +138,7 @@ export function writeWorksheet(sheet: SheetModel, context: WorksheetWriteContext
     if (xml) insertInOrder(root, fragment(document, xml))
     if (filter.sortXml) {
       const range = sheet.resolveRange(filter.range)
-      const sort = fragment(document, filter.sortXml)
+      const sort = fragment(document, resolveXml(filter.sortXml, sheet))
       if (range) sort.setAttribute('ref', rangeName({ ...range, top: range.top + 1 }))
       insertInOrder(root, sort)
     }
@@ -649,7 +650,8 @@ function writeAutoFilter(sheet: SheetModel, filter: AutoFilter): string | undefi
     .join('')
   // The last sort (and extensions) stay while the filter covers the same cells it was read with.
   const ref = rangeName(range)
-  const kept = filter.xml && new RegExp(`^<(?:\\w+:)?autoFilter\\b[^>]*\\bref="${ref}"`).test(filter.xml) ? keptFilterChildren(filter.xml) : ''
+  const filterXml = filter.xml && resolveXml(filter.xml, sheet)
+  const kept = filterXml && new RegExp(`^<(?:\\w+:)?autoFilter\\b[^>]*\\bref="${ref}"`).test(filterXml) ? keptFilterChildren(filterXml) : ''
   return `<autoFilter ref="${ref}">${columns}${kept}</autoFilter>`
 }
 
@@ -662,13 +664,15 @@ function keptFilterChildren(xml: string): string {
 export function writeTablePart(sheet: SheetModel, table: SheetTable, id: number, headerNames?: string[]): string | undefined {
   const range = sheet.resolveRange(table.range)
   if (!range) return undefined
-  const document = parseXml(table.xml || `<table xmlns="${SHEET_NS}" id="${id}" name="${escapeXml(table.name)}" displayName="${escapeXml(table.displayName)}" ref="A1"><autoFilter ref="A1"/><tableColumns count="0"/><tableStyleInfo name="TableStyleMedium2" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/></table>`)
+  const document = parseXml(resolveXml(table.xml || `<table xmlns="${SHEET_NS}" id="${id}" name="${escapeXml(table.name)}" displayName="${escapeXml(table.displayName)}" ref="A1"><autoFilter ref="A1"/><tableColumns count="0"/><tableStyleInfo name="TableStyleMedium2" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/></table>`, sheet))
   const root = document.documentElement!
   // A table that hasn't moved keeps its autofilter as written (LibreOffice includes the totals row).
   const moved = root.getAttribute('ref') !== rangeName(range)
   root.setAttribute('ref', rangeName(range))
   root.setAttribute('name', table.name)
   root.setAttribute('displayName', table.displayName)
+  if (!table.headerRow || root.hasAttribute('headerRowCount')) root.setAttribute('headerRowCount', table.headerRow ? '1' : '0')
+  if (table.totalsRow || root.hasAttribute('totalsRowCount')) root.setAttribute('totalsRowCount', table.totalsRow ? '1' : '0')
   const filter = child(root, 'autoFilter')
   if (filter && (moved || !filter.getAttribute('ref'))) filter.setAttribute('ref', rangeName(table.totalsRow ? { ...range, bottom: range.bottom - 1 } : range))
   const width = range.right - range.left + 1
@@ -681,7 +685,7 @@ export function writeTablePart(sheet: SheetModel, table: SheetTable, id: number,
     let nextId = 1
     for (const node of existing) nextId = Math.max(nextId, (Number(node.getAttribute('id')) || 0) + 1)
     for (const column of names) {
-      const element = column.xml ? (document.importNode(parseXml(column.xml).documentElement!, true) as XmlElement) : document.createElementNS(SHEET_NS, 'tableColumn')
+      const element = column.xml ? (document.importNode(parseXml(resolveXml(column.xml, sheet)).documentElement!, true) as XmlElement) : document.createElementNS(SHEET_NS, 'tableColumn')
       if (!element.getAttribute('id')) element.setAttribute('id', String(nextId++))
       element.setAttribute('name', column.name)
       columns.appendChild(element)

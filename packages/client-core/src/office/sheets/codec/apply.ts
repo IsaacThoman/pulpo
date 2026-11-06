@@ -1,3 +1,4 @@
+import { resolveXml, referenceParts, translateXml } from './reference-xml.js'
 import type * as Y from 'yjs'
 import { parseXml } from '../../ooxml/package.js'
 import { attributes, children, type XmlElement } from './xml.js'
@@ -283,6 +284,8 @@ function syncSheet(own: SheetModel, other: SheetModel, styles: StyleMap, restore
   syncCollections(own, other, styles, restore)
   for (const key of new Set([...own.raw.keys(), ...other.raw.keys()])) {
     let value = other.raw.get(key)
+    if (key === 'xml' && typeof value === 'string') value = translateXml(value, other, own)
+    if (key === 'referenceParts') value = Object.fromEntries(Object.entries(referenceParts(other)).map(([path, part]) => [path, { ...part, anchored: translateXml(part.anchored, other, own) }]))
     if (key === 'csvLastRow') value = translateAxisId(own.rows, other.rows, value as string | undefined)
     if (key === 'csvLastCol') value = translateAxisId(own.cols, other.cols, value as string | undefined)
     setIfDifferent(own.raw, key, value)
@@ -460,6 +463,7 @@ function syncCollection<T>(ownMap: Y.Map<unknown>, otherMap: Y.Map<unknown>, own
 function positioned(sheet: SheetModel, value: unknown, dxf: (index: number | undefined) => number | undefined = (index) => index, restore = false): string {
   return JSON.stringify(value, (key, entry: unknown) => {
     // XML kept as read is written back re-serialized; what the model says is what counts.
+    if (restore && (key === 'xml' || key === 'sortXml') && typeof entry === 'string') return resolveXml(entry, sheet)
     if (!restore && (key === 'xml' || key === 'shape' || key === 'sortXml' || key === 'part' || key === 'rPr' || key === 'fileOrder')) return undefined
     if ((key === 'range' || key === 'ranges') && entry) {
       const ranges = Array.isArray(entry) ? (entry as RangeIds[]) : [entry as RangeIds]
@@ -543,9 +547,9 @@ function syncCollections(own: SheetModel, other: SheetModel, styles: StyleMap, r
       ...(value.formula2 !== undefined ? { formula2: translateFormula(own, other, value.formula2) } : {}),
     }
   })
-  syncCollection<SheetTable>(own.tables, other.tables, ownForm, otherForm, (value) => {
+  syncCollection<SheetTable>(own.tables, other.tables, (value) => ownForm(value) + JSON.stringify(value.columns.map((column) => column.xml && resolveXml(column.xml, own))), (value) => otherForm(value) + JSON.stringify(value.columns.map((column) => column.xml && resolveXml(column.xml, other))), (value) => {
     const range = translateRange(own, other, value.range)
-    return range && { ...value, range }
+    return range && { ...value, range, ...(value.xml ? { xml: translateXml(value.xml, other, own) } : {}), columns: value.columns.map((column) => ({ ...column, ...(column.xml ? { xml: translateXml(column.xml, other, own) } : {}) })) }
   })
   syncCollection<DrawingObject>(own.drawings, other.drawings, (value) => restore ? ownForm(value) : drawingForm(own, value), (value) => restore ? otherForm(value) : drawingForm(other, value), (value) => {
     const from = translatePoint(own, other, value.from)
@@ -576,7 +580,7 @@ function syncCollections(own: SheetModel, other: SheetModel, styles: StyleMap, r
     if (ownFilter) own.filter.delete('value')
   } else if (ownForm(ownFilter) !== otherForm(otherFilter)) {
     const range = translateRange(own, other, otherFilter.range)
-    if (range) own.filter.set('value', { ...otherFilter, range })
+    if (range) own.filter.set('value', { ...otherFilter, range, ...(otherFilter.xml ? { xml: translateXml(otherFilter.xml, other, own) } : {}), ...(otherFilter.sortXml ? { sortXml: translateXml(otherFilter.sortXml, other, own) } : {}), ...(otherFilter.sort ? { sort: otherFilter.sort.map((entry) => ({ ...entry, col: translateAxisId(own.cols, other.cols, entry.col)! })) } : {}) })
   }
 }
 

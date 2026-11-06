@@ -1,3 +1,4 @@
+import { anchorXml, referenceParts, resolveXml } from './reference-xml.js'
 import type * as Y from 'yjs'
 import type { LiveAssetStore } from '../../live-format.js'
 import { CONTENT_TYPES_NS, OoxmlPackage, PACKAGE_RELATIONSHIPS_NS, parseXml, relationshipsPathFor, relativeTarget, resolveTarget, serializeXml, type XmlDocument } from '../../ooxml/package.js'
@@ -185,8 +186,18 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
   const pkg = new OoxmlPackage()
   for (const [path, part] of [...model.parts].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) pkg.set(path, await assets.get(part.hash))
 
+  for (const sheet of model.sheets()) for (const [path, part] of Object.entries(referenceParts(sheet))) {
+    const resolved = resolveXml(part.anchored, sheet)
+    const original = resolveXml(anchorXml(part.source, sheet), sheet)
+    if (resolved !== original) pkg.setXml(path, resolved)
+    else if (!pkg.has(path)) pkg.setXml(path, part.source)
+  }
+
   const workbookPath = model.metaValue('workbookPath') ?? 'xl/workbook.xml'
   const types = new ContentTypes(model.metaValue('contentTypesXml'))
+  for (const sheet of model.sheets()) for (const [path, part] of Object.entries(referenceParts(sheet))) {
+    if (/threadedcomments/i.test(part.source)) types.override(path, 'application/vnd.ms-excel.threadedcomments+xml')
+  }
   const rootRels = new Rels(pkg.text('_rels/.rels'))
   const originalRootRels = rootRels.toXml()
   const pointsAtWorkbook = rootRels.list().some((rel) => rel.type === REL_TYPES.officeDocument && resolveTarget('', rel.target) === workbookPath)

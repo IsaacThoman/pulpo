@@ -1,3 +1,4 @@
+import { toA1Form, toIdForm } from './formula-ids.js'
 import { maxOf } from '../../../collections.js'
 import * as Y from 'yjs'
 import type { CellRange } from '../address.js'
@@ -12,6 +13,7 @@ import {
   type CellData,
   type CellIds,
   type DefinedName,
+  type Hyperlink,
   type PreservedPart,
   type RangeIds,
   type SheetColor,
@@ -532,7 +534,11 @@ export class WorkbookModel {
     const error = validateSheetName(name, this, id)
     if (error) throw new Error(error)
     // Formulas refer to sheets by id, so nothing else changes.
-    this.transact(() => sheet.map.set('name', name))
+    this.transact(() => {
+      const finish = this.captureLinkLocations()
+      sheet.map.set('name', name)
+      finish()
+    })
   }
 
   setSheetState(id: string, state: SheetState): void {
@@ -568,10 +574,22 @@ export class WorkbookModel {
       throw new Error('A workbook must keep at least one visible sheet')
     }
     this.transact(() => {
+      const finish = this.captureLinkLocations()
       // Retain contents and scoped names in case concurrent deletions make this the fallback.
       sheet.map.set('deleted', true)
+      finish()
       if (this.metaValue('activeSheet') === id) this.setMeta('activeSheet', this.sheetIds()[0])
     })
+  }
+
+  private captureLinkLocations(): () => void {
+    const links = this.sheets().flatMap((sheet) => [...sheet.links].flatMap(([key, raw]) => {
+      const link = raw as Hyperlink
+      return link.location ? [{ sheet, key, link, formula: toIdForm(link.location, sheet) }] : []
+    }))
+    return () => {
+      for (const { sheet, key, link, formula } of links) sheet.links.set(key, { ...link, location: toA1Form(formula, sheet) })
+    }
   }
 
   /** Index of `position` among live sheet ids, as an index into the stored order. */

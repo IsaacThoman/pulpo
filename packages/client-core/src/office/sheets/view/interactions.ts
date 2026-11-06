@@ -1,3 +1,4 @@
+import { moveCells } from '../model/move-cells.js'
 import { maxOf, replaceChildrenWith } from '../../../collections.js'
 import { cellName, MAX_COLS, MAX_ROWS, rangeContains, type CellRange } from '../address.js'
 import type { AutoFilter, DrawingObject, Note, StyleProps } from '../model/schema.js'
@@ -836,6 +837,14 @@ export class SheetInteractions {
     const placeOptions: commands.PlaceOptions = { values: !mode.formats || !!mode.values, formats: !mode.values || !!mode.formats }
     view.workbook.transact(() => {
       if (internal) {
+        if (internal.cut && this.cut && !mode.values && !mode.formats) {
+          const source = view.workbook.sheet(this.cut.sheet)
+          if (source) moveCells(source, sheet, this.cut.range, origin)
+          this.cut = undefined
+          view.copyRange = undefined
+          view.select({ top: origin.row, left: origin.col, bottom: origin.row + internal.source.bottom - internal.source.top, right: origin.col + internal.source.right - internal.source.left }, { active: origin, scroll: false })
+          return
+        }
         const height = internal.cells.length
         const width = internal.cells[0]?.length ?? 0
         // A single copied cell fills the whole selection; otherwise paste once at its corner.

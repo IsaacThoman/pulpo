@@ -80,9 +80,18 @@ describe('concurrent editing', () => {
           case 6:
             deleteAxis(sheet, pick(['row', 'col'] as const), row, 1)
             break
-          case 7:
-            moveAxis(sheet, 'row', row, 1, Math.floor(random() * 10))
+          case 7: {
+            const before = Y.encodeStateAsUpdate(model.doc)
+            try {
+              moveAxis(sheet, 'row', row, 1, Math.floor(random() * 10))
+            } catch (error) {
+              // Excel rejects moving only part of a merged cell. Rejection must be atomic,
+              // and the replicas must still converge after subsequent valid operations.
+              expect((error as Error).message).toBe('Cannot split a merged cell')
+              expect(Y.encodeStateAsUpdate(model.doc)).toEqual(before)
+            }
             break
+          }
           case 8:
             commands.mergeRanges(sheet, [{ top: row, left: col, bottom: row + 1, right: col + 1 }])
             break

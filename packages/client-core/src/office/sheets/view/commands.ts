@@ -2,7 +2,7 @@ import { MAX_COLS, MAX_ROWS, rangeContains, type CellRange } from '../address.js
 import { randomId } from '../model/axis.js'
 import { toA1Form, toIdForm } from '../model/formula-ids.js'
 import { shiftFormula } from '../model/references.js'
-import type { AutoFilter, BorderEdge, BorderStyle, CellData, DataValidation, Hyperlink, Note, SheetColor, StyleProp, StyleProps } from '../model/schema.js'
+import type { AutoFilter, BorderEdge, BorderStyle, CellData, DataValidation, Hyperlink, Note, SheetTable, SheetColor, StyleProp, StyleProps } from '../model/schema.js'
 import { deleteAxis, insertAxis, type AxisKind } from '../model/structure.js'
 import type { SheetModel } from '../model/workbook.js'
 import { parseInput } from '../numfmt/parse.js'
@@ -335,6 +335,8 @@ export interface CellSnapshot {
   formula?: string
   xf?: number
   overrides: Partial<StyleProps>
+  note?: Note
+  link?: Hyperlink
 }
 
 export function snapshotCell(sheet: SheetModel, row: number, col: number): CellSnapshot {
@@ -346,6 +348,10 @@ export function snapshotCell(sheet: SheetModel, row: number, col: number): CellS
     if (data.f !== undefined) snapshot.formula = toA1Form(data.f, sheet)
   }
   const xf = sheet.xf.get(key)
+  const note = sheet.notes.get(key) as Note | undefined
+  const link = sheet.links.get(key) as Hyperlink | undefined
+  if (note) snapshot.note = note
+  if (link) snapshot.link = link
   if (xf !== undefined) snapshot.xf = xf
   return snapshot
 }
@@ -404,7 +410,18 @@ export function compareForSort(a: CellValue, b: CellValue, descending = false): 
 
 /** Sorts the rows of a range by keys (stable), moving content and formats like Excel. */
 export function sortRange(sheet: SheetModel, range: CellRange, keys: SortKey[], value: (row: number, col: number) => CellValue): void {
-  const area = clampToUsed(sheet, range)
+  let area = clampToUsed(sheet, range)
+  const tables = [...sheet.tables.values()].flatMap((raw) => {
+    const table = raw as SheetTable
+    const rect = sheet.resolveRange(table.range)
+    return rect && intersects(rect, area) ? [{ table, rect }] : []
+  })
+  if (tables.length > 1) throw new Error('Cannot sort multiple tables together')
+  if (tables[0]) {
+    const { table, rect } = tables[0]
+    area = { ...rect, top: rect.top + (table.headerRow ? 1 : 0), bottom: rect.bottom - (table.totalsRow ? 1 : 0) }
+  }
+  if (area.top > area.bottom) return
   const rows = span(area.top, area.bottom)
   const order = [...rows].sort((a, b) => {
     for (const key of keys) {
@@ -419,7 +436,16 @@ export function sortRange(sheet: SheetModel, range: CellRange, keys: SortKey[], 
     order.forEach((sourceRow, index) => {
       const targetRow = area.top + index
       span(area.left, area.right).forEach((col, offset) => {
-        placeCell(sheet, snapshots[index]![offset]!, { row: sourceRow, col }, { row: targetRow, col })
+        const snapshot = snapshots[index]![offset]!
+        placeCell(sheet, snapshot, { row: sourceRow, col }, { row: targetRow, col })
+        const key = sheet.keyAt(targetRow, col)
+        if (snapshot.note) sheet.notes.set(key, snapshot.note)
+        else sheet.notes.delete(key)
+        if (snapshot.link) {
+          const rect = snapshot.link.range && sheet.resolveRange(snapshot.link.range)
+          sheet.links.set(key, { ...snapshot.link, ...(rect ? { range: sheet.rangeIds({ ...rect, top: Math.max(0, rect.top + targetRow - sourceRow), bottom: Math.max(0, rect.bottom + targetRow - sourceRow) }) } : {}) })
+        }
+        else sheet.links.delete(key)
       })
     })
   })

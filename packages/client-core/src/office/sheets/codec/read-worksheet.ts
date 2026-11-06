@@ -1,3 +1,4 @@
+import { anchorXml, keepReferencePart } from './reference-xml.js'
 import { epochMsToSerial } from '../dates.js'
 import { columnIntervals, columnIntervalProps } from '../model/column-intervals.js'
 import { MAX_EXPANDED_CELLS } from '../limits.js'
@@ -86,6 +87,11 @@ export function readWorksheet(sheet: SheetModel, path: string, context: ReadCont
   const vmlId = attr(child(root, 'legacyDrawing'), 'r:id')
   const vmlPath = vmlId ? context.pkg.relationshipTarget(path, vmlId) : undefined
   if (comments) readNotes(sheet, context.pkg.relationshipTarget(path, comments.id)!, vmlPath, context)
+  for (const rel of rels.filter((entry) => entry.type === REL_TYPES.threadedComments && entry.targetMode !== 'External')) {
+    const target = context.pkg.relationshipTarget(path, rel.id)
+    const xml = target && context.pkg.text(target)
+    if (target && xml) keepReferencePart(sheet, target, xml)
+  }
   // A legacy drawing without notes (form controls) is kept as it is; the export links it again.
   if (vmlPath && !sheet.raw.has('vmlPart') && context.pkg.has(vmlPath)) sheet.raw.set('vmlPart', vmlPath)
 
@@ -98,7 +104,7 @@ export function readWorksheet(sheet: SheetModel, path: string, context: ReadCont
   if (view && !child(view, 'pane')) for (const selection of children(view, 'selection')) view.removeChild(selection)
   for (const name of ['outlineLevelRow', 'outlineLevelCol']) child(root, 'sheetFormatPr')?.removeAttribute(name)
   sheet.raw.set('part', path)
-  sheet.raw.set('xml', tidyNamespaces(serializeSkeleton(document)))
+  sheet.raw.set('xml', anchorXml(tidyNamespaces(serializeSkeleton(document)), sheet))
   const relsPath = path.replace(/([^/]+)$/, '_rels/$1.rels')
   const relsText = context.pkg.text(relsPath)
   // Relationships the export rebuilds from the model are left out, so a file read back after
@@ -585,8 +591,8 @@ function readAutoFilter(sheet: SheetModel, element: XmlElement | undefined, sort
   sheet.filter.set('value', {
     range: sheet.rangeIds(range),
     columns,
-    xml: serializeNode(element),
-    ...(sortState ? { sortXml: serializeNode(sortState) } : {}),
+    xml: anchorXml(serializeNode(element), sheet),
+    ...(sortState ? { sortXml: anchorXml(serializeNode(sortState), sheet) } : {}),
   })
 }
 
@@ -605,9 +611,9 @@ function readTables(sheet: SheetModel, element: XmlElement | undefined, sheetPat
       range: sheet.rangeIds(range),
       headerRow: attr(root, 'headerRowCount') !== '0',
       totalsRow: (numberAttr(root, 'totalsRowCount') ?? 0) > 0,
-      columns: children(child(root, 'tableColumns'), 'tableColumn').map((column) => ({ name: attr(column, 'name') ?? '', xml: serializeNode(column) })),
+      columns: children(child(root, 'tableColumns'), 'tableColumn').map((column) => ({ name: attr(column, 'name') ?? '', xml: anchorXml(serializeNode(column), sheet) })),
       part: path,
-      xml: context.pkg.text(path) ?? '',
+      xml: anchorXml(context.pkg.text(path) ?? '', sheet),
     }
     sheet.tables.set(randomId(), table)
     context.regenerated.add(path)

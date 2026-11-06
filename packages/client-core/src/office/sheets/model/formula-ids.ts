@@ -28,6 +28,8 @@ export interface IdEnd {
 
 export interface IdToken {
   sheet?: string
+  /** Original members of a 3D sheet span, for deleted endpoint resolution. */
+  sheets?: string[]
   /** Sheet-scoped defined name. */
   name?: string
   from: IdEnd
@@ -37,6 +39,7 @@ export interface IdToken {
 export function formatIdToken(token: IdToken): string {
   const fields: string[] = []
   if (token.sheet) fields.push(`s:${token.sheet}`)
+  if (token.sheets) fields.push(`d:${token.sheets.join(',')}`)
   if (token.name !== undefined) fields.push(`n:${token.name}`)
   const end = (value: IdEnd, rowKey: string, colKey: string) => {
     if (value.row !== undefined) fields.push(`${rowKey}${value.rowAbs ? '$' : ''}:${value.row}`)
@@ -58,6 +61,9 @@ export function parseIdToken(body: string): IdToken {
     const value = field.slice(colon + 1)
     const abs = key.endsWith('$')
     switch (key[0]) {
+      case 'd':
+        token.sheets = value.split(',')
+        break
       case 's':
         token.sheet = value
         break
@@ -141,17 +147,21 @@ export function idTokens(formula: string): IdToken[] {
  */
 export function toIdForm(formula: string, sheet: SheetModel | undefined, workbook: WorkbookModel = sheet!.workbook): string {
   return rewriteReferences(formula, (ref) => {
-    if (ref.external || ref.sheet?.last) return undefined
+    if (ref.external) return undefined
     // Defined names have no sheet of their own: their unqualified references stay as text.
     const target = ref.sheet ? workbook.sheetByName(ref.sheet.first) : sheet
     if (!target) return undefined
     const sheetId = ref.sheet ? target.id : undefined
+    const last = ref.sheet?.last && workbook.sheetByName(ref.sheet.last)
+    if (ref.sheet?.last && !last) return undefined
+    const ids = workbook.sheetIds()
+    const span = last ? ids.slice(Math.min(ids.indexOf(target.id), ids.indexOf(last.id)), Math.max(ids.indexOf(target.id), ids.indexOf(last.id)) + 1) : undefined
     if (ref.kind === 'name') return formatIdToken({ sheet: sheetId, name: ref.name, from: {} })
     const end = (value: RefEnd): IdEnd => ({
       ...(value.row !== undefined ? { row: target.rows.idAt(value.row), rowAbs: !!value.rowAbs } : {}),
       ...(value.col !== undefined ? { col: target.cols.idAt(value.col), colAbs: !!value.colAbs } : {}),
     })
-    return formatIdToken({ ...(sheetId ? { sheet: sheetId } : {}), from: end(ref.from), ...(ref.to ? { to: end(ref.to) } : {}) })
+    return formatIdToken({ ...(sheetId ? { sheet: sheetId } : {}), ...(span ? { sheets: span } : {}), from: end(ref.from), ...(ref.to ? { to: end(ref.to) } : {}) })
   })
 }
 
@@ -166,9 +176,16 @@ export function toA1Form(formula: string, sheet: SheetModel | undefined, workboo
 }
 
 export function idTokenToA1(token: IdToken, sheet: SheetModel | undefined, workbook: WorkbookModel = sheet!.workbook, options: A1FormOptions = {}): string {
-  const target = token.sheet ? workbook.sheet(token.sheet) : sheet
+  const order = token.sheets && workbook.order.toArray()
+  const first = token.sheets && order!.indexOf(token.sheets[0]!)
+  const last = token.sheets && order!.indexOf(token.sheets[token.sheets.length - 1]!)
+  // Tombstoned endpoint tabs stay in order, so newly inserted tabs inside the span survive
+  // endpoint deletion, while tabs moved outside its current boundaries are excluded.
+  const members = order && first! >= 0 && last! >= 0 ? order.slice(Math.min(first!, last!), Math.max(first!, last!) + 1) : token.sheets
+  const survivors = members?.flatMap((id) => { const member = workbook.sheet(id); return member ? [member] : [] })
+  const target = survivors ? survivors[0] : token.sheet ? workbook.sheet(token.sheet) : sheet
   if (!target) return '#REF!'
-  const prefix = token.sheet ? { first: target.name } : undefined
+  const prefix = token.sheet ? { first: target.name, ...(survivors && survivors.length > 1 ? { last: survivors[survivors.length - 1]!.name } : {}) } : undefined
   if (token.name !== undefined) return (prefix ? formatSheetPrefix(prefix) : '') + token.name
   const resolved = resolveToken(target, token, options)
   if (!resolved) return (prefix ? formatSheetPrefix(prefix) : '') + '#REF!'

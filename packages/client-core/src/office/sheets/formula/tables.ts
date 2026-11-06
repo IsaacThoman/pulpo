@@ -62,7 +62,7 @@ export function structuredArea(table: TableDefinition, ref: StructuredRef, row: 
   if (ref.firstColumn !== undefined) {
     const first = columnOffset(table, ref.firstColumn)
     const last = ref.lastColumn === undefined ? first : columnOffset(table, ref.lastColumn)
-    if (first < 0 || last < 0) return Errors.REF
+    if (first < 0 || last < 0 || first > table.right - table.left || last > table.right - table.left) return Errors.REF
     left = table.left + Math.min(first, last)
     right = table.left + Math.max(first, last)
   }
