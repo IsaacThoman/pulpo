@@ -20,6 +20,8 @@ const ChatPage = lazy(() => import('@/pages/ChatPage').then((module) => ({ defau
 const UsageLayout = lazy(() => import('@/pages/usage/UsageLayout').then((module) => ({ default: module.UsageLayout })))
 const PersonalPage = lazy(() => import('@/pages/usage/PersonalPage').then((module) => ({ default: module.PersonalPage })))
 const LeaderboardPage = lazy(() => import('@/pages/usage/LeaderboardPage').then((module) => ({ default: module.LeaderboardPage })))
+const FriendsLeaderboardPage = lazy(() => import('@/pages/usage/LeaderboardPage').then((module) => ({ default: module.FriendsLeaderboardPage })))
+const FriendsLayout = lazy(() => import('@/pages/FriendsLayout').then((module) => ({ default: module.FriendsLayout })))
 const FriendsPage = lazy(() => import('@/pages/FriendsPage').then((module) => ({ default: module.FriendsPage })))
 const ApiKeysPage = lazy(() => import('@/pages/ApiKeysPage').then((module) => ({ default: module.ApiKeysPage })))
 const FilesPage = lazy(() => import('@/pages/files/FilesPage').then((module) => ({ default: module.FilesPage })))
@@ -131,9 +133,9 @@ export default function App() {
             <Route path="c/:chatId" element={<LocalizedRoute><ChatPage /></LocalizedRoute>} />
             <Route path="usage" element={<LocalizedRoute><UsageLayout /></LocalizedRoute>}>
               <Route index element={<LocalizedRoute><PersonalPage /></LocalizedRoute>} />
-              <Route path="friends" element={<LocalizedRoute><LeaderboardPage /></LocalizedRoute>} />
-              <Route path="pool" element={<LocalizedRoute><LeaderboardPage scope="pool" /></LocalizedRoute>} />
-              <Route path="leaderboard" element={<Navigate to="/usage/friends" replace />} />
+              <Route path="friends" element={<Navigate to="/friends/leaderboard" replace />} />
+              <Route path="pool" element={<Navigate to="/friends/leaderboard?scope=pool" replace />} />
+              <Route path="leaderboard" element={<Navigate to="/friends/leaderboard" replace />} />
             </Route>
             <Route path="files" element={<LocalizedRoute><FilesPage /></LocalizedRoute>} />
             <Route path="files/f/:folderId" element={<LocalizedRoute><FilesPage /></LocalizedRoute>} />
@@ -141,8 +143,11 @@ export default function App() {
             <Route path="files/trash/f/:folderId" element={<LocalizedRoute><TrashFolderPage /></LocalizedRoute>} />
             <Route path="files/d/:docId" element={<LocalizedRoute><FileDocPage /></LocalizedRoute>} />
             <Route path="attachments/:attachmentId" element={<LocalizedRoute><AttachmentPage /></LocalizedRoute>} />
-            <Route path="friends" element={<LocalizedRoute><FriendsPage /></LocalizedRoute>} />
-            <Route path="friends/pool" element={<Navigate to="/friends" replace />} />
+            <Route path="friends" element={<LocalizedRoute><FriendsLayout /></LocalizedRoute>}>
+              <Route index element={<LocalizedRoute><FriendsPage /></LocalizedRoute>} />
+              <Route path="leaderboard" element={<LocalizedRoute><FriendsLeaderboardPage /></LocalizedRoute>} />
+              <Route path="pool" element={<Navigate to="/friends" replace />} />
+            </Route>
             <Route path="api-keys" element={<LocalizedRoute><ApiKeysPage /></LocalizedRoute>} />
             <Route path="billing" element={<LocalizedRoute><RequireBilling><BillingPage /></RequireBilling></LocalizedRoute>} />
             <Route element={<RequireAdmin />}>

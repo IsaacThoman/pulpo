@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { BarChart3, Clock } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis, matchByDataKey } from 'recharts'
 import { useAuth } from '@/stores/auth'
-import { formatBalance, formatChartNumber, formatDate, formatUsd } from '@/lib/format'
+import { formatBalance, formatChartNumber, formatUsd } from '@/lib/format'
 import type { Metric, MonitorUser, TimeRange } from '@/lib/types'
 import { ToggleGroup } from '@/components/usage/ToggleGroup'
 import { StatsRow } from '@/components/usage/StatsRow'
@@ -26,6 +26,12 @@ import { useSettings } from '@/stores/settings'
 import { DEFAULT_CHART_ANIMATION_DURATION_MS, scaledAnimationDuration } from '@/lib/animation-speed'
 
 type LBMetric = Metric | 'balance'
+type CircleScope = 'friends' | 'pool'
+
+const SCOPES: { id: CircleScope; label: string }[] = [
+  { id: 'friends', label: "Friends" },
+  { id: 'pool', label: "Pool" },
+]
 
 const RANGES: { id: TimeRange; label: string }[] = [
   { id: '24h', label: "24h" },
@@ -170,7 +176,26 @@ function LeaderboardTip({
   )
 }
 
-export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'pool' | 'instance' }) {
+/** The Friends hub's Leaderboard tab; `?scope=pool` narrows it to the Pool. */
+export function FriendsLeaderboardPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const scope: CircleScope = searchParams.get('scope') === 'pool' ? 'pool' : 'friends'
+  const setScope = (next: CircleScope) => setSearchParams((params) => {
+    if (next === 'pool') params.set('scope', 'pool')
+    else params.delete('scope')
+    return params
+  }, { replace: true })
+  return (
+    <div className="mx-auto w-full min-w-0 max-w-5xl px-5 py-6">
+      <LeaderboardPage scope={scope} onScopeChange={setScope} />
+    </div>
+  )
+}
+
+export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
+  scope?: CircleScope | 'instance'
+  onScopeChange?: (scope: CircleScope) => void
+}) {
   const [range, setRange] = useState<TimeRange>('30d')
   const [metric, setMetric] = useState<LBMetric>('tokens')
   const animationSpeed = useSettings((state) => state.animationSpeed)
@@ -226,14 +251,6 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
   })) ?? [], [circleUsageQuery.data?.leaderboard.data])
   const records = useMemo(() => flattenUsagePages(recordsQuery.data?.pages), [recordsQuery.data])
   const nextCursor = recordsQuery.data?.pages.at(-1)?.nextCursor ?? null
-  const leaderboardMe = users.find((u) => u.id === currentUserId)
-  const me = {
-    id: authUser?.id ?? '', name: authUser?.name ?? 'Pulpo user', email: authUser?.email ?? '',
-    username: authUser?.username ?? 'pulpo', avatarUrl: authUser?.avatarUrl ?? null, profileColor: authUser?.profileColor ?? null,
-    role: authUser?.role ?? 'user', balance: (authUser?.balanceMicros ?? 0) / 1_000_000,
-    joinedAt: authUser ? Date.parse(authUser.createdAt) : Date.now(), blocked: false,
-    ...(leaderboardMe ? { balance: leaderboardMe.balance } : {}),
-  }
 
   const activity = circleUsageQuery.data?.activity ?? null
   const loading = circleUsageQuery.isLoading || recordsQuery.isLoading
@@ -301,11 +318,14 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
         <div className="mt-0.5 text-xs text-muted-foreground wrap-anywhere">
           {circleUsageQuery.isLoading ? ui("Loading active participants…") : uit`${users.length.toLocaleString(activeLocale())} active users with settled usage in this period`}
         </div>
-      </div> : <div>
-        <div className="text-lg font-medium wrap-anywhere">{me.name}</div>
-        <div className="mt-0.5 text-xs text-muted-foreground wrap-anywhere">
-          {me.email} {ui("· Joined")} {formatDate(me.joinedAt)}
+      </div> : <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="text-lg font-medium">{ui("Leaderboard")}</div>
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            {scope === 'pool' ? ui("Settled usage across your Pool") : ui("Settled usage across you and your friends")}
+          </div>
         </div>
+        {onScopeChange && <ToggleGroup options={SCOPES.map((option) => ({ ...option, label: ui(option.label) }))} value={scope === 'pool' ? 'pool' : 'friends'} onChange={onScopeChange} />}
       </div>}
 
       {/* usage overview (all users) */}
