@@ -87,8 +87,8 @@ export function editableUpload(node: FileNode): boolean {
 
 /** What can be done with an item: convert it (to `target`) and export it as PDF. */
 export function officeActions(node: Pick<FileNode, 'kind' | 'name' | 'status'>, enabled: boolean): { target: OfficeEditableFormat | null; pdf: boolean } {
-  if (!enabled || node.kind !== 'blob' || node.status !== 'ready') return { target: null, pdf: false }
-  return { target: officeConversionTarget(node.name), pdf: canExportOfficePdf(node.name) }
+  if (!enabled || (node.kind !== 'blob' && node.kind !== 'doc') || node.status !== 'ready') return { target: null, pdf: false }
+  return { target: node.kind === 'blob' ? officeConversionTarget(node.name) : null, pdf: canExportOfficePdf(node.name) }
 }
 
 /** Color and Icon… (Color… for a built-in folder), for files and folders as on the web. */

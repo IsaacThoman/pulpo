@@ -332,6 +332,7 @@ function OpenLiveDoc({ userId, docId, view, web }: { userId: string; docId: stri
   const chatWidth = useSettings((state) => state.chatWidth)
   const assets = useMemo(() => new ApiLiveAssetStore(docId), [docId])
   const go = useMainNavigate()
+  const conversion = useOfficeConversion(() => {})
   const { Editor } = web
 
   useEffect(() => setEverSynced(false), [docId])
@@ -358,6 +359,7 @@ function OpenLiveDoc({ userId, docId, view, web }: { userId: string; docId: stri
             .catch((cause: unknown) => setNotice(filesErrorMessage(cause)))
         }}
       >
+        {node && <OfficeFileHeaderActions node={node} conversion={conversion} compact={view.layout === 'panel'} />}
         <Presence peers={peers} />
         <SyncIndicator status={status} />
       </FileHeader>

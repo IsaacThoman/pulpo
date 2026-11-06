@@ -17,7 +17,7 @@ if (!/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(api)) throw new Error('Ru
 const screenshots = process.env.PULPO_SCREENSHOTS
 const root = new URL('..', import.meta.url).pathname
 const serverRoot = new URL('../../server', import.meta.url).pathname
-const account = { name: 'Live Text Tester', username: 'live_text', email: 'live-text@example.test', password: 'Live-text-test-2026' }
+const account = { name: 'Live Text Tester', username: 'live_text', email: process.env.PULPO_TEST_EMAIL ?? 'live-text@example.test', password: process.env.PULPO_TEST_PASSWORD ?? 'Live-text-test-2026' }
 const scratch = mkdtempSync(join(tmpdir(), 'pulpo-live-text-'))
 
 let server
@@ -119,7 +119,7 @@ try {
   await waitForText(first, 'print("hello")\n# from the second tab')
 
   // Downloading gives the real file.
-  const [download] = await Promise.all([first.waitForEvent('download'), first.getByRole('button', { name: 'Download' }).click()])
+  const [download] = await Promise.all([first.waitForEvent('download'), first.getByRole('button', { name: 'Download', exact: true }).click()])
   assert.equal(download.suggestedFilename(), `greet-${unique}.py`)
   assert.equal(readFileSync(await download.path(), 'utf8'), 'print("hello")\n# from the second tab')
   // The server's export, which agents pull, matches.
@@ -165,7 +165,7 @@ try {
   await waitForText(first, 'const answer = 42\nconsole.log(answer)\n')
   await first.getByText('UTF-8 BOM').waitFor()
   await first.getByText('CRLF', { exact: true }).waitFor()
-  const [converted] = await Promise.all([first.waitForEvent('download'), first.getByRole('button', { name: 'Download' }).click()])
+  const [converted] = await Promise.all([first.waitForEvent('download'), first.getByRole('button', { name: 'Download', exact: true }).click()])
   assert.deepEqual([...readFileSync(await converted.path())], [...original])
 
   // An HTML file previews as it is edited, inside the sandbox.

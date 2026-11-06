@@ -6,6 +6,7 @@ import { changeMode, guardedReply, joinPath, type CommandContext, type CommandOu
 import { createBlobChange } from './mutations.js'
 import { FilesCommandError, locateExisting, locateOptional, locateParent, modeFor } from './scope.js'
 import { agentBlobView } from './versions.js'
+import { agentLiveView } from './live.js'
 
 export interface ConvertArgs {
   path: string
@@ -48,7 +49,7 @@ export async function convertCommand(ctx: CommandContext, args: ConvertArgs): Pr
   if (!officeConversionAvailable()) throw new FilesCommandError(UNAVAILABLE)
   const located = await locateExisting(ctx.scope, args.path)
   const node = located.node
-  if (!node || node.kind !== 'blob') throw new FilesCommandError(`"${located.path || 'My files'}" is not an uploaded file; only office files (.doc, .xls, .ppt, .odt, .pages, .docx, …) can be converted`)
+  if (!node || (node.kind !== 'blob' && node.kind !== 'doc')) throw new FilesCommandError(`"${located.path || 'My files'}" is not an office file; only office files (.doc, .xls, .ppt, .odt, .pages, .docx, …) can be converted`)
   const supported = args.to === 'pdf' ? canExportOfficePdf(node.name) : officeConversionTarget(node.name) === args.to
   if (!supported) {
     const target = officeConversionTarget(node.name)
@@ -57,13 +58,15 @@ export async function convertCommand(ctx: CommandContext, args: ConvertArgs): Pr
       : `"${located.path}" is not an office file Pulpo can convert`)
   }
   const sourceMode = await modeFor(ctx.scope, node.id)
-  const view = await agentBlobView(db, ctx.chatId, node, async () => sourceMode)
-  if (view.sizeBytes > OFFICE_CONVERTER_MAX_INPUT_BYTES) throw new FilesCommandError(`"${located.path}" is too large to convert`)
-
   const target = await destination(ctx, located.path, node.name, args)
   const mode = changeMode(await modeFor(ctx.scope, target.parentId), target.parentPath)
-  const converted = await withConversionSlot(ctx.userId, async () =>
-    convertOfficeDocument({ bytes: await readStoredObject(view.objectKey), from: fileExtension(node.name), to: args.to, signal: ctx.signal }))
+  const converted = await withConversionSlot(ctx.userId, async () => {
+    const bytes = node.kind === 'doc'
+      ? (await agentLiveView(db, ctx.chatId, node, async () => sourceMode)).bytes
+      : await readStoredObject((await agentBlobView(db, ctx.chatId, node, async () => sourceMode)).objectKey)
+    if (bytes.byteLength > OFFICE_CONVERTER_MAX_INPUT_BYTES) throw new FilesCommandError(`"${located.path}" is too large to convert`)
+    return convertOfficeDocument({ bytes, from: fileExtension(node.name), to: args.to, signal: ctx.signal })
+  })
   await assertConvertedSizeAllowed(db, converted.byteLength)
   const reply = guardedReply(ctx, mode, (executor) => modeFor(ctx.scope, target.parentId, executor))
   const created = await createBlobChange(reply, target.parentId, target.name, converted, mode, { pickFreeName: !args.output })

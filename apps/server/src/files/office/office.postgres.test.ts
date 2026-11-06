@@ -8,6 +8,9 @@ import { applicationSettings, fileChanges, fileNodes } from '../../database/sche
 import { storageUsedBytes } from '../../attachments/storage-quota.js'
 import { AppError } from '../../lib/errors.js'
 import { filesFixture, requireDisposableDatabase, type FilesFixture } from '../agent/test-fixtures.js'
+import { blankDocx } from '@pulpo/client-core/office/docx'
+import { OoxmlPackage } from '@pulpo/client-core/office/ooxml'
+import { createDoc } from '../doc-store.js'
 
 const objects = vi.hoisted(() => new Map<string, Buffer>())
 const mocks = vi.hoisted(() => ({ config: {} as Record<string, unknown>, userId: '', publish: vi.fn() }))
@@ -245,6 +248,28 @@ describe.skipIf(!enabled)('office file conversion', () => {
       expect((await db.select().from(fileNodes).where(eq(fileNodes.ownerUserId, files.userId))).length).toBe(rows)
     })
 
+    it('exports live Office edits and converts the agent proposal rather than the current document', async () => {
+      const folder = await files.folder('Live')
+      const live = await createDoc(files.userId, { parentId: folder, name: 'Report.docx' })
+      await files.attach({ [folder]: 'write' })
+      const changed = OoxmlPackage.read(blankDocx())
+      changed.setXml('word/document.xml', changed.text('word/document.xml')!.replace('<w:p/>', '<w:p><w:r><w:t>Edited report</w:t></w:r></w:p>'))
+      files.put('/workspace/report.docx', Buffer.from(changed.write()))
+      await files.ok('push', { items: [{ local: '/workspace/report.docx', remote: 'Live/Report.docx', base: null, force: true }] })
+      await exportFileAsPdf(files.userId, live.id)
+      expect(OoxmlPackage.read(received.at(-1)!.body).text('word/document.xml')).toContain('Edited report')
+
+      await files.newReply()
+      await files.attach({ [folder]: 'suggest' })
+      changed.setXml('word/document.xml', changed.text('word/document.xml')!.replace('Edited report', 'Proposed report'))
+      files.put('/workspace/report.docx', Buffer.from(changed.write()))
+      await files.ok('push', { items: [{ local: '/workspace/report.docx', remote: 'Live/Report.docx', base: null, force: true }] })
+      await files.ok('convert', { path: 'Live/Report.docx', to: 'pdf' })
+      expect(OoxmlPackage.read(received.at(-1)!.body).text('word/document.xml')).toContain('Proposed report')
+      await exportFileAsPdf(files.userId, live.id)
+      expect(OoxmlPackage.read(received.at(-1)!.body).text('word/document.xml')).toContain('Edited report')
+    })
+
     it('serves both over HTTP with validation and download headers', async () => {
       const app = Fastify()
       await registerFileRoutes(app)
@@ -324,7 +349,7 @@ describe.skipIf(!enabled)('office file conversion', () => {
       expect(await files.error('convert', { path: 'Shared/Spec.odt', to: 'docx', output: 'Out/Taken.docx' })).toMatch(/already exists/)
       expect(await files.error('convert', { path: 'Shared/Spec.odt', to: 'docx', output: 'Out/Spec.pdf' })).toMatch(/must end in \.docx/)
       expect(await files.error('convert', { path: 'Shared/Spec.odt', to: 'xlsx' })).toMatch(/converts to \.docx or \.pdf/)
-      expect(await files.error('convert', { path: 'Shared', to: 'pdf' })).toMatch(/not an uploaded file/)
+      expect(await files.error('convert', { path: 'Shared', to: 'pdf' })).toMatch(/not an office file/)
       expect(received).toEqual([])
       expect((await files.ok('convert', { path: 'Alone.rtf', to: 'docx', output: 'Out/Alone.docx' })).output).toBe('Converted "Alone.rtf" to "Out/Alone.docx"')
       expect((await nodesNamed('Alone.docx'))[0]).toMatchObject({ parentId: out })

@@ -43,6 +43,8 @@ import { DOCX_TOOLBAR, docxToolbarState } from '../editor/docxToolbar'
 import { deviceSessionLabel } from '../editor/presentation'
 import { fetchDocMarkdown, fetchFileAsset } from '../api'
 import { filesErrorMessage } from '../display'
+import { officeActions } from '../itemActions'
+import { shareOfficePdf, useOfficeConversionEnabled } from '../officeConversion'
 import { openFilesLinkInApp } from '../links'
 import { shareFileItem } from '../open'
 import { useFileOperations } from '../operations'
@@ -103,9 +105,12 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const namespace = useFilesNamespace()
   const filesEnabled = useFilesEnabled()
   const operations = useFileOperations(namespace)
+  const officeConversionEnabled = useOfficeConversionEnabled()
+  const [exportingPdf, setExportingPdf] = useState(false)
   const fileId = route.params.fileId
   const nodeQuery = useQuery({ ...fileNodeQuery(namespace, fileId), enabled: Boolean(namespace) && filesEnabled })
   const node = nodeQuery.data?.node
+  const canExportPdf = Boolean(node && !node.trashedAt && officeActions(node, officeConversionEnabled).pdf)
   // The document's live format picks its editor; only Markdown has suggestions inline.
   const formatId = node?.format ?? 'markdown'
   const schemaSupported = useDocSchemaSupported(formatId) && Boolean(editorBundleFor(formatId))
@@ -292,6 +297,13 @@ export function FileDocumentScreen({ navigation, route }: Props) {
     ])
   }, [navigation, operations, node])
 
+  const exportPdf = useCallback(async () => {
+    if (!node) return
+    setExportingPdf(true)
+    try { await shareOfficePdf(node) } catch (error) { operations.fail(error, node.name) }
+    finally { setExportingPdf(false) }
+  }, [node, operations])
+
   const menu: NativeStackHeaderItem = useMemo(() => ({
     type: 'menu',
     label: 'Document',
@@ -304,6 +316,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
           : isDeck
           ? { type: 'action', label: 'Present', icon: { type: 'sfSymbol', name: 'play.rectangle' }, disabled: !editorState?.loaded, onPress: () => editor.current?.command('present') }
           : { type: 'action', label: isText ? 'Find and Replace' : isSheet ? 'Find in Spreadsheet' : 'Find in Document', icon: { type: 'sfSymbol', name: 'magnifyingglass' }, disabled: !editorState?.loaded, onPress: () => { if (isText || isSheet) editor.current?.command('find'); else editor.current?.showFind() } },
+        ...(canExportPdf ? [{ type: 'action' as const, label: 'Export as PDF', icon: { type: 'sfSymbol' as const, name: 'doc.text' as const }, disabled: exportingPdf, onPress: () => { void exportPdf() } }] : []),
         { type: 'action', label: 'Export…', icon: { type: 'sfSymbol', name: 'square.and.arrow.up' }, disabled: !node, onPress: () => { void exportDocument() } },
         {
           type: 'submenu',
@@ -320,7 +333,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
         { type: 'action', label: 'Move to Trash', icon: { type: 'sfSymbol', name: 'trash' }, destructive: true, disabled: !node || Boolean(node.trashedAt), onPress: trash },
       ],
     },
-  }), [editable, editorState?.loaded, exportDocument, isNotebook, isDeck, isText, isSheet, navigation, node, nodeQuery.data?.ancestors, operations, rename, trash])
+  }), [canExportPdf, exportingPdf, exportPdf, editable, editorState?.loaded, exportDocument, isNotebook, isDeck, isText, isSheet, navigation, node, nodeQuery.data?.ancestors, operations, rename, trash])
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -357,6 +370,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const editorBottomPadding = reviewBarHeight + (formattingBarVisible && !isDeck ? FORMATTING_BAR_HEIGHT : 0) + (presentationBarVisible ? PRESENTATION_BAR_HEIGHT + insets.bottom : 0) + navigationBarPadding
   const showAndroidMenu = () => showActions(title, [
     ...(isDeck ? [{ label: 'Present', icon: 'play.rectangle', onPress: () => editor.current?.command('present') }] : []),
+    ...(canExportPdf ? [{ label: 'Export as PDF', icon: 'doc.text', disabled: exportingPdf, onPress: () => { void exportPdf() } }] : []),
     { label: 'Export', icon: 'square.and.arrow.up', onPress: () => { void exportDocument() } },
     { label: 'Rename', icon: 'pencil', onPress: rename },
     { label: 'Move', icon: 'folder', onPress: () => setMoving(true) },

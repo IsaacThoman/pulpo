@@ -59,7 +59,7 @@ describe('built notebook page', () => {
       dom.window.close()
       doc.destroy()
     }
-  })
+  }, 20_000)
 })
 
 

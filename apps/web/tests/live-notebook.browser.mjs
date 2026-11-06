@@ -183,7 +183,7 @@ try {
   assert.equal(reloaded[0], 'import math')
 
   // Downloading gives a valid notebook, and the server's export matches.
-  const [download] = await Promise.all([first.waitForEvent('download'), first.getByRole('button', { name: 'Download' }).click()])
+  const [download] = await Promise.all([first.waitForEvent('download'), first.getByRole('button', { name: 'Download', exact: true }).click()])
   assert.equal(download.suggestedFilename(), `analysis-${unique}.ipynb`)
   const downloaded = validated(readFileSync(await download.path()))
   assert.deepEqual(downloaded.cells.map((cell) => cell.cell_type), ['code', 'markdown', 'code', 'code'])
@@ -206,7 +206,7 @@ try {
   await first.getByRole('img').first().waitFor({ timeout: 15_000 })
   await first.locator('[data-output="error"]').getByText('ZeroDivisionError').first().waitFor()
   await first.frameLocator('iframe[title="Notebook output"]').first().getByText('month').waitFor({ timeout: 15_000 })
-  const [unedited] = await Promise.all([first.waitForEvent('download'), first.getByRole('button', { name: 'Download' }).click()])
+  const [unedited] = await Promise.all([first.waitForEvent('download'), first.getByRole('button', { name: 'Download', exact: true }).click()])
   assert.deepEqual([...readFileSync(await unedited.path())], [...original])
   // Clearing every output and collapsing one cell's are stored as Jupyter writes them.
   await notebookKeys(first).focus()

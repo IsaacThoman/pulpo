@@ -9,8 +9,8 @@ import { filesErrorMessage } from './file-display'
 
 /** What the server's office converter can do with a file, if it is configured. */
 export function officeFileActions(node: Pick<FileNode, 'kind' | 'name'>, enabled: boolean): { target: OfficeEditableFormat | null; pdf: boolean } {
-  if (!enabled || node.kind !== 'blob') return { target: null, pdf: false }
-  return { target: officeConversionTarget(node.name), pdf: canExportOfficePdf(node.name) }
+  if (!enabled || (node.kind !== 'blob' && node.kind !== 'doc')) return { target: null, pdf: false }
+  return { target: node.kind === 'blob' ? officeConversionTarget(node.name) : null, pdf: canExportOfficePdf(node.name) }
 }
 
 /**

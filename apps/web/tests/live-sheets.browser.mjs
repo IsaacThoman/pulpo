@@ -20,7 +20,7 @@ const screenshots = process.env.PULPO_SCREENSHOTS
 const python = join(process.env.PULPO_SHEETS_VENV ?? join(homedir(), '.cache', 'pulpo-sheets-venv'), 'bin', 'python')
 const root = new URL('..', import.meta.url).pathname
 const serverRoot = new URL('../../server', import.meta.url).pathname
-const account = { name: 'Live Sheets Tester', username: 'live_sheets', email: 'live-sheets@example.test', password: 'Live-sheets-test-2026' }
+const account = { name: 'Live Sheets Tester', username: 'live_sheets', email: process.env.PULPO_TEST_EMAIL ?? 'live-sheets@example.test', password: process.env.PULPO_TEST_PASSWORD ?? 'Live-sheets-test-2026' }
 const scratch = mkdtempSync(join(tmpdir(), 'pulpo-live-sheets-'))
 // Python reads downloads from an empty directory of their own, with the script kept elsewhere.
 const scripts = join(scratch, 'scripts')
@@ -98,7 +98,7 @@ try {
     }
   }
   const download = async (page, name) => {
-    const [file] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download' }).click()])
+    const [file] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download', exact: true }).click()])
     if (name) assert.equal(file.suggestedFilename(), name)
     const path = join(scratch, `${randomUUID()}.xlsx`)
     await file.saveAs(path)

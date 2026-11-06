@@ -20,7 +20,7 @@ const python = process.env.PULPO_PPTX_PYTHON ?? '/tmp/pulpo-pptx-venv/bin/python
 const root = new URL('..', import.meta.url).pathname
 const serverRoot = new URL('../../server', import.meta.url).pathname
 const fixtures = new URL('../../../packages/client-core/fixtures/presentation/', import.meta.url).pathname
-const account = { name: 'Deck Tester', username: 'deck_tester', email: 'deck-tester@example.test', password: 'Deck-tester-2026' }
+const account = { name: 'Deck Tester', username: 'deck_tester', email: process.env.PULPO_TEST_EMAIL ?? 'deck-tester@example.test', password: process.env.PULPO_TEST_PASSWORD ?? 'Deck-tester-2026' }
 const scratch = mkdtempSync(join(tmpdir(), 'pulpo-presentation-files-'))
 const PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 
@@ -130,7 +130,7 @@ try {
   assert.equal(await deckText(first), 2)
 
   // Downloading gives a real .pptx that python-pptx reads.
-  const [download] = await Promise.all([first.waitForEvent('download'), first.getByRole('button', { name: 'Download' }).click()])
+  const [download] = await Promise.all([first.waitForEvent('download'), first.getByRole('button', { name: 'Download', exact: true }).click()])
   assert.equal(download.suggestedFilename(), `Pitch ${unique}.pptx`)
   const downloaded = await download.path()
   const read = pythonText(downloaded)

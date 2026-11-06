@@ -84,6 +84,8 @@ describe('office conversion on mobile', () => {
     expect(fileItemActions(legacy, { agent: 'none', selectable: true, officeConversion: true }).find((action) => action.id === 'convert-office')?.title).toBe('Convert to .xlsx')
     expect(ids({ ...legacy, name: 'Budget.xlsx' } as FileNode, true)).toContain('export-pdf')
     expect(ids({ ...legacy, name: 'Budget.xlsx' } as FileNode, true)).not.toContain('convert-office')
+    expect(ids({ ...legacy, kind: 'doc', name: 'Budget.xlsx' } as FileNode, true)).toContain('export-pdf')
+    expect(ids({ ...legacy, kind: 'doc', name: 'Budget.xlsx' } as FileNode, true)).not.toContain('convert-office')
     expect(ids(legacy, false)).not.toContain('export-pdf')
     expect(ids({ ...legacy, name: 'photo.png' } as FileNode, true)).not.toContain('export-pdf')
     expect(officeActions({ ...legacy, status: 'pending' }, true)).toEqual({ target: null, pdf: false })
