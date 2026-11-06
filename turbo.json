@@ -1,0 +1,51 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "envMode": "loose",
+  "globalDependencies": ["package.json"],
+  "globalEnv": [
+    "NODE_ENV",
+    "NODE_OPTIONS",
+    "DATABASE_URL",
+    "REDIS_URL",
+    "PULPO_*",
+    "WORKSPACE_CONTROLLER_*",
+    "VITE_*",
+    "EXPO_PUBLIC_*"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@pulpo/desktop#build": {
+      "dependsOn": ["@pulpo/contracts#build", "@pulpo/client-core#build"],
+      "outputs": [],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/web/src/**", "$TURBO_ROOT$/apps/web/package.json"]
+    },
+    "@pulpo/desktop#test": {
+      "dependsOn": ["@pulpo/contracts#build", "@pulpo/client-core#build"],
+      "outputs": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/apps/web/src/**",
+        "$TURBO_ROOT$/apps/web/package.json",
+        "$TURBO_ROOT$/deploy/nginx.conf",
+        "$TURBO_ROOT$/deploy/nginx-static.conf",
+        "$TURBO_ROOT$/packages/contracts/src/sandbox.ts"
+      ]
+    },
+    "@pulpo/server#test": {
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/packages/workspace-daemon/src/**"]
+    }
+  }
+}
