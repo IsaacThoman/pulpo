@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { LIVE_FORMATS, liveFormatOfName } from '@pulpo/client-core/office'
 import { LIVE_WEB_FORMATS, liveWebFormat } from './registry'
 import { officeFileActions } from '../office-file'
+
+vi.hoisted(() => {
+  window.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) as unknown as MediaQueryList
+})
 
 describe('combined live format wiring', () => {
   it('opens every catalog format in its own editor and creation menu', () => {
