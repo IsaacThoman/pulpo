@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import type { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import path from 'node:path'
-import type { BlobMetadata, BlobStore } from './blob-store.js'
+import type { BlobByteRange, BlobMetadata, BlobStore } from './blob-store.js'
 
 /** Local URLs are served by the API route that owns the object's metadata table. */
 export function localObjectRouteBase(key: string): '/api/files' | '/api/attachments' {
@@ -44,8 +44,8 @@ export class LocalBlobStore implements BlobStore {
     return readFile(this.resolve(key))
   }
 
-  async getStream(key: string): Promise<Readable> {
-    return createReadStream(this.resolve(key))
+  async getStream(key: string, range?: BlobByteRange): Promise<Readable> {
+    return createReadStream(this.resolve(key), range && { start: range.start, end: range.end })
   }
 
   async delete(key: string): Promise<void> {

@@ -6,8 +6,8 @@ import { Markdown } from '@/components/chat/Markdown'
 import { QuizCard } from '@/components/chat/QuizCard'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
-import { fetchFileBlob, fileUrl, isApiUrl } from './api'
-import { filePreviewKind, filesErrorMessage, MAX_INLINE_PREVIEW_BYTES, mediaMimeType } from './file-display'
+import { fetchFileBlob, fileStreamUrl } from './api'
+import { filePreviewKind, filesErrorMessage, MAX_INLINE_PREVIEW_BYTES } from './file-display'
 
 type PreviewState =
   | { status: 'loading' }
@@ -50,11 +50,9 @@ export function FilePreviewBody({ node }: { node: FileNode }) {
           if (!cancelled) setState({ status: 'text', text })
           return
         }
-        const mediaType = kind === 'video' || kind === 'audio' ? mediaMimeType(node.name, node.mimeType) : null
-        // Presigned object-store URLs can stream media directly; API-served files need the session.
-        // Media stored under a generic type is fetched and retyped instead, as the store serves the stored type.
-        const url = await fileUrl(node)
-        if (!isApiUrl(url) && mediaType && mediaType === node.mimeType?.toLowerCase()) {
+        // Media streams at any size, typed by its extension when it was stored under a generic type.
+        if (kind === 'video' || kind === 'audio') {
+          const url = await fileStreamUrl(node)
           if (!cancelled) setState({ status: 'url', url })
           return
         }
@@ -64,7 +62,7 @@ export function FilePreviewBody({ node }: { node: FileNode }) {
         }
         const blob = await fetchFileBlob(node)
         // Blob URLs share this page's origin, so the frame only ever receives a PDF type, never HTML.
-        const type = kind === 'pdf' ? 'application/pdf' : mediaType ?? node.mimeType ?? blob.type
+        const type = kind === 'pdf' ? 'application/pdf' : node.mimeType ?? blob.type
         objectUrl = URL.createObjectURL(blob.slice(0, blob.size, type))
         if (!cancelled) setState({ status: 'url', url: objectUrl })
       } catch (cause) {
