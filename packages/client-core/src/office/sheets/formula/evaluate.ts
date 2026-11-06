@@ -7,6 +7,10 @@
  * evaluated iteratively, and LAMBDA/name recursion is capped at `MAX_CALL_DEPTH` (#NUM! beyond).
  */
 
+import { broadcastRanges } from './ranges.js'
+import { logicalSize } from './types.js'
+
+
 import { serialToParts } from '../dates.js'
 import { CalculationStopped, consumeWork } from './budget.js'
 import { OWNED_FUNCTIONS } from './builtins.js'
@@ -15,7 +19,6 @@ import { structuredArea, type TableDefinition } from './tables.js'
 import type { RefParts, StructuredRef } from './tokenize.js'
 import {
   Errors,
-  checkArraySize,
   errorFromCode,
   isError,
   isLambda,
@@ -32,7 +35,7 @@ import {
   type Scalar,
   type Value,
 } from './types.js'
-import { binaryScalar, broadcastAt, elementwise, mapValue, negate, percent, type ScalarOp } from './values.js'
+import { binaryScalar, elementwise, mapValue, negate, percent, type ScalarOp } from './values.js'
 
 /** How deep LAMBDA calls and defined-name evaluation may recurse. */
 export const MAX_CALL_DEPTH = 1000
@@ -305,7 +308,7 @@ export class Interpreter {
   scalarArg(value: Value): Scalar | Matrix | LambdaValue {
     if (isLambda(value)) return value
     const operand = this.operand(value)
-    if (isMatrix(operand) && operand.rows === 1 && operand.cols === 1) return operand.data[0] ?? null
+    if (isMatrix(operand) && logicalSize(operand).rows === 1 && logicalSize(operand).cols === 1) return operand.data[0] ?? null
     return operand
   }
 
@@ -331,7 +334,7 @@ export class Interpreter {
       if (area.top !== area.bottom || area.left !== area.right) return Errors.CALC
       return this.host.readCell(area.sheet, area.top, area.left)
     }
-    if (isMatrix(value)) return value.rows === 1 && value.cols === 1 ? (value.data[0] ?? null) : Errors.CALC
+    if (isMatrix(value)) return logicalSize(value).rows === 1 && logicalSize(value).cols === 1 ? (value.data[0] ?? null) : Errors.CALC
     if (isLambda(value)) return Errors.CALC
     return value
   }
@@ -453,29 +456,8 @@ export class Interpreter {
 
   /** Runs `fn` once per element of the array arguments, broadcasting like Excel. */
   lift(values: (Value | undefined)[], fn: (args: (Value | undefined)[]) => Value): Matrix {
-    let rows = 1
-    let cols = 1
-    for (const value of values) {
-      if (isMatrix(value)) {
-        rows = Math.max(rows, value.rows)
-        cols = Math.max(cols, value.cols)
-      }
-    }
-    checkArraySize(rows, cols)
-    const data: Scalar[] = new Array(rows * cols)
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        let missing = false
-        const row = values.map((value) => {
-          if (!isMatrix(value)) return value
-          const element = broadcastAt(value, r, c)
-          if (element === undefined) missing = true
-          return element
-        })
-        data[r * cols + c] = missing ? Errors.NA : this.elementResult(fn(row))
-      }
-    }
-    return matrix(rows, cols, data)
+    const matrices = values.map((value) => isMatrix(value) ? value : null)
+    return broadcastRanges(matrices, (cells) => this.elementResult(fn(values.map((value, i) => matrices[i] ? cells[i] : value))))
   }
 
   private apply(spec: FunctionSpec, values: (Value | undefined)[]): Value {

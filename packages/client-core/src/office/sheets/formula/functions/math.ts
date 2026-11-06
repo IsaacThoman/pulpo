@@ -1,7 +1,8 @@
 /** Math and trigonometry functions. */
 
 import { consumeWork } from '../budget.js'
-import { logicalSize, matrixGet } from '../types.js'
+import { alignedRanges, rangeSlice } from '../ranges.js'
+import { logicalSize } from '../types.js'
 import { Errors, isError, isReference, matrix, type FunctionContext, type FunctionSpec, type Matrix, type Reference, type Scalar, type Value } from '../types.js'
 import {
   check,
@@ -22,7 +23,7 @@ import {
   type Args,
 } from './coerce.js'
 import { parseCriteria } from './criteria.js'
-import { collectNumbers } from './iterate.js'
+import { collectNumbers, numberSummary } from './iterate.js'
 import { combin, factorial, gcd2, median, mean, modes, percentileExc, percentileInc, round15, roundDecimal, sorted, sum, variance } from './numeric.js'
 
 /** A one-argument numeric function; `f` returning NaN or ±∞ becomes #NUM!. */
@@ -61,36 +62,17 @@ export function criteriaRange(ctx: FunctionContext, value: Value | undefined): M
 }
 
 /** The values `sum_range` covers when it is resized to `rows`×`cols`. */
-export function sizedLike(ctx: FunctionContext, value: Value | undefined, rows: number, cols: number): Scalar[] {
-  if (isReference(value)) return ctx.resolve(resizeReference(value, rows, cols)).data
-  const m = toMatrix(ctx, value)
-  checkArraySize(rows, cols)
-  const out: Scalar[] = []
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) out.push(r < m.rows && c < m.cols ? (m.data[r * m.cols + c] ?? null) : null)
-  return out
+export function sizedLike(ctx: FunctionContext, value: Value | undefined, rows: number, cols: number): Matrix {
+  if (isReference(value)) return ctx.resolve(resizeReference(value, rows, cols))
+  return rangeSlice(toMatrix(ctx, value), 0, 0, rows, cols)
 }
 
-/**
- * Indexes of cells matching every (range, criterion) pair of a *IFS function. The ranges must all
- * be the same shape (#VALUE! otherwise).
- */
-export function matchingIndexes(ctx: FunctionContext, ranges: Matrix[], criteria: Scalar[]): { indexes: number[]; rows: number; cols: number } {
-  const first = ranges[0]!
-  for (const range of ranges) if (range.rows !== first.rows || range.cols !== first.cols) fail(Errors.VALUE)
-  const predicates = criteria.map((c) => parseCriteria(c, ctx))
-  const indexes: number[] = []
-  for (let i = 0; i < first.data.length; i++) {
-    if (predicates.every((p, k) => p(ranges[k]!.data[i] ?? null))) indexes.push(i)
-  }
-  return { indexes, rows: first.rows, cols: first.cols }
-}
-
-/** Shared driver for SUMIFS/AVERAGEIFS/MAXIFS/MINIFS/COUNTIFS: `target` may be undefined (COUNTIFS). */
+/** Shared positional criteria driver; uniform tails are weighted instead of expanded. */
 export function ifsAggregate(
   ctx: FunctionContext,
   target: Value | undefined,
   pairs: Args,
-  reduce: (values: Scalar[], count: number) => Scalar,
+  reduce: (values: Scalar[], count: number, weights: number[]) => Scalar,
 ): Value {
   if (pairs.length < 2 || pairs.length % 2) return fail(Errors.VALUE)
   const ranges: Matrix[] = []
@@ -99,38 +81,31 @@ export function ifsAggregate(
     ranges.push(criteriaRange(ctx, pairs[i]))
     criteriaArgs.push(pairs[i + 1])
   }
-  if (target === undefined) {
-    return liftOver(ctx, criteriaArgs, (criteria) => {
-      const first = logicalSize(ranges[0]!)
-      for (const range of ranges) {
-        const size = logicalSize(range)
-        if (size.rows !== first.rows || size.cols !== first.cols) fail(Errors.VALUE)
-      }
-      const rows = ranges.reduce((max, range) => Math.max(max, range.rows), 0)
-      const cols = ranges.reduce((max, range) => Math.max(max, range.cols), 0)
-      consumeWork(rows * cols * ranges.length)
-      const predicates = criteria.map((criterion) => parseCriteria(criterion, ctx))
-      let count = predicates.every((predicate, i) => predicate(ranges[i]!.omittedValue ?? null)) ? first.rows * first.cols - rows * cols : 0
-      for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) if (predicates.every((predicate, i) => predicate(matrixGet(ranges[i]!, row, col)))) count++
-      return reduce([], count)
-    })
-  }
-  const targetMatrix = toMatrix(ctx, target)
-  if (targetMatrix && (targetMatrix.rows !== ranges[0]!.rows || targetMatrix.cols !== ranges[0]!.cols)) fail(Errors.VALUE)
+  const targetMatrix = target === undefined ? undefined : toMatrix(ctx, target)
   return liftOver(ctx, criteriaArgs, (criteria) => {
-    const { indexes } = matchingIndexes(ctx, ranges, criteria)
-    const values = targetMatrix ? indexes.map((i) => targetMatrix.data[i] ?? null) : []
-    return reduce(values, indexes.length)
+    const predicates = criteria.map((criterion) => parseCriteria(criterion, ctx))
+    const values: Scalar[] = []
+    const weights: number[] = []
+    let count = 0
+    alignedRanges(targetMatrix ? [...ranges, targetMatrix] : ranges, (cells, weight) => {
+      if (!predicates.every((predicate, i) => predicate(cells[i]!))) return
+      count += weight
+      if (targetMatrix) { values.push(cells[cells.length - 1]!); weights.push(weight) }
+    })
+    return reduce(values, count, weights)
   })
 }
 
-function numbersOnly(values: Scalar[]): number[] {
-  const out: number[] = []
-  for (const v of values) {
-    if (typeof v === 'number') out.push(v)
-    else if (isError(v)) fail(v)
-  }
-  return out
+export function conditionalTotal(values: Scalar[], weights: number[], average = false): number {
+  const totals: number[] = []
+  let count = 0
+  values.forEach((value, i) => {
+    if (isError(value)) fail(value)
+    if (typeof value === 'number') { totals.push(value * weights[i]!); count += weights[i]! }
+  })
+  if (average && !count) fail(Errors.DIV0)
+  const total = sum(totals)
+  return average ? total / count : total
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -366,15 +341,12 @@ function pairSum(name: string, f: (x: number, y: number) => number): FunctionSpe
     fn: (ctx, args) => {
       const a = toMatrix(ctx, args[0])
       const b = toMatrix(ctx, args[1])
-      if (a.data.length !== b.data.length) return fail(Errors.NA)
       let total = 0
-      for (let i = 0; i < a.data.length; i++) {
-        const x = a.data[i] ?? null
-        const y = b.data[i] ?? null
-        if (isError(x)) return fail(x)
-        if (isError(y)) return fail(y)
-        if (typeof x === 'number' && typeof y === 'number') total += f(x, y)
-      }
+      alignedRanges([a, b], ([x, y], count) => {
+        if (isError(x)) fail(x)
+        if (isError(y)) fail(y)
+        if (typeof x === 'number' && typeof y === 'number') total += count * f(x, y)
+      }, Errors.NA, true)
       return total
     },
   })
@@ -389,16 +361,15 @@ function integerArgs(ctx: FunctionContext, args: Args): number[] {
 }
 
 export const MATH_FUNCTIONS: FunctionSpec[] = [
-  define({ name: 'SUM', min: 1, max: 255, args: ['any'], fn: (ctx, args) => sum(collectNumbers(ctx, args)) }),
-  define({ name: 'SUMSQ', min: 1, max: 255, args: ['any'], fn: (ctx, args) => sum(collectNumbers(ctx, args).map((v) => v * v)) }),
+  define({ name: 'SUM', min: 1, max: 255, args: ['any'], fn: (ctx, args) => numberSummary(ctx, args).total }),
+  define({ name: 'SUMSQ', min: 1, max: 255, args: ['any'], fn: (ctx, args) => numberSummary(ctx, args).squares }),
   define({
     name: 'PRODUCT',
     min: 1,
     max: 255,
     args: ['any'],
     fn: (ctx, args) => {
-      const values = collectNumbers(ctx, args)
-      return values.length ? values.reduce((a, b) => a * b, 1) : 0
+      return numberSummary(ctx, args).product
     },
   }),
   define({
@@ -408,28 +379,15 @@ export const MATH_FUNCTIONS: FunctionSpec[] = [
     args: ['any'],
     fn: (ctx, args) => {
       const mats = args.map((a) => toMatrix(ctx, a))
-      const first = mats[0]!
-      const size = logicalSize(first)
-      for (const m of mats) {
-        const other = logicalSize(m)
-        if (other.rows !== size.rows || other.cols !== size.cols) return fail(Errors.VALUE)
-      }
       let total = 0
-      const rows = mats.reduce((max, m) => Math.max(max, m.rows), 0)
-      const cols = mats.reduce((max, m) => Math.max(max, m.cols), 0)
-      const productAt = (row: number, col: number) => {
+      alignedRanges(mats, (cells, count) => {
         let product = 1
-        for (const m of mats) {
-          const v = matrixGet(m, row, col)
-          if (isError(v)) return fail(v)
-          product *= typeof v === 'number' ? v : 0
+        for (const value of cells) {
+          if (isError(value)) fail(value)
+          product *= typeof value === 'number' ? value : 0
         }
-        return product
-      }
-      consumeWork(rows * cols * mats.length)
-      for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) total += productAt(row, col)
-      const omitted = size.rows * size.cols - rows * cols
-      if (omitted) total += omitted * productAt(rows, cols)
+        total += count * product
+      })
       return total
     },
   }),
@@ -763,16 +721,9 @@ export const MATH_FUNCTIONS: FunctionSpec[] = [
     args: ['any', 'scalar', 'any'],
     fn: (ctx, args) => {
       const range = criteriaRange(ctx, args[0])
-      const predicate = parseCriteria(scalarOf(args[1]), ctx)
-      const values = args.length > 2 && args[2] !== undefined ? sizedLike(ctx, args[2], range.rows, range.cols) : range.data
-      let total = 0
-      for (let i = 0; i < range.data.length; i++) {
-        if (!predicate(range.data[i] ?? null)) continue
-        const v = values[i] ?? null
-        if (isError(v)) return fail(v)
-        if (typeof v === 'number') total += v
-      }
-      return total
+      const size = logicalSize(range)
+      const target = args[2] === undefined ? range : sizedLike(ctx, args[2], size.rows, size.cols)
+      return ifsAggregate(ctx, target, [range, args[1]], (values, _count, weights) => conditionalTotal(values, weights))
     },
   }),
   define({
@@ -780,7 +731,7 @@ export const MATH_FUNCTIONS: FunctionSpec[] = [
     min: 3,
     max: 255,
     args: ['any'],
-    fn: (ctx, args) => ifsAggregate(ctx, args[0], args.slice(1), (values) => sum(numbersOnly(values))),
+    fn: (ctx, args) => ifsAggregate(ctx, args[0], args.slice(1), (values, _count, weights) => conditionalTotal(values, weights)),
   }),
   // SUBTOTAL and AGGREGATE see values, not rows: the evaluator has no row visibility, so the
   // "ignore hidden rows" variants (101–111, AGGREGATE options 1/3/5/7) behave like their plain

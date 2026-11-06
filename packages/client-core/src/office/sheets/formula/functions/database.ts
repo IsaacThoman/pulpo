@@ -5,6 +5,9 @@
  * values that begin with the text (`"Ap"` matches "Apple"); use `="=Ap"` for an exact match.
  */
 
+import { denseRange } from '../ranges.js'
+
+
 import { Errors, isError, type FunctionContext, type FunctionSpec, type Matrix, type Scalar } from '../types.js'
 import { cell, compareText, define, fail, numberToText, omitted, scalarOf, toMatrix, type Args } from './coerce.js'
 import { parseCriteria, type Predicate } from './criteria.js'
@@ -55,8 +58,8 @@ function matchingRecords(ctx: FunctionContext, db: Matrix, criteria: Matrix): nu
 }
 
 function fieldValues(ctx: FunctionContext, args: Args): { values: Scalar[]; records: number; noField: boolean } {
-  const db = toMatrix(ctx, args[0])
-  const criteria = toMatrix(ctx, args[2])
+  const db = denseRange(toMatrix(ctx, args[0]))
+  const criteria = denseRange(toMatrix(ctx, args[2]))
   if (db.rows < 1) return fail(Errors.VALUE)
   const records = matchingRecords(ctx, db, criteria)
   if (omitted(args, 1)) return { values: records.map(() => null), records: records.length, noField: true }

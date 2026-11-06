@@ -4,7 +4,8 @@
  * matrices; blank source cells stay `null` (the evaluator shows spilled blanks as 0 like Excel).
  */
 
-import { Errors, isError, matrix, type FunctionContext, type FunctionSpec, type Matrix, type Scalar, type Value } from '../types.js'
+import { denseRange, rangeSlice, shaped } from '../ranges.js'
+import { logicalSize, matrixGet, Errors, isError, matrix, type FunctionContext, type FunctionSpec, type Matrix, type Scalar, type Value } from '../types.js'
 import {
   cell,
   check,
@@ -15,7 +16,6 @@ import {
   define,
   fail,
   int,
-  matrixRow,
   num,
   omitted,
   scalarKey,
@@ -26,7 +26,7 @@ import {
 } from './coerce.js'
 
 function rowsOf(m: Matrix): Scalar[][] {
-  return Array.from({ length: m.rows }, (_, r) => matrixRow(m, r))
+  return Array.from({ length: m.rows }, (_, r) => Array.from({ length: m.cols }, (_, c) => matrixGet(m, r, c)))
 }
 
 function fromRows(rows: Scalar[][], cols?: number): Matrix {
@@ -45,21 +45,34 @@ function filter(ctx: FunctionContext, args: Args): Value {
   const source = toMatrix(ctx, args[0])
   const include = toMatrix(ctx, args[1])
   const empty = (): Value => (omitted(args, 2) ? fail(Errors.CALC) : args[2] === undefined ? null : scalarOrMatrix(ctx, args[2]))
-  if (include.cols === 1 && include.rows === source.rows) {
-    const rows = rowsOf(source).filter((_, r) => truthy(cell(include, r, 0)))
-    return rows.length ? fromRows(rows, source.cols) : empty()
-  }
-  if (include.rows === 1 && include.cols === source.cols) {
-    const keep = matrixRow(include, 0).map(truthy)
-    const rows = rowsOf(source).map((row) => row.filter((_, c) => keep[c]))
-    return rows[0]!.length ? fromRows(rows) : empty()
+  const size = logicalSize(source)
+  const inc = logicalSize(include)
+  const byRow = inc.cols === 1 && inc.rows === size.rows
+  const byCol = inc.rows === 1 && inc.cols === size.cols
+  if (byRow || byCol) {
+    const m = byRow ? source : transpose(source)
+    const mask = byRow ? include : transpose(include)
+    const logical = logicalSize(m)
+    const prefix = Math.max(m.rows, mask.rows)
+    const rows: Scalar[][] = []
+    for (let r = 0; r < prefix; r++) {
+      if (!truthy(cell(mask, r, 0))) continue
+      checkArraySize(rows.length + 1, m.cols)
+      rows.push(Array.from({ length: m.cols }, (_, c) => cell(m, r, c)))
+    }
+    const tail = logical.rows > prefix && truthy(mask.omittedValue ?? null) ? logical.rows - prefix : 0
+    const count = rows.length + tail
+    if (!count) return empty()
+    if (!rows.length) rows.push(new Array<Scalar>(m.cols).fill(m.omittedValue ?? null))
+    const result = shaped(fromRows(rows, m.cols), count, logical.cols, m.omittedValue ?? null)
+    return byRow ? result : transpose(result)
   }
   return fail(Errors.VALUE)
 }
 
 function scalarOrMatrix(ctx: FunctionContext, value: Value | undefined): Value {
   const m = toMatrix(ctx, value)
-  return m.rows * m.cols === 1 ? (m.data[0] ?? null) : m
+  return logicalSize(m).rows * logicalSize(m).cols === 1 ? (m.data[0] ?? null) : m
 }
 
 /** Sort comparison: values in Excel's type order, reversed for descending; blanks always last. */
@@ -92,38 +105,54 @@ function orderOf(v: Scalar): number {
 }
 
 function sort(ctx: FunctionContext, args: Args): Value {
-  const source = toMatrix(ctx, args[0])
+  let source = toMatrix(ctx, args[0])
+  if (source.omittedValue != null) source = denseRange(source)
   const byCol = defBool(args, 3, false, ctx)
   const m = byCol ? transpose(source) : source
   const indexes = omitted(args, 1) ? [1] : toMatrix(ctx, args[1]).data.map((v) => int(v, ctx))
   const orders = omitted(args, 2) ? [1] : toMatrix(ctx, args[2]).data.map(orderOf)
   const lines = rowsOf(m)
   const keys = indexes.map((index, k) => {
-    if (index < 1 || index > m.cols) fail(Errors.VALUE)
+    if (index < 1 || index > logicalSize(m).cols) fail(Errors.VALUE)
     return { values: lines.map((line) => line[index - 1] ?? null), order: orders[Math.min(k, orders.length - 1)] ?? 1 }
   })
-  const result = fromRows(sortLines(lines, keys), m.cols)
+  const size = logicalSize(m)
+  const result = shaped(fromRows(sortLines(lines, keys), m.cols), size.rows, size.cols, m.omittedValue ?? null)
   return byCol ? transpose(result) : result
 }
 
 function sortBy(ctx: FunctionContext, args: Args): Value {
-  const source = toMatrix(ctx, args[0])
-  const keys: SortKey[] = []
+  let source = toMatrix(ctx, args[0])
+  const size = logicalSize(source)
+  const ranges: Matrix[] = []
+  const orders: number[] = []
   let byCol: boolean | undefined
   for (let i = 1; i < args.length; i += 2) {
     const by = toMatrix(ctx, args[i])
-    const order = i + 1 < args.length && args[i + 1] !== undefined ? orderOf(scalarOf(args[i + 1], ctx)) : 1
+    const keySize = logicalSize(by)
     let thisByCol: boolean
-    if (by.cols === 1 && by.rows === source.rows) thisByCol = false
-    else if (by.rows === 1 && by.cols === source.cols) thisByCol = true
+    if (keySize.cols === 1 && keySize.rows === size.rows) thisByCol = false
+    else if (keySize.rows === 1 && keySize.cols === size.cols) thisByCol = true
     else return fail(Errors.VALUE)
-    if (by.rows === 1 && by.cols === 1) thisByCol = byCol ?? false
+    if (keySize.rows === 1 && keySize.cols === 1) thisByCol = byCol ?? false
     if (byCol !== undefined && byCol !== thisByCol) return fail(Errors.VALUE)
     byCol = thisByCol
-    keys.push({ values: by.data.slice(), order })
+    ranges.push(by)
+    orders.push(i + 1 < args.length && args[i + 1] !== undefined ? orderOf(scalarOf(args[i + 1], ctx)) : 1)
+  }
+  // Blank keys sort last, so their uniform omitted tail remains at the end, stably.
+  if (ranges.some((key) => key.omittedValue != null)) {
+    source = denseRange(source)
+    for (let i = 0; i < ranges.length; i++) ranges[i] = denseRange(ranges[i]!)
   }
   const m = byCol ? transpose(source) : source
-  const result = fromRows(sortLines(rowsOf(m), keys), m.cols)
+  const keys = ranges.map((key) => byCol ? transpose(key) : key)
+  const rows = Math.max(m.rows, ...keys.map((key) => key.rows))
+  checkArraySize(rows, m.cols)
+  const lines = Array.from({ length: rows }, (_, r) => Array.from({ length: m.cols }, (_, c) => cell(m, r, c)))
+  const sortKeys = keys.map((key, i) => ({ values: Array.from({ length: rows }, (_, r) => cell(key, r, 0)), order: orders[i]! }))
+  const logical = logicalSize(m)
+  const result = shaped(fromRows(sortLines(lines, sortKeys), m.cols), logical.rows, logical.cols, m.omittedValue ?? null)
   return byCol ? transpose(result) : result
 }
 
@@ -132,10 +161,13 @@ function unique(ctx: FunctionContext, args: Args): Value {
   const byCol = defBool(args, 1, false, ctx)
   const exactlyOnce = defBool(args, 2, false, ctx)
   const m = byCol ? transpose(source) : source
+  const size = logicalSize(m)
   const lines = rowsOf(m)
+  const tailRows = size.rows - m.rows
+  if (tailRows) lines.push(new Array<Scalar>(m.cols).fill(m.omittedValue ?? null))
   const counts = new Map<string, number>()
   const keyOf = (line: Scalar[]): string => line.map((v) => scalarKey(v === '' ? null : v)).join('\u0000')
-  for (const line of lines) counts.set(keyOf(line), (counts.get(keyOf(line)) ?? 0) + 1)
+  lines.forEach((line, i) => { const key = keyOf(line); counts.set(key, (counts.get(key) ?? 0) + (i === m.rows ? tailRows : 1)) })
   const seen = new Set<string>()
   const out: Scalar[][] = []
   for (const line of lines) {
@@ -146,7 +178,7 @@ function unique(ctx: FunctionContext, args: Args): Value {
     out.push(line)
   }
   if (!out.length) return fail(Errors.CALC)
-  const result = fromRows(out, m.cols)
+  const result = shaped(fromRows(out, m.cols), out.length, size.cols, m.omittedValue ?? null)
   return byCol ? transpose(result) : result
 }
 
@@ -175,10 +207,8 @@ function dropRange(total: number, count: number): [number, number] {
 }
 
 function slice(m: Matrix, rows: [number, number], cols: [number, number]): Matrix {
-  const out: Scalar[][] = []
-  for (let r = rows[0]; r < rows[1]; r++) out.push(matrixRow(m, r).slice(cols[0], cols[1]))
-  if (!out.length || cols[1] <= cols[0]) return fail(Errors.CALC)
-  return fromRows(out, cols[1] - cols[0])
+  if (rows[1] <= rows[0] || cols[1] <= cols[0]) return fail(Errors.CALC)
+  return rangeSlice(m, rows[0], cols[0], rows[1] - rows[0], cols[1] - cols[0])
 }
 
 function takeDrop(ctx: FunctionContext, args: Args, take: boolean): Value {
@@ -186,27 +216,29 @@ function takeDrop(ctx: FunctionContext, args: Args, take: boolean): Value {
   const rowCount = omitted(args, 1) ? undefined : int(args[1], ctx)
   const colCount = omitted(args, 2) ? undefined : int(args[2], ctx)
   if (take && (rowCount === 0 || colCount === 0)) return fail(Errors.CALC)
+  const size = logicalSize(m)
   const pick = take ? takeRange : dropRange
-  const rows: [number, number] = rowCount === undefined ? [0, m.rows] : pick(m.rows, rowCount)
-  const cols: [number, number] = colCount === undefined ? [0, m.cols] : pick(m.cols, colCount)
+  const rows: [number, number] = rowCount === undefined ? [0, size.rows] : pick(size.rows, rowCount)
+  const cols: [number, number] = colCount === undefined ? [0, size.cols] : pick(size.cols, colCount)
   if (rows[1] <= rows[0] || cols[1] <= cols[0]) return fail(Errors.CALC)
   return slice(m, rows, cols)
 }
 
 function expand(ctx: FunctionContext, args: Args): Value {
   const m = toMatrix(ctx, args[0])
-  const rows = omitted(args, 1) ? m.rows : int(args[1], ctx)
-  const cols = omitted(args, 2) ? m.cols : int(args[2], ctx)
+  const size = logicalSize(m)
+  const rows = omitted(args, 1) ? size.rows : int(args[1], ctx)
+  const cols = omitted(args, 2) ? size.cols : int(args[2], ctx)
   const pad: Scalar = args.length > 3 ? scalarOf(args[3], ctx) : Errors.NA
-  if (rows < m.rows || cols < m.cols) return fail(Errors.VALUE)
+  if (rows < size.rows || cols < size.cols) return fail(Errors.VALUE)
   checkArraySize(rows, cols)
   const data: Scalar[] = []
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) data.push(r < m.rows && c < m.cols ? cell(m, r, c) : pad)
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) data.push(r < size.rows && c < size.cols ? cell(m, r, c) : pad)
   return matrix(rows, cols, data)
 }
 
 function stack(ctx: FunctionContext, args: Args, horizontal: boolean): Value {
-  const parts = args.map((a) => toMatrix(ctx, a))
+  const parts = args.map((a) => denseRange(toMatrix(ctx, a)))
   if (horizontal) {
     const rows = Math.max(...parts.map((p) => p.rows))
     const cols = parts.reduce((n, p) => n + p.cols, 0)
@@ -224,7 +256,7 @@ function stack(ctx: FunctionContext, args: Args, horizontal: boolean): Value {
 }
 
 function flatten(ctx: FunctionContext, args: Args): Scalar[] {
-  const m = toMatrix(ctx, args[0])
+  const m = denseRange(toMatrix(ctx, args[0]))
   const ignore = defInt(args, 1, 0, ctx)
   check(ignore >= 0 && ignore <= 3, Errors.VALUE)
   const byColumn = defBool(args, 2, false, ctx)
@@ -233,7 +265,7 @@ function flatten(ctx: FunctionContext, args: Args): Scalar[] {
 }
 
 function wrap(ctx: FunctionContext, args: Args, byRows: boolean): Value {
-  const m = toMatrix(ctx, args[0])
+  const m = denseRange(toMatrix(ctx, args[0]))
   if (m.rows > 1 && m.cols > 1) return fail(Errors.VALUE)
   const count = int(args[1], ctx)
   check(count >= 1)
@@ -249,10 +281,11 @@ function wrap(ctx: FunctionContext, args: Args, byRows: boolean): Value {
 
 function choose(ctx: FunctionContext, args: Args, columns: boolean): Value {
   const m = toMatrix(ctx, args[0])
-  const total = columns ? m.cols : m.rows
+  const size = logicalSize(m)
+  const total = columns ? size.cols : size.rows
   const picks: number[] = []
   for (const arg of args.slice(1)) {
-    const values = toMatrix(ctx, arg).data
+    const values = denseRange(toMatrix(ctx, arg)).data
     checkArraySize(picks.length + values.length, columns ? m.rows : m.cols)
     for (const v of values) {
       const n = int(v, ctx)
@@ -261,10 +294,11 @@ function choose(ctx: FunctionContext, args: Args, columns: boolean): Value {
     }
   }
   if (columns) {
-    const rows = rowsOf(m).map((row) => picks.map((c) => row[c] ?? null))
-    return fromRows(rows, picks.length)
+    const rows = Array.from({ length: m.rows }, (_, r) => picks.map((c) => cell(m, r, c)))
+    return shaped(fromRows(rows, picks.length), size.rows, picks.length, m.omittedValue ?? null)
   }
-  return fromRows(picks.map((r) => matrixRow(m, r)), m.cols)
+  const rows = picks.map((r) => Array.from({ length: m.cols }, (_, c) => cell(m, r, c)))
+  return shaped(fromRows(rows, m.cols), picks.length, size.cols, m.omittedValue ?? null)
 }
 
 export const ARRAY_FUNCTIONS: FunctionSpec[] = [

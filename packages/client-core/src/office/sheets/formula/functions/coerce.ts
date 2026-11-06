@@ -4,6 +4,8 @@
  * which keeps Excel's "first error wins" propagation out of every function body.
  */
 
+import { broadcastRanges, denseRange, shaped } from '../ranges.js'
+import { logicalSize, matrixGet, omittedCells } from '../types.js'
 import { consumeWork } from '../budget.js'
 import { serialToParts } from '../../dates.js'
 import { parseNumberText, type ParseOptions } from '../../numfmt/parse.js'
@@ -81,7 +83,7 @@ function normalizeScalar(value: Scalar): Scalar {
 function normalizeResult(value: Value): Value {
   if (isMatrix(value)) {
     if (value.rows === 0 || value.cols === 0) return Errors.CALC
-    return matrix(value.rows, value.cols, value.data.map(normalizeScalar))
+    return { ...value, data: value.data.map(normalizeScalar), ...(value.omittedValue !== undefined ? { omittedValue: normalizeScalar(value.omittedValue) } : {}) }
   }
   if (isReference(value) || isLambda(value)) return value
   return normalizeScalar(value)
@@ -143,7 +145,7 @@ export function scalarOf(value: Value | undefined, ctx?: FunctionContext): Scala
     return scalarOf(ctx.resolve(value))
   }
   if (isMatrix(value)) {
-    if (value.rows === 1 && value.cols === 1) return value.data[0] ?? null
+    if (logicalSize(value).rows === 1 && logicalSize(value).cols === 1) return matrixGet(value, 0, 0)
     return fail(Errors.VALUE)
   }
   if (isLambda(value)) return fail(Errors.CALC)
@@ -255,29 +257,36 @@ export function toMatrix(ctx: FunctionContext, value: Value | undefined): Matrix
 }
 
 export function cell(m: Matrix, row: number, col: number): Scalar {
-  return m.data[row * m.cols + col] ?? null
+  return matrixGet(m, row, col)
 }
 
 /** Row `row` of a matrix as an array. */
 export function matrixRow(m: Matrix, row: number): Scalar[] {
-  return m.data.slice(row * m.cols, (row + 1) * m.cols)
+  const { cols } = logicalSize(m)
+  checkArraySize(1, cols)
+  return Array.from({ length: cols }, (_, col) => matrixGet(m, row, col))
 }
 
 export function matrixCol(m: Matrix, col: number): Scalar[] {
   const out: Scalar[] = []
-  for (let row = 0; row < m.rows; row++) out.push(m.data[row * m.cols + col] ?? null)
+  const { rows } = logicalSize(m)
+  checkArraySize(rows, 1)
+  for (let row = 0; row < rows; row++) out.push(matrixGet(m, row, col))
   return out
 }
 
 export function transpose(m: Matrix): Matrix {
   const data: Scalar[] = new Array(m.rows * m.cols)
   for (let row = 0; row < m.rows; row++) for (let col = 0; col < m.cols; col++) data[col * m.rows + row] = m.data[row * m.cols + col] ?? null
-  return matrix(m.cols, m.rows, data)
+  const size = logicalSize(m)
+  return shaped(matrix(m.cols, m.rows, data), size.cols, size.rows, m.omittedValue ?? null)
 }
 
 /** A matrix of numbers for linear algebra: every cell must be a number (blanks and text are #VALUE!). */
 export function numericMatrix(ctx: FunctionContext, value: Value | undefined): { rows: number; cols: number; data: number[] } {
-  const m = toMatrix(ctx, value)
+  const source = toMatrix(ctx, value)
+  if (omittedCells(source) && typeof source.omittedValue !== 'number') fail(isError(source.omittedValue) ? source.omittedValue : Errors.VALUE)
+  const m = denseRange(source)
   const data = m.data.map((v) => {
     if (typeof v === 'number') return v
     if (isError(v)) return fail(v)
@@ -346,10 +355,11 @@ export function attempt<T extends Value>(fn: () => T): T | FormulaError {
 
 /** Picks the element of `m` at broadcast position (row, col), Excel style; outside → #N/A. */
 export function broadcastAt(m: Matrix, row: number, col: number): Scalar {
-  const r = m.rows === 1 ? 0 : row
-  const c = m.cols === 1 ? 0 : col
-  if (r >= m.rows || c >= m.cols) return Errors.NA
-  return m.data[r * m.cols + c] ?? null
+  const size = logicalSize(m)
+  const r = size.rows === 1 ? 0 : row
+  const c = size.cols === 1 ? 0 : col
+  if (r >= size.rows || c >= size.cols) return Errors.NA
+  return matrixGet(m, r, c)
 }
 
 /**
@@ -359,22 +369,7 @@ export function broadcastAt(m: Matrix, row: number, col: number): Scalar {
  */
 export function liftOver(ctx: FunctionContext, values: (Value | undefined)[], fn: (scalars: Scalar[]) => Scalar): Value {
   const mats = values.map((v) => (v === undefined ? undefined : isReference(v) || isMatrix(v) ? toMatrix(ctx, v) : undefined))
-  let rows = 1
-  let cols = 1
-  for (const m of mats) {
-    if (!m) continue
-    rows = Math.max(rows, m.rows)
-    cols = Math.max(cols, m.cols)
-  }
-  const pick = (row: number, col: number): Scalar[] =>
-    values.map((v, i) => {
-      const m = mats[i]
-      if (m) return broadcastAt(m, row, col)
-      return v === undefined ? null : scalarOf(v, ctx)
-    })
-  if (rows === 1 && cols === 1) return fn(pick(0, 0))
-  checkArraySize(rows, cols)
-  const data: Scalar[] = []
-  for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) data.push(attempt(() => fn(pick(row, col))))
-  return matrix(rows, cols, data)
+  const result = broadcastRanges(mats.map((m) => m ?? null), (cells) => attempt(() => fn(values.map((v, i) => mats[i] ? cells[i]! : v === undefined ? null : scalarOf(v, ctx)))))
+  const size = logicalSize(result)
+  return size.rows === 1 && size.cols === 1 ? matrixGet(result, 0, 0) : result
 }

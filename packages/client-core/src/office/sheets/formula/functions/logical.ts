@@ -11,12 +11,14 @@ import { forEachValue } from './iterate.js'
  */
 function logicals(ctx: FunctionContext, args: Args): boolean[] {
   const out: boolean[] = []
-  forEachValue(ctx, args, (value, direct) => {
+  forEachValue(ctx, args, (value, direct, count) => {
+    // Two copies preserve existence for AND/OR and even parity for XOR.
+    const push = (logical: boolean): void => { out.push(logical); if (count % 2 === 0) out.push(logical) }
     if (isError(value)) fail(value)
-    if (typeof value === 'boolean') out.push(value)
-    else if (typeof value === 'number') out.push(value !== 0)
-    else if (direct && value === null) out.push(false)
-    else if (direct && typeof value === 'string') out.push(bool(value))
+    if (typeof value === 'boolean') push(value)
+    else if (typeof value === 'number') push(value !== 0)
+    else if (direct && value === null) push(false)
+    else if (direct && typeof value === 'string') push(bool(value))
   })
   if (!out.length) fail(Errors.VALUE)
   return out

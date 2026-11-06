@@ -67,9 +67,10 @@ export type Scalar = number | string | boolean | FormulaError | null
 /** A rectangular array of scalars, row-major. Array constants, range contents, and spilled results. */
 export interface Matrix {
   kind: 'matrix'
+  /** Stored prefix dimensions. Use logicalSize for range compatibility, indexing, and spills. */
   rows: number
   cols: number
-  /** `rows * cols` values, row-major. */
+  /** `rows * cols` stored values, row-major. Use matrixGet to read omitted cells. */
   data: Scalar[]
   /** Logical bounds of a reference whose blank tail was not materialized. */
   logicalRows?: number

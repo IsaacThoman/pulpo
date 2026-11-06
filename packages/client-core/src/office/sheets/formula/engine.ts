@@ -25,7 +25,7 @@ import { Interpreter, refRect, type EvalHost } from './evaluate.js'
 import { parseFormula, type Node, type ParseError } from './parse.js'
 import { RangeIndex, newQueryToken, type Rect } from './range-index.js'
 import { structuredArea, tableAt, type TableDefinition } from './tables.js'
-import { checkArraySize, MAX_ARRAY_CELLS, Errors, isError, isLambda, isMatrix, isReference, matrix, type Area, type FunctionSpec, type Matrix, type Scalar, type Value } from './types.js'
+import { logicalSize, matrixGet, checkArraySize, MAX_ARRAY_CELLS, Errors, isError, isLambda, isMatrix, isReference, matrix, type Area, type FunctionSpec, type Matrix, type Scalar, type Value } from './types.js'
 import { broadcastAt, sameScalar } from './values.js'
 
 export interface FormulaEngineOptions {
@@ -349,11 +349,11 @@ function isSingle(rect: Rect): boolean {
 
 function spillElement(owner: Cell, row: number, col: number): Scalar {
   const spill = owner.spill!
-  return spill.data.data[(row - owner.row) * spill.cols + (col - owner.col)] ?? null
+  return matrixGet(spill.data, row - owner.row, col - owner.col)
 }
 
 function zeroBlanks(value: Matrix): Matrix {
-  return value.data.includes(null) ? matrix(value.rows, value.cols, value.data.map((x) => x ?? 0)) : value
+  return { ...value, data: value.data.map((x) => x ?? 0), ...(value.logicalRows !== undefined || value.logicalCols !== undefined ? { omittedValue: value.omittedValue ?? 0 } : {}) }
 }
 
 export class FormulaEngine {
@@ -648,7 +648,7 @@ export class FormulaEngine {
         return zeroBlanks(this.host.readArea(area))
       }
       if (isLambda(raw)) return Errors.CALC
-      if (isMatrix(raw)) return raw.rows === 1 && raw.cols === 1 ? (raw.data[0] ?? 0) : zeroBlanks(raw)
+      if (isMatrix(raw)) return logicalSize(raw).rows === 1 && logicalSize(raw).cols === 1 ? (raw.data[0] ?? 0) : zeroBlanks(raw)
       return raw ?? 0
     } catch (error) {
       if (isError(error)) return error
@@ -1011,7 +1011,7 @@ export class FormulaEngine {
     }
     if (isMatrix(raw)) {
       if (!raw.rows || !raw.cols) return { value: Errors.CALC }
-      if (formula.legacy || (raw.rows === 1 && raw.cols === 1)) return { value: raw.data[0] ?? 0 }
+      if (formula.legacy || (logicalSize(raw).rows === 1 && logicalSize(raw).cols === 1)) return { value: raw.data[0] ?? 0 }
       const data = zeroBlanks(raw)
       return { value: data.data[0] ?? 0, spill: data }
     }
@@ -1037,13 +1037,16 @@ export class FormulaEngine {
     let blocked: Rect | undefined
     if (result.spill) {
       const data = result.spill
+      const { rows, cols } = logicalSize(data)
       if (formula.array) {
-        spill = { rows: data.rows, cols: data.cols, data, fixed: true }
-      } else if (this.spillBlocked(cell, data.rows, data.cols)) {
+        spill = { rows, cols, data, fixed: true }
+      } else if (this.spillBlocked(cell, rows, cols)) {
         value = Errors.SPILL
-        blocked = { top: cell.row, left: cell.col, bottom: cell.row + data.rows - 1, right: cell.col + data.cols - 1 }
+        blocked = { top: cell.row, left: cell.col, bottom: cell.row + rows - 1, right: cell.col + cols - 1 }
+      } else if (rows * cols > MAX_ARRAY_CELLS) {
+        value = Errors.NUM
       } else {
-        spill = { rows: data.rows, cols: data.cols, data, fixed: false }
+        spill = { rows, cols, data, fixed: false }
       }
     }
     if (blocked) {
@@ -1113,10 +1116,7 @@ export class FormulaEngine {
       }
     }
     if (previous && next && !moved) {
-      const a = previous.data.data
-      const b = next.data.data
-      for (let k = 0; k < b.length; k++) report(cell.row + Math.floor(k / next.cols), cell.col + (k % next.cols), a[k] ?? null, b[k] ?? null)
-      moved = moved || a.length !== b.length
+      for (let r = 0; r < next.rows; r++) for (let c = 0; c < next.cols; c++) report(cell.row + r, cell.col + c, matrixGet(previous.data, r, c), matrixGet(next.data, r, c))
       if (!moved) return
     } else {
       const bounds = [before, after].filter((rect): rect is Rect => rect !== undefined)
@@ -1687,5 +1687,5 @@ export class FormulaEngine {
 }
 
 function spillValueOf(cell: Cell, spill: Spill, row: number, col: number): Scalar {
-  return spill.data.data[(row - cell.row) * spill.cols + (col - cell.col)] ?? null
+  return matrixGet(spill.data, row - cell.row, col - cell.col)
 }

@@ -1,12 +1,13 @@
 /** Statistical functions: aggregates, ranks, regressions, and probability distributions. */
 
 import { consumeWork } from '../budget.js'
-import { checkArraySize, omittedCells } from '../types.js'
+import { alignedRanges, denseRange } from '../ranges.js'
+import { logicalSize, checkArraySize, omittedCells } from '../types.js'
 import { Errors, isError, matrix, type FunctionContext, type FunctionSpec, type Scalar, type Value } from '../types.js'
 import { bool, check, defNum, define, fail, int, num, optNum, scalarOf, toMatrix, type Args } from './coerce.js'
 import { parseCriteria } from './criteria.js'
-import { collectNumbers, numberPairs, type CollectOptions } from './iterate.js'
-import { criteriaRange, ifsAggregate, invertMatrix, sizedLike } from './math.js'
+import { collectNumbers, numberPairs, numberSummary, type CollectOptions } from './iterate.js'
+import { conditionalTotal, criteriaRange, ifsAggregate, invertMatrix, sizedLike } from './math.js'
 import { combin, devsq, mean, median, modes, percentileExc, percentileInc, roundDecimal, sorted, sum, variance } from './numeric.js'
 import {
   betaI,
@@ -150,7 +151,9 @@ interface Fit {
 }
 
 function numericCells(ctx: FunctionContext, value: Value | undefined): { rows: number; cols: number; data: number[] } {
-  const m = toMatrix(ctx, value)
+  const source = toMatrix(ctx, value)
+  if (omittedCells(source) && typeof source.omittedValue !== 'number') fail(isError(source.omittedValue) ? source.omittedValue : Errors.VALUE)
+  const m = denseRange(source)
   const data = m.data.map((v) => {
     if (typeof v === 'number') return v
     if (isError(v)) return fail(v)
@@ -418,9 +421,6 @@ function tTest(ctx: FunctionContext, args: Args): number {
   let dof: number
   if (type === 1) {
     const [a, b] = numberPairs(ctx, args[0], args[1])
-    const m1 = toMatrix(ctx, args[0])
-    const m2 = toMatrix(ctx, args[1])
-    if (m1.data.length !== m2.data.length) return fail(Errors.NA)
     const diffs = a.map((v, i) => v - b[i]!)
     const n = diffs.length
     if (n < 2) return fail(Errors.DIV0)
@@ -464,19 +464,15 @@ function zTest(ctx: FunctionContext, args: Args): number {
 function chisqTest(ctx: FunctionContext, args: Args): number {
   const actual = toMatrix(ctx, args[0])
   const expected = toMatrix(ctx, args[1])
-  if (actual.rows !== expected.rows || actual.cols !== expected.cols) return fail(Errors.NA)
   let chi = 0
-  for (let i = 0; i < actual.data.length; i++) {
-    const a = actual.data[i] ?? null
-    const e = expected.data[i] ?? null
-    if (isError(a)) return fail(a)
-    if (isError(e)) return fail(e)
-    if (typeof a !== 'number' || typeof e !== 'number') continue
-    if (e === 0) return fail(Errors.DIV0)
-    chi += (a - e) ** 2 / e
-  }
-  const r = actual.rows
-  const c = actual.cols
+  alignedRanges([actual, expected], ([a, e], count) => {
+    if (isError(a)) fail(a)
+    if (isError(e)) fail(e)
+    if (typeof a !== 'number' || typeof e !== 'number') return
+    if (e === 0) fail(Errors.DIV0)
+    chi += count * (a - e) ** 2 / e
+  }, Errors.NA)
+  const { rows: r, cols: c } = logicalSize(actual)
   const dof = r > 1 && c > 1 ? (r - 1) * (c - 1) : r > 1 ? r - 1 : c - 1
   if (dof < 1) return fail(Errors.NA)
   return chisqUpper(chi, dof)
@@ -497,21 +493,18 @@ function fTest(ctx: FunctionContext, args: Args): number {
 function probRange(ctx: FunctionContext, args: Args): number {
   const xs = toMatrix(ctx, args[0])
   const ps = toMatrix(ctx, args[1])
-  if (xs.data.length !== ps.data.length) return fail(Errors.NA)
   const lower = num(args[2], ctx)
   const upper = args.length > 3 && args[3] !== undefined ? num(args[3], ctx) : lower
   let total = 0
   let result = 0
-  for (let i = 0; i < xs.data.length; i++) {
-    const x = xs.data[i] ?? null
-    const p = ps.data[i] ?? null
-    if (isError(x)) return fail(x)
-    if (isError(p)) return fail(p)
-    if (typeof p !== 'number') continue
+  alignedRanges([xs, ps], ([x, p], count) => {
+    if (isError(x)) fail(x)
+    if (isError(p)) fail(p)
+    if (typeof p !== 'number') return
     check(p >= 0 && p <= 1)
-    total += p
-    if (typeof x === 'number' && x >= lower && x <= upper) result += p
-  }
+    total += count * p
+    if (typeof x === 'number' && x >= lower && x <= upper) result += count * p
+  }, Errors.NA, true)
   check(Math.abs(total - 1) < 1e-6)
   return result
 }
@@ -585,14 +578,14 @@ const ALIAS_NAMES = {
 const isNew = (name: string): boolean => name.includes('.')
 
 export const STATISTICAL_FUNCTIONS: FunctionSpec[] = [
-  aggregate('AVERAGE', mean),
+  define({ name: 'AVERAGE', min: 1, max: 255, args: ['any'], fn: (ctx, args) => { const v = numberSummary(ctx, args); return v.count ? v.total / v.count : fail(Errors.DIV0) } }),
   aggregate('AVERAGEA', mean, A_OPTIONS),
   define({
     name: 'COUNT',
     min: 1,
     max: 255,
     args: ['any'],
-    fn: (ctx, args) => collectNumbers(ctx, args, { directText: 'skip', skipErrors: true }).length,
+    fn: (ctx, args) => numberSummary(ctx, args, { directText: 'skip', skipErrors: true }).count,
   }),
   define({
     name: 'COUNTA',
@@ -633,14 +626,12 @@ export const STATISTICAL_FUNCTIONS: FunctionSpec[] = [
     args: ['any', 'scalar', 'any'],
     fn: (ctx, args) => {
       const range = criteriaRange(ctx, args[0])
-      const predicate = parseCriteria(scalarOf(args[1]), ctx)
-      const values = args.length > 2 && args[2] !== undefined ? sizedLike(ctx, args[2], range.rows, range.cols) : range.data
-      const picked: Scalar[] = []
-      for (let i = 0; i < range.data.length; i++) if (predicate(range.data[i] ?? null)) picked.push(values[i] ?? null)
-      return mean(numericValues(picked))
+      const size = logicalSize(range)
+      const target = args[2] === undefined ? range : sizedLike(ctx, args[2], size.rows, size.cols)
+      return ifsAggregate(ctx, target, [range, args[1]], (values, _count, weights) => conditionalTotal(values, weights, true))
     },
   }),
-  define({ name: 'AVERAGEIFS', min: 3, max: 255, args: ['any'], fn: (ctx, args) => ifsAggregate(ctx, args[0], args.slice(1), (values) => mean(numericValues(values))) }),
+  define({ name: 'AVERAGEIFS', min: 3, max: 255, args: ['any'], fn: (ctx, args) => ifsAggregate(ctx, args[0], args.slice(1), (values, _count, weights) => conditionalTotal(values, weights, true)) }),
   define({
     name: 'MAXIFS',
     min: 3,
@@ -665,9 +656,9 @@ export const STATISTICAL_FUNCTIONS: FunctionSpec[] = [
         return v.length ? Math.min(...v) : 0
       }),
   }),
-  aggregate('MAX', (v) => (v.length ? v.reduce((a, b) => Math.max(a, b)) : 0)),
+  define({ name: 'MAX', min: 1, max: 255, args: ['any'], fn: (ctx, args) => numberSummary(ctx, args).max }),
   aggregate('MAXA', (v) => (v.length ? v.reduce((a, b) => Math.max(a, b)) : 0), A_OPTIONS),
-  aggregate('MIN', (v) => (v.length ? v.reduce((a, b) => Math.min(a, b)) : 0)),
+  define({ name: 'MIN', min: 1, max: 255, args: ['any'], fn: (ctx, args) => numberSummary(ctx, args).min }),
   aggregate('MINA', (v) => (v.length ? v.reduce((a, b) => Math.min(a, b)) : 0), A_OPTIONS),
   aggregate('MEDIAN', median),
   ...['MODE', 'MODE.SNGL'].map((name) =>

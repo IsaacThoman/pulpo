@@ -1,5 +1,8 @@
 /** Information functions (ISREF, ISFORMULA, CELL, SHEET, … need references and live in the evaluator). */
 
+import { logicalSize } from '../types.js'
+
+
 import { Errors, isError, isLambda, isMatrix, isReference, type ErrorCode, type FunctionSpec, type Scalar } from '../types.js'
 import { define, fail, num, scalarOf } from './coerce.js'
 
@@ -71,7 +74,7 @@ export const INFORMATION_FUNCTIONS: FunctionSpec[] = [
     fn: (ctx, args) => {
       const v = args[0]
       if (isLambda(v)) return 128
-      if (isMatrix(v)) return v.rows * v.cols === 1 ? typeOf(v.data[0] ?? null) : 64
+      if (isMatrix(v)) return logicalSize(v).rows * logicalSize(v).cols === 1 ? typeOf(v.data[0] ?? null) : 64
       if (isReference(v)) {
         const area = v.areas[0]
         if (v.areas.length > 1) return 16

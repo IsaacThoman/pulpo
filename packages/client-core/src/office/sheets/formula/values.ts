@@ -3,9 +3,10 @@
  * operators. Shared by the evaluator and available to the function library.
  */
 
+import { broadcastRanges } from './ranges.js'
 import { parseNumberText } from '../numfmt/parse.js'
 import { consumeWork } from './budget.js'
-import { checkArraySize, Errors, FormulaError, isError, logicalSize, matrix, matrixGet, type Matrix, type Scalar } from './types.js'
+import { Errors, FormulaError, isError, logicalSize, matrixGet, type Matrix, type Scalar } from './types.js'
 
 /** Longest text a cell can hold. */
 export const MAX_TEXT_LENGTH = 32_767
@@ -214,28 +215,7 @@ export function percent(value: Scalar, date1904 = false, currentYear = 2000): Sc
  */
 export function elementwise(a: Scalar | Matrix, b: Scalar | Matrix, fn: (x: Scalar, y: Scalar) => Scalar): Scalar | Matrix {
   if (!isMatrixValue(a) && !isMatrixValue(b)) return fn(a, b)
-  const rows = Math.max(isMatrixValue(a) ? a.rows : 1, isMatrixValue(b) ? b.rows : 1)
-  const cols = Math.max(isMatrixValue(a) ? a.cols : 1, isMatrixValue(b) ? b.cols : 1)
-  checkArraySize(rows, cols)
-  const data: Scalar[] = new Array(rows * cols)
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const x = broadcastAt(a, r, c)
-      const y = broadcastAt(b, r, c)
-      data[r * cols + c] = x === undefined || y === undefined ? Errors.NA : fn(x, y)
-    }
-  }
-  const result = matrix(rows, cols, data)
-  const sizeA = isMatrixValue(a) ? logicalSize(a) : { rows: 1, cols: 1 }
-  const sizeB = isMatrixValue(b) ? logicalSize(b) : { rows: 1, cols: 1 }
-  const logicalRows = Math.max(sizeA.rows, sizeB.rows)
-  const logicalCols = Math.max(sizeA.cols, sizeB.cols)
-  if (logicalRows !== rows || logicalCols !== cols) {
-    result.logicalRows = logicalRows
-    result.logicalCols = logicalCols
-    result.omittedValue = fn(isMatrixValue(a) ? a.omittedValue ?? null : a, isMatrixValue(b) ? b.omittedValue ?? null : b)
-  }
-  return result
+  return broadcastRanges([a, b], ([x, y]) => fn(x!, y!))
 }
 
 /** Maps a scalar function over an operand. */

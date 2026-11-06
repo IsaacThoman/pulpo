@@ -8,10 +8,11 @@
  * such as `LOOKUP(2, 1/(A:A="x"), B:B)` return the last match.
  */
 
-import { omittedCells } from '../types.js'
+import { rangeSlice } from '../ranges.js'
+import { logicalSize, matrixGet, type Matrix } from '../types.js'
 import { MAX_COLS, MAX_ROWS, columnName, quoteSheetName } from '../../address.js'
-import { Errors, isError, isReference, matrix, type FunctionContext, type FunctionSpec, type Scalar, type Value } from '../types.js'
-import { bool, cell, check, compareText, defInt, define, fail, int, matrixCol, matrixRow, num, omitted, scalarOf, text, toMatrix, type Args } from './coerce.js'
+import { Errors, isError, isReference, type FunctionContext, type FunctionSpec, type Scalar, type Value } from '../types.js'
+import { bool, cell, check, compareText, defInt, define, fail, int, num, omitted, scalarOf, text, toMatrix, type Args } from './coerce.js'
 import { hasWildcards, wildcardMatch } from './criteria.js'
 
 /** A lookup value: errors propagate, blanks look up 0. */
@@ -133,45 +134,59 @@ function vhlookup(ctx: FunctionContext, args: Args, horizontal: boolean): Value 
   const index = int(args[2], ctx)
   const approximate = args.length > 3 ? bool(args[3], ctx) : true
   if (index < 1) return fail(Errors.VALUE)
-  if (index > (horizontal ? table.rows : table.cols)) return fail(Errors.REF)
-  const keys = horizontal ? matrixRow(table, 0) : matrixCol(table, 0)
-  const at = approximate ? binaryApprox(keys, lookup) : linearExact(keys, lookup, true)
+  const size = logicalSize(table)
+  if (index > (horizontal ? size.rows : size.cols)) return fail(Errors.REF)
+  const keys = searchVector(rangeSlice(table, 0, 0, horizontal ? 1 : size.rows, horizontal ? size.cols : 1))
+  const found = approximate ? binaryApprox(keys.values, lookup) : linearExact(keys.values, lookup, true)
+  const at = keys.indexAt(found)
   if (at < 0) return fail(Errors.NA)
   return horizontal ? cell(table, index - 1, at) : cell(table, at, index - 1)
 }
 
-/** A vector's values; 2-D arrays are #N/A for MATCH. */
-function vector(ctx: FunctionContext, value: Value | undefined, error = Errors.NA): { values: Scalar[]; vertical: boolean } {
+/** Search a uniform omitted tail with its first and last positions, never a million entries. */
+function searchVector(m: Matrix): { values: Scalar[]; indexAt: (index: number) => number } {
+  const size = logicalSize(m)
+  const vertical = size.cols === 1
+  const stored = vertical ? m.rows : m.cols
+  const length = vertical ? size.rows : size.cols
+  const values = Array.from({ length: stored }, (_, i) => matrixGet(m, vertical ? i : 0, vertical ? 0 : i))
+  if (length > stored) values.push(m.omittedValue ?? null)
+  if (length > stored + 1) values.push(m.omittedValue ?? null)
+  return { values, indexAt: (index) => index === stored + 1 ? length - 1 : index }
+}
+
+function vector(ctx: FunctionContext, value: Value | undefined, error = Errors.NA): ReturnType<typeof searchVector> {
   const m = toMatrix(ctx, value)
-  if (m.rows > 1 && m.cols > 1) return fail(error)
-  const values = m.data.slice()
-  if (omittedCells(m)) values.push(m.omittedValue ?? null)
-  return { values, vertical: m.cols === 1 && (m.logicalRows ?? m.rows) > 1 }
+  const size = logicalSize(m)
+  if (size.rows > 1 && size.cols > 1) return fail(error)
+  return searchVector(m)
 }
 
 function lookupFn(ctx: FunctionContext, args: Args): Value {
   const lookup = lookupValue(args[0], ctx)
   const source = toMatrix(ctx, args[1])
+  const size = logicalSize(source)
   if (args.length < 3) {
-    // Array form: search the first row or column, return from the last one.
-    const byRow = source.cols > source.rows
-    const keys = byRow ? matrixRow(source, 0) : matrixCol(source, 0)
-    const at = binaryApprox(keys, lookup)
+    const byRow = size.cols > size.rows
+    const keys = searchVector(rangeSlice(source, 0, 0, byRow ? 1 : size.rows, byRow ? size.cols : 1))
+    const at = keys.indexAt(binaryApprox(keys.values, lookup))
     if (at < 0) return fail(Errors.NA)
-    return byRow ? cell(source, source.rows - 1, at) : cell(source, at, source.cols - 1)
+    return byRow ? cell(source, size.rows - 1, at) : cell(source, at, size.cols - 1)
   }
-  if (source.rows > 1 && source.cols > 1) return fail(Errors.NA)
-  const at = binaryApprox(source.data, lookup)
+  const keys = vector(ctx, args[1])
+  const at = keys.indexAt(binaryApprox(keys.values, lookup))
   if (at < 0) return fail(Errors.NA)
-  const resultArg = args[2]
-  if (isReference(resultArg)) {
-    const area = resultArg.areas[0]!
+  if (isReference(args[2])) {
+    const area = args[2].areas[0]!
     const vertical = area.bottom > area.top || area.right === area.left
     const target = vertical ? { ...area, top: area.top + at, bottom: area.top + at, right: area.left } : { ...area, left: area.left + at, right: area.left + at, bottom: area.top }
-    return ctx.resolve({ kind: 'ref', areas: [target] }).data[0] ?? null
+    return matrixGet(ctx.resolve({ kind: 'ref', areas: [target] }), 0, 0)
   }
-  const result = toMatrix(ctx, resultArg)
-  return result.data[at] ?? fail(Errors.NA)
+  const result = toMatrix(ctx, args[2])
+  const resultSize = logicalSize(result)
+  if (resultSize.rows > 1 && resultSize.cols > 1) return fail(Errors.NA)
+  if (at >= resultSize.rows * resultSize.cols) return fail(Errors.NA)
+  return resultSize.cols === 1 ? cell(result, at, 0) : cell(result, 0, at)
 }
 
 function xlookup(ctx: FunctionContext, args: Args): Value {
@@ -182,24 +197,27 @@ function xlookup(ctx: FunctionContext, args: Args): Value {
   const searchMode = defInt(args, 5, 1, ctx)
   check([0, -1, 1, 2].includes(matchMode), Errors.VALUE)
   check([1, -1, 2, -2].includes(searchMode), Errors.VALUE)
-  if (lookupArray.rows > 1 && lookupArray.cols > 1) return fail(Errors.VALUE)
-  const vertical = lookupArray.cols === 1
-  const length = lookupArray.data.length
-  if (vertical ? returnArray.rows !== length : returnArray.cols !== length) return fail(Errors.VALUE)
-  const at = xfind(lookupArray.data, lookup, matchMode, searchMode)
+  const size = logicalSize(lookupArray)
+  const resultSize = logicalSize(returnArray)
+  if (size.rows > 1 && size.cols > 1) return fail(Errors.VALUE)
+  const vertical = size.cols === 1
+  const length = vertical ? size.rows : size.cols
+  if (vertical ? resultSize.rows !== length : resultSize.cols !== length) return fail(Errors.VALUE)
+  const keys = searchVector(lookupArray)
+  const at = keys.indexAt(xfind(keys.values, lookup, matchMode, searchMode))
   if (at < 0) {
     if (!omitted(args, 3)) {
       const fallback = toMatrix(ctx, args[3])
-      return fallback.rows * fallback.cols === 1 ? (fallback.data[0] ?? null) : fallback
+      return logicalSize(fallback).rows * logicalSize(fallback).cols === 1 ? (fallback.data[0] ?? null) : fallback
     }
     return fail(Errors.NA)
   }
   if (vertical) {
-    if (returnArray.cols === 1) return cell(returnArray, at, 0)
-    return matrix(1, returnArray.cols, matrixRow(returnArray, at))
+    if (resultSize.cols === 1) return cell(returnArray, at, 0)
+    return rangeSlice(returnArray, at, 0, 1, resultSize.cols)
   }
-  if (returnArray.rows === 1) return cell(returnArray, 0, at)
-  return matrix(returnArray.rows, 1, matrixCol(returnArray, at))
+  if (resultSize.rows === 1) return cell(returnArray, 0, at)
+  return rangeSlice(returnArray, 0, at, resultSize.rows, 1)
 }
 
 function address(ctx: FunctionContext, args: Args): string {
@@ -231,8 +249,8 @@ export const LOOKUP_FUNCTIONS: FunctionSpec[] = [
     args: ['scalar', 'any', 'scalar'],
     fn: (ctx, args) => {
       const lookup = lookupValue(args[0], ctx)
-      const { values } = vector(ctx, args[1])
-      const at = find(values, lookup, matchType(ctx, args, 2))
+      const { values, indexAt } = vector(ctx, args[1])
+      const at = indexAt(find(values, lookup, matchType(ctx, args, 2)))
       return at < 0 ? fail(Errors.NA) : at + 1
     },
   }),
@@ -245,12 +263,12 @@ export const LOOKUP_FUNCTIONS: FunctionSpec[] = [
     xlfn: true,
     fn: (ctx, args) => {
       const lookup = lookupValue(args[0], ctx)
-      const { values } = vector(ctx, args[1], Errors.VALUE)
+      const { values, indexAt } = vector(ctx, args[1], Errors.VALUE)
       const matchMode = defInt(args, 2, 0, ctx)
       const searchMode = defInt(args, 3, 1, ctx)
       check([0, -1, 1, 2].includes(matchMode), Errors.VALUE)
       check([1, -1, 2, -2].includes(searchMode), Errors.VALUE)
-      const at = xfind(values, lookup, matchMode, searchMode)
+      const at = indexAt(xfind(values, lookup, matchMode, searchMode))
       return at < 0 ? fail(Errors.NA) : at + 1
     },
   }),

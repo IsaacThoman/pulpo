@@ -4,6 +4,10 @@
  * than values (ROW, INDEX, OFFSET, INDIRECT, …). These win over library functions of the same name.
  */
 
+import { broadcastRanges, rangeSlice } from './ranges.js'
+import { logicalSize, matrixGet } from './types.js'
+
+
 import { MAX_COLS, MAX_ROWS, columnName, quoteSheetName } from '../address.js'
 import type { Interpreter, Scope } from './evaluate.js'
 import { parseFormula, type Node } from './parse.js'
@@ -24,7 +28,7 @@ import {
   type Scalar,
   type Value,
 } from './types.js'
-import { broadcastAt, compareScalars, toBoolean, toNumber, toText } from './values.js'
+import { compareScalars, toBoolean, toNumber, toText } from './values.js'
 
 export type OwnedFunction = (it: Interpreter, args: readonly (Node | null)[], scope: Scope | undefined) => Value
 
@@ -42,29 +46,7 @@ function liftable(it: Interpreter, node: Node | null | undefined, scope: Scope |
 
 /** Element-wise combination of several lifted operands. */
 function liftAll(values: Liftable[], fn: (row: Scalar[]) => Scalar): Matrix {
-  let rows = 1
-  let cols = 1
-  for (const value of values) {
-    if (isMatrix(value)) {
-      rows = Math.max(rows, value.rows)
-      cols = Math.max(cols, value.cols)
-    }
-  }
-  checkArraySize(rows, cols)
-  const data: Scalar[] = new Array(rows * cols)
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const row: Scalar[] = []
-      let missing = false
-      for (const value of values) {
-        const element = broadcastAt(value, r, c)
-        if (element === undefined) missing = true
-        row.push(element ?? null)
-      }
-      data[r * cols + c] = missing ? Errors.NA : fn(row)
-    }
-  }
-  return matrix(rows, cols, data)
+  return broadcastRanges(values, fn)
 }
 
 function integer(value: Scalar, date1904: boolean, currentYear: number): number | FormulaError {
@@ -259,7 +241,7 @@ function gridOf(it: Interpreter, value: Value): Grid | FormulaError {
   if (isError(value)) return value
   if (isReference(value)) {
     if (value.areas.length !== 1) return Errors.VALUE
-    const area = it.host.usedArea(value.areas[0]!)
+    const area = value.areas[0]!
     return {
       rows: areaRows(area),
       cols: areaCols(area),
@@ -270,15 +252,10 @@ function gridOf(it: Interpreter, value: Value): Grid | FormulaError {
   }
   if (isMatrix(value)) {
     return {
-      rows: value.rows,
-      cols: value.cols,
-      at: (r, c) => value.data[r * value.cols + c] ?? null,
-      row: (r) => matrix(1, value.cols, value.data.slice(r * value.cols, (r + 1) * value.cols)),
-      col: (c) => {
-        const data: Scalar[] = []
-        for (let r = 0; r < value.rows; r++) data.push(value.data[r * value.cols + c] ?? null)
-        return matrix(value.rows, 1, data)
-      },
+      ...logicalSize(value),
+      at: (r, c) => matrixGet(value, r, c),
+      row: (r) => rangeSlice(value, r, 0, 1, logicalSize(value).cols),
+      col: (c) => rangeSlice(value, 0, c, logicalSize(value).rows, 1),
     }
   }
   if (isLambda(value)) return Errors.VALUE
@@ -503,8 +480,8 @@ function indexOne(it: Interpreter, source: Value, rowArg: Scalar, colArg: Scalar
   } else {
     if (areaNumber !== 1) return Errors.REF
     array = isMatrix(source) ? source : matrix(1, 1, [source as Scalar])
-    rows = array.rows
-    cols = array.cols
+    rows = logicalSize(array).rows
+    cols = logicalSize(array).cols
   }
   if (col === undefined) {
     if (rows === 1 && cols > 1) {
@@ -522,10 +499,8 @@ function indexOne(it: Interpreter, source: Value, rowArg: Scalar, colArg: Scalar
   if (area) {
     return { kind: 'ref', areas: [{ sheet: area.sheet, top: area.top + top, left: area.left + left, bottom: area.top + bottom, right: area.left + right }] }
   }
-  if (top === bottom && left === right) return array!.data[top * array!.cols + left] ?? null
-  const data: Scalar[] = []
-  for (let r = top; r <= bottom; r++) for (let c = left; c <= right; c++) data.push(array!.data[r * array!.cols + c] ?? null)
-  return matrix(bottom - top + 1, right - left + 1, data)
+  if (top === bottom && left === right) return matrixGet(array!, top, left)
+  return rangeSlice(array!, top, left, bottom - top + 1, right - left + 1)
 }
 
 const INDEX: OwnedFunction = (it, args, scope) => {

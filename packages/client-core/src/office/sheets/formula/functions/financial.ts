@@ -1,5 +1,9 @@
 /** Financial functions: annuities, cash-flow analysis, depreciation, rates, and T-bills/bonds. */
 
+import { omittedCells } from '../types.js'
+import { denseRange } from '../ranges.js'
+
+
 import { Errors, isError, type FunctionContext, type FunctionSpec, type Scalar, type Value } from '../types.js'
 import { bool, check, defInt, defNum, define, fail, int, num, omitted, toMatrix, type Args } from './coerce.js'
 import { partsOf, yearfrac } from './datetime.js'
@@ -142,7 +146,9 @@ function irr(ctx: FunctionContext, args: Args): number {
 }
 
 function strictNumbers(ctx: FunctionContext, value: Value | undefined): number[] {
-  return toMatrix(ctx, value).data.map((v: Scalar) => {
+  const source = toMatrix(ctx, value)
+  if (omittedCells(source) && typeof source.omittedValue !== 'number') fail(isError(source.omittedValue) ? source.omittedValue : Errors.VALUE)
+  return denseRange(source).data.map((v: Scalar) => {
     if (isError(v)) return fail(v)
     if (typeof v !== 'number') return fail(Errors.VALUE)
     return v
