@@ -5,6 +5,7 @@ import { DOCX_BODY_FRAGMENT, DOCX_EXTENSIONS, DOCX_MAX_FILE_BYTES, DOCX_SCHEMA_V
 import type { LiveFormatId } from './live-format.js'
 import { NOTEBOOK_EXTENSIONS, NOTEBOOK_FIELD, NOTEBOOK_MAX_FILE_BYTES, NOTEBOOK_MIME_TYPE, NOTEBOOK_SCHEMA_VERSION } from './notebook/layout.js'
 import { PRESENTATION_EXTENSIONS, PRESENTATION_MAX_FILE_BYTES, PRESENTATION_SCHEMA_VERSION, presentationHasContent, presentationMimeType } from './presentation/layout.js'
+import { SHEET_EXTENSIONS, SHEET_MAX_FILE_BYTES, SHEETS_SCHEMA_VERSION, sheetHasContent, sheetMimeType } from './sheets/layout.js'
 import { TEXT_EXTENSIONS, TEXT_FIELD, TEXT_FILE_NAMES, TEXT_MAX_FILE_BYTES, TEXT_SCHEMA_VERSION, textMimeType } from './text/layout.js'
 
 /**
@@ -93,8 +94,20 @@ export const DOCUMENT_FORMAT: LiveFormatInfo = {
   hasContent: (doc) => doc.getXmlFragment(DOCX_BODY_FRAGMENT).length > 0,
 }
 
+export const SHEET_FORMAT: LiveFormatInfo = {
+  id: 'sheet',
+  schemaVersion: SHEETS_SCHEMA_VERSION,
+  extensions: SHEET_EXTENSIONS,
+  // xlsx files come back with every part the editor doesn't model kept as it was, and CSV files
+  // byte for byte, so an upload converts as soon as someone edits it.
+  lossless: true,
+  maxFileBytes: SHEET_MAX_FILE_BYTES,
+  mimeType: sheetMimeType,
+  hasContent: sheetHasContent,
+}
+
 /** Every live format, in the order creation menus list them. */
-export const LIVE_FORMATS: readonly LiveFormatInfo[] = [MARKDOWN_FORMAT, TEXT_FORMAT, NOTEBOOK_FORMAT, PRESENTATION_FORMAT, DOCUMENT_FORMAT]
+export const LIVE_FORMATS: readonly LiveFormatInfo[] = [MARKDOWN_FORMAT, TEXT_FORMAT, DOCUMENT_FORMAT, SHEET_FORMAT, PRESENTATION_FORMAT, NOTEBOOK_FORMAT]
 
 const BY_ID = new Map<string, LiveFormatInfo>(LIVE_FORMATS.map((format) => [format.id, format]))
 const BY_EXTENSION = new Map<string, LiveFormatInfo>()

@@ -5,6 +5,7 @@ import { markdownCodec } from './markdown/index.js'
 import { notebookCodec } from './notebook/codec.js'
 import { presentationCodec } from './presentation/codec.js'
 import { textCodec } from './text/codec.js'
+import { sheetCodec } from './sheets/codec/codec.js'
 
 /**
  * The codec of every live format in `LIVE_FORMATS`. This module loads all of them (Markdown pulls
@@ -16,6 +17,7 @@ const CODECS: Partial<Record<LiveFormatId, LiveFormatCodec>> = {
   notebook: notebookCodec,
   presentation: presentationCodec,
   document: docxCodec,
+  sheet: sheetCodec,
 }
 
 for (const format of LIVE_FORMATS) {

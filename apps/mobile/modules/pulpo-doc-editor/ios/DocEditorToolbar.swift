@@ -1,12 +1,20 @@
 import SwiftUI
 import UIKit
 
-/** A button a live format puts on the bar (see `DocEditorToolbarState.items`); a menu with options. */
+/** A choice in a live format's toolbar menu. */
+struct DocEditorToolbarOption: Identifiable, Equatable {
+  let command: String
+  let label: String
+  let systemImage: String
+  var id: String { command }
+}
+
+/** A button a live format puts on the bar (see `DocEditorToolbarState.items`); with options, a menu of them. */
 struct DocEditorToolbarItem: Identifiable, Equatable {
   let command: String
   let label: String
   let systemImage: String
-  var options: [MenuOption] = []
+  var options: [DocEditorToolbarOption] = []
   var separatorBefore = false
   var id: String { command }
 }
@@ -49,12 +57,7 @@ private struct ToolbarButton: View {
   }
 }
 
-struct MenuOption: Identifiable, Equatable {
-  let command: String
-  let label: String
-  let systemImage: String
-  var id: String { command }
-}
+typealias MenuOption = DocEditorToolbarOption
 
 private struct ToolbarMenu: View {
   let label: String
@@ -90,6 +93,8 @@ private struct ToolbarMenu: View {
     }
     .menuStyle(.button)
     .buttonStyle(.plain)
+    .disabled(model.disabled.contains(identifier))
+    .opacity(model.disabled.contains(identifier) ? 0.35 : 1)
     .accessibilityLabel(label)
     .accessibilityIdentifier("doc-toolbar-\(identifier)")
   }

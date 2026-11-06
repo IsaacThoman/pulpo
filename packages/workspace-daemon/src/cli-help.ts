@@ -5,7 +5,7 @@ Read and change the user's Pulpo Files that are attached to this chat.
 Files paths look like "Projects/Plan.md" (no leading slash; names are
 case-insensitive). Some files are live documents that people may be editing
 in Pulpo while you work: Markdown (.md), text or code files (.txt, .py,
-.json, .html, …), Jupyter notebooks (.ipynb), Word documents (.docx), and PowerPoint decks (.pptx). You still pull and push
+.json, .html, …), Jupyter notebooks (.ipynb), spreadsheets (.xlsx, .xlsm, .xltx, .csv, .tsv), Word documents (.docx), and PowerPoint decks (.pptx). You still pull and push
 them as ordinary files, and your push merges with their edits. Other files
 are stored as uploaded bytes.
 
@@ -31,7 +31,7 @@ Edit a document or file:
   (edit /workspace/files/Projects/Plan.md with your usual tools)
   pulpo files push
 Office files work the same way: edit a pulled .docx with python-docx, .xlsx
-with openpyxl, or .pptx with python-pptx, save it in place, then push. For a
+with openpyxl (keep_vba=True for .xlsm), or .pptx with python-pptx, save it in place, then push. For a
 .docx, change the paragraphs, runs, and tables you mean to and leave the rest:
 styles, comments, tracked changes, headers, and pictures you don't touch are
 kept, and only what differs is merged into the live document.
@@ -46,6 +46,10 @@ Run a notebook: pull it, execute it in place, and push the outputs back.
   pulpo files push
 Edit notebooks with nbformat (or as JSON), not by rewriting them by hand;
 cells keep their ids, so your push merges with people editing other cells.
+
+Edit .csv and .tsv as text. Pulpo recalculates spreadsheet formulas after a push;
+openpyxl leaves formula references alone when you insert or delete rows,
+so fix formulas that point across them yourself.
 
 Create a file: write it under /workspace/files/<folder>/ and run
 \`pulpo files push\`, or push any workspace file to a chosen path:
@@ -78,7 +82,7 @@ Example:
   cat: `Usage: pulpo files cat <path>...
 
 Print documents or text files: Markdown documents as Markdown, other live
-documents as their plain text. Notebooks print as readable text: each cell
+documents as their plain text. Spreadsheets print each sheet's values as tab-separated lines followed by formulas. Notebooks print as readable text: each cell
 under a "# %% [code] cell 3 · In [2] · id …" line, with outputs summarized as
 comments (pull the .ipynb for the real file). Word documents print with list numbers, headings, tables, footnotes, and comments. Documents show pending
 suggestions as if they were accepted. Binary or very large files cannot be printed: pull them and

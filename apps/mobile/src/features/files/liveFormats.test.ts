@@ -20,20 +20,25 @@ const node = (name: string, extra: Partial<FileNode> = {}) => ({
 }) as FileNode
 
 describe('live formats on mobile', () => {
-  it('ships an editor for Markdown, text, and notebooks and presentations, and announces their schemas', () => {
+  it('ships every live editor and announces their schemas', () => {
     expect(editorBundleFor(null)?.format).toBe('markdown')
     expect(editorBundleFor('text')?.format).toBe('text')
     expect(editorBundleFor('notebook')?.format).toBe('notebook')
     expect(editorBundleFor('presentation')?.format).toBe('presentation')
     expect(editorBundleFor('document')?.format).toBe('document')
-    expect(editorBundleFor('sheet')).toBeNull()
+    expect(editorBundleFor('sheet')?.format).toBe('sheet')
     expect(MOBILE_SCHEMA_VERSIONS).toEqual({
       markdown: editorBundleFor('markdown')!.schemaVersion,
       text: editorBundleFor('text')!.schemaVersion,
       notebook: editorBundleFor('notebook')!.schemaVersion,
       presentation: editorBundleFor('presentation')!.schemaVersion,
       document: editorBundleFor('document')!.schemaVersion,
+      sheet: editorBundleFor('sheet')!.schemaVersion,
     })
+  })
+
+  it('offers every supported live format in the New menu', () => {
+    expect(newLiveFiles(config({ enabled: true, docSchemaVersion: MOBILE_SCHEMA_VERSIONS.markdown, liveFormats: MOBILE_SCHEMA_VERSIONS })).map((entry) => entry.format)).toEqual(['text', 'document', 'sheet', 'presentation', 'notebook'])
   })
 
   it('edits a format only where the server speaks the same schema', () => {
@@ -45,6 +50,9 @@ describe('live formats on mobile', () => {
     expect(formatSupported(config({ enabled: true, docSchemaVersion: markdown }), 'markdown')).toBe(true)
     expect(newLiveFiles(config({ enabled: true, docSchemaVersion: markdown }))).toEqual([])
     expect(newLiveFiles(config({ enabled: true, docSchemaVersion: markdown, liveFormats: { markdown, text: 1 } })).map((entry) => entry.name)).toEqual(['Untitled.txt'])
+    const sheet = editorBundleFor('sheet')!.schemaVersion
+    expect(newLiveFiles(config({ enabled: true, docSchemaVersion: markdown, liveFormats: { markdown, text: 1, sheet } })).map((entry) => entry.name)).toEqual(['Untitled.txt', 'Untitled.xlsx'])
+    expect(formatSupported(config({ enabled: true, docSchemaVersion: markdown, liveFormats: { markdown, text: 1, sheet: sheet + 1 } }), 'sheet')).toBe(false)
   })
 
   it('bundles an Android icon for every live-text creation and toolbar item', () => {
@@ -60,6 +68,8 @@ describe('live formats on mobile', () => {
 
   it('offers Edit for uploaded text and code files, not Markdown, binaries, or oversized files', () => {
     expect(editableUpload(node('main.py'))).toBe(true)
+    expect(editableUpload(node('budget.xlsx'))).toBe(true)
+    expect(editableUpload(node('people.csv'))).toBe(true)
     expect(editableUpload(node('notes.md'))).toBe(false)
     expect(editableUpload(node('photo.png'))).toBe(false)
     expect(editableUpload(node('main.py', { sizeBytes: 50_000_000 }))).toBe(false)

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="%CSP%">
+<title>Spreadsheet</title>
+</head>
+<body>
+<main id="app">
+  <div id="formula-bar" class="bar">
+    <span id="address" class="address" aria-label="Selected cells">A1</span>
+    <span class="fx" aria-hidden="true">fx</span>
+    <input id="formula" class="field" aria-label="Cell contents" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
+    <button id="cancel-edit" class="icon-button" type="button" aria-label="Cancel" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <button id="commit-edit" class="icon-button accent" type="button" aria-label="Done" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+    </button>
+  </div>
+  <div id="find-bar" class="bar" hidden>
+    <input id="find-input" class="field" type="search" aria-label="Find in spreadsheet" placeholder="Find" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
+    <span id="find-count" class="count" aria-live="polite"></span>
+    <button id="find-previous" class="icon-button" type="button" aria-label="Previous match">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>
+    </button>
+    <button id="find-next" class="icon-button" type="button" aria-label="Next match">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <button id="find-done" class="text-button" type="button">Done</button>
+  </div>
+  <div id="grid"></div>
+  <nav id="tabs" aria-label="Sheets">
+    <div id="tab-list" role="tablist"></div>
+    <button id="add-sheet" class="icon-button" type="button" aria-label="Add sheet" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+  </nav>
+</main>
+<script type="module" src="./main.ts"></script>
+</body>
+</html>

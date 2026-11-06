@@ -33,6 +33,7 @@ import type { EditorBridgeState } from '../editor/bridge'
 import { editorBundleFor, type MobileEditorFormat } from '../editor/bundles'
 import { docEditorAvailable, DocEditorView, type DocEditorHandle } from '../editor/DocEditorView'
 import { NOTEBOOK_TOOLBAR, notebookToolbarState } from '../editor/notebookToolbar'
+import { SHEET_TOOLBAR, sheetToolbarState } from '../editor/sheetToolbar'
 import { TEXT_TOOLBAR, textToolbarState } from '../editor/textToolbar'
 import { PRESENTATION_TOOLBAR, presentationToolbarState } from '../editor/presentationToolbar'
 import type { PresentationCommand } from '../editor/protocol'
@@ -105,17 +106,17 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const fileId = route.params.fileId
   const nodeQuery = useQuery({ ...fileNodeQuery(namespace, fileId), enabled: Boolean(namespace) && filesEnabled })
   const node = nodeQuery.data?.node
-  // The document's live format picks its editor; text and code files have no suggestions inline.
+  // The document's live format picks its editor; only Markdown has suggestions inline.
   const formatId = node?.format ?? 'markdown'
   const schemaSupported = useDocSchemaSupported(formatId) && Boolean(editorBundleFor(formatId))
-  const editorFormat: MobileEditorFormat = formatId === 'text' || formatId === 'notebook' || formatId === 'presentation' || formatId === 'document' ? formatId : 'markdown'
+  const editorFormat: MobileEditorFormat = formatId === 'text' || formatId === 'notebook' || formatId === 'presentation' || formatId === 'document' || formatId === 'sheet' ? formatId : 'markdown'
   const isText = editorFormat === 'text'
   const isNotebook = editorFormat === 'notebook'
   /** Formats other than Markdown keep their extension, have no inline suggestions, and fall back to their text. */
   const isLive = editorFormat !== 'markdown'
   const isDeck = editorFormat === 'presentation'
-  const isMarkdown = editorFormat === 'markdown'
   const isWord = editorFormat === 'document'
+  const isSheet = editorFormat === 'sheet'
   const editor = useRef<DocEditorHandle>(null)
   const [handle, setHandle] = useState<DocHandle | null>(null)
   const [editorState, setEditorState] = useState<EditorBridgeState | null>(null)
@@ -162,11 +163,11 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   // A document just created opens ready to type in, once.
   const focusedNew = useRef(false)
   useEffect(() => {
-    const ready = editorState?.loaded && (isText ? editorState.text && !editorState.text.readOnly : isNotebook ? editorState.notebook && !editorState.notebook.readOnly : isWord ? editorState.docx?.editable : editorState.formatting?.editable)
+    const ready = editorState?.loaded && (isText ? editorState.text && !editorState.text.readOnly : isNotebook ? editorState.notebook && !editorState.notebook.readOnly : isWord ? editorState.docx?.editable : isSheet ? editorState.sheet && !editorState.sheet.readOnly : editorState.formatting?.editable)
     if (isDeck || !route.params.created || focusedNew.current || !ready) return
     focusedNew.current = true
     editor.current?.focus('start')
-  }, [editorState, isDeck, isNotebook, isText, isWord, route.params.created])
+  }, [editorState, isDeck, isNotebook, isText, isWord, isSheet, route.params.created])
 
   // A copy of an earlier document under this id was dropped; start over without it.
   useEffect(() => {
@@ -259,12 +260,17 @@ export function FileDocumentScreen({ navigation, route }: Props) {
         await shareFileItem(node, undefined, bytes)
         return
       }
+      // Spreadsheets are written by the server's codec, which the app doesn't ship; edits waiting to sync aren't in it yet.
+      if (isSheet) {
+        await shareFileItem(node)
+        return
+      }
       const markdown = editorState?.loaded ? await editor.current?.exportMarkdown() : undefined
       await shareFileItem(node, markdown)
     } catch (error) {
       operations.fail(error, node.name)
     }
-  }, [editorState?.loaded, handle, isDeck, isNotebook, isText, isWord, node, operations, status.state, usable])
+  }, [editorState?.loaded, handle, isDeck, isNotebook, isText, isWord, isSheet, node, operations, status.state, usable])
   /** A deck's pictures, fetched for the editor page (which has no network of its own). */
   const fetchAsset = useCallback(async (hash: string) => {
     const url = apiUrl(`/api/files/${fileId}/assets/${hash}`)
@@ -297,7 +303,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
           ? { type: 'action', label: 'Clear All Outputs', icon: { type: 'sfSymbol', name: 'eye.slash' }, disabled: !editorState?.loaded || !editable, onPress: () => editor.current?.command('clearAllOutputs') }
           : isDeck
           ? { type: 'action', label: 'Present', icon: { type: 'sfSymbol', name: 'play.rectangle' }, disabled: !editorState?.loaded, onPress: () => editor.current?.command('present') }
-          : { type: 'action', label: isText ? 'Find and Replace' : 'Find in Document', icon: { type: 'sfSymbol', name: 'magnifyingglass' }, disabled: !editorState?.loaded, onPress: () => { if (isText) editor.current?.command('find'); else editor.current?.showFind() } },
+          : { type: 'action', label: isText ? 'Find and Replace' : isSheet ? 'Find in Spreadsheet' : 'Find in Document', icon: { type: 'sfSymbol', name: 'magnifyingglass' }, disabled: !editorState?.loaded, onPress: () => { if (isText || isSheet) editor.current?.command('find'); else editor.current?.showFind() } },
         { type: 'action', label: 'Export…', icon: { type: 'sfSymbol', name: 'square.and.arrow.up' }, disabled: !node, onPress: () => { void exportDocument() } },
         {
           type: 'submenu',
@@ -314,7 +320,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
         { type: 'action', label: 'Move to Trash', icon: { type: 'sfSymbol', name: 'trash' }, destructive: true, disabled: !node || Boolean(node.trashedAt), onPress: trash },
       ],
     },
-  }), [editable, editorState?.loaded, exportDocument, isNotebook, isDeck, isText, navigation, node, nodeQuery.data?.ancestors, operations, rename, trash])
+  }), [editable, editorState?.loaded, exportDocument, isNotebook, isDeck, isText, isSheet, navigation, node, nodeQuery.data?.ancestors, operations, rename, trash])
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -347,7 +353,8 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   // A running slide show gets the whole screen: no header, status bar, or deck bar.
   const presenting = isDeck && editorState?.presentation?.presenting === true
   const presentationBarVisible = isDeck && editable && Boolean(editorState?.loaded) && !presenting
-  const editorBottomPadding = reviewBarHeight + (formattingBarVisible && !isDeck ? FORMATTING_BAR_HEIGHT : 0) + (presentationBarVisible ? PRESENTATION_BAR_HEIGHT + insets.bottom : 0)
+  const navigationBarPadding = Platform.OS === 'android' && isSheet && !keyboardVisible ? insets.bottom : 0
+  const editorBottomPadding = reviewBarHeight + (formattingBarVisible && !isDeck ? FORMATTING_BAR_HEIGHT : 0) + (presentationBarVisible ? PRESENTATION_BAR_HEIGHT + insets.bottom : 0) + navigationBarPadding
   const showAndroidMenu = () => showActions(title, [
     ...(isDeck ? [{ label: 'Present', icon: 'play.rectangle', onPress: () => editor.current?.command('present') }] : []),
     { label: 'Export', icon: 'square.and.arrow.up', onPress: () => { void exportDocument() } },
@@ -492,8 +499,8 @@ export function FileDocumentScreen({ navigation, route }: Props) {
       {banner}
       {Platform.OS === 'android' ? <KeyboardAvoidingView behavior="padding" style={styles.flex}>{body}</KeyboardAvoidingView> : body}
       <FormattingBar
-        formatting={isText ? (editorState?.text ? textToolbarState(editorState) : null) : isNotebook ? (editorState?.notebook ? notebookToolbarState(editorState) : null) : isWord ? (editorState?.docx ? docxToolbarState(editorState) : null) : editorState?.formatting ?? null}
-        items={isText ? TEXT_TOOLBAR : isNotebook ? NOTEBOOK_TOOLBAR : isWord ? DOCX_TOOLBAR : undefined}
+        formatting={isText ? (editorState?.text ? textToolbarState(editorState) : null) : isNotebook ? (editorState?.notebook ? notebookToolbarState(editorState) : null) : isWord ? (editorState?.docx ? docxToolbarState(editorState) : null) : isSheet ? (editorState?.sheet ? sheetToolbarState(editorState) : null) : editorState?.formatting ?? null}
+        items={isText ? TEXT_TOOLBAR : isNotebook ? NOTEBOOK_TOOLBAR : isWord ? DOCX_TOOLBAR : isSheet ? SHEET_TOOLBAR : undefined}
         visible={formattingBarVisible && !isDeck}
         onCommand={(command) => editor.current?.toolbar(command as never)}
         onDismissKeyboard={() => editor.current?.dismissKeyboard()}

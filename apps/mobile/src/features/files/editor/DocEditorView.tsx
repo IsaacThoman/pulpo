@@ -3,7 +3,7 @@ import * as Crypto from 'expo-crypto'
 import { requireNativeViewManager } from 'expo-modules-core'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore, type Ref } from 'react'
 import { Alert, Platform, type StyleProp, type ViewStyle } from 'react-native'
-import { promptText } from '../../../platform/materialActions'
+import { promptText, showActions } from '../../../platform/materialActions'
 import PulpoDocEditor from '../../../../modules/pulpo-doc-editor'
 import { useAppTheme } from '../../../theme'
 import type { DocHandle } from '../doc/sessions'
@@ -11,8 +11,9 @@ import { EditorBridge, type EditorBridgeState } from './bridge'
 import { EDITOR_BUNDLES, type MobileEditorFormat } from './bundles'
 import { editorTheme, normalizeHref } from './presentation'
 import { notebookToolbarState, NOTEBOOK_TOOLBAR } from './notebookToolbar'
-import type { DocxCommand, NotebookCommand, PresentationCommand, ReviewAction, TextCommand } from './protocol'
+import type { DocxCommand, NotebookCommand, PresentationCommand, ReviewAction, SheetCommand, TextCommand } from './protocol'
 import { presentationToolbarState } from './presentationToolbar'
+import { SHEET_TOOLBAR, sheetToolbarMenu, sheetToolbarState } from './sheetToolbar'
 import { TEXT_TOOLBAR, textToolbarState, type NativeToolbarItem } from './textToolbar'
 import { DOCX_TOOLBAR, docxToolbarState } from './docxToolbar'
 import { fetchDocAsset } from '../api'
@@ -94,13 +95,13 @@ function runDocxToolbar(bridge: EditorBridge, command: DocxCommand, link: string
 }
 
 const noSubscription = () => () => {}
-const INITIAL: EditorBridgeState = { loaded: false, formatting: null, focused: false, suggestions: { count: 0, index: null, active: null }, text: null, notebook: null, presentation: null, incompatible: false }
+const INITIAL: EditorBridgeState = { loaded: false, formatting: null, focused: false, suggestions: { count: 0, index: null, active: null }, text: null, sheet: null, notebook: null, presentation: null, incompatible: false }
 const initialState = () => INITIAL
 
 export interface DocEditorHandle {
   format(command: FormatCommand, href?: string): void
   /** A text or notebook editor's command. */
-  command(command: TextCommand | NotebookCommand | PresentationCommand): void
+  command(command: TextCommand | SheetCommand | NotebookCommand | PresentationCommand): void
   /** A formatting bar's command, asking for a link's address where needed. */
   toolbar(command: FormatCommand): void
   review(action: ReviewAction): void
@@ -230,6 +231,15 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
       bridge.command(command as TextCommand | NotebookCommand | PresentationCommand)
       return
     }
+    if (format === 'sheet') {
+      // A menu's own command arrives where the bar can't show menus itself: offer its choices.
+      const menu = sheetToolbarMenu(command)
+      if (menu) {
+        const active = new Set(sheetToolbarState(state).active)
+        showActions(menu.label, menu.options.map((option) => ({ label: option.label, icon: option.systemImage, selected: active.has(option.command), onPress: () => bridge.command(option.command) })))
+      } else bridge.command(command as SheetCommand)
+      return
+    }
     if (command !== 'link') {
       bridge.format(command as FormatCommand)
       return
@@ -268,7 +278,7 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
   }), [bridge])
 
   if (!NativeDocEditor || !instance || !bridge) return null
-  const formatting = format === 'text' ? textToolbarState(state) : format === 'notebook' ? notebookToolbarState(state) : format === 'presentation' ? presentationToolbarState(state) : format === 'document' ? docxToolbarState(state) : state.formatting
+  const formatting = format === 'text' ? textToolbarState(state) : format === 'notebook' ? notebookToolbarState(state) : format === 'presentation' ? presentationToolbarState(state) : format === 'document' ? docxToolbarState(state) : format === 'sheet' ? sheetToolbarState(state) : state.formatting
   return (
     <NativeDocEditor
       ref={native}
@@ -282,7 +292,7 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
         active: formatting?.active ?? [],
         disabled: formatting?.disabled ?? [],
         tint: theme.blue,
-        items: Platform.OS !== 'ios' ? [] : format === 'text' ? [...TEXT_TOOLBAR] : format === 'notebook' ? [...NOTEBOOK_TOOLBAR] : format === 'document' ? [...DOCX_TOOLBAR] : [],
+        items: Platform.OS !== 'ios' ? [] : format === 'text' ? [...TEXT_TOOLBAR] : format === 'notebook' ? [...NOTEBOOK_TOOLBAR] : format === 'document' ? [...DOCX_TOOLBAR] : format === 'sheet' ? [...SHEET_TOOLBAR] : [],
       }}
       onMessage={({ nativeEvent }) => bridge.receive(nativeEvent.data)}
       onTerminate={() => bridge.reset()}

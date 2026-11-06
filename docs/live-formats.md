@@ -1,6 +1,6 @@
 # Live formats
 
-A live format is a file type that opens as a collaborative document. Its content lives in a Y.Doc synced over the document socket, the same way Markdown documents work, and a codec converts it to and from the file's bytes. Downloads, agent `pull`, and agent `push` therefore still deal in real files. Markdown, text/code, Jupyter notebooks, and presentations are live today. The sheet and document engines plug in the same way.
+A live format is a file type that opens as a collaborative document. Its content lives in a Y.Doc synced over the document socket, and a codec converts it to and from the file's bytes. Downloads and agent pull/push still deal in real files. Markdown, text/code, Word documents, spreadsheets (including CSV/TSV), presentations, and Jupyter notebooks are live on web, desktop, and mobile.
 
 This page covers the model and the integration steps. [Files](./files.md) describes the user-facing behavior.
 
@@ -24,8 +24,10 @@ This page covers the model and the integration steps. [Files](./files.md) descri
 | `text` | most text and code extensions (`office/text/layout.ts`), plus names such as `Dockerfile` and `.gitignore` | 1 | at once | `csv`/`tsv` (sheets), `ipynb` (notebooks), and `svg` (previews as an image) are excluded. |
 | `notebook` | `ipynb` | 1 | at once | nbformat 4 (any minor version); nbformat 3 is upgraded to 4.5. See [The notebook format](#the-notebook-format). |
 | `presentation` | `pptx`, `potx`, `ppsx`, `pptm`, `potm`, `ppsm` | 1 | at once | Lossless: untouched parts are written back byte for byte. Pictures and media are assets. See [Presentations](./presentations.md). |
+| `sheet` | `xlsx`, `xlsm`, `xltx`, `xltm`, `csv`, `tsv` | `SHEETS_SCHEMA_VERSION` (1) | at once | Workbooks keep every part they don't edit; CSV and TSV come back byte for byte. See [Spreadsheets](./sheets.md). |
+| `document` | `docx`, `dotx`, `docm`, `dotm` | `DOCX_SCHEMA_VERSION` (3) | at once | Word documents with preserved unedited parts and assets; macro-enabled Word imports drop macros. See [Word documents](./office-documents.md). |
 
-`liveFormatOfName(name)` decides a name's format, and nothing else does: the server, web, and mobile all call it. This list duplicates the text extension lists in `agent/versions.ts`, `files/display.ts`, `lib/attachment-previews.ts`, and mobile `attachmentExperience.ts`, which decide how an uploaded file previews. Once the shared file-type module lands, those should read the catalog.
+`liveFormatOfName(name)` decides a name's format, and nothing else does: the server, web, and mobile all call it. Uploaded-file preview families and text detection come from the shared file-type table (`files/file-types.ts`), used by server `agent/versions.ts`, client-core `files/display.ts`, web `lib/attachment-previews.ts`, and mobile `attachmentExperience.ts`. The preview family does not change a live document's editor: the document format chooses that.
 
 ## Data model
 
@@ -86,7 +88,7 @@ Review UIs read `FileChangeSummary.contentDiff` and fetch both versions:
 4. **Mobile.**
    - Add `apps/mobile/editor/<format>/` (an `index.html` with `%CSP%` and a `main.ts` speaking `src/features/files/editor/protocol.ts`; send `format` in `ready`).
    - Add its entry to `EDITOR_BUNDLES` in `scripts/doc-editor-inputs.mjs` and to `editor/bundles.ts`.
-   - Give `DocEditorView` its native toolbar items (`textToolbar.ts` shows how; the iOS host draws whatever `items` it gets, and Android's `FormattingBar` takes the same list).
+   - Give `DocEditorView` its native toolbar items (`textToolbar.ts` shows how; the iOS host draws whatever `items` it gets, and Android's `FormattingBar` takes the same list). An item with `options` is a menu of them (`sheetToolbar.ts`).
    - Run `npm run build:editor -w @pulpo/mobile`. `editorBundle.test.ts` checks every bundle is fresh and keeps editors out of the Hermes bundle.
 5. **Agents.** Mention the format and how to edit it in `files/agent/prompt.ts` and `packages/workspace-daemon/src/cli-help.ts`.
 

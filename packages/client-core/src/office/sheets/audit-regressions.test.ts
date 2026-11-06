@@ -1,0 +1,1036 @@
+import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { strToU8, strFromU8, zipSync, unzipSync } from 'fflate'
+import { createRequire } from 'node:module'
+import { describe, expect, it, vi } from 'vitest'
+import * as Y from 'yjs'
+import { MemoryLiveAssetStore } from '../assets.js'
+import { columnName, MAX_COLS, MAX_ROWS } from './address.js'
+import { diffWorkbooks } from './diff/workbook-diff.js'
+import { Stylesheet } from './styles/stylesheet.js'
+import { validationAt } from './view/commands.js'
+import { ConditionalFormatter } from './view/conditional.js'
+import { DEFAULT_THEME_COLORS } from './view/colors.js'
+import { SheetCalc, sheetFunctions } from './calc.js'
+import { applyWorkbook } from './codec/apply.js'
+import { SheetCodec } from './codec/codec.js'
+import { readCsv, writeCsv } from './codec/csv.js'
+import { writeDrawing } from './codec/drawing.js'
+import { FormulaEngine } from './formula/engine.js'
+import { calculationBudget, CalculationStopped } from './formula/budget.js'
+import { wildcardIndex, wildcardMatch } from './formula/functions/criteria.js'
+import { markCalcDirty, trackEdits } from './model/edits.js'
+import { dateToSerial } from './dates.js'
+import { MAX_EXPANDED_CELLS } from './limits.js'
+import { columnIntervalProps } from './model/column-intervals.js'
+import type { ConditionalFormat, DataValidation, DrawingObject } from './model/schema.js'
+import { toA1Form, toIdForm } from './model/formula-ids.js'
+import { deleteAxis, moveAxis } from './model/structure.js'
+import { WorkbookModel, SheetModel } from './model/workbook.js'
+import { parseHtml } from './view/clipboard.js'
+import { SheetView } from './view/sheet-view.js'
+
+const { JSDOM } = createRequire(import.meta.url)('jsdom') as { JSDOM: new (html: string) => { window: { DOMParser: typeof DOMParser; document: Document } } }
+
+const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+
+/** Matches the audit's tiny package without depending on an external workbook generator. */
+function xlsx(body: string, after = ''): Uint8Array {
+  const parts: Record<string, string> = {
+    '[Content_Types].xml': `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/></Types>`,
+    '_rels/.rels': `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${R}/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+    'xl/workbook.xml': `<workbook xmlns="${NS}" xmlns:r="${R}"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+    'xl/_rels/workbook.xml.rels': `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${R}/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`,
+    'xl/worksheets/sheet1.xml': `<worksheet xmlns="${NS}"><sheetData>${body}</sheetData>${after}</worksheet>`,
+  }
+  return zipSync(Object.fromEntries(Object.entries(parts).map(([path, xml]) => [path, strToU8(xml)])))
+}
+
+async function open(bytes: Uint8Array, name = 'Book.xlsx') {
+  const codec = new SheetCodec()
+  const assets = new MemoryLiveAssetStore()
+  const context = { name, assets }
+  const doc = new Y.Doc()
+  await codec.importFile(doc, bytes, context)
+  const workbook = new WorkbookModel(doc)
+  return { codec, context, doc, workbook, sheet: workbook.sheets()[0]! }
+}
+
+function print(sheet: SheetModel, font = 'Calibri', color = '#000') {
+  return SheetView.prototype.printHtml.call({
+    sheet,
+    settleEdit: () => true,
+    colLayout: { size: () => 64, isHidden: () => false },
+    rowLayout: { size: () => 20, isHidden: () => false },
+    display: { render: () => ({ text: 'x', color, hAlign: 'left', borders: {}, style: { fontName: font, fontSize: 11 } }) },
+  } as unknown as SheetView)
+}
+
+/** Merges both delivery orders into three explicit client ids, keeping the source snapshot fixed. */
+function replicas(base: Y.Doc, edit: (sheet: SheetModel, client: number) => void): Y.Doc[] {
+  const result: Y.Doc[] = []
+  for (const reverse of [false, true]) {
+    const docs = [1, 2, 3].map((id) => {
+      const doc = new Y.Doc()
+      doc.clientID = id
+      Y.applyUpdate(doc, Y.encodeStateAsUpdate(base))
+      return doc
+    })
+    for (let index = 0; index < 2; index++) edit(new WorkbookModel(docs[index]!).sheets()[0]!, index + 1)
+    const updates = docs.slice(0, 2).map((doc) => Y.encodeStateAsUpdate(doc))
+    for (const doc of docs) for (const update of reverse ? [...updates].reverse() : updates) Y.applyUpdate(doc, update)
+    result.push(...docs)
+  }
+  return result
+}
+
+describe('spreadsheet audit regressions', () => {
+  it.each(['structural', 'cell', 'batched', 'remote', 'remote metadata'] as const)('invalidates imported caches on the first %s edit', async (edit) => {
+    const rows = Array.from({ length: 10 }, (_, row) => `<row r="${row + 1}"><c r="A${row + 1}"><v>${row + 1}</v></c></row>`).join('')
+    const { doc, workbook, sheet } = await open(xlsx(`${rows}<row r="20"><c r="B20"><f>SUM(A1:A10)</f><v>55</v></c><c r="C20"><f>2+3</f><v>99</v></c><c r="D20"><f>UNKNOWN()</f><v>77</v></c><c r="E20"><f t="dataTable" ref="E20:E21"/><v>88</v></c></row>`))
+    const stopTracking = trackEdits(doc)
+    const calc = new SheetCalc(workbook)
+    expect(calc.get(sheet, 19, 1)).toBe(55)
+    expect(calc.get(sheet, 19, 2)).toBe(99)
+    let formulaRow = 19
+    if (edit === 'structural' || edit === 'batched') {
+      formulaRow--
+      workbook.transact(() => {
+        deleteAxis(sheet, 'row', 0, 1)
+        if (edit === 'batched') markCalcDirty(doc)
+      })
+      expect(toA1Form(sheet.cell(18, 1)!.f!, sheet)).toBe('SUM(A1:A9)')
+    } else if (edit === 'cell') sheet.setCell(0, 0, { v: 0 })
+    else {
+      const remote = new Y.Doc()
+      Y.applyUpdate(remote, Y.encodeStateAsUpdate(doc))
+      const remoteWorkbook = new WorkbookModel(remote)
+      const stopRemoteTracking = trackEdits(remote)
+      if (edit === 'remote') remoteWorkbook.sheets()[0]!.setCell(0, 0, { v: 0 })
+      else markCalcDirty(remote)
+      Y.applyUpdate(doc, Y.encodeStateAsUpdate(remote))
+      stopRemoteTracking()
+      remote.destroy()
+    }
+    expect(workbook.metaValue('calcDirty')).toBe(true)
+    expect(calc.get(sheet, formulaRow, 1)).toBe(edit === 'remote metadata' ? 55 : 54)
+    expect(calc.get(sheet, formulaRow, 2)).toBe(5)
+    expect(calc.get(sheet, formulaRow, 3)).toBe(77)
+    expect(calc.get(sheet, formulaRow, 4)).toBe(88)
+    calc.destroy()
+    stopTracking()
+    doc.destroy()
+  })
+
+  it.each(['row', 'col'] as const)('shrinks reversed %s ranges toward their surviving interior', (kind) => {
+    const doc = new Y.Doc()
+    const workbook = WorkbookModel.initialize(doc)
+    const sheet = workbook.addSheet('Sheet1')
+    for (let index = 0; index < 10; index++) sheet.setCell(kind === 'row' ? index : 0, kind === 'col' ? index : 0, { v: index + 1 })
+    sheet.setCell(19, 19, { f: toIdForm(kind === 'row' ? 'SUM(A10:A1)' : 'SUM(J1:A1)', sheet) })
+    const calc = new SheetCalc(workbook)
+    expect(calc.get(sheet, 19, 19)).toBe(55)
+    deleteAxis(sheet, kind, 0, 1)
+    const row = kind === 'row' ? 18 : 19
+    const col = kind === 'col' ? 18 : 19
+    expect(toA1Form(sheet.cell(row, col)!.f!, sheet)).toBe(kind === 'row' ? 'SUM(A9:A1)' : 'SUM(I1:A1)')
+    expect(calc.get(sheet, row, col)).toBe(54)
+    deleteAxis(sheet, kind, 8, 1)
+    const finalRow = kind === 'row' ? row - 1 : row
+    const finalCol = kind === 'col' ? col - 1 : col
+    expect(toA1Form(sheet.cell(finalRow, finalCol)!.f!, sheet)).toBe(kind === 'row' ? 'SUM(A8:A1)' : 'SUM(H1:A1)')
+    expect(calc.get(sheet, finalRow, finalCol)).toBe(44)
+    calc.destroy()
+    doc.destroy()
+  })
+
+  it('keeps a range valid when a surviving deleted-edge neighbor moves past the other endpoint', () => {
+    const doc = new Y.Doc()
+    const workbook = WorkbookModel.initialize(doc)
+    const sheet = workbook.addSheet('Sheet1')
+    for (let row = 0; row < 3; row++) sheet.setCell(row, 0, { v: row + 1 })
+    sheet.setCell(19, 1, { f: toIdForm('SUM(A1:A3)', sheet) })
+    const calc = new SheetCalc(workbook)
+    deleteAxis(sheet, 'row', 0, 1)
+    expect(calc.get(sheet, 18, 1)).toBe(5)
+    moveAxis(sheet, 'row', 0, 1, 4)
+    expect(toA1Form(sheet.cell(18, 1)!.f!, sheet)).toBe('SUM(A5:A1)')
+    expect(calc.get(sheet, 18, 1)).toBe(5)
+    calc.destroy()
+    doc.destroy()
+  })
+
+  it.each(['row', 'col'] as const)('resolves %s deletions without rewriting formulas and restores references on undo', async (kind) => {
+    for (const [start, count] of [[0, 1], [9, 1], [0, 10]] as const) {
+      const doc = new Y.Doc()
+      const workbook = WorkbookModel.initialize(doc)
+      const sheet = workbook.addSheet('Sheet1')
+      const other = workbook.addSheet('Other')
+      const row = kind === 'row'
+      for (let index = 0; index < 10; index++) sheet.setCell(row ? index : 0, row ? 0 : index, { v: index + 1 })
+      const range = row ? 'A1:A10' : 'A1:J1'
+      const single = row ? `A${start + 1}` : `${start === 9 ? 'J' : 'A'}1`
+      const formulas = [`SUM(${range})`, single]
+      for (const [index, formula] of formulas.entries()) {
+        sheet.setCell(19, 19 + index, { f: toIdForm(formula, sheet) })
+        other.setCell(0, index, { f: toIdForm(formula.replace(/([A-J]\d+)/, 'Sheet1!$1'), other) })
+      }
+      const stored = [...sheet.cells.values(), ...other.cells.values()].filter((data) => data.f).map((data) => data.f)
+      const calc = new SheetCalc(workbook)
+      const undo = new Y.UndoManager(workbook.root)
+      deleteAxis(sheet, kind, start, count)
+      const formulaRow = row ? 19 - count : 19
+      const formulaCol = row ? 19 : 19 - count
+      const remaining = row ? 'A1:A9' : 'A1:I1'
+      const expectedRange = count === 10 ? 'SUM(#REF!)' : `SUM(${remaining})`
+      expect(toA1Form(sheet.cell(formulaRow, formulaCol)!.f!, sheet)).toBe(expectedRange)
+      expect(toA1Form(sheet.cell(formulaRow, formulaCol + 1)!.f!, sheet)).toBe('#REF!')
+      expect(toA1Form(other.cell(0, 0)!.f!, other)).toBe(expectedRange.replace(/(A1:[AI]\d+|#REF!)/, 'Sheet1!$1'))
+      expect(toA1Form(other.cell(0, 1)!.f!, other)).toBe('Sheet1!#REF!')
+      const sum = count === 10 ? { e: '#REF!' } : 55 - (start + 1)
+      expect(calc.get(sheet, formulaRow, formulaCol)).toEqual(sum)
+      expect(calc.get(other, 0, 0)).toEqual(sum)
+      expect(calc.get(sheet, formulaRow, formulaCol + 1)).toEqual({ e: '#REF!' })
+      expect(calc.get(other, 0, 1)).toEqual({ e: '#REF!' })
+      expect([...sheet.cells.values(), ...other.cells.values()].filter((data) => data.f).map((data) => data.f)).toEqual(stored)
+      const codec = new SheetCodec()
+      const context = { name: 'Deleted.xlsx', assets: new MemoryLiveAssetStore() }
+      const bytes = await codec.exportFile(doc, context)
+      const xml = strFromU8(unzipSync(bytes)['xl/worksheets/sheet1.xml']!)
+      expect(xml).toContain(`<f>${expectedRange}</f>`)
+      expect(xml).toContain('<f>#REF!</f><v>#REF!</v>')
+      expect(await codec.applyFile(doc, bytes, context)).toEqual({ changed: false })
+      undo.undo()
+      for (const [index, formula] of formulas.entries()) expect(toA1Form(sheet.cell(19, 19 + index)!.f!, sheet)).toBe(formula)
+      expect(calc.get(sheet, 19, 19)).toBe(55)
+      expect(calc.get(sheet, 19, 20)).toBe(start + 1)
+      undo.destroy()
+      calc.destroy()
+      doc.destroy()
+    }
+  })
+
+  it.each([false, true])('calculates colliding table names in canonical order across replicas, swap=%s', async (swap) => {
+    const base = new Y.Doc()
+    base.clientID = 100
+    const workbook = WorkbookModel.initialize(base)
+    workbook.setMeta('calcDirty', true)
+    const sheet = workbook.addSheet('Sheet1')
+    sheet.setCell(0, 0, { v: 'Header' })
+    sheet.setCell(1, 0, { v: 10 })
+    sheet.setCell(3, 0, { v: 'Header' })
+    sheet.setCell(4, 0, { v: 20 })
+    sheet.setCell(0, 2, { f: toIdForm('SUM(Foo[Header])', sheet) })
+    sheet.setCell(1, 2, { f: toIdForm('SUM(Foo_2[Header])', sheet) })
+    const docs = replicas(base, (sheet, client) => {
+      const first = swap ? client === 2 : client === 1
+      const row = first ? 0 : 3
+      sheet.tables.set(first ? 'table0' : 'table1', { name: 'Foo', displayName: 'Foo', range: sheet.rangeIds({ top: row, left: 0, bottom: row + 1, right: 0 }), headerRow: true, totalsRow: false, columns: [{ name: 'Header' }] })
+    })
+    const codec = new SheetCodec()
+    const context = { name: 'Tables.xlsx', assets: new MemoryLiveAssetStore() }
+    const files = []
+    for (const doc of docs) {
+      const model = new WorkbookModel(doc)
+      const sheet = model.sheets()[0]!
+      const calc = new SheetCalc(model)
+      expect(calc.get(sheet, 0, 2)).toBe(10)
+      expect(calc.get(sheet, 1, 2)).toBe(20)
+      expect(calc.evaluate(sheet, 0, 2, 'SUM(Foo[Header])')).toBe(10)
+      expect(calc.evaluate(sheet, 0, 2, 'SUM(Foo_2[Header])')).toBe(20)
+      // Structured-reference dependencies must bind to the same resolved table as evaluation.
+      sheet.setCell(1, 0, { v: 11 })
+      expect(calc.get(sheet, 0, 2)).toBe(11)
+      expect(calc.get(sheet, 1, 2)).toBe(20)
+      files.push(await codec.exportFile(doc, context))
+      calc.destroy()
+    }
+    for (const bytes of files) expect(bytes).toEqual(files[0])
+    for (const doc of docs) doc.destroy()
+    base.destroy()
+  })
+
+  it.each([1, 10_000])('bounds dependency discovery and traversal for 2,000 overlapping formulas with maxWork=%s', (maxWork) => {
+    const engine = new FormulaEngine({ functions: sheetFunctions(), maxWork })
+    engine.setSheets(['Sheet1'])
+    for (let row = 0; row < 2000; row++) engine.setCell(0, row, 0, { formula: 'SUM(A1:A2000)', cached: row + 1 })
+    expect(engine.dependencyStats().rangeEntries).toBe(1)
+    const before = performance.now()
+    expect(engine.recalc({ full: true }).stoppedEarly).toBe(true)
+    expect(performance.now() - before).toBeLessThan(1000)
+    for (let row = 0; row < 2000; row++) expect(engine.getValue(0, row, 0)).toBe(row + 1)
+    // Interrupted graph construction must leave the pending work available for another recalc.
+    expect(engine.recalc().stoppedEarly).toBe(true)
+  })
+
+  it('retains cached values after dependency discovery stops and retries the unfinished work', () => {
+    const options = { functions: sheetFunctions(), maxWork: 1 }
+    const engine = new FormulaEngine(options)
+    engine.setSheets(['Sheet1'])
+    engine.setCell(0, 0, 0, { value: 1 })
+    for (let row = 0; row < 50; row++) engine.setCell(0, row, 1, { formula: 'A1*2', cached: 2 })
+    engine.markClean()
+    engine.setCell(0, 0, 0, { value: 3 })
+    expect(engine.recalc().stoppedEarly).toBe(true)
+    for (let row = 0; row < 50; row++) expect(engine.getValue(0, row, 1)).toBe(2)
+    options.maxWork = 100_000
+    expect(engine.recalc().stoppedEarly).toBe(false)
+    for (let row = 0; row < 50; row++) expect(engine.getValue(0, row, 1)).toBe(6)
+  })
+
+  it('retries dependency invalidation interrupted while committing a spill', () => {
+    for (let maxWork = 1; maxWork <= 80; maxWork++) {
+      const options = { functions: sheetFunctions(), maxWork }
+      const engine = new FormulaEngine(options)
+      engine.setSheets(['Sheet1'])
+      engine.setCell(0, 0, 0, { formula: 'SEQUENCE(2)', cached: 9 })
+      engine.setCell(0, 0, 1, { formula: 'A2*2', cached: 18 })
+      engine.markClean()
+      engine.recalc({ full: true })
+      options.maxWork = 10_000
+      expect(engine.recalc().stoppedEarly).toBe(false)
+      expect(engine.getValue(0, 0, 0), `anchor after maxWork=${maxWork}`).toBe(1)
+      expect(engine.getValue(0, 1, 0), `spill after maxWork=${maxWork}`).toBe(2)
+      expect(engine.getValue(0, 0, 1), `dependent after maxWork=${maxWork}`).toBe(4)
+    }
+  })
+
+  it.each([[39_998, 100, 2], [undefined, 100, 20], [undefined, 1000, 5]] as const)('bounds cumulative array import allocations across twenty arrays, limit=%s, columns=%s', async (maxArrayEntries, cols, materialized) => {
+    const body = Array.from({ length: 20 }, (_, index) => {
+      const row = index * 100 + 1
+      return `<row r="${row}"><c r="A${row}"><f t="array" ref="A${row}:${columnName(cols - 1)}${row + 99}">1</f><v>1</v></c></row>`
+    }).join('')
+    const codec = new SheetCodec({ read: { maxCells: 20, maxArrayEntries } })
+    const context = { name: 'Arrays.xlsx', assets: new MemoryLiveAssetStore() }
+    const doc = new Y.Doc()
+    await codec.importFile(doc, xlsx(body), context)
+    const workbook = new WorkbookModel(doc)
+    const sheet = workbook.sheets()[0]!
+    expect(sheet.cells.size).toBe(20)
+    const calc = new SheetCalc(workbook)
+    for (let index = 0; index < 20; index++) {
+      const data = sheet.cell(index * 100, 0)!
+      expect(data.spillCache?.flat().length ?? 0).toBe(index < materialized ? 100 * cols : 0)
+      expect(calc.isUnsupported(sheet, index * 100, 0)).toBe(index >= materialized)
+      expect(calc.get(sheet, index * 100, 0)).toBe(1)
+    }
+    const output = await codec.exportFile(doc, context)
+    const xml = strFromU8(unzipSync(output)['xl/worksheets/sheet1.xml']!)
+    expect(xml).toContain(`t="array" ref="A1901:${columnName(cols - 1)}2000"`)
+    const again = new Y.Doc()
+    await codec.importFile(again, output, context)
+    expect(new WorkbookModel(again).sheets()[0]!.cell(1900, 0)?.oversizedArray).toBe(materialized === 20 ? undefined : true)
+    calc.destroy()
+    again.destroy()
+    doc.destroy()
+  }, 15_000)
+
+  it('shares the array import allowance between worksheets and preserves unmaterialized member values', async () => {
+    const parts = unzipSync(xlsx('<row r="1"><c r="A1"><f t="array" ref="A1:A2">1</f><v>1</v></c></row><row r="2"><c r="A2"><v>2</v></c></row>'))
+    parts['xl/workbook.xml'] = strToU8(strFromU8(parts['xl/workbook.xml']!).replace('</sheets>', '<sheet name="Sheet2" sheetId="2" r:id="rId2"/></sheets>'))
+    parts['xl/_rels/workbook.xml.rels'] = strToU8(strFromU8(parts['xl/_rels/workbook.xml.rels']!).replace('</Relationships>', `<Relationship Id="rId2" Type="${R}/worksheet" Target="worksheets/sheet2.xml"/></Relationships>`))
+    parts['xl/worksheets/sheet2.xml'] = parts['xl/worksheets/sheet1.xml']!
+    const codec = new SheetCodec({ read: { maxArrayEntries: 3 } })
+    const context = { name: 'Arrays.xlsx', assets: new MemoryLiveAssetStore() }
+    const doc = new Y.Doc()
+    await codec.importFile(doc, zipSync(parts), context)
+    const workbook = new WorkbookModel(doc)
+    expect(workbook.sheets()[0]!.cell(0, 0)?.spillCache).toEqual([[1], [2]])
+    expect(workbook.sheets()[1]!.cell(0, 0)?.oversizedArray).toBe(true)
+    expect(workbook.sheets()[1]!.cell(0, 0)?.spillCache).toBeUndefined()
+    expect(workbook.sheets()[1]!.cell(1, 0)?.v).toBe(2)
+    const output = await codec.exportFile(doc, context)
+    const again = new Y.Doc()
+    await codec.importFile(again, output, context)
+    expect(new WorkbookModel(again).sheets()[1]!.cell(1, 0)?.v).toBe(2)
+    again.destroy()
+    doc.destroy()
+  })
+
+  it.each(['Infinity', 'NaN', '-1', '1.5', String(MAX_ROWS)])('drops drawing anchors with invalid row %s (finding 1)', async (row) => {
+    const parts = unzipSync(readFileSync(new URL('../../../test-fixtures/sheets/generated/gen-image.xlsx', import.meta.url)))
+    const baseline = await open(zipSync(parts))
+    const path = Object.keys(parts).find((path) => /^xl\/drawings\/drawing\d+\.xml$/.test(path))!
+    parts[path] = strToU8(strFromU8(parts[path]!).replace(/(<(?:\w+:)?row>)[^<]*(<\/(?:\w+:)?row>)/, `$1${row}$2`))
+    const { sheet } = await open(zipSync(parts))
+    expect(sheet.drawings.size).toBe(baseline.sheet.drawings.size - 1)
+    expect(sheet.rows.length).toBeLessThan(10_000)
+  })
+
+  it.each([false, true])('preserves oversized array formulas without expanding them, dynamic=%s (finding 2)', async (dynamic) => {
+    const bytes = xlsx(`<row r="1"><c r="A1"${dynamic ? ' cm="1"' : ''}><f t="array" ref="A1:XFD1048576">1</f><v>1</v></c></row>`)
+    if (!dynamic) expect(bytes.length).toBe(1360)
+    const { workbook, sheet, codec, context, doc } = await open(bytes)
+    const calc = new SheetCalc(workbook)
+    calc.recalculateAll()
+    expect(calc.get(sheet, 0, 0)).toBe(1)
+    expect(calc.isUnsupported(sheet, 0, 0)).toBe(true)
+    const exported = await codec.exportFile(doc, context)
+    const output = unzipSync(exported)
+    expect(strFromU8(output['xl/worksheets/sheet1.xml']!)).toContain('t="array" ref="A1:XFD1048576"')
+    const again = await open(exported)
+    expect(again.sheet.cell(0, 0)).toEqual(sheet.cell(0, 0))
+    expect(sheet.cells.size).toBe(1)
+    calc.destroy()
+  })
+
+  it('bounds HTML clipboard spans and paste area (finding 5)', () => {
+    vi.stubGlobal('DOMParser', new JSDOM('').window.DOMParser)
+    try {
+      for (const span of ['Infinity', 'NaN', '-1', '1.5']) {
+        expect(parseHtml(`<table><tr><td rowspan="${span}" colspan="${span}">x</td><td>y</td></tr></table>`)?.cells[0]?.map((cell) => cell.text)).toEqual(['x', 'y'])
+      }
+      const html = `<table><tr><td rowspan="1048576" colspan="16384">x</td></tr>${'<tr><td>y</td></tr>'.repeat(100)}</table>`
+      const parsed = parseHtml(html)!
+      expect(parsed.cells.length * MAX_COLS).toBeLessThanOrEqual(MAX_EXPANDED_CELLS)
+      expect(parsed.cells.flat().filter((cell) => cell.text === 'y')).toHaveLength(0)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('serializes file fonts as CSS strings and rejects declaration-shaped colors (finding 6)', () => {
+    const sheet = WorkbookModel.initialize(new Y.Doc()).addSheet('Sheet1')
+    sheet.setCell(0, 0, { v: 'x' })
+    const font = "x';background-image:url(https://example.invalid/probe);font-family:'y"
+    const td = new JSDOM(print(sheet, font, 'red;background-image:url(https://example.invalid/color)')).window.document.querySelector('td')!
+    expect(td.style.backgroundImage).toBe('')
+    expect(td.style.color).toBe('')
+    expect(td.style.fontFamily).toContain('background-image')
+    expect(td.style.fontSize).toBe('11pt')
+  })
+
+  it('clips huge print merges without enumerating their cells (finding 7)', async () => {
+    const { sheet } = await open(xlsx('<row r="1"><c r="A1"><v>1</v></c></row>', '<mergeCells><mergeCell ref="A1:XFD1048576"/></mergeCells>'))
+    const html = print(sheet)
+    expect(html).toContain('rowspan="1" colspan="1"')
+    expect(html.match(/<td/g)).toHaveLength(1)
+  })
+
+  it.each(['shape', 'image', 'chart'] as const)('applies changes to preserved %s XML (finding 8)', (kind) => {
+    const doc = new Y.Doc()
+    const sheet = WorkbookModel.initialize(doc).addSheet('Sheet1')
+    sheet.drawings.set('object', { kind, anchor: 'absolute', z: 1, xml: '<xdr:sp><a:t>Before</a:t></xdr:sp>' } satisfies DrawingObject)
+    const incoming = new Y.Doc()
+    Y.applyUpdate(incoming, Y.encodeStateAsUpdate(doc))
+    const other = new WorkbookModel(incoming).sheets()[0]!
+    other.drawings.set('object', { ...(other.drawings.get('object') as DrawingObject), xml: '<xdr:sp><a:t>After</a:t></xdr:sp>' })
+    expect(applyWorkbook(doc, incoming).changed).toBe(true)
+    expect((Array.from(sheet.drawings.values())[0] as DrawingObject).xml).toContain('After')
+    expect(applyWorkbook(doc, incoming).changed).toBe(false)
+  })
+
+  it('ignores drawing XML prefix, attribute-order, and object-id differences (finding 8)', () => {
+    const doc = new Y.Doc()
+    const sheet = WorkbookModel.initialize(doc).addSheet('Sheet1')
+    sheet.drawings.set('shape', { kind: 'shape', anchor: 'absolute', z: 1, xml: '<xdr:sp><xdr:cNvPr id="1" name="Shape"/><a:t>Same</a:t></xdr:sp>' } satisfies DrawingObject)
+    const incoming = new Y.Doc()
+    Y.applyUpdate(incoming, Y.encodeStateAsUpdate(doc))
+    const other = new WorkbookModel(incoming).sheets()[0]!
+    other.drawings.set('shape', { ...(other.drawings.get('shape') as DrawingObject), xml: '<sp xmlns="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"><cNvPr name="Shape" id="42"/><a:t>Same</a:t></sp>' })
+    expect(applyWorkbook(doc, incoming).changed).toBe(false)
+  })
+
+  it.each(['a,b,\nc,d,\n', 'a\tb\nc\td\n', 'a;b;\r\nc;d;\n', 'a|b\nc|d\n', 'a,b\nc,d\r\n', 'a,b\rc,d\r\nlast,'])('round-trips CSV bytes %j (finding 9)', async (text) => {
+    const { doc, codec, context } = await open(strToU8(text), 'Book.csv')
+    expect(strFromU8(await codec.exportFile(doc, context))).toBe(text)
+  })
+
+  it('keeps multiple wide column intervals and their bounds (finding 10)', async () => {
+    const parts = unzipSync(xlsx(''))
+    parts['xl/worksheets/sheet1.xml'] = strToU8(`<worksheet xmlns="${NS}"><cols><col min="1" max="2048" width="20" customWidth="1"/><col min="2049" max="16384" width="10" customWidth="1"/></cols><sheetData/></worksheet>`)
+    const { sheet, codec, doc, context } = await open(zipSync(parts))
+    expect(columnIntervalProps(sheet, 0).size).toBe(20)
+    expect(columnIntervalProps(sheet, 2048).size).toBe(10)
+    const output = unzipSync(await codec.exportFile(doc, context))
+    const xml = strFromU8(output['xl/worksheets/sheet1.xml']!)
+    expect(xml).toContain('min="1" max="2048" width="20"')
+    expect(xml).toContain('min="2049" max="16384" width="10"')
+    sheet.raw.set('colTail', { from: 10, to: 20, props: { size: 30 } })
+    expect(columnIntervalProps(sheet, 9)).toEqual({})
+    expect(columnIntervalProps(sheet, 20).size).toBe(30)
+    expect(columnIntervalProps(sheet, 21)).toEqual({})
+  })
+
+  it('applies 140,000 row metadata entries without spreading arguments (finding 11)', () => {
+    const doc = new Y.Doc()
+    const sheet = WorkbookModel.initialize(doc).addSheet('Sheet1')
+    doc.transact(() => {
+      sheet.rows.ensure(140_000)
+      for (let row = 0; row < 140_000; row++) sheet.rowMeta.set(`${sheet.rows.idAt(row)}|size`, 20)
+    })
+    const incoming = new Y.Doc()
+    Y.applyUpdate(incoming, Y.encodeStateAsUpdate(doc))
+    expect(applyWorkbook(doc, incoming)).toEqual({ changed: false })
+  }, 10_000)
+
+  it('counts omitted whole-column and whole-row blanks with logical dimensions (finding 12)', () => {
+    const workbook = WorkbookModel.initialize(new Y.Doc())
+    const sheet = workbook.addSheet('Sheet1')
+    sheet.setCell(0, 0, { v: 1 })
+    const calc = new SheetCalc(workbook)
+    for (const [formula, expected] of [
+      ['COUNTBLANK(A:A)', MAX_ROWS - 1], ['COUNTIF(A:A,"")', MAX_ROWS - 1], ['COUNTIF(A:A,"=")', MAX_ROWS - 1],
+      ['COUNTIFS(A:A,"",B:B,"=")', MAX_ROWS - 1], ['ROWS(A:A)', MAX_ROWS], ['COLUMNS(1:1)', MAX_COLS],
+      ['COUNTBLANK(1:1)', MAX_COLS - 1], ['COUNTA(A:A)', 1], ['COUNT(A:A)', 1], ['SUMPRODUCT(A:A)', 1],
+      ['SUMPRODUCT(--(A:A=""))', MAX_ROWS - 1], ['MATCH("",A:A&"",0)', 2], ['COUNTBLANK(A1:A1048575)', MAX_ROWS - 2],
+    ] as const) expect(calc.evaluate(sheet, 0, 1, formula), formula).toBe(expected)
+    expect(calc.evaluate(sheet, 0, 1, 'MATCH(0,A:A,0)')).toEqual(calc.evaluate(sheet, 0, 1, 'MATCH(0,A1:A100,0)'))
+    calc.destroy()
+  })
+  it.each([
+    ['hello', 'HeLLo', true], ['hello', 'hell', false], ['', '', true], ['', 'x', false],
+    ['*', '', true], ['?', '', false], ['?', 'A', true], ['?', 'AB', false],
+    ['a*b', 'ab', true], ['a*b', 'aXYZb', true], ['*ab', 'XAB', true], ['ab*', 'ABX', true],
+    ['a?c', 'AbC', true], ['a?c', 'ac', false], ['~*', '*', true], ['~?', '?', true],
+    ['~~', '~', true], ['~a', '~A', true], ['~', '~', true], ['*~**', 'a*b', true],
+    ['a.b', 'axb', false], ['*?*', '\n', true],
+  ] as const)('matches bounded Excel wildcards %j against %j', (pattern, text, expected) => {
+    expect(wildcardMatch(pattern, text)).toBe(expected)
+  })
+
+  it.each([
+    ['a?c', 'xxAbCyy', 2], ['*ab', 'xxab', 0], ['ab*', 'xxab', 2],
+    ['a*b', 'xxaccb', 2], ['~*', 'x*y', 1], ['', 'abc', 0], ['?', '', -1],
+    ['ab', 'aaab', 2], ['a*b?c', 'xa123bxc', 1],
+  ] as const)('finds wildcard substrings %j in %j', (pattern, text, expected) => {
+    expect(wildcardIndex(pattern, text)).toBe(expected)
+  })
+
+  it('finishes the exponential wildcard reproduction in milliseconds and charges every caller', () => {
+    const pattern = '*a'.repeat(14) + 'b'
+    const text = 'a'.repeat(28) + 'c'
+    const start = performance.now()
+    expect(wildcardMatch(pattern, text)).toBe(false)
+    expect(wildcardIndex(pattern, text)).toBe(-1)
+    expect(performance.now() - start).toBeLessThan(100)
+    const restore = calculationBudget(100)
+    try {
+      expect(() => wildcardMatch(pattern, text)).toThrow(CalculationStopped)
+      expect(() => wildcardIndex(pattern, text)).toThrow(CalculationStopped)
+    } finally { restore() }
+    const workbook = WorkbookModel.initialize(new Y.Doc())
+    const sheet = workbook.addSheet('Sheet1')
+    sheet.setCell(0, 0, { v: 'Header' })
+    sheet.setCell(1, 0, { v: 'a*b' })
+    sheet.setCell(2, 0, { v: 'other' })
+    sheet.setCell(1, 1, { v: 7 })
+    sheet.setCell(2, 1, { v: 3 })
+    sheet.setCell(0, 3, { v: 'Header' })
+    sheet.setCell(1, 3, { v: '=a~*b' })
+    const calc = new SheetCalc(workbook)
+    for (const [formula, expected] of [
+      ['COUNTIF(A2:A3,"a~*b")', 1], ['COUNTIFS(A2:A3,"a~*b")', 1],
+      ['SUMIF(A2:A3,"a~*b",B2:B3)', 7], ['SUMIFS(B2:B3,A2:A3,"a~*b")', 7],
+      ['AVERAGEIF(A2:A3,"a~*b",B2:B3)', 7], ['AVERAGEIFS(B2:B3,A2:A3,"a~*b")', 7],
+      ['MAXIFS(B2:B3,A2:A3,"a~*b")', 7], ['MINIFS(B2:B3,A2:A3,"a~*b")', 7],
+      ['MATCH("a~*b",A2:A3,0)', 1], ['XLOOKUP("a~*b",A2:A3,B2:B3,,2)', 7],
+      ['VLOOKUP("a~*b",A2:B3,2,FALSE)', 7], ['HLOOKUP("a~*b",A2:B3,1,FALSE)', 'a*b'],
+      ['SEARCH("~*",A2)', 2], ['DCOUNTA(A1:A3,"Header",D1:D2)', 1],
+    ] as const) expect(calc.evaluate(sheet, 0, 5, formula), formula).toBe(expected)
+    calc.destroy()
+    sheet.setCell(1, 0, { v: text })
+    const bounded = new SheetCalc(workbook, { maxWork: 100, live: false })
+    const before = performance.now()
+    bounded.evaluate(sheet, 0, 5, `COUNTIF(A2,"${pattern}")`)
+    expect(performance.now() - before).toBeLessThan(100)
+    bounded.destroy()
+  })
+
+  it.each([false, true])('exports colliding tables across three replicas and both orders, defined names=%s', async (definedNames) => {
+    const base = new Y.Doc()
+    base.clientID = 100
+    const workbook = WorkbookModel.initialize(base)
+    const sheet = workbook.addSheet('Sheet1')
+    const add = (sheet: SheetModel, id: string, name: string, row: number) => {
+      sheet.tables.set(id, { name, displayName: name, range: sheet.rangeIds({ top: row, left: 0, bottom: row + 1, right: 0 }), headerRow: true, totalsRow: false, columns: [{ name: 'Header' }] })
+    }
+    add(sheet, 'existing', 'Foo_3', 0)
+    if (definedNames) {
+      workbook.names.set('reserved2', { name: 'fOO_2', formula: '1' })
+      workbook.names.set('reserved4', { name: 'FOO_4', formula: '1' })
+    }
+    const docs = replicas(base, (sheet, client) => add(sheet, `new${client}`, 'Foo', client * 2))
+    const codec = new SheetCodec()
+    const context = { name: 'Tables.xlsx', assets: new MemoryLiveAssetStore() }
+    const exports = await Promise.all(docs.map((doc) => codec.exportFile(doc, context)))
+    for (const bytes of exports) expect(Buffer.from(bytes).equals(Buffer.from(exports[0]!))).toBe(true)
+    const parts = unzipSync(exports[0]!)
+    const names = Object.entries(parts).filter(([path]) => /^xl\/tables\/table.*xml$/.test(path)).map(([, bytes]) => / name="([^"]+)"/.exec(strFromU8(bytes))![1])
+    expect(names).toEqual(['Foo_3', 'Foo', definedNames ? 'Foo_5' : 'Foo_2'])
+    for (const doc of docs) doc.destroy()
+    base.destroy()
+  })
+
+  it('exports ragged CSV with stored-cell work instead of rectangular lookups', () => {
+    const text = Array(100).fill('x').join(',') + '\n' + 'x\n'.repeat(9)
+    const doc = new Y.Doc()
+    readCsv(doc, strToU8(text), 'csv')
+    const cell = vi.spyOn(SheetModel.prototype, 'cell')
+    try {
+      expect(strFromU8(writeCsv(doc, 'csv'))).toBe(text)
+      expect(cell.mock.calls.length).toBeLessThanOrEqual(109)
+    } finally { cell.mockRestore() }
+    doc.destroy()
+  })
+
+  it('exports a 16,384-column row and 50,000 one-field rows within a few seconds', () => {
+    const text = Array(MAX_COLS).fill('x').join(',') + '\n' + 'x\n'.repeat(50_000)
+    const doc = new Y.Doc()
+    readCsv(doc, strToU8(text), 'csv')
+    const start = performance.now()
+    const bytes = writeCsv(doc, 'csv')
+    const elapsed = performance.now() - start
+    expect(strFromU8(bytes)).toBe(text)
+    expect(elapsed).toBeLessThan(3000)
+    doc.destroy()
+  }, 15_000)
+
+  it('assigns stable picture ids after preserved objects in canonical order', async () => {
+    const base = new Y.Doc()
+    base.clientID = 100
+    const workbook = WorkbookModel.initialize(base)
+    const sheet = workbook.addSheet('Sheet1')
+    const assets = new MemoryLiveAssetStore()
+    const image = await assets.put(new Uint8Array(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jL1sAAAAASUVORK5CYII=', 'base64')), 'image/png')
+    sheet.drawings.set('preserved', { kind: 'shape', anchor: 'absolute', xml: '<xdr:sp><xdr:cNvPr name="Old" id="42"/></xdr:sp>', z: 0 } satisfies DrawingObject)
+    const docs = replicas(base, (sheet, client) => {
+      sheet.drawings.set(`pic${client}`, { kind: 'image', anchor: 'oneCell', from: { row: sheet.rows.idAt(client), col: sheet.cols.idAt(0), rowOff: 0, colOff: 0 }, ext: { cx: 100, cy: 100 }, z: 1, xml: '', image: { hash: image.hash, mimeType: 'image/png' } } satisfies DrawingObject)
+    })
+    const codec = new SheetCodec()
+    const context = { name: 'Pictures.xlsx', assets }
+    const exports = await Promise.all(docs.flatMap((doc) => [codec.exportFile(doc, context), codec.exportFile(doc, context)]))
+    for (const bytes of exports) expect(Buffer.from(bytes).equals(Buffer.from(exports[0]!))).toBe(true)
+    const xml = strFromU8(unzipSync(exports[0]!)['xl/drawings/drawing1.xml']!)
+    const ids = [...xml.matchAll(/cNvPr[^>]* id="(\d+)"/g)].map((match) => Number(match[1]))
+    expect(ids).toEqual([42, 43, 44])
+    expect(new Set(ids).size).toBe(ids.length)
+    const other = new WorkbookModel(docs[0]!).sheets()[0]!
+    const withSkeleton = writeDrawing(other, '<xdr:wsDr><xdr:cNvPr id="99"/></xdr:wsDr>', () => 'rId1')
+    expect(withSkeleton).toContain('id="100"')
+    expect(withSkeleton).toContain('id="101"')
+    for (const doc of docs) doc.destroy()
+    base.destroy()
+  })
+
+  it.each([undefined, 300, -60])('exports fixed-clock formulas identically across host timezones with stored offset %s', async (offset) => {
+    const doc = new Y.Doc()
+    const workbook = WorkbookModel.initialize(doc)
+    const sheet = workbook.addSheet('Sheet1')
+    expect(workbook.metaValue('calcTimezoneOffset')).toBeUndefined()
+    workbook.setMeta('calcTime', Date.UTC(2024, 0, 1, 1))
+    workbook.setMeta('calcDirty', true)
+    if (offset !== undefined) workbook.setMeta('calcTimezoneOffset', offset)
+    sheet.setCell(0, 0, { f: 'NOW()' })
+    sheet.setCell(0, 1, { f: 'TODAY()' })
+    sheet.setCell(0, 2, { f: 'DATEVALUE("1/2")' })
+    const script = `
+      import * as Y from 'yjs';
+      import { SheetCodec } from './src/office/sheets/codec/codec.ts';
+      import { MemoryLiveAssetStore } from './src/office/assets.ts';
+      const doc = new Y.Doc();
+      Y.applyUpdate(doc, Buffer.from(process.env.SHEET_SNAPSHOT, 'base64'));
+      const bytes = await new SheetCodec().exportFile(doc, { name: 'Clock.xlsx', assets: new MemoryLiveAssetStore() });
+      process.stdout.write(Buffer.from(bytes).toString('base64'));
+    `
+    const outputs = ['UTC', 'America/New_York'].map((TZ) => {
+      const child = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', script], {
+        cwd: new URL('../../../', import.meta.url),
+        env: { ...process.env, TZ, SHEET_SNAPSHOT: Buffer.from(Y.encodeStateAsUpdate(doc)).toString('base64') }, encoding: 'utf8', timeout: 15_000,
+      })
+      expect(child.status, child.stderr).toBe(0)
+      return Buffer.from(child.stdout, 'base64')
+    })
+    expect(outputs[0]!.equals(outputs[1]!)).toBe(true)
+    const xml = strFromU8(unzipSync(outputs[0]!)['xl/worksheets/sheet1.xml']!)
+    const values = [...xml.matchAll(/<v>([^<]+)<\/v>/g)].map((match) => Number(match[1]))
+    const now = 45292 + (60 - (offset ?? 0)) / 1440
+    expect(values[0]).toBeCloseTo(now, 8)
+    expect(values[1]).toBe(Math.floor(now))
+    expect(values[2]).toBe(dateToSerial(offset === 300 ? 2023 : 2024, 1, 2))
+    doc.destroy()
+  }, 30_000)
+
+  it('records the editing timezone with each new calculation clock and ignores snapshot-only edits', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(Date.UTC(2024, 0, 1))
+    const doc = new Y.Doc()
+    const workbook = WorkbookModel.initialize(doc)
+    const sheet = workbook.addSheet('Sheet1')
+    // A recently imported clock still needs the editing client's offset on the first local edit.
+    workbook.setMeta('calcTime', Date.now())
+    const stop = trackEdits(doc)
+    try {
+      sheet.setCell(0, 0, { v: 1 })
+      expect(workbook.metaValue('calcTime')).toBe(Date.now())
+      expect(workbook.metaValue('calcTimezoneOffset')).toBe(new Date(Date.now()).getTimezoneOffset())
+      vi.setSystemTime(Date.now() + 60_001)
+      workbook.setMeta('calcTimezoneOffset', 123)
+      expect(workbook.metaValue('calcTime')).not.toBe(Date.now())
+      markCalcDirty(doc)
+      expect(workbook.metaValue('calcTime')).toBe(Date.now())
+      expect(workbook.metaValue('calcTimezoneOffset')).toBe(new Date(Date.now()).getTimezoneOffset())
+      const calc = new SheetCalc(workbook)
+      const engine = (calc as unknown as { engine: unknown }).engine
+      workbook.setMeta('calcTimezoneOffset', 456)
+      expect((calc as unknown as { engine: unknown }).engine).toBe(engine)
+      calc.destroy()
+    } finally {
+      stop()
+      doc.destroy()
+      vi.useRealTimers()
+    }
+  })
+
+  it.each([false, true])('uses the snapshot year for date functions and arithmetic across New Year, date1904=%s', async (date1904) => {
+    const { codec, context, doc, workbook, sheet } = await open(xlsx(''))
+    workbook.setMeta('date1904', date1904)
+    workbook.setMeta('calcDirty', true)
+    workbook.setMeta('calcTime', Date.UTC(2024, 0, 1, 1))
+    workbook.setMeta('calcTimezoneOffset', 300)
+    const formulas = ['DATEVALUE("1/2")', 'VALUE("1/2")', 'TIMEVALUE("1/2 12:00")', '"1/2"+0', '-"1/2"', '"1/2"%', 'TEXT("1/2","yyyy-mm-dd")', 'SUM("1/2")', 'DATEVALUE("Jan 2")']
+    formulas.forEach((f, col) => sheet.setCell(0, col, { f }))
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(Date.UTC(2024, 11, 31))
+      const before = await codec.exportFile(doc, context)
+      const text = codec.toText(doc)
+      vi.setSystemTime(Date.UTC(2025, 0, 1, 12))
+      expect(Buffer.from(await codec.exportFile(doc, context)).equals(Buffer.from(before))).toBe(true)
+      expect(codec.toText(doc)).toBe(text)
+      const reopened = await open(before)
+      const day = dateToSerial(2023, 1, 2, date1904)
+      const expected = [day, day, 0.5, day, -day, day / 100, '2023-01-02', day, day]
+      expected.forEach((value, col) => expect(reopened.sheet.cell(0, col)?.v, formulas[col]).toEqual(value))
+      const live = new SheetCalc(workbook)
+      expect(live.evaluate(sheet, 1, 0, 'DATEVALUE("1/2")')).toBe(dateToSerial(2025, 1, 2, date1904))
+      live.destroy()
+      reopened.doc.destroy()
+    } finally {
+      vi.useRealTimers()
+      doc.destroy()
+    }
+  })
+
+})
+
+describe('sixth review regressions', () => {
+  /** Two replicas edit a copy of `base`, with each assignment of edits to client ids. */
+  function converged(base: Y.Doc, edits: [(model: WorkbookModel) => void, (model: WorkbookModel) => void]): WorkbookModel[] {
+    const models: WorkbookModel[] = []
+    for (const swap of [false, true]) {
+      for (const docs of replicas(base, (sheet, client) => edits[(client - 1 + (swap ? 1 : 0)) % 2]!(sheet.workbook))) models.push(new WorkbookModel(docs))
+    }
+    return models
+  }
+
+  it('resolves both deleted ends of a range from their neighbors, not from indexes recorded on different replicas', () => {
+    const base = new Y.Doc()
+    base.clientID = 100
+    const workbook = WorkbookModel.initialize(base)
+    const sheet = workbook.addSheet('Sheet1')
+    for (let row = 0; row < 12; row++) sheet.setCell(row, 0, { v: row + 1 })
+    sheet.setCell(19, 1, { f: toIdForm('SUM(A5:A10)', sheet) })
+    const models = converged(base, [
+      (model) => deleteAxis(model.sheets()[0]!, 'row', 4, 1),
+      (model) => {
+        const other = model.sheets()[0]!
+        deleteAxis(other, 'row', 0, 4)
+        deleteAxis(other, 'row', 1, 1)
+        deleteAxis(other, 'row', 4, 1)
+      },
+    ])
+    for (const model of models) {
+      const after = model.sheets()[0]!
+      // Rows 7, 8, and 9 are what survives of A5:A10; row 11 must stay out.
+      expect(toA1Form(after.cell(12, 1)!.f!, after)).toBe('SUM(A1:A3)')
+      const calc = new SheetCalc(model, { live: false })
+      expect(calc.get(after, 12, 1)).toBe(24)
+      calc.destroy()
+    }
+  })
+
+  it('shrinks a reversed range in a defined name when its edge row is deleted', () => {
+    for (const scoped of [false, true]) {
+      const doc = new Y.Doc()
+      const workbook = WorkbookModel.initialize(doc)
+      const sheet = workbook.addSheet('Sheet1')
+      for (let row = 0; row < 10; row++) sheet.setCell(row, 0, { v: row + 1 })
+      workbook.names.set('n:backwards', { name: 'Backwards', formula: toIdForm('SUM(Sheet1!A10:A1)', sheet), ...(scoped ? { scope: sheet.id } : {}) })
+      sheet.setCell(19, 1, { f: toIdForm('Backwards', sheet) })
+      deleteAxis(sheet, 'row', 0, 1)
+      const name = workbook.names.get('n:backwards')!
+      expect(toA1Form(name.formula, scoped ? sheet : undefined, workbook)).toBe('SUM(Sheet1!A9:A1)')
+      const calc = new SheetCalc(workbook, { live: false })
+      expect(calc.get(sheet, 18, 1)).toBe(54)
+      calc.destroy()
+    }
+  })
+
+  it('applies a file to a workbook with thousands of names in linear time', () => {
+    const doc = new Y.Doc()
+    const workbook = WorkbookModel.initialize(doc)
+    const sheet = workbook.addSheet('Sheet1')
+    sheet.setCell(0, 0, { v: 1 })
+    doc.transact(() => {
+      for (let index = 0; index < 20_000; index++) workbook.names.set(`name${index}`, { name: `Name_${index}`, formula: '1' })
+    })
+    const clone = new Y.Doc()
+    Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc))
+    new WorkbookModel(clone).sheets()[0]!.setCell(0, 0, { v: 2 })
+    const started = performance.now()
+    applyWorkbook(doc, clone)
+    expect(performance.now() - started).toBeLessThan(4_000)
+    expect(sheet.cell(0, 0)?.v).toBe(2)
+  }, 30_000)
+
+  it('goes to the active sheet\'s definition of a name before the workbook\'s, on every replica', () => {
+    const base = new Y.Doc()
+    base.clientID = 100
+    WorkbookModel.initialize(base).addSheet('Sheet1')
+    const models = converged(base, [
+      (model) => model.names.set('n:workbook', { name: 'Target', formula: toIdForm('Sheet1!B2', model.sheets()[0]!) }),
+      (model) => model.names.set('n:sheet', { name: 'Target', formula: toIdForm('Sheet1!D4', model.sheets()[0]!), scope: model.sheets()[0]!.id }),
+    ])
+    for (const model of models) {
+      const sheet = model.sheets()[0]!
+      let selected: unknown
+      const view = { workbook: model, sheet, sheetIdValue: sheet.id, setActiveSheet() {}, select(range: unknown) { selected = range } }
+      expect(SheetView.prototype.goTo.call(view as unknown as SheetView, 'Target')).toBe(true)
+      expect(selected).toEqual({ top: 3, left: 3, bottom: 3, right: 3 })
+    }
+  })
+})
+
+describe('eighth review regressions', () => {
+  function passes(sheet: SheetModel, values: SheetCalc, row: number, col: number, text: string): boolean {
+    const view = { sheet, workbook: sheet.workbook, values, editing: { row, col } }
+    const method = (SheetView.prototype as unknown as { passesValidation: (validation: DataValidation, text: string) => boolean }).passesValidation
+    return method.call(view, validationAt(sheet, row, col)!, text)
+  }
+
+  function applyWithoutRuleChanges(doc: Y.Doc, incoming: Y.Doc): void {
+    const sheet = new WorkbookModel(doc).sheets()[0]!
+    const changed = vi.fn()
+    sheet.cf.observe(changed)
+    sheet.dv.observe(changed)
+    try {
+      applyWorkbook(doc, incoming)
+      expect(changed).not.toHaveBeenCalled()
+    } finally {
+      sheet.cf.unobserve(changed)
+      sheet.dv.unobserve(changed)
+    }
+  }
+
+  it.each([false, true])('keeps only replacement rules after applyFile races a deletion, swap=%s', async (swap) => {
+    const base = new Y.Doc()
+    base.clientID = 100
+    const workbook = WorkbookModel.initialize(base)
+    const sheet = workbook.addSheet('Sheet1')
+    for (let row = 0; row < 10; row++) sheet.setCell(row, 0, { v: row })
+    const ranges = [sheet.rangeIds({ top: 0, left: 1, bottom: 9, right: 1 })]
+    sheet.cf.set('cf', { ranges, rules: [{ type: 'expression', priority: 1, formulas: [toIdForm('$A$10>0', sheet)] }] } satisfies ConditionalFormat)
+    sheet.dv.set('dv', { ranges, type: 'whole', operator: 'greaterThan', formula1: toIdForm('$A$10', sheet) } satisfies DataValidation)
+    const incoming = new Y.Doc()
+    Y.applyUpdate(incoming, Y.encodeStateAsUpdate(base))
+    const changed = new WorkbookModel(incoming).sheets()[0]!
+    changed.cf.set('cf', { ranges, rules: [{ type: 'expression', priority: 1, formulas: [toIdForm('$A$10>5', changed)] }] } satisfies ConditionalFormat)
+    changed.dv.set('dv', { ranges, type: 'whole', operator: 'greaterThan', formula1: toIdForm('$A$10+5', changed) } satisfies DataValidation)
+    const codec = new SheetCodec()
+    const context = { name: 'Rules.xlsx', assets: new MemoryLiveAssetStore() }
+    const file = await codec.exportFile(incoming, context)
+    for (const reverse of [false, true]) {
+      const docs = [1, 2, 3].map((id) => {
+        const doc = new Y.Doc()
+        doc.clientID = id
+        Y.applyUpdate(doc, Y.encodeStateAsUpdate(base))
+        return doc
+      })
+      await codec.applyFile(docs[swap ? 1 : 0]!, file, context)
+      deleteAxis(new WorkbookModel(docs[swap ? 0 : 1]!).sheets()[0]!, 'row', 0, 1)
+      const updates = docs.slice(0, 2).map((doc) => Y.encodeStateAsUpdate(doc))
+      for (const doc of docs) for (const update of reverse ? [...updates].reverse() : updates) Y.applyUpdate(doc, update)
+      const exports: Uint8Array[] = []
+      for (const doc of docs) {
+        const model = new WorkbookModel(doc)
+        const after = model.sheets()[0]!
+        expect(after.cf.size).toBe(1)
+        expect(after.dv.size).toBe(1)
+        const format = [...after.cf.values()][0] as ConditionalFormat
+        expect(toA1Form(format.rules[0]!.formulas![0]!, after)).toBe('$A$9>5')
+        expect(toA1Form(validationAt(after, 0, 1)!.formula1!, after)).toBe('$A$9+5')
+        const calc = new SheetCalc(model, { live: false })
+        expect(passes(after, calc, 0, 1, '10')).toBe(false)
+        expect(passes(after, calc, 0, 1, '15')).toBe(true)
+        calc.destroy()
+        exports.push(await codec.exportFile(doc, context))
+      }
+      for (const bytes of exports) expect(bytes).toEqual(exports[0])
+      for (const doc of docs) doc.destroy()
+    }
+    incoming.destroy()
+    base.destroy()
+  })
+
+  it('ignores dead rule ranges in evaluation, validation, export, diff, and file comparisons', async () => {
+    const doc = new Y.Doc()
+    const workbook = WorkbookModel.initialize(doc)
+    const sheet = workbook.addSheet('Sheet1')
+    for (let row = 0; row < 3; row++) sheet.setCell(row, 0, { v: row + 1 })
+    const dead = sheet.rangeIds({ top: 0, left: 1, bottom: 0, right: 1 })
+    const live = sheet.rangeIds({ top: 2, left: 1, bottom: 2, right: 1 })
+    const cf = { ranges: [dead], rules: [{ type: 'expression', priority: 1, formulas: ['TRUE'] }] } satisfies ConditionalFormat
+    const dv = { ranges: [dead], type: 'whole', operator: 'greaterThan', formula1: '99' } satisfies DataValidation
+    sheet.cf.set('dead', cf)
+    sheet.cf.set('mixed', { ...cf, ranges: [dead, live] })
+    sheet.dv.set('dead', dv)
+    sheet.dv.set('mixed', { ...dv, ranges: [dead, live], formula1: '1' })
+    deleteAxis(sheet, 'row', 0, 1)
+    expect(sheet.cf.get('dead')).toBe(cf)
+    expect(sheet.dv.get('dead')).toBe(dv)
+    expect(validationAt(sheet, 0, 1)).toBeUndefined()
+    expect(validationAt(sheet, 1, 1)!.formula1).toBe('1')
+    const calc = new SheetCalc(workbook, { live: false })
+    const formatter = new ConditionalFormatter(sheet, calc, new Stylesheet(), DEFAULT_THEME_COLORS)
+    expect(formatter.overlay(0, 1)).toBeUndefined()
+    expect(formatter.overlay(1, 1)).toEqual({})
+    calc.destroy()
+    const codec = new SheetCodec()
+    const context = { name: 'Dead.xlsx', assets: new MemoryLiveAssetStore() }
+    const bytes = await codec.exportFile(doc, context)
+    const xml = strFromU8(unzipSync(bytes)['xl/worksheets/sheet1.xml']!)
+    expect(xml.match(/<conditionalFormatting /g)).toHaveLength(1)
+    expect(xml.match(/<dataValidation /g)).toHaveLength(1)
+    expect(xml).toContain('sqref="B2"')
+    expect(xml).not.toContain('99')
+    const imported = new Y.Doc()
+    await codec.importFile(imported, bytes, context)
+    const diff = diffWorkbooks(doc, imported)
+    expect(diff.sheets[0]!.other.filter((change) => change.kind === 'conditionalFormats' || change.kind === 'validations')).toEqual([])
+    applyWithoutRuleChanges(doc, imported)
+    applyWithoutRuleChanges(imported, doc)
+    expect((await codec.applyFile(doc, bytes, context)).changed).toBe(false)
+    imported.destroy()
+    doc.destroy()
+  })
+
+  it('rebases relative CF and validation origins after deleting their first row', async () => {
+    const rows = [1, 2, 3].map((value) => `<row r="${value}"><c r="A${value}"><v>${value}</v></c></row>`).join('')
+    const { doc, sheet, workbook, codec, context } = await open(xlsx(rows,
+      '<conditionalFormatting sqref="B1:B3"><cfRule type="expression" priority="1"><formula>A1&gt;0</formula></cfRule></conditionalFormatting>' +
+      '<dataValidations count="1"><dataValidation sqref="B1:B3" type="whole" operator="greaterThan"><formula1>A1</formula1></dataValidation></dataValidations>'))
+    deleteAxis(sheet, 'row', 0, 1)
+    const values = new SheetCalc(workbook, { live: false })
+    const formatter = new ConditionalFormatter(sheet, values, new Stylesheet(), DEFAULT_THEME_COLORS)
+    expect(formatter.overlay(0, 1)).toEqual({})
+    expect(formatter.overlay(1, 1)).toEqual({})
+    expect(passes(sheet, values, 0, 1, '2')).toBe(false)
+    expect(passes(sheet, values, 0, 1, '3')).toBe(true)
+    const xml = strFromU8(unzipSync(await codec.exportFile(doc, context))['xl/worksheets/sheet1.xml']!)
+    expect(xml).toContain('sqref="B1:B2"')
+    expect(xml).toContain('<formula>A1&gt;0</formula>')
+    expect(xml).toContain('<formula1>A1</formula1>')
+    expect(xml).not.toContain('#REF!')
+    const incoming = new Y.Doc()
+    await codec.importFile(incoming, await codec.exportFile(doc, context), context)
+    applyWithoutRuleChanges(doc, incoming)
+    applyWithoutRuleChanges(incoming, doc)
+    values.destroy()
+    incoming.destroy()
+    doc.destroy()
+  })
+
+  it.each(['row', 'col'] as const)('follows only deleted relative single-cell axes in rule formulas, %s', async (kind) => {
+    const doc = new Y.Doc()
+    const workbook = WorkbookModel.initialize(doc)
+    const sheet = workbook.addSheet('Sheet1')
+    const formulas = ['A1', '$A$1', '$A1', 'A$1', 'A1:A3'].map((formula) => toIdForm(formula, sheet))
+    const ranges = [sheet.rangeIds({ top: 1, left: 1, bottom: 2, right: 2 })]
+    sheet.cf.set('absolute', { ranges, rules: [{ type: 'expression', priority: 1, formulas: [formulas[1]!] }] } satisfies ConditionalFormat)
+    sheet.dv.set('absolute', { ranges, type: 'whole', formula1: formulas[1]! } satisfies DataValidation)
+    deleteAxis(sheet, kind, 0, 1)
+    const resolved = formulas.map((formula) => toA1Form(formula, sheet, workbook, { followDeletedRelative: true }))
+    expect(resolved).toEqual(kind === 'row' ? ['A1', '#REF!', '$A1', '#REF!', 'A1:A2'] : ['A1', '#REF!', '#REF!', 'A$1', '#REF!'])
+    expect(toA1Form(formulas[0]!, sheet)).toBe('#REF!')
+    const bytes = await new SheetCodec().exportFile(doc, { name: 'Absolute.xlsx', assets: new MemoryLiveAssetStore() })
+    const xml = strFromU8(unzipSync(bytes)['xl/worksheets/sheet1.xml']!)
+    expect(xml).toContain('<formula>#REF!</formula>')
+    expect(xml).toContain('<formula1>#REF!</formula1>')
+    doc.destroy()
+  })
+
+  it('reads and exports the new canonical name inside an outer transaction', async () => {
+    const doc = new Y.Doc()
+    const workbook = WorkbookModel.initialize(doc)
+    workbook.addSheet('Sheet1')
+    workbook.names.set('z', { name: 'Rate', formula: '1' })
+    expect([...workbook.names.keys()]).toEqual(['z'])
+    const remote = new Y.Doc()
+    Y.applyUpdate(remote, Y.encodeStateAsUpdate(doc))
+    new WorkbookModel(remote).names.set('a', { name: 'Rate', formula: '2' })
+    const codec = new SheetCodec()
+    const context = { name: 'Names.xlsx', assets: new MemoryLiveAssetStore() }
+    let exported: Promise<Uint8Array> | undefined
+    doc.transact(() => {
+      Y.applyUpdate(doc, Y.encodeStateAsUpdate(remote))
+      expect([...workbook.names.keys()]).toEqual(['a'])
+      expect(workbook.names.get('z')).toBeUndefined()
+      expect([...workbook.names.values()]).toEqual([{ name: 'Rate', formula: '2' }])
+      exported = codec.exportFile(doc, context)
+    })
+    const xml = strFromU8(unzipSync(await exported!)['xl/workbook.xml']!)
+    expect(xml).toContain('<definedName name="Rate">2</definedName>')
+    expect([...workbook.names.keys()]).toEqual(['a'])
+    remote.destroy()
+    doc.destroy()
+  })
+
+  it('applies 16,000 changed name formulas from one canonical snapshot within five seconds', () => {
+    const doc = new Y.Doc()
+    const workbook = WorkbookModel.initialize(doc)
+    workbook.addSheet('Sheet1')
+    doc.transact(() => {
+      for (let index = 0; index < 16_000; index++) workbook.names.set(`key${index}`, { name: `Name_${index}`, formula: '1' })
+    })
+    const incoming = new Y.Doc()
+    Y.applyUpdate(incoming, Y.encodeStateAsUpdate(doc))
+    const other = new WorkbookModel(incoming)
+    incoming.transact(() => {
+      for (let index = 0; index < 16_000; index++) other.names.set(`key${index}`, { name: `Name_${index}`, formula: '2' })
+    })
+    const started = performance.now()
+    expect(applyWorkbook(doc, incoming).changed).toBe(true)
+    expect(performance.now() - started).toBeLessThan(5_000)
+    const names = [...workbook.names.entries()]
+    expect(names).toHaveLength(16_000)
+    for (const [key, name] of names) {
+      expect(key).toBe(`key${name.name.slice(5)}`)
+      expect(name.formula).toBe('2')
+    }
+    incoming.destroy()
+    doc.destroy()
+  }, 30_000)
+})
+
+describe('final review regressions', () => {
+  it.each(['row', 'col'] as const)('keeps a rule on a deleted single %s gone when its neighbors move concurrently', (kind) => {
+    const base = new Y.Doc()
+    base.clientID = 100
+    const workbook = WorkbookModel.initialize(base)
+    const sheet = workbook.addSheet('Sheet1')
+    const at = (index: number, other: number) => (kind === 'row' ? { top: index, bottom: index, left: other, right: other } : { top: other, bottom: other, left: index, right: index })
+    sheet.cf.set('cf', { ranges: [sheet.rangeIds(at(1, 1))], rules: [{ type: 'expression', priority: 1, formulas: ['TRUE'] }] })
+    for (const swap of [false, true]) {
+      for (const docs of replicas(base, (replica, client) => {
+        if ((client === 1) !== swap) deleteAxis(replica, kind, 1, 1)
+        else moveAxis(replica, kind, 0, 1, 3)
+      })) {
+        const after = new WorkbookModel(docs).sheets()[0]!
+        const format = after.cf.get('cf') as { ranges: Parameters<SheetModel['resolveRange']>[0][] }
+        expect(format.ranges.map((range) => after.resolveRange(range)).filter(Boolean)).toEqual([])
+      }
+    }
+  })
+})

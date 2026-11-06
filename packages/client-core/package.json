@@ -105,6 +105,14 @@
     "./office/docx/view": {
       "types": "./dist/office/docx/view/index.d.ts",
       "import": "./dist/office/docx/view/index.js"
+    },
+    "./office/sheets": {
+      "types": "./dist/office/sheets/index.d.ts",
+      "import": "./dist/office/sheets/index.js"
+    },
+    "./office/sheets/view": {
+      "types": "./dist/office/sheets/view/index.d.ts",
+      "import": "./dist/office/sheets/view/index.js"
     }
   },
   "scripts": {

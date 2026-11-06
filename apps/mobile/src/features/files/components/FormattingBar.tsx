@@ -11,7 +11,7 @@ export const FORMATTING_BAR_HEIGHT = 52
 
 type Item =
   | { command: FormatCommand; label: string; symbol: string }
-  | { menu: string; label: string; symbol: string; options: Array<{ command: FormatCommand; label: string }> }
+  | { menu: string; label: string; symbol: string; options: ReadonlyArray<{ command: FormatCommand; label: string }> }
   | { separator: true }
 
 const ITEMS: Item[] = [
@@ -87,17 +87,22 @@ export function FormattingBar({ formatting, items: formatItems, visible, onComma
             if ('separator' in item) return <View key={`separator-${index}`} style={[styles.separator, { backgroundColor: theme.separator }]} />
             if ('menu' in item) {
               const on = item.options.some((option) => option.command !== 'paragraph' && active.has(option.command))
+              const off = disabled.has(item.menu)
               return (
                 <Pressable
                   key={item.menu}
                   accessibilityLabel={item.label}
                   accessibilityRole="button"
+                  accessibilityState={{ disabled: off, selected: on }}
+                  disabled={off}
                   onPress={() => showActions(item.label, item.options.map((option) => ({
                     label: option.label,
                     selected: active.has(option.command),
+                    disabled: disabled.has(option.command),
                     onPress: () => run(option.command),
                   })))}
-                  style={[styles.button, on && { backgroundColor: theme.fillStrong }]}
+                  style={[styles.button, on && { backgroundColor: theme.fillStrong }, off && { opacity: 0.35 }]}
+                  testID={`formatting-${item.menu}`}
                 >
                   <SymbolView name={item.symbol as never} size={22} tintColor={on ? theme.blue : theme.text} />
                 </Pressable>

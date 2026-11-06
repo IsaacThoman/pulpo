@@ -1,0 +1,3 @@
+# Fixtures are byte-exact test inputs (CRLF/CR line endings, BOMs, UTF-16). Never normalise them.
+* -text -diff
+*.md text diff

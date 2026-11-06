@@ -14,6 +14,9 @@ export interface NewLiveFile {
 const NEW_FILES: readonly NewLiveFile[] = [
   { format: 'text', label: 'New Text File', name: 'Untitled.txt', systemImage: 'doc.plaintext' },
   { format: 'document', label: 'New Word Document', name: 'Untitled document.docx', systemImage: 'doc.richtext' },
+  { format: 'sheet', label: 'New Spreadsheet', name: 'Untitled.xlsx', systemImage: 'tablecells' },
+  { format: 'presentation', label: 'New Presentation', name: 'Untitled.pptx', systemImage: 'rectangle.on.rectangle' },
+  { format: 'notebook', label: 'New Notebook', name: 'Untitled.ipynb', systemImage: 'doc.plaintext' },
 ]
 
 /** The extra "New …" items this app and its server both support. */

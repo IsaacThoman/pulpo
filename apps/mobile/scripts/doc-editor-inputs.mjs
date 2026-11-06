@@ -96,6 +96,22 @@ export const EDITOR_BUNDLES = {
     ],
     packages: new RegExp(`^node_modules/(@tiptap/(pm|y-tiptap)|prosemirror-[^/]+|${SYNC_PACKAGES}|orderedmap|rope-sequence|w3c-keyname|fflate|@xmldom/xmldom)$`),
   },
+  sheet: {
+    root: join(editorRoot, 'sheet'),
+    entry: 'main.ts',
+    output: generated('sheetEditorBundle.generated.ts'),
+    exportName: 'SHEET_EDITOR_BUNDLE',
+    schemaVersion: { file: join(clientCoreSource, 'office/sheets/layout.ts'), pattern: /SHEETS_SCHEMA_VERSION = (\d+)/ },
+    sources: [
+      join(editorRoot, 'sheet'),
+      // The whole sheets tree (the view, model, formula engine, number formats, and charts it renders)
+      // and the OOXML helpers its styles and charts read themes with.
+      join(clientCoreSource, 'office/sheets'), join(clientCoreSource, 'office/ooxml'),
+      join(clientCoreSource, 'office/formats.ts'), join(clientCoreSource, 'office/assets.ts'),
+      join(clientCoreSource, 'office/live-format.ts'), join(clientCoreSource, 'doc-schema/version.ts'),
+    ],
+    packages: new RegExp(`^node_modules/(${SYNC_PACKAGES}|@xmldom/xmldom|fflate)$`),
+  },
 }
 
 function walk(path) {

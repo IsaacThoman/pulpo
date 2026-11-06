@@ -17,6 +17,8 @@ import {
   type DocxCommand,
   type DocxPhoneState,
   type ReviewAction,
+  type SheetCommand,
+  type SheetEditorState,
   type TextCommand,
 } from './protocol'
 
@@ -43,6 +45,8 @@ export interface EditorBridgeState {
   presentation: PresentationEditorState | null
   /** What a Word editor reports. */
   docx?: DocxPhoneState | null
+  /** What a spreadsheet editor reports. */
+  sheet: SheetEditorState | null
   /** The editor's page reported a protocol or schema this app cannot use. */
   incompatible: boolean
 }
@@ -78,6 +82,7 @@ const INITIAL_STATE: EditorBridgeState = {
   text: null,
   notebook: null,
   presentation: null,
+  sheet: null,
   incompatible: false,
 }
 
@@ -149,7 +154,7 @@ export class EditorBridge {
   }
 
   /** A text editor's toolbar command. */
-  command(command: TextCommand | NotebookCommand | PresentationCommand): void {
+  command(command: TextCommand | SheetCommand | NotebookCommand | PresentationCommand): void {
     this.post({ type: 'command', session: this.session, command })
   }
 
@@ -209,6 +214,7 @@ export class EditorBridge {
       this.options.awareness.setLocalStateField('cursor', null)
       if (this.options.format === 'notebook') this.options.awareness.setLocalStateField('notebook', null)
       this.options.awareness.setLocalStateField('presentation', null)
+      if (this.options.format === 'sheet') this.options.awareness.setLocalStateField('sheet', null)
     }
     this.rejectExports(new Error('The editor closed'))
     this.listeners.clear()
@@ -263,6 +269,13 @@ export class EditorBridge {
         break
       case 'docxState':
         this.setState({ ...this.state, docx: message.state, focused: message.state.focused })
+        break
+      case 'sheetState':
+        this.setState({ ...this.state, sheet: message.state, focused: message.state.focused })
+        break
+      case 'selection':
+        // Only a spreadsheet page shares a selection; other fields of this session's awareness stay the app's.
+        if (this.options.format === 'sheet') this.options.awareness.setLocalStateField('sheet', message.selection ?? null)
         break
       case 'suggestions':
         this.setState({ ...this.state, suggestions: { count: message.count, index: message.index, active: message.active } })

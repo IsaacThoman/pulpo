@@ -1,0 +1,12 @@
+field,value
+comma,"a,b,c"
+quote,"she said ""hi"""
+only quotes,""""""
+newline LF,"line1
+line2"
+newline CRLF,"line1
+line2"
+padded,"  spaces  "
+quoted empty,""
+unquoted empty,
+"quoted, then text"x,next

@@ -1,0 +1,20 @@
+value,kind
+00123,leading zeros
+12345678901234567890,20-digit integer
+1e5,scientific
+1E-3,scientific
+45%,percent
+$1,234.56,currency (unquoted comma!)
+"$1,234.56",currency quoted
+-0,negative zero
+TRUE,boolean
+false,boolean lowercase
+2024-02-29,ISO date
+02/03/2024,ambiguous date
+13:45,time
+#N/A,error literal
+ NaN ,NaN padded
+=1+1,formula injection
++cmd|' /C calc'!A0,DDE injection
+@SUM(1),at injection
+-2+3,minus injection
