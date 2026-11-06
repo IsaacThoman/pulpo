@@ -1,5 +1,6 @@
 import { liveFormat, liveFormatOfName, LIVE_FORMATS, type LiveFormatInfo } from './formats.js'
 import type { LiveFormatCodec, LiveFormatId } from './live-format.js'
+import { docxCodec } from './docx/codec.js'
 import { markdownCodec } from './markdown/index.js'
 import { notebookCodec } from './notebook/codec.js'
 import { presentationCodec } from './presentation/codec.js'
@@ -14,6 +15,7 @@ const CODECS: Partial<Record<LiveFormatId, LiveFormatCodec>> = {
   text: textCodec,
   notebook: notebookCodec,
   presentation: presentationCodec,
+  document: docxCodec,
 }
 
 for (const format of LIVE_FORMATS) {

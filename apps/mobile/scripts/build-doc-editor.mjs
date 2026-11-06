@@ -33,6 +33,8 @@ export async function buildEditorPage(format) {
         { find: /^@pulpo\/client-core\/office\/notebook\/view$/, replacement: join(clientCoreSource, 'office/notebook/view/index.ts') },
         { find: /^@pulpo\/client-core\/office\/presentation$/, replacement: join(clientCoreSource, 'office/presentation/index.ts') },
         { find: /^@pulpo\/client-core\/office\/presentation\/view$/, replacement: join(clientCoreSource, 'office/presentation/view/index.ts') },
+        { find: /^@pulpo\/client-core\/office\/docx\/view$/, replacement: join(clientCoreSource, 'office/docx/view/index.ts') },
+        { find: /^@pulpo\/client-core\/office\/docx\/format$/, replacement: join(clientCoreSource, 'office/docx/format.ts') },
       ],
     },
     define: { 'process.env.NODE_ENV': JSON.stringify('production') },

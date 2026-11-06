@@ -38,6 +38,7 @@ import { PRESENTATION_TOOLBAR, presentationToolbarState } from '../editor/presen
 import type { PresentationCommand } from '../editor/protocol'
 import { PRESENTATION_BAR_HEIGHT, PresentationBar } from '../components/PresentationBar'
 import { apiUrl, nativeAuthorizationHeaders } from '../../../api/client'
+import { DOCX_TOOLBAR, docxToolbarState } from '../editor/docxToolbar'
 import { deviceSessionLabel } from '../editor/presentation'
 import { fetchDocMarkdown, fetchFileAsset } from '../api'
 import { filesErrorMessage } from '../display'
@@ -107,13 +108,14 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   // The document's live format picks its editor; text and code files have no suggestions inline.
   const formatId = node?.format ?? 'markdown'
   const schemaSupported = useDocSchemaSupported(formatId) && Boolean(editorBundleFor(formatId))
-  const editorFormat: MobileEditorFormat = formatId === 'text' || formatId === 'notebook' || formatId === 'presentation' ? formatId : 'markdown'
+  const editorFormat: MobileEditorFormat = formatId === 'text' || formatId === 'notebook' || formatId === 'presentation' || formatId === 'document' ? formatId : 'markdown'
   const isText = editorFormat === 'text'
   const isNotebook = editorFormat === 'notebook'
   /** Formats other than Markdown keep their extension, have no inline suggestions, and fall back to their text. */
   const isLive = editorFormat !== 'markdown'
   const isDeck = editorFormat === 'presentation'
   const isMarkdown = editorFormat === 'markdown'
+  const isWord = editorFormat === 'document'
   const editor = useRef<DocEditorHandle>(null)
   const [handle, setHandle] = useState<DocHandle | null>(null)
   const [editorState, setEditorState] = useState<EditorBridgeState | null>(null)
@@ -160,11 +162,11 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   // A document just created opens ready to type in, once.
   const focusedNew = useRef(false)
   useEffect(() => {
-    const ready = editorState?.loaded && (isText ? editorState.text && !editorState.text.readOnly : isNotebook ? editorState.notebook && !editorState.notebook.readOnly : editorState.formatting?.editable)
+    const ready = editorState?.loaded && (isText ? editorState.text && !editorState.text.readOnly : isNotebook ? editorState.notebook && !editorState.notebook.readOnly : isWord ? editorState.docx?.editable : editorState.formatting?.editable)
     if (isDeck || !route.params.created || focusedNew.current || !ready) return
     focusedNew.current = true
     editor.current?.focus('start')
-  }, [editorState, isDeck, isNotebook, isText, route.params.created])
+  }, [editorState, isDeck, isNotebook, isText, isWord, route.params.created])
 
   // A copy of an earlier document under this id was dropped; start over without it.
   useEffect(() => {
@@ -244,6 +246,11 @@ export function FileDocumentScreen({ navigation, route }: Props) {
         await shareFileItem(node, undefined, bytes)
         return
       }
+      // Word documents export on the server, which holds their pictures and original parts.
+      if (isWord) {
+        await shareFileItem(node)
+        return
+      }
       if (isText) {
         // A file kept with its original bytes (mixed line breaks, a legacy encoding) is exported
         // exactly by the server, which holds them; while edits wait to sync, this copy has more.
@@ -257,7 +264,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
     } catch (error) {
       operations.fail(error, node.name)
     }
-  }, [editorState?.loaded, handle, isDeck, isNotebook, isText, node, operations, status.state, usable])
+  }, [editorState?.loaded, handle, isDeck, isNotebook, isText, isWord, node, operations, status.state, usable])
   /** A deck's pictures, fetched for the editor page (which has no network of its own). */
   const fetchAsset = useCallback(async (hash: string) => {
     const url = apiUrl(`/api/files/${fileId}/assets/${hash}`)
@@ -386,7 +393,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
     fallback.data ? (
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={[styles.fallback, { paddingBottom: insets.bottom + 24 }]}>
         {isLive
-          ? <Text selectable style={[styles.code, { color: theme.text }]}>{fallback.data.markdown}</Text>
+          ? <Text selectable style={[isWord ? null : styles.code, { color: theme.text }]}>{fallback.data.markdown}</Text>
           : <SafeMarkdown>{fallback.data.markdown}</SafeMarkdown>}
       </ScrollView>
     ) : fallback.isError || (!fallback.isFetching && !fallback.data) ? (
@@ -403,6 +410,7 @@ export function FileDocumentScreen({ navigation, route }: Props) {
       ref={editor}
       format={editorFormat}
       name={node?.name}
+      docId={fileId}
       acquire={() => accountDocSessions(namespace).acquire(fileId)}
       editable={editable}
       placeholder="Start writing…"
@@ -484,8 +492,8 @@ export function FileDocumentScreen({ navigation, route }: Props) {
       {banner}
       {Platform.OS === 'android' ? <KeyboardAvoidingView behavior="padding" style={styles.flex}>{body}</KeyboardAvoidingView> : body}
       <FormattingBar
-        formatting={isText ? (editorState?.text ? textToolbarState(editorState) : null) : isNotebook ? (editorState?.notebook ? notebookToolbarState(editorState) : null) : editorState?.formatting ?? null}
-        items={isText ? TEXT_TOOLBAR : isNotebook ? NOTEBOOK_TOOLBAR : undefined}
+        formatting={isText ? (editorState?.text ? textToolbarState(editorState) : null) : isNotebook ? (editorState?.notebook ? notebookToolbarState(editorState) : null) : isWord ? (editorState?.docx ? docxToolbarState(editorState) : null) : editorState?.formatting ?? null}
+        items={isText ? TEXT_TOOLBAR : isNotebook ? NOTEBOOK_TOOLBAR : isWord ? DOCX_TOOLBAR : undefined}
         visible={formattingBarVisible && !isDeck}
         onCommand={(command) => editor.current?.toolbar(command as never)}
         onDismissKeyboard={() => editor.current?.dismissKeyboard()}

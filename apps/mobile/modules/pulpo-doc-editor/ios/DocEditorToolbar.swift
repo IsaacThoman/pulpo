@@ -1,11 +1,13 @@
 import SwiftUI
 import UIKit
 
-/** A button a live format puts on the bar (see `DocEditorToolbarState.items`). */
+/** A button a live format puts on the bar (see `DocEditorToolbarState.items`); a menu with options. */
 struct DocEditorToolbarItem: Identifiable, Equatable {
   let command: String
   let label: String
   let systemImage: String
+  var options: [MenuOption] = []
+  var separatorBefore = false
   var id: String { command }
 }
 
@@ -47,7 +49,7 @@ private struct ToolbarButton: View {
   }
 }
 
-private struct MenuOption: Identifiable {
+struct MenuOption: Identifiable, Equatable {
   let command: String
   let label: String
   let systemImage: String
@@ -109,7 +111,12 @@ struct DocEditorToolbar: View {
         if !model.items.isEmpty {
           HStack(spacing: 2) {
             ForEach(model.items) { item in
-              ToolbarButton(command: item.command, label: item.label, systemImage: item.systemImage, model: model, action: action)
+              if item.separatorBefore { ToolbarSeparator() }
+              if item.options.isEmpty {
+                ToolbarButton(command: item.command, label: item.label, systemImage: item.systemImage, model: model, action: action)
+              } else {
+                ToolbarMenu(label: item.label, systemImage: item.systemImage, identifier: item.command, options: item.options, model: model, action: action)
+              }
             }
           }
           .padding(.horizontal, 8)

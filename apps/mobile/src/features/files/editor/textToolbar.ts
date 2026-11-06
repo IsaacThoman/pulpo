@@ -1,8 +1,14 @@
 import type { EditorBridgeState } from './bridge'
 import type { TextCommand } from './protocol'
 
-/** A toolbar button the native bar shows for formats with their own toolbar (SF Symbol name). */
-export type NativeToolbarItem = { command: string; label: string; systemImage: string }
+/** A choice in a toolbar menu (SF Symbol name). */
+export type NativeToolbarOption = { command: string; label: string; systemImage: string }
+
+/**
+ * A toolbar button the native bar shows for formats with their own toolbar (SF Symbol name).
+ * With `options` it is a menu named `command`; `separatorBefore` draws a divider before it.
+ */
+export type NativeToolbarItem = NativeToolbarOption & { options?: NativeToolbarOption[]; separatorBefore?: boolean }
 
 /** The text and code editor's bar: no formatting, but the keys a phone keyboard lacks. */
 export const TEXT_TOOLBAR: ReadonlyArray<NativeToolbarItem & { command: TextCommand }> = [

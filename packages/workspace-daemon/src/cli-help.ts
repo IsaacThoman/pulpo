@@ -5,7 +5,7 @@ Read and change the user's Pulpo Files that are attached to this chat.
 Files paths look like "Projects/Plan.md" (no leading slash; names are
 case-insensitive). Some files are live documents that people may be editing
 in Pulpo while you work: Markdown (.md), text or code files (.txt, .py,
-.json, .html, …), Jupyter notebooks (.ipynb), and PowerPoint decks (.pptx). You still pull and push
+.json, .html, …), Jupyter notebooks (.ipynb), Word documents (.docx), and PowerPoint decks (.pptx). You still pull and push
 them as ordinary files, and your push merges with their edits. Other files
 are stored as uploaded bytes.
 
@@ -32,7 +32,11 @@ Edit a document or file:
   pulpo files push
 Office files work the same way: edit a pulled .docx with python-docx, .xlsx
 with openpyxl, or .pptx with python-pptx, save it in place, then push. For a
-.pptx, change only the slides and shapes you mean to (python-pptx keeps their
+.docx, change the paragraphs, runs, and tables you mean to and leave the rest:
+styles, comments, tracked changes, headers, and pictures you don't touch are
+kept, and only what differs is merged into the live document.
+
+For a .pptx, change only the slides and shapes you mean to (python-pptx keeps their
 ids, which is how your push merges with people editing other slides); \`cat\`
 prints each slide's text, tables, chart data, and speaker notes.
 
@@ -76,7 +80,7 @@ Example:
 Print documents or text files: Markdown documents as Markdown, other live
 documents as their plain text. Notebooks print as readable text: each cell
 under a "# %% [code] cell 3 · In [2] · id …" line, with outputs summarized as
-comments (pull the .ipynb for the real file). Documents show pending
+comments (pull the .ipynb for the real file). Word documents print with list numbers, headings, tables, footnotes, and comments. Documents show pending
 suggestions as if they were accepted. Binary or very large files cannot be printed: pull them and
 inspect the local copy instead.
 

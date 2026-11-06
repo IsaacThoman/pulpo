@@ -14,6 +14,8 @@ import {
   type NotebookToolbarState,
   type PresentationCommand,
   type PresentationEditorState,
+  type DocxCommand,
+  type DocxPhoneState,
   type ReviewAction,
   type TextCommand,
 } from './protocol'
@@ -39,6 +41,8 @@ export interface EditorBridgeState {
   notebook: NotebookToolbarState | null
   /** What a presentation editor reports. */
   presentation: PresentationEditorState | null
+  /** What a Word editor reports. */
+  docx?: DocxPhoneState | null
   /** The editor's page reported a protocol or schema this app cannot use. */
   incompatible: boolean
 }
@@ -149,6 +153,11 @@ export class EditorBridge {
     this.post({ type: 'command', session: this.session, command })
   }
 
+  /** A Word editor's toolbar command. */
+  docxCommand(command: DocxCommand, value?: string): void {
+    this.post({ type: 'docxCommand', session: this.session, command, value })
+  }
+
   setName(name: string): void {
     if (this.options.name === name) return
     this.options = { ...this.options, name }
@@ -251,6 +260,9 @@ export class EditorBridge {
         break
       case 'presentationState':
         this.setState({ ...this.state, presentation: message.state })
+        break
+      case 'docxState':
+        this.setState({ ...this.state, docx: message.state, focused: message.state.focused })
         break
       case 'suggestions':
         this.setState({ ...this.state, suggestions: { count: message.count, index: message.index, active: message.active } })

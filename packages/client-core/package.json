@@ -93,6 +93,18 @@
     "./office/presentation/view": {
       "types": "./dist/office/presentation/view/index.d.ts",
       "import": "./dist/office/presentation/view/index.js"
+    },
+    "./office/docx": {
+      "types": "./dist/office/docx/index.d.ts",
+      "import": "./dist/office/docx/index.js"
+    },
+    "./office/docx/format": {
+      "types": "./dist/office/docx/format.d.ts",
+      "import": "./dist/office/docx/format.js"
+    },
+    "./office/docx/view": {
+      "types": "./dist/office/docx/view/index.d.ts",
+      "import": "./dist/office/docx/view/index.js"
     }
   },
   "scripts": {

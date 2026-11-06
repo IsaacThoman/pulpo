@@ -25,12 +25,14 @@ describe('live formats on mobile', () => {
     expect(editorBundleFor('text')?.format).toBe('text')
     expect(editorBundleFor('notebook')?.format).toBe('notebook')
     expect(editorBundleFor('presentation')?.format).toBe('presentation')
+    expect(editorBundleFor('document')?.format).toBe('document')
     expect(editorBundleFor('sheet')).toBeNull()
     expect(MOBILE_SCHEMA_VERSIONS).toEqual({
       markdown: editorBundleFor('markdown')!.schemaVersion,
       text: editorBundleFor('text')!.schemaVersion,
       notebook: editorBundleFor('notebook')!.schemaVersion,
       presentation: editorBundleFor('presentation')!.schemaVersion,
+      document: editorBundleFor('document')!.schemaVersion,
     })
   })
 

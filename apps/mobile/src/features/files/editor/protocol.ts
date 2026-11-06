@@ -67,6 +67,8 @@ export type HostMessage =
   | { type: 'command'; session: number; command: TextCommand | NotebookCommand | PresentationCommand }
   /** The file was renamed; text editors pick their language from the name. */
   | { type: 'name'; session: number; name: string }
+  /** A Word editor command from the app's toolbar; `value` carries a link's address. */
+  | { type: 'docxCommand'; session: number; command: DocxCommand; value?: string }
   /** An asset the page asked for (base64), or null when it can't be had (offline, missing). */
   | { type: 'asset'; session: number; hash: string; data: string | null }
 
@@ -116,6 +118,32 @@ export interface PresentationEditorState {
   presenting?: boolean
 }
 
+export type DocxCommand =
+  | 'undo' | 'redo' | 'bold' | 'italic' | 'underline' | 'strike' | 'bulletList' | 'numberedList'
+  | 'indent' | 'outdent' | 'alignLeft' | 'alignCenter' | 'alignRight' | 'heading1' | 'heading2' | 'normal'
+  | 'link' | 'comment' | 'suggest' | 'layout'
+
+/** What a Word editor's toolbar shows as on or unavailable. */
+export interface DocxPhoneState {
+  /** Older bundles omit this; false disables unsupported comment creation in stories. */
+  canComment?: boolean
+  bold: boolean
+  italic: boolean
+  underline: boolean
+  strike: boolean
+  list: 'bullet' | 'decimal' | 'multilevel' | null
+  alignment: 'left' | 'center' | 'right' | 'both'
+  styleId: string | null
+  link: string | null
+  canUndo: boolean
+  canRedo: boolean
+  suggesting: boolean
+  layout: 'print' | 'web'
+  focused: boolean
+  /** False until the app lets the page edit (and while it is read-only). */
+  editable: boolean
+}
+
 export interface ActiveSuggestion {
   id: string
   changeId: string
@@ -137,6 +165,8 @@ export type EditorMessage =
   | { type: 'textState'; session: number; state: TextEditorState }
   /** What a notebook editor's toolbar shows. */
   | { type: 'notebookState'; session: number; state: NotebookToolbarState }
+  /** What a Word editor's toolbar shows. */
+  | { type: 'docxState'; session: number; state: DocxPhoneState }
   | { type: 'suggestions'; session: number; count: number; index: number | null; active: ActiveSuggestion | null }
   /** The editor's own cursor, as Yjs relative positions, for other sessions' awareness; notebooks add the cell it is on. */
   | { type: 'cursor'; session: number; cursor: { anchor: unknown; head: unknown } | null; notebook?: unknown; presentation?: { slide: string | null; shapes: string[]; editing?: string | null } | null }

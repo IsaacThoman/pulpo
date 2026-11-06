@@ -38,10 +38,11 @@ describe('live format catalog', () => {
     expect(liveMimeType(liveFormat('text')!, 'a.py')).toBe('text/x-python')
     expect(liveMimeType(liveFormat('text')!, 'Dockerfile')).toBe('text/plain')
     expect(liveMimeType(liveFormat('markdown')!, 'a.md')).toBe('text/markdown')
+    expect(liveMimeType(liveFormat('document')!, 'Letter.DOTX')).toBe('application/vnd.openxmlformats-officedocument.wordprocessingml.template')
   })
 
   it('announces each format schema version, Markdown keeping the document schema version', () => {
-    expect(liveSchemaVersions()).toEqual({ markdown: DOC_SCHEMA_VERSION, text: 1, notebook: 1, presentation: 1 })
+    expect(liveSchemaVersions()).toEqual({ markdown: DOC_SCHEMA_VERSION, text: 1, document: 3, notebook: 1, presentation: 1 })
     expect(liveFormatOfName('Analysis.IPYNB')?.id).toBe('notebook')
   })
 
@@ -69,7 +70,7 @@ describe('live format catalog', () => {
       expect(format.hasContent(doc)).toBe(false)
       const codec = liveFormatCodec(format.id)
       const sample = format.id === 'notebook' ? '{"cells": [], "metadata": {}, "nbformat": 4, "nbformat_minor": 5}' : '# Title\n\nbody\n'
-      if (format.id === 'presentation') await codec.createEmpty(doc, { name: 'a.pptx', assets: new MemoryLiveAssetStore() })
+      if (format.id === 'presentation' || format.id === 'document') await codec.createEmpty(doc, { name: `a.${format.extensions[0]}`, assets: new MemoryLiveAssetStore() })
       else await codec.importFile(doc, new TextEncoder().encode(sample), { name: `a.${format.extensions[0]}`, assets: new MemoryLiveAssetStore() })
       expect(format.hasContent(doc)).toBe(true)
     }

@@ -64,6 +64,8 @@ const SYSTEM_BLUE = '#0A84FF'
 /** An item's symbol and color, as on the web: custom icon and color first, then its kind's. */
 /** Slide decks, as the web's file icons group them. */
 const PRESENTATION_EXTENSIONS = new Set(['pptx', 'pptm', 'potx', 'potm', 'ppsx', 'ppsm', 'ppt', 'pps', 'pot', 'odp', 'key'])
+/** Word-processing files, which show as Word documents whether or not they open live. */
+const WORD_EXTENSIONS = new Set(['doc', 'docx', 'dotx', 'docm', 'dotm', 'odt', 'rtf'])
 
 export function fileIcon(node: IconSubject, fallbackTint = SYSTEM_BLUE): { symbol: string; tint: string } {
   const source = node.kind === 'shortcut' && node.target
@@ -89,6 +91,7 @@ export function fileIcon(node: IconSubject, fallbackTint = SYSTEM_BLUE): { symbo
   if (mime.startsWith('audio/')) return { symbol: 'waveform', tint: tint ?? '#FF2D55' }
   if (mime === 'application/pdf' || extension === 'pdf') return { symbol: 'doc.fill', tint: tint ?? '#FF3B30' }
   if (isMarkdownName(source.name)) return { symbol: 'doc.plaintext.fill', tint: tint ?? '#8E8E93' }
+  if (WORD_EXTENSIONS.has(extension)) return { symbol: 'doc.text.image.fill', tint: tint ?? SYSTEM_BLUE }
   if (ARCHIVE_EXTENSIONS.has(extension)) return { symbol: 'doc.zipper', tint: tint ?? '#8E8E93' }
   if (SHEET_EXTENSIONS.has(extension)) return { symbol: 'tablecells.fill', tint: tint ?? '#34C759' }
   if (PRESENTATION_EXTENSIONS.has(extension)) return { symbol: 'rectangle.on.rectangle', tint: tint ?? '#FF9500' }
@@ -103,6 +106,7 @@ export function fileKindLabel(node: Pick<FileNode, 'kind' | 'name' | 'target'>):
   if (node.kind === 'doc' && isMarkdownName(node.name)) return 'Document'
   if (isMarkdownName(node.name)) return 'Markdown'
   const extension = fileExtension(node.name)
+  if (WORD_EXTENSIONS.has(extension)) return 'Word document'
   return extension ? `${extension.toUpperCase()} file` : 'File'
 }
 

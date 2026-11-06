@@ -1,9 +1,18 @@
 import ExpoModulesCore
 
+struct DocEditorToolbarOptionRecord: Record {
+  @Field var command: String = ""
+  @Field var label: String = ""
+  @Field var systemImage: String = ""
+}
+
 struct DocEditorToolbarItemRecord: Record {
   @Field var command: String = ""
   @Field var label: String = ""
   @Field var systemImage: String = ""
+  /** Present for a menu, whose choices these are. */
+  @Field var options: [DocEditorToolbarOptionRecord] = []
+  @Field var separatorBefore: Bool = false
 }
 
 struct DocEditorToolbarState: Record {
