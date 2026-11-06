@@ -39,6 +39,14 @@ it('shows People and Leaderboard tabs on the Friends hub', async () => {
   await screen.findByRole('heading', { name: 'Combined friends page' })
   expect(screen.getByRole('link', { name: 'People' }).getAttribute('href')).toBe('/friends')
   expect(screen.getByRole('link', { name: 'Leaderboard' }).getAttribute('href')).toBe('/friends/leaderboard')
+  expect(screen.queryByRole('link', { name: 'Personal usage' })).toBeNull()
+})
+
+it('links the leaderboard back to personal usage', async () => {
+  window.history.replaceState({}, '', '/friends/leaderboard')
+  render(<App />)
+  await screen.findByRole('heading', { name: 'Friends leaderboard: friends' })
+  expect(screen.getByRole('link', { name: 'Personal usage' }).getAttribute('href')).toBe('/usage')
 })
 
 it.each([

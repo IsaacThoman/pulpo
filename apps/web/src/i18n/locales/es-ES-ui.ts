@@ -1310,6 +1310,7 @@ const esUi: Record<string, string> = {
   "Period end": "Fin del periodo",
   "Permanently delete every chat in trash? This cannot be undone.": "¿Eliminar permanentemente todos los chats de la papelera? Esto no se puede deshacer.",
   "Personal": "Personal",
+  "Personal usage": "Uso personal",
   "Personalization": "Personalización",
   "Pi agent mode": "Modo de agente Pi",
   "Plan": "Plan",
