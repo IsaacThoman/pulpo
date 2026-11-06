@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { canExportOfficePdf, officeConversionTarget, type FileNode, type OfficeEditableFormat } from '@pulpo/contracts'
+import { liveFormatOfName } from '@pulpo/client-core/office'
 import { ui, uit } from '@/i18n/ui'
 import { useAuth } from '@/stores/auth'
 import { convertOfficeFile, downloadFileAsPdf, filesQueryKey } from './api'
@@ -10,6 +11,7 @@ import { filesErrorMessage } from './file-display'
 /** What the server's office converter can do with a file, if it is configured. */
 export function officeFileActions(node: Pick<FileNode, 'kind' | 'name'>, enabled: boolean): { target: OfficeEditableFormat | null; pdf: boolean } {
   if (!enabled || (node.kind !== 'blob' && node.kind !== 'doc')) return { target: null, pdf: false }
+  if (node.kind === 'doc' && !['document', 'sheet', 'presentation'].includes(liveFormatOfName(node.name)?.id ?? '')) return { target: null, pdf: false }
   return { target: node.kind === 'blob' ? officeConversionTarget(node.name) : null, pdf: canExportOfficePdf(node.name) }
 }
 

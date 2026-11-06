@@ -5,6 +5,7 @@ import {
   CODE_EXTENSIONS,
   DOCUMENT_EXTENSIONS,
   fileTypeForName,
+  fileTypeOf,
   PRESENTATION_EXTENSIONS,
   SHEET_EXTENSIONS,
   VIDEO_EXTENSIONS,
@@ -36,6 +37,9 @@ function extension(name: string): string | null {
 export function attachmentVisualKind(name: string, mimeType: string): AttachmentVisualKind {
   const mime = mimeType.trim().toLowerCase()
   const ext = extension(name)
+  const family = fileTypeOf(name, mime)?.family
+  if (family === 'document') return 'text'
+  if (family === 'code') return 'code'
   if (mime.startsWith('image/') || (ext && IMAGE_EXTENSIONS.has(ext))) return 'image'
   if (mime === 'application/pdf' || ext === 'pdf') return 'pdf'
   if (mime.startsWith('audio/') || (ext && AUDIO_EXTENSIONS.has(ext))) return 'audio'

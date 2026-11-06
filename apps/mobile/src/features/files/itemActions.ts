@@ -88,6 +88,7 @@ export function editableUpload(node: FileNode): boolean {
 /** What can be done with an item: convert it (to `target`) and export it as PDF. */
 export function officeActions(node: Pick<FileNode, 'kind' | 'name' | 'status'>, enabled: boolean): { target: OfficeEditableFormat | null; pdf: boolean } {
   if (!enabled || (node.kind !== 'blob' && node.kind !== 'doc') || node.status !== 'ready') return { target: null, pdf: false }
+  if (node.kind === 'doc' && !['document', 'sheet', 'presentation'].includes(liveFormatOfName(node.name)?.id ?? '')) return { target: null, pdf: false }
   return { target: node.kind === 'blob' ? officeConversionTarget(node.name) : null, pdf: canExportOfficePdf(node.name) }
 }
 

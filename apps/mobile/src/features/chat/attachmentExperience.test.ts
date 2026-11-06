@@ -24,6 +24,8 @@ describe('attachment experience', () => {
     expect(attachmentVisualKind('source.swift', 'text/plain')).toBe('code')
     expect(attachmentVisualKind('backup.zip', 'application/octet-stream')).toBe('archive')
     expect(attachmentVisualKind('unknown.bin', 'application/octet-stream')).toBe('file')
+    expect(attachmentVisualKind('Report.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')).toBe('text')
+    expect(attachmentVisualKind('Dockerfile', 'application/octet-stream')).toBe('code')
   })
 
   it('prefers declared media MIME types', () => {
