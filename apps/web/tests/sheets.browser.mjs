@@ -124,6 +124,58 @@ try {
     assert.equal(await inputText(page, 21, 2), '=B22*C21')
   })
 
+  await step('system clipboard keeps filtered row positions and copy-time values', async () => {
+    await go(page, 'N60')
+    await page.evaluate(() => {
+      const view = window.__sheets.views[0]
+      view.clipboard.paste({ text: '10\t=A60\n99\t=A61\n20\t=A62' })
+      // Use references to the adjacent numeric source column.
+      view.sheet.setCell(59, 14, { f: 'N60' })
+      view.sheet.setCell(60, 14, { f: 'N61' })
+      view.sheet.setCell(61, 14, { f: 'N62' })
+      view.sheet.setRowProp([60], 'hidden', true)
+    })
+    await go(page, 'O60:O62')
+    await page.keyboard.press(`${mod}+c`)
+    const captured = await page.evaluate(async () => {
+      const items = await navigator.clipboard.read()
+      return { html: await (await items[0].getType('text/html')).text(), text: await (await items[0].getType('text/plain')).text() }
+    })
+    assert.equal(captured.text, '10\n20')
+    await go(page, 'O65')
+    await page.keyboard.press(`${mod}+v`)
+    assert.equal(await inputText(page, 64, 14), '=N65')
+    assert.equal(await inputText(page, 65, 14), '=N66')
+    await page.evaluate((data) => {
+      const view = window.__sheets.views[0]
+      view.sheet.setCell(59, 13, { v: 999 })
+      view.goTo('Q65')
+      view.clipboard.paste(data, { values: true })
+      view.sheet.setRowProp([60], 'hidden', undefined)
+    }, captured)
+    assert.equal(await inputText(page, 64, 16), '10')
+    assert.equal(await inputText(page, 65, 16), '20')
+  })
+
+  await step('overlapping system clipboard paste-values uses a snapshot and undoes once', async () => {
+    await go(page, 'N70')
+    await page.evaluate(() => window.__sheets.views[0].clipboard.paste({ text: '10\t=N70\n20\t=N71' }))
+    await go(page, 'O70:O71')
+    await page.keyboard.press(`${mod}+c`)
+    await page.evaluate(async () => {
+      const items = await navigator.clipboard.read()
+      const html = await (await items[0].getType('text/html')).text()
+      const view = window.__sheets.views[0]
+      view.goTo('O71')
+      view.clipboard.paste({ html }, { values: true })
+    })
+    assert.equal(await inputText(page, 70, 14), '10')
+    assert.equal(await inputText(page, 71, 14), '20')
+    await page.evaluate(() => window.__sheets.views[0].undo())
+    assert.equal(await inputText(page, 70, 14), '=N71')
+    assert.equal(await inputText(page, 71, 14), '')
+  })
+
   await step('paste from other spreadsheets (TSV and HTML)', async () => {
     await go(page, 'H20')
     await page.evaluate(() => window.__sheets.views[0].clipboard.paste({ text: 'one\ttwo\n3\t"multi\nline"' }))

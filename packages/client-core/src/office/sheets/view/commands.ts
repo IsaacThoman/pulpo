@@ -353,7 +353,7 @@ export function snapshotCell(sheet: SheetModel, row: number, col: number): CellS
   if (note) snapshot.note = note
   if (link) snapshot.link = link
   if (xf !== undefined) snapshot.xf = xf
-  return snapshot
+  return JSON.parse(JSON.stringify(snapshot)) as CellSnapshot
 }
 
 export interface PlaceOptions {
@@ -365,15 +365,16 @@ export interface PlaceOptions {
 
 /** Writes a snapshot taken at `from` into `to`, moving relative references by the offset. */
 export function placeCell(sheet: SheetModel, snapshot: CellSnapshot, from: { row: number; col: number }, to: { row: number; col: number }, options: PlaceOptions = { values: true, formats: true }): void {
+  if (to.row < 0 || to.col < 0 || to.row >= MAX_ROWS || to.col >= MAX_COLS) return
   const key = (sheet.ensure(to.row, to.col), sheet.keyAt(to.row, to.col))
   if (options.values !== false) {
-    if (options.valueFor && snapshot.formula !== undefined) {
+    if (options.valueFor) {
       const value = options.valueFor(snapshot)
       if (value === null) sheet.cells.delete(key)
       else sheet.cells.set(key, isErrorValue(value) ? { v: value.e, t: 'e' } : { v: value })
     } else if (snapshot.formula !== undefined) {
       const moved = shiftFormula(snapshot.formula, to.row - from.row, to.col - from.col)
-      const { f: _f, spillCache: _cache, ...rest } = snapshot.data!
+      const { f: _f, ...rest } = snapshot.data!
       sheet.cells.set(key, { ...rest, f: toIdForm(moved, sheet) })
     } else if (snapshot.data) sheet.cells.set(key, snapshot.data)
     else sheet.cells.delete(key)

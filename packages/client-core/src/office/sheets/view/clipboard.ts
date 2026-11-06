@@ -1,8 +1,10 @@
 import { MAX_COLS, MAX_ROWS } from '../address.js'
+import { formatSheetPrefix, mapReferences } from '../formula/translate.js'
 import { MAX_EXPANDED_CELLS } from '../limits.js'
 import type { CellRange } from '../address.js'
-import type { StyleProps } from '../model/schema.js'
+import type { ConditionalFormat, DataValidation, StyleProps } from '../model/schema.js'
 import type { CellSnapshot } from './commands.js'
+import type { CellValue } from '../values.js'
 
 /**
  * Copy and paste between sheets here, Excel, and Google Sheets. Copies put tab-separated text
@@ -19,12 +21,37 @@ export interface ClipboardCell {
   style?: Partial<StyleProps>
   /** CSS colors, resolved, for the HTML. */
   css?: { color?: string; background?: string }
+  rowSpan?: number
+  colSpan?: number
+  covered?: boolean
 }
 
 export interface ClipboardPayload {
   rows: ClipboardCell[][]
   /** Snapshots for lossless pastes within this app, plus where they came from. */
-  internal?: { source: CellRange; sheet: string; cells: CellSnapshot[][]; cut?: boolean }
+  internal?: ClipboardSnapshot
+}
+
+/** All coordinates and formulas are captured at copy time, never recovered from a live sheet. */
+export interface ClipboardSnapshot {
+  stylesXml?: string
+  source: CellRange
+  sheet: string
+  cells: CellSnapshot[][]
+  sourceRows: number[]
+  sourceCols: number[]
+  values: CellValue[][]
+  merges: CellRange[]
+  validations: ClipboardRule<DataValidation>[]
+  conditionalFormats: ClipboardRule<ConditionalFormat>[]
+  /** A session token authorizes a cut; HTML alone must never delete source cells. */
+  cut?: string
+}
+
+export interface ClipboardRule<T> {
+  ranges: CellRange[]
+  origin: { row: number; col: number }
+  value: Omit<T, 'ranges'>
 }
 
 /** Quotes a TSV field when it holds tabs, newlines, or quotes (as Excel does). */
@@ -59,9 +86,24 @@ function cellCss(cell: ClipboardCell): string {
 export function toHtml(payload: ClipboardPayload): string {
   const internal = payload.internal ? ` ${CLIPBOARD_MARKER}="${escapeHtml(encodeBase64(JSON.stringify(payload.internal)))}"` : ''
   const body = payload.rows
-    .map((row) => `<tr>${row.map((cell) => `<td${cell.formula ? ` x:fmla="${escapeHtml(cell.formula)}"` : ''} style="${escapeHtml(cellCss(cell))}">${escapeHtml(cell.text).replace(/\n/g, '<br>')}</td>`).join('')}</tr>`)
+    .map((row, r) => `<tr>${row.map((cell, c) => cell.covered ? '' : htmlCell(cell, payload.internal?.values[r]?.[c], payload.internal?.sourceRows[r] ?? r, payload.internal?.sourceCols[c] ?? c)).join('')}</tr>`)
     .join('')
   return `<meta charset="utf-8"><table${internal} style="border-collapse:collapse">${body}</table>`
+}
+
+function htmlCell(cell: ClipboardCell, value: CellValue | undefined, row: number, col: number): string {
+  return `<td${cell.rowSpan ? ` rowspan="${cell.rowSpan}"` : ''}${cell.colSpan ? ` colspan="${cell.colSpan}"` : ''}${typeof value === 'string' ? ' x:str' : ''}${cell.formula ? ` x:fmla="${escapeHtml(excelFormula(cell.formula, row, col))}"` : ''} style="${escapeHtml(cellCss(cell))}">${escapeHtml(cell.text).replace(/\n/g, '<br>')}</td>`
+}
+
+/** Excel's HTML formula attribute uses R1C1 offsets relative to each visible source cell. */
+function excelFormula(formula: string, row: number, col: number): string {
+  const part = (axis: string, n: number, absolute: boolean, at: number) => absolute ? `${axis}${n + 1}` : `${axis}${n === at ? '' : `[${n - at}]`}`
+  return mapReferences(formula, (ref) => {
+    const one = (r: number, c: number, ra: boolean, ca: boolean) => (ref.kind === 'cols' ? '' : part('R', r, ra, row)) + (ref.kind === 'rows' ? '' : part('C', c, ca, col))
+    const first = one(ref.row, ref.col, ref.rowAbs, ref.colAbs)
+    const last = ref.kind === 'cell' ? '' : `:${one(ref.row2, ref.col2, ref.row2Abs, ref.col2Abs)}`
+    return (ref.sheet ? formatSheetPrefix(ref.sheet) : '') + first + last
+  })
 }
 
 function encodeBase64(text: string): string {
@@ -134,22 +176,25 @@ export interface PastedCell {
   /** CSS colors from the source, for the caller to map to cell colors. */
   color?: string
   background?: string
+  formula?: string
+  stringValue?: boolean
 }
 
 /**
  * Reads an HTML clipboard table (Excel, Google Sheets, web pages). Returns our own snapshots
  * when the table came from this app. Requires a DOM (DOMParser).
  */
-export function parseHtml(html: string): { cells: PastedCell[][]; internal?: ClipboardPayload['internal'] } | undefined {
+export function parseHtml(html: string): { cells: PastedCell[][]; merges: CellRange[]; internal?: ClipboardPayload['internal'] } | undefined {
   if (typeof DOMParser === 'undefined') return undefined
   const document = new DOMParser().parseFromString(html, 'text/html')
   const table = document.querySelector('table')
   if (!table) return undefined
   const marker = table.getAttribute(CLIPBOARD_MARKER)
   let internal: ClipboardPayload['internal']
-  if (marker) {
+  if (marker && marker.length <= 64 * 1024 * 1024) {
     try {
-      internal = JSON.parse(decodeBase64(marker)) as ClipboardPayload['internal']
+      const candidate: unknown = JSON.parse(decodeBase64(marker))
+      if (validSnapshot(candidate)) internal = candidate
     } catch {
       internal = undefined
     }
@@ -181,6 +226,9 @@ export function parseHtml(html: string): { cells: PastedCell[][]; internal?: Cli
       if (col >= MAX_COLS || (col + 1) * height > MAX_EXPANDED_CELLS) break
       const css = [...(td.getAttribute('class') ?? '').split(/\s+/).map((name) => classStyles.get(name) ?? ''), td.getAttribute('style') ?? ''].join(';')
       const cell: PastedCell = { text: cellText(td) }
+      const formula = td.getAttribute('x:fmla')
+      if (formula?.startsWith('=')) cell.formula = formula
+      if (td.hasAttribute('x:str')) cell.stringValue = true
       const style = styleFromCss(css, td)
       if (Object.keys(style.style).length) cell.style = style.style
       if (style.color) cell.color = style.color
@@ -194,8 +242,11 @@ export function parseHtml(html: string): { cells: PastedCell[][]; internal?: Cli
       col += colSpan
     }
   }
-  for (const row of cells) for (let index = 0; index < row.length; index++) row[index] ??= { text: '' }
-  return { cells, ...(internal ? { internal } : {}) }
+  for (let r = 0; r < height; r++) {
+    const row = (cells[r] ??= [])
+    for (let c = 0; c < width; c++) row[c] ??= { text: '' }
+  }
+  return { cells, merges: occupied, ...(internal ? { internal } : {}) }
 }
 
 function cellText(element: Element): string {
@@ -250,4 +301,87 @@ export function cssToRgb(color: string | undefined): string | undefined {
   }
   const named: Record<string, string> = { black: '000000', white: 'FFFFFF', red: 'FF0000', green: '008000', blue: '0000FF', yellow: 'FFFF00', gray: '808080', grey: '808080', orange: 'FFA500', purple: '800080' }
   return named[text]
+}
+
+function validSnapshot(value: unknown): value is ClipboardSnapshot {
+  if (!value || typeof value !== 'object') return false
+  const s = value as ClipboardSnapshot
+  const position = (n: unknown, max: number) => Number.isInteger(n) && (n as number) >= 0 && (n as number) < max
+  const range = (r: CellRange) => r && position(r.top, MAX_ROWS) && position(r.bottom, MAX_ROWS) && position(r.left, MAX_COLS) && position(r.right, MAX_COLS) && r.top <= r.bottom && r.left <= r.right
+  if (typeof s.sheet !== 'string' || !range(s.source) || !Array.isArray(s.cells) || !s.cells.length) return false
+  const width = s.cells[0]?.length
+  if (!width || s.cells.length * width > MAX_EXPANDED_CELLS || !Array.isArray(s.sourceRows) || !Array.isArray(s.sourceCols) || !Array.isArray(s.values)) return false
+  if (s.sourceRows.length !== s.cells.length || s.sourceCols.length !== width || s.values.length !== s.cells.length) return false
+  if (!s.sourceRows.every((r, i) => position(r, MAX_ROWS) && r >= s.source.top && r <= s.source.bottom && (!i || r > s.sourceRows[i - 1]!))) return false
+  if (!s.sourceCols.every((c, i) => position(c, MAX_COLS) && c >= s.source.left && c <= s.source.right && (!i || c > s.sourceCols[i - 1]!))) return false
+  const scalar = validValue
+  if (!s.cells.every((row, r) => Array.isArray(row) && row.length === width && row.every(validCell) && Array.isArray(s.values[r]) && s.values[r]!.length === width && s.values[r]!.every(scalar))) return false
+  const inside = (r: CellRange) => range(r) && r.bottom < s.cells.length && r.right < width
+  if (!Array.isArray(s.merges) || !s.merges.every(inside)) return false
+  if (s.stylesXml !== undefined && typeof s.stylesXml !== 'string') return false
+  for (const rules of [s.validations, s.conditionalFormats]) {
+    if (!Array.isArray(rules) || !rules.every((r) => r && Array.isArray(r.ranges) && r.ranges.every(inside) && r.origin && position(r.origin.row, MAX_ROWS) && position(r.origin.col, MAX_COLS) && r.value && typeof r.value === 'object')) return false
+  }
+  const strings = (value: unknown) => value === undefined || (Array.isArray(value) && value.every((v) => typeof v === 'string'))
+  for (const { value } of s.validations) {
+    if (typeof value.type !== 'string' || !validStrings(value, ['formula1', 'formula2', 'error', 'errorTitle', 'prompt', 'promptTitle', 'operator', 'errorStyle']) || !strings(value.formula1 === undefined ? undefined : [value.formula1]) || !strings(value.formula2 === undefined ? undefined : [value.formula2])) return false
+  }
+  for (const { value } of s.conditionalFormats) {
+    if (!Array.isArray(value.rules) || !value.rules.every((rule) => rule && typeof rule.type === 'string' && Number.isFinite(rule.priority) && validStrings(rule, ['text', 'operator', 'timePeriod', 'xml']) && strings(rule.formulas) && ['colorScale', 'dataBar', 'iconSet'].every((key) => {
+      const scale = rule[key as 'colorScale']
+      if (scale && key === 'colorScale' && (!Array.isArray(scale.colors) || !scale.colors.every(validColor))) return false
+      if (scale && key === 'dataBar' && !validColor((scale as unknown as { color: unknown }).color)) return false
+      if (scale && key === 'iconSet' && typeof (scale as unknown as { set: unknown }).set !== 'string') return false
+      return scale === undefined || (scale && Array.isArray(scale.values) && scale.values.every((v) => v && typeof v.type === 'string' && (v.value === undefined || typeof v.value === 'string')))
+    }))) return false
+  }
+  return s.cut === undefined || typeof s.cut === 'string'
+}
+
+const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
+const optional = (v: unknown, check: (v: unknown) => boolean) => v === undefined || check(v)
+const finite = (v: unknown) => typeof v === 'number' && Number.isFinite(v)
+const string = (v: unknown) => typeof v === 'string'
+const boolean = (v: unknown) => typeof v === 'boolean'
+const stringMap = (v: unknown) => object(v) && Object.values(v).every(string)
+const validStrings = (v: object, keys: string[]) => keys.every((key) => optional((v as Record<string, unknown>)[key], string))
+const positive = (v: unknown, max: number) => Number.isInteger(v) && (v as number) > 0 && (v as number) <= max
+const index = (v: unknown) => Number.isInteger(v) && (v as number) >= 0
+function validValue(v: unknown): boolean {
+  return v === null || string(v) || finite(v) || boolean(v) || (object(v) && string(v.e))
+}
+function validColor(v: unknown): boolean {
+  return v === null || (object(v) && optional(v.rgb, string) && optional(v.auto, boolean) && ['theme', 'indexed', 'tint'].every((key) => optional(v[key], finite)))
+}
+function validBorder(v: unknown): boolean {
+  return v === null || (object(v) && string(v.style) && optional(v.color, validColor))
+}
+function validStyle(v: unknown): boolean {
+  if (!object(v)) return false
+  const strings = ['fontName', 'numFmt', 'hAlign', 'vAlign', 'vertAlign', 'styleName']
+  const numbers = ['fontSize', 'rotation', 'indent']
+  const booleans = ['bold', 'italic', 'strike', 'wrap', 'shrink', 'locked', 'hidden', 'quotePrefix']
+  if (!validStrings(v, strings) || !numbers.every((k) => optional(v[k], finite)) || !booleans.every((k) => optional(v[k], boolean))) return false
+  if (!optional(v.underline, (u) => u === null || string(u))) return false
+  if (!['fontColor', 'fill'].every((k) => optional(v[k], validColor))) return false
+  if (!['borderTop', 'borderBottom', 'borderLeft', 'borderRight', 'diagonalUp', 'diagonalDown'].every((k) => optional(v[k], validBorder))) return false
+  if (!optional(v.pattern, (p) => object(p) && string(p.type) && optional(p.fg, validColor) && optional(p.bg, validColor))) return false
+  return optional(v.gradient, (g) => object(g) && string(g.type) && finite(g.degree) && Array.isArray(g.stops) && g.stops.every((s) => object(s) && finite(s.position) && validColor(s.color)))
+}
+function validRuns(v: unknown): boolean {
+  return Array.isArray(v) && v.every((r) => object(r) && string(r.text) && optional(r.font, validStyle) && optional(r.rPr, string))
+}
+function validData(v: unknown): boolean {
+  if (!object(v) || !optional(v.v, (s) => s === null || string(s) || finite(s) || boolean(s))) return false
+  if (!validStrings(v, ['f', 'raw', 'phonetic']) || !optional(v.t, (t) => t === 's' || t === 'e')) return false
+  if (!optional(v.runs, validRuns) || !optional(v.dynamic, boolean) || !optional(v.oversizedArray, boolean)) return false
+  if (!optional(v.array, (a) => object(a) && positive(a.rows, MAX_ROWS) && positive(a.cols, MAX_COLS) && (a.rows as number) * (a.cols as number) <= MAX_EXPANDED_CELLS)) return false
+  if (!optional(v.spillCache, (a) => Array.isArray(a) && a.length > 0 && Array.isArray(a[0]) && a[0].length > 0 && a.length * a[0].length <= MAX_EXPANDED_CELLS && a.every((row) => Array.isArray(row) && row.length === a[0].length && row.every(validValue)))) return false
+  return optional(v.keep, (k) => object(k) && validStrings(k, ['fText', 'extra', 'v', 'fa', 'fc']) && optional(k.c, stringMap) && optional(k.f, stringMap))
+}
+function validCell(v: unknown): boolean {
+  if (!object(v) || !validStyle(v.overrides) || !optional(v.xf, index) || !optional(v.data, validData)) return false
+  if (!optional(v.formula, string) || (v.formula !== undefined && !object(v.data)) || (object(v.data) && v.data.f !== undefined && v.formula === undefined)) return false
+  if (!optional(v.note, (n) => object(n) && string(n.text) && validStrings(n, ['author', 'shape']) && optional(n.runs, validRuns) && optional(n.keep, stringMap) && optional(n.visible, boolean))) return false
+  return optional(v.link, (l) => object(l) && validStrings(l, ['target', 'location', 'tooltip', 'display']) && optional(l.range, stringMap))
 }

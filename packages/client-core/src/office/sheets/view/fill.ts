@@ -1,3 +1,4 @@
+import { tokenize } from '../formula/tokenize.js'
 import { dateToSerial, serialToParts } from '../dates.js'
 import { isDateFormat } from '../numfmt/index.js'
 import type { CellValue } from '../values.js'
@@ -136,4 +137,24 @@ export function fillSeries(sources: FillSource[], count: number, backward = fals
     }
   }
   return positions.map(at)
+}
+
+/** Horizontal autofill advances qualified table columns; copy/paste and column ranges stay fixed. */
+export function fillStructuredFormula(formula: string, columns: number, tables: { name: string; displayName: string; columns: { name: string }[] }[]): string {
+  if (!columns) return formula
+  let out = '', last = 0
+  for (const token of tokenize(formula)) {
+    const ref = token.structured
+    if (!ref?.table || ref.firstColumn === undefined || ref.lastColumn !== undefined) continue
+    const table = tables.find((t) => [t.name, t.displayName].some((name) => name.toLowerCase() === ref.table!.toLowerCase()))
+    if (!table?.columns.length) continue
+    const index = table.columns.findIndex((c) => c.name.toLowerCase() === ref.firstColumn!.toLowerCase())
+    if (index < 0) continue
+    const next = ((index + columns) % table.columns.length + table.columns.length) % table.columns.length
+    const name = table.columns[next]!.name.replace(/['[\]#@]/g, "'$&")
+    const item = ref.items.length ? `[${[...ref.items.map((v) => `[${v}]`), `[${name}]`].join(',')}]` : `[${name}]`
+    out += formula.slice(last, token.start) + ref.table + item
+    last = token.end
+  }
+  return last ? out + formula.slice(last) : formula
 }

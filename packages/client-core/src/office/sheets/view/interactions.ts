@@ -1,12 +1,17 @@
+import { r1c1ToA1 } from '../formula/translate.js'
+import { Stylesheet } from '../styles/stylesheet.js'
+import { MAX_EXPANDED_CELLS } from '../limits.js'
+import { randomId } from '../model/axis.js'
+import { canWriteArrays, contains, intersects, offsetRange, pasteRules, placeRule, snapshotRules } from './clipboard-state.js'
 import { moveCells } from '../model/move-cells.js'
 import { maxOf, replaceChildrenWith } from '../../../collections.js'
 import { cellName, MAX_COLS, MAX_ROWS, rangeContains, type CellRange } from '../address.js'
-import type { AutoFilter, DrawingObject, Note, StyleProps } from '../model/schema.js'
+import type { AutoFilter, ConditionalFormat, DataValidation, DrawingObject, Note, SheetTable, StyleProps } from '../model/schema.js'
 import type { CellValue } from '../values.js'
 import { isErrorValue } from '../values.js'
-import { parseHtml, parseTsv, toHtml, toTsv, cssToRgb, type ClipboardCell, type ClipboardPayload } from './clipboard.js'
+import { parseHtml, parseTsv, toHtml, toTsv, cssToRgb, type ClipboardCell, type ClipboardPayload, type ClipboardRule } from './clipboard.js'
 import * as commands from './commands.js'
-import { fillSeries } from './fill.js'
+import { fillSeries, fillStructuredFormula } from './fill.js'
 import { applyCompletion, argumentHint, completions, partialFunctionName, type FunctionDoc } from './formula-assist.js'
 import { POINTS_TO_PIXELS } from './layout.js'
 import type { Scene } from './renderer.js'
@@ -50,7 +55,7 @@ export class SheetInteractions {
   private lastTap: { time: number; row: number; col: number } | undefined
   private touchStart: { x: number; y: number; time: number; id: number } | undefined
   private pinch: { distance: number; zoom: number; pointers: Map<number, { x: number; y: number }> } = { distance: 0, zoom: 1, pointers: new Map() }
-  private cut: { sheet: string; range: CellRange } | undefined
+  private cut: { token: string; sheet: string; range: CellRange; signature: string } | undefined
 
   constructor(private readonly view: SheetView) {
     const { scroller, input, root } = view
@@ -715,12 +720,14 @@ export class SheetInteractions {
   /** Fills the selection from its first row (Ctrl+D) or column (Ctrl+R). */
   private fillFromEdge(direction: 'down' | 'right'): void {
     const view = this.view
-    for (const range of view.selection.ranges) {
-      if (direction === 'down' && range.bottom > range.top) this.fill({ ...range, bottom: range.top }, range, true)
-      else if (direction === 'right' && range.right > range.left) this.fill({ ...range, right: range.left }, range, true)
-      else if (direction === 'down' && range.top > 0) this.fill({ ...range, top: range.top - 1, bottom: range.top - 1 }, { ...range, top: range.top - 1 }, true)
-      else if (direction === 'right' && range.left > 0) this.fill({ ...range, left: range.left - 1, right: range.left - 1 }, { ...range, left: range.left - 1 }, true)
-    }
+    view.workbook.transact(() => {
+      for (const range of view.selection.ranges) {
+        if (direction === 'down' && range.bottom > range.top) this.fill({ ...range, bottom: range.top }, range, true)
+        else if (direction === 'right' && range.right > range.left) this.fill({ ...range, right: range.left }, range, true)
+        else if (direction === 'down' && range.top > 0) this.fill({ ...range, top: range.top - 1, bottom: range.top - 1 }, { ...range, top: range.top - 1 }, true)
+        else if (direction === 'right' && range.left > 0) this.fill({ ...range, left: range.left - 1, right: range.left - 1 }, { ...range, left: range.left - 1 }, true)
+      }
+    })
   }
 
   /** Extends `source` to `target` with the fill handle's series (or copies, with `copy`). */
@@ -730,41 +737,71 @@ export class SheetInteractions {
     if (view.readOnly) return
     const vertical = target.top !== source.top || target.bottom !== source.bottom
     const backward = vertical ? target.top < source.top : target.left < source.left
+    if (!contains(target, source) || target.top < 0 || target.left < 0 || target.bottom >= MAX_ROWS || target.right >= MAX_COLS || (target.bottom - target.top + 1) * (target.right - target.left + 1) > MAX_EXPANDED_CELLS) return
+    const extension = vertical ? backward ? { ...target, bottom: source.top - 1 } : { ...target, top: source.bottom + 1 } : backward ? { ...target, right: source.left - 1 } : { ...target, left: source.right + 1 }
+    if (!canWriteArrays(sheet, extension, view.values)) return
+    // These fill patterns need shape-aware repetition; reject them before any write.
+    if (sheet.mergedRanges().some((m) => intersects(m.range, target))) return
+    let arraySource = false
+    const spillSources: CellRange[] = []
+    sheet.forEachCell((row, col, data) => {
+      if (row > source.bottom || col > source.right) return
+      const size = data.array ?? view.values.spill?.(sheet, row, col)
+      if (!size || size.rows * size.cols <= 1) return
+      const range = { top: row, left: col, bottom: row + size.rows - 1, right: col + size.cols - 1 }
+      if (!intersects(range, source)) return
+      spillSources.push(range)
+      if (data.array || rangeContains(source, row, col) && span(Math.max(row, source.top), Math.min(range.bottom, source.bottom)).some((r) => view.rows.isHidden(r))) arraySource = true
+    })
+    if (arraySource) return
+    const jobs: {
+      sourceCells: { row: number; col: number }[]
+      targets: { row: number; col: number }[]
+      snapshots: commands.CellSnapshot[]
+      series: ReturnType<typeof fillSeries>
+      metadata: { dv: ClipboardRule<DataValidation>[] }[]
+    }[] = []
+    const lines = vertical ? span(source.left, source.right) : span(source.top, source.bottom)
+    for (const line of lines) {
+      const sourceCells = (vertical ? span(source.top, source.bottom).map((row) => ({ row, col: line })) : span(source.left, source.right).map((col) => ({ row: line, col }))).filter((cell) => !view.rows.isHidden(cell.row))
+      const targets = (vertical
+        ? backward ? span(target.top, source.top - 1).reverse().map((row) => ({ row, col: line })) : span(source.bottom + 1, target.bottom).map((row) => ({ row, col: line }))
+        : backward ? span(target.left, source.left - 1).reverse().map((col) => ({ row: line, col })) : span(source.right + 1, target.right).map((col) => ({ row: line, col }))).filter((cell) => !view.rows.isHidden(cell.row))
+      if (!sourceCells.length) continue
+      const snapshots = sourceCells.map((cell) => {
+        const snapshot = commands.snapshotCell(sheet, cell.row, cell.col)
+        snapshot.overrides = JSON.parse(JSON.stringify(view.styleAt(cell.row, cell.col))) as Partial<StyleProps>
+        const spill = spillSources.find((r) => rangeContains(r, cell.row, cell.col))
+        if (spill && !rangeContains(source, spill.top, spill.left)) snapshot.data = valueData(view.valueAt(cell.row, cell.col))
+        return snapshot
+      })
+      const series = copy
+        ? targets.map((_, index) => ({ kind: 'copy' as const, from: backward ? sourceCells.length - 1 - (index % sourceCells.length) : index % sourceCells.length }))
+        : fillSeries(sourceCells.map((cell, index) => ({ value: view.valueAt(cell.row, cell.col), formula: snapshots[index]!.formula !== undefined, numFmt: view.styleAt(cell.row, cell.col).numFmt })), targets.length, backward, view.workbook.date1904)
+      // Prepare every line before writing: a later line's formulas can depend on an earlier one.
+      const metadata = sourceCells.map((cell) => ({ dv: snapshotRules<DataValidation>(sheet, sheet.dv.values(), [cell.row], [cell.col]) }))
+      jobs.push({ sourceCells, targets, snapshots, series, metadata })
+    }
+    const tables = [...sheet.workbook.sheets()].flatMap((owner) => [...owner.tables.values()] as SheetTable[])
+    const formats = snapshotRules<ConditionalFormat>(sheet, sheet.cf.values(), span(source.top, source.bottom), span(source.left, source.right))
+    const formatTargets = formats.map(() => [] as CellRange[])
     view.workbook.transact(() => {
-      const lines = vertical ? span(source.left, source.right) : span(source.top, source.bottom)
-      for (const line of lines) {
-        const sourceCells = vertical ? span(source.top, source.bottom).map((row) => ({ row, col: line })) : span(source.left, source.right).map((col) => ({ row: line, col }))
-        const targets = vertical
-          ? backward
-            ? span(target.top, source.top - 1).reverse().map((row) => ({ row, col: line }))
-            : span(source.bottom + 1, target.bottom).map((row) => ({ row, col: line }))
-          : backward
-            ? span(target.left, source.left - 1).reverse().map((col) => ({ row: line, col }))
-            : span(source.right + 1, target.right).map((col) => ({ row: line, col }))
-        const snapshots = sourceCells.map((cell) => commands.snapshotCell(sheet, cell.row, cell.col))
-        const series = copy
-          ? targets.map((_, index) => ({ kind: 'copy' as const, from: backward ? sourceCells.length - 1 - (index % sourceCells.length) : index % sourceCells.length }))
-          : fillSeries(
-              sourceCells.map((cell, index) => ({ value: view.valueAt(cell.row, cell.col), formula: snapshots[index]!.formula !== undefined, numFmt: view.styleAt(cell.row, cell.col).numFmt })),
-              targets.length,
-              backward,
-              view.workbook.date1904,
-            )
-        series.forEach((result, index) => {
-          const to = targets[index]!
-          if (result.kind === 'copy') {
-            const from = sourceCells[result.from]!
-            commands.placeCell(sheet, snapshots[result.from]!, from, to)
-          } else {
-            // A series value with the format of the source cell it continues.
-            const model = snapshots[backward ? 0 : snapshots.length - 1]!
-            const fromCell = sourceCells[backward ? 0 : sourceCells.length - 1]!
-            commands.placeCell(sheet, model, fromCell, to, { values: false, formats: true })
-            const value = result.value
-            sheet.setCell(to.row, to.col, value === null ? undefined : isErrorValue(value) ? { v: value.e, t: 'e' } : { v: value })
-          }
+      for (const { sourceCells, targets, snapshots, series, metadata } of jobs) series.forEach((result, index) => {
+        const to = targets[index]!
+        const sourceIndex = result.kind === 'copy' ? result.from : backward ? 0 : snapshots.length - 1
+        const from = sourceCells[sourceIndex]!
+        let model = snapshots[sourceIndex]!
+        if (!copy && !vertical && model.formula !== undefined) model = { ...model, formula: fillStructuredFormula(model.formula, to.col - from.col, tables) }
+        commands.placeCell(sheet, model, from, to, result.kind === 'copy' ? undefined : { values: false, formats: true })
+        if (result.kind === 'value') sheet.setCell(to.row, to.col, valueData(result.value))
+        const destination = { top: to.row, bottom: to.row, left: to.col, right: to.col }
+        pasteRules(sheet, 'dv', metadata[sourceIndex]!.dv, destination, [from.row], [from.col])
+        pasteRules(sheet, 'cf', [], destination, [from.row], [from.col])
+        formats.forEach((rule, i) => {
+          if (rule.ranges.some((r) => rangeContains(r, from.row - source.top, from.col - source.left))) formatTargets[i]!.push(destination)
         })
-      }
+      })
+      formats.forEach((rule, i) => placeRule(sheet, 'cf', rule, formatTargets[i]!))
     })
     view.select(target, { active: view.selection.active, scroll: false })
   }
@@ -777,24 +814,24 @@ export class SheetInteractions {
     if (view.selection.ranges.length !== 1) return undefined
     const sheet = view.sheet
     const range = commands.clampToUsed(sheet, view.selection.ranges[0]!)
+    if ((range.bottom - range.top + 1) * (range.right - range.left + 1) > MAX_EXPANDED_CELLS) return undefined
+    const sourceRows = span(range.top, range.bottom).filter((row) => cut || !view.rows.isHidden(row))
+    // Like Excel, hidden columns remain part of a normal copied rectangle.
+    const sourceCols = span(range.left, range.right)
+    if (!sourceRows.length || !sourceCols.length) return undefined
     const rows: ClipboardCell[][] = []
     const cells: commands.CellSnapshot[][] = []
     const values: CellValue[][] = []
-    for (let row = range.top; row <= range.bottom; row++) {
-      if (view.rows.isHidden(row) && !cut) continue
+    for (const row of sourceRows) {
       const line: ClipboardCell[] = []
       const snapshots: commands.CellSnapshot[] = []
       const lineValues: CellValue[] = []
-      for (let col = range.left; col <= range.right; col++) {
+      for (const col of sourceCols) {
         const render = view.cellRender(row, col)
         const snapshot = commands.snapshotCell(sheet, row, col)
-        const style: Partial<StyleProps> = { ...render.style }
-        line.push({
-          text: render.text,
-          ...(snapshot.formula !== undefined ? { formula: `=${snapshot.formula}` } : {}),
-          style,
-          css: { color: render.color, ...(render.fill ? { background: render.fill } : {}) },
-        })
+        // Resolve inherited formats at copy time, without baking conditional formatting in.
+        snapshot.overrides = { ...view.styleAt(row, col) }
+        line.push({ text: render.text, ...(snapshot.formula !== undefined ? { formula: `=${snapshot.formula}` } : {}), style: { ...render.style }, css: { color: render.color, ...(render.fill ? { background: render.fill } : {}) } })
         snapshots.push(snapshot)
         lineValues.push(render.value)
       }
@@ -802,7 +839,53 @@ export class SheetInteractions {
       cells.push(snapshots)
       values.push(lineValues)
     }
-    return { rows, internal: { source: range, sheet: sheet.id, cells, ...(cut ? { cut: true } : {}) }, values } as ClipboardPayload & { values: CellValue[][] }
+    const merges: CellRange[] = []
+    for (const merge of sheet.mergedRanges()) {
+      if (!intersects(range, merge.range)) continue
+      if (!contains(range, merge.range)) return undefined
+      const top = sourceRows.indexOf(merge.range.top), bottom = sourceRows.indexOf(merge.range.bottom)
+      if (top < 0 || bottom - top !== merge.range.bottom - merge.range.top) return undefined
+      const rect = { top, bottom, left: merge.range.left - range.left, right: merge.range.right - range.left }
+      merges.push(rect)
+      for (let r = top; r <= bottom; r++) for (let c = rect.left; c <= rect.right; c++) {
+        if (r === top && c === rect.left) Object.assign(rows[r]![c]!, { rowSpan: bottom - top + 1, colSpan: rect.right - rect.left + 1 })
+        else rows[r]![c]!.covered = true
+      }
+    }
+    // A spill member copied on its own becomes its displayed value. When its anchor is included,
+    // leave members empty so the pasted formula can spill without artificial obstructions.
+    sheet.forEachCell((row, col, data) => {
+      const size = data.array ?? view.values.spill?.(sheet, row, col)
+      if (!size) return
+      let anchor = sourceRows.includes(row) && sourceCols.includes(col)
+      const filtered = span(Math.max(row, range.top), Math.min(row + size.rows - 1, range.bottom)).some((r) => !sourceRows.includes(r))
+      if (anchor && filtered && !data.array) {
+        const r = sourceRows.indexOf(row), c = sourceCols.indexOf(col)
+        cells[r]![c]!.data = valueData(values[r]![c]!)
+        delete cells[r]![c]!.formula
+        delete rows[r]![c]!.formula
+        anchor = false
+      }
+      for (let r = 0; r < sourceRows.length; r++) for (let c = 0; c < sourceCols.length; c++) {
+        const rr = sourceRows[r]!, cc = sourceCols[c]!
+        if ((rr === row && cc === col) || rr < row || rr >= row + size.rows || cc < col || cc >= col + size.cols) continue
+        cells[r]![c]!.data = anchor ? undefined : valueData(values[r]![c]!)
+      }
+    })
+    const token = cut && !view.readOnly ? randomId() : undefined
+    this.cut = token ? { token, sheet: sheet.id, range, signature: this.cutSignature(sheet.id, range) } : undefined
+    const payload: ClipboardPayload = { rows, internal: { source: range, sheet: sheet.id, sourceRows, sourceCols, cells, values, merges, validations: snapshotRules<DataValidation>(sheet, sheet.dv.values(), sourceRows, sourceCols), conditionalFormats: snapshotRules<ConditionalFormat>(sheet, sheet.cf.values(), sourceRows, sourceCols), stylesXml: view.stylesheetFor.toXml(), ...(token ? { cut: token } : {}) } }
+    // Detach nested JSON objects from Yjs and cached render/style objects as well.
+    return JSON.parse(JSON.stringify(payload)) as ClipboardPayload
+  }
+
+  private cutSignature(id: string, range: CellRange): string {
+    const sheet = this.view.workbook.sheet(id)
+    if (!sheet) return ''
+    return JSON.stringify({
+      cells: span(range.top, range.bottom).map((row) => span(range.left, range.right).map((col) => [sheet.keyAt(row, col), commands.snapshotCell(sheet, row, col)])),
+      metadata: [sheet.merges, sheet.tables, sheet.cf, sheet.dv, sheet.filter, sheet.drawings, sheet.raw].map((map) => [...map]),
+    })
   }
 
   private onCopy(event: ClipboardEvent, cut: boolean): void {
@@ -814,7 +897,6 @@ export class SheetInteractions {
     event.clipboardData.setData('text/plain', toTsv(payload.rows))
     event.clipboardData.setData('text/html', toHtml(payload))
     view.copyRange = payload.internal!.source
-    this.cut = cut && !view.readOnly ? { sheet: view.sheetId, range: payload.internal!.source } : undefined
     view.scheduleRender()
   }
 
@@ -833,76 +915,109 @@ export class SheetInteractions {
     const target = view.selection.ranges[view.selection.ranges.length - 1]!
     const origin = { row: target.top, col: target.left }
     const parsed = data.html ? parseHtml(data.html) : undefined
-    const internal = parsed?.internal && view.workbook.sheet(parsed.internal.sheet) ? parsed.internal : undefined
+    const internal = parsed?.internal
+    const cells = parsed?.cells ?? parseTsv(data.text ?? '').map((row) => row.map((text) => ({ text })))
+    const height = internal?.cells.length ?? cells.length
+    const width = internal?.cells[0]?.length ?? maxOf(cells.map((row) => row.length))
+    if (!height || !width) return
     const placeOptions: commands.PlaceOptions = { values: !mode.formats || !!mode.values, formats: !mode.values || !!mode.formats }
+    const all = !mode.values && !mode.formats || !!mode.values && !!mode.formats
+    const cut = internal?.cut && this.cut?.token === internal.cut && internal.sheet === this.cut.sheet && JSON.stringify(internal.source) === JSON.stringify(this.cut.range) ? this.cut : undefined
+    const moving = !!cut && all
+    // A changed source is copied from the immutable snapshot; never clear a remote edit.
+    const relocate = moving && cut.signature === this.cutSignature(cut.sheet, cut.range)
+    const selectedHeight = target.bottom - target.top + 1, selectedWidth = target.right - target.left + 1
+    const tile = !moving && selectedHeight >= height && selectedWidth >= width && selectedHeight % height === 0 && selectedWidth % width === 0
+    if (!moving && !tile && (selectedHeight > height || selectedWidth > width)) return
+    const rows = tile ? selectedHeight : height, cols = tile ? selectedWidth : width
+    const destination = { top: origin.row, left: origin.col, bottom: origin.row + rows - 1, right: origin.col + cols - 1 }
+    // Preflight is outside the transaction: failures must not leave a partial paste behind.
+    if (destination.bottom >= MAX_ROWS || destination.right >= MAX_COLS || rows * cols > MAX_EXPANDED_CELLS) return
+    if (placeOptions.values && !canWriteArrays(sheet, destination, view.values)) return
+    if (relocate) {
+      const source = view.workbook.sheet(cut.sheet)!
+      if (!canWriteArrays(source, cut.range, view.values)) return
+      for (const owner of new Set([source, sheet])) for (const collection of [owner.tables, owner.merges]) for (const raw of collection.values()) {
+        const rect = owner.resolveRange((raw as { range: import('../model/schema.js').RangeIds }).range)
+        if (!rect) continue
+        if (owner === source && intersects(rect, cut.range) && !contains(cut.range, rect)) return
+        if (owner === sheet && intersects(rect, destination) && !(owner === source && contains(cut.range, rect))) return
+      }
+    } else {
+      for (const merge of sheet.mergedRanges()) if (intersects(merge.range, destination) && !contains(destination, merge.range)) return
+    }
+    const merges = internal?.merges ?? parsed?.merges ?? []
+    // Legacy array formulas must keep their entire original shape.
+    if (internal && placeOptions.values && !mode.values) for (let r = 0; r < height; r++) for (let c = 0; c < width; c++) {
+      const size = internal.cells[r]![c]!.data?.array
+      if (size && (r + size.rows > height || c + size.cols > width || internal.sourceRows[r + size.rows - 1]! - internal.sourceRows[r]! !== size.rows - 1)) return
+    }
     view.workbook.transact(() => {
-      if (internal) {
-        if (internal.cut && this.cut && !mode.values && !mode.formats) {
-          const source = view.workbook.sheet(this.cut.sheet)
-          if (source) moveCells(source, sheet, this.cut.range, origin)
-          this.cut = undefined
-          view.copyRange = undefined
-          view.select({ top: origin.row, left: origin.col, bottom: origin.row + internal.source.bottom - internal.source.top, right: origin.col + internal.source.right - internal.source.left }, { active: origin, scroll: false })
-          return
+      if (relocate) {
+        moveCells(view.workbook.sheet(cut.sheet)!, sheet, cut.range, origin)
+        // A moved cell also keeps formats it inherited from its original row/column.
+        for (let r = 0; r < height; r++) for (let c = 0; c < width; c++) {
+          const to = { row: origin.row + r, col: origin.col + c }
+          commands.placeCell(sheet, internal!.cells[r]![c]!, to, to, { values: false, formats: true })
         }
-        const height = internal.cells.length
-        const width = internal.cells[0]?.length ?? 0
-        // A single copied cell fills the whole selection; otherwise paste once at its corner.
-        const tile = height === 1 && width === 1 ? { rows: target.bottom - target.top + 1, cols: target.right - target.left + 1 } : { rows: height, cols: width }
-        for (let dr = 0; dr < tile.rows; dr++) {
-          for (let dc = 0; dc < tile.cols; dc++) {
-            const snapshot = internal.cells[dr % height]![dc % width]!
-            const from = { row: internal.source.top + (dr % height), col: internal.source.left + (dc % width) }
-            const to = { row: origin.row + dr, col: origin.col + dc }
-            const sourceSheet = view.workbook.sheet(internal.sheet)!
-            // Cut and paste moves formulas as they are; copy moves their relative references.
-            const effectiveFrom = internal.cut ? to : from
-            commands.placeCell(sheet, snapshot, effectiveFrom, to, {
-              ...placeOptions,
-              ...(mode.values ? { valueFor: () => view.values.get(sourceSheet, from.row, from.col) } : {}),
-            })
-          }
+      }
+      else {
+        let dxf: number[] | undefined
+        if (internal?.stylesXml && placeOptions.formats) {
+          const styles = new Stylesheet(view.workbook.metaValue('stylesXml'))
+          const imported = styles.merge(new Stylesheet(internal.stylesXml))
+          dxf = imported.dxf
+          // Preserve original base formats, including properties not modeled as overrides.
+          for (const row of internal.cells) for (const cell of row) if (cell.xf !== undefined) cell.xf = imported.xf[cell.xf]
+          const xml = styles.toXml()
+          if (xml !== view.workbook.metaValue('stylesXml')) view.workbook.setMeta('stylesXml', xml)
         }
-        if (internal.cut && this.cut) {
-          const cutRange = this.cut.range
-          const cutSheet = view.workbook.sheet(this.cut.sheet)
-          if (cutSheet) {
-            for (let row = cutRange.top; row <= cutRange.bottom; row++) {
-              for (let col = cutRange.left; col <= cutRange.right; col++) {
-                const inTarget = cutSheet.id === sheet.id && row >= origin.row && row < origin.row + height && col >= origin.col && col < origin.col + width
-                if (inTarget) continue
-                cutSheet.setCell(row, col, undefined)
-                cutSheet.clearStyle({ top: row, left: col, bottom: row, right: col })
-              }
+        if (placeOptions.formats) commands.unmergeRanges(sheet, [destination])
+        for (let dr = 0; dr < rows; dr++) for (let dc = 0; dc < cols; dc++) {
+          const r = dr % height, c = dc % width
+          const to = { row: origin.row + dr, col: origin.col + dc }
+          if (internal) {
+            const snapshot = internal.cells[r]![c]!
+            const from = { row: internal.sourceRows[r]!, col: internal.sourceCols[c]! }
+            commands.placeCell(sheet, snapshot, from, to, { ...placeOptions, ...(mode.values || view.valuesOnly ? { valueFor: () => internal.values[r]![c]! } : {}) })
+            if (all) {
+              const key = sheet.keyAt(to.row, to.col)
+              if (snapshot.note) sheet.notes.set(key, snapshot.note); else sheet.notes.delete(key)
+              if (snapshot.link) sheet.links.set(key, { ...snapshot.link, ...(snapshot.link.range ? { range: sheet.rangeIds({ top: to.row, bottom: to.row, left: to.col, right: to.col }) } : {}) }); else sheet.links.delete(key)
+            }
+          } else {
+            const cell = cells[r]?.[c] ?? { text: '' }
+            if (placeOptions.values) {
+              const formula = !mode.values && 'formula' in cell && typeof cell.formula === 'string' ? r1c1ToA1(cell.formula, to.row, to.col) : undefined
+              const literal = 'stringValue' in cell && cell.stringValue || mode.values && /^[=']/.test(cell.text)
+              if (literal && !formula) sheet.setCell(to.row, to.col, { v: cell.text, t: 's' })
+              else if (mode.values) {
+                const { data: content } = commands.contentFromInput(sheet, cell.text, { valuesOnly: view.valuesOnly, date1904: view.workbook.date1904 })
+                sheet.setCell(to.row, to.col, content)
+              } else commands.setCellInput(sheet, to.row, to.col, formula ?? cell.text, { valuesOnly: view.valuesOnly, date1904: view.workbook.date1904, currentFormat: view.styleAt(to.row, to.col).numFmt })
+            }
+            if (placeOptions.formats && 'style' in cell) {
+              const pasted = cell as { style?: Partial<StyleProps>; color?: string; background?: string }
+              const patch: commands.StylePatch = { ...(pasted.style ?? {}) }
+              const color = cssToRgb(pasted.color), background = cssToRgb(pasted.background)
+              if (color) patch.fontColor = { rgb: color }
+              if (background) patch.fill = { rgb: background }
+              sheet.clearStyle({ top: to.row, bottom: to.row, left: to.col, right: to.col })
+              if (Object.keys(patch).length) sheet.setStyle({ top: to.row, bottom: to.row, left: to.col, right: to.col }, patch)
             }
           }
-          this.cut = undefined
-          view.copyRange = undefined
         }
-        view.select({ top: origin.row, left: origin.col, bottom: origin.row + tile.rows - 1, right: origin.col + tile.cols - 1 }, { active: origin, scroll: false })
-        return
+        if (internal) {
+          if (all) pasteRules(sheet, 'dv', internal.validations, destination, internal.sourceRows, internal.sourceCols)
+          if (placeOptions.formats) pasteRules(sheet, 'cf', internal.conditionalFormats, destination, internal.sourceRows, internal.sourceCols, dxf)
+        }
+        if (placeOptions.formats) for (let dr = 0; dr < rows; dr += height) for (let dc = 0; dc < cols; dc += width) for (const merge of merges) {
+          sheet.merges.set(randomId(), { range: sheet.rangeIds(offsetRange(merge, origin.row + dr, origin.col + dc)) })
+        }
       }
-      const cells = parsed?.cells ?? parseTsv(data.text ?? '').map((row) => row.map((text) => ({ text })))
-      if (!cells.length) return
-      cells.forEach((row, dr) =>
-        row.forEach((cell, dc) => {
-          const to = { row: origin.row + dr, col: origin.col + dc }
-          if (to.row >= MAX_ROWS || to.col >= MAX_COLS) return
-          if (placeOptions.values !== false) commands.setCellInput(sheet, to.row, to.col, cell.text, { valuesOnly: view.valuesOnly, date1904: view.workbook.date1904, currentFormat: view.styleAt(to.row, to.col).numFmt })
-          if (placeOptions.formats !== false && 'style' in cell) {
-            const pasted = cell as { style?: Partial<StyleProps>; color?: string; background?: string }
-            const patch: commands.StylePatch = { ...(pasted.style ?? {}) }
-            const color = cssToRgb(pasted.color)
-            const background = cssToRgb(pasted.background)
-            if (color && color !== '000000') patch.fontColor = { rgb: color }
-            if (background && background !== 'FFFFFF') patch.fill = { rgb: background }
-            if (Object.keys(patch).length) sheet.setStyle({ top: to.row, left: to.col, bottom: to.row, right: to.col }, patch)
-          }
-        }),
-      )
-      const width = maxOf(cells.map((row) => row.length))
-      view.select({ top: origin.row, left: origin.col, bottom: origin.row + cells.length - 1, right: origin.col + width - 1 }, { active: origin, scroll: false })
+      if (cut && all) { this.cut = undefined; view.copyRange = undefined }
     })
+    view.select(destination, { active: origin, scroll: false })
   }
 
   // ── Editor ───────────────────────────────────────────────────────────────
@@ -1651,3 +1766,7 @@ function escapeRegExp(text: string): string {
 }
 
 export { cellName }
+
+function valueData(value: CellValue): import('../model/schema.js').CellData | undefined {
+  return value === null ? undefined : isErrorValue(value) ? { v: value.e, t: 'e' } : { v: value }
+}
