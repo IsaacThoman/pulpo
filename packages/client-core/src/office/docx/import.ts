@@ -1,3 +1,4 @@
+import { insertAll } from '../../collections.js'
 import { Mark, type Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { COPY_RELATIONSHIPS, PRESERVED_IMAGE, PRESERVED_LINK, isPictureReference, relationshipReferences } from './relationships.js'
 import { DOCX_MAX_TABLE_DEPTH } from './format.js'
@@ -442,7 +443,7 @@ class BlockBuilder {
           unwrap(child, 'w:tc', (tc, shell) => addCell(tc, packJml(shell)), (extra) => outside.push(extra))
           // A wrapper without cells stays whole; otherwise its loose markers go before its first cell.
           if (cells.length === count) cellLead.push(child)
-          else if (outside.length) cells[count]!.lead.splice(before, 0, ...outside)
+          else if (outside.length) insertAll(cells[count]!.lead, before, outside)
         } else if (child[0] !== 'w:trPr' && child[0] !== 'w:tblPrEx') cellLead.push(child)
       }
       if (col + after > DOCX_LIMITS.maxColumns) throw tooWide()
@@ -456,7 +457,7 @@ class BlockBuilder {
         const outside: JmlElement[] = []
         unwrap(child, 'w:tr', (tr, shell) => addRow(tr, packJml(shell)), (extra) => outside.push(extra))
         if (rows.length === count) pendingLead.push(child)
-        else rows[count]!.lead.unshift(...outside)
+        else insertAll(rows[count]!.lead, 0, outside)
       }
       else if (BLOCK_MARKERS.has(child[0])) pendingLead.push(child)
     }

@@ -1,3 +1,4 @@
+import { pushAll } from '../../../collections.js'
 import { parseXml } from '../../ooxml/package.js'
 import { parseDrawingColor, type DrawingColor } from '../../ooxml/theme.js'
 import { DRAWINGML_NS, MARKUP_COMPATIBILITY_NS, attribute, childElements, isElement, numberAttribute, ownText, type Element } from '../../ooxml/xml.js'
@@ -66,7 +67,7 @@ function kids(parent: Element | undefined, depth = 0): Element[] {
     if (!isElement(node)) continue
     if (node.namespaceURI === MARKUP_COMPATIBILITY_NS && node.localName === 'AlternateContent') {
       const branch = depth < 4 ? chooseAlternate(node) : undefined
-      if (branch) result.push(...kids(branch, depth + 1))
+      if (branch) pushAll(result, kids(branch, depth + 1))
     } else result.push(node)
   }
   return result

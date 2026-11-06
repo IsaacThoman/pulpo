@@ -1,3 +1,4 @@
+import { pushAll } from '../../collections.js'
 import type * as Y from 'yjs'
 import { alignKeys } from './codec.js'
 import { canonicalValue, CanonicalPresentation } from './canonical.js'
@@ -125,7 +126,7 @@ function samePart(before: PartSnapshot | undefined, after: PartSnapshot | undefi
 function referencedParts(shape: ShapeSnapshot, slide: SlideSnapshot): string[] {
   const rels: RelTarget[] = Object.values(shape.rels)
   // Diagram drawings can be attached to the slide rather than to the graphic frame.
-  if (rels.some((rel) => rel.type === REL_TYPES.diagramData)) rels.push(...Object.values(slide.rels).filter((rel) => rel.type === REL_TYPES.diagramDrawing))
+  if (rels.some((rel) => rel.type === REL_TYPES.diagramData)) pushAll(rels, Object.values(slide.rels).filter((rel) => rel.type === REL_TYPES.diagramDrawing))
   return [...new Set(rels.filter((rel) => !rel.external).map((rel) => rel.target))].sort()
 }
 
@@ -271,7 +272,7 @@ export function diffSnapshots(beforeInput: PresentationSnapshot, afterInput: Pre
     else if (path.includes('/media/')) partKinds.add('media')
     else if (!/docProps|presentation\.xml|_rels\/presentation|\[Content_Types\]|charts\/|diagrams\/|embeddings\//.test(path)) partKinds.add('other')
   }
-  deck.push(...([...partKinds] as PresentationDiff['deck']))
+  pushAll(deck, ([...partKinds] as PresentationDiff['deck']))
   const count = (status: SlideDiff['status']) => slides.filter((slide) => slide.status === status).length
   // Moved slides that were also edited still count as edited for the summary.
   const edited = slides.filter((slide) => slide.status === 'edited' || (slide.status === 'moved' && (slide.shapes.length || slide.slideChanges.length))).length

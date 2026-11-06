@@ -1,3 +1,4 @@
+import { pushAll } from '@pulpo/client-core/collections'
 import { and, eq } from 'drizzle-orm'
 import { FILE_TREE_MAX_DEPTH, type FileNode } from '@pulpo/contracts'
 import { assertStorageCapacity } from '../attachments/storage-quota.js'
@@ -61,7 +62,7 @@ export async function saveAttachmentToFiles(
         || target.parentId !== parentId || target.name.toLowerCase() !== desired.toLowerCase()) {
         throw new AppError(409, 'file_replace_conflict', 'The file to overwrite has changed. Try saving again.')
       }
-      closedDocs.push(...await trashNodeInTx(tx, userId, target))
+      pushAll(closedDocs, await trashNodeInTx(tx, userId, target))
     }
     const name = replaceId ? desired : await availableName(tx, userId, parentId, desired)
     await tx.insert(fileNodes).values({

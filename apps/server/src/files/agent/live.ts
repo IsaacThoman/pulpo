@@ -1,3 +1,4 @@
+import { pushAll } from '@pulpo/client-core/collections'
 import type { Readable } from 'node:stream'
 import { and, desc, eq, ne } from 'drizzle-orm'
 import * as Y from 'yjs'
@@ -150,7 +151,7 @@ export async function applyLiveFileInTx(tx: DatabaseTransaction, effects: Commit
   const vector = Y.encodeStateVector(doc)
   const { changed } = await codecCall(() => liveFormatCodec(format).applyFile(doc, input.bytes, context, input.origin))
   if (!changed) return null
-  effects.writtenKeys.push(...await context.assets.flush(tx, input.node.ownerUserId, input.node.id))
+  pushAll(effects.writtenKeys, await context.assets.flush(tx, input.node.ownerUserId, input.node.id))
   await logLiveUpdate(tx, effects, input.node.id, Y.encodeStateAsUpdate(doc, vector), input.actorUserId, input.origin)
   return exportLiveDoc(doc, format, context)
 }
@@ -179,7 +180,7 @@ export async function proposalFork(tx: DatabaseTransaction, effects: CommitEffec
   const { changed } = await codecCall(() => liveFormatCodec(format).applyFile(base, bytes, context, 'agent'))
   if (!changed) return null
   // Parts the proposal adds are kept with the document now, so accepting it later finds them.
-  effects.writtenKeys.push(...await context.assets.flush(tx, node.ownerUserId, node.id))
+  pushAll(effects.writtenKeys, await context.assets.flush(tx, node.ownerUserId, node.id))
   return { fork: Y.encodeStateAsUpdate(base), current }
 }
 

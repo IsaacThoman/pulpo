@@ -1,3 +1,4 @@
+import { maxOf, minOf } from '../../../collections.js'
 import type { Element } from '@xmldom/xmldom'
 import { automaticColor } from './color.js'
 import { formatGeneral, formatNumber } from './format.js'
@@ -489,7 +490,7 @@ function layoutLegend(ctx: Context, area: Box): { remaining: Box; draw: () => vo
     rows.splice(Math.max(1, Math.floor((area.h * 0.4) / rowHeight)))
   }
   const rowWidth = (row: number[]): number => row.reduce((sum, index, position) => sum + widths[index]! + (position ? entryGap : 0), 0)
-  const boxWidth = Math.min(area.w, Math.max(...rows.map(rowWidth)))
+  const boxWidth = Math.min(area.w, maxOf(rows.map(rowWidth)))
   const boxHeight = rows.length * rowHeight
   const gap = font.sizePx * 0.6
 
@@ -746,7 +747,7 @@ function buildAxisGroups(ctx: Context, plots: PlotModel[]): AxisGroup[] {
     const measureAxis = ctx.model.axes.find((axis) => axis.id === measureId) ?? syntheticAxis(measureId, 'val', horizontal ? 'b' : 'l', true)
     const categoryPlots = groupPlots.filter((plot): plot is CategoryPlot => plot.type === 'bar' || plot.type === 'line' || plot.type === 'area')
     const categories = categoryPlots.map(plotCategories).find(Boolean)
-    const categoryCount = Math.max(1, categories?.count ?? 0, ...categoryPlots.flatMap((plot) => plot.series.map((series) => series.values.values.length)))
+    const categoryCount = Math.max(1, categories?.count ?? 0, maxOf(categoryPlots.flatMap((plot) => plot.series.map((series) => series.values.values.length))))
     const hasBars = categoryPlots.some((plot) => plot.type === 'bar')
     const onlyArea = categoryPlots.length > 0 && categoryPlots.every((plot) => plot.type === 'area')
     const crossBetween = measureAxis.crossBetween ?? (onlyArea ? 'midCat' : 'between')
@@ -785,7 +786,7 @@ function isPercent(plot: PlotModel): boolean {
  * category's total magnitude.
  */
 function stackedValues(plot: CategoryPlot, dispBlanksAs: SupportedChartModel['dispBlanksAs']): { from: number; to: number; raw: number }[][] {
-  const count = Math.max(0, ...plot.series.map((series) => series.values.values.length))
+  const count = Math.max(0, maxOf(plot.series.map((series) => series.values.values.length)))
   const stacked = isStacked(plot)
   const percent = isPercent(plot)
   const totals = new Array<number>(count).fill(0)
@@ -932,12 +933,12 @@ function arrangeCategoryLabels(ctx: Context, group: AxisGroup, length: number, m
     const maxWidth = Math.max(font.sizePx * 2, maxThickness - levelThickness)
     const skip = explicitSkip ?? Math.max(1, Math.ceil(height / Math.max(1, slot)))
     const lines = thin(skip, texts.map((text) => [truncateText(text, maxWidth, font.sizePx, font.bold)]))
-    const leafThickness = Math.max(0, ...lines.flat().map((line) => textWidth(line, font)))
+    const leafThickness = Math.max(0, maxOf(lines.flat().map((line) => textWidth(line, font))))
     return { lines, rotation: 0, outerLevels, levelThickness: outerLevels.length * Math.min(maxWidth, font.sizePx * 6), leafThickness }
   }
 
   const explicitRotation = placed.axis.textStyle.rotationDeg
-  const widest = Math.max(0, ...texts.map((text) => textWidth(text, font)))
+  const widest = Math.max(0, maxOf(texts.map((text) => textWidth(text, font))))
   if (!explicitRotation && widest <= slot * 0.92) {
     const skip = explicitSkip ?? 1
     return { lines: thin(skip, texts.map((text) => [text])), rotation: 0, outerLevels, levelThickness, leafThickness: height }
@@ -946,7 +947,7 @@ function arrangeCategoryLabels(ctx: Context, group: AxisGroup, length: number, m
     const wrapped = texts.map((text) => wrapText(text, slot * 0.92, font.sizePx, font.bold))
     const fits = wrapped.every((lines) => lines.length <= 3 && lines.every((line) => textWidth(line, font) <= slot * 0.92))
     if (fits) {
-      const rows = Math.max(...wrapped.map((lines) => lines.length))
+      const rows = maxOf(wrapped.map((lines) => lines.length))
       return { lines: thin(explicitSkip ?? 1, wrapped), rotation: 0, outerLevels, levelThickness, leafThickness: rows * height }
     }
   }
@@ -958,7 +959,7 @@ function arrangeCategoryLabels(ctx: Context, group: AxisGroup, length: number, m
   const skip = explicitSkip ?? Math.max(1, Math.ceil(height / sin / Math.max(1, slot)))
   const maxLength = Math.max(font.sizePx * 3, (maxThickness - levelThickness - height * cos) / sin)
   const lines = thin(skip, texts.map((text) => [truncateText(text, maxLength, font.sizePx, font.bold)]))
-  const longest = Math.max(0, ...lines.flat().map((line) => textWidth(line, font)))
+  const longest = Math.max(0, maxOf(lines.flat().map((line) => textWidth(line, font))))
   return { lines, rotation, outerLevels, levelThickness, leafThickness: longest * sin + height * cos }
 }
 
@@ -992,7 +993,7 @@ function labelSpace(ctx: Context, placed: PlacedAxis): number {
   const gap = font.sizePx * 0.45 + tickLength(ctx, placed.axis)
   if (placed.labels) return placed.labels.leafThickness + placed.labels.levelThickness + gap
   if (!placed.vertical || !placed.scale) return lineHeight(font) + gap
-  const widest = Math.max(0, ...placed.scale.ticks.map((value) => textWidth(formatNumber(value, placed.format, { date1904: ctx.model.date1904 }), font)))
+  const widest = Math.max(0, maxOf(placed.scale.ticks.map((value) => textWidth(formatNumber(value, placed.format, { date1904: ctx.model.date1904 }), font))))
   return widest + gap
 }
 
@@ -1050,7 +1051,7 @@ function layoutAxes(ctx: Context, groups: AxisGroup[], area: Box): Box {
     for (const { group, placed } of placedAxes) {
       if (placed.role !== 'category' || placed.vertical || group.between || !placed.labels || placed.labels.rotation) continue
       const font = axisFont(ctx, placed.axis)
-      const widths = placed.labels.lines.map((lines) => Math.max(0, ...lines.map((line) => textWidth(line, font))))
+      const widths = placed.labels.lines.map((lines) => Math.max(0, maxOf(lines.map((line) => textWidth(line, font)))))
       const [startSide, endSide]: [Side, Side] = placed.axis.reversed ? ['right', 'left'] : ['left', 'right']
       margins[startSide] = Math.max(margins[startSide], (widths[0] ?? 0) / 2)
       margins[endSide] = Math.max(margins[endSide], (widths[widths.length - 1] ?? 0) / 2)
@@ -1342,7 +1343,7 @@ function drawBarPlot(ctx: Context, group: AxisGroup, plot: Extract<PlotModel, { 
 function placeBarLabel(ctx: Context, group: AxisGroup, box: Box, base: number, end: number, lines: string[], style: TextStyle, position: DataLabelPosition): void {
   const font = dataLabelFont(ctx, style)
   const blockHeight = lines.length * lineHeight(font)
-  const blockWidth = Math.max(...lines.map((line) => textWidth(line, font)))
+  const blockWidth = maxOf(lines.map((line) => textWidth(line, font)))
   const direction = end >= base ? 1 : -1
   const pad = font.sizePx * 0.3
   if (group.horizontal) {
@@ -1516,7 +1517,7 @@ function drawScatterPlot(ctx: Context, group: AxisGroup, plot: Extract<PlotModel
 
 function drawBubblePlot(ctx: Context, group: AxisGroup, plot: Extract<PlotModel, { type: 'bubble' }>, inner: Box): void {
   const sizes = plot.series.flatMap((series) => (series.bubbleSizes?.values ?? []).map((size) => Math.abs(size ?? 0)))
-  const largest = Math.max(0, ...sizes)
+  const largest = Math.max(0, maxOf(sizes))
   // Office draws the largest bubble at a quarter of the plot's smaller side by default.
   const maxRadius = (Math.min(inner.w, inner.h) * 0.25 * (plot.bubbleScale / 100)) / 2
   const bubbles: { x: number; y: number; r: number; fill: string; stroke?: Stroke; label?: () => void }[] = []
@@ -1580,7 +1581,7 @@ function drawPieChart(ctx: Context, box: Box, plot: Extract<PlotModel, { type: '
   const rings = plot.holeSize > 0 ? plot.series : plot.series.slice(0, 1)
   if (!rings.length) return
   const categories = plotCategories(plot)
-  const explosion = Math.max(0, ...rings.flatMap((series) => [series.explosion, ...[...series.points.values()].map((point) => point.explosion ?? 0)]))
+  const explosion = Math.max(0, maxOf(rings.flatMap((series) => [series.explosion, ...[...series.points.values()].map((point) => point.explosion ?? 0)])))
   const anyOutside = rings.some((series) => {
     const labels = effectiveDataLabels(plot.dataLabels, series.dataLabels)
     return !!labels && !labels.deleted && plot.holeSize === 0 && (labels.position === 'outEnd' || labels.position === 'bestFit' || labels.position === undefined) && (labels.showValue || labels.showPercent || labels.showCategory || labels.showSeriesName)
@@ -1631,7 +1632,7 @@ function placePieLabel(
   label: { lines: string[]; style: TextStyle; position?: DataLabelPosition },
 ): void {
   const font = dataLabelFont(ctx, label.style)
-  const width = Math.max(...label.lines.map((line) => textWidth(line, font)))
+  const width = maxOf(label.lines.map((line) => textWidth(line, font)))
   const height = label.lines.length * lineHeight(font)
   let position = doughnut ? 'ctr' : (label.position ?? 'bestFit')
   if (position === 'bestFit') {
@@ -1659,20 +1660,20 @@ function placePieLabel(
 
 function drawRadarChart(ctx: Context, box: Box, plot: Extract<PlotModel, { type: 'radar' }>): void {
   const categories = plotCategories(plot)
-  const count = Math.max(3, categories?.count ?? 0, ...plot.series.map((series) => series.values.values.length))
+  const count = Math.max(3, categories?.count ?? 0, maxOf(plot.series.map((series) => series.values.values.length)))
   const [catId = '', valId = ''] = plot.axisIds
   const catAxis = ctx.model.axes.find((axis) => axis.id === catId) ?? syntheticAxis(catId, 'cat', 'b', true)
   const valAxis = ctx.model.axes.find((axis) => axis.id === valId) ?? syntheticAxis(valId, 'val', 'l', true)
   const catFont = axisFont(ctx, catAxis)
   const texts = Array.from({ length: count }, (_, index) => (categories ? categoryLabel(categories, index, undefined, { date1904: ctx.model.date1904 }) : String(index + 1)))
   const showCategories = !catAxis.deleted && catAxis.tickLabelPosition !== 'none'
-  const labelWidth = showCategories ? Math.min(box.w * 0.25, Math.max(0, ...texts.map((text) => textWidth(text, catFont)))) : 0
+  const labelWidth = showCategories ? Math.min(box.w * 0.25, Math.max(0, maxOf(texts.map((text) => textWidth(text, catFont))))) : 0
   const radius = Math.max(4, Math.min((box.w - labelWidth * 2) / 2 - catFont.sizePx, box.h / 2 - lineHeight(catFont) * 1.4))
   const cx = box.x + box.w / 2
   const cy = box.y + box.h / 2
   const values = plot.series.flatMap((series) => series.values.values.filter((value): value is number => value !== undefined))
-  const min = values.length ? Math.min(...values) : 0
-  const max = values.length ? Math.max(...values) : 1
+  const min = values.length ? minOf(values) : 0
+  const max = values.length ? maxOf(values) : 1
   const valFont = axisFont(ctx, valAxis)
   const format = axisFormat(valAxis, plot.series[0], false, 'y')
   const scale = computeScale({

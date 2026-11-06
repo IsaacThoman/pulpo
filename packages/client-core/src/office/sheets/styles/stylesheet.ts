@@ -1,3 +1,4 @@
+import { maxOf } from '../../../collections.js'
 import { parseXml, serializeXml, type XmlDocument } from '../../ooxml/package.js'
 import { builtinFormatCode } from '../numfmt/index.js'
 import { attr, boolAttr, child, children, numberAttr, SHEET_NS, type XmlElement } from '../codec/xml.js'
@@ -405,7 +406,7 @@ export class Stylesheet {
   numFmtId(code: string): number {
     for (let id = 0; id <= 49; id++) if (builtinFormatCode(id) === code) return id
     for (const [id, existing] of this.numFmts) if (existing === code) return id
-    const id = Math.max(163, ...this.numFmts.keys()) + 1
+    const id = Math.max(163, maxOf(this.numFmts.keys())) + 1
     const numFmts = this.ensureSection('numFmts', ['fonts'])
     const element = this.document.createElementNS(SHEET_NS, 'numFmt')
     element.setAttribute('numFmtId', String(id))

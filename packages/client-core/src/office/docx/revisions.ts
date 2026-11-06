@@ -1,3 +1,4 @@
+import { pushAll } from '../../collections.js'
 import { Slice, type Attrs, type Mark, type Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { EditorState, TextSelection, type Transaction } from '@tiptap/pm/state'
 import { removeRow, TableMap } from '@tiptap/pm/tables'
@@ -54,7 +55,7 @@ const PARAGRAPH_KEYS = ['pStyle', ...Object.keys(PARAGRAPH_PROPERTY_ATTRS), 'pPr
 export function runPropertiesOf(marks: readonly Mark[]): JmlElement[] {
   const elements: JmlElement[] = []
   for (const mark of marks) {
-    if (mark.type.name === 'rPrRest') elements.push(...(unpackJml<JmlElement[]>(mark.attrs.v as string) ?? []))
+    if (mark.type.name === 'rPrRest') pushAll(elements, (unpackJml<JmlElement[]>(mark.attrs.v as string) ?? []))
     else if (mark.type.name in RUN_PROPERTY_MARKS) {
       const element = jml(mark.attrs.v)
       if (element) elements.push(element)
@@ -71,7 +72,7 @@ export function paragraphPropertiesOf(attrs: Record<string, unknown>): JmlElemen
     const element = jml(attrs[key])
     if (element) elements.push(element)
   }
-  elements.push(...(typeof attrs.pPrRest === 'string' ? unpackJml<JmlElement[]>(attrs.pPrRest) ?? [] : []))
+  pushAll(elements, (typeof attrs.pPrRest === 'string' ? unpackJml<JmlElement[]>(attrs.pPrRest) ?? [] : []))
   return sortByOrder(elements, PPR_ORDER)
 }
 
@@ -615,7 +616,7 @@ function normalizeVertical(out: Transaction): void {
         if (continuing && above && above.span === cell.attrs.colspan && above.end === rowIndex - 1) {
           above.end = rowIndex + Number(cell.attrs.rowspan) - 1
           above.merged += Number(cell.attrs.rowspan)
-          above.kept.push(preserveCell(cell), ...unpackJml<JmlElement[]>(cell.attrs.vMergeCells as string | null) ?? [])
+          pushAll(above.kept, [preserveCell(cell), ...unpackJml<JmlElement[]>(cell.attrs.vMergeCells as string | null) ?? []])
           owners.add(above)
           next.set(col, above)
           removed.push(pos)

@@ -1,3 +1,4 @@
+import { maxOf, minOf } from '../../collections.js'
 import { updateYFragment } from '@tiptap/y-tiptap'
 import * as Y from 'yjs'
 import type { LiveAssetRef } from '../live-format.js'
@@ -249,7 +250,7 @@ export function duplicateSlides(doc: Y.Doc, keys: readonly string[], origin?: un
   const sorted = [...keys].filter((key) => order.includes(key)).sort((a, b) => order.indexOf(a) - order.indexOf(b))
   const created: string[] = []
   doc.transact(() => {
-    let insertAt = Math.max(...sorted.map((key) => slideKeys(doc).indexOf(key))) + 1
+    let insertAt = maxOf(sorted.map((key) => slideKeys(doc).indexOf(key))) + 1
     for (const key of sorted) {
       const slide = readSlide(doc, key)
       if (!slide) continue
@@ -774,10 +775,10 @@ function moveToMatch(array: Y.Array<string>, target: string[]): void {
 
 /** Bounding box (unrotated) of shapes, in EMU. */
 export function boundsOf(xfrms: readonly Xfrm[]): Xfrm {
-  const left = Math.min(...xfrms.map((xfrm) => xfrm.x))
-  const top = Math.min(...xfrms.map((xfrm) => xfrm.y))
-  const right = Math.max(...xfrms.map((xfrm) => xfrm.x + xfrm.cx))
-  const bottom = Math.max(...xfrms.map((xfrm) => xfrm.y + xfrm.cy))
+  const left = minOf(xfrms.map((xfrm) => xfrm.x))
+  const top = minOf(xfrms.map((xfrm) => xfrm.y))
+  const right = maxOf(xfrms.map((xfrm) => xfrm.x + xfrm.cx))
+  const bottom = maxOf(xfrms.map((xfrm) => xfrm.y + xfrm.cy))
   return { x: left, y: top, cx: right - left, cy: bottom - top }
 }
 
@@ -800,7 +801,7 @@ export function groupShapes(doc: Y.Doc, slideKey: string, keys: readonly string[
   )
   doc.transact(() => {
     const items = container.array.toArray()
-    const topmost = Math.max(...keys.map((key) => items.indexOf(key)))
+    const topmost = maxOf(keys.map((key) => items.indexOf(key)))
     const ordered = items.filter((key) => keys.includes(key))
     // Members without their own transform (placeholders) get the one they inherited.
     for (const key of keys) if (!shapeMap(doc, slideKey, key)!.has('xfrm')) setXfrm(doc, slideKey, key, xfrms.get(key)!)

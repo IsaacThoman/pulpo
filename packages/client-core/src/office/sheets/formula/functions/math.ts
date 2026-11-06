@@ -1,5 +1,7 @@
 /** Math and trigonometry functions. */
 
+import { maxOf, minOf } from '../../../../collections.js'
+
 import { consumeWork } from '../budget.js'
 import { alignedRanges, rangeSlice } from '../ranges.js'
 import { logicalSize } from '../types.js'
@@ -117,8 +119,8 @@ const STAT_BY_NUMBER: Record<number, AggregateFn> = {
   1: (v) => mean(v),
   2: (v) => v.length,
   3: (v) => v.length,
-  4: (v) => (v.length ? Math.max(...v) : 0),
-  5: (v) => (v.length ? Math.min(...v) : 0),
+  4: (v) => (v.length ? maxOf(v) : 0),
+  5: (v) => (v.length ? minOf(v) : 0),
   6: (v) => (v.length ? v.reduce((a, b) => a * b, 1) : 0),
   7: (v) => Math.sqrt(variance(v, true)),
   8: (v) => Math.sqrt(variance(v, false)),

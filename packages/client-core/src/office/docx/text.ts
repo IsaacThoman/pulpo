@@ -1,3 +1,4 @@
+import { pushAll } from '../../collections.js'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { jmlAttr, jmlText, unpackJml, walkJml, type JmlElement } from './jsonml.js'
 import { parseJson, type CommentMeta, type DocxModel } from './model.js'
@@ -149,7 +150,7 @@ function resolvedBlocksText(node: ProseMirrorNode, context: TextContext): string
         })
         break
       case 'blockWrapper':
-        lines.push(...resolvedBlocksText(child, context))
+        pushAll(lines, resolvedBlocksText(child, context))
         break
       default:
         break

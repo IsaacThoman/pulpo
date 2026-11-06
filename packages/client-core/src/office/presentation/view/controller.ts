@@ -1,3 +1,4 @@
+import { minOf } from '../../../collections.js'
 import { ySyncPluginKey } from '@tiptap/y-tiptap'
 import type { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
@@ -599,7 +600,7 @@ export class PresentationController {
     if (this.readOnly) return
     const order = this.slideKeys()
     if (keys.length >= order.length) return
-    const index = Math.min(...keys.map((key) => order.indexOf(key)))
+    const index = minOf(keys.map((key) => order.indexOf(key)))
     commands.deleteSlides(this.doc, keys, LOCAL_ORIGIN)
     const remaining = this.slideKeys()
     const next = remaining[Math.min(index, remaining.length - 1)]

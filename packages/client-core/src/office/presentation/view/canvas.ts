@@ -1,3 +1,4 @@
+import { minOf, maxOf } from '../../../collections.js'
 import * as Y from 'yjs'
 import { cellFragment, ensureNotes, shapeFragment, slideMap } from '../commands.js'
 import type { Xfrm } from '../model.js'
@@ -406,10 +407,10 @@ export class SlideCanvas {
     }
     const boxes = [...gesture.start.values()]
     if (!boxes.length) return
-    const left = Math.min(...boxes.map((xfrm) => xfrm.x)) / EMU_PER_PX + dx
-    const top = Math.min(...boxes.map((xfrm) => xfrm.y)) / EMU_PER_PX + dy
-    const right = Math.max(...boxes.map((xfrm) => xfrm.x + xfrm.cx)) / EMU_PER_PX + dx
-    const bottom = Math.max(...boxes.map((xfrm) => xfrm.y + xfrm.cy)) / EMU_PER_PX + dy
+    const left = minOf(boxes.map((xfrm) => xfrm.x)) / EMU_PER_PX + dx
+    const top = minOf(boxes.map((xfrm) => xfrm.y)) / EMU_PER_PX + dy
+    const right = maxOf(boxes.map((xfrm) => xfrm.x + xfrm.cx)) / EMU_PER_PX + dx
+    const bottom = maxOf(boxes.map((xfrm) => xfrm.y + xfrm.cy)) / EMU_PER_PX + dy
     const snapped = this.snap({ x: left, y: top, w: right - left, h: bottom - top }, new Set(gesture.start.keys()))
     this.guides = snapped.guides
     this.controller.doc.transact(() => {

@@ -1,3 +1,4 @@
+import { pushAll } from '@pulpo/client-core/collections'
 import { and, asc, eq, gt, inArray, lt, sql } from 'drizzle-orm'
 import * as Y from 'yjs'
 import { liveMimeType } from '@pulpo/client-core/office'
@@ -67,7 +68,7 @@ export async function createDocInTx(tx: DatabaseTransaction, userId: string, inp
     markdown: initial.text, schemaVersion: format.schemaVersion, generation: initial.generation,
   })
   const written = await initial.assets.flush(tx, userId, node!.id)
-  input.writtenKeys?.push(...written)
+  if (input.writtenKeys) pushAll(input.writtenKeys, written)
   return node!
 }
 

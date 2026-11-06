@@ -7,6 +7,8 @@
  * evaluated iteratively, and LAMBDA/name recursion is capped at `MAX_CALL_DEPTH` (#NUM! beyond).
  */
 
+import { minOf, maxOf } from '../../../collections.js'
+
 import { broadcastRanges } from './ranges.js'
 import { logicalSize } from './types.js'
 
@@ -376,10 +378,10 @@ export class Interpreter {
         areas: [
           {
             sheet,
-            top: Math.min(...areas.map((area) => area.top)),
-            left: Math.min(...areas.map((area) => area.left)),
-            bottom: Math.max(...areas.map((area) => area.bottom)),
-            right: Math.max(...areas.map((area) => area.right)),
+            top: minOf(areas.map((area) => area.top)),
+            left: minOf(areas.map((area) => area.left)),
+            bottom: maxOf(areas.map((area) => area.bottom)),
+            right: maxOf(areas.map((area) => area.right)),
           },
         ],
       }

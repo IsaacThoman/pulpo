@@ -4,6 +4,8 @@
  * than values (ROW, INDEX, OFFSET, INDIRECT, …). These win over library functions of the same name.
  */
 
+import { maxOf } from '../../../collections.js'
+
 import { broadcastRanges, rangeSlice } from './ranges.js'
 import { logicalSize, matrixGet } from './types.js'
 
@@ -279,8 +281,8 @@ const MAP: OwnedFunction = (it, args, scope) => {
     if (isError(grid)) return grid
     grids.push(grid)
   }
-  const rows = Math.max(...grids.map((grid) => grid.rows))
-  const cols = Math.max(...grids.map((grid) => grid.cols))
+  const rows = maxOf(grids.map((grid) => grid.rows))
+  const cols = maxOf(grids.map((grid) => grid.cols))
   checkArraySize(rows, cols)
   const data: Scalar[] = new Array(rows * cols)
   for (let r = 0; r < rows; r++) {

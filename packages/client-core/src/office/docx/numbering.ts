@@ -1,3 +1,4 @@
+import { maxOf } from '../../collections.js'
 import { jmlAttr, jmlChild, jmlElements, jmlNumber, jmlOn, unpackJml, type JmlElement } from './jsonml.js'
 import { symbolText } from './schema.js'
 import type { StyleSheet } from './styles.js'
@@ -203,7 +204,7 @@ export class Numbering {
 
   /** Free ids for a new list definition and instance. */
   nextIds(): { abstractId: string; numId: string } {
-    const next = (keys: Iterable<string>) => String(Math.max(0, ...[...keys].map(Number).filter(Number.isFinite)) + 1)
+    const next = (keys: Iterable<string>) => String(Math.max(0, maxOf([...keys].map(Number).filter(Number.isFinite))) + 1)
     return { abstractId: next(this.abstracts.keys()), numId: next(this.nums.keys()) }
   }
 }

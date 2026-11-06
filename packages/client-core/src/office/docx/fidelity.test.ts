@@ -1,3 +1,4 @@
+import { pushAll } from '../../collections.js'
 import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -38,7 +39,7 @@ function fixtureFiles(): string[] {
     ...readdirSync(join(fixtures, 'poi')).filter((name) => name.endsWith('.docx')).map((name) => join(fixtures, 'poi', name)),
   ]
   const corpus = process.env.PULPO_DOCX_CORPUS
-  if (corpus) files.push(...readdirSync(corpus).filter((name) => /\.docx$/i.test(name)).map((name) => join(corpus, name)))
+  if (corpus) pushAll(files, readdirSync(corpus).filter((name) => /\.docx$/i.test(name)).map((name) => join(corpus, name)))
   return files
 }
 

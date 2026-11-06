@@ -419,7 +419,11 @@ export function sanitizePastedHtml(html: string): string {
   const cleaned = html.replace(/<!--\[if[\s\S]*?<!\[endif\]-->/gi, '').replace(/<!--[\s\S]*?-->/g, '')
   const parsed = new DOMParser().parseFromString(cleaned, 'text/html')
   for (const node of parsed.querySelectorAll(DANGEROUS)) node.remove()
-  for (const node of parsed.querySelectorAll('o\\:p')) node.replaceWith(...node.childNodes)
+  for (const node of parsed.querySelectorAll('o\\:p')) {
+    const fragment = parsed.createDocumentFragment()
+    while (node.firstChild) fragment.appendChild(node.firstChild)
+    node.replaceWith(fragment)
+  }
   for (const node of parsed.querySelectorAll('img')) node.remove()
   for (const node of parsed.querySelectorAll('*')) {
     for (const attribute of [...node.attributes]) {

@@ -1,3 +1,4 @@
+import { pushAll } from '../../../collections.js'
 import type { Element } from '@xmldom/xmldom'
 import { LiveFormatError } from '../../live-format.js'
 import { parseXml } from '../../ooxml/package.js'
@@ -305,7 +306,7 @@ function elementChildren(parent: Element): Element[] {
     if (element.localName === 'AlternateContent' && element.namespaceURI === MARKUP_COMPATIBILITY_NS) {
       const branches = elementChildren(element)
       const chosen = branches.find((branch) => branch.localName === 'Fallback') ?? branches[0]
-      if (chosen) result.push(...elementChildren(chosen))
+      if (chosen) pushAll(result, elementChildren(chosen))
     } else {
       result.push(element)
     }

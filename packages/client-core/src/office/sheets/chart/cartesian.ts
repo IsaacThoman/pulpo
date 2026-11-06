@@ -1,3 +1,4 @@
+import { minOf, maxOf, pushAll } from '../../../collections.js'
 import { dateToSerial, serialToParts } from '../dates.js'
 import type { ResolvedSeries } from './data.js'
 import { labelText, renderDataLabel, type LabelAnchor, type LabelValues } from './labels.js'
@@ -130,8 +131,8 @@ function categoryLabels(ctx: RenderContext, info: AxisInfo): void {
     const serials = source.values.map((value) => (typeof value === 'number' ? Math.floor(value) : NaN))
     const finite = serials.filter((value) => Number.isFinite(value))
     if (finite.length) {
-      const min = Math.min(...finite.slice(0, 100_000))
-      const max = Math.max(...finite.slice(0, 100_000))
+      const min = minOf(finite.slice(0, 100_000))
+      const max = maxOf(finite.slice(0, 100_000))
       const unit = info.axis.baseTimeUnit ?? 'days'
       const date1904 = ctx.model.date1904
       const monthIndex = (serial: number) => {
@@ -228,7 +229,7 @@ function computeScale(ctx: RenderContext, info: AxisInfo, plot: Rect): void {
   else {
     // Horizontal value axes: room for the widest label.
     const sample = [info.dataMin, info.dataMax].filter(Number.isFinite).map((value) => textWidth(ctx.format(value, info.formatCode), style))
-    spacing = Math.max(style.px * 3, ...sample.map((width) => width + style.px * 1.5))
+    spacing = Math.max(style.px * 3, maxOf(sample.map((width) => width + style.px * 1.5)))
   }
   const options: Parameters<typeof computeValueScale>[2] = { maxIntervals: Math.max(1, Math.floor(length / spacing)) }
   const axis = info.axis
@@ -344,7 +345,7 @@ function layoutCategoryLabels(info: AxisInfo, plot: Rect): CategoryLabelLayout {
   const lineHeight = style.px * 1.2
   const indexes = sampleIndexes(info.count)
   const widths = indexes.map((i) => textWidth(info.labels[i] ?? '', style))
-  const maxWidth = Math.max(0, ...widths)
+  const maxWidth = Math.max(0, maxOf(widths))
   const explicitRotation = info.axis.textRotation
   const lines = new Map<number, string[]>()
   const fixedSkip = info.axis.tickLabelSkip
@@ -371,7 +372,7 @@ function layoutCategoryLabels(info: AxisInfo, plot: Rect): CategoryLabelLayout {
     const fits = maxWidth <= band * skip * 0.95
     if (fits || fixedSkip) {
       for (const i of indexes) lines.set(i, wrapText(info.labels[i] ?? '', band * skip * 0.95, style.px, style.bold, 2))
-      const rows = Math.max(1, ...[...lines.values()].map((l) => l.length))
+      const rows = Math.max(1, maxOf([...lines.values()].map((l) => l.length)))
       return { skip, rotate: 0, lines, extent: rows * lineHeight }
     }
   }
@@ -415,7 +416,7 @@ function labelExtent(ctx: RenderContext, info: AxisInfo, plot: Rect): number {
   }
   const scale = info.scale!
   const labels = scale.ticks.map((tick) => formatTick(ctx, info, tick))
-  if (info.orientation === 'v') return Math.max(0, ...labels.map((label) => textWidth(label, info.labelStyle))) + ticks + LABEL_GAP
+  if (info.orientation === 'v') return Math.max(0, maxOf(labels.map((label) => textWidth(label, info.labelStyle)))) + ticks + LABEL_GAP
   return info.labelStyle.px * 1.2 + ticks + LABEL_GAP
 }
 
@@ -476,7 +477,7 @@ export function renderCartesian(ctx: RenderContext, area: Rect, all: ResolvedSer
     const series = seriesOfGroup(all, group)
     for (const info of [independent, dependent]) {
       info.groups.push(group)
-      info.series.push(...series)
+      pushAll(info.series, series)
     }
     pairs.push({ group, independent, dependent })
   })
@@ -606,7 +607,7 @@ function drawCartesian(
   }
 
   for (const info of infos.values()) parts.push(drawAxis(ctx, info, plot))
-  parts.push(...labels)
+  pushAll(parts, labels)
   return parts.join('')
 }
 

@@ -1,3 +1,4 @@
+import { pushAll } from '@pulpo/client-core/collections'
 import { createHash } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { and, eq } from 'drizzle-orm'
@@ -86,7 +87,7 @@ export async function convertBlobToDocInTx(tx: DatabaseTransaction, node: FileNo
     nodeId: node.id, state: initial.state, stateBytes: initial.state.byteLength,
     markdown: initial.text, schemaVersion: format.schemaVersion, generation: initial.generation,
   })
-  writtenKeys.push(...await initial.assets.flush(tx, node.ownerUserId, node.id))
+  pushAll(writtenKeys, await initial.assets.flush(tx, node.ownerUserId, node.id))
   const [row] = await tx.update(fileNodes).set({
     kind: 'doc', format: format.id, objectKey: null, checksum: null, mimeType: liveMimeType(format, node.name),
     sizeBytes: initial.state.byteLength, updatedAt: new Date(),

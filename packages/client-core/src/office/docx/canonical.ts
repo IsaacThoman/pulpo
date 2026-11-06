@@ -1,3 +1,4 @@
+import { pushAll } from '../../collections.js'
 import { parseXml } from '../ooxml/package.js'
 import { elementToJml, jmlElements, type JmlElement, type JmlNode } from './jsonml.js'
 import { PPR_ORDER, RPR_ORDER, TCPR_ORDER, TRPR_ORDER, sortByOrder } from './names.js'
@@ -72,7 +73,7 @@ function mergeRuns(children: JmlNode[]): JmlNode[] {
       if (!content.length) continue
       const previous = result[result.length - 1]
       if (Array.isArray(previous) && previous[0] === 'w:r' && JSON.stringify(previous[1]) === JSON.stringify(child[1]) && JSON.stringify(propertiesOf(previous)) === JSON.stringify(propertiesOf(child))) {
-        previous.push(...content)
+        pushAll(previous, content)
         continue
       }
       result.push([child[0], child[1], ...jmlElements(child)])
@@ -91,7 +92,8 @@ function mergeRuns(children: JmlNode[]): JmlNode[] {
       }
       merged.push(Array.isArray(part) ? [...part] as JmlElement : part)
     }
-    node.splice(2, node.length - 2, ...merged)
+    node.length = 2
+    pushAll(node, merged)
   }
   return result
 }

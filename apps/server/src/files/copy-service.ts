@@ -1,3 +1,4 @@
+import { maxOf } from '@pulpo/client-core/collections'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import * as Y from 'yjs'
 import { liveFormatCodec } from '@pulpo/client-core/office/codecs'
@@ -77,7 +78,7 @@ export async function copyFileNodes(userId: string, ids: string[], parentId: str
     const ancestors = parentId ? new Set(await chainIds(tx, userId, parentId)) : new Set<string>()
     for (const tree of trees) {
       if (ancestors.has(tree[0]!.id)) throw new AppError(400, 'file_move_cycle', 'A folder cannot be copied into itself')
-      if (baseDepth + Math.max(...tree.map((node) => node.depth)) > FILE_TREE_MAX_DEPTH) throw treeTooDeep()
+      if (baseDepth + maxOf(tree.map((node) => node.depth)) > FILE_TREE_MAX_DEPTH) throw treeTooDeep()
     }
     const sourceDocIds = trees.flat().filter((node) => node.kind === 'doc').map((node) => node.id)
     const assets = sourceDocIds.length ? await tx.select().from(fileDocAssets).where(inArray(fileDocAssets.nodeId, sourceDocIds)) : []

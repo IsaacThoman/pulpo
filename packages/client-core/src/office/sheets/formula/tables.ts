@@ -1,5 +1,7 @@
 /** Resolving structured references (`Table1[Col]`, `[@Amount]`) against table definitions. */
 
+import { minOf, maxOf } from '../../../collections.js'
+
 import { Errors, type Area, type FormulaError } from './types.js'
 import type { StructuredRef } from './tokenize.js'
 
@@ -52,8 +54,8 @@ export function structuredArea(table: TableDefinition, ref: StructuredRef, row: 
     }
     // [#Headers],[#Totals] without the data in between is not a rectangle.
     if (items.has('#Headers') && items.has('#Totals') && !items.has('#Data')) return Errors.REF
-    top = Math.min(...rows)
-    bottom = Math.max(...rows)
+    top = minOf(rows)
+    bottom = maxOf(rows)
   }
   let left = table.left
   let right = table.right

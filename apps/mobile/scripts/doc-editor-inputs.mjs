@@ -75,6 +75,7 @@ export const EDITOR_BUNDLES = {
     blobMedia: true,
     schemaVersion: { file: join(clientCoreSource, 'office/presentation/layout.ts'), pattern: /PRESENTATION_SCHEMA_VERSION = (\d+)/ },
     sources: [
+      join(clientCoreSource, 'collections.ts'),
       join(editorRoot, 'presentation'),
       join(clientCoreSource, 'office/presentation'), join(clientCoreSource, 'office/ooxml'), join(clientCoreSource, 'office/assets.ts'),
       join(clientCoreSource, 'office/live-format.ts'),
@@ -89,6 +90,7 @@ export const EDITOR_BUNDLES = {
     exportName: 'DOCX_EDITOR_BUNDLE',
     schemaVersion: { file: join(clientCoreSource, 'office/docx/format.ts'), pattern: /DOCX_SCHEMA_VERSION = (\d+)/ },
     sources: [
+      join(clientCoreSource, 'collections.ts'),
       join(editorRoot, 'docx'),
       join(clientCoreSource, 'office/docx'), join(clientCoreSource, 'office/ooxml'), join(clientCoreSource, 'office/formats.ts'),
       join(clientCoreSource, 'office/assets.ts'), join(clientCoreSource, 'office/index.ts'), join(clientCoreSource, 'office/live-format.ts'),
@@ -103,6 +105,7 @@ export const EDITOR_BUNDLES = {
     exportName: 'SHEET_EDITOR_BUNDLE',
     schemaVersion: { file: join(clientCoreSource, 'office/sheets/layout.ts'), pattern: /SHEETS_SCHEMA_VERSION = (\d+)/ },
     sources: [
+      join(clientCoreSource, 'collections.ts'),
       join(editorRoot, 'sheet'),
       // The whole sheets tree (the view, model, formula engine, number formats, and charts it renders)
       // and the OOXML helpers its styles and charts read themes with.

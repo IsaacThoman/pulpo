@@ -5,6 +5,8 @@
  * values that begin with the text (`"Ap"` matches "Apple"); use `="=Ap"` for an exact match.
  */
 
+import { maxOf, minOf } from '../../../../collections.js'
+
 import { denseRange } from '../ranges.js'
 
 
@@ -98,11 +100,11 @@ export const DATABASE_FUNCTIONS: FunctionSpec[] = [
   dbFunction('DCOUNTA', (values) => values.filter((v) => v !== null && v !== '').length, true),
   dbFunction('DMAX', (values) => {
     const n = numbers(values)
-    return n.length ? Math.max(...n) : 0
+    return n.length ? maxOf(n) : 0
   }),
   dbFunction('DMIN', (values) => {
     const n = numbers(values)
-    return n.length ? Math.min(...n) : 0
+    return n.length ? minOf(n) : 0
   }),
   dbFunction('DPRODUCT', (values) => {
     const n = numbers(values)

@@ -1,3 +1,4 @@
+import { pushAll } from '../../../collections.js'
 import { originalCaseOffsets } from '../../../case-offsets.js'
 import { chainCommands, createParagraphNear, liftEmptyBlock, newlineInCode, splitBlock } from '@tiptap/pm/commands'
 import type { Attrs, Mark, Node as ProseMirrorNode, Schema } from '@tiptap/pm/model'
@@ -611,7 +612,7 @@ export function findMatches(doc: ProseMirrorNode, query: string, options: FindOp
   projection.doc.descendants((node, pos) => {
     if (node.type.name === 'tableCell' && node.attrs.phantom) return false
     if (!node.isTextblock) return true
-    if (results.length < 10_000) results.push(...textblockMatches(node, pos, needle, options, 10_000 - results.length))
+    if (results.length < 10_000) pushAll(results, textblockMatches(node, pos, needle, options, 10_000 - results.length))
     return false
   })
   return results.map(({ from, to }) => ({ from: projection.sourcePosition(from, 1), to: projection.sourcePosition(to, -1) })).filter(({ from, to }) => from < to)

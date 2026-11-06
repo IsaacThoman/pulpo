@@ -1,3 +1,4 @@
+import { pushAll } from '../../collections.js'
 import type { Mark, Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type * as Y from 'yjs'
 import { OoxmlPackage } from '../ooxml/package.js'
@@ -412,7 +413,7 @@ function ownChanges(before: ProseMirrorNode | undefined, after: ProseMirrorNode 
   const changes: FormatChange[] = []
   const handled = new Set(['marks'])
   if (before.type.name === 'paragraph') {
-    changes.push(...formatChanges(before, after, sheets).map((change) => ({ ...change, ...(location.length ? { location } : {}) })))
+    pushAll(changes, formatChanges(before, after, sheets).map((change) => ({ ...change, ...(location.length ? { location } : {}) })))
     for (const key of ['pStyle', ...Object.keys(PARAGRAPH_PROPERTY_ATTRS)]) handled.add(key)
   }
   if (before.type.name === 'drawing') {
@@ -422,7 +423,7 @@ function ownChanges(before: ProseMirrorNode | undefined, after: ProseMirrorNode 
   }
   for (const key of ['tblPr', 'trPr', 'tblPrEx', 'tcPr']) {
     if (!(key in before.attrs)) continue
-    if (canonicalValue(before.attrs[key]) !== canonicalValue(after.attrs[key])) changes.push(...tablePropertyChanges(before.attrs[key], after.attrs[key], location))
+    if (canonicalValue(before.attrs[key]) !== canonicalValue(after.attrs[key])) pushAll(changes, tablePropertyChanges(before.attrs[key], after.attrs[key], location))
     handled.add(key)
   }
   if ('tblGrid' in before.attrs) {
@@ -468,7 +469,7 @@ function structuralChanges(before: ProseMirrorNode | undefined, after: ProseMirr
   if (a.length !== b.length || a.some((child, index) => child.type !== b[index]?.type)) changes.push(generic(after, location))
   for (let index = 0; index < Math.min(a.length, b.length); index++) {
     if (a[index]!.type !== b[index]!.type) continue
-    changes.push(...structuralChanges(a[index], b[index], sheets, childLocation(b[index]!, index, location)))
+    pushAll(changes, structuralChanges(a[index], b[index], sheets, childLocation(b[index]!, index, location)))
   }
   if (!changes.length && inlineText(before) === inlineText(after)) changes.push(generic(after, location))
   return changes
@@ -590,7 +591,7 @@ function diffBody(before: DocxModel, after: DocxModel): Pick<DocxDiff, 'blocks' 
             ancestorChanges.set(left, byRight)
           }
           const location = added.location.slice(0, index + 1)
-          formats.push(...changes.map((change) => location.length ? { ...change, location } : change))
+          pushAll(formats, changes.map((change) => location.length ? { ...change, location } : change))
         }
       }
       if (removed.summary.label !== added.summary.label) {
@@ -611,7 +612,7 @@ function diffBody(before: DocxModel, after: DocxModel): Pick<DocxDiff, 'blocks' 
       stats.insertedBlocks++
       stats.insertedWords += words(added.summary.text)
     })
-    blocks.push(...output)
+    pushAll(blocks, output)
     pendingDeletes = []
     pendingInserts = []
   }

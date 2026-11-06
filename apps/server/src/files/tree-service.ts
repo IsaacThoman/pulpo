@@ -1,3 +1,4 @@
+import { maxOf, pushAll } from '@pulpo/client-core/collections'
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm'
 import { LIVE_FORMATS, liveFormatOfName, liveMimeType, type LiveFormatInfo } from '@pulpo/client-core/office'
 import { FILE_TREE_MAX_DEPTH, nextAvailableName, type FileColor, type FileIcon, type FileListing, type FileNode, type FileNodeKind, type FileSystemRole, type StateInvalidationScope } from '@pulpo/contracts'
@@ -216,7 +217,7 @@ export async function assertMovable(tx: DatabaseTransaction, userId: string, nod
   if (parentId && (await chainIds(tx, userId, parentId)).includes(node.id)) {
     throw new AppError(400, 'file_move_cycle', 'A folder cannot be moved into itself')
   }
-  const height = Math.max(...(await subtree(tx, userId, node.id)).map((row) => row.depth))
+  const height = maxOf((await subtree(tx, userId, node.id)).map((row) => row.depth))
   if (await destinationDepth(tx, userId, parentId) + height > FILE_TREE_MAX_DEPTH) throw treeTooDeep()
 }
 
@@ -334,7 +335,7 @@ export async function moveFileNodes(userId: string, items: Array<{ id: string; p
     const converted: string[] = []
     const releasedKeys: string[] = []
     const chatItems = items.filter((item) => chatIds.has(item.id))
-    if (chatItems.length) moved.push(...await moveChatsInTx(tx, userId, chatItems, await chatsFolderIdOf(tx, userId)))
+    if (chatItems.length) pushAll(moved, await moveChatsInTx(tx, userId, chatItems, await chatsFolderIdOf(tx, userId)))
     const nodeItems = items.filter((item) => !chatIds.has(item.id))
     const ids = new Set(await topLevelIds(tx, userId, nodeItems.map((item) => item.id)))
     for (const item of nodeItems) {
@@ -343,7 +344,7 @@ export async function moveFileNodes(userId: string, items: Array<{ id: string; p
       const result = await moveNodeInTx(tx, userId, node, { parentId: item.parentId, name: item.name ?? node.name, onConflict: 'rename' })
       moved.push(toFileNode(result.row))
       if (result.converted) converted.push(node.id)
-      releasedKeys.push(...result.releasedKeys)
+      pushAll(releasedKeys, result.releasedKeys)
     }
     return { moved, converted, releasedKeys }
   }, chatIds.size ? CHAT_SCOPES : undefined)
@@ -375,7 +376,7 @@ export async function trashFileNodes(userId: string, ids: string[]): Promise<str
   const { roots, docIds } = !nodeIds.length ? { roots: [], docIds: [] } : await mutateFileTree(userId, async (tx) => {
     const roots = await topLevelIds(tx, userId, nodeIds)
     const docIds: string[] = []
-    for (const id of roots) docIds.push(...await trashNodeInTx(tx, userId, await liveNode(tx, userId, id)))
+    for (const id of roots) pushAll(docIds, await trashNodeInTx(tx, userId, await liveNode(tx, userId, id)))
     return { roots, docIds }
   }, CHAT_SCOPES)
   await publishDocsClosed(docIds, 'trashed')
@@ -400,7 +401,7 @@ export async function restoreNodeInTx(tx: DatabaseTransaction, userId: string, i
   const below = await subtree(tx, userId, node.id)
   let parentId: string | null
   if (destination) {
-    const height = Math.max(...below.map((row) => row.depth))
+    const height = maxOf(below.map((row) => row.depth))
     if (await destinationDepth(tx, userId, destination.parentId) + height > FILE_TREE_MAX_DEPTH) throw treeTooDeep()
     parentId = destination.parentId
   } else {
@@ -450,7 +451,7 @@ export async function restoreFileNodes(userId: string, ids: string[], destinatio
     if (chatIds.length) {
       const chatsFolderId = await chatsFolderIdOf(tx, userId)
       const recovered = await recoverChats(userId, chatIds)
-      restored.push(...destination
+      pushAll(restored, destination
         ? await moveChatsInTx(tx, userId, recovered.map((chat) => ({ id: chat.id, parentId: destination.parentId })), chatsFolderId)
         : recovered.map((chat) => chatToFileNode(chat, chatsFolderId)))
     }
@@ -514,7 +515,7 @@ export async function purgeNodesInTx(tx: DatabaseTransaction, userId: string, ro
     .where(and(eq(fileVersions.userId, userId), inArray(fileVersions.nodeId, [...ids])))
   const docIds = rows.filter((row) => row.kind === 'doc').map((row) => row.id)
   const keys = [...rows.flatMap((row) => row.key ?? []), ...versions.map((version) => version.key), ...await docAssetKeys(tx, docIds)]
-  if (deferredKeys) deferredKeys.push(...keys)
+  if (deferredKeys) pushAll(deferredKeys, keys)
   else for (const key of keys) await getBlobStore().delete(key)
   // Children, document state and assets, update logs, versions, and change rows cascade from their nodes.
   await tx.delete(fileNodes).where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, rootIds)))

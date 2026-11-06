@@ -113,6 +113,10 @@
     "./office/sheets/view": {
       "types": "./dist/office/sheets/view/index.d.ts",
       "import": "./dist/office/sheets/view/index.js"
+    },
+    "./collections": {
+      "types": "./dist/collections.d.ts",
+      "import": "./dist/collections.js"
     }
   },
   "scripts": {

@@ -1,3 +1,4 @@
+import { maxOf } from '../../../collections.js'
 import * as Y from 'yjs'
 import type { CellRange } from '../address.js'
 import { MAX_COLS, MAX_ROWS } from '../address.js'
@@ -255,7 +256,7 @@ export class SheetModel {
     const meta = axis === 'row' ? this.rowMeta : this.colMeta
     const ids = axis === 'row' ? this.rows : this.cols
     this.workbook.transact(() => {
-      ids.ensure(Math.max(...positions) + 1)
+      ids.ensure(maxOf(positions) + 1)
       for (const position of positions) {
         const id = ids.idAt(position)
         for (const [prop, value] of Object.entries(props)) {
@@ -269,7 +270,7 @@ export class SheetModel {
   private setAxisProp<K extends AxisProp>(axis: Axis, meta: Y.Map<unknown>, positions: number[], prop: K, value: AxisProps[K] | undefined): void {
     if (!positions.length) return
     this.workbook.transact(() => {
-      axis.ensure(Math.max(...positions) + 1)
+      axis.ensure(maxOf(positions) + 1)
       for (const position of positions) {
         const key = `${axis.idAt(position)}|${prop}`
         if (value === undefined) meta.delete(key)

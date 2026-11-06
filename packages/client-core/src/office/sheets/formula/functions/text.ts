@@ -1,5 +1,7 @@
 /** Text functions (the number-formatting ones, TEXT/VALUE/FIXED/…, live in text-format.ts). */
 
+import { maxOf } from '../../../../collections.js'
+
 import { Errors, isError, matrix, type FunctionContext, type FunctionSpec, type Scalar, type Value } from '../types.js'
 import { MAX_TEXT_LENGTH, bool, check, checkArraySize, defBool, defInt, define, fail, int, omitted, optInt, scalarOf, text, toMatrix, type Args } from './coerce.js'
 import { wildcardIndex } from './criteria.js'
@@ -145,7 +147,7 @@ function textSplit(ctx: FunctionContext, args: Args): Value {
   })
   grid = grid.filter((row) => row.length > 0)
   if (!grid.length) return fail(Errors.CALC)
-  const width = Math.max(...grid.map((r) => r.length))
+  const width = maxOf(grid.map((r) => r.length))
   checkArraySize(grid.length, width)
   const data: Scalar[] = []
   for (const row of grid) for (let c = 0; c < width; c++) data.push(c < row.length ? row[c]! : pad)

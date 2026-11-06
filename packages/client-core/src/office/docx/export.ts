@@ -1,3 +1,4 @@
+import { pushAll } from '../../collections.js'
 import type { Mark, Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { TableMap } from '@tiptap/pm/tables'
 import { strToU8 } from 'fflate'
@@ -208,7 +209,7 @@ export class StoryWriter {
   blocks(content: ProseMirrorNode | readonly ProseMirrorNode[]): string {
     let xml = ''
     const nodes: ProseMirrorNode[] = []
-    if (Array.isArray(content)) nodes.push(...content)
+    if (Array.isArray(content)) pushAll(nodes, content)
     else (content as ProseMirrorNode).forEach((child) => { nodes.push(child) })
     for (const node of nodes) xml += this.block(node)
     return xml
@@ -262,7 +263,7 @@ export class StoryWriter {
       const element = this.jml(node.attrs[key])
       if (element) elements.push(element)
     }
-    elements.push(...this.jmlList(node.attrs.pPrRest))
+    pushAll(elements, this.jmlList(node.attrs.pPrRest))
     for (const key of ['markRPr', 'sectPr', 'pPrChange']) {
       const element = this.jml(node.attrs[key])
       if (element) elements.push(element)
@@ -347,7 +348,7 @@ export class StoryWriter {
   runProperties(marks: readonly Mark[]): JmlElement[] {
     const elements: JmlElement[] = []
     for (const mark of marks) {
-      if (mark.type.name === 'rPrRest') elements.push(...this.jmlList(mark.attrs.v))
+      if (mark.type.name === 'rPrRest') pushAll(elements, this.jmlList(mark.attrs.v))
       else {
         const element = this.jml(mark.attrs.v)
         if (element) elements.push(element)

@@ -176,8 +176,9 @@ function serializer(doc: ProseMirrorNode, options: StaticOptions): DOMSerializer
     if (!(rendered.dom instanceof HTMLElement)) return rendered
     for (const [key, value] of Object.entries(attrs)) {
       if (key === 'style') rendered.dom.style.cssText += value
-      else if (key === 'class') rendered.dom.classList.add(...value.split(/\s+/).filter(Boolean))
-      else rendered.dom.setAttribute(key, value)
+      else if (key === 'class') {
+        for (const token of value.split(/\s+/).filter(Boolean)) rendered.dom.classList.add(token)
+      } else rendered.dom.setAttribute(key, value)
     }
     return rendered
   }]))

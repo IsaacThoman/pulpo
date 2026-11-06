@@ -1,3 +1,4 @@
+import { maxOf } from '../../../collections.js'
 import type { ResolvedSeries } from './data.js'
 import { labelStyle, labelText, type LabelValues } from './labels.js'
 import type { ChartAxis, ChartGroup } from './model.js'
@@ -129,7 +130,7 @@ export function renderPie(ctx: RenderContext, area: Rect, group: ChartGroup, all
       if (!content) return
       const pointStyle = labelStyle(ctx, settings)
       const lines = content.split(/\r?\n/)
-      const width = Math.max(...lines.map((line) => textWidth(line, pointStyle)))
+      const width = maxOf(lines.map((line) => textWidth(line, pointStyle)))
       const middle = (a0 + a1) / 2
       const position = settings.position ?? (group.type === 'pie' ? 'bestFit' : 'ctr')
       const centerX = cx + offset.x
@@ -167,7 +168,7 @@ export function renderRadar(ctx: RenderContext, area: Rect, group: ChartGroup, a
   const catStyle = resolveText(ctx, [ctx.model.textStyle, categoryAxis?.textStyle], { size: ctx.baseSize })
   const valStyle = resolveText(ctx, [ctx.model.textStyle, valueAxis?.textStyle], { size: ctx.baseSize })
   const showCategories = !categoryAxis?.deleted && categoryAxis?.tickLabelPosition !== 'none'
-  const maxLabel = showCategories ? Math.min(area.w * 0.25, Math.max(...labels.map((label) => textWidth(label, catStyle)))) : 0
+  const maxLabel = showCategories ? Math.min(area.w * 0.25, maxOf(labels.map((label) => textWidth(label, catStyle)))) : 0
   const radius = Math.max(8, Math.min((area.w - 2 * (maxLabel + 8)) / 2, (area.h - 2 * (catStyle.px * 1.4 + 4)) / 2))
   const cx = area.x + area.w / 2
   const cy = area.y + area.h / 2

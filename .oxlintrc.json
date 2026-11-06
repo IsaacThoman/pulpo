@@ -8,5 +8,34 @@
     "react/no-object-type-as-default-prop": "warn",
     "react/rules-of-hooks": "error",
     "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
+  },
+  "jsPlugins": [
+    {
+      "name": "pulpo",
+      "specifier": "./scripts/lint/no-input-sized-arguments.mjs"
+    }
+  ],
+  "overrides": [
+    {
+      "files": [
+        "packages/client-core/src/office/**",
+        "packages/client-core/src/files/**",
+        "apps/server/src/files/**",
+        "apps/web/src/features/files/**",
+        "apps/web/src/components/viewers/**"
+      ],
+      "rules": {
+        "pulpo/no-input-sized-arguments": "error"
+      }
+    },
+    {
+      "files": [
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "pulpo/no-input-sized-arguments": "off"
+      }
+    }
+  ]
 }

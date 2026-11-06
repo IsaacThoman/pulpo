@@ -1,3 +1,4 @@
+import { maxOf } from '../../../collections.js'
 import type { DataLabelSettings, TextStyle } from './model.js'
 import { fillToCss } from './colors.js'
 import { rect, resolveLine, resolveText, textBlock, textWidth, type RenderContext } from './svg.js'
@@ -45,7 +46,7 @@ export function labelStyle(ctx: RenderContext, settings: { style: TextStyle } | 
 export function renderDataLabel(ctx: RenderContext, settings: DataLabelSettings, content: string, anchor: LabelAnchor, position: string, horizontalBars: boolean): string {
   const style = labelStyle(ctx, settings)
   const lines = content.split(/\r?\n/)
-  const width = Math.max(...lines.map((line) => textWidth(line, style)))
+  const width = maxOf(lines.map((line) => textWidth(line, style)))
   const height = lines.length * style.px * 1.2
   const gap = 3
   let cx = anchor.x

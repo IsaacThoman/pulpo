@@ -1,5 +1,7 @@
 /** Statistical functions: aggregates, ranks, regressions, and probability distributions. */
 
+import { maxOf, minOf } from '../../../../collections.js'
+
 import { consumeWork } from '../budget.js'
 import { alignedRanges, denseRange } from '../ranges.js'
 import { logicalSize, checkArraySize, omittedCells } from '../types.js'
@@ -641,7 +643,7 @@ export const STATISTICAL_FUNCTIONS: FunctionSpec[] = [
     fn: (ctx, args) =>
       ifsAggregate(ctx, args[0], args.slice(1), (values) => {
         const v = numericValues(values)
-        return v.length ? Math.max(...v) : 0
+        return v.length ? maxOf(v) : 0
       }),
   }),
   define({
@@ -653,7 +655,7 @@ export const STATISTICAL_FUNCTIONS: FunctionSpec[] = [
     fn: (ctx, args) =>
       ifsAggregate(ctx, args[0], args.slice(1), (values) => {
         const v = numericValues(values)
-        return v.length ? Math.min(...v) : 0
+        return v.length ? minOf(v) : 0
       }),
   }),
   define({ name: 'MAX', min: 1, max: 255, args: ['any'], fn: (ctx, args) => numberSummary(ctx, args).max }),

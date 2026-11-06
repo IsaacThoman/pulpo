@@ -1,3 +1,4 @@
+import { maxOf, pushAll } from '../../../collections.js'
 import { DEFAULT_THEME, resolveThemeFont, type Theme } from '../../ooxml/theme.js'
 import type { Scalar } from '../formula/types.js'
 import { formatValue } from '../numfmt/index.js'
@@ -167,7 +168,7 @@ function layoutTitle(ctx: RenderContext, runs: TextRun[][], title: ChartText | u
       styles.push(resolved.length ? resolved : [resolveText(ctx, [ctx.model.textStyle, title?.style], defaults)])
     }
   }
-  const height = styles.reduce((sum, line) => sum + Math.max(...line.map((style) => style.px)) * 1.2, 0)
+  const height = styles.reduce((sum, line) => sum + maxOf(line.map((style) => style.px)) * 1.2, 0)
   return { lines, styles, height }
 }
 
@@ -176,7 +177,7 @@ function drawTitle(ctx: RenderContext, layout: TitleLayout, centerX: number, top
   let y = top
   layout.lines.forEach((line, i) => {
     const styles = layout.styles[i]!
-    const lineHeight = Math.max(...styles.map((style) => style.px)) * 1.2
+    const lineHeight = maxOf(styles.map((style) => style.px)) * 1.2
     const widths = line.map((run, k) => textWidth(run.text, styles[k] ?? styles[0]!))
     let x = centerX - widths.reduce((sum, w) => sum + w, 0) / 2
     line.forEach((run, k) => {
@@ -219,7 +220,7 @@ function legendEntries(ctx: RenderContext, all: ResolvedSeries[]): LegendEntry[]
     // A side legend lists stacked columns and areas top-down, matching the stack.
     const side = ctx.model.legend?.position === 'r' || ctx.model.legend?.position === 'l' || ctx.model.legend?.position === 'tr'
     const stackedUp = (group.grouping === 'stacked' || group.grouping === 'percentStacked') && (group.type === 'area' || (group.type === 'bar' && group.barDirection === 'col'))
-    entries.push(...(side && stackedUp ? groupEntries.reverse() : groupEntries))
+    pushAll(entries, (side && stackedUp ? groupEntries.reverse() : groupEntries))
   }
   const deleted = new Set(ctx.model.legend?.deletedEntries ?? [])
   return entries.filter((entry) => !deleted.has(entry.index)).slice(0, 500)
@@ -248,7 +249,7 @@ function layoutLegend(ctx: RenderContext, entries: LegendEntry[], area: Rect): L
   const rows: LegendLayout['rows'] = []
   if (vertical) {
     const maxWidth = area.w * 0.4
-    const width = Math.min(maxWidth, Math.max(...entries.map((entry) => symbolWidth(entry) + gap + textWidth(entry.label, style) + 1))) + 8
+    const width = Math.min(maxWidth, maxOf(entries.map((entry) => symbolWidth(entry) + gap + textWidth(entry.label, style) + 1))) + 8
     const fit = Math.max(1, Math.floor((area.h - 8) / rowHeight))
     const shown = entries.slice(0, fit)
     const height = shown.length * rowHeight + 8
@@ -285,7 +286,7 @@ function layoutLegend(ctx: RenderContext, entries: LegendEntry[], area: Rect): L
       x += item.width
     }
   })
-  const widest = Math.max(...shownLines.map((line) => line.reduce((sum, item) => sum + item.width, 0)))
+  const widest = maxOf(shownLines.map((line) => line.reduce((sum, item) => sum + item.width, 0)))
   return { rect: { x: area.x + (area.w - widest) / 2, y, w: widest, h: height }, rows, style }
 }
 
@@ -332,7 +333,7 @@ function draw(ctx: RenderContext, options: RenderChartOptions): string {
     const layout = layoutTitle(ctx, runs, model.title, area.w * 0.85)
     const manual = model.title?.layout
     if (manual && manual.xMode === 'edge' && manual.yMode === 'edge' && manual.x !== undefined && manual.y !== undefined) {
-      titleParts.push(drawTitle(ctx, layout, manual.x * ctx.width + Math.max(...layout.lines.map((line, i) => line.reduce((s, run, k) => s + textWidth(run.text, layout.styles[i]![k] ?? layout.styles[i]![0]!), 0))) / 2, manual.y * ctx.height))
+      titleParts.push(drawTitle(ctx, layout, manual.x * ctx.width + maxOf(layout.lines.map((line, i) => line.reduce((s, run, k) => s + textWidth(run.text, layout.styles[i]![k] ?? layout.styles[i]![0]!), 0))) / 2, manual.y * ctx.height))
     } else {
       titleParts.push(drawTitle(ctx, layout, ctx.width / 2, area.y))
       if (!model.title?.overlay) area = { ...area, y: area.y + layout.height + 4, h: area.h - layout.height - 4 }
@@ -368,7 +369,7 @@ function draw(ctx: RenderContext, options: RenderChartOptions): string {
   else if (circular) parts.push(renderPie(ctx, plotRect(ctx, area), circular, all))
   else if (radar) parts.push(renderRadar(ctx, plotRect(ctx, area), radar, all))
 
-  parts.push(...titleParts)
+  pushAll(parts, titleParts)
   if (legendLayout) parts.push(drawLegend(ctx, legendLayout))
   const label = runs ? runs.map((line) => line.map((run) => run.text).join('')).join(' ') : 'Chart'
   return svgOpen(ctx, label || 'Chart') + parts.join('') + '</svg>'

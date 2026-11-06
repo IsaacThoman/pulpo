@@ -1,3 +1,4 @@
+import { pushAll } from '@pulpo/client-core/collections'
 import { Readable } from 'node:stream'
 import { and, asc, eq, inArray } from 'drizzle-orm'
 import { FILE_TREE_MAX_DEPTH } from '@pulpo/contracts'
@@ -160,7 +161,7 @@ async function searchedFiles(ctx: CommandContext, path: string | undefined): Pro
     }
     const walked = await walkTree(ctx.userId, { id: start.node?.id ?? null, path: start.path }, { maxDepth: FILE_TREE_MAX_DEPTH, maxNodes: GREP_MAX_FILES * 4 })
     truncated ||= walked.truncated
-    files.push(...walked.nodes.filter((item) => item.node.kind !== 'folder'))
+    pushAll(files, walked.nodes.filter((item) => item.node.kind !== 'folder'))
   }
   return { files: files.slice(0, GREP_MAX_FILES), truncated: truncated || files.length > GREP_MAX_FILES }
 }

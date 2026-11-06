@@ -4,6 +4,8 @@
  * matrices; blank source cells stay `null` (the evaluator shows spilled blanks as 0 like Excel).
  */
 
+import { maxOf } from '../../../../collections.js'
+
 import { denseRange, rangeSlice, shaped } from '../ranges.js'
 import { logicalSize, matrixGet, Errors, isError, matrix, type FunctionContext, type FunctionSpec, type Matrix, type Scalar, type Value } from '../types.js'
 import {
@@ -147,7 +149,7 @@ function sortBy(ctx: FunctionContext, args: Args): Value {
   }
   const m = byCol ? transpose(source) : source
   const keys = ranges.map((key) => byCol ? transpose(key) : key)
-  const rows = Math.max(m.rows, ...keys.map((key) => key.rows))
+  const rows = Math.max(m.rows, maxOf(keys.map((key) => key.rows)))
   checkArraySize(rows, m.cols)
   const lines = Array.from({ length: rows }, (_, r) => Array.from({ length: m.cols }, (_, c) => cell(m, r, c)))
   const sortKeys = keys.map((key, i) => ({ values: Array.from({ length: rows }, (_, r) => cell(key, r, 0)), order: orders[i]! }))
@@ -240,14 +242,14 @@ function expand(ctx: FunctionContext, args: Args): Value {
 function stack(ctx: FunctionContext, args: Args, horizontal: boolean): Value {
   const parts = args.map((a) => denseRange(toMatrix(ctx, a)))
   if (horizontal) {
-    const rows = Math.max(...parts.map((p) => p.rows))
+    const rows = maxOf(parts.map((p) => p.rows))
     const cols = parts.reduce((n, p) => n + p.cols, 0)
     checkArraySize(rows, cols)
     const data: Scalar[] = []
     for (let r = 0; r < rows; r++) for (const p of parts) for (let c = 0; c < p.cols; c++) data.push(r < p.rows ? cell(p, r, c) : Errors.NA)
     return matrix(rows, cols, data)
   }
-  const cols = Math.max(...parts.map((p) => p.cols))
+  const cols = maxOf(parts.map((p) => p.cols))
   const rows = parts.reduce((n, p) => n + p.rows, 0)
   checkArraySize(rows, cols)
   const data: Scalar[] = []

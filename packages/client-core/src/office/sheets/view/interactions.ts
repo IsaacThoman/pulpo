@@ -1,3 +1,4 @@
+import { maxOf, replaceChildrenWith } from '../../../collections.js'
 import { cellName, MAX_COLS, MAX_ROWS, rangeContains, type CellRange } from '../address.js'
 import type { AutoFilter, DrawingObject, Note, StyleProps } from '../model/schema.js'
 import type { CellValue } from '../values.js'
@@ -890,7 +891,7 @@ export class SheetInteractions {
           }
         }),
       )
-      const width = Math.max(...cells.map((row) => row.length))
+      const width = maxOf(cells.map((row) => row.length))
       view.select({ top: origin.row, left: origin.col, bottom: origin.row + cells.length - 1, right: origin.col + width - 1 }, { active: origin, scroll: false })
     })
   }
@@ -979,7 +980,7 @@ export class SheetInteractions {
     const measure = view.canvas.getContext('2d')!
     measure.font = font
     const lines = edit.text.split('\n')
-    const textWidth = Math.max(...lines.map((line) => measure.measureText(line).width)) + 12
+    const textWidth = maxOf(lines.map((line) => measure.measureText(line).width)) + 12
     const maxWidth = Math.max(rect.width, view.viewport.width - rect.x - 4)
     const width = Math.min(maxWidth, Math.max(rect.width + 1, textWidth))
     const wrapLines = style.wrap || width >= maxWidth ? Math.ceil(textWidth / Math.max(1, width)) : 1
@@ -1034,14 +1035,12 @@ export class SheetInteractions {
         this.hint.style.cssText = `${this.popupCss()}padding:4px 8px;font:12px system-ui,sans-serif;`
         view.root.appendChild(this.hint)
       }
-      this.hint.replaceChildren(
-        ...hint.parts.map((part) => {
-          const span = document.createElement('span')
-          span.textContent = part.text
-          if (part.active) span.style.fontWeight = '600'
-          return span
-        }),
-      )
+      replaceChildrenWith(this.hint, hint.parts.map((part) => {
+        const span = document.createElement('span')
+        span.textContent = part.text
+        if (part.active) span.style.fontWeight = '600'
+        return span
+      }))
       this.placeBelowEditor(this.hint)
     } else {
       this.hint?.remove()
@@ -1052,29 +1051,27 @@ export class SheetInteractions {
   private renderCompletions(): void {
     const list = this.completionList
     if (!list) return
-    list.element.replaceChildren(
-      ...list.items.map((doc, index) => {
-        const item = document.createElement('div')
-        item.setAttribute('role', 'option')
-        item.setAttribute('aria-selected', String(index === list.index))
-        item.style.cssText = `padding:4px 10px;cursor:pointer;font:12px system-ui,sans-serif;${index === list.index ? 'background:rgba(26,115,232,0.12);' : ''}`
-        const name = document.createElement('div')
-        name.textContent = doc.name
-        name.style.fontWeight = '600'
-        item.appendChild(name)
-        if (doc.description && index === list.index) {
-          const description = document.createElement('div')
-          description.textContent = doc.description
-          description.style.cssText = 'opacity:0.75;white-space:normal;max-width:320px;'
-          item.appendChild(description)
-        }
-        item.addEventListener('pointerdown', (event) => {
-          event.preventDefault()
-          this.acceptCompletion(doc)
-        })
-        return item
-      }),
-    )
+    replaceChildrenWith(list.element, list.items.map((doc, index) => {
+      const item = document.createElement('div')
+      item.setAttribute('role', 'option')
+      item.setAttribute('aria-selected', String(index === list.index))
+      item.style.cssText = `padding:4px 10px;cursor:pointer;font:12px system-ui,sans-serif;${index === list.index ? 'background:rgba(26,115,232,0.12);' : ''}`
+      const name = document.createElement('div')
+      name.textContent = doc.name
+      name.style.fontWeight = '600'
+      item.appendChild(name)
+      if (doc.description && index === list.index) {
+        const description = document.createElement('div')
+        description.textContent = doc.description
+        description.style.cssText = 'opacity:0.75;white-space:normal;max-width:320px;'
+        item.appendChild(description)
+      }
+      item.addEventListener('pointerdown', (event) => {
+        event.preventDefault()
+        this.acceptCompletion(doc)
+      })
+      return item
+    }))
     this.placeBelowEditor(list.element)
   }
 
@@ -1262,7 +1259,7 @@ export class SheetInteractions {
         label.append(box, document.createTextNode(value || labels.blanks))
         rows.push(label)
       }
-      list.replaceChildren(...rows)
+      replaceChildrenWith(list, rows)
     }
     search.addEventListener('input', renderList)
     renderList()

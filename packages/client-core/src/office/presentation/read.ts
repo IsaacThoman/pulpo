@@ -1,3 +1,4 @@
+import { pushAll } from '../../collections.js'
 import { LiveFormatError, type LiveAssetStore } from '../live-format.js'
 import { OoxmlPackage, relationshipsPathFor, resolveTarget, type PackageLimits } from '../ooxml/package.js'
 import type {
@@ -329,7 +330,7 @@ export function relationshipIdsIn(element: XmlElement): string[] {
       const attribute = node.attributes.item(index)!
       if ((attribute.namespaceURI === NS.r || (!attribute.namespaceURI && attribute.localName === 'relId')) && attribute.value) ids.push(attribute.value)
     }
-    stack.push(...childElements(node))
+    pushAll(stack, childElements(node))
   }
   return ids
 }

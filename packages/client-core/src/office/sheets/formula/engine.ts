@@ -16,6 +16,8 @@
  * Circular references evaluate to 0 (or iterate, if enabled) and are reported by `isCircular`.
  */
 
+import { maxOf, pushAll } from '../../../collections.js'
+
 import { MAX_COLS, MAX_ROWS } from '../address.js'
 import { MAX_EXPANDED_CELLS } from '../limits.js'
 import { epochMsToSerial } from '../dates.js'
@@ -1120,8 +1122,8 @@ export class FormulaEngine {
       if (!moved) return
     } else {
       const bounds = [before, after].filter((rect): rect is Rect => rect !== undefined)
-      const bottom = Math.max(...bounds.map((rect) => rect.bottom))
-      const right = Math.max(...bounds.map((rect) => rect.right))
+      const bottom = maxOf(bounds.map((rect) => rect.bottom))
+      const right = maxOf(bounds.map((rect) => rect.right))
       for (let row = cell.row; row <= bottom; row++) {
         for (let col = cell.col; col <= right; col++) {
           const inBefore = before && row <= before.bottom && col <= before.right
@@ -1137,7 +1139,7 @@ export class FormulaEngine {
       this.calc.areas.clear()
       this.closure(rects, true)
     }
-    else this.changedRects.push(...rects)
+    else pushAll(this.changedRects, rects)
   }
 
   private updateDynamicDeps(cell: Cell, formula: FormulaInfo, reads: Dep[]): void {

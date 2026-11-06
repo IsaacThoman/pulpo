@@ -1,4 +1,6 @@
 /** Logical range operations. Storage is only a prefix rectangle; its uniform tail is not an edge. */
+
+import { maxOf } from '../../../collections.js'
 import { consumeWork } from './budget.js'
 import { checkArraySize, Errors, logicalSize, matrix, matrixGet, type FormulaError, type Matrix, type Scalar } from './types.js'
 
@@ -55,8 +57,8 @@ export function alignedRanges(values: Matrix[], visit: (cells: Scalar[], count: 
     consumeWork(indexes.size * values.length)
     return
   }
-  const rows = Math.max(...values.map((value) => value.rows))
-  const cols = Math.max(...values.map((value) => value.cols))
+  const rows = maxOf(values.map((value) => value.rows))
+  const cols = maxOf(values.map((value) => value.cols))
   consumeWork(rows * cols * values.length)
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) visit(values.map((value) => matrixGet(value, r, c)), 1)
   const omitted = total - rows * cols
@@ -66,11 +68,11 @@ export function alignedRanges(values: Matrix[], visit: (cells: Scalar[], count: 
 /** Broadcast using logical edges. A compact result is safe only when its omitted region is uniform. */
 export function broadcastRanges(values: (Scalar | Matrix)[], fn: (cells: Scalar[]) => Scalar): Matrix {
   const sizes = values.map((v) => typeof v === 'object' && v !== null && 'kind' in v ? logicalSize(v) : { rows: 1, cols: 1 })
-  const rows = Math.max(...sizes.map((s) => s.rows))
-  const cols = Math.max(...sizes.map((s) => s.cols))
+  const rows = maxOf(sizes.map((s) => s.rows))
+  const cols = maxOf(sizes.map((s) => s.cols))
   const matrices = values.map((v) => typeof v === 'object' && v !== null && 'kind' in v ? v : undefined)
-  let storedRows = Math.max(...matrices.map((m) => m?.rows ?? 1))
-  let storedCols = Math.max(...matrices.map((m) => m?.cols ?? 1))
+  let storedRows = maxOf(matrices.map((m) => m?.rows ?? 1))
+  let storedCols = maxOf(matrices.map((m) => m?.cols ?? 1))
   for (const size of sizes) {
     if (size.rows > 1 && size.rows < rows) storedRows = Math.max(storedRows, size.rows)
     if (size.cols > 1 && size.cols < cols) storedCols = Math.max(storedCols, size.cols)

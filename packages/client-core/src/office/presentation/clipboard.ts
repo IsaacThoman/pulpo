@@ -1,3 +1,4 @@
+import { pushAll } from '../../collections.js'
 import type * as Y from 'yjs'
 import { LiveFormatError, type LiveAssetStore } from '../live-format.js'
 import { decodePartText, relationshipsPathFor, relativeTarget, resolveTarget } from '../ooxml/package.js'
@@ -403,7 +404,7 @@ function rewriteScopedIds(bytes: Uint8Array, ids: Map<string, string>): Uint8Arr
       const next = ids.get(attribute.value)
       if (next) attribute.value = next
     }
-    stack.push(...childElements(node))
+    pushAll(stack, childElements(node))
   }
   return new TextEncoder().encode(serializeNode(document))
 }

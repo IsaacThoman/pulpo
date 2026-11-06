@@ -1,3 +1,4 @@
+import { pushAll } from '../../collections.js'
 import { Node as ProseMirrorNode, Schema, type MarkSpec, type NodeSpec } from '@tiptap/pm/model'
 import {
   attr,
@@ -267,7 +268,7 @@ function relationshipAttributes(element: XmlElement): XmlAttribute[] {
       const attribute = node.attributes.item(index)!
       if (attribute.namespaceURI === NS.r) found.push(attribute)
     }
-    stack.push(...childElements(node))
+    pushAll(stack, childElements(node))
   }
   return found
 }

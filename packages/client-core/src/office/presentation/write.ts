@@ -1,3 +1,4 @@
+import { maxOf, pushAll } from '../../collections.js'
 import { strToU8 } from 'fflate'
 import { LiveFormatError, type LiveAssetStore } from '../live-format.js'
 import {
@@ -145,7 +146,7 @@ class SlideIdAllocator {
 
   constructor(existing: number[]) {
     this.used = new Set(existing)
-    this.candidate = Math.max(255, ...existing.filter((id) => id <= MAX_SLIDE_ID)) + 1
+    this.candidate = Math.max(255, maxOf(existing.filter((id) => id <= MAX_SLIDE_ID))) + 1
   }
 
   next(): number {
@@ -243,7 +244,7 @@ function remapRelationshipIds(element: XmlElement, local: Record<string, RelTarg
       const rel = local[attribute.value]
       if (rel) attribute.value = table.allocate(rel.type, rel.target, rel.external === true, attribute.value)
     }
-    stack.push(...childElements(node))
+    pushAll(stack, childElements(node))
   }
 }
 
@@ -547,7 +548,7 @@ function dropDeadSlideLinks(root: XmlElement, table: RelationshipTable, livePart
       const attribute = node.attributes.item(index)!
       if (attribute.namespaceURI === NS.r && dead.has(attribute.value)) attribute.value = ''
     }
-    stack.push(...childElements(node))
+    pushAll(stack, childElements(node))
   }
 }
 
@@ -563,7 +564,7 @@ function pruneShapeReferences(root: XmlElement): void {
     const node = stack.pop()!
     all.push(node)
     if (node.localName === 'cNvPr') ids.add(node.getAttribute('id') ?? '')
-    stack.push(...childElements(node))
+    pushAll(stack, childElements(node))
   }
   for (const node of all) {
     if (!node.parentNode) continue
@@ -591,7 +592,7 @@ function pruneEmptyTiming(root: XmlElement): void {
   while (stack.length) {
     const node = stack.pop()!
     if (node.localName === 'seq' && node.namespaceURI === NS.p) sequences.push(node)
-    stack.push(...childElements(node))
+    pushAll(stack, childElements(node))
   }
   for (const sequence of sequences) {
     if (timeNodes(child(sequence, 'cTn', NS.p)).length) continue

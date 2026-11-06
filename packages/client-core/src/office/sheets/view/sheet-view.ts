@@ -1,3 +1,4 @@
+import { maxOf } from '../../../collections.js'
 import * as Y from 'yjs'
 import type { Awareness } from 'y-protocols/awareness'
 import type { LiveAssetStore } from '../../live-format.js'
@@ -1559,7 +1560,7 @@ export class SheetView {
     const scale = maxWidth / size.width
     this.workbook.transact(() => {
       sheet.ensure(row, col)
-      const z = Math.max(0, ...[...sheet.drawings.values()].map((drawing) => (drawing as DrawingObject).z)) + 1
+      const z = Math.max(0, maxOf([...sheet.drawings.values()].map((drawing) => (drawing as DrawingObject).z))) + 1
       const drawing: DrawingObject = {
         kind: 'image',
         anchor: 'oneCell',

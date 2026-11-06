@@ -54,3 +54,14 @@ describe('without TextDecoder', () => {
     expect(decodeWindows1252(bytes(0x93, 0x94))).toBe('“”')
   })
 })
+
+it('decodes large UTF-8 text without TextDecoder, including chunk-boundary surrogate pairs', () => {
+  const text = 'a'.repeat(32_767) + '🐙' + 'café'.repeat(40_000)
+  const encoded = new TextEncoder().encode(text)
+  vi.stubGlobal('TextDecoder', undefined)
+  try {
+    expect(decodeUtf8Lossy(encoded)).toBe(text)
+  } finally {
+    vi.unstubAllGlobals()
+  }
+})

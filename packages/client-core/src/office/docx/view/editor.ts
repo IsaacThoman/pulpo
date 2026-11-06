@@ -1,3 +1,4 @@
+import { pushAll, maxOf } from '../../../collections.js'
 import { baseKeymap } from '@tiptap/pm/commands'
 import { dropCursor } from '@tiptap/pm/dropcursor'
 import { gapCursor } from '@tiptap/pm/gapcursor'
@@ -175,13 +176,6 @@ function documentPictures(doc: Y.Doc): Set<string> {
 function pasted(tr: Transaction): boolean {
   const event = tr.getMeta('uiEvent')
   return event === 'paste' || event === 'drop'
-}
-
-/** The largest value, without spreading (a document can have a section per paragraph). */
-function maxOf(values: number[]): number {
-  let max = -Infinity
-  for (const value of values) if (value > max) max = value
-  return max
 }
 
 export interface DocxEditorOptions {
@@ -1388,7 +1382,7 @@ export class DocxEditor {
     for (const [id, json] of readDocxMap(this.options.doc, 'stories')) {
       const meta = parseJson<StoryMeta>(json)
       if (!meta) continue
-      revisions.push(...listRevisions(fragmentToNode(this.options.doc.getXmlFragment(storyFragmentName(id))), id))
+      pushAll(revisions, listRevisions(fragmentToNode(this.options.doc.getXmlFragment(storyFragmentName(id))), id))
     }
     return revisions
   }
@@ -1626,7 +1620,7 @@ export class DocxEditor {
       const link = schema.marks.link!.create({ v: packJml(['w:hyperlink', { 'w:anchor': name ?? '', 'w:history': '1' }, '\u0000']), href: null })
       const page = this.pageOf(heading.pos)
       const content: ProseMirrorNode[] = []
-      if (index === 0) content.push(...begin)
+      if (index === 0) pushAll(content, begin)
       content.push(schema.text(heading.text, [link]), schema.node('tab', { v: packJml(['w:tab', {}]), marks: packMarks([link]) }))
       if (page !== undefined) content.push(schema.text(String(page), [link]))
       if (index === headings.length - 1) content.push(fieldChar('end'))
@@ -1743,8 +1737,8 @@ export class DocxEditor {
     this.endnotesHeight = endnotesHeight
     const result = paginate(this.view, this.context, (id) => this.noteHeights.get(id) ?? 0, (setup, index, all) => {
       // A header or footer taller than its margin pushes the text away, as in Word.
-      const header = Math.max(0, ...(['default', 'first', 'even'] as const).map((type) => storyHeight(all, index, 'header', type)))
-      const footer = Math.max(0, ...(['default', 'first', 'even'] as const).map((type) => storyHeight(all, index, 'footer', type)))
+      const header = Math.max(0, maxOf((['default', 'first', 'even'] as const).map((type) => storyHeight(all, index, 'header', type))))
+      const footer = Math.max(0, maxOf((['default', 'first', 'even'] as const).map((type) => storyHeight(all, index, 'footer', type))))
       return { ...setup, top: Math.max(setup.top, setup.header + header), bottom: Math.max(setup.bottom, setup.footer + footer) }
     }, endnotesHeight ? endnotesHeight + 16 : 0)
     this.view.dispatch(this.view.state.tr.setMeta(paginationKey, [...tabs, ...result.decorations]).setMeta('addToHistory', false))

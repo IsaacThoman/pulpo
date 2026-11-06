@@ -1,3 +1,4 @@
+import { pushAll } from '../../collections.js'
 import type * as Y from 'yjs'
 import { LiveFormatError, type LiveFormatCodec, type LiveFormatContext } from '../live-format.js'
 import { blankPresentation } from './blank.js'
@@ -237,7 +238,7 @@ function fillGaps(anchors: [number, number][], currentLength: number, incomingLe
     if (at > 0) result.push(bounds[at]!)
     const [currentStart, incomingStart] = bounds[at]!
     const [currentEnd, incomingEnd] = bounds[at + 1]!
-    if (currentEnd - currentStart > 1 && incomingEnd - incomingStart > 1) result.push(...match(currentStart + 1, currentEnd, incomingStart + 1, incomingEnd))
+    if (currentEnd - currentStart > 1 && incomingEnd - incomingStart > 1) pushAll(result, match(currentStart + 1, currentEnd, incomingStart + 1, incomingEnd))
   }
   return result
 }

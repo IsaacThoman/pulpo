@@ -3,6 +3,8 @@
  * library is wired in. Deliberately minimal; not Excel-complete.
  */
 
+import { maxOf, minOf } from '../../../collections.js'
+
 import { Errors, isError, isMatrix, isReference, matrix, type FunctionContext, type FunctionSpec, type Scalar, type Value } from './types.js'
 import { toNumber, toText } from './values.js'
 
@@ -69,8 +71,8 @@ function unary(name: string, fn: (x: number) => Scalar): FunctionSpec {
 const SPECS: FunctionSpec[] = [
   aggregate('SUM', (values) => values.reduce((a, b) => a + b, 0)),
   aggregate('COUNT', (values) => values.length),
-  aggregate('MAX', (values) => (values.length ? Math.max(...values) : 0)),
-  aggregate('MIN', (values) => (values.length ? Math.min(...values) : 0)),
+  aggregate('MAX', (values) => (values.length ? maxOf(values) : 0)),
+  aggregate('MIN', (values) => (values.length ? minOf(values) : 0)),
   aggregate('PRODUCT', (values) => values.reduce((a, b) => a * b, 1)),
   unary('ABS', Math.abs),
   unary('SQRT', (x) => (x < 0 ? Errors.NUM : Math.sqrt(x))),
@@ -154,7 +156,7 @@ const SPECS: FunctionSpec[] = [
     xlfn: true,
     fn: (ctx, args) => {
       const parts = args.map((arg) => (isReference(arg) ? ctx.resolve(arg) : isMatrix(arg) ? arg : matrix(1, 1, [(arg ?? null) as Scalar])))
-      const cols = Math.max(...parts.map((part) => part.cols))
+      const cols = maxOf(parts.map((part) => part.cols))
       const data: Scalar[] = []
       for (const part of parts) for (let r = 0; r < part.rows; r++) for (let c = 0; c < cols; c++) data.push(c < part.cols ? (part.data[r * part.cols + c] ?? null) : Errors.NA)
       return matrix(data.length / cols, cols, data)
