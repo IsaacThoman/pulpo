@@ -12,7 +12,7 @@ import type {
 } from '@pulpo/contracts'
 import { formatAttachmentSizeLimit } from '@pulpo/client-core'
 import { convertedFileName } from '@pulpo/contracts'
-import { ApiError, apiRequest, authenticatedFetch, downloadApiFile, fetchApiBlob, fetchApiBlobResponse } from '@/lib/api'
+import { ApiError, apiDownloadUrl, apiRequest, authenticatedFetch, downloadApiFile, fetchApiBlob, fetchApiBlobResponse } from '@/lib/api'
 import { uit } from '@/i18n/ui'
 import { useAuth } from '@/stores/auth'
 
@@ -187,6 +187,14 @@ export async function uploadFile(parentId: string | null, file: File): Promise<F
 
 export async function fileUrl(node: FileNode): Promise<string> {
   return (await apiRequest<{ url: string }>(`/api/files/${node.id}/download`)).url
+}
+
+/**
+ * A URL an audio or video element can stream with range requests on its own: signed, so it needs
+ * neither the session cookie nor the desktop app's bearer header, and typed as playable media.
+ */
+export async function fileStreamUrl(node: FileNode): Promise<string> {
+  return apiDownloadUrl((await apiRequest<{ url: string }>(`/api/files/${node.id}/stream-url`)).url)
 }
 
 /** Local-driver URLs are API routes that need the session; object-store URLs are presigned. */

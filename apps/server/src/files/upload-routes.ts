@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm'
 import { Readable } from 'node:stream'
 import { z } from 'zod'
 import { reserveFileUploadSchema } from '@pulpo/contracts'
+import { mediaMimeType } from '@pulpo/client-core/files'
 import { attachmentRateLimit, withAttachmentCapacity } from '../attachments/capacity.js'
 import { canonicalUploadedMimeType } from '../attachments/policy.js'
 import { attachmentStorageErrorCode, attachmentUploadContentType } from '../attachments/routes.js'
@@ -15,7 +16,8 @@ import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
 import { resolveFileAccess } from './access.js'
-import { parseFileInput, requireFilesUser } from './request.js'
+import { createMediaStreamToken, MEDIA_STREAM_TTL_SECONDS, parseByteRange, verifyMediaStreamToken } from './media-stream.js'
+import { filesFeatureEnabled, parseFileInput, requireFilesUser } from './request.js'
 import { availableName, deleteFileNode, lockFileTree, mutateFileTree, toFileNode } from './tree-service.js'
 import { topSortOrder } from './order.js'
 
@@ -136,6 +138,65 @@ export async function registerFileUploadRoutes(app: FastifyInstance): Promise<vo
         contentDisposition: fileContentDisposition('attachment', access.node.name),
       }),
     }
+  })
+
+  // Audio and video play from a URL the media element streams itself with range requests, so a
+  // long recording starts at once instead of downloading whole into memory first.
+  app.get('/api/files/:id/stream-url', { config: attachmentRateLimit }, async (request) => {
+    const user = await requireFilesUser(request)
+    const { id } = idParams.parse(request.params)
+    const node = (await resolveFileAccess(db, user.id, id))?.node
+    if (!node || node.kind !== 'blob' || node.status !== 'ready') throw notFound('File')
+    const contentType = mediaMimeType(node.name, node.mimeType)
+    if (!contentType) throw new AppError(415, 'not_media', 'Only audio and video files can be streamed')
+    const config = getConfig()
+    if (config.STORAGE_DRIVER === 's3') {
+      return {
+        url: await getBlobStore().createDownloadUrl(node.objectKey!, MEDIA_STREAM_TTL_SECONDS, {
+          contentDisposition: fileContentDisposition('inline', node.name),
+          contentType,
+        }),
+      }
+    }
+    const token = createMediaStreamToken({
+      nodeId: node.id,
+      userId: user.id,
+      objectKey: node.objectKey!,
+      expiresAt: Math.floor(Date.now() / 1000) + MEDIA_STREAM_TTL_SECONDS,
+    }, config.ENCRYPTION_KEY)
+    return { url: `/api/files/stream/${token}` }
+  })
+
+  // The signed token stands in for the session, which media elements cannot send from the desktop app.
+  app.get('/api/files/stream/:token', { config: attachmentRateLimit }, async (request, reply) => {
+    const config = getConfig()
+    if (config.STORAGE_DRIVER !== 'local') throw notFound('File')
+    const { token } = request.params as { token: string }
+    const claims = verifyMediaStreamToken(token, config.ENCRYPTION_KEY)
+    if (!claims) throw notFound('File')
+    const [owner] = await db.select({ role: users.role, blocked: users.blocked, deleting: users.deletionRequestedAt })
+      .from(users).where(eq(users.id, claims.userId)).limit(1)
+    if (!owner || owner.role === 'pending' || owner.blocked || owner.deleting || !await filesFeatureEnabled()) throw notFound('File')
+    const node = (await resolveFileAccess(db, claims.userId, claims.nodeId))?.node
+    if (!node || node.kind !== 'blob' || node.status !== 'ready' || node.objectKey !== claims.objectKey) throw notFound('File')
+    const contentType = mediaMimeType(node.name, node.mimeType)
+    if (!contentType) throw notFound('File')
+
+    const size = node.sizeBytes
+    const range = parseByteRange(request.headers.range, size)
+    reply.type(contentType)
+      .header('accept-ranges', 'bytes')
+      .header('cache-control', 'private, no-store')
+      .header('content-disposition', fileContentDisposition('inline', node.name))
+      .header('x-content-type-options', 'nosniff')
+      // The desktop app loads media from its own origin; the URL itself is the credential.
+      .header('cross-origin-resource-policy', 'cross-origin')
+    if (range === 'unsatisfiable') return reply.code(416).header('content-range', `bytes */${size}`).send()
+    if (!range) return reply.header('content-length', size).send(await getBlobStore().getStream(node.objectKey!))
+    return reply.code(206)
+      .header('content-range', `bytes ${range.start}-${range.end}/${size}`)
+      .header('content-length', range.end - range.start + 1)
+      .send(await getBlobStore().getStream(node.objectKey!, range))
   })
 
   app.get('/api/files/local-download/:key', { config: attachmentRateLimit }, async (request, reply) => {
