@@ -14,7 +14,7 @@ export interface AnalyticsJob {
 }
 
 export interface MaintenanceJob {
-  type: 'delete-account' | 'cleanup' | 'backup-schedule' | 'scrub-response-binary-context' | 'purge-chats' | 'expire-temporary-chat' | 'expire-normal-chat' | 'rollup' | 'export' | 'backup' | 'restore' | 'billing-reconcile' | 'app-store-sandbox-sync' | 'auto-top-up' | 'auto-top-up-sweep'
+  type: 'delete-account' | 'cleanup' | 'backup-schedule' | 'scrub-response-binary-context' | 'purge-chats' | 'expire-temporary-chat' | 'expire-normal-chat' | 'rollup' | 'export' | 'backup' | 'restore' | 'billing-reconcile' | 'app-store-sandbox-sync' | 'auto-top-up' | 'auto-top-up-sweep' | 'abandoned-reservations'
   payload?: Record<string, unknown>
 }
 
