@@ -24,7 +24,7 @@ export function markCalcDirty(doc: Y.Doc): void {
 export function trackEdits(doc: Y.Doc): () => void {
   const root = doc.getMap(WORKBOOK_MAP)
   const afterTransaction = (transaction: Y.Transaction) => {
-    if (!transaction.local || transaction.origin === IMPORT_ORIGIN || transaction.origin === EDIT_ORIGIN) return
+    if (!transaction.local || transaction.origin === IMPORT_ORIGIN || transaction.origin === 'restore' || transaction.origin === EDIT_ORIGIN) return
     const meta = root.get('meta')
     const events = [...transaction.changedParentTypes].find(([type]) => (type as unknown) === root)?.[1] ?? []
     const edited = events.some((event) => event.target !== meta || [...(event as Y.YMapEvent<unknown>).keysChanged].some((key) => key !== 'calcDirty' && key !== 'calcTime' && key !== 'calcTimezoneOffset'))

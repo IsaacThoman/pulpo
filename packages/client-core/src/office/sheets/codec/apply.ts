@@ -35,12 +35,12 @@ export function applyWorkbook(doc: Y.Doc, incomingDoc: Y.Doc, origin?: unknown):
   const changed = transactChanges(doc, () => {
     if (!target.initialized) WorkbookModel.initialize(doc, {})
     const styleMap = mergeStyles(target, incoming)
-    syncMeta(target, incoming)
+    syncMeta(target, incoming, origin === 'restore')
     const pairs = syncSheets(target, incoming)
     // Rows and columns first, everywhere: formulas in one sheet refer to rows of others, so their
     // positions must line up before any content is compared.
     for (const [targetSheet, incomingSheet] of pairs) alignSheet(targetSheet, incomingSheet, styleMap)
-    for (const [targetSheet, incomingSheet] of pairs) syncSheet(targetSheet, incomingSheet, styleMap)
+    for (const [targetSheet, incomingSheet] of pairs) syncSheet(targetSheet, incomingSheet, styleMap, origin === 'restore')
     syncNames(target, incoming, pairs)
     syncParts(target, incoming)
   }, origin ?? null)
@@ -81,8 +81,13 @@ function mergeStyles(target: WorkbookModel, incoming: WorkbookModel): StyleMap {
 // Part paths are where this copy writes its parts; a new version's paths don't matter.
 const META_KEYS = ['format', 'date1904', 'iterate', 'iterateCount', 'iterateDelta', 'csv', 'workbookXml', 'workbookRels', 'themeXml', 'contentTypesXml', 'sharedStringsSeed', 'looseParts'] as const
 
-function syncMeta(target: WorkbookModel, incoming: WorkbookModel): void {
+function syncMeta(target: WorkbookModel, incoming: WorkbookModel, restore: boolean): void {
   for (const key of META_KEYS) setIfDifferent(target.meta, key, incoming.metaValue(key))
+  // Undo/redo restores a saved calculation snapshot, including the absence of a clock. Ordinary
+  // pushes keep the current clock until the edit tracker records a new calculation snapshot.
+  if (restore) {
+    for (const key of ['calcTime', 'calcTimezoneOffset', 'calcDirty'] as const) setIfDifferent(target.meta, key, incoming.metaValue(key))
+  }
 }
 
 /** Pairs each incoming sheet with a sheet here (same name, else same part, else same position). */
@@ -257,10 +262,10 @@ function alignSheet(own: SheetModel, other: SheetModel, styles: StyleMap): void 
   alignAxis(own, other, rowsFirst ? 'col' : 'row', styles)
 }
 
-function syncSheet(own: SheetModel, other: SheetModel, styles: StyleMap): void {
+function syncSheet(own: SheetModel, other: SheetModel, styles: StyleMap, restore: boolean): void {
   const extent = extentOf(other)
   if (extent.rows && extent.cols) own.ensure(extent.rows - 1, extent.cols - 1)
-  syncCells(own, other, styles)
+  syncCells(own, other, styles, restore)
   syncAxisMeta(own, other, 'row', styles)
   syncAxisMeta(own, other, 'col', styles)
   syncView(own, other)
@@ -284,9 +289,12 @@ function alignmentScore(own: SheetModel, other: SheetModel, kind: AxisKind, styl
 }
 
 /** A cell's content in a form comparable across workbooks (formulas as A1 text). */
-function comparable(sheet: SheetModel, data: CellData | undefined): string {
+function comparable(sheet: SheetModel, data: CellData | undefined, restore: boolean): string {
   if (!data) return ''
   if (data.f !== undefined) {
+    // A restore trusts the saved formula results (including volatile ones) rather than
+    // recalculating them in the current timezone or retaining the version being undone.
+    if (restore) return JSON.stringify({ ...data, f: toA1Form(data.f, sheet) })
     // A formula's cached result is derived (exports recalculate it), so only the formula counts.
     const { f, v: _v, t: _t, spillCache: _cache, ...rest } = data
     return JSON.stringify({ ...rest, f: toA1Form(f, sheet) })
@@ -294,7 +302,7 @@ function comparable(sheet: SheetModel, data: CellData | undefined): string {
   return JSON.stringify(data)
 }
 
-function syncCells(own: SheetModel, other: SheetModel, styles: StyleMap): void {
+function syncCells(own: SheetModel, other: SheetModel, styles: StyleMap, restore: boolean): void {
   const positions = new Set<string>()
   const collect = (sheet: SheetModel) => {
     for (const key of [...sheet.cells.keys(), ...sheet.xf.keys(), ...[...sheet.fmt.keys()].map((entry) => entry.slice(0, entry.lastIndexOf('|')))]) {
@@ -309,7 +317,7 @@ function syncCells(own: SheetModel, other: SheetModel, styles: StyleMap): void {
     const otherData = other.cell(row, col)
     const ownKey = own.keyAt(row, col)
     const ownData = own.cells.get(ownKey)
-    if (comparable(own, ownData) !== comparable(other, otherData)) {
+    if (comparable(own, ownData, restore) !== comparable(other, otherData, restore)) {
       if (!otherData) own.cells.delete(ownKey)
       else {
         const data: CellData = { ...otherData }

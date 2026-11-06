@@ -74,7 +74,7 @@ export class SheetCodec implements LiveFormatCodec {
     const unsubscribe = trackEdits(doc)
     try {
       const result = applyWorkbook(doc, incoming, origin)
-      if (result.changed) markCalcDirty(doc)
+      if (result.changed && origin !== 'restore') markCalcDirty(doc)
       return result
     } finally {
       unsubscribe()

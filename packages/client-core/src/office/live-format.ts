@@ -81,6 +81,8 @@ export interface LiveFormatCodec {
    * Rewrites `doc` to match `bytes` as a minimal diff, in one transaction with `origin`. Used when
    * an agent pushes a new version or a review accepts one: replacing the state wholesale would let
    * replicas that still hold the old content merge it back, and would discard concurrent edits.
+   * The `restore` origin replays an exported snapshot for undo/redo: preserve its saved metadata
+   * and formula caches rather than recording a fresh edit, so its export keeps the same checksum.
    */
   applyFile(doc: Y.Doc, bytes: Uint8Array, context: LiveFormatContext, origin?: unknown): Promise<{ changed: boolean }>
   /** Plain text of the document, for search, grep, `cat`, and previews. */
