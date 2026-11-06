@@ -1,7 +1,7 @@
 import { CopyObjectCommand, CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutBucketCorsCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { Readable } from 'node:stream'
-import type { BlobDownloadOptions, BlobMetadata, BlobStore } from './blob-store.js'
+import type { BlobByteRange, BlobDownloadOptions, BlobMetadata, BlobStore } from './blob-store.js'
 
 export interface S3BlobStoreOptions {
   endpoint: string
@@ -87,9 +87,13 @@ export class S3BlobStore implements BlobStore {
     return result.Body.transformToByteArray()
   }
 
-  async getStream(key: string): Promise<Readable> {
+  async getStream(key: string, range?: BlobByteRange): Promise<Readable> {
     await this.ensureReady()
-    const result = await this.client.send(new GetObjectCommand({ Bucket: this.options.bucket, Key: key }))
+    const result = await this.client.send(new GetObjectCommand({
+      Bucket: this.options.bucket,
+      Key: key,
+      Range: range && `bytes=${range.start}-${range.end}`,
+    }))
     if (!result.Body) throw new Error('Object body is empty')
     return Readable.from(result.Body as AsyncIterable<Uint8Array>, { objectMode: false })
   }
@@ -124,6 +128,7 @@ export class S3BlobStore implements BlobStore {
       Bucket: this.options.bucket,
       Key: key,
       ResponseContentDisposition: options.contentDisposition,
+      ResponseContentType: options.contentType,
     }), { expiresIn: expiresInSeconds })
   }
 }
