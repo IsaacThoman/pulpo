@@ -34,6 +34,7 @@ export interface SheetViewLabels {
   cancel: string
   search: string
   clearFilter: string
+  dataErrors: Record<keyof typeof commands.DATA_ERRORS, string>
   invalidValue: string
   chartUnavailable: string
   imageUnavailable: string
@@ -41,6 +42,7 @@ export interface SheetViewLabels {
 }
 
 export const DEFAULT_LABELS: SheetViewLabels = {
+  dataErrors: commands.DATA_ERRORS,
   sortAscending: 'Sort A to Z',
   sortDescending: 'Sort Z to A',
   selectAll: 'Select all',
@@ -1398,12 +1400,29 @@ export class SheetView {
     this.notify()
   }
 
-  sort(descending: boolean, column = this.selection.active.col): void {
+  sort(descending: boolean, column = this.selection.active.col, options: { header?: boolean; caseSensitive?: boolean } = {}): void {
     const range = this.selection.ranges[this.selection.ranges.length - 1]!
     const area = range.top === range.bottom && range.left === range.right ? this.currentRegion(range.top, range.left) : range
-    // A first row of text over numbers is a header and stays put.
-    const header = area.bottom > area.top && this.looksLikeHeader(area) ? 1 : 0
-    this.run(() => commands.sortRange(this.sheet, { ...area, top: area.top + header }, [{ col: column, descending }], (row, col) => this.values.get(this.sheet, row, col)))
+    const filter = this.sheet.filter.get('value') as AutoFilter | undefined
+    const filterRange = filter && this.sheet.resolveRange(filter.range)
+    const header = options.header ?? (filterRange?.top === area.top && filterRange.left <= area.right && filterRange.right >= area.left || area.bottom > area.top && this.looksLikeHeader(area))
+    this.sortArea({ ...area, top: area.top + Number(header) }, [{ col: column, descending }], options)
+  }
+
+  /** Shared by toolbar sorts and the filter menu, including error reporting and safety guards. */
+  sortArea(area: CellRange, keys: commands.SortKey[], options: { caseSensitive?: boolean } = {}): void {
+    this.dataOperation(() => commands.sortRange(this.sheet, area, keys, (row, col) => this.values.get(this.sheet, row, col), {
+      ...options, values: this.values, display: (r, c) => this.displayText(r, c), collaborative: !!this.options.awareness,
+    }))
+  }
+
+  dataOperation(change: () => void): void {
+    try {
+      this.run(change)
+    } catch (error) {
+      if (!(error instanceof commands.DataOperationError)) throw error
+      this.interactions.showMessage(this.labels.dataErrors[error.reason], this.selection.active.row, this.selection.active.col)
+    }
   }
 
   private looksLikeHeader(range: CellRange): boolean {
@@ -1440,7 +1459,7 @@ export class SheetView {
   /** Turns the autofilter on for the selection (or the data around the active cell), or off. */
   toggleFilter(): void {
     if (this.sheet.filter.has('value')) {
-      this.run(() => commands.setAutoFilter(this.sheet, undefined))
+      this.dataOperation(() => commands.setAutoFilter(this.sheet, undefined, (r, c) => this.displayText(r, c)))
       return
     }
     const range = this.selection.ranges[this.selection.ranges.length - 1]!

@@ -136,12 +136,17 @@ export function writeWorksheet(sheet: SheetModel, context: WorksheetWriteContext
   if (filter) {
     const xml = writeAutoFilter(sheet, filter)
     if (xml) insertInOrder(root, fragment(document, xml))
-    if (filter.sortXml) {
+    if (filter.sortXml && !filter.sort && !sheet.filter.has('sort')) {
       const range = sheet.resolveRange(filter.range)
       const sort = fragment(document, resolveXml(filter.sortXml, sheet))
       if (range) sort.setAttribute('ref', rangeName({ ...range, top: range.top + 1 }))
       insertInOrder(root, sort)
     }
+  }
+  const plainSort = sheet.filter.get('sort') as AutoFilter | string | undefined
+  if (plainSort) {
+    const xml = typeof plainSort === 'string' ? resolveXml(plainSort, sheet) : writeSortState(sheet, plainSort)
+    if (xml) insertInOrder(root, fragment(document, xml))
   }
   const merges = sheet.mergedRanges().sort((a, b) => a.range.top - b.range.top || a.range.left - b.range.left || a.range.bottom - b.range.bottom || a.range.right - b.range.right)
   if (merges.length) {
@@ -633,6 +638,8 @@ function writeHyperlinks(sheet: SheetModel, context: WorksheetWriteContext): str
   return xml ? `<hyperlinks>${xml}</hyperlinks>` : undefined
 }
 
+export const FILTER_VISIBILITY_NS = 'https://pulpo.chat/office/sheets/filter-visibility/v1'
+
 function writeAutoFilter(sheet: SheetModel, filter: AutoFilter): string | undefined {
   const range = sheet.resolveRange(filter.range)
   if (!range) return undefined
@@ -651,13 +658,39 @@ function writeAutoFilter(sheet: SheetModel, filter: AutoFilter): string | undefi
   // The last sort (and extensions) stay while the filter covers the same cells it was read with.
   const ref = rangeName(range)
   const filterXml = filter.xml && resolveXml(filter.xml, sheet)
-  const kept = filterXml && new RegExp(`^<(?:\\w+:)?autoFilter\\b[^>]*\\bref="${ref}"`).test(filterXml) ? keptFilterChildren(filterXml) : ''
-  return `<autoFilter ref="${ref}">${columns}${kept}</autoFilter>`
+  const manual: number[] = []
+  for (let row = range.top + 1; row <= range.bottom; row++) if (sheet.rowProp(row, 'manualHidden')) manual.push(row + 1)
+  const filtered = filter.hiddenRows?.map((id) => sheet.rows.indexOf(id)).filter((row) => row > range.top && row <= range.bottom).map((row) => row + 1)
+  const provenance = filtered ? `<ext uri="${FILTER_VISIBILITY_NS}"><p:visibility xmlns:p="${FILTER_VISIBILITY_NS}" filtered="${filtered.join(' ')}" manual="${manual.join(' ')}"/></ext>` : undefined
+  const kept = filterXml && new RegExp(`^<(?:\\w+:)?autoFilter\\b[^>]*\\bref="${ref}"`).test(filterXml) ? keptFilterChildren(filterXml, !!filter.sort, provenance) : keptFilterChildren('<autoFilter/>', false, provenance)
+  return `<autoFilter ref="${ref}">${columns}${writeSortState(sheet, filter, true) ?? ''}${kept}</autoFilter>`
+}
+
+/** Explicit sort state replaces imported XML once a user sorts again. */
+function writeSortState(sheet: SheetModel, filter: AutoFilter, header = false): string | undefined {
+  const range = sheet.resolveRange(filter.range)
+  if (!range || !filter.sort) return undefined
+  const area = { ...range, top: range.top + Number(header) }
+  if (area.top > area.bottom) return undefined
+  const conditions = filter.sort.flatMap((key) => {
+    const col = sheet.cols.indexOf(key.col)
+    return col < area.left || col > area.right ? [] : [`<sortCondition ref="${rangeName({ ...area, left: col, right: col })}" descending="${Number(key.descending)}"/>`]
+  }).join('')
+  return conditions ? `<sortState ref="${rangeName(area)}" caseSensitive="${Number(!!filter.sortCaseSensitive)}">${conditions}</sortState>` : undefined
 }
 
 /** An autofilter's `sortState` and `extLst`, as written. */
-function keptFilterChildren(xml: string): string {
-  return [...xml.matchAll(/<((?:\w+:)?(?:sortState|extLst))\b[^>]*?(?:\/>|>[\s\S]*?<\/\1>)/g)].map((match) => match[0]).join('')
+function keptFilterChildren(xml: string, replaceSort: boolean, provenance?: string): string {
+  const document = parseXml(xml)
+  const root = document.documentElement!
+  if (replaceSort) for (const sort of children(root, 'sortState')) root.removeChild(sort)
+  let extensions = child(root, 'extLst')
+  if (extensions) for (const ext of children(extensions, 'ext')) if (ext.getAttribute('uri') === FILTER_VISIBILITY_NS) extensions.removeChild(ext)
+  if (provenance) {
+    if (!extensions) { extensions = document.createElementNS(SHEET_NS, 'extLst'); root.appendChild(extensions) }
+    extensions.appendChild(document.importNode(parseXml(provenance).documentElement!, true))
+  }
+  return children(root).filter((node) => node.localName === 'sortState' || node.localName === 'extLst' && children(node).length > 0).map(serializeNode).join('')
 }
 
 /** The table part XML with its range, columns, and autofilter updated. */
@@ -675,6 +708,11 @@ export function writeTablePart(sheet: SheetModel, table: SheetTable, id: number,
   if (table.totalsRow || root.hasAttribute('totalsRowCount')) root.setAttribute('totalsRowCount', table.totalsRow ? '1' : '0')
   const filter = child(root, 'autoFilter')
   if (filter && (moved || !filter.getAttribute('ref'))) filter.setAttribute('ref', rangeName(table.totalsRow ? { ...range, bottom: range.bottom - 1 } : range))
+  if (table.sort) {
+    for (const parent of [root, filter]) if (parent) for (const state of children(parent, 'sortState')) parent.removeChild(state)
+    const xml = writeSortState(sheet, { range: sheet.rangeIds({ ...range, bottom: range.bottom - Number(table.totalsRow) }), columns: [], sort: table.sort, sortCaseSensitive: table.sortCaseSensitive }, table.headerRow)
+    if (xml) root.insertBefore(fragment(document, xml), child(root, 'tableColumns') ?? null)
+  }
   const width = range.right - range.left + 1
   const columns = child(root, 'tableColumns')
   if (columns) {

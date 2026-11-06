@@ -292,6 +292,55 @@ try {
     assert.match(text, /## Forecast/)
   })
 
+  await step('filter-menu sorts preserve active filter visibility and undo once', async () => {
+    const { page: filtered, errors: filterErrors } = await open('?local=1')
+    await filtered.evaluate(() => {
+      const view = window.__sheets.views[0]
+      const sheet = view.workbook.addSheet('Sort regression')
+      view.setActiveSheet(sheet.id)
+      view.goTo('A1')
+      view.clipboard.paste({ text: 'Fruit\tQty\napple\t2\npear\t1\napple\t1' })
+      view.select({ top: 0, left: 0, bottom: 3, right: 1 })
+      view.toggleFilter()
+    })
+    const openMenu = async () => {
+      const point = await cellPoint(filtered, 0, 0)
+      await filtered.mouse.click(point.left + point.width - 8, point.top + point.height - 8)
+      await filtered.getByRole('button', { name: 'Sort Z to A', exact: true }).last().waitFor()
+    }
+    await openMenu()
+    await filtered.getByRole('checkbox', { name: 'pear' }).uncheck()
+    await filtered.getByRole('button', { name: 'OK', exact: true }).click()
+    await openMenu()
+    await filtered.getByRole('button', { name: 'Sort Z to A', exact: true }).last().click()
+    const state = () => filtered.evaluate(() => {
+      const view = window.__sheets.views[0]
+      return [1, 2, 3].map((r) => [view.inputText(r, 0), !!view.sheet.rowProp(r, 'hidden')])
+    })
+    assert.deepEqual(await state(), [['pear', true], ['apple', false], ['apple', false]])
+    await filtered.evaluate(() => window.__sheets.views[0].undo())
+    assert.deepEqual(await state(), [['apple', false], ['pear', true], ['apple', false]])
+    await openMenu()
+    await filtered.getByRole('button', { name: 'Sort A to Z', exact: true }).last().click()
+    assert.deepEqual(await state(), [['apple', false], ['apple', false], ['pear', true]])
+    await openMenu()
+    await filtered.getByRole('button', { name: 'Clear filter', exact: true }).click()
+    assert.deepEqual(await state(), [['apple', false], ['apple', false], ['pear', false]])
+    // Array refusal is shown to the user, rather than becoming an uncaught menu exception.
+    await filtered.evaluate(() => {
+      const view = window.__sheets.views[0]
+      view.goTo('C2')
+      view.beginEdit('=SEQUENCE(3,1,3,-1)', true)
+      view.commitEdit()
+      view.select({ top: 1, left: 2, bottom: 3, right: 2 })
+      view.sort(false)
+    })
+    await filtered.getByRole('alert').filter({ hasText: 'array formulas' }).waitFor()
+    assert.equal(await inputText(filtered, 1, 2), '=SEQUENCE(3,1,3,-1)')
+    assert.deepEqual(filterErrors, [])
+    await filtered.close()
+  })
+
   await step('scrolls 100k rows smoothly', async () => {
     const timing = await page.evaluate(async () => {
       const sheetView = window.__sheets.views[0]

@@ -124,7 +124,7 @@ export function Harness() {
         <div key={index} className="flex min-w-0 flex-1 flex-col bg-background" data-replica={index}>
           <SheetEditor
             doc={docs[index]!}
-            awareness={awareness[index]!}
+            awareness={params.get('local') === '1' ? undefined : awareness[index]!}
             readOnly={params.get('readonly') === '1'}
             assets={assets}
             user={USERS[index]!}

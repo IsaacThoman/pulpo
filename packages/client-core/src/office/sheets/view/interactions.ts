@@ -1327,14 +1327,14 @@ export class SheetInteractions {
       popup.appendChild(button)
     }
     const sortBy = (descending: boolean) => {
-      view.workbook.transact(() => commands.sortRange(sheet, { ...range, top: range.top + 1 }, [{ col, descending }], (r, c) => view.valueAt(r, c)))
+      view.sortArea({ ...range, top: range.top + 1 }, [{ col, descending }])
     }
     if (!view.readOnly) {
       action(labels.sortAscending, () => sortBy(false))
       action(labels.sortDescending, () => sortBy(true))
     }
     const current = filter.columns.find((entry) => entry.col === offset)
-    if (current && !view.readOnly) action(labels.clearFilter, () => commands.filterColumn(sheet, offset, undefined, (r, c) => view.displayText(r, c)))
+    if (current && !view.readOnly) action(labels.clearFilter, () => view.dataOperation(() => commands.filterColumn(sheet, offset, undefined, (r, c) => view.displayText(r, c))))
     // Values in the column (shown and hidden rows).
     const values = new Map<string, number>()
     for (let row = range.top + 1; row <= range.bottom; row++) {
@@ -1406,7 +1406,7 @@ export class SheetInteractions {
         if (view.readOnly) return
         this.closePopup()
         const everything = sorted.every((value) => chosen.has(value))
-        commands.filterColumn(sheet, offset, everything ? undefined : [...chosen], (r, c) => view.displayText(r, c))
+        view.dataOperation(() => commands.filterColumn(sheet, offset, everything ? undefined : [...chosen], (r, c) => view.displayText(r, c)))
         view.focus()
       })
     }

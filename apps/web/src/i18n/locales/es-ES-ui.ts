@@ -3236,6 +3236,17 @@ const esUi: Record<string, string> = {
   "This chart type can't be shown yet": "Este tipo de gráfico aún no se puede mostrar",
   "This image can't be shown": "Esta imagen no se puede mostrar",
   "Ctrl+click to open the link": "Ctrl+clic para abrir el enlace",
+  "Cannot sort a range containing spilled or legacy array formulas.": "No se puede ordenar un rango con fórmulas matriciales heredadas o desbordadas.",
+  "Cannot sort merged cells. Unmerge the cells first.": "No se pueden ordenar celdas combinadas. Sepáralas primero.",
+  "Cannot sort this range with validation, conditional formatting, drawings, or range hyperlinks. Remove them first.": "No se puede ordenar este rango con validación, formato condicional, dibujos o hipervínculos de rango. Quítalos primero.",
+  "Show manually hidden rows and remove outlines before sorting.": "Muestra las filas ocultas manualmente y quita los esquemas antes de ordenar.",
+  "Cannot change this filter safely. Only value-list filters are supported.": "No se puede cambiar este filtro de forma segura. Solo se admiten filtros de listas de valores.",
+  "Select cells inside a single table before sorting it.": "Selecciona celdas dentro de una sola tabla antes de ordenarla.",
+  "Sort keys must be columns inside the sorted range.": "Las claves de ordenación deben ser columnas dentro del rango ordenado.",
+  "Sorting a shared document requires an exclusive editing lock. Sort a local copy instead.": "Ordenar un documento compartido requiere un bloqueo de edición exclusivo. Ordena una copia local.",
+  "The sheet changed while preparing the sort. Try again.": "La hoja cambió mientras se preparaba la ordenación. Inténtalo de nuevo.",
+  "Cannot safely sort filtered formulas or formulas with references to other rows or sheets. Sort values instead.": "No se pueden ordenar de forma segura fórmulas filtradas o con referencias a otras filas u hojas. Ordena valores.",
+  "This range is too large to sort safely. Select a smaller range.": "Este rango es demasiado grande para ordenarlo de forma segura. Selecciona un rango más pequeño.",
 }
 
 export default esUi

@@ -12,7 +12,7 @@ import { readXlsx } from '../codec/read-xlsx.js'
 import { anchorXml, keepReferencePart, resolveXml } from '../codec/reference-xml.js'
 import { fidelityAvailable, fidelityPython, libreOfficeAvailable, libreOfficeConvert } from '../testing/fidelity.js'
 import { moveCells } from './move-cells.js'
-import { sortRange } from '../view/commands.js'
+import { DataOperationError, sortRange } from '../view/commands.js'
 import { toA1Form, toIdForm } from './formula-ids.js'
 import type { AutoFilter, DrawingObject, SheetTable } from './schema.js'
 import { WorkbookModel } from './workbook.js'
@@ -185,6 +185,11 @@ describe('structural metadata identities', () => {
 
   it('cuts table metadata, chart relationships, sparklines and threaded comments between sheets', async () => {
     const { doc, sheet, other, assets } = richWorkbook()
+    const before = Y.encodeStateVector(doc)
+    expect(() => moveCells(sheet, other, { top: 0, left: 0, bottom: 5, right: 4 }, { row: 9, col: 6 })).toThrow(/Clear filters/)
+    expect(Y.encodeStateVector(doc)).toEqual(before)
+    // Clear worksheet filter criteria before relocating rows to another sheet.
+    sheet.filter.delete('value')
     moveCells(sheet, other, { top: 0, left: 0, bottom: 5, right: 4 }, { row: 9, col: 6 })
     expect(sheet.tables.size).toBe(0)
     expect(other.tables.size).toBe(1)
@@ -259,7 +264,16 @@ describe('structural metadata identities', () => {
           model.deleteSheet(transient.id)
           expect(toA1Form(scratch.cell(9, 9)!.f!, scratch)).toBe('#REF!')
         } else if (operation === 8 && range && range.bottom - range.top > 3) moveAxis(sheet, 'row', range.top + 1, 1, range.bottom - 1)
-        else if (range && range.bottom - range.top > 2) sortRange(sheet, { ...range, top: range.top + 1, bottom: range.bottom - (current.totalsRow ? 1 : 0) }, [{ col: 0 }], (row, col) => sheet.cell(row, col)?.v ?? null)
+        else if (range && range.bottom - range.top > 2) {
+          const before = Y.encodeStateVector(doc)
+          try {
+            sortRange(sheet, { ...range, top: range.top + 1, bottom: range.bottom - (current.totalsRow ? 1 : 0) }, [{ col: 0 }], (row, col) => sheet.cell(row, col)?.v ?? null)
+          } catch (error) {
+            // Imported table filters and range metadata must be preserved rather than flattened.
+            expect(error).toBeInstanceOf(DataOperationError)
+            expect(Y.encodeStateVector(doc)).toEqual(before)
+          }
+        }
         for (const owner of model.sheets()) {
           for (const raw of owner.tables.values()) {
             const entry = raw as SheetTable

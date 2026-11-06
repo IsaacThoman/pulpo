@@ -30,6 +30,17 @@ export function moveCells(source: SheetModel, target: SheetModel, range: CellRan
       if (owner === target && intersects(rect, destination) && !(owner === source && contains(range, rect))) throw new Error('Cannot overwrite a table or merged cell')
     }
   }
+  // Filter visibility belongs to entire worksheet rows, not just the cut cells. Moving it
+  // vertically could hide unrelated destination data; require clearing it first.
+  for (const [owner, area] of [[source, range], [target, destination]] as const) {
+    const filter = owner.filter.get('value') as AutoFilter | undefined
+    const rect = filter && owner.resolveRange(filter.range)
+    if (filter?.columns.length && rect && intersects(rect, area) && (source !== target || dr !== 0 || !contains(range, rect))) throw new Error('Clear filters before moving part of a filtered range or moving it to other rows or sheets')
+  }
+  const relocateSort = (sort: AutoFilter['sort']) => sort?.flatMap((key) => {
+    const col = source.cols.indexOf(key.col)
+    return col >= 0 ? [{ ...key, col: target.cols.idAt(col + dc) }] : []
+  })
   const redirect = (formula: string, context: SheetModel, resultContext = context) => mapIdTokens(formula, (token, text) => {
     if (token.name !== undefined || token.sheets) return text
     const referenced = token.sheet ? source.workbook.sheet(token.sheet) : context
@@ -83,7 +94,7 @@ export function moveCells(source: SheetModel, target: SheetModel, range: CellRan
         const table = raw as SheetTable
         const next = { ...value, range: target.rangeIds(shift(rect)) }
         if (raw && typeof raw === 'object' && 'columns' in raw) {
-          Object.assign(next, { xml: table.xml && mapXmlReferences(table.xml, (text) => redirect(text, source, target)), columns: table.columns.map((column) => ({ ...column, ...(column.xml ? { xml: mapXmlReferences(column.xml, (text) => redirect(text, source, target)) } : {}) })) })
+          Object.assign(next, { ...(table.sort ? { sort: relocateSort(table.sort) } : {}), xml: table.xml && mapXmlReferences(table.xml, (text) => redirect(text, source, target)), columns: table.columns.map((column) => ({ ...column, ...(column.xml ? { xml: mapXmlReferences(column.xml, (text) => redirect(text, source, target)) } : {}) })) })
         }
         to.set(id, next)
         movedTables.add(next)
@@ -93,7 +104,20 @@ export function moveCells(source: SheetModel, target: SheetModel, range: CellRan
     const filterRange = filter && source.resolveRange(filter.range)
     if (filter && filterRange && contains(range, filterRange)) {
       source.filter.delete('value')
-      target.filter.set('value', { ...filter, range: target.rangeIds(shift(filterRange)), ...(filter.xml ? { xml: mapXmlReferences(filter.xml, (text) => redirect(text, source, target)) } : {}), ...(filter.sortXml ? { sortXml: mapXmlReferences(filter.sortXml, (text) => redirect(text, source, target)) } : {}) })
+      target.filter.set('value', { ...filter, ...(filter.sort ? { sort: relocateSort(filter.sort) } : {}), ...(filter.hiddenRows ? { hiddenRows: filter.hiddenRows.flatMap((id) => { const row = source.rows.indexOf(id); return row >= 0 ? [target.rows.idAt(row + dr)] : [] }) } : {}), range: target.rangeIds(shift(filterRange)), ...(filter.xml ? { xml: mapXmlReferences(filter.xml, (text) => redirect(text, source, target)) } : {}), ...(filter.sortXml ? { sortXml: mapXmlReferences(filter.sortXml, (text) => redirect(text, source, target)) } : {}) })
+    }
+    const sortStates = [...new Set([target, source])].map((owner) => [owner, owner.filter.get('sort') as AutoFilter | string | undefined] as const)
+    for (const [owner, sort] of sortStates) {
+      if (!sort) continue
+      // Opaque imported sort conditions cannot always describe a partial relocation. Dropping
+      // this descriptive state is safer than exporting stale coordinates.
+      if (typeof sort === 'string') { owner.filter.delete('sort'); continue }
+      const rect = owner.resolveRange(sort.range)
+      if (!rect) continue
+      if (owner === source && contains(range, rect)) {
+        owner.filter.delete('sort')
+        target.filter.set('sort', { ...sort, range: target.rangeIds(shift(rect)), sort: relocateSort(sort.sort) })
+      } else if (owner === source && intersects(range, rect) || owner === target && intersects(destination, rect)) owner.filter.delete('sort')
     }
     const subtract = (rect: CellRange, cut: CellRange): CellRange[] => {
       if (!intersects(rect, cut)) return [rect]

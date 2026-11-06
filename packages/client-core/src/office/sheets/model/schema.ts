@@ -190,6 +190,8 @@ export interface AxisProps {
   /** The size was set by hand (customHeight / customWidth). */
   custom: boolean
   hidden: boolean
+  /** Manual row hiding, retained independently while value filters also hide the row. */
+  manualHidden: boolean
   /** Outline (group) level, 0–7. */
   level: number
   collapsed: boolean
@@ -353,6 +355,8 @@ export interface TableColumn {
 }
 
 export interface SheetTable {
+  sort?: AutoFilter['sort']
+  sortCaseSensitive?: boolean
   name: string
   displayName: string
   range: RangeIds
@@ -378,6 +382,9 @@ export interface AutoFilter {
   range: RangeIds
   columns: FilterColumn[]
   sort?: { col: string; descending: boolean }[]
+  sortCaseSensitive?: boolean
+  /** Row identities hidden by value filters, distinct from manual row visibility. */
+  hiddenRows?: string[]
   /** The `<autoFilter>`/`<sortState>` XML as read. */
   xml?: string
   sortXml?: string

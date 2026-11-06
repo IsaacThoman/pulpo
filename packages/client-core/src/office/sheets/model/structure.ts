@@ -41,7 +41,7 @@ function copyFormatFrom(sheet: SheetModel, kind: AxisKind, sourceId: string, tar
     if (key.slice(0, bar) !== sourceId) continue
     const prop = key.slice(bar + 1)
     // Height/width and styles carry over; visibility and outline do not.
-    if (prop === 'hidden' || prop === 'level' || prop === 'collapsed' || prop === 'keep') continue
+    if (prop === 'hidden' || prop === 'manualHidden' || prop === 'level' || prop === 'collapsed' || prop === 'keep') continue
     for (const target of targets) meta.set(`${target}|${prop}`, value)
   }
   const copyStyles = <T>(map: Y.Map<T>, keyOf: (key: string) => string) => {

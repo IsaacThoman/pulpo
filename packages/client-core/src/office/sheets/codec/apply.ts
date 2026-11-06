@@ -474,6 +474,8 @@ function positioned(sheet: SheetModel, value: unknown, dxf: (index: number | und
       const point = entry as AnchorPoint
       return { ...point, row: sheet.rows.indexOf(point.row), col: sheet.cols.indexOf(point.col) }
     }
+    if (key === 'hiddenRows' && Array.isArray(entry)) return (entry as string[]).map((id) => sheet.rows.indexOf(id))
+    if (key === 'sort' && Array.isArray(entry)) return (entry as NonNullable<AutoFilter['sort']>).map((key) => ({ ...key, col: sheet.cols.indexOf(key.col) }))
     if (key === 'formulas' && Array.isArray(entry)) return (entry as string[]).map((formula) => toA1Form(formula, sheet, sheet.workbook, { followDeletedRelative: true }))
     if ((key === 'formula1' || key === 'formula2') && typeof entry === 'string') return toA1Form(entry, sheet, sheet.workbook, { followDeletedRelative: true })
     if (entry && typeof entry === 'object' && 'type' in entry && entry.type === 'formula' && 'value' in entry && typeof entry.value === 'string') {
@@ -549,7 +551,7 @@ function syncCollections(own: SheetModel, other: SheetModel, styles: StyleMap, r
   })
   syncCollection<SheetTable>(own.tables, other.tables, (value) => ownForm(value) + JSON.stringify(value.columns.map((column) => column.xml && resolveXml(column.xml, own))), (value) => otherForm(value) + JSON.stringify(value.columns.map((column) => column.xml && resolveXml(column.xml, other))), (value) => {
     const range = translateRange(own, other, value.range)
-    return range && { ...value, range, ...(value.xml ? { xml: translateXml(value.xml, other, own) } : {}), columns: value.columns.map((column) => ({ ...column, ...(column.xml ? { xml: translateXml(column.xml, other, own) } : {}) })) }
+    return range && { ...value, range, ...(value.sort ? { sort: value.sort.flatMap((key) => { const col = translateAxisId(own.cols, other.cols, key.col); return col ? [{ ...key, col }] : [] }) } : {}), ...(value.xml ? { xml: translateXml(value.xml, other, own) } : {}), columns: value.columns.map((column) => ({ ...column, ...(column.xml ? { xml: translateXml(column.xml, other, own) } : {}) })) }
   })
   syncCollection<DrawingObject>(own.drawings, other.drawings, (value) => restore ? ownForm(value) : drawingForm(own, value), (value) => restore ? otherForm(value) : drawingForm(other, value), (value) => {
     const from = translatePoint(own, other, value.from)
@@ -580,8 +582,22 @@ function syncCollections(own: SheetModel, other: SheetModel, styles: StyleMap, r
     if (ownFilter) own.filter.delete('value')
   } else if (ownForm(ownFilter) !== otherForm(otherFilter)) {
     const range = translateRange(own, other, otherFilter.range)
-    if (range) own.filter.set('value', { ...otherFilter, range, ...(otherFilter.xml ? { xml: translateXml(otherFilter.xml, other, own) } : {}), ...(otherFilter.sortXml ? { sortXml: translateXml(otherFilter.sortXml, other, own) } : {}), ...(otherFilter.sort ? { sort: otherFilter.sort.map((entry) => ({ ...entry, col: translateAxisId(own.cols, other.cols, entry.col)! })) } : {}) })
+    if (range) own.filter.set('value', { ...otherFilter, range, ...(otherFilter.xml ? { xml: translateXml(otherFilter.xml, other, own) } : {}), ...(otherFilter.sortXml ? { sortXml: translateXml(otherFilter.sortXml, other, own) } : {}), ...(otherFilter.hiddenRows ? { hiddenRows: otherFilter.hiddenRows.flatMap((id) => { const row = translateAxisId(own.rows, other.rows, id); return row ? [row] : [] }) } : {}), ...(otherFilter.sort ? { sort: otherFilter.sort.map((entry) => ({ ...entry, col: translateAxisId(own.cols, other.cols, entry.col)! })) } : {}) })
   }
+  const otherSort = other.filter.get('sort') as AutoFilter | string | undefined
+  const ownSort = own.filter.get('sort') as AutoFilter | string | undefined
+  if (!otherSort) own.filter.delete('sort')
+  else if (typeof otherSort === 'string') {
+    const xml = translateXml(otherSort, other, own)
+    if (typeof ownSort !== 'string' || resolveXml(ownSort, own) !== resolveXml(xml, own)) own.filter.set('sort', xml)
+  } else if (ownForm(ownSort) !== otherForm(otherSort)) {
+    const range = translateRange(own, other, otherSort.range)
+    if (range) own.filter.set('sort', { ...otherSort, range, sort: otherSort.sort?.flatMap((key) => {
+      const col = translateAxisId(own.cols, other.cols, key.col)
+      return col ? [{ ...key, col }] : []
+    }) })
+  }
+
 }
 
 function syncNames(target: WorkbookModel, incoming: WorkbookModel, pairs: [SheetModel, SheetModel][]): void {

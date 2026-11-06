@@ -25,7 +25,7 @@ import { readDrawing } from './drawing.js'
 import { lightChild, locateElement, parseFragment, type LightNode } from './light-xml.js'
 import { readNotes } from './notes.js'
 import { readStringItem, type SheetString } from './strings.js'
-import { tidyNamespaces } from './write-worksheet.js'
+import { FILTER_VISIBILITY_NS, tidyNamespaces } from './write-worksheet.js'
 import { attr, boolAttr, child, children, numberAttr, otherAttributes, REL_TYPES, serializeNode, textOf, type XmlElement } from './xml.js'
 
 /** Elements of a worksheet the model owns; everything else stays in the preserved skeleton. */
@@ -578,7 +578,10 @@ function readHyperlinks(sheet: SheetModel, element: XmlElement | undefined, rels
 
 function readAutoFilter(sheet: SheetModel, element: XmlElement | undefined, sortState: XmlElement | undefined): void {
   const range = element && parseRangeName(attr(element, 'ref') ?? '')
-  if (!element || !range) return
+  if (!element || !range) {
+    if (sortState) sheet.filter.set('sort', anchorXml(serializeNode(sortState), sheet))
+    return
+  }
   const columns: FilterColumn[] = children(element, 'filterColumn').map((column) => {
     const entry: FilterColumn = { col: numberAttr(column, 'colId') ?? 0, xml: serializeNode(column) }
     const filters = child(column, 'filters')
@@ -588,9 +591,19 @@ function readAutoFilter(sheet: SheetModel, element: XmlElement | undefined, sort
     }
     return entry
   })
+  // Standard row.hidden cannot distinguish manual hiding from filter exclusion. Our optional
+  // extension keeps that distinction across exports; foreign files still use predicate inference.
+  const visibility = children(child(element, 'extLst'), 'ext').find((ext) => attr(ext, 'uri') === FILTER_VISIBILITY_NS)
+  const provenance = visibility && child(visibility, 'visibility')
+  const rows = (text: string | undefined) => (text ?? '').split(/\s+/).flatMap((token) => {
+    const row = /^\d+$/.test(token) ? Number(token) - 1 : -1
+    return row > range.top && row <= range.bottom && sheet.rowProp(row, 'hidden') ? [row] : []
+  })
+  if (provenance) for (const row of rows(attr(provenance, 'manual'))) sheet.setRowProp([row], 'manualHidden', true)
   sheet.filter.set('value', {
     range: sheet.rangeIds(range),
     columns,
+    ...(provenance ? { hiddenRows: rows(attr(provenance, 'filtered')).map((row) => sheet.rows.idAt(row)) } : {}),
     xml: anchorXml(serializeNode(element), sheet),
     ...(sortState ? { sortXml: anchorXml(serializeNode(sortState), sheet) } : {}),
   })
