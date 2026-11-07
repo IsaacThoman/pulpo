@@ -611,7 +611,7 @@ function ActivityBlock({
               )
             })}
             {active && steps.length === 0 ? (
-              <div className="text-[13px] leading-5 text-muted-foreground/70">{ui("Thinking…")}</div>
+              <div className="text-[13px] leading-5 text-muted-foreground">{ui("Thinking…")}</div>
             ) : null}
           </div>
         </CollapsibleContent>

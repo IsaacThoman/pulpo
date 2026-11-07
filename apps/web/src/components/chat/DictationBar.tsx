@@ -151,7 +151,7 @@ export function DictationBar({ phase, stream, startedAt, onCancel, onConfirm }: 
       <div role="status" aria-live={recording ? 'off' : 'polite'} aria-label={label} className="relative h-8 min-w-0 flex-1">
         <div className={cn('absolute inset-0 flex items-center gap-2.5 px-1 transition-opacity duration-200 motion-reduce:transition-none', showsWaveform ? 'opacity-100' : 'opacity-0')} data-testid="dictation-waveform-layer">
           <DictationWaveform levels={levels} />
-          <span className={cn('shrink-0 text-xs tabular-nums', dictationNearsLimit(seconds) ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground')} data-testid="dictation-elapsed">
+          <span className={cn('shrink-0 text-xs tabular-nums', dictationNearsLimit(seconds) ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground')} data-testid="dictation-elapsed">
             {elapsed}
           </span>
         </div>
