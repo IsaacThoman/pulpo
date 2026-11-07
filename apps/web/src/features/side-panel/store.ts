@@ -18,10 +18,25 @@ export type PanelContent =
   | { kind: 'attachment'; id: string }
 
 interface SidePanelState {
+  /** What the panel shows: its active tab, or null while it is closed. */
   content: PanelContent | null
+  /**
+   * The panel's open tabs, in order, including `content`. Kept while the panel is closed, so it
+   * can be reopened as it was; opening anything else in a closed panel starts over with that.
+   */
+  tabs: PanelContent[]
   /** The last thing shown, so the panel can be reopened after closing it. */
   lastContent: PanelContent | null
+  /** Shows `content` in a tab of its own, or the tab already showing it. */
   open: (content: PanelContent) => void
+  /**
+   * Shows `content` in place of the active tab, as browsing in the panel does (a folder, a file
+   * in it, the folders above it), or switches to the tab already showing it.
+   */
+  show: (content: PanelContent) => void
+  /** Closes one tab; the next tab, or else the previous, takes its place. The last one closes the panel. */
+  closeTab: (content: PanelContent) => void
+  /** Closes the panel, keeping its tabs for reopening. */
   close: () => void
   toggle: () => void
   /**
@@ -33,19 +48,74 @@ interface SidePanelState {
   enabled: boolean
 }
 
+const TABS_STORAGE_KEY = 'pulpo.sidePanel.tabs'
+
+/** The tabs of the last panel in this browser tab, so a reload reopens all of them. */
+function readTabs(): PanelContent[] {
+  try {
+    const saved: unknown = JSON.parse(sessionStorage.getItem(TABS_STORAGE_KEY) ?? '[]')
+    if (!Array.isArray(saved)) return []
+    return dedupeTabs(saved.map((value) => typeof value === 'string' ? parsePanelContent(value) : null).filter((tab) => tab !== null))
+  } catch { return [] }
+}
+
+function writeTabs(tabs: PanelContent[]): void {
+  try { sessionStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(tabs.map(serializePanelContent))) } catch { /* the tabs are optional */ }
+}
+
+function dedupeTabs(tabs: PanelContent[]): PanelContent[] {
+  const seen = new Set<string | null>()
+  return tabs.filter((tab) => {
+    const key = serializePanelContent(tab)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+const tabIndex = (tabs: PanelContent[], content: PanelContent | null) => tabs.findIndex((tab) => samePanelContent(tab, content))
+
 export const useSidePanel = create<SidePanelState>()((set, get) => ({
   content: null,
+  tabs: readTabs(),
   lastContent: null,
   splitAvailable: true,
   enabled: true,
-  open: (content) => set({ content, lastContent: content }),
+  open: (content) => {
+    const { content: active, tabs } = get()
+    if (tabIndex(tabs, content) >= 0) set({ content, lastContent: content })
+    // A closed panel opens with only this; an open one adds it after the tab in view.
+    else if (!active) set({ content, lastContent: content, tabs: [content] })
+    else {
+      const next = [...tabs]
+      next.splice(tabIndex(tabs, active) + 1, 0, content)
+      set({ content, lastContent: content, tabs: next })
+    }
+  },
+  show: (content) => {
+    const { content: active, tabs } = get()
+    const at = tabIndex(tabs, active)
+    if (!active || at < 0 || tabIndex(tabs, content) >= 0) return get().open(content)
+    set({ content, lastContent: content, tabs: tabs.with(at, content) })
+  },
+  closeTab: (content) => {
+    const { content: active, tabs } = get()
+    const at = tabIndex(tabs, content)
+    if (at < 0) return
+    const next = tabs.toSpliced(at, 1)
+    if (!samePanelContent(active, content)) return set({ tabs: next })
+    const replacement = next[at] ?? next[at - 1] ?? null
+    set({ content: replacement, tabs: next, lastContent: replacement ?? get().lastContent })
+  },
   close: () => set({ content: null }),
   toggle: () => {
-    const { content, lastContent } = get()
+    const { content, lastContent, tabs } = get()
     if (content) set({ content: null })
-    else if (lastContent) set({ content: lastContent })
+    else if (lastContent) set({ content: lastContent, tabs: tabIndex(tabs, lastContent) >= 0 ? tabs : [lastContent] })
   },
 }))
+
+useSidePanel.subscribe((state, previous) => { if (state.tabs !== previous.tabs) writeTabs(state.tabs) })
 
 export function samePanelContent(left: PanelContent | null, right: PanelContent | null): boolean {
   return serializePanelContent(left) === serializePanelContent(right)

@@ -68,8 +68,8 @@ export function usePanelActions(content: PanelContent) {
 
   return {
     close: () => useSidePanel.getState().close(),
-    /** Makes the panel's content the main view: the panel closes and the page opens it. */
-    openInMain: () => { useSidePanel.getState().close(); go(target) },
+    /** Makes the panel's content the main view: its tab closes and the page opens it. */
+    openInMain: () => { useSidePanel.getState().closeTab(content); go(target) },
     /** A new browser tab; the desktop app has no tabs. */
     openInNewTab: isDesktopRuntime() ? null : () => { window.open(target, '_blank', 'noopener') },
   }

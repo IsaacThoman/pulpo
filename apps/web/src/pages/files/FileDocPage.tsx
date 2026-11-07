@@ -168,7 +168,7 @@ function FilePath({ ancestors, inPanel }: { ancestors: FileNode[]; inPanel: bool
       }
     } else if (inPanel) {
       event.preventDefault()
-      useSidePanel.getState().open(folder)
+      useSidePanel.getState().show(folder)
     }
   }
   return (
@@ -205,7 +205,7 @@ function SuggestionBanner({ node, ancestors, view }: { node: FileNode | undefine
       node={node}
       ancestors={ancestors}
       onRejected={(root) => {
-        if (view.layout === 'panel') useSidePanel.getState().close()
+        if (view.panel) useSidePanel.getState().closeTab(view.panel)
         else navigate(root.parentId ? `/files/f/${root.parentId}` : '/files', { replace: true })
       }}
     />
@@ -429,8 +429,8 @@ function FileViewMessage({ message, view, back }: { message: string; view: FileV
       <div className="max-w-md rounded-xl border p-6 text-center">
         <TriangleAlert className="mx-auto size-8 text-amber-500" />
         <p className="mt-3 text-sm text-muted-foreground">{message}</p>
-        {view.layout === 'panel'
-          ? <Button variant="outline" size="sm" className="mt-4" onClick={() => useSidePanel.getState().close()}>{ui("Close")}</Button>
+        {view.panel
+          ? <Button variant="outline" size="sm" className="mt-4" onClick={() => useSidePanel.getState().closeTab(view.panel!)}>{ui("Close")}</Button>
           : <Button asChild variant="outline" size="sm" className="mt-4"><Link to={back}>{ui("Back to My files")}</Link></Button>}
       </div>
     </div>
@@ -457,12 +457,13 @@ export function FileDocPage() {
   const location = useLocation()
   const userId = useAuth((state) => state.user?.id)
   const filesEnabled = useAuth((state) => state.filesEnabled)
-  const shown = useSidePanel((state) => state.content)
-  // Opening the side panel's file full page moves it here instead of showing it twice.
+  const tabs = useSidePanel((state) => state.tabs)
+  // Opening one of the side panel's files full page moves it here instead of showing it twice.
   useEffect(() => {
-    if (!locationIsCurrent(location)) return
-    if (docId && shown?.kind === 'file' && shown.id.toLowerCase() === docId) useSidePanel.getState().close()
-  }, [docId, location, shown])
+    if (!locationIsCurrent(location) || !docId) return
+    const tab = tabs.find((content) => content.kind === 'file' && content.id.toLowerCase() === docId)
+    if (tab) useSidePanel.getState().closeTab(tab)
+  }, [docId, location, tabs])
   if (!filesEnabled) {
     return <div className="grid h-full place-items-center p-8 text-sm text-muted-foreground">{ui("Files are disabled by the administrator")}</div>
   }

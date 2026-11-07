@@ -365,7 +365,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
 
   /** Shows a folder (or a trash reference) here: the page follows the route, the panel keeps its own place. */
   const showFolder = (id: string | null) => {
-    if (panel) useSidePanel.getState().open({ kind: 'folder', id })
+    if (panel) useSidePanel.getState().show({ kind: 'folder', id })
     else navigate(folderPath(id))
   }
 
@@ -387,7 +387,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     if (node.kind === 'chat') goMain(`/c/${node.id}`)
     else if (node.kind === 'folder') showFolder(node.id)
     // The panel shows every file in place, with a way back to its folder.
-    else if (panel) useSidePanel.getState().open({ kind: 'file', id: node.id })
+    else if (panel) useSidePanel.getState().show({ kind: 'file', id: node.id })
     else navigate(`/files/d/${node.id}`)
   }
 
@@ -1261,7 +1261,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
           ancestors={listing.data.ancestors}
           onRejected={(root) => {
             // The suggested folder is gone with everything in it; show the folder that held it.
-            if (panel) useSidePanel.getState().open({ kind: 'folder', id: root.parentId })
+            if (panel) useSidePanel.getState().show({ kind: 'folder', id: root.parentId })
             else navigate(root.parentId ? `/files/f/${root.parentId}` : '/files', { replace: true })
           }}
         />
