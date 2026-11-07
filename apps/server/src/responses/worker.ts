@@ -49,7 +49,8 @@ import {
 import { piUserTextMessage } from '../compaction/pi-history.js'
 import { summaryMaxOutputTokens } from '../compaction/policy.js'
 import { SUMMARIZATION_PROMPT } from '../compaction/prompt.js'
-import { responsesUserTextItem } from '../compaction/responses-history.js'
+import { renderCompactedResponsesHistory, responsesUserTextItem } from '../compaction/responses-history.js'
+import { hasUserMessagesCompaction } from '../compaction/checkpoint.js'
 import { CompactionError, CompactionOverflowError } from '../compaction/summarize.js'
 import { temporaryChatIsExpired } from '../chats/temporary.js'
 import { normalChatIsExpired } from '../chats/expiration.js'
@@ -293,6 +294,9 @@ async function contextualInput(
     context.push({ role: 'developer', content: timeContext })
   }
   const existingItem = preResponseCompactionItem(record.response.output)
+  // Only a head Pulpo built is folded; public API input reaches the model as the client sent it.
+  const priorHead = hasUserMessagesCompaction(history.map((turn) => turn.output))
+  const renderHead = (items: unknown[], compactedNow = false) => priorHead || compactedNow ? renderCompactedResponsesHistory(items) : items
   const summaryParameters = summaryRequestParameters(compaction.requestParameters)
   const compacted = await compactResponsesConversation({
     responseId: record.response.id,
@@ -306,7 +310,7 @@ async function contextualInput(
     instructions: typeof summaryParameters.instructions === 'string' ? summaryParameters.instructions : undefined,
     summarize: async (conversation) => {
       // The real request with the summary prompt appended, so its prefix matches the cached main request.
-      const input = await compaction.prepareInput([...context, ...conversation, responsesUserTextItem(SUMMARIZATION_PROMPT)])
+      const input = await compaction.prepareInput([...context, ...renderHead(conversation), responsesUserTextItem(SUMMARIZATION_PROMPT)])
       const maxOutputTokens = summaryMaxOutputTokens(record.model.maxOutputTokens)
       const billed = await trackBilledInternalModelCall({
         responseId: record.response.id,
@@ -337,7 +341,8 @@ async function contextualInput(
     const [updated] = await db.select().from(responses).where(eq(responses.id, record.response.id)).limit(1)
     if (updated) await publishSnapshot(toSnapshot(updated))
   }
-  return { input: [...context, ...compacted.conversation, ...(record.response.input as unknown[])], compactionItems: compacted.item ? [compacted.item] : [] }
+  // The current input follows the head, so every retained message reads as already handled.
+  return { input: [...context, ...renderHead([...compacted.conversation, ...(record.response.input as unknown[])], Boolean(compacted.item))], compactionItems: compacted.item ? [compacted.item] : [] }
 }
 
 /** Non-streaming summarizer call; a provider context overflow drops the oldest history and retries. */

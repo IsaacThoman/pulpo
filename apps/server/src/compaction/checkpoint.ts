@@ -24,6 +24,17 @@ export function findLatestCheckpoint(lineage: readonly HistoryResponseRow[]): { 
   return undefined
 }
 
+/**
+ * Whether these outputs hold a completed user_messages compaction, of any phase. Only then can a
+ * history open with a head Pulpo built; a client's own Codex-style summary must reach the model as sent.
+ */
+export function hasUserMessagesCompaction(outputs: readonly unknown[]): boolean {
+  return outputs.some((output) => Array.isArray(output) && output.some((raw) => {
+    const item = raw as Partial<CompactionItem> | null
+    return item?.type === 'pulpo_compaction' && item.status === 'completed' && item.strategy === USER_MESSAGES_STRATEGY
+  }))
+}
+
 export function isUserMessagesCheckpoint(item: CompactionItem): boolean {
   return item.strategy === USER_MESSAGES_STRATEGY
 }
