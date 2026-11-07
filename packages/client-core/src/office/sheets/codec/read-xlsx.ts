@@ -142,10 +142,11 @@ export async function readXlsx(doc: Y.Doc, bytes: Uint8Array, assets: LiveAssetS
   const sheetElements = children(child(workbookRoot, 'sheets'), 'sheet')
   if (!sheetElements.length) throw new LiveFormatError('corrupt', 'This workbook has no sheets')
   const sheets: { id: string; path?: string; kind: SheetKind }[] = []
+  const byId = new Map(rels.map((rel) => [rel.id, rel]))
   doc.transact(() => {
     for (const element of sheetElements) {
       const relId = attr(element, 'r:id')
-      const rel = relId ? rels.find((entry) => entry.id === relId) : undefined
+      const rel = relId ? byId.get(relId) : undefined
       const path = rel && rel.targetMode !== 'External' ? pkg.relationshipTarget(workbookPath, rel.id) : undefined
       const kind = (rel && SHEET_KINDS[rel.type]) ?? 'worksheet'
       const name = attr(element, 'name') ?? model.nextSheetName()

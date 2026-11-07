@@ -1,5 +1,6 @@
+import { RangeLookup } from '../range-lookup.js'
 import type { CellRange } from '../address.js'
-import { subtractRanges, intersects } from '../range-set.js'
+import { subtractRanges } from '../range-set.js'
 import { formatIdToken, mapIdTokens, toA1Form, toIdForm } from './formula-ids.js'
 import { shiftFormula } from './references.js'
 import type { ConditionalFormat, DataValidation, Hyperlink, RangeIds } from './schema.js'
@@ -58,11 +59,12 @@ export function rebaseRule<T extends DataValidation | ConditionalFormat>(value: 
 /** Clear a selection's union atomically without touching coverage outside it. */
 export function clearRules(sheet: SheetModel, kind: 'dv' | 'cf', selection: CellRange | readonly CellRange[]): void {
   const selected = Array.isArray(selection) ? selection : [selection as CellRange]
+  const selectedLookup = new RangeLookup(selected, (range) => [range])
   const collection = sheet[kind]
   for (const [id, raw] of [...collection]) {
     const value = raw as DataValidation | ConditionalFormat
     const rects = value.ranges.map((r) => sheet.resolveRange(r)).filter((r): r is CellRange => !!r)
-    if (!rects.some((r) => selected.some((s) => intersects(r, s)))) continue
+    if (!rects.some((r) => selectedLookup.overlapping(r).length > 0)) continue
     const staying = subtractRanges(rects, selected)
     if (!staying.length) collection.delete(id)
     else collection.set(id, { ...rebaseRule(value, sheet, rects[0]!, staying[0]!), ranges: staying.map((r) => metadataRangeIds(sheet, r)) })
@@ -72,11 +74,12 @@ export function clearRules(sheet: SheetModel, kind: 'dv' | 'cf', selection: Cell
 /** Hyperlinks have one rectangle per entry (OOXML ref, rather than sqref). */
 export function clearLinks(sheet: SheetModel, selection: readonly CellRange[]): void {
   const survivors: Array<{ link: Hyperlink; range: CellRange }> = []
+  const selectedLookup = new RangeLookup(selection, (range) => [range])
   for (const [key, raw] of [...sheet.links]) {
     const link = raw as Hyperlink
     const point = sheet.position(key)
     const range = link.range ? sheet.resolveRange(link.range) : point && { top: point.row, bottom: point.row, left: point.col, right: point.col }
-    if (!range || !selection.some((r) => intersects(range, r))) continue
+    if (!range || selectedLookup.overlapping(range).length === 0) continue
     sheet.links.delete(key)
     for (const remaining of subtractRanges([range], selection)) survivors.push({ link, range: remaining })
   }

@@ -84,9 +84,10 @@ export function writeComments(sheet: SheetModel): string | undefined {
   if (!notes.length) return undefined
   notes.sort((a, b) => a.row - b.row || a.col - b.col)
   const authors: string[] = []
+  const indexes = new Map<string, number>()
   const authorIndex = (author: string) => {
-    let index = authors.indexOf(author)
-    if (index < 0) index = authors.push(author) - 1
+    let index = indexes.get(author)
+    if (index === undefined) { index = authors.push(author) - 1; indexes.set(author, index) }
     return index
   }
   let list = ''

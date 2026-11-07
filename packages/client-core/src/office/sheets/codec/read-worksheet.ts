@@ -559,12 +559,13 @@ function readDataValidations(sheet: SheetModel, element: XmlElement | undefined)
 }
 
 function readHyperlinks(sheet: SheetModel, element: XmlElement | undefined, rels: { id: string; target: string; targetMode?: string }[]): void {
+  const byId = new Map(rels.map((rel) => [rel.id, rel]))
   for (const entry of children(element, 'hyperlink')) {
     const range = parseRangeName(attr(entry, 'ref') ?? '')
     if (!range) continue
     const link: Hyperlink = {}
     const relId = attr(entry, 'r:id')
-    const rel = relId ? rels.find((candidate) => candidate.id === relId) : undefined
+    const rel = relId ? byId.get(relId) : undefined
     if (rel) link.target = rel.target
     for (const name of ['location', 'tooltip', 'display'] as const) {
       const value = attr(entry, name)

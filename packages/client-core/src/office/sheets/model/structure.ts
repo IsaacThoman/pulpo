@@ -1,3 +1,4 @@
+import { RangeLookup } from '../range-lookup.js'
 import { freezeSortFormulas } from './sort-formulas.js'
 import { captureMovedReferences, type MoveIntervals } from './move-references.js'
 import { tokenize } from '../formula/tokenize.js'
@@ -264,7 +265,8 @@ function captureMetadata(sheet: SheetModel, kind: AxisKind, moved?: MoveInterval
     return { id, drawing, from: position(drawing.from), to: position(drawing.to) }
   })
   const intervals = kind === 'col' ? columnIntervals(sheet) : []
-  const intervalIds = intervals.length ? Array.from({ length: MAX_COLS }, (_, col) => ({ id: sheet.cols.idAt(col), props: intervals.filter((entry) => col >= entry.from && col <= entry.to).reduce<Partial<AxisProps>>((props, entry) => Object.assign(props, entry.props), {}) })) : []
+  const intervalLookup = new RangeLookup(intervals, (entry) => [{ top: 0, bottom: 0, left: entry.from, right: entry.to }])
+  const intervalIds = intervals.length ? Array.from({ length: MAX_COLS }, (_, col) => ({ id: sheet.cols.idAt(col), props: intervalLookup.overlapping({ top: 0, bottom: 0, left: col, right: col }).reduce<Partial<AxisProps>>((props, entry) => Object.assign(props, entry.props), {}) })) : []
   const intervalProps = new Map(intervalIds.map((entry) => [entry.id, entry.props]))
   const filter = sheet.filter.get('value') as AutoFilter | undefined
   const filterRange = filter && sheet.resolveRange(filter.range)
@@ -333,8 +335,8 @@ function captureMetadata(sheet: SheetModel, kind: AxisKind, moved?: MoveInterval
         totalsRow: table.totalsRow && sheet.rows.indexOf(table.range.bottom!) >= 0,
       } satisfies SheetTable)
     }
-    for (const { table } of tables) {
-      const current = [...sheet.tables.values()].find((raw) => (raw as SheetTable).name === table.name) as SheetTable | undefined
+    for (const { id, table } of tables) {
+      const current = sheet.tables.get(id) as SheetTable | undefined
       const names = new Set(current?.columns.map((column) => column.name.toLowerCase()) ?? [])
       if (!current || table.columns.some((column) => !names.has(column.name.toLowerCase()))) invalidateTableReferences(sheet, table, names, !current)
     }
@@ -377,8 +379,9 @@ function remapTableFilters(xml: string, before: string[], after: string[]): stri
   const document = parseXml(xml)
   const filters = document.getElementsByTagNameNS('*', 'filterColumn')
   const entries = Array.from({ length: filters.length }, (_, index) => filters.item(index)!)
+  const offsets = new Map(after.map((id, index) => [id, index]))
   for (const entry of entries) {
-    const offset = after.indexOf(before[Number(entry.getAttribute('colId'))]!)
+    const offset = offsets.get(before[Number(entry.getAttribute('colId'))]!) ?? -1
     if (offset < 0) entry.parentNode?.removeChild(entry)
     else entry.setAttribute('colId', String(offset))
   }

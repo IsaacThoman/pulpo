@@ -52,7 +52,7 @@ The editor core (`view/sheet-view.ts` and its helpers) is framework-free: web an
 - **Editing**: an always-focused hidden textarea takes typing (and IMEs and mobile keyboards) and becomes the in-cell editor; Enter, Tab, Escape, F2, Alt+Enter, Ctrl+Enter, arrow-key commit and pointing, F4 to cycle absolute references; formula autocomplete, argument hints, and colored references; clicking or arrowing inserts references while a formula is typed; data validation is enforced on commit.
 - **Selection and navigation**: ranges, multiple ranges with Ctrl/Cmd, whole rows and columns, Shift and Ctrl+arrows (data edges), Home/End, PageUp/Down, Tab/Enter flows inside a selection, the name box (cells, ranges, `Sheet!A1`, defined names).
 - **Clipboard**: copies put tab-separated text and an HTML table (with styles) on the clipboard, plus this app's own snapshots so pasting here keeps formulas and exact formats; pastes from Excel and Google Sheets read their HTML (inline styles and Excel's class styles) or text. Paste values only and formats only.
-- **Fill**: the fill handle and Ctrl+D/Ctrl+R continue series (linear trends, dates by day or month, text with numbers, day and month names) or copy with references moved.
+- **Fill**: the fill handle and Ctrl+D/Ctrl+R continue series (linear trends, dates by day, month or year, text with numbers, day and month names) or copy with references moved. Monthly/yearly series clamp the day to the destination month, retaining the original day for subsequent months (January 31 → February 29 → March 31). Clipped source examples also retain that cadence. Reverse fills use the same arithmetic, and date-times retain their fractional time. Both workbook date systems are supported; daily steps include Excel’s fictitious serial 60 in the 1900 system. Weekday-name lists cycle through all seven days; there is no business-day date-fill option. `EDATE`/`EOMONTH` clamp and discard time, while `DATE` deliberately overflows days and months, matching [Excel DATE semantics](https://support.microsoft.com/en-us/excel/functions/date-function) and [Calc EDATE](https://help.libreoffice.org/latest/en-US/text/scalc/01/func_edate.html).
 - **Structure and format**: insert, delete, hide, resize, and auto-fit rows and columns; merge and unmerge; freeze panes; fonts, sizes, bold/italic/underline/strike, text and fill colors from the theme palette, border presets, alignment, wrapping, number formats (menu and custom codes), decimals.
 - **Data**: stable multi-key sort (numbers, text, booleans, stable errors, blanks last in either direction), optional case sensitivity, autofilter with value lists and search, find and replace (values or formulas, one sheet or all). `sortRange` accepts worksheet-column keys and `SortOptions`; `SheetView.sort` accepts explicit `header` and `caseSensitive` options, and `sortArea` is the common toolbar/filter-menu entry point. Known filter/table headers stay put; text-over-numeric or bold headers are inferred for ordinary ranges. All-text ranges can use explicit header selection. Text collation uses the host locale, with lowercase first for case-sensitive ties, following [Excel's sort options](https://support.microsoft.com/en-us/excel/sort-data-in-a-range-or-table-in-excel).
 
@@ -173,3 +173,28 @@ Copy omits hidden rows, retaining their actual source positions for formula tran
 Default paste carries validation, notes and links as well as formats and conditional formats. Values-only leaves those destination properties intact. Formats-only carries formats, merges and conditional formats while retaining destination values, validation, notes and links. Cut relocation requires a matching local session token and an unchanged source: stale, repeated or externally supplied cut data is copied from its snapshot instead. Cross-sheet moves retain the existing relocation of tables and dependent references. Copying a table's cells keeps the original table and its structured references; it does not create a second table object.
 
 Fill prepares all source lines before writing, skips hidden rows, carries inherited formats, validation and conditional formats, and commits in one undo step. Horizontal autofill advances qualified table column references; copying and explicit column-range references retain their columns. Merged fill patterns, legacy array fill patterns and filtered dynamic spill anchors are currently rejected rather than flattened; transpose is not exposed. Interactive clipboard parity is tested in jsdom and Chromium. The opt-in `PULPO_SHEETS_FIDELITY=1` clipboard interaction test exports its results and checks formula recalculation and copied values through the private-profile LibreOffice tooling; this validates the file results, not LibreOffice's interactive clipboard UI.
+
+## Autofill and copy regression checks
+
+`view/fill-dates.test.ts` covers forward/backward monthly and yearly series, leap-day recovery,
+1900/1904 epochs, fractional times, descending series, and weekday-name cycling. Formula tests
+cover the separate clamping/overflow contracts of EDATE, EOMONTH, and DATE. With
+`PULPO_SHEETS_FIDELITY=1`, `date-fill-fidelity.test.ts` executes real Calc autofill through
+`scripts/sheets/lo_fill.py` using a private profile and compares three series and six recalculated
+formula caches. Excel's fictitious February 1900 is covered by unit tests rather than Calc's
+Gregorian calendar oracle.
+
+The synchronous copy handler builds row-position membership once and visits only the selected
+overlap of each spill. Clipboard rule coverage clips sorted axis endpoints without enumerating
+cells against all rules. Filters use sets of allowed values; merge resolution, rendering,
+conditional formats, ranged hyperlinks, validations, and column intervals use rectangle indexes.
+Derived read indexes invalidate before Yjs observers run and bypass caching during writes, so
+remote updates and changes within a transaction remain visible. XLSX relationship, content-type,
+comment-author, sheet-pairing, and scope lookups use maps or sets where repeated scans grew with
+input size. Axis `indexOf` already uses the axis position map and is not an array scan.
+
+`view/clipboard.perf.test.ts` counts potential linear-search comparisons for a 200,000-row spill,
+checks scaling from 100,000 rows, and exercises many independent spills. Timing-sensitive sheet
+formula, number-format, clipboard, and presentation performance suites run in the serial
+`performance` Vitest project after the default-parallel correctness project. Their existing
+budgets remain enforced without competing test workers on two-core CI runners.

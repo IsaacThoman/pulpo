@@ -1,4 +1,5 @@
-import { rangeContains, type CellRange } from '../address.js'
+import { RangeLookup } from '../range-lookup.js'
+import { type CellRange } from '../address.js'
 import { serialToParts } from '../dates.js'
 import type { CfValue, ConditionalFormat, ConditionalRule, SheetColor } from '../model/schema.js'
 import type { SheetModel } from '../model/workbook.js'
@@ -75,6 +76,7 @@ function mix(a: string, b: string, t: number): string {
 
 export class ConditionalFormatter {
   private blocks: Block[] | undefined
+  private lookup: RangeLookup<Block> | undefined
   private cache = new Map<string, ConditionalOverlay | null>()
 
   constructor(
@@ -87,6 +89,7 @@ export class ConditionalFormatter {
 
   invalidate(): void {
     this.blocks = undefined
+    this.lookup = undefined
     this.cache.clear()
   }
 
@@ -108,8 +111,8 @@ export class ConditionalFormatter {
     const cached = this.cache.get(key)
     if (cached !== undefined) return cached ?? undefined
     const matches: { priority: number; rule: ConditionalRule; block: Block }[] = []
-    for (const block of this.getBlocks()) {
-      if (!block.ranges.some((range) => rangeContains(range, row, col))) continue
+    this.lookup ??= new RangeLookup(this.getBlocks(), (block) => block.ranges)
+    for (const block of this.lookup.overlapping({ top: row, bottom: row, left: col, right: col })) {
       for (const rule of block.rules) matches.push({ priority: rule.priority, rule, block })
     }
     if (!matches.length) {

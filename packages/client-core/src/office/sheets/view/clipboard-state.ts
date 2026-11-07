@@ -1,5 +1,5 @@
 import type { CellRange } from '../address.js'
-import { rangeContains } from '../address.js'
+import { lowerBound } from '../sorted.js'
 import { randomId } from '../model/axis.js'
 import { toA1Form } from '../model/formula-ids.js'
 import { clearRules, mapRuleFormulas, metadataRangeIds, metadataFormula } from '../model/range-metadata.js'
@@ -21,23 +21,21 @@ export function snapshotRules<T extends DataValidation | ConditionalFormat>(shee
     const first = ranges[0]
     if (!first) continue
     const mapped: CellRange[] = []
-    // Compress each visible run; gaps in the source become adjacent clipboard cells.
-    rows.forEach((row, dr) => {
-      let start = -1
-      for (let dc = 0; dc <= cols.length; dc++) {
-        const inside = dc < cols.length && ranges.some((r) => rangeContains(r, row, cols[dc]!))
-        if (inside && start < 0) start = dc
-        if (!inside && start >= 0) { mapped.push({ top: dr, bottom: dr, left: start, right: dc - 1 }); start = -1 }
-      }
-    })
+    // Copied axes are sorted. Clipping endpoints maps even filtered rows to a contiguous
+    // clipboard interval without testing every cell against every metadata rectangle.
+    for (const range of ranges) {
+      const top = lowerBound(rows, range.top), bottom = lowerBound(rows, range.bottom + 1) - 1
+      const left = lowerBound(cols, range.left), right = lowerBound(cols, range.right + 1) - 1
+      if (top <= bottom && left <= right) mapped.push({ top, bottom, left, right })
+    }
     if (mapped.length) result.push({ ranges: mapped, origin: { row: first.top, col: first.left }, value: mapRuleFormulas(value, (f) => toA1Form(f, sheet, sheet.workbook, { followDeletedRelative: true })) })
   }
   return result
 }
 
 /** Replace destination metadata only for the modes which carry it. Rebase survivors as well. */
-export function pasteRules<T extends DataValidation | ConditionalFormat>(sheet: SheetModel, kind: 'dv' | 'cf', rules: ClipboardRule<T>[], destination: CellRange, sourceRows: number[], sourceCols: number[], dxf?: number[]): void {
-  clearRules(sheet, kind, destination)
+export function pasteRules<T extends DataValidation | ConditionalFormat>(sheet: SheetModel, kind: 'dv' | 'cf', rules: ClipboardRule<T>[], destination: CellRange, sourceRows: number[], sourceCols: number[], dxf?: number[], clear = true): void {
+  if (clear) clearRules(sheet, kind, destination)
   const height = sourceRows.length, width = sourceCols.length
   for (let dr = 0; dr <= destination.bottom - destination.top; dr += height) for (let dc = 0; dc <= destination.right - destination.left; dc += width) {
     for (const rule of rules) {

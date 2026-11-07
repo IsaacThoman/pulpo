@@ -1,8 +1,11 @@
+import { RangeLookup } from '../range-lookup.js'
+import { lowerBound } from '../sorted.js'
+import { RangeIndex } from '../formula/range-index.js'
 import { clearLinks } from '../model/range-metadata.js'
 import { r1c1ToA1 } from '../formula/translate.js'
 import { Stylesheet } from '../styles/stylesheet.js'
 import { randomId } from '../model/axis.js'
-import { contains, intersects, offsetRange, pasteRules, placeRule, snapshotRules } from './clipboard-state.js'
+import { contains, intersects, clearRules, offsetRange, pasteRules, placeRule, snapshotRules } from './clipboard-state.js'
 import { moveCells } from '../model/move-cells.js'
 import { maxOf, replaceChildrenWith } from '../../../collections.js'
 import { cellName, MAX_COLS, MAX_ROWS, rangeContains, type CellRange } from '../address.js'
@@ -11,7 +14,7 @@ import type { CellValue } from '../values.js'
 import { isErrorValue } from '../values.js'
 import { parseHtml, parseTsv, toHtml, toTsv, cssToRgb, type ClipboardCell, type ClipboardPayload, type ClipboardRule } from './clipboard.js'
 import * as commands from './commands.js'
-import { fillSeries, fillStructuredFormula } from './fill.js'
+import { fillSeries, fillStructuredFormula, indexFillTables } from './fill.js'
 import { applyCompletion, argumentHint, completions, partialFunctionName, type FunctionDoc } from './formula-assist.js'
 import { POINTS_TO_PIXELS } from './layout.js'
 import type { Scene } from './renderer.js'
@@ -757,14 +760,14 @@ export class SheetInteractions {
     // These fill patterns need shape-aware repetition; reject them before any write.
     if (sheet.mergedRanges().some((m) => intersects(m.range, target))) return
     let arraySource = false
-    const spillSources: CellRange[] = []
+    const spillSources = new RangeIndex<CellRange>()
     sheet.forEachCell((row, col, data) => {
       if (row > source.bottom || col > source.right) return
       const size = data.array ?? view.values.spill?.(sheet, row, col)
       if (!size || size.rows * size.cols <= 1) return
       const range = { top: row, left: col, bottom: row + size.rows - 1, right: col + size.cols - 1 }
       if (!intersects(range, source)) return
-      spillSources.push(range)
+      spillSources.add(range, range)
       if (data.array || rangeContains(source, row, col) && span(Math.max(row, source.top), Math.min(range.bottom, source.bottom)).some((r) => view.rows.isHidden(r))) arraySource = true
     })
     if (arraySource) return
@@ -775,6 +778,7 @@ export class SheetInteractions {
       series: ReturnType<typeof fillSeries>
       metadata: { dv: ClipboardRule<DataValidation>[] }[]
     }[] = []
+    const validations = new RangeLookup([...sheet.dv.values()] as DataValidation[], (value) => value.ranges.flatMap((ids) => { const range = sheet.resolveRange(ids); return range ? [range] : [] }))
     const lines = vertical ? span(source.left, source.right) : span(source.top, source.bottom)
     for (const line of lines) {
       const sourceCells = (vertical ? span(source.top, source.bottom).map((row) => ({ row, col: line })) : span(source.left, source.right).map((col) => ({ row: line, col }))).filter((cell) => !view.rows.isHidden(cell.row))
@@ -785,7 +789,8 @@ export class SheetInteractions {
       const snapshots = sourceCells.map((cell) => {
         const snapshot = commands.snapshotCell(sheet, cell.row, cell.col)
         snapshot.overrides = JSON.parse(JSON.stringify(view.styleAt(cell.row, cell.col))) as Partial<StyleProps>
-        const spill = spillSources.find((r) => rangeContains(r, cell.row, cell.col))
+        let spill: CellRange | undefined
+        spillSources.query({ top: cell.row, bottom: cell.row, left: cell.col, right: cell.col }, (range) => { spill ??= range })
         if (spill && !rangeContains(source, spill.top, spill.left)) snapshot.data = valueData(view.valueAt(cell.row, cell.col))
         return snapshot
       })
@@ -793,13 +798,17 @@ export class SheetInteractions {
         ? targets.map((_, index) => ({ kind: 'copy' as const, from: backward ? sourceCells.length - 1 - (index % sourceCells.length) : index % sourceCells.length }))
         : fillSeries(sourceCells.map((cell, index) => ({ value: view.valueAt(cell.row, cell.col), formula: snapshots[index]!.formula !== undefined, numFmt: view.styleAt(cell.row, cell.col).numFmt })), targets.length, backward, view.workbook.date1904)
       // Prepare every line before writing: a later line's formulas can depend on an earlier one.
-      const metadata = sourceCells.map((cell) => ({ dv: snapshotRules<DataValidation>(sheet, sheet.dv.values(), [cell.row], [cell.col]) }))
+      const metadata = sourceCells.map((cell) => ({ dv: snapshotRules<DataValidation>(sheet, validations.overlapping({ top: cell.row, bottom: cell.row, left: cell.col, right: cell.col }), [cell.row], [cell.col]) }))
       jobs.push({ sourceCells, targets, snapshots, series, metadata })
     }
-    const tables = [...sheet.workbook.sheets()].flatMap((owner) => [...owner.tables.values()] as SheetTable[])
+    const tables = indexFillTables([...sheet.workbook.sheets()].flatMap((owner) => [...owner.tables.values()] as SheetTable[]))
     const formats = snapshotRules<ConditionalFormat>(sheet, sheet.cf.values(), span(source.top, source.bottom), span(source.left, source.right))
     const formatTargets = formats.map(() => [] as CellRange[])
+    const formatLookup = new RangeLookup(formats.map((rule, index) => ({ rule, index })), (entry) => entry.rule.ranges)
     view.workbook.transact(() => {
+      const writeRanges = this.fillWriteRanges(source, target)
+      clearRules(sheet, 'dv', writeRanges)
+      clearRules(sheet, 'cf', writeRanges)
       for (const { sourceCells, targets, snapshots, series, metadata } of jobs) series.forEach((result, index) => {
         const to = targets[index]!
         const sourceIndex = result.kind === 'copy' ? result.from : backward ? 0 : snapshots.length - 1
@@ -809,11 +818,9 @@ export class SheetInteractions {
         commands.placeCell(sheet, model, from, to, result.kind === 'copy' ? undefined : { values: false, formats: true })
         if (result.kind === 'value') sheet.setCell(to.row, to.col, valueData(result.value))
         const destination = { top: to.row, bottom: to.row, left: to.col, right: to.col }
-        pasteRules(sheet, 'dv', metadata[sourceIndex]!.dv, destination, [from.row], [from.col])
-        pasteRules(sheet, 'cf', [], destination, [from.row], [from.col])
-        formats.forEach((rule, i) => {
-          if (rule.ranges.some((r) => rangeContains(r, from.row - source.top, from.col - source.left))) formatTargets[i]!.push(destination)
-        })
+        pasteRules(sheet, 'dv', metadata[sourceIndex]!.dv, destination, [from.row], [from.col], undefined, false)
+        const row = from.row - source.top, col = from.col - source.left
+        for (const entry of formatLookup.overlapping({ top: row, bottom: row, left: col, right: col })) formatTargets[entry.index]!.push(destination)
       })
       formats.forEach((rule, i) => placeRule(sheet, 'cf', rule, formatTargets[i]!))
     })
@@ -834,6 +841,7 @@ export class SheetInteractions {
     // Like Excel, hidden columns remain part of a normal copied rectangle.
     const sourceCols = span(range.left, range.right)
     if (!sourceRows.length || !sourceCols.length) return undefined
+    const rowPositions = new Map(sourceRows.map((row, index) => [row, index]))
     const rows: ClipboardCell[][] = []
     const cells: commands.CellSnapshot[][] = []
     const values: CellValue[][] = []
@@ -858,7 +866,7 @@ export class SheetInteractions {
     for (const merge of sheet.mergedRanges()) {
       if (!intersects(range, merge.range)) continue
       if (!contains(range, merge.range)) return undefined
-      const top = sourceRows.indexOf(merge.range.top), bottom = sourceRows.indexOf(merge.range.bottom)
+      const top = (rowPositions.get(merge.range.top) ?? -1), bottom = (rowPositions.get(merge.range.bottom) ?? -1)
       if (top < 0 || bottom - top !== merge.range.bottom - merge.range.top) return undefined
       const rect = { top, bottom, left: merge.range.left - range.left, right: merge.range.right - range.left }
       merges.push(rect)
@@ -872,16 +880,20 @@ export class SheetInteractions {
     sheet.forEachCell((row, col, data) => {
       const size = data.array ?? view.values.spill?.(sheet, row, col)
       if (!size) return
-      let anchor = sourceRows.includes(row) && sourceCols.includes(col)
-      const filtered = span(Math.max(row, range.top), Math.min(row + size.rows - 1, range.bottom)).some((r) => !sourceRows.includes(r))
+      const firstRow = Math.max(row, range.top), lastRow = Math.min(row + size.rows - 1, range.bottom)
+      const firstCol = Math.max(col, range.left), lastCol = Math.min(col + size.cols - 1, range.right)
+      if (firstRow > lastRow || firstCol > lastCol) return
+      const start = lowerBound(sourceRows, firstRow), end = lowerBound(sourceRows, lastRow + 1)
+      let anchor = rowPositions.has(row) && col >= range.left && col <= range.right
+      const filtered = end - start !== lastRow - firstRow + 1
       if (anchor && filtered && !data.array) {
-        const r = sourceRows.indexOf(row), c = sourceCols.indexOf(col)
+        const r = rowPositions.get(row)!, c = col - range.left
         cells[r]![c]!.data = valueData(values[r]![c]!)
         delete cells[r]![c]!.formula
         delete rows[r]![c]!.formula
         anchor = false
       }
-      for (let r = 0; r < sourceRows.length; r++) for (let c = 0; c < sourceCols.length; c++) {
+      for (let r = start; r < end; r++) for (let c = firstCol - range.left; c <= lastCol - range.left; c++) {
         const rr = sourceRows[r]!, cc = sourceCols[c]!
         if ((rr === row && cc === col) || rr < row || rr >= row + size.rows || cc < col || cc >= col + size.cols) continue
         cells[r]![c]!.data = anchor ? undefined : valueData(values[r]![c]!)

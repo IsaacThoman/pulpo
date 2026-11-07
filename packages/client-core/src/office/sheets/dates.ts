@@ -110,3 +110,11 @@ export function serialToEpochMs(serial: number, date1904 = false): number {
 export function liveCurrentYear(): number {
   return new Date().getFullYear()
 }
+
+/** Last day in the workbook calendar, including Excel's fictitious February 1900. */
+export function daysInMonth(year: number, month: number, date1904 = false): number {
+  if (!date1904 && year === 1900 && month === 2) return 29
+  const date = new Date(0)
+  date.setUTCFullYear(year, month, 0)
+  return date.getUTCDate()
+}

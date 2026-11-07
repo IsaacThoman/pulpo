@@ -1,3 +1,6 @@
+import { cachedSheetRead } from './read-cache.js'
+import { RangeLookup } from '../range-lookup.js'
+import { RangeIndex } from '../formula/range-index.js'
 import { cellVersion, rebindSortedFormulas, type SortedFormula } from './sort-formulas.js'
 import { toA1Form, toIdForm } from './formula-ids.js'
 import { maxOf } from '../../../collections.js'
@@ -120,12 +123,16 @@ export class SheetModel {
   linkAt(row: number, col: number): Hyperlink | undefined {
     const record = this.links.get(this.keyAt(row, col)) as Hyperlink | undefined
     if (record && !record.range) return record
-    for (const raw of this.links.values()) {
-      const link = raw as Hyperlink
-      const range = link.range && this.resolveRange(link.range)
-      if (range && row >= range.top && row <= range.bottom && col >= range.left && col <= range.right) return link
-    }
-    return record
+    const lookup = cachedSheetRead(this.workbook.doc, this.map, 'links', () => {
+      const entries: { link: Hyperlink; range: CellRange }[] = []
+      for (const raw of this.links.values()) {
+        const link = raw as Hyperlink
+        const range = link.range && this.resolveRange(link.range)
+        if (range) entries.push({ link, range })
+      }
+      return new RangeLookup(entries, (entry) => [entry.range])
+    })
+    return lookup.first(row, col)?.link ?? record
   }
 
   static create(map: Y.Map<unknown>, name: string): void {
@@ -394,12 +401,20 @@ export class SheetModel {
    * (the same choice on every replica) and the other is ignored.
    */
   mergedRanges(): { id: string; range: CellRange }[] {
+    return cachedSheetRead(this.workbook.doc, this.map, 'merges', () => this.resolveMerges())
+  }
+
+  private resolveMerges(): { id: string; range: CellRange }[] {
     const merged: { id: string; range: CellRange }[] = []
+    const index = new RangeIndex<boolean>()
     const entries = [...this.merges.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     for (const [id, merge] of entries) {
       const range = this.resolveRange(merge.range)
       if (!range || (range.bottom === range.top && range.right === range.left)) continue
-      if (merged.some((kept) => kept.range.left <= range.right && range.left <= kept.range.right && kept.range.top <= range.bottom && range.top <= kept.range.bottom)) continue
+      let overlaps = false
+      index.query(range, () => { overlaps = true })
+      if (overlaps) continue
+      index.add(range, true)
       merged.push({ id, range })
     }
     return merged

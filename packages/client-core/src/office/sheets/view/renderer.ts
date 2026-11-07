@@ -1,3 +1,4 @@
+import { RangeLookup } from '../range-lookup.js'
 import { columnName, rangeContains, type CellRange } from '../address.js'
 import type { BorderStyle } from '../model/schema.js'
 import { formatValue } from '../numfmt/index.js'
@@ -198,7 +199,8 @@ export class GridRenderer {
     const [left, right] = pane.cols
     // Text can overflow in from cells just outside the pane.
     const merges = scene.merges.filter((merge) => merge.bottom >= top && merge.top <= bottom)
-    const mergeAt = (row: number, col: number) => merges.find((merge) => rangeContains(merge, row, col))
+    const mergeLookup = new RangeLookup(merges, (range) => [range])
+    const mergeAt = (row: number, col: number) => mergeLookup.first(row, col)
     const renders = new Map<string, CellRender>()
     const get = (row: number, col: number) => {
       const key = `${row},${col}`

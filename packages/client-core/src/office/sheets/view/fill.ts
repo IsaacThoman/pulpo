@@ -1,5 +1,5 @@
 import { tokenize } from '../formula/tokenize.js'
-import { dateToSerial, serialToParts } from '../dates.js'
+import { dateToSerial, serialToParts, daysInMonth } from '../dates.js'
 import { isDateFormat } from '../numfmt/index.js'
 import type { CellValue } from '../values.js'
 
@@ -86,16 +86,19 @@ export function fillSeries(sources: FillSource[], count: number, backward = fals
   if (dates) {
     const serials = sources.map((source) => source.value as number)
     const parts = serials.map((serial) => serialToParts(serial, date1904))
-    // Same day of month, whole months apart: step by months (or years).
-    if (n >= 2 && parts.every((part) => part && part.day === parts[0]!.day)) {
+    // Retain the original day even after a shorter month clips it (including leap years).
+    const day = parts.reduce((max, part) => Math.max(max, part?.day ?? 0), 0)
+    const fraction = serials[0]! - Math.floor(serials[0]!)
+    if (n >= 2 && parts.every((part, i) => part && part.day === Math.min(day, daysInMonth(part.year, part.month, date1904)) && Math.abs(serials[i]! % 1 - fraction) < 1e-9)) {
       const months = parts.map((part) => part!.year * 12 + part!.month - 1)
       const step = months[1]! - months[0]!
       if (step && months.every((month, index) => index === 0 || month - months[index - 1]! === step)) {
         for (const position of positions) {
           const month = months[0]! + step * position
           const year = Math.floor(month / 12)
-          const fraction = serials[0]! - Math.floor(serials[0]!)
-          results.push({ kind: 'value', value: dateToSerial(year, (month % 12) + 1, parts[0]!.day, date1904) + fraction })
+          const destinationMonth = month - year * 12 + 1
+          const destinationDay = Math.min(day, daysInMonth(year, destinationMonth, date1904))
+          results.push({ kind: 'value', value: dateToSerial(year, destinationMonth, destinationDay, date1904) + fraction })
         }
         return results
       }
@@ -140,15 +143,30 @@ export function fillSeries(sources: FillSource[], count: number, backward = fals
 }
 
 /** Horizontal autofill advances qualified table columns; copy/paste and column ranges stay fixed. */
-export function fillStructuredFormula(formula: string, columns: number, tables: { name: string; displayName: string; columns: { name: string }[] }[]): string {
+type FillTable = { name: string; displayName: string; columns: { name: string }[] }
+type FillTableIndex = Map<string, { table: FillTable; columns: Map<string, number> }>
+
+export function indexFillTables(tables: FillTable[]): FillTableIndex {
+  const index: FillTableIndex = new Map()
+  for (const table of tables) {
+    const entry = { table, columns: new Map<string, number>() }
+    table.columns.forEach((column, i) => { if (!entry.columns.has(column.name.toLowerCase())) entry.columns.set(column.name.toLowerCase(), i) })
+    for (const name of [table.name, table.displayName]) if (!index.has(name.toLowerCase())) index.set(name.toLowerCase(), entry)
+  }
+  return index
+}
+
+export function fillStructuredFormula(formula: string, columns: number, tables: FillTable[] | FillTableIndex): string {
   if (!columns) return formula
+  const tableIndex = Array.isArray(tables) ? indexFillTables(tables) : tables
   let out = '', last = 0
   for (const token of tokenize(formula)) {
     const ref = token.structured
     if (!ref?.table || ref.firstColumn === undefined || ref.lastColumn !== undefined) continue
-    const table = tables.find((t) => [t.name, t.displayName].some((name) => name.toLowerCase() === ref.table!.toLowerCase()))
+    const entry = tableIndex.get(ref.table.toLowerCase())
+    const table = entry?.table
     if (!table?.columns.length) continue
-    const index = table.columns.findIndex((c) => c.name.toLowerCase() === ref.firstColumn!.toLowerCase())
+    const index = entry!.columns.get(ref.firstColumn.toLowerCase()) ?? -1
     if (index < 0) continue
     const next = ((index + columns) % table.columns.length + table.columns.length) % table.columns.length
     const name = table.columns[next]!.name.replace(/['[\]#@]/g, "'$&")

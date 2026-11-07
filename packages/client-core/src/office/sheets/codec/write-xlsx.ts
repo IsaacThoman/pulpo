@@ -75,9 +75,24 @@ const EMPTY_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Re
 /** A relationships part being edited. */
 class Rels {
   readonly document: XmlDocument
+  private targets = new Map<string, string>()
+  private ids = new Set<string>()
+  private next = 1
 
   constructor(xml: string | undefined) {
     this.document = parseXml(xml ?? EMPTY_RELS)
+    this.reindex()
+  }
+
+  private reindex(): void {
+    this.targets.clear()
+    this.ids.clear()
+    for (const rel of this.list()) {
+      this.ids.add(rel.id)
+      const key = JSON.stringify([rel.type, rel.target])
+      if (!this.targets.has(key)) this.targets.set(key, rel.id)
+    }
+    this.next = this.ids.size + 1
   }
 
   private get elements(): XmlElement[] {
@@ -98,13 +113,15 @@ class Rels {
       const rel = { id: element.getAttribute('Id') ?? '', type: element.getAttribute('Type') ?? '', target: element.getAttribute('Target') ?? '' }
       if (test(rel)) this.document.documentElement!.removeChild(element)
     }
+    this.reindex()
   }
 
   add(type: string, target: string, external = false): string {
-    const taken = new Set(this.list().map((rel) => rel.id))
-    let next = taken.size + 1
-    while (taken.has(`rId${next}`)) next++
-    const id = `rId${next}`
+    while (this.ids.has(`rId${this.next}`)) this.next++
+    const id = `rId${this.next++}`
+    this.ids.add(id)
+    const key = JSON.stringify([type, target])
+    if (!this.targets.has(key)) this.targets.set(key, id)
     const element = this.document.createElementNS(PACKAGE_RELATIONSHIPS_NS, 'Relationship')
     element.setAttribute('Id', id)
     element.setAttribute('Type', type)
@@ -116,7 +133,7 @@ class Rels {
 
   /** The id of a relationship of `type` to `target` (relative), adding it if missing. */
   ensure(type: string, target: string): string {
-    return this.list().find((rel) => rel.type === type && rel.target === target)?.id ?? this.add(type, target)
+    return this.targets.get(JSON.stringify([type, target])) ?? this.add(type, target)
   }
 
   get empty(): boolean {
@@ -131,29 +148,34 @@ class Rels {
 /** [Content_Types].xml being edited. */
 class ContentTypes {
   readonly document: XmlDocument
+  private overrides = new Map<string, XmlElement>()
+  private defaults = new Set<string>()
 
   constructor(xml: string | undefined) {
     this.document = parseXml(xml ?? `<Types xmlns="${CONTENT_TYPES_NS}"><Default Extension="rels" ContentType="${CONTENT_TYPES.relationships}"/><Default Extension="xml" ContentType="application/xml"/></Types>`)
+    for (const element of children(this.document.documentElement!, 'Override')) {
+      const key = (element.getAttribute('PartName') ?? '').toLowerCase()
+      if (!this.overrides.has(key)) this.overrides.set(key, element)
+    }
+    for (const element of children(this.document.documentElement!, 'Default')) this.defaults.add((element.getAttribute('Extension') ?? '').toLowerCase())
   }
 
   override(path: string, contentType: string): void {
     const partName = `/${path}`
     const root = this.document.documentElement!
-    for (const element of children(root, 'Override')) {
-      if (element.getAttribute('PartName')?.toLowerCase() === partName.toLowerCase()) {
-        element.setAttribute('ContentType', contentType)
-        return
-      }
-    }
+    const existing = this.overrides.get(partName.toLowerCase())
+    if (existing) { existing.setAttribute('ContentType', contentType); return }
     const element = this.document.createElementNS(CONTENT_TYPES_NS, 'Override')
     element.setAttribute('PartName', partName)
     element.setAttribute('ContentType', contentType)
     root.appendChild(element)
+    this.overrides.set(partName.toLowerCase(), element)
   }
 
   defaultFor(extension: string, contentType: string): void {
     const root = this.document.documentElement!
-    if (children(root, 'Default').some((element) => element.getAttribute('Extension')?.toLowerCase() === extension)) return
+    if (this.defaults.has(extension.toLowerCase())) return
+    this.defaults.add(extension.toLowerCase())
     const element = this.document.createElementNS(CONTENT_TYPES_NS, 'Default')
     element.setAttribute('Extension', extension)
     element.setAttribute('ContentType', contentType)
@@ -223,6 +245,7 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
   if (seed) for (const item of readSharedStrings(seed)) strings.add(item, true)
   const sheets = model.sheets()
   const sheetEntries: string[] = []
+  const assignedSheetIds = new Set<number>()
   const usedSheetIds = new Set(sheets.map((sheet) => sheet.raw.get('sheetId') as number | undefined).filter((id): id is number => id !== undefined))
   let nextSheetId = 1
   for (const id of usedSheetIds) nextSheetId = Math.max(nextSheetId, id + 1)
@@ -272,7 +295,8 @@ export async function writeXlsx(doc: Y.Doc, assets: LiveAssetStore, options: Xls
     const existing = workbookRels.list().find((rel) => rel.type === SHEET_REL_TYPES[kind] && resolveTarget(workbookPath, rel.target) === path)
     const relId = existing?.id ?? workbookRels.add(SHEET_REL_TYPES[kind], relTarget)
     let sheetId = sheet.raw.get('sheetId') as number | undefined
-    if (sheetId === undefined || sheetEntries.some((entry) => entry.includes(` sheetId="${sheetId}"`))) sheetId = nextSheetId++
+    if (sheetId === undefined || assignedSheetIds.has(sheetId)) sheetId = nextSheetId++
+    assignedSheetIds.add(sheetId)
     const keep = Object.entries((sheet.raw.get('keep') as Record<string, string> | undefined) ?? {})
       .map(([name, value]) => ` ${name}="${escapeXml(value)}"`)
       .join('')
@@ -463,9 +487,10 @@ function patchWorkbook(document: XmlDocument, model: WorkbookModel, sheetEntries
     ) as XmlElement
   insertWorkbookChild(root, wrap(`<sheets>${sheetEntries.join('')}</sheets>`))
   const sheetIds = model.sheetIds()
-  const names = [...model.names.values()].sort((a, b) => sheetIds.indexOf(a.scope ?? '') - sheetIds.indexOf(b.scope ?? '') || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+  const scopeIndexes = new Map(sheetIds.map((id, index) => [id, index]))
+  const names = [...model.names.values()].sort((a, b) => (scopeIndexes.get(a.scope ?? '') ?? -1) - (scopeIndexes.get(b.scope ?? '') ?? -1) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     .map((name: DefinedName) => {
-      const scopeIndex = name.scope ? sheetIds.indexOf(name.scope) : -1
+      const scopeIndex = scopeIndexes.get(name.scope ?? '') ?? -1
       if (name.scope && scopeIndex < 0) return ''
       const scopeSheet = name.scope ? model.sheet(name.scope) : undefined
       const attrs = Object.entries(name.keep ?? {})

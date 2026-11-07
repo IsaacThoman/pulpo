@@ -1,3 +1,4 @@
+import { RangeIndex } from '../formula/range-index.js'
 import { MAX_COLS, MAX_ROWS } from '../address.js'
 import { formatSheetPrefix, mapReferences } from '../formula/translate.js'
 import { MAX_EXPANDED_CELLS } from '../limits.js'
@@ -206,6 +207,7 @@ export function parseHtml(html: string): { cells: PastedCell[][]; merges: CellRa
   }
   const cells: PastedCell[][] = []
   const occupied: { top: number; bottom: number; left: number; right: number }[] = []
+  const occupiedIndex = new RangeIndex<CellRange>()
   let width = 1
   let height = 1
   const span = (value: string | null, max: number) => {
@@ -219,7 +221,8 @@ export function parseHtml(html: string): { cells: PastedCell[][]; merges: CellRa
     let col = 0
     for (const td of Array.from(tr.children).filter((element) => element.tagName === 'TD' || element.tagName === 'TH')) {
       for (;;) {
-        const covering = occupied.find((rect) => rowIndex >= rect.top && rowIndex <= rect.bottom && col >= rect.left && col <= rect.right)
+        let covering: CellRange | undefined
+        occupiedIndex.query({ top: rowIndex, bottom: rowIndex, left: col, right: col }, (range) => { covering ??= range })
         if (!covering) break
         col = covering.right + 1
       }
@@ -238,7 +241,11 @@ export function parseHtml(html: string): { cells: PastedCell[][]; merges: CellRa
       width = Math.max(width, col + colSpan)
       const rowSpan = span(td.getAttribute('rowspan'), Math.min(MAX_ROWS - rowIndex, Math.floor(MAX_EXPANDED_CELLS / width) - rowIndex))
       height = Math.max(height, rowIndex + rowSpan)
-      if (rowSpan > 1 || colSpan > 1) occupied.push({ top: rowIndex, bottom: rowIndex + rowSpan - 1, left: col, right: col + colSpan - 1 })
+      if (rowSpan > 1 || colSpan > 1) {
+        const range = { top: rowIndex, bottom: rowIndex + rowSpan - 1, left: col, right: col + colSpan - 1 }
+        occupied.push(range)
+        occupiedIndex.add(range, range)
+      }
       col += colSpan
     }
   }

@@ -1,3 +1,4 @@
+import { RangeLookup } from '../range-lookup.js'
 import { assertArrayWrite } from './array-guard.js'
 import { maxOf } from '../../../collections.js'
 import * as Y from 'yjs'
@@ -1754,6 +1755,7 @@ export class SheetView {
     }
     if (!used) return `<!doctype html><title>${escape(sheet.name)}</title><p></p>`
     const merges = sheet.mergedRanges().map(({ range }) => ({ ...range, bottom: Math.min(range.bottom, used.bottom), right: Math.min(range.right, used.right) })).filter((range) => range.top <= range.bottom && range.left <= range.right)
+    const mergeLookup = new RangeLookup(merges, (range) => [range])
     const border = (edge: { style: string; color: string } | undefined) => (edge && printColor(edge.color) ? `${edge.style === 'thick' ? 3 : edge.style.startsWith('medium') ? 2 : 1}px ${edge.style === 'double' ? 'double' : /dash|dot|hair/i.test(edge.style) ? 'dashed' : 'solid'} ${edge.color}` : '')
     let colgroup = '<colgroup>'
     for (let col = 0; col <= used.right; col++) colgroup += `<col style="width:${this.colLayout.size(col)}px">`
@@ -1763,8 +1765,9 @@ export class SheetView {
       if (this.rowLayout.isHidden(row)) continue
       body += `<tr style="height:${this.rowLayout.size(row)}px">`
       for (let col = 0; col <= used.right; col++) {
-        if (merges.some((range) => rangeContains(range, row, col) && (row !== range.top || col !== range.left)) || this.colLayout.isHidden(col)) continue
-        const merge = merges.find((entry) => entry.top === row && entry.left === col)
+        if (this.colLayout.isHidden(col)) continue
+        const merge = mergeLookup.first(row, col)
+        if (merge && (row !== merge.top || col !== merge.left)) continue
         const render = this.display.render(row, col)
         const style = render.style
         const css = [

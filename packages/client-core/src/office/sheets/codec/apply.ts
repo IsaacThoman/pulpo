@@ -108,8 +108,18 @@ function syncSheets(target: WorkbookModel, incoming: WorkbookModel): [SheetModel
   const theirs = incoming.sheets()
   const pairs = new Map<SheetModel, SheetModel>()
   const used = new Set<SheetModel>()
+  const byName = new Map(own.map((sheet) => [sheet.name.toLowerCase(), sheet]))
+  const byPart = new Map<unknown, SheetModel[]>()
+  for (const sheet of own) {
+    const part = sheet.raw.get('part')
+    const entries = byPart.get(part) ?? []
+    entries.push(sheet)
+    byPart.set(part, entries)
+  }
+  for (const entries of byPart.values()) entries.reverse()
   for (const sheet of theirs) {
-    const match = own.find((candidate) => !used.has(candidate) && candidate.name.toLowerCase() === sheet.name.toLowerCase())
+    const candidate = byName.get(sheet.name.toLowerCase())
+    const match = candidate && !used.has(candidate) ? candidate : undefined
     if (match) {
       pairs.set(sheet, match)
       used.add(match)
@@ -118,7 +128,9 @@ function syncSheets(target: WorkbookModel, incoming: WorkbookModel): [SheetModel
   for (const sheet of theirs) {
     if (pairs.has(sheet)) continue
     const part = sheet.raw.get('part')
-    const match = own.find((candidate) => !used.has(candidate) && part !== undefined && candidate.raw.get('part') === part)
+    const candidates = part !== undefined ? byPart.get(part) : undefined
+    while (candidates?.length && used.has(candidates[candidates.length - 1]!)) candidates.pop()
+    const match = candidates?.pop()
     if (match) {
       pairs.set(sheet, match)
       used.add(match)

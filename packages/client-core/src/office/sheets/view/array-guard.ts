@@ -1,4 +1,5 @@
-import { MAX_ROWS, MAX_COLS, rangeContains, type CellRange } from '../address.js'
+import { RangeLookup } from '../range-lookup.js'
+import { MAX_ROWS, MAX_COLS, type CellRange } from '../address.js'
 import { parseFormula, type Node } from '../formula/parse.js'
 import { toA1Form } from '../model/formula-ids.js'
 import type { SheetModel } from '../model/workbook.js'
@@ -34,6 +35,7 @@ export interface ArrayWriteOptions {
 /** All interactive content writes preflight here, before any mutation. Dynamic spills may be
  * obstructed by ordinary edits (Excel shows #SPILL! until the obstruction is cleared). */
 export function assertArrayWrite(sheet: SheetModel, ranges: CellRange[], options: ArrayWriteOptions = {}): void {
+  const selected = new RangeLookup(ranges, (range) => [range])
   sheet.forEachCell((row, col, data) => {
     if (data.array) {
       const array = { top: row, left: col, bottom: row + data.array.rows - 1, right: col + data.array.cols - 1 }
@@ -41,9 +43,9 @@ export function assertArrayWrite(sheet: SheetModel, ranges: CellRange[], options
         const { kind, at } = options.insert
         if (kind === 'row' ? at > array.top && at <= array.bottom : at > array.left && at <= array.right) throw new DataOperationError('partialArray')
       }
-      if (ranges.some((r) => intersects(r, array))) {
+      if (selected.overlapping(array).length > 0) {
         if (options.sort) throw new DataOperationError('arrays')
-        if (!covered(array, ranges)) throw new DataOperationError('partialArray')
+        if (!covered(array, selected.overlapping(array))) throw new DataOperationError('partialArray')
       }
     }
     const sort = options.sort
@@ -51,8 +53,8 @@ export function assertArrayWrite(sheet: SheetModel, ranges: CellRange[], options
     const size = data.array ?? sort.values?.spill?.(sheet, row, col) ?? (data.spillCache ? { rows: data.spillCache.length, cols: data.spillCache[0]?.length ?? 1 } : undefined)
     const potential = data.oversizedArray || data.dynamic && !sort.values?.spill
     const array = size ? { top: row, left: col, bottom: row + size.rows - 1, right: col + size.cols - 1 } : potential ? { top: row, left: col, bottom: MAX_ROWS - 1, right: MAX_COLS - 1 } : undefined
-    if (array && ranges.some((r) => intersects(r, array))) throw new DataOperationError('arrays')
-    if (!data.dynamic || !ranges.some((r) => rangeContains(r, row, col))) return
+    if (array && selected.overlapping(array).length > 0) throw new DataOperationError('arrays')
+    if (!data.dynamic || !selected.first(row, col)) return
     const value = sort.value(row, col)
     if (isErrorValue(value) && value.e === '#SPILL!') throw new DataOperationError('arrays')
     if (data.f !== undefined) {

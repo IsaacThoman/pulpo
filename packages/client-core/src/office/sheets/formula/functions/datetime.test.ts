@@ -1,3 +1,4 @@
+import { dateToSerial } from '../../dates.js'
 import { Errors } from '../types.js'
 import { table } from './test-table.js'
 import { col, createContext, row } from './testing.js'
@@ -163,3 +164,21 @@ table('Weekdays and working days', [
   ['WORKDAY.INTL', [40909, 3, '0000011'], 40912],
   ['WORKDAY.INTL', [40909, 3], 40912],
 ])
+
+// EDATE/EOMONTH truncate time; DATE deliberately overflows rather than clamping.
+for (const system of [false, true]) {
+  const d = (year: number, month: number, day: number) => dateToSerial(year, month, day, system)
+  table(`calendar clamping and overflow, date1904=${system}`, [
+    ['EDATE', [d(2024, 1, 31) + 0.75, 1], d(2024, 2, 29)],
+    ['EDATE', [d(2024, 3, 31), -1], d(2024, 2, 29)],
+    ['EDATE', [d(2024, 2, 29), 12], d(2025, 2, 28)],
+    ['EDATE', [d(2024, 2, 29), -12], d(2023, 2, 28)],
+    ['EDATE', [d(2024, 2, 29), 48], d(2028, 2, 29)],
+    ['EOMONTH', [d(2024, 1, 31) + 0.75, 1], d(2024, 2, 29)],
+    ['EOMONTH', [d(2024, 3, 31), -1], d(2024, 2, 29)],
+    ['DATE', [2025, 2, 29], d(2025, 3, 1)],
+    ['DATE', [2024, 2, 31], d(2024, 3, 2)],
+    ['DATE', [2024, 3, 0], d(2024, 2, 29)],
+    ['DATE', [2024, -1, 31], d(2023, 12, 1)],
+  ], () => createContext({ date1904: system }))
+}

@@ -1,3 +1,5 @@
+import { cachedSheetRead } from '../model/read-cache.js'
+import { RangeLookup } from '../range-lookup.js'
 import { csvNumber } from '../codec/csv-field.js'
 import { parseXml } from '../../ooxml/package.js'
 import { attr, boolAttr, child, children, numberAttr } from '../codec/xml.js'
@@ -301,7 +303,8 @@ export type BorderPreset = 'all' | 'outer' | 'inner' | 'horizontal' | 'vertical'
 export function applyBorders(sheet: SheetModel, ranges: CellRange[], preset: BorderPreset, style: BorderStyle = 'thin', color?: SheetColor): void {
   const edge = (edgeStyle: BorderStyle = style): BorderEdge => (color ? { style: edgeStyle, color } : { style: edgeStyle })
   const axis = ranges.filter((r) => (isWholeColumns(r) || isWholeRows(r)) && (preset === 'all' || preset === 'none'))
-  const dense = ranges.filter((r) => !axis.includes(r))
+  const axisSet = new Set(axis)
+  const dense = ranges.filter((r) => !axisSet.has(r))
   preflightStyle(sheet, axis, dense)
   sheet.workbook.transact(() => {
     const border = preset === 'none' ? null : edge()
@@ -488,11 +491,12 @@ export function setHidden(sheet: SheetModel, kind: AxisKind, positions: number[]
   sheet.workbook.transact(() => {
     if (kind === 'col') { sheet.setColProp(positions, 'hidden', hidden || undefined); return }
     const filter = sheet.filter.get('value') as AutoFilter | undefined
+    const filteredRows = new Set(filter?.hiddenRows)
     for (const row of positions) {
       sheet.ensure(row, 0)
       const id = sheet.rows.idAt(row)
       sheet.setRowProp([row], 'manualHidden', hidden || undefined)
-      sheet.setRowProp([row], 'hidden', hidden || filter?.hiddenRows?.includes(id) || undefined)
+      sheet.setRowProp([row], 'hidden', hidden || filteredRows.has(id) || undefined)
     }
   })
 }
@@ -702,6 +706,7 @@ export function sortRange(sheet: SheetModel, range: CellRange, keys: SortKey[], 
     const manual = order.map((row) => visibility?.manual.has(sheet.rows.idAt(row)) ?? !!(sheet.rowProp(row, 'manualHidden') || sheet.rowProp(row, 'hidden')))
     const restorePositions = permute ? sortPositions(sheet, area) : undefined
     const rangeLinks = [...sheet.links.entries()].filter(([, raw]) => { const link = raw as Hyperlink; return link.range && (link.range.top?.startsWith('~p') || link.range.top !== link.range.bottom || link.range.left !== link.range.right) })
+    const rangeLinkKeys = new Set(rangeLinks.map(([key]) => key))
     const movedFormulas = permute ? order.map((row) => cols.map((col) => {
       const key = sheet.keyAt(row, col)
       const f = sheet.cellData(key)?.f
@@ -750,8 +755,8 @@ export function sortRange(sheet: SheetModel, range: CellRange, keys: SortKey[], 
           const key = sheet.keyAt(targetRow, col)
           if (snapshot.note) sheet.notes.set(key, snapshot.note)
           else sheet.notes.delete(key)
-          if (rangeLinks.some(([k]) => k === key) || snapshot.link?.range && (snapshot.link.range.top?.startsWith('~p') || snapshot.link.range.top !== snapshot.link.range.bottom || snapshot.link.range.left !== snapshot.link.range.right)) {
-            if (!rangeLinks.some(([k]) => k === key)) sheet.links.delete(key)
+          if (rangeLinkKeys.has(key) || snapshot.link?.range && (snapshot.link.range.top?.startsWith('~p') || snapshot.link.range.top !== snapshot.link.range.bottom || snapshot.link.range.left !== snapshot.link.range.right)) {
+            if (!rangeLinkKeys.has(key)) sheet.links.delete(key)
             return
           }
           if (snapshot.link) sheet.links.set(key, { ...snapshot.link, ...(snapshot.link.range ? { range: sheet.rangeIds({ top: targetRow, bottom: targetRow, left: col, right: col }) } : {}) })
@@ -770,10 +775,11 @@ export function sortRange(sheet: SheetModel, range: CellRange, keys: SortKey[], 
         const current = tableFilter ?? sheet.filter.get('value') as AutoFilter
         options.values?.refresh?.()
         const hiddenRows: string[] = []
+        const matches = filterMatcher(current.columns, display)
         const currentRange = tableFilter ? filterRange! : sheet.resolveRange(current.range)!
         for (let row = currentRange.top + 1; row <= currentRange.bottom; row++) {
           // Evaluate after every record and formula has moved, with fresh positional caches.
-          const hidden = !current.columns.every((column) => column.values!.includes(display(row, currentRange.left + column.col)))
+          const hidden = !matches(row, currentRange.left)
           if (hidden) hiddenRows.push(sheet.rows.idAt(row))
           const manuallyHidden = !!sheet.rowProp(row, 'manualHidden') || (row < area.top || row > area.bottom) && visibility!.manual.has(sheet.rows.idAt(row))
           if (!!sheet.rowProp(row, 'manualHidden') !== manuallyHidden) sheet.setRowProp([row], 'manualHidden', manuallyHidden || undefined)
@@ -789,6 +795,12 @@ export function sortRange(sheet: SheetModel, range: CellRange, keys: SortKey[], 
 
 // ── Filters ────────────────────────────────────────────────────────────────
 
+/** Build value membership once for a row pass, rather than scanning allowed values per cell. */
+function filterMatcher(columns: AutoFilter['columns'], display: (row: number, col: number) => string): (row: number, left: number) => boolean {
+  const indexed = columns.map((column) => ({ col: column.col, values: new Set(column.values) }))
+  return (row, left) => indexed.every((column) => column.values.has(display(row, left + column.col)))
+}
+
 function checkFilter(filter: AutoFilter): void {
   if (filter.columns.some((column) => !column.values)) throw new DataOperationError('filter')
 }
@@ -801,9 +813,10 @@ function filterVisibility(sheet: SheetModel, filter: AutoFilter, display: (row: 
   const previous = new Set(filter.hiddenRows)
   const filtered = new Set<string>()
   const manual = new Set<string>()
+  const matchesRow = filterMatcher(filter.columns, display)
   for (let row = range.top + 1; row <= range.bottom; row++) {
     const id = sheet.rows.idAt(row)
-    const matches = filter.columns.every((column) => column.values!.includes(display(row, range.left + column.col)))
+    const matches = matchesRow(row, range.left)
     if (!matches) filtered.add(id)
     const wasFiltered = filter.hiddenRows ? previous.has(id) : !matches
     if (sheet.rowProp(row, 'manualHidden') || !filter.hiddenRows && sheet.rowProp(row, 'hidden') && !wasFiltered) manual.add(id)
@@ -845,9 +858,10 @@ export function filterColumn(sheet: SheetModel, offset: number, values: string[]
   if (values) columns.push({ col: offset, values })
   const hiddenRows: string[] = []
   const hidden = new Map<number, boolean>()
+  const matchesRow = filterMatcher(columns, display)
   for (let row = range.top + 1; row <= range.bottom; row++) {
     const id = sheet.rows.idAt(row)
-    const visible = columns.every((column) => column.values!.includes(display(row, range.left + column.col)))
+    const visible = matchesRow(row, range.left)
     if (!visible) hiddenRows.push(id)
     hidden.set(row, !visible || visibility.manual.has(id))
   }
@@ -919,14 +933,11 @@ export function setConditionalFormat(sheet: SheetModel, ranges: CellRange[], for
 
 /** The validation rule covering a cell, if any. */
 export function validationAt(sheet: SheetModel, row: number, col: number): DataValidation | undefined {
-  for (const raw of sheet.dv.values()) {
-    const validation = raw as DataValidation
-    if (validation.ranges.some((ids) => {
-      const range = sheet.resolveRange(ids)
-      return range && rangeContains(range, row, col)
-    })) return validation
-  }
-  return undefined
+  const lookup = cachedSheetRead(sheet.workbook.doc, sheet.map, 'validations', () => new RangeLookup(
+    [...sheet.dv.values()] as DataValidation[],
+    (value) => value.ranges.flatMap((ids) => { const range = sheet.resolveRange(ids); return range ? [range] : [] }),
+  ))
+  return lookup.first(row, col)
 }
 
 /** The choices of a list validation written as a literal (`"a,b,c"`), or undefined for references. */
