@@ -59,7 +59,7 @@ export class CellDisplay {
     if (cached) return cached
     const { row: rowId, col: colId } = splitCellKey(key)
     const sheet = this.sheet
-    const base = sheet.xf.get(key) ?? (sheet.rowMeta.get(`${rowId}|xf`) as number | undefined) ?? (sheet.colMeta.get(`${colId}|xf`) as number | undefined) ?? columnIntervalProps(sheet, col).xf
+    const base = sheet.xf.get(key) ?? sheet.rowProp(sheet.rows.indexOf(rowId), 'xf') ?? (sheet.colMeta.get(`${colId}|xf`) as number | undefined) ?? columnIntervalProps(sheet, col).xf
     const overrides: Partial<StyleProps> = { ...sheet.axisOverrides('col', colId), ...sheet.axisOverrides('row', rowId), ...sheet.cellOverrides(key) }
     const resolved = this.styles.resolve(base)
     const style = Object.keys(overrides).length ? { ...resolved, ...overrides } : resolved

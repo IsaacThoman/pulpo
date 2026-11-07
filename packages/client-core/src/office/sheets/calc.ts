@@ -186,7 +186,7 @@ export class SheetCalc implements SheetValues {
         const index = this.sheetIndex.get(sheet.id)
         const position = sheet.position(key)
         if (index === undefined || !position) continue
-        this.engine.setCell(index, position.row, position.col, engineInput(sheet, sheet.cells.get(key)))
+        this.engine.setCell(index, position.row, position.col, engineInput(sheet, sheet.cellData(key)))
       }
       if (!full) this.recalc()
     } else if (!full) return
@@ -210,6 +210,11 @@ export class SheetCalc implements SheetValues {
   recalculateAll(): void {
     this.stoppedEarly = this.engine.recalc({ full: true, keepCachedFor: (sheet, row, col) => this.isDataTable(sheet, row, col) }).stoppedEarly
     for (const listener of this.listeners) listener()
+  }
+
+  refresh(): void {
+    this.rebuild()
+    this.recalc(true)
   }
 
   get(sheet: SheetModel, row: number, col: number): CellValue {

@@ -48,7 +48,7 @@ describe('live format catalog', () => {
   })
 
   it('announces each format schema version, Markdown keeping the document schema version', () => {
-    expect(liveSchemaVersions()).toEqual({ markdown: DOC_SCHEMA_VERSION, text: 1, sheet: 1, document: 3, notebook: 1, presentation: 1 })
+    expect(liveSchemaVersions()).toEqual({ markdown: DOC_SCHEMA_VERSION, text: 1, sheet: 2, document: 3, notebook: 1, presentation: 1 })
     expect(liveFormatOfName('Analysis.IPYNB')?.id).toBe('notebook')
   })
 

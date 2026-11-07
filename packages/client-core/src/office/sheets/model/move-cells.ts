@@ -1,3 +1,4 @@
+import { freezeSortFormulas } from './sort-formulas.js'
 import { PACKAGE_RELATIONSHIPS_NS, parseXml, relativeTarget } from '../../ooxml/package.js'
 import { child, children, serializeNode } from '../codec/xml.js'
 import { referenceParts, resolveXml } from '../codec/reference-xml.js'
@@ -58,6 +59,8 @@ export function moveCells(source: SheetModel, target: SheetModel, range: CellRan
   const ruleOrigins = new Map<object, SheetModel>()
   const movedTables = new Set<object>()
   source.workbook.transact(() => {
+    freezeSortFormulas(source)
+    if (target !== source) freezeSortFormulas(target)
     target.ensure(destination.bottom, destination.right)
     const movedKeys = new Set<string>()
     const relocateMap = <T>(from: Y.Map<T>, to: Y.Map<T>, keyCell: (key: string) => string = (key) => key) => {
@@ -67,7 +70,7 @@ export function moveCells(source: SheetModel, target: SheetModel, range: CellRan
         const position = source.position(cell)
         if (!position || !rangeContains(range, position.row, position.col)) continue
         const dest = target.keyAt(position.row + dr, position.col + dc)
-        entries.push([dest + key.slice(cell.length), value])
+        entries.push([dest + key.slice(cell.length), ((from as unknown) === source.cells ? source.cellData(key) : value) as T])
         from.delete(key)
       }
       for (const key of [...to.keys()]) {
@@ -167,7 +170,7 @@ export function moveCells(source: SheetModel, target: SheetModel, range: CellRan
       target.drawings.set(id, { ...movedDrawing, from: move(drawing.from!), ...(drawing.to ? { to: move(drawing.to) } : {}) })
     }
     for (const owner of source.workbook.sheets()) {
-      for (const [key, data] of [...owner.cells]) if (data.f !== undefined) owner.cells.set(key, { ...data, f: redirect(data.f, owner === target && movedKeys.has(key) ? source : owner, owner) })
+      for (const [key, raw] of [...owner.cells]) { const data = owner.cellData(key) ?? raw; if (data.f !== undefined) owner.cells.set(key, { ...data, f: redirect(data.f, owner === target && movedKeys.has(key) ? source : owner, owner) }) }
       for (const [key, raw] of [...owner.links]) {
         const link = raw as Hyperlink
         const original = locations.get(link)

@@ -1,4 +1,6 @@
 const esUi: Record<string, string> = {
+  "To do this, all the merged cells need to be the same size.": "Para hacer esto, todas las celdas combinadas deben tener el mismo tamaño.",
+  "Cannot sort an opaque What-If data table.": "No se puede ordenar una tabla de datos de análisis de hipótesis no compatible.",
   "Table width": "Ancho de la tabla",
   "Column widths": "Anchos de columna",
   "Cell width": "Ancho de celda",

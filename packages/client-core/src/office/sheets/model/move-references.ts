@@ -12,7 +12,8 @@ export type MoveIntervals = (start: number, end: number) => [number, number][]
 export function captureMovedReferences(sheet: SheetModel, kind: AxisKind, intervals: MoveIntervals): () => void {
   const axis = kind === 'row' ? sheet.rows : sheet.cols
   const before = axis.resolve()
-  const index = (id: string) => before.index.get(id) ?? (/^(0|[1-9]\d*)$/.test(id) && Number(id) >= before.next ? before.ids.length + Number(id) - before.next : -1)
+  const slots = kind === 'row' ? sheet.positionRows.resolve() : undefined
+  const index = (id: string) => (id.startsWith('~p') ? slots?.index.get(id.slice(2)) : before.index.get(id)) ?? (/^(0|[1-9]\d*)$/.test(id) && Number(id) >= before.next ? before.ids.length + Number(id) - before.next : -1)
   const rewrite = (formula: string, owner: SheetModel) => mapIdTokens(formula, (token, text) => {
     if (token.name !== undefined || token.sheets || (token.sheet ?? owner.id) !== sheet.id || !token.to) return text
     const a = token.from[kind], b = token.to[kind]
@@ -45,11 +46,12 @@ export function captureMovedReferences(sheet: SheetModel, kind: AxisKind, interv
       }
       for (const collection of [owner.cells, owner.cf, owner.dv, owner.tables, owner.filter] as const) {
         for (const [key, value] of [...collection]) {
-          const next = visit(value)
-          if (JSON.stringify(next) !== JSON.stringify(value)) (collection as import('yjs').Map<unknown>).set(key, next)
+          const effective = collection === owner.cells ? owner.cellData(key) : value
+          const next = visit(effective)
+          if (JSON.stringify(next) !== JSON.stringify(effective)) (collection as import('yjs').Map<unknown>).set(key, next)
         }
       }
-      for (const key of ['xml', 'referenceParts']) {
+      for (const key of [...owner.raw.keys()].filter((key) => key.startsWith('sortFormula:')).concat(['xml', 'referenceParts'])) {
         const value = owner.raw.get(key)
         if (value !== undefined) owner.raw.set(key, visit(value, key))
       }

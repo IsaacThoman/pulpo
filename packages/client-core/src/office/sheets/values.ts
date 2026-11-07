@@ -26,6 +26,8 @@ export interface SheetValues {
   spill?(sheet: SheetModel, row: number, col: number): { rows: number; cols: number } | undefined
   /** Evaluates an A1 formula as if typed in a cell (conditional formats, validation lists). */
   evaluate?(sheet: SheetModel, row: number, col: number, formula: string): CellValue | CellValue[][]
+  /** Refresh inside a bulk transaction before reading relocated formulas. */
+  refresh?(): void
   /** Called after values change (recalculation or remote edits). Returns an unsubscribe function. */
   subscribe(listener: () => void): () => void
 }

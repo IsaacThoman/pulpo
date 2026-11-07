@@ -76,6 +76,7 @@ export class Axis {
      * past the data.
      */
     readonly chunk = 1,
+    readonly positional?: () => Axis | undefined,
   ) {
     order.observe(() => this.invalidate())
     dead.observe(() => this.invalidate())
@@ -167,6 +168,15 @@ export class Axis {
    * to where the axis would put them.
    */
   indexOf(id: string): number {
+    if (id.startsWith('~p')) {
+      const positions = this.positional?.()
+      return positions?.order.length ? positions.indexOf(id.slice(2)) : this.indexOf(id.slice(2))
+    }
+    if (id.startsWith('~r')) {
+      const split = id.lastIndexOf('_')
+      const source = this.indexOf(id.slice(2, split))
+      return source < 0 ? -1 : source + Number(id.slice(split + 1))
+    }
     const { ids, next, index } = this.resolve()
     const found = index.get(id)
     if (found !== undefined) return found
@@ -192,6 +202,7 @@ export class Axis {
    * neighbors) don't shift it. Undefined if the id wasn't deleted; -1 if nothing precedes an end.
    */
   deletedPosition(id: string, side: 'start' | 'end'): number | undefined {
+    if (id.startsWith('~p')) return this.positional?.()?.deletedPosition(id.slice(2), side)
     const visited = new Set<string>()
     let current = id
     for (;;) {
@@ -208,6 +219,13 @@ export class Axis {
       visited.add(current)
       current = neighbor
     }
+  }
+
+  /** Seed a stationary axis from an existing row order without leaving a stale local cache. */
+  seed(ids: readonly string[]): void {
+    if (this.order.length) return
+    this.order.push([...ids])
+    this.invalidate()
   }
 
   /** Stores entries until at least `count` are materialized. Call inside a transaction. */
@@ -273,6 +291,21 @@ export class Axis {
     this.invalidate()
     // Moving keeps ids: references and cells follow the moved rows.
     this.order.insert(this.storedIndex(to), moving)
+    this.invalidate()
+  }
+
+  /** Reorders a contiguous run without changing identities. Call inside a transaction.
+   * Remove every known copy; concurrent permutations merge with first-occurrence-wins.
+   */
+  permute(from: number, ids: readonly string[]): void {
+    this.ensure(from + ids.length + 1)
+    const current = this.resolve().ids.slice(from, from + ids.length)
+    const permuted = new Set(ids)
+    if (permuted.size !== ids.length || current.some((id) => !permuted.has(id))) throw new Error('Invalid axis permutation')
+    if (current.every((id, i) => id === ids[i])) return
+    this.removeFromOrder(permuted)
+    this.invalidate()
+    this.order.insert(this.storedIndex(from), [...ids])
     this.invalidate()
   }
 

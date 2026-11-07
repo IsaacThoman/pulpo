@@ -5,7 +5,7 @@ import type { LiveAssetStore } from '../../live-format.js'
 import { MAX_EXPANDED_CELLS } from '../limits.js'
 import { columnIntervalProps } from '../model/column-intervals.js'
 import { cellName, MAX_COLS, MAX_ROWS, parseCellName, parseRangeName, rangeContains, rangeName, type CellRange } from '../address.js'
-import { toA1Form } from '../model/formula-ids.js'
+import { toA1Form, toIdForm } from '../model/formula-ids.js'
 import type { AutoFilter, DrawingObject, Hyperlink, Note, RangeIds, SheetColor, SheetFormat, StyleProps } from '../model/schema.js'
 import { WorkbookModel, type SheetModel } from '../model/workbook.js'
 import { Stylesheet, type ResolvedStyle } from '../styles/stylesheet.js'
@@ -245,6 +245,7 @@ export class SheetView {
     this.themeXml = this.workbook.metaValue('themeXml')
     this.theme = readThemeColors(this.themeXml)
     this.undoManager = new Y.UndoManager(this.workbook.root, { trackedOrigins: new Set([this.origin]), captureTimeout: 0 })
+    for (const sheet of this.workbook.sheets()) this.undoManager.addToScope([sheet.positionRows.order, sheet.positionRows.dead])
     this.undoManager.on('stack-item-added', (event: { stackItem: { meta: Map<string, unknown> } }) => {
       event.stackItem.meta.set('selection', this.selection)
       event.stackItem.meta.set('sheet', this.sheetIdValue)
@@ -475,7 +476,7 @@ export class SheetView {
     const owners = new Set<string>([...sheet.xf.keys(), ...[...sheet.fmt.keys()].filter((key) => key.endsWith('|fontSize')).map((key) => key.slice(0, key.lastIndexOf('|')))])
     for (const key of owners) {
       const position = sheet.position(key)
-      if (!position || sheet.rowMeta.has(`${sheet.rows.idAt(position.row)}|size`)) continue
+      if (!position || sheet.rowProp(position.row, 'size') !== undefined) continue
       const size = this.display.style(position.row, position.col).fontSize
       const pixels = Math.round(size * 1.3 * POINTS_TO_PIXELS)
       if (pixels > defaultRow && pixels > (autoHeights.get(position.row) ?? 0)) autoHeights.set(position.row, pixels)
@@ -485,10 +486,10 @@ export class SheetView {
       const bar = key.lastIndexOf('|')
       const prop = key.slice(bar + 1)
       if (prop !== 'size' && prop !== 'hidden') continue
-      const index = sheet.rows.indexOf(key.slice(0, bar))
+      const index = sheet.rowMetaPosition(key.slice(0, bar), prop)
       if (index < 0) continue
-      if (prop === 'hidden' && value) rowSizes.set(index, 0)
-      else if (prop === 'size' && rowSizes.get(index) !== 0) rowSizes.set(index, Math.round((value as number) * POINTS_TO_PIXELS))
+      if (prop === 'hidden' && sheet.rowProp(index, 'hidden')) rowSizes.set(index, 0)
+      else if (prop === 'size' && rowSizes.get(index) !== 0) rowSizes.set(index, Math.round((sheet.rowProp(index, 'size') ?? value as number) * POINTS_TO_PIXELS))
     }
     for (const [key, value] of sheet.colMeta) {
       const bar = key.lastIndexOf('|')
@@ -753,7 +754,7 @@ export class SheetView {
     const last = this.selection.ranges[this.selection.ranges.length - 1]!
     const key = sheet.keyAt(active.row, active.col)
     const note = sheet.notes.get(key) as Note | undefined
-    const link = sheet.links.get(key) as Hyperlink | undefined
+    const link = sheet.linkAt(active.row, active.col)
     return {
       sheetId: this.sheetIdValue,
       sheets: this.workbook.sheets().map((entry) => {
@@ -1239,6 +1240,7 @@ export class SheetView {
   private run(change: () => void): void {
     if (this.readOnly) return
     if (!this.commitEdit()) return
+    for (const sheet of this.workbook.sheets()) this.undoManager.addToScope([sheet.positionRows.order, sheet.positionRows.dead])
     change()
     this.scheduleRender()
     this.notify()
@@ -1412,7 +1414,7 @@ export class SheetView {
   /** Shared by toolbar sorts and the filter menu, including error reporting and safety guards. */
   sortArea(area: CellRange, keys: commands.SortKey[], options: { caseSensitive?: boolean } = {}): void {
     this.dataOperation(() => commands.sortRange(this.sheet, area, keys, (row, col) => this.values.get(this.sheet, row, col), {
-      ...options, values: this.values, display: (r, c) => this.displayText(r, c), collaborative: !!this.options.awareness,
+      ...options, values: this.values, display: (r, c) => this.displayText(r, c),
     }))
   }
 
@@ -1551,11 +1553,20 @@ export class SheetView {
       // Deleted ids stay deleted in the copy, so virtual rows past the end line up too.
       for (const [id, index] of source.rows.dead) copy.rows.dead.set(id, index)
       for (const [id, index] of source.cols.dead) copy.cols.dead.set(id, index)
+      this.undoManager?.addToScope([copy.positionRows.order, copy.positionRows.dead])
+      if (source.positionRows.order.length) copy.positionRows.seed(source.positionRows.resolve().ids)
+      for (const [id, dead] of source.positionRows.dead) copy.positionRows.dead.set(id, dead)
       for (const name of ['cells', 'xf', 'fmt', 'rowMeta', 'colMeta', 'view', 'merges', 'cf', 'dv', 'links', 'notes'] as const) {
         const from = source.map.get(name) as Y.Map<unknown>
         const to = copy.map.get(name) as Y.Map<unknown>
-        for (const [key, value] of from) to.set(key, value)
+        for (const [key, value] of from) {
+          if (name === 'cells') {
+            const data = source.cellData(key)!
+            to.set(key, data.f !== undefined ? { ...data, f: toIdForm(toA1Form(data.f, source), copy) } : data)
+          } else to.set(key, value)
+        }
       }
+      for (const [key, value] of source.raw) if (/^(rowPosition:|positionRowSource:)/.test(key)) copy.raw.set(key, value)
       for (const key of ['format', 'colTail']) if (source.raw.has(key)) copy.raw.set(key, source.raw.get(key))
       if (source.tabColor) copy.map.set('tabColor', source.tabColor)
     })
@@ -1604,7 +1615,8 @@ export class SheetView {
     const sheets = options.allSheets ? this.workbook.sheets().filter((sheet) => (sheet.map.get('kind') ?? 'worksheet') === 'worksheet') : [this.sheet]
     for (const sheet of sheets) {
       const found: { row: number; col: number }[] = []
-      for (const [key, data] of sheet.cells) {
+      for (const [key, raw] of sheet.cells) {
+        const data = sheet.cellData(key) ?? raw
         const position = sheet.position(key)
         if (!position) continue
         let text: string

@@ -24,7 +24,7 @@ export function sheetsToText(doc: Y.Doc, valueOf?: (sheet: SheetModel, row: numb
   const sections: string[] = []
   const shown = (sheet: SheetModel, row: number, col: number): string => {
     const key = sheet.keyAt(row, col)
-    const data = sheet.cells.get(key)
+    const data = sheet.cellData(key)
     if (!data) {
       // Results spilled by dynamic-array formulas show too.
       const spilled = valueOf?.(sheet, row, col) ?? null

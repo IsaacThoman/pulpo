@@ -207,6 +207,7 @@ function resolveToken(sheet: SheetModel, token: IdToken, options: A1FormOptions)
     const first = token.from[kind]
     const second = token.to?.[kind]
     if (first === undefined) continue
+    if ([first, second].some((id) => id?.startsWith('~r') && (axis.indexOf(id) < 0 || axis.indexOf(id) >= limit))) return undefined
     let positions: [number, number] | undefined
     if (second === undefined) {
       let index = axis.indexOf(first)

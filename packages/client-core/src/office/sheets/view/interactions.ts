@@ -1424,7 +1424,7 @@ export class SheetInteractions {
     const sheet = view.sheet
     const key = sheet.keyAt(hit.row, hit.col)
     const note = sheet.notes.get(key) as Note | undefined
-    const link = sheet.links.get(key)
+    const link = sheet.linkAt(hit.row, hit.col)
     if (!note && !link) return this.hideNote()
     this.noteTimer = setTimeout(() => this.showNote(hit.row, hit.col, note, !!link), 250)
   }
@@ -1479,7 +1479,7 @@ export class SheetInteractions {
 
   private followLink(row: number, col: number): boolean {
     const view = this.view
-    const link = view.sheet.links.get(view.sheet.keyAt(row, col)) as { target?: string; location?: string } | undefined
+    const link = view.sheet.linkAt(row, col)
     if (!link) return false
     if (link.location) return view.goTo(link.location)
     if (link.target && /^(https?:|mailto:)/i.test(link.target)) {

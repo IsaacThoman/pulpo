@@ -186,7 +186,7 @@ function lineSignatures(sheet: SheetModel, kind: AxisKind, count: number, styles
   }
   for (const [key, data] of sheet.cells) {
     const position = sheet.position(key)
-    if (position) add(key, `c${cellSignature(sheet, data)}`)
+    if (position) add(key, `c${cellSignature(sheet, sheet.cellData(key) ?? data)}`)
   }
   for (const [key, xf] of sheet.xf) {
     const mapped = styles(xf)
@@ -220,7 +220,7 @@ function extentOf(sheet: SheetModel): Extent {
   const used = sheet.usedRange()
   let rows = used ? used.bottom + 1 : 0
   let cols = used ? used.right + 1 : 0
-  for (const key of sheet.rowMeta.keys()) rows = Math.max(rows, sheet.rows.indexOf(key.slice(0, key.lastIndexOf('|'))) + 1)
+  for (const key of sheet.rowMeta.keys()) rows = Math.max(rows, sheet.rowMetaPosition(key.slice(0, key.lastIndexOf('|')), key.slice(key.lastIndexOf('|') + 1)) + 1)
   for (const key of sheet.colMeta.keys()) cols = Math.max(cols, sheet.cols.indexOf(key.slice(0, key.lastIndexOf('|'))) + 1)
   return { rows, cols }
 }
@@ -283,6 +283,7 @@ function syncSheet(own: SheetModel, other: SheetModel, styles: StyleMap, restore
   syncView(own, other)
   syncCollections(own, other, styles, restore)
   for (const key of new Set([...own.raw.keys(), ...other.raw.keys()])) {
+    if (/^(sortFormula:|rowPosition:|positionRowSource:)/.test(key) || key === 'positionAnchors') continue
     let value = other.raw.get(key)
     if (key === 'xml' && typeof value === 'string') value = translateXml(value, other, own)
     if (key === 'referenceParts') value = Object.fromEntries(Object.entries(referenceParts(other)).map(([path, part]) => [path, { ...part, anchored: translateXml(part.anchored, other, own) }]))
@@ -330,7 +331,7 @@ function syncCells(own: SheetModel, other: SheetModel, styles: StyleMap, restore
     const [row, col] = position.split(',').map(Number) as [number, number]
     const otherData = other.cell(row, col)
     const ownKey = own.keyAt(row, col)
-    const ownData = own.cells.get(ownKey)
+    const ownData = own.cellData(ownKey)
     if (comparable(own, ownData, restore) !== comparable(other, otherData, restore)) {
       if (!otherData) own.cells.delete(ownKey)
       else {
@@ -370,7 +371,7 @@ function syncAxisMeta(own: SheetModel, other: SheetModel, kind: AxisKind, styles
   let last = -1
   for (const [key, value] of otherMeta) {
     const bar = key.lastIndexOf('|')
-    const index = otherAxis.indexOf(key.slice(0, bar))
+    const index = kind === 'row' ? other.rowMetaPosition(key.slice(0, bar), key.slice(bar + 1)) : otherAxis.indexOf(key.slice(0, bar))
     if (index < 0) continue
     const prop = key.slice(bar + 1)
     last = Math.max(last, index)
@@ -379,7 +380,13 @@ function syncAxisMeta(own: SheetModel, other: SheetModel, kind: AxisKind, styles
       const keep = value as { last?: string; ending?: string }
       translated = { ...keep, ...(keep.last !== undefined ? { last: translateAxisId(own.cols, other.cols, keep.last) } : {}) }
     }
-    wanted.set(`${ownAxis.idAt(index)}|${prop}`, translated)
+    let id = ownAxis.idAt(index)
+    if (kind === 'row' && prop !== 'hidden' && prop !== 'manualHidden') {
+      const positional = own.positionRowId(index)
+      const legacy = own.raw.get(`positionRowSource:${positional}`) as string | undefined ?? id
+      id = ownMeta.has(`${positional}|${prop}`) ? positional : ownMeta.has(`${legacy}|${prop}`) && own.rowMetaPosition(legacy, prop) === index ? legacy : positional
+    }
+    wanted.set(`${id}|${prop}`, translated)
   }
   for (const key of [...ownMeta.keys()]) if (!wanted.has(key)) ownMeta.delete(key)
   if (last >= 0) ownAxis.ensure(last + 1)

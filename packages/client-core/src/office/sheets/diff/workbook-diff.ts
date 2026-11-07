@@ -134,7 +134,7 @@ class SheetReader {
     const key = sheet.keyAt(row, col)
     const rowId = sheet.rows.idAt(row)
     const colId = sheet.cols.idAt(col)
-    const base = sheet.xf.get(key) ?? (sheet.rowMeta.get(`${rowId}|xf`) as number | undefined) ?? (sheet.colMeta.get(`${colId}|xf`) as number | undefined)
+    const base = sheet.xf.get(key) ?? sheet.rowProp(sheet.rows.indexOf(rowId), 'xf') ?? (sheet.colMeta.get(`${colId}|xf`) as number | undefined)
     return { ...this.styles.resolve(base), ...sheet.axisOverrides('col', colId), ...sheet.axisOverrides('row', rowId), ...sheet.cellOverrides(key) }
   }
 

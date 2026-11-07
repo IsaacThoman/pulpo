@@ -293,7 +293,7 @@ try {
   })
 
   await step('filter-menu sorts preserve active filter visibility and undo once', async () => {
-    const { page: filtered, errors: filterErrors } = await open('?local=1')
+    const { page: filtered, errors: filterErrors } = await open('?split=1')
     await filtered.evaluate(() => {
       const view = window.__sheets.views[0]
       const sheet = view.workbook.addSheet('Sort regression')
@@ -306,22 +306,28 @@ try {
     const openMenu = async () => {
       const point = await cellPoint(filtered, 0, 0)
       await filtered.mouse.click(point.left + point.width - 8, point.top + point.height - 8)
-      await filtered.getByRole('button', { name: 'Sort Z to A', exact: true }).last().waitFor()
+      await filtered.locator('[data-replica="0"]').getByRole('button', { name: 'Sort Z to A', exact: true }).last().waitFor()
     }
+    await filtered.waitForFunction(() => window.__sheets.views[1].workbook.sheets().some((sheet) => sheet.name === 'Sort regression'))
+    await filtered.evaluate(() => {
+      const view = window.__sheets.views[1]
+      view.setActiveSheet(view.workbook.sheets().find((sheet) => sheet.name === 'Sort regression').id)
+    })
     await openMenu()
     await filtered.getByRole('checkbox', { name: 'pear' }).uncheck()
     await filtered.getByRole('button', { name: 'OK', exact: true }).click()
     await openMenu()
-    await filtered.getByRole('button', { name: 'Sort Z to A', exact: true }).last().click()
+    await filtered.locator('[data-replica="0"]').getByRole('button', { name: 'Sort Z to A', exact: true }).last().click()
     const state = () => filtered.evaluate(() => {
       const view = window.__sheets.views[0]
       return [1, 2, 3].map((r) => [view.inputText(r, 0), !!view.sheet.rowProp(r, 'hidden')])
     })
     assert.deepEqual(await state(), [['pear', true], ['apple', false], ['apple', false]])
+    await filtered.waitForFunction(() => window.__sheets.views[1].inputText(1, 0) === 'pear' && window.__sheets.views[1].sheet.rowProp(1, 'hidden'))
     await filtered.evaluate(() => window.__sheets.views[0].undo())
     assert.deepEqual(await state(), [['apple', false], ['pear', true], ['apple', false]])
     await openMenu()
-    await filtered.getByRole('button', { name: 'Sort A to Z', exact: true }).last().click()
+    await filtered.locator('[data-replica="0"]').getByRole('button', { name: 'Sort A to Z', exact: true }).last().click()
     assert.deepEqual(await state(), [['apple', false], ['apple', false], ['pear', true]])
     await openMenu()
     await filtered.getByRole('button', { name: 'Clear filter', exact: true }).click()

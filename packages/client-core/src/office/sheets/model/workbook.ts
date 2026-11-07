@@ -1,3 +1,4 @@
+import { cellVersion, rebindSortedFormulas, type SortedFormula } from './sort-formulas.js'
 import { toA1Form, toIdForm } from './formula-ids.js'
 import { maxOf } from '../../../collections.js'
 import * as Y from 'yjs'
@@ -22,6 +23,8 @@ import {
   type ViewProps,
   type WorkbookMeta,
 } from './schema.js'
+
+const sortUndoDocuments = new WeakSet<Y.Doc>()
 
 export type SheetState = 'visible' | 'hidden' | 'veryHidden'
 
@@ -48,6 +51,7 @@ export const COL_CHUNK = 64
 const AXIS_STYLE_PREFIX = 's.'
 
 export class SheetModel {
+  private slots: Axis | undefined
   readonly rows: Axis
   readonly cols: Axis
   readonly cells: Y.Map<CellData>
@@ -71,7 +75,7 @@ export class SheetModel {
     readonly id: string,
     readonly map: Y.Map<unknown>,
   ) {
-    this.rows = new Axis(map.get('rows') as Y.Array<string>, map.get('deadRows') as Y.Map<Tombstone>, ROW_CHUNK)
+    this.rows = new Axis(map.get('rows') as Y.Array<string>, map.get('deadRows') as Y.Map<Tombstone>, ROW_CHUNK, () => this.positionRows)
     this.cols = new Axis(map.get('cols') as Y.Array<string>, map.get('deadCols') as Y.Map<Tombstone>, COL_CHUNK)
     this.cells = map.get('cells') as Y.Map<CellData>
     this.xf = map.get('xf') as Y.Map<number>
@@ -88,6 +92,40 @@ export class SheetModel {
     this.notes = map.get('notes') as Y.Map<unknown>
     this.filter = map.get('filter') as Y.Map<unknown>
     this.raw = map.get('raw') as Y.Map<unknown>
+  }
+
+  /** A second axis represents worksheet positions. Sorting never moves these identities.
+   * Top-level shared types have deterministic names, so simultaneous upgrades cannot replace
+   * one another's axes. They are included in the view's undo scope.
+   */
+  get positionRows(): Axis {
+    return this.slots ??= new Axis(this.workbook.doc.getArray(`sheetPositions:${this.id}`), this.workbook.doc.getMap(`sheetDeadPositions:${this.id}`), ROW_CHUNK)
+  }
+
+  enablePositions(): void {
+    if (!this.positionRows.order.length) this.positionRows.seed(this.rows.resolve().ids)
+  }
+
+  positionRowId(row: number): string {
+    return `~p${this.positionRows.order.length ? this.positionRows.idAt(row) : this.rows.idAt(row)}`
+  }
+
+  cellData(key: string): CellData | undefined {
+    const data = this.cells.get(key)
+    if (data?.f === undefined) return data
+    const moved = this.raw.get(`sortFormula:${key}`) as SortedFormula | undefined
+    return moved?.source === cellVersion(this, key) ? { ...data, f: moved.f } : data
+  }
+
+  linkAt(row: number, col: number): Hyperlink | undefined {
+    const record = this.links.get(this.keyAt(row, col)) as Hyperlink | undefined
+    if (record && !record.range) return record
+    for (const raw of this.links.values()) {
+      const link = raw as Hyperlink
+      const range = link.range && this.resolveRange(link.range)
+      if (range && row >= range.top && row <= range.bottom && col >= range.left && col <= range.right) return link
+    }
+    return record
   }
 
   static create(map: Y.Map<unknown>, name: string): void {
@@ -131,7 +169,7 @@ export class SheetModel {
   }
 
   cell(row: number, col: number): CellData | undefined {
-    return this.cells.get(this.keyAt(row, col))
+    return this.cellData(this.keyAt(row, col))
   }
 
   /** Writes or clears a cell's content (style is separate). */
@@ -156,7 +194,7 @@ export class SheetModel {
   forEachCell(visit: (row: number, col: number, data: CellData, key: string) => void): void {
     for (const [key, data] of this.cells) {
       const position = this.position(key)
-      if (position) visit(position.row, position.col, data, key)
+      if (position) visit(position.row, position.col, this.cellData(key) ?? data, key)
     }
   }
 
@@ -234,7 +272,15 @@ export class SheetModel {
   // ── Rows and columns ─────────────────────────────────────────────────────
 
   rowProp<K extends AxisProp>(row: number, prop: K): AxisProps[K] | undefined {
-    return this.rowMeta.get(`${this.rows.idAt(row)}|${prop}`) as AxisProps[K] | undefined
+    if (prop === 'hidden' || prop === 'manualHidden') return this.rowMeta.get(`${this.rows.idAt(row)}|${prop}`) as AxisProps[K] | undefined
+    const id = this.positionRowId(row)
+    const source = this.raw.get(`positionRowSource:${id}`) as string | undefined
+    return (this.rowMeta.get(`${id}|${prop}`) ?? this.rowMeta.get(`${source ?? this.rows.idAt(row)}|${prop}`)) as AxisProps[K] | undefined
+  }
+
+  rowMetaPosition(id: string, prop: string): number {
+    const anchored = prop !== 'hidden' && prop !== 'manualHidden' && this.raw.get(`rowPosition:${id}`)
+    return this.rows.indexOf(typeof anchored === 'string' ? anchored : id)
   }
 
   colProp<K extends AxisProp>(col: number, prop: K): AxisProps[K] | undefined {
@@ -251,7 +297,11 @@ export class SheetModel {
 
   /** Style overrides on whole rows/columns (`s.<prop>` keys of the axis meta maps). */
   axisOverrides(axis: 'row' | 'col', id: string): Partial<StyleProps> {
-    return this.workbook.overridesOf(axis === 'row' ? this.rowMeta : this.colMeta, id, AXIS_STYLE_PREFIX)
+    if (axis === 'col') return this.workbook.overridesOf(this.colMeta, id, AXIS_STYLE_PREFIX)
+    const row = this.rows.indexOf(id)
+    const positional = this.positionRowId(row)
+    const source = this.raw.get(`positionRowSource:${positional}`) as string | undefined
+    return { ...this.workbook.overridesOf(this.rowMeta, source ?? this.rows.idAt(row), AXIS_STYLE_PREFIX), ...this.workbook.overridesOf(this.rowMeta, positional, AXIS_STYLE_PREFIX) }
   }
 
   setAxisStyle(axis: 'row' | 'col', positions: number[], props: Partial<{ [K in StyleProp]: StyleProps[K] | undefined }>): void {
@@ -260,9 +310,12 @@ export class SheetModel {
     this.workbook.transact(() => {
       ids.ensure(maxOf(positions) + 1)
       for (const position of positions) {
-        const id = ids.idAt(position)
+        const id = axis === 'row' ? this.positionRowId(position) : ids.idAt(position)
         for (const [prop, value] of Object.entries(props)) {
-          if (value === undefined) meta.delete(`${id}|${AXIS_STYLE_PREFIX}${prop}`)
+          if (value === undefined) {
+            meta.delete(`${id}|${AXIS_STYLE_PREFIX}${prop}`)
+            if (axis === 'row') meta.delete(`${this.raw.get(`positionRowSource:${id}`) ?? this.rows.idAt(position)}|${AXIS_STYLE_PREFIX}${prop}`)
+          }
           else meta.set(`${id}|${AXIS_STYLE_PREFIX}${prop}`, value)
         }
       }
@@ -274,8 +327,12 @@ export class SheetModel {
     this.workbook.transact(() => {
       axis.ensure(maxOf(positions) + 1)
       for (const position of positions) {
-        const key = `${axis.idAt(position)}|${prop}`
-        if (value === undefined) meta.delete(key)
+        const id = axis === this.rows && prop !== 'hidden' && prop !== 'manualHidden' ? this.positionRowId(position) : axis.idAt(position)
+        const key = `${id}|${prop}`
+        if (value === undefined) {
+          meta.delete(key)
+          if (axis === this.rows && prop !== 'hidden' && prop !== 'manualHidden') meta.delete(`${this.raw.get(`positionRowSource:${id}`) ?? this.rows.idAt(position)}|${prop}`)
+        }
         else meta.set(key, value)
       }
     })
@@ -371,6 +428,12 @@ export class WorkbookModel {
     /** Transaction origin for edits made through this model (undo managers track it). */
     readonly origin: unknown = null,
   ) {
+    if (!sortUndoDocuments.has(doc)) {
+      sortUndoDocuments.add(doc)
+      doc.on('beforeObserverCalls', (transaction: Y.Transaction) => {
+        if (transaction.origin instanceof Y.UndoManager) for (const sheet of this.sheets()) rebindSortedFormulas(sheet)
+      })
+    }
     this.root = doc.getMap(WORKBOOK_MAP)
   }
 

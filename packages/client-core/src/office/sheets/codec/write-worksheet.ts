@@ -92,7 +92,7 @@ export function rangeText(range: CellRange): string {
 /** Style overrides of a cell including those of its row and column (cell beats row beats column). */
 export function cellStyleIndex(sheet: SheetModel, styles: Stylesheet, rowId: string, colId: string, key: string): number | undefined {
   const cellXf = sheet.xf.get(key)
-  const rowXf = sheet.rowMeta.get(`${rowId}|xf`) as number | undefined
+  const rowXf = sheet.rowProp(sheet.rows.indexOf(rowId), 'xf')
   const colXf = (sheet.colMeta.get(`${colId}|xf`) as number | undefined) ?? columnTailXf(sheet, colId)
   const base = cellXf ?? rowXf ?? colXf
   const overrides: Partial<StyleProps> = {
@@ -393,7 +393,7 @@ function writeSheetData(sheet: SheetModel, context: WorksheetWriteContext): { ro
     const row = sheet.rows.indexOf(ids.row)
     const col = sheet.cols.indexOf(ids.col)
     if (row < 0 || col < 0 || row >= MAX_ROWS || col >= MAX_COLS) continue
-    const data = sheet.cells.get(key)
+    const data = sheet.cellData(key)
     const style = cellStyleIndex(sheet, styles, ids.row, ids.col, key)
     const spill = spilled.get(`${row}:${col}`)
     const xml = data ? writeCell(sheet, row, col, data, style, context) : spill !== undefined ? writeValueCell(row, col, spill, style, context) : style ? `<c r="${cellName(row, col)}" s="${style}"/>` : ''
@@ -402,14 +402,17 @@ function writeSheetData(sheet: SheetModel, context: WorksheetWriteContext): { ro
     touch(row, col)
   }
   // Rows with properties but no cells still need a <row>.
-  const rowOwners = new Set<string>()
-  for (const key of sheet.rowMeta.keys()) rowOwners.add(key.slice(0, key.lastIndexOf('|')))
   let maxRowLevel = 0
   const rowAttrs = new Map<number, string>()
-  for (const id of [...rowOwners].sort((a, b) => sheet.rows.indexOf(a) - sheet.rows.indexOf(b))) {
-    const index = sheet.rows.indexOf(id)
+  const rowPositions = new Set<number>()
+  for (const key of sheet.rowMeta.keys()) {
+    const bar = key.lastIndexOf('|')
+    rowPositions.add(sheet.rowMetaPosition(key.slice(0, bar), key.slice(bar + 1)))
+  }
+  for (const index of [...rowPositions].sort((a, b) => a - b)) {
     if (index < 0 || index >= MAX_ROWS) continue
-    const props = axisProps(sheet.rowMeta, id)
+    const id = sheet.rows.idAt(index)
+    const props = Object.fromEntries(['size', 'custom', 'hidden', 'manualHidden', 'level', 'collapsed', 'xf', 'keep'].map((prop) => [prop, sheet.rowProp(index, prop as keyof AxisProps)])) as Partial<AxisProps>
     const overrides = sheet.axisOverrides('row', id)
     const xf = Object.keys(overrides).length ? styles.intern(props.xf, overrides) : props.xf
     maxRowLevel = Math.max(maxRowLevel, props.level ?? 0)

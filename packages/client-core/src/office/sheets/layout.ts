@@ -7,7 +7,7 @@ import type * as Y from 'yjs'
  */
 
 /** Bumped when the Y.Doc layout changes incompatibly (see model/schema.ts). */
-export const SHEETS_SCHEMA_VERSION = 1
+export const SHEETS_SCHEMA_VERSION = 2
 
 /** The first is used for new files. */
 export const SHEET_EXTENSIONS = ['xlsx', 'xlsm', 'xltx', 'xltm', 'csv', 'tsv'] as const

@@ -1,3 +1,4 @@
+import { freezeSortFormulas } from './sort-formulas.js'
 import { captureMovedReferences, type MoveIntervals } from './move-references.js'
 import { tokenize } from '../formula/tokenize.js'
 import { mapXmlReferences } from '../codec/reference-xml.js'
@@ -26,6 +27,9 @@ export function insertAxis(sheet: SheetModel, kind: AxisKind, position: number, 
   sheet.workbook.transact(() => {
     const axis = kind === 'row' ? sheet.rows : sheet.cols
     const finish = captureMetadata(sheet, kind)
+    if (kind === 'row') sheet.enablePositions()
+    freezeSortFormulas(sheet)
+    if (kind === 'row' && sheet.positionRows.order.length) sheet.positionRows.insert(position, count)
     inserted = axis.insert(position, count)
     finish()
     if (position > 0) copyFormatFrom(sheet, kind, axis.idAt(position - 1), inserted)
@@ -38,11 +42,14 @@ function copyFormatFrom(sheet: SheetModel, kind: AxisKind, sourceId: string, tar
   const meta = kind === 'row' ? sheet.rowMeta : sheet.colMeta
   for (const [key, value] of [...meta.entries()]) {
     const bar = key.lastIndexOf('|')
-    if (key.slice(0, bar) !== sourceId) continue
+    if (kind === 'row' ? sheet.rowMetaPosition(key.slice(0, bar), key.slice(bar + 1)) !== sheet.rows.indexOf(sourceId) : key.slice(0, bar) !== sourceId) continue
     const prop = key.slice(bar + 1)
     // Height/width and styles carry over; visibility and outline do not.
     if (prop === 'hidden' || prop === 'manualHidden' || prop === 'level' || prop === 'collapsed' || prop === 'keep') continue
-    for (const target of targets) meta.set(`${target}|${prop}`, value)
+    const sourceRow = sheet.rows.indexOf(sourceId)
+    const inherited = kind !== 'row' ? value : prop.startsWith('s.') ? sheet.axisOverrides('row', sourceId)[prop.slice(2) as keyof import('./schema.js').StyleProps] : sheet.rowProp(sourceRow, prop as keyof AxisProps)
+    if (inherited === undefined) continue
+    for (const target of targets) meta.set(`${kind === 'row' ? sheet.positionRowId(sheet.rows.indexOf(target)) : target}|${prop}`, inherited)
   }
   const copyStyles = <T>(map: Y.Map<T>, keyOf: (key: string) => string) => {
     for (const [key, value] of [...map.entries()]) {
@@ -66,7 +73,15 @@ export function deleteAxis(sheet: SheetModel, kind: AxisKind, position: number, 
   workbook.transact(() => {
     const axis = kind === 'row' ? sheet.rows : sheet.cols
     const finish = captureMetadata(sheet, kind)
-    const deleted = new Set(axis.delete(position, count))
+    if (kind === 'row') sheet.enablePositions()
+    freezeSortFormulas(sheet)
+    const deletedProperties = new Set([...sheet.rowMeta.keys()].filter((key) => {
+      const bar = key.lastIndexOf('|')
+      const index = sheet.rowMetaPosition(key.slice(0, bar), key.slice(bar + 1))
+      return index >= position && index < position + count
+    }))
+    const positionDeleted = kind === 'row' && sheet.positionRows.order.length ? sheet.positionRows.delete(position, count).map((id) => `~p${id}`) : []
+    const deleted = new Set([...axis.delete(position, count), ...positionDeleted])
     finish()
     const hit = (key: string) => deleted.has(kind === 'row' ? splitCellKey(key).row : splitCellKey(key).col)
     const owner = (key: string) => key.slice(0, key.lastIndexOf('|'))
@@ -82,7 +97,7 @@ export function deleteAxis(sheet: SheetModel, kind: AxisKind, position: number, 
       if (range) sheet.links.set(sheet.keyAt(range.top, range.left), link)
     }
     deleteKeys(sheet.notes, hit)
-    deleteKeys(kind === 'row' ? sheet.rowMeta : sheet.colMeta, (key) => deleted.has(owner(key)))
+    deleteKeys(kind === 'row' ? sheet.rowMeta : sheet.colMeta, (key) => kind === 'row' ? deletedProperties.has(key) : deleted.has(owner(key)))
 
     const edges = new EdgeMover(axis, deleted, position)
     adjustRanges(sheet, kind, edges)
@@ -115,6 +130,9 @@ export function moveAxis(sheet: SheetModel, kind: AxisKind, from: number, count:
     }
     const finish = captureMetadata(sheet, kind, intervals)
     const references = captureMovedReferences(sheet, kind, intervals)
+    if (kind === 'row') sheet.enablePositions()
+    freezeSortFormulas(sheet)
+    if (kind === 'row') sheet.positionRows.move(from, count, to)
     ;(kind === 'row' ? sheet.rows : sheet.cols).move(from, count, to)
     finish()
     references()
@@ -384,7 +402,8 @@ function invalidateTableReferences(sheet: SheetModel, table: SheetTable, names: 
   }
   const area = sheet.resolveRange(table.range)
   for (const owner of sheet.workbook.sheets()) {
-    for (const [key, cell] of [...owner.cells]) {
+    for (const [key, raw] of [...owner.cells]) {
+      const cell = owner.cellData(key) ?? raw
       if (!cell.f) continue
       const position = owner.position(key)
       const implicit = owner === sheet && !!area && !!position && position.row >= area.top && position.row <= area.bottom && position.col >= area.left && position.col <= area.right

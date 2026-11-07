@@ -1,12 +1,16 @@
+import { parseXml } from '../../ooxml/package.js'
+import { attr, boolAttr, child, children, numberAttr } from '../codec/xml.js'
+import { sortedFormula, outsideSortFormulas } from '../model/sort-formulas.js'
 import { MAX_COLS, MAX_ROWS, parseRangeName, rangeContains, type CellRange } from '../address.js'
 import { parseFormula, type Node } from '../formula/parse.js'
 import { MAX_EXPANDED_CELLS } from '../limits.js'
 import { randomId } from '../model/axis.js'
 import { toA1Form, toIdForm } from '../model/formula-ids.js'
-import { scanReferences, shiftFormula } from '../model/references.js'
+import { formatA1Reference, rewriteReferences, shiftFormula } from '../model/references.js'
 import type { AutoFilter, BorderEdge, BorderStyle, CellData, DataValidation, Hyperlink, Note, SheetTable, SheetColor, StyleProp, StyleProps } from '../model/schema.js'
 import { deleteAxis, insertAxis, type AxisKind } from '../model/structure.js'
 import type { SheetModel } from '../model/workbook.js'
+import { sortPositions } from './sort-positions.js'
 import { parseInput } from '../numfmt/parse.js'
 import { isErrorValue, type CellValue, type SheetValues } from '../values.js'
 
@@ -351,7 +355,7 @@ export interface CellSnapshot {
 
 export function snapshotCell(sheet: SheetModel, row: number, col: number): CellSnapshot {
   const key = sheet.keyAt(row, col)
-  const data = sheet.cells.get(key)
+  const data = sheet.cellData(key)
   const snapshot: CellSnapshot = { overrides: sheet.cellOverrides(key) }
   if (data) {
     snapshot.data = data
@@ -359,7 +363,7 @@ export function snapshotCell(sheet: SheetModel, row: number, col: number): CellS
   }
   const xf = sheet.xf.get(key)
   const note = sheet.notes.get(key) as Note | undefined
-  const link = sheet.links.get(key) as Hyperlink | undefined
+  const link = sheet.linkAt(row, col)
   if (note) snapshot.note = note
   if (link) snapshot.link = link
   if (xf !== undefined) snapshot.xf = xf
@@ -407,15 +411,12 @@ export interface SortKey {
 export const DATA_ERRORS = {
   size: 'This range is too large to sort safely. Select a smaller range.',
   arrays: 'Cannot sort a range containing spilled or legacy array formulas.',
-  merges: 'Cannot sort merged cells. Unmerge the cells first.',
-  metadata: 'Cannot sort this range with validation, conditional formatting, drawings, or range hyperlinks. Remove them first.',
-  hidden: 'Show manually hidden rows and remove outlines before sorting.',
+  merges: 'To do this, all the merged cells need to be the same size.',
   filter: 'Cannot change this filter safely. Only value-list filters are supported.',
   tables: 'Select cells inside a single table before sorting it.',
   keys: 'Sort keys must be columns inside the sorted range.',
-  collaboration: 'Sorting a shared document requires an exclusive editing lock. Sort a local copy instead.',
   changed: 'The sheet changed while preparing the sort. Try again.',
-  formulas: 'Cannot safely sort filtered formulas or formulas with references to other rows or sheets. Sort values instead.',
+  formulas: 'Cannot sort an opaque What-If data table.',
 } as const
 
 export class DataOperationError extends Error {
@@ -429,8 +430,6 @@ export interface SortOptions {
   /** Required to determine the extent of calculated dynamic spills. */
   values?: SheetValues
   display?: (row: number, col: number) => string
-  /** Snapshot sorts cannot safely merge with concurrent record edits without a server lock. */
-  collaborative?: boolean
 }
 
 /** Excel's sort order: numbers < text < booleans < errors, blanks always last. */
@@ -465,7 +464,6 @@ function alwaysScalar(node: Node): boolean {
 
 /** Sort a snapshot synchronously, with all safety checks completed before the first write. */
 export function sortRange(sheet: SheetModel, range: CellRange, keys: SortKey[], value: (row: number, col: number) => CellValue, options: SortOptions = {}): void {
-  if (options.collaborative) throw new DataOperationError('collaboration')
   // Observers are deferred inside an outer transaction, so preparation cannot detect changes.
   if (sheet.workbook.doc._transaction) throw new DataOperationError('changed')
   let changed = false
@@ -473,6 +471,7 @@ export function sortRange(sheet: SheetModel, range: CellRange, keys: SortKey[], 
   sheet.workbook.root.observeDeep(onChange)
   try {
     let area = clampToUsed(sheet, range)
+    let tableFilter: AutoFilter | undefined
     const tables = [...sheet.tables.entries()].flatMap(([id, raw]) => {
       const table = raw as SheetTable
       const rect = sheet.resolveRange(table.range)
@@ -481,19 +480,31 @@ export function sortRange(sheet: SheetModel, range: CellRange, keys: SortKey[], 
     if (tables.length > 1 || tables[0] && !contains(tables[0].rect, area)) throw new DataOperationError('tables')
     if (tables[0]) {
       const { table, rect } = tables[0]
-      // Imported table filters aren't modeled as worksheet filters. Don't leave their XML stale.
-      if (table.xml && /<(?:\w+:)?filterColumn\b/.test(table.xml)) throw new DataOperationError('filter')
+      if (table.xml && /<(?:\w+:)?filterColumn\b/.test(table.xml)) {
+        const auto = child(parseXml(table.xml).documentElement, 'autoFilter')
+        if (!auto) throw new DataOperationError('filter')
+        const columns = children(auto, 'filterColumn').map((column) => {
+          const list = child(column, 'filters')
+          if (!list || children(list).some((node) => node.localName !== 'filter')) throw new DataOperationError('filter')
+          const values = children(list, 'filter').map((node) => attr(node, 'val') ?? '')
+          if (boolAttr(list, 'blank')) values.push('')
+          return { col: numberAttr(column, 'colId') ?? 0, values }
+        })
+        tableFilter = { range: sheet.rangeIds({ ...rect, bottom: rect.bottom - Number(table.totalsRow) }), columns }
+      }
       area = { ...rect, top: rect.top + (table.headerRow ? 1 : 0), bottom: rect.bottom - (table.totalsRow ? 1 : 0) }
     }
     if (!keys.length || keys.some((key) => !Number.isInteger(key.col) || key.col < area.left || key.col > area.right)) throw new DataOperationError('keys')
     if (area.top >= area.bottom) return
     if ((area.bottom - area.top + 1) * (area.right - area.left + 1) > MAX_EXPANDED_CELLS) throw new DataOperationError('size')
-    if (sheet.mergedRanges().some((merge) => intersects(merge.range, area))) throw new DataOperationError('merges')
-    const filter = sheet.filter.get('value') as AutoFilter | undefined
+    const merges = sheet.mergedRanges().map((merge) => merge.range).filter((r) => intersects(r, area))
+    const blockHeight = merges.length ? merges[0]!.bottom - merges[0]!.top + 1 : 1
+    const blockWidth = merges.length ? merges[0]!.right - merges[0]!.left + 1 : 1
+    if (merges.length && (merges.some((r) => !contains(area, r) || r.bottom - r.top + 1 !== blockHeight || r.right - r.left + 1 !== blockWidth || (r.top - area.top) % blockHeight || (r.left - area.left) % blockWidth) || merges.length * blockHeight * blockWidth !== (area.bottom - area.top + 1) * (area.right - area.left + 1))) throw new DataOperationError('merges')
+    const filter = tableFilter ?? sheet.filter.get('value') as AutoFilter | undefined
     const filterRange = filter && sheet.resolveRange(filter.range)
     const filterData = filterRange && { ...filterRange, top: filterRange.top + 1 }
     const filtering = !!filter && !!filterData && intersects(filterData, area)
-    if (filtering && (!contains(area, filterData!) || !contains(filterData!, area))) throw new DataOperationError('filter')
     if (filtering) checkFilter(filter!)
     const display = options.display ?? ((r: number, c: number) => String(value(r, c) ?? ''))
     const visibility = filtering ? filterVisibility(sheet, filter!, display) : undefined
@@ -507,7 +518,7 @@ export function sortRange(sheet: SheetModel, range: CellRange, keys: SortKey[], 
       const potential = data.oversizedArray || data.dynamic && !options.values?.spill
       const arrayRange = size ? { top: row, left: col, bottom: row + size.rows - 1, right: col + size.cols - 1 } : potential ? { top: row, left: col, bottom: MAX_ROWS - 1, right: MAX_COLS - 1 } : undefined
       if (arrayRange && intersects(arrayRange, area)) throw new DataOperationError('arrays')
-      if (data.keep?.f) {
+      if (data.keep?.f?.t === 'dataTable') {
         const opaqueRange = data.keep.f.ref && parseRangeName(data.keep.f.ref)
         if (rangeContains(area, row, col) || opaqueRange && intersects(opaqueRange, area)) throw new DataOperationError('formulas')
       }
@@ -517,62 +528,107 @@ export function sortRange(sheet: SheetModel, range: CellRange, keys: SortKey[], 
         const parsed = parseFormula(formula)
         if (!parsed.ok || !alwaysScalar(parsed.ast)) throw new DataOperationError('arrays')
       }
-      // Qualified and cross-row references have different relocation semantics in Excel.
-      // Reject these until we can implement them without guessing or introducing #REF!.
-      if (filtering && filter!.columns.length || data.keep?.f || scanReferences(formula).some((ref) => ref.kind === 'name' || ref.sheet || ref.external || [ref.from, ref.to].some((end) => end && !end.rowAbs && end.row !== row))) throw new DataOperationError('formulas')
     })
-    for (const kind of ['dv', 'cf'] as const) for (const raw of sheet[kind].values()) {
-      if ((raw as DataValidation).ranges.some((ids) => { const r = sheet.resolveRange(ids); return r && intersects(r, area) })) throw new DataOperationError('metadata')
-    }
-    // Opaque threaded comments/sparklines and drawing anchors cannot be split by a record move.
-    if (sheet.drawings.size || /threadedComment/.test(String(sheet.raw.get('rels') ?? '')) || /threadedComment|sparkline/.test(String(sheet.raw.get('xml') ?? ''))) throw new DataOperationError('metadata')
-    for (const [key, raw] of sheet.links) {
-      const link = raw as Hyperlink
-      const rect = link.range && sheet.resolveRange(link.range)
-      const pos = sheet.position(key)
-      if (rect && (rect.top !== rect.bottom || rect.left !== rect.right) && (intersects(rect, area) || pos && rangeContains(area, pos.row, pos.col))) throw new DataOperationError('metadata')
-    }
     const rows = span(area.top, area.bottom)
-    for (const row of rows) {
-      const manual = visibility?.manual.has(sheet.rows.idAt(row)) ?? !!sheet.rowProp(row, 'hidden')
-      if (sheet.rowProp(row, 'xf') !== undefined || Object.keys(sheet.axisOverrides('row', sheet.rows.idAt(row))).length) throw new DataOperationError('metadata')
-      if (manual || sheet.rowProp(row, 'level') || sheet.rowProp(row, 'collapsed')) throw new DataOperationError('hidden')
+    // Content, including styled blanks and annotations, beside the selection must stay put.
+    const outside = (key: string) => {
+      const pos = sheet.position(key.split('|')[0]!)
+      return pos && pos.row >= area.top && pos.row <= area.bottom && (pos.col < area.left || pos.col > area.right)
     }
+    const permute = ![sheet.cells, sheet.xf, sheet.fmt, sheet.notes, sheet.links].some((map) => [...map.keys()].some(outside))
     // Evaluate keys once, before writes (formula evaluation may invalidate caches).
     const keyValues = new Map(rows.map((row) => [row, keys.map((key) => value(row, key.col))]))
-    const order = [...rows].sort((a, b) => {
+    const blocks = rows.filter((_, i) => i % blockHeight === 0)
+    const order = blocks.sort((a, b) => {
       for (let k = 0; k < keys.length; k++) {
         const result = compareForSort(keyValues.get(a)![k]!, keyValues.get(b)![k]!, keys[k]!.descending, options.caseSensitive)
         if (result) return result
       }
       return a - b
-    })
+    }).flatMap((start) => span(start, start + blockHeight - 1))
     const cols = span(area.left, area.right)
     const snapshots = order.map((row) => cols.map((col) => snapshotCell(sheet, row, col)))
-    const filtered = order.map((row) => visibility?.filtered.has(sheet.rows.idAt(row)) ?? false)
+    const manual = order.map((row) => visibility?.manual.has(sheet.rows.idAt(row)) ?? !!(sheet.rowProp(row, 'manualHidden') || sheet.rowProp(row, 'hidden')))
+    const restorePositions = permute ? sortPositions(sheet, area) : undefined
+    const rangeLinks = [...sheet.links.entries()].filter(([, raw]) => { const link = raw as Hyperlink; return link.range && (link.range.top !== link.range.bottom || link.range.left !== link.range.right) })
+    const movedFormulas = permute ? order.map((row) => cols.map((col) => {
+      const key = sheet.keyAt(row, col)
+      const f = sheet.cellData(key)?.f
+      return f === undefined ? undefined : sortedFormula(sheet, key, f, area)
+    })) : []
+    const keepOutsideFormulas = permute ? outsideSortFormulas(sheet, area) : undefined
+    const ids = order.map((row) => sheet.rows.idAt(row))
+    // Same-row references follow the record. Cross-row relative references inside the data
+    // keep their offset (Calc's real sort); absolute references stay positional. References
+    // outside the data retain their identities, including references to other sheets.
+    const formulas = order.map((source, i) => cols.map((col, c) => {
+      const formula = snapshots[i]![c]!.formula
+      if (formula === undefined) return undefined
+      return rewriteReferences(formula, (ref) => {
+        if (ref.kind === 'name' || ref.external || ref.sheet && ref.sheet.first !== sheet.name) return undefined
+        const end = (e: typeof ref.from) => {
+          if (e.row === undefined || e.row < area.top || e.row > area.bottom) return e
+          return { ...e, row: e.rowAbs ? e.row : e.row + rows[i]! - source }
+        }
+        const from = end(ref.from)
+        const to = ref.to && end(ref.to)
+        if ([from, to].some((e) => e?.row !== undefined && (e.row < 0 || e.row >= MAX_ROWS))) return '#REF!'
+        return formatA1Reference({ ...ref, from, to })
+      })
+    }))
     if (changed) throw new DataOperationError('changed')
     sheet.workbook.transact(() => {
+      if (permute) {
+        restorePositions!()
+        sheet.rows.permute(area.top, ids)
+        keepOutsideFormulas!()
+      }
       order.forEach((sourceRow, index) => {
         const targetRow = rows[index]!
-        if (sourceRow === targetRow) return
         cols.forEach((col, offset) => {
           const snapshot = snapshots[index]![offset]!
-          placeCell(sheet, snapshot, { row: sourceRow, col }, { row: targetRow, col })
+          const formula = formulas[index]![offset]
+          if (permute) {
+            const moved = movedFormulas[index]![offset]
+            if (moved) sheet.raw.set(`sortFormula:${sheet.keyAt(targetRow, col)}`, moved)
+            return
+          }
+          if (sourceRow === targetRow) return
+          placeCell(sheet, { ...snapshot, formula: undefined }, { row: sourceRow, col }, { row: targetRow, col })
+          if (formula !== undefined) sheet.cells.set(sheet.keyAt(targetRow, col), { ...snapshot.data!, f: toIdForm(formula, sheet) })
           const key = sheet.keyAt(targetRow, col)
           if (snapshot.note) sheet.notes.set(key, snapshot.note)
           else sheet.notes.delete(key)
+          if (rangeLinks.some(([k]) => k === key) || snapshot.link?.range && (snapshot.link.range.top !== snapshot.link.range.bottom || snapshot.link.range.left !== snapshot.link.range.right)) {
+            if (!rangeLinks.some(([k]) => k === key)) sheet.links.delete(key)
+            return
+          }
           if (snapshot.link) sheet.links.set(key, { ...snapshot.link, ...(snapshot.link.range ? { range: sheet.rangeIds({ top: targetRow, bottom: targetRow, left: col, right: col }) } : {}) })
           else sheet.links.delete(key)
         })
       })
+      if (!permute) for (let i = 0; i < rows.length; i++) {
+        sheet.setRowProp([rows[i]!], 'manualHidden', manual[i] || undefined)
+        sheet.setRowProp([rows[i]!], 'hidden', manual[i] || undefined)
+      }
       const sort = keys.map((key) => ({ col: sheet.cols.idAt(key.col), descending: !!key.descending }))
-      if (tables[0]) sheet.tables.set(tables[0].id, { ...tables[0].table, sort, sortCaseSensitive: !!options.caseSensitive })
-      else if (!filtering) sheet.filter.set('sort', { range: sheet.rangeIds(area), columns: [], sort, sortCaseSensitive: !!options.caseSensitive } satisfies AutoFilter)
+      if (tables[0]) sheet.tables.set(tables[0].id, { ...sheet.tables.get(tables[0].id) as SheetTable, sort, sortCaseSensitive: !!options.caseSensitive })
+      else if (!filtering) sheet.filter.set('sort', { range: permute ? { ...sheet.rangeIds(area), top: sheet.positionRowId(area.top), bottom: sheet.positionRowId(area.bottom) } : sheet.rangeIds(area), columns: [], sort, sortCaseSensitive: !!options.caseSensitive } satisfies AutoFilter)
       if (filtering) {
         sheet.filter.delete('sort')
-        const hiddenRows = rows.filter((_, i) => filtered[i]).map((row) => sheet.rows.idAt(row))
-        for (let i = 0; i < rows.length; i++) sheet.setRowProp([rows[i]!], 'hidden', filtered[i] || undefined)
-        sheet.filter.set('value', { ...filter!, hiddenRows, sort, sortCaseSensitive: !!options.caseSensitive, sortXml: undefined })
+        const current = tableFilter ?? sheet.filter.get('value') as AutoFilter
+        options.values?.refresh?.()
+        const hiddenRows: string[] = []
+        const currentRange = tableFilter ? filterRange! : sheet.resolveRange(current.range)!
+        for (let row = currentRange.top + 1; row <= currentRange.bottom; row++) {
+          // Evaluate after every record and formula has moved, with fresh positional caches.
+          const hidden = !current.columns.every((column) => column.values!.includes(display(row, currentRange.left + column.col)))
+          if (hidden) hiddenRows.push(sheet.rows.idAt(row))
+          const manuallyHidden = !!sheet.rowProp(row, 'manualHidden') || (row < area.top || row > area.bottom) && visibility!.manual.has(sheet.rows.idAt(row))
+          if (!!sheet.rowProp(row, 'manualHidden') !== manuallyHidden) sheet.setRowProp([row], 'manualHidden', manuallyHidden || undefined)
+          if (!!sheet.rowProp(row, 'hidden') !== (hidden || manuallyHidden)) sheet.setRowProp([row], 'hidden', hidden || manuallyHidden || undefined)
+        }
+        if (!tableFilter) sheet.filter.set('value', { ...current, hiddenRows, sort, sortCaseSensitive: !!options.caseSensitive, sortXml: undefined })
       }
     })
   } finally {
@@ -667,6 +723,8 @@ export function setLink(sheet: SheetModel, row: number, col: number, link: Hyper
   sheet.workbook.transact(() => {
     sheet.ensure(row, col)
     const key = sheet.keyAt(row, col)
+    const current = sheet.linkAt(row, col)
+    if (current?.range) for (const [owner, raw] of sheet.links) if (raw === current) sheet.links.delete(owner)
     if (link && (link.target || link.location)) sheet.links.set(key, link)
     else sheet.links.delete(key)
   })

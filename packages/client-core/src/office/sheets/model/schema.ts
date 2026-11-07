@@ -22,7 +22,11 @@
  *   merges, cf, dv, tables, drawings   Y.Map id → object with id-anchored ranges
  *   links, notes                       Y.Map "row:col" → Hyperlink / Note
  *   filter    Y.Map  the autofilter (key 'value')
- *   raw       Y.Map  preserved XML of the sheet, its relationships, and its parts
+ *   raw       Y.Map  preserved XML, positional row-source mappings, version-gated sorted formulas
+ *
+ * doc.getArray(`sheetPositions:${sheetId}`), doc.getMap(`sheetDeadPositions:${sheetId}`)
+ *   Stationary row-slot identities, changed by structural edits but never by sorting.
+ *   `~p<slot>` references a slot; sorted `~r<record>_<offset>` references a relative row.
  * ```
  *
  * Cell contents, each style property, and each row/column property are separate map entries, so
