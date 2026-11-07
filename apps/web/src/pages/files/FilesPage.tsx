@@ -599,7 +599,13 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     setMenu(null)
     const returnTo = menuReturnFocus.current
     menuReturnFocus.current = null
-    if (returnTo?.isConnected) requestAnimationFrame(() => returnTo.focus({ preventScroll: true }))
+    // Only when focus was lost with the menu: an action that moved focus on purpose (Rename's
+    // input) keeps it.
+    if (returnTo?.isConnected) requestAnimationFrame(() => {
+      const active = document.activeElement
+      if (active && active !== document.body && active.isConnected) return
+      returnTo.focus({ preventScroll: true })
+    })
   }
 
   // One window listener that always sees the latest state, like a desktop file manager.

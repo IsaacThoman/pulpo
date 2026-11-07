@@ -279,6 +279,8 @@ export function AppLayout() {
       if (!items.length) return
       const first = items[0]!, last = items.at(-1)!
       const active = document.activeElement
+      // A dialog or menu opened from the drawer renders in a portal and traps focus itself.
+      if (active && !panel.contains(active) && active.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [data-radix-popper-content-wrapper]')) return
       if (event.shiftKey && (active === first || !panel.contains(active))) {
         event.preventDefault()
         last.focus()

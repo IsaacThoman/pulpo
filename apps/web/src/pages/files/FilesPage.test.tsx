@@ -415,6 +415,19 @@ describe('keyboard', () => {
     expect(await screen.findByRole('menuitem', { name: /^Rename/ })).toBeTruthy()
   })
 
+  it('keeps focus in the rename field when Rename is chosen from the keyboard menu', async () => {
+    showFiles()
+    fireEvent.click(await screen.findByRole('option', { name: /Notes.md/ }))
+    const list = screen.getByRole('listbox')
+    list.focus()
+    fireEvent.keyDown(list, { key: 'F10', shiftKey: true })
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^Rename/ }))
+    await act(() => new Promise(requestAnimationFrame))
+    await act(() => new Promise(requestAnimationFrame))
+    const input = await screen.findByDisplayValue('Notes.md')
+    expect(document.activeElement).toBe(input)
+  })
+
   it('puts the sort order in the sort button name instead of aria-sort', async () => {
     showFiles()
     await screen.findByRole('option', { name: /Notes.md/ })

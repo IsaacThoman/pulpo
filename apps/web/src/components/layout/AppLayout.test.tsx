@@ -127,6 +127,25 @@ describe('narrow desktop layout', () => {
     expect(document.activeElement).toBe(opener)
   })
 
+  it('lets a dialog opened from the drawer keep Tab inside itself', async () => {
+    narrow = true
+    Reflect.deleteProperty(window, 'pulpoDesktop')
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Open sidebar' }))
+    await act(() => new Promise(requestAnimationFrame))
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    const field = document.createElement('input')
+    dialog.append(field)
+    document.body.append(dialog)
+    field.focus()
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    field.dispatchEvent(tab)
+    expect(tab.defaultPrevented).toBe(false)
+    expect(document.activeElement).toBe(field)
+    dialog.remove()
+  })
+
   it('keeps mobile web controls in the page header', () => {
     narrow = true
     Reflect.deleteProperty(window, 'pulpoDesktop')
