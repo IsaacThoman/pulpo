@@ -76,7 +76,7 @@ function AttachmentRoute({ attachmentId, inPanel }: { attachmentId: string; inPa
         <TriangleAlert className="mx-auto size-8 text-amber-500" />
         <p className="mt-3 text-sm text-muted-foreground">{ui("This attachment could not be found. It may have been deleted with its chat.")}</p>
         {inPanel
-          ? <Button variant="outline" size="sm" className="mt-4" onClick={() => useSidePanel.getState().close()}>{ui("Close")}</Button>
+          ? <Button variant="outline" size="sm" className="mt-4" onClick={() => useSidePanel.getState().closeTab({ kind: 'attachment', id: attachmentId })}>{ui("Close")}</Button>
           : <Button asChild variant="outline" size="sm" className="mt-4"><Link to="/">{ui("New chat")}</Link></Button>}
       </div>
     </div>
@@ -85,10 +85,9 @@ function AttachmentRoute({ attachmentId, inPanel }: { attachmentId: string; inPa
 
 export function AttachmentPage() {
   const { attachmentId } = useParams()
-  // Opening the side panel's attachment full page moves it here instead of showing it twice.
+  // Opening one of the side panel's attachments full page moves it here instead of showing it twice.
   useEffect(() => {
-    const shown = useSidePanel.getState().content
-    if (attachmentId && shown?.kind === 'attachment' && shown.id === attachmentId) useSidePanel.getState().close()
+    if (attachmentId) useSidePanel.getState().closeTab({ kind: 'attachment', id: attachmentId })
   }, [attachmentId])
   if (!attachmentId) return null
   return <AttachmentRoute key={attachmentId} attachmentId={attachmentId} inPanel={false} />

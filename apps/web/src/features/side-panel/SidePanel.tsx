@@ -9,6 +9,8 @@ import { panelContentPath, useMainNavigate } from './use-panel-actions'
 const FilePanelView = lazy(() => import('@/pages/files/FileDocPage').then((module) => ({ default: module.FilePanelView })))
 const FolderPanelView = lazy(() => import('@/pages/files/FilesPage').then((module) => ({ default: module.FolderPanelView })))
 const AttachmentPanelView = lazy(() => import('@/pages/AttachmentPage').then((module) => ({ default: module.AttachmentPanelView })))
+// The tab strip names tabs from the Files and attachment queries; load it once there are tabs.
+const PanelTabs = lazy(() => import('./PanelTabs').then((module) => ({ default: module.PanelTabs })))
 
 const loading = <div className="grid h-full place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
 
@@ -30,6 +32,7 @@ const PanelView = memo(function PanelView({ panel }: { panel: PanelContent }) {
  */
 export function SidePanel({ available, full = false }: { available: number; full?: boolean }) {
   const panel = useSidePanel((state) => state.content)
+  const tabbed = useSidePanel((state) => state.tabs.length > 1)
   // The preferred width is kept as set; what shows is clamped to the room there is now.
   const [preferred, setPreferred] = useState(readPanelWidth)
   const [resizing, setResizing] = useState(false)
@@ -56,7 +59,7 @@ export function SidePanel({ available, full = false }: { available: number; full
       } else if (event.key === 'Enter' && event.shiftKey && state.content) {
         event.preventDefault()
         const target = panelContentPath(state.content)
-        state.close()
+        state.closeTab(state.content)
         goRef.current(target)
       }
     }
@@ -94,7 +97,7 @@ export function SidePanel({ available, full = false }: { available: number; full
     handle.addEventListener('pointercancel', end)
   }
 
-  const content = <PanelView panel={panel} />
+  const content = <>{tabbed && <Suspense fallback={null}><PanelTabs /></Suspense>}<PanelView panel={panel} /></>
 
   if (full) {
     return (

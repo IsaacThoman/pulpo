@@ -218,8 +218,14 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
   }
 
   /* A side panel shown as the only view clears the drawer button like page headers do. */
-  html:not([data-desktop="true"]) .app-side-panel[data-full] .side-panel-header {
+  html:not([data-desktop="true"]) .app-side-panel[data-full] .side-panel-header,
+  html:not([data-desktop="true"]) .app-side-panel[data-full] .side-panel-tabs {
     padding-left: 3rem;
+  }
+
+  /* With tabs, they take the top edge and the header below them keeps its own padding. */
+  html:not([data-desktop="true"]) .app-side-panel[data-full]:has(.side-panel-tabs) .side-panel-header {
+    padding-left: 1rem;
   }
 
   /* The chat header sits inside ChatPage's preview-panel wrapper, so match it
@@ -636,8 +642,14 @@ html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-side-panel {
 }
 
 /* On Windows the caption buttons sit over the right edge, which the panel now occupies. */
-html[data-desktop-os="win32"] .app-side-panel .side-panel-header {
+html[data-desktop-os="win32"] .app-side-panel .side-panel-header,
+html[data-desktop-os="win32"] .app-side-panel .side-panel-tabs {
   padding-right: 138px;
+}
+
+/* With tabs, they sit under the caption buttons and the header below them keeps its own padding. */
+html[data-desktop-os="win32"] .app-side-panel:has(.side-panel-tabs) .side-panel-header {
+  padding-right: 1rem;
 }
 
 html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main > div > header,
