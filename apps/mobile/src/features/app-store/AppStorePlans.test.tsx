@@ -119,6 +119,15 @@ describe('App Store plan cards', () => {
     expect((await screen.findByText('Starts at renewal')).closest('button')!.disabled).toBe(true)
   })
 
+  it('lets a subscriber who canceled after scheduling a switch subscribe to that plan again', async () => {
+    mocks.kit.purchase.mockResolvedValue({ status: 'purchased', transactionId: '11', originalTransactionId: '9', productId: 'pulpoEight', signedTransaction: 'jws' })
+    mount({ ...fatSubscriber, subscription: { ...fatSubscriber.subscription!, cancelAtPeriodEnd: true, pendingPlan: 'eight' } })
+    expect(await screen.findByText('Ends Nov 5, 2026')).toBeTruthy()
+    expect(screen.queryByText('Starts at renewal')).toBeNull()
+    fireEvent.click(screen.getByText('Switch to Eight').closest('button')!)
+    await waitFor(() => expect(mocks.kit.purchase).toHaveBeenCalledWith('pulpoEight', expect.any(String)))
+  })
+
   it('leaves out lines that need plan details from an older server', async () => {
     mount({ ...baby, plans: null })
     expect(await screen.findByText('Everything in Pulpo Eight')).toBeTruthy()
