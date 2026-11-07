@@ -104,9 +104,15 @@ export function AppStorePlans({ kit, offer, limits, onChanged }: {
     <View style={styles.legal}>
       <Text style={[styles.terms, { color: theme.secondary }]}>{SUBSCRIPTION_TERMS}</Text>
       <View style={styles.links}>
-        <Text accessibilityRole="button" disabled={busy} onPress={() => void restore()} style={[styles.link, { color: theme.blue }]}>Restore Purchases</Text>
-        <Text accessibilityRole="link" onPress={() => void Linking.openURL(TERMS_OF_USE_URL)} style={[styles.link, { color: theme.blue }]}>Terms of Use</Text>
-        <Text accessibilityRole="link" onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)} style={[styles.link, { color: theme.blue }]}>Privacy Policy</Text>
+        <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={() => void restore()} style={[styles.linkTarget, busy && styles.linkDisabled]}>
+          <Text style={[styles.link, { color: theme.blue }]}>Restore Purchases</Text>
+        </Pressable>
+        <Pressable accessibilityRole="link" onPress={() => void Linking.openURL(TERMS_OF_USE_URL)} style={styles.linkTarget}>
+          <Text style={[styles.link, { color: theme.blue }]}>Terms of Use</Text>
+        </Pressable>
+        <Pressable accessibilityRole="link" onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)} style={styles.linkTarget}>
+          <Text style={[styles.link, { color: theme.blue }]}>Privacy Policy</Text>
+        </Pressable>
       </View>
     </View>
   </ScrollView>
@@ -148,6 +154,9 @@ const styles = StyleSheet.create({
   buttonText: { fontSize: 17, fontWeight: '700' },
   legal: { gap: 10, alignItems: 'center' },
   terms: { fontSize: 11.5, lineHeight: 16, textAlign: 'center' },
-  links: { flexDirection: 'row', gap: 18 },
-  link: { fontSize: 13, fontWeight: '600' },
+  // Wraps at large text sizes; each link keeps a 44-point target.
+  links: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', columnGap: 10 },
+  linkTarget: { minHeight: 44, maxWidth: '100%', justifyContent: 'center', paddingHorizontal: 4 },
+  linkDisabled: { opacity: 0.5 },
+  link: { fontSize: 13, fontWeight: '600', textAlign: 'center' },
 })

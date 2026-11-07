@@ -50,7 +50,7 @@ function ConversionSheet({ preview, converting, onConfirm, onCancel }: {
             Editing turns this file into a document. Some of its Markdown will be written differently:
           </Text>
           {rows ? rows.map((row, index) => row.kind === 'gap' ? (
-            <Text key={index} style={[styles.gap, { color: theme.tertiary }]}>{row.count} unchanged {row.count === 1 ? 'line' : 'lines'}</Text>
+            <Text key={index} style={[styles.gap, { color: theme.secondary }]}>{row.count} unchanged {row.count === 1 ? 'line' : 'lines'}</Text>
           ) : (
             <Text
               key={index}

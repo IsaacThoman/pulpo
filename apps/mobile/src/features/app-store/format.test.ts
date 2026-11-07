@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { periodLabel, planBenefits, planStorageLabel, priceLabel, subscriptionStatusLabel } from './format'
+import { periodLabel, planBenefits, planButtonColors, planStorageLabel, priceLabel, subscriptionStatusLabel } from './format'
 
 const subscription = {
   provider: 'app_store' as const, plan: 'eight' as const, pendingPlan: null, status: 'active' as const,
@@ -34,5 +34,24 @@ describe('App Store formatting', () => {
     expect(planBenefits('eight', plans)).toEqual(['Everything in Pulpo Baby', 'High usage limits', '10 GB of file storage', 'Cancel any time'])
     expect(planBenefits('fat', plans)).toEqual(['Everything in Pulpo Eight', 'Highest usage limits', 'Share 40% of your weekly usage', '25 GB of file storage'])
     expect(planBenefits('fat', null)).toEqual(['Everything in Pulpo Eight', 'Highest usage limits'])
+  })
+})
+
+describe('planButtonColors', () => {
+  const contrast = (a: string, b: string) => {
+    const lum = (hex: string) => {
+      const [r, g, b] = (hex.slice(1).match(/.{2}/g) ?? []).map((c) => { const v = parseInt(c, 16) / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 })
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+    }
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x)
+    return (hi! + 0.05) / (lo! + 0.05)
+  }
+  it('keeps each plan button label at 4.5:1 or better in light and dark mode', () => {
+    for (const plan of ['eight', 'fat'] as const) {
+      for (const dark of [false, true]) {
+        const { background, text } = planButtonColors(plan, dark)
+        expect(contrast(text, background), `${plan} ${dark ? 'dark' : 'light'}`).toBeGreaterThanOrEqual(4.5)
+      }
+    }
   })
 })

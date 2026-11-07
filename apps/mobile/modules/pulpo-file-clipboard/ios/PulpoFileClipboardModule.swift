@@ -17,6 +17,10 @@ public final class PulpoFileClipboardModule: Module {
   public func definition() -> ModuleDefinition {
     Name("PulpoFileClipboard")
 
+    OnCreate {
+      PulpoSwiftUIModifiers.register()
+    }
+
     AsyncFunction("copyFile") { (uri: URL) in
       guard uri.isFileURL, FileManager.default.fileExists(atPath: uri.path) else {
         throw ClipboardFileNotFoundException(uri.absoluteString)

@@ -26,12 +26,15 @@ private struct ToolbarButton: View {
         .frame(width: 40, height: 36)
         .foregroundStyle(active ? model.tint : Color.primary)
         .background(active ? model.tint.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        // A 44-point target around the 40 by 36 highlight.
+        .frame(width: 44, height: 44)
         .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .disabled(model.disabled.contains(command))
     .opacity(model.disabled.contains(command) ? 0.35 : 1)
     .accessibilityLabel(label)
+    .accessibilityShowsLargeContentViewer { Label(label, systemImage: systemImage) }
     .accessibilityAddTraits(active ? .isSelected : [])
     .accessibilityIdentifier("doc-toolbar-\(command)")
   }
@@ -74,11 +77,14 @@ private struct ToolbarMenu: View {
         .frame(width: 40, height: 36)
         .foregroundStyle(active ? model.tint : Color.primary)
         .background(active ? model.tint.opacity(0.16) : Color.clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        // A 44-point target around the 40 by 36 highlight.
+        .frame(width: 44, height: 44)
         .contentShape(Rectangle())
     }
     .menuStyle(.button)
     .buttonStyle(.plain)
     .accessibilityLabel(label)
+    .accessibilityShowsLargeContentViewer { Label(label, systemImage: systemImage) }
     .accessibilityIdentifier("doc-toolbar-\(identifier)")
   }
 }
@@ -133,11 +139,12 @@ struct DocEditorToolbar: View {
       } label: {
         Image(systemName: "keyboard.chevron.compact.down")
           .font(.system(size: 17, weight: .medium))
-          .frame(width: 44, height: 36)
+          .frame(width: 44, height: 44)
           .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
       .accessibilityLabel("Hide keyboard")
+      .accessibilityShowsLargeContentViewer { Label("Hide keyboard", systemImage: "keyboard.chevron.compact.down") }
       .accessibilityIdentifier("doc-toolbar-dismiss")
       .padding(.trailing, 6)
     }
