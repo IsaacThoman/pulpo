@@ -1,7 +1,7 @@
 /** Logical range operations. Storage is only a prefix rectangle; its uniform tail is not an edge. */
 
 import { maxOf } from '../../../collections.js'
-import { consumeWork } from './budget.js'
+import { consumeWork, WorkCounter } from './budget.js'
 import { checkArraySize, Errors, logicalSize, matrix, matrixGet, type FormulaError, type Matrix, type Scalar } from './types.js'
 
 export function shaped(value: Matrix, rows: number, cols: number, omittedValue: Scalar = null): Matrix {
@@ -46,15 +46,18 @@ export function alignedRanges(values: Matrix[], visit: (cells: Scalar[], count: 
       const size = logicalSize(value)
       for (let r = 0; r < value.rows; r++) for (let c = 0; c < value.cols; c++) indexes.add(r * size.cols + c)
     }
+    consumeWork(indexes.size * values.length)
+    const work = new WorkCounter()
+    const ordered = [...indexes].sort((a, b) => { work.consume(); return a - b })
+    work.flush()
     const tail = values.map((value) => value.omittedValue ?? null)
     let next = 0
-    for (const index of [...indexes].sort((a, b) => a - b)) {
+    for (const index of ordered) {
       if (index > next) visit(tail, index - next)
       visit(values.map((value) => { const size = logicalSize(value); return matrixGet(value, Math.floor(index / size.cols), index % size.cols) }), 1)
       next = index + 1
     }
     if (next < total) visit(tail, total - next)
-    consumeWork(indexes.size * values.length)
     return
   }
   const rows = maxOf(values.map((value) => value.rows))
@@ -80,7 +83,9 @@ export function broadcastRanges(values: (Scalar | Matrix)[], fn: (cells: Scalar[
     if (size.rows > 1 && size.rows < rows) storedRows = Math.max(storedRows, size.rows)
     if (size.cols > 1 && size.cols < cols) storedCols = Math.max(storedCols, size.cols)
   }
+  const work = new WorkCounter()
   const at = (r: number, c: number): Scalar => {
+    work.consume(values.length)
     let missing = false
     const cells = values.map((v, i) => {
       const m = matrices[i]
@@ -113,8 +118,10 @@ export function broadcastRanges(values: (Scalar | Matrix)[], fn: (cells: Scalar[
     checkArraySize(rows, cols)
     const full: Scalar[] = []
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) full.push(at(r, c))
+    work.flush()
     return matrix(rows, cols, full)
   }
+  work.flush()
   return shaped(matrix(storedRows, storedCols, data), rows, cols, tail)
 }
 

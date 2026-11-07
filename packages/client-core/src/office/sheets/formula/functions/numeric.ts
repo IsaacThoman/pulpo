@@ -3,7 +3,7 @@
  * decimal-correct rounding and the basic sample statistics.
  */
 
-import { consumeWork } from '../budget.js'
+import { consumeWork, WorkCounter } from '../budget.js'
 
 import { Errors } from '../types.js'
 import { fail } from './coerce.js'
@@ -76,7 +76,13 @@ export function variance(values: readonly number[], sample: boolean): number {
 }
 
 export function sorted(values: readonly number[]): number[] {
-  return values.slice().sort((a, b) => a - b)
+  const work = new WorkCounter()
+  const result = values.slice().sort((a, b) => {
+    work.consume()
+    return a - b
+  })
+  work.flush()
+  return result
 }
 
 export function median(values: readonly number[]): number {

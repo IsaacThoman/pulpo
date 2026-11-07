@@ -145,6 +145,9 @@ function findAll(haystack: string, delims: string[], ignoreCase: boolean): Hit[]
     for (const d of ds) {
       consumeWork()
       const at = h.indexOf(d, i)
+      // Native substring searches scan the remaining text for every delimiter. Account for
+      // the scanned span too, especially when many delimiters never occur.
+      consumeWork((at < 0 ? h.length : at) - i + d.length)
       if (at >= 0 && (!best || at < best.index || (at === best.index && d.length > best.length))) best = { index: at, length: d.length }
     }
     if (!best) break

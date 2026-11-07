@@ -6,6 +6,7 @@
 
 import { maxOf } from '../../../../collections.js'
 
+import { consumeWork, WorkCounter } from '../budget.js'
 import { denseRange, rangeSlice, shaped } from '../ranges.js'
 import { logicalSize, matrixGet, Errors, isError, matrix, type FunctionContext, type FunctionSpec, type Matrix, type Scalar, type Value } from '../types.js'
 import {
@@ -89,14 +90,17 @@ interface SortKey {
 }
 
 function sortLines(lines: Scalar[][], keys: SortKey[]): Scalar[][] {
+  const work = new WorkCounter()
   const indexed = lines.map((line, i) => ({ line, i }))
   indexed.sort((x, y) => {
     for (const key of keys) {
+      work.consume()
       const c = sortCompare(key.values[x.i] ?? null, key.values[y.i] ?? null, key.order)
       if (c) return c
     }
     return x.i - y.i
   })
+  work.flush()
   return indexed.map((x) => x.line)
 }
 
@@ -114,6 +118,7 @@ function sort(ctx: FunctionContext, args: Args): Value {
   const indexes = omitted(args, 1) ? [1] : denseRange(toMatrix(ctx, args[1])).data.map((v) => int(v, ctx))
   const orders = omitted(args, 2) ? [1] : denseRange(toMatrix(ctx, args[2])).data.map(orderOf)
   const lines = rowsOf(m)
+  consumeWork(indexes.length * lines.length)
   const keys = indexes.map((index, k) => {
     if (index < 1 || index > logicalSize(m).cols) fail(Errors.VALUE)
     return { values: lines.map((line) => line[index - 1] ?? null), order: orders[Math.min(k, orders.length - 1)] ?? 1 }
@@ -152,6 +157,7 @@ function sortBy(ctx: FunctionContext, args: Args): Value {
   const rows = Math.max(m.rows, maxOf(keys.map((key) => key.rows)))
   checkArraySize(rows, m.cols)
   const lines = Array.from({ length: rows }, (_, r) => Array.from({ length: m.cols }, (_, c) => cell(m, r, c)))
+  consumeWork(rows * keys.length)
   const sortKeys = keys.map((key, i) => ({ values: Array.from({ length: rows }, (_, r) => cell(key, r, 0)), order: orders[i]! }))
   const logical = logicalSize(m)
   const result = shaped(fromRows(sortLines(lines, sortKeys), m.cols), logical.rows, logical.cols, m.omittedValue ?? null)

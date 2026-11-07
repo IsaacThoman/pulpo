@@ -2,7 +2,7 @@
 
 import { maxOf, minOf } from '../../../../collections.js'
 
-import { consumeWork } from '../budget.js'
+import { consumeWork, WorkCounter } from '../budget.js'
 import { forEachLogical, alignedRanges, denseRange, rangeSlice } from '../ranges.js'
 import { logicalSize } from '../types.js'
 import { Errors, isError, isReference, matrix, type FunctionContext, type FunctionSpec, type Matrix, type Reference, type Scalar, type Value } from '../types.js'
@@ -85,15 +85,20 @@ export function ifsAggregate(
   }
   const targetMatrix = target === undefined ? undefined : toMatrix(ctx, target)
   return liftOver(ctx, criteriaArgs, (criteria) => {
+    const work = new WorkCounter()
     const predicates = criteria.map((criterion) => parseCriteria(criterion, ctx))
     const values: Scalar[] = []
     const weights: number[] = []
     let count = 0
     alignedRanges(targetMatrix ? [...ranges, targetMatrix] : ranges, (cells, weight) => {
-      if (!predicates.every((predicate, i) => predicate(cells[i]!))) return
+      if (!predicates.every((predicate, i) => {
+        work.consume()
+        return predicate(cells[i]!)
+      })) return
       count += weight
       if (targetMatrix) { values.push(cells[cells.length - 1]!); weights.push(weight) }
     })
+    work.flush()
     return reduce(values, count, weights)
   })
 }

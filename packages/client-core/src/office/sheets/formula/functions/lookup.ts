@@ -8,7 +8,7 @@
  * such as `LOOKUP(2, 1/(A:A="x"), B:B)` return the last match.
  */
 
-import { consumeWork } from '../budget.js'
+import { consumeWork, WorkCounter } from '../budget.js'
 import { rangeSlice } from '../ranges.js'
 import { logicalSize, matrixGet, type Matrix } from '../types.js'
 import { MAX_COLS, MAX_ROWS, columnName, quoteSheetName } from '../../address.js'
@@ -40,12 +40,15 @@ function exactEquals(lookup: Scalar, candidate: Scalar, wildcards: boolean): boo
 
 /** First (or last) index whose value equals `lookup`, or -1. */
 export function linearExact(values: readonly Scalar[], lookup: Scalar, wildcards: boolean, reverse = false): number {
-  if (reverse) {
-    for (let i = values.length - 1; i >= 0; i--) if (exactEquals(lookup, values[i] ?? null, wildcards)) return i
-    return -1
+  const work = new WorkCounter()
+  let found = -1
+  for (let offset = 0; offset < values.length; offset++) {
+    work.consume()
+    const i = reverse ? values.length - 1 - offset : offset
+    if (exactEquals(lookup, values[i] ?? null, wildcards)) { found = i; break }
   }
-  for (let i = 0; i < values.length; i++) if (exactEquals(lookup, values[i] ?? null, wildcards)) return i
-  return -1
+  work.flush()
+  return found
 }
 
 /**
@@ -67,6 +70,7 @@ function approximate(values: LookupSequence, lookup: Scalar, descending = false)
   let hi = values.length - 1
   let best = -1
   while (lo <= hi) {
+    consumeWork()
     const mid = (lo + hi) >> 1
     let j = mid
     let c: number | undefined
@@ -100,6 +104,7 @@ export function xfind(values: readonly Scalar[], lookup: Scalar, matchMode: numb
   const exact = linearExact(values, lookup, matchMode === 2, reverse)
   if (exact >= 0 || matchMode === 0 || matchMode === 2) return exact
   let best = -1
+  consumeWork(values.length)
   const order = reverse ? values.map((_, i) => values.length - 1 - i) : values.map((_, i) => i)
   for (const i of order) {
     const c = lookupCompare(values[i] ?? null, lookup)
@@ -112,6 +117,7 @@ export function xfind(values: readonly Scalar[], lookup: Scalar, matchMode: numb
 
 function xbinary(values: readonly Scalar[], lookup: Scalar, matchMode: number, descending: boolean): number {
   // Binary search over the values comparable with the lookup value.
+  consumeWork(values.length)
   const indexes: number[] = []
   for (let i = 0; i < values.length; i++) if (lookupCompare(values[i] ?? null, lookup) !== undefined) indexes.push(i)
   const sign = descending ? -1 : 1

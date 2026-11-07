@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { FormulaEngine } from './engine.js'
+import { guardedEngine } from './budget-test-utils.js'
 import { testFunctions } from './testing.js'
 
 // Loose bounds: these guard against accidental quadratic behavior, not against slow CI machines.
@@ -70,4 +71,33 @@ describe('performance', () => {
     expect(result.changed).toEqual([{ sheet: 0, row: 4_999, col: 1 }])
     expect(ms).toBeLessThan(200)
   })
+})
+
+// An unmetered interpreter is a stronger baseline than the previous implementation: all
+// calculation-budget overhead is removed. Both copies run otherwise identical production code.
+it('keeps work accounting cheap on a typical mixed workbook', () => {
+  const before = guardedEngine({ instrument: false, unmetered: true }).engine
+  const after = guardedEngine({ instrument: false, maxWork: 50_000_000 }).engine
+  for (const book of [before, after]) {
+    book.setCell(0, 0, 0, { value: 'amount' })
+    book.setCell(0, 0, 1, { value: 'amount' })
+    book.setCell(0, 1, 1, { value: '>100' })
+    for (let row = 1; row <= 200; row++) book.setCell(0, row, 0, { value: (row * 137) % 200 })
+    const formulas = ['SUM(A2:A201)', 'SUMIF(A2:A201,">100")', 'DSUM(A1:A201,1,B1:B2)', 'SUM(SORT(A2:A201))', 'SUM(UNIQUE(A2:A201))', 'SUM(A2:A201+TRANSPOSE(A2:A21))']
+    for (let row = 0; row < 60; row++) book.setCell(0, row, 6, { formula: formulas[row % formulas.length]! })
+  }
+  const samples = [[], []] as [number[], number[]]
+  for (let round = 0; round < 10; round++) {
+    for (const index of round % 2 ? [1, 0] : [0, 1]) {
+      const book = [before, after][index]!
+      const start = performance.now()
+      expect(book.recalc({ full: true }).stoppedEarly).toBe(false)
+      if (round >= 3) samples[index]!.push(performance.now() - start)
+    }
+  }
+  const median = (times: number[]) => times.sort((a, b) => a - b)[Math.floor(times.length / 2)]!
+  const baseline = median(samples[0]), charged = median(samples[1])
+  console.info(`[perf] mixed workbook unmetered=${baseline.toFixed(1)}ms budgeted=${charged.toFixed(1)}ms`)
+  expect(charged).toBeLessThan(baseline * 3 + 20)
+  for (let row = 0; row < 60; row++) expect(after.getValue(0, row, 6)).toEqual(before.getValue(0, row, 6))
 })

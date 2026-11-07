@@ -7,6 +7,7 @@
 
 import { maxOf, minOf } from '../../../../collections.js'
 
+import { WorkCounter } from '../budget.js'
 import { denseRange } from '../ranges.js'
 
 
@@ -37,6 +38,7 @@ function fieldIndex(ctx: FunctionContext, db: Matrix, field: Scalar): number {
 
 /** Indexes (database rows, 1-based past the header) of the records matching the criteria range. */
 function matchingRecords(ctx: FunctionContext, db: Matrix, criteria: Matrix): number[] {
+  const work = new WorkCounter()
   const records: number[] = []
   const alternatives: { col: number; test: Predicate }[][] = []
   for (let r = 1; r < criteria.rows; r++) {
@@ -46,16 +48,26 @@ function matchingRecords(ctx: FunctionContext, db: Matrix, criteria: Matrix): nu
       if (value === null || value === '') continue
       const name = headerName(cell(criteria, 0, c))
       let col = -1
-      for (let k = 0; k < db.cols; k++) if (compareText(headerName(cell(db, 0, k)), name) === 0) col = k
+      for (let k = 0; k < db.cols; k++) {
+        work.consume()
+        if (compareText(headerName(cell(db, 0, k)), name) === 0) col = k
+      }
       // A criterion under an unknown heading matches nothing.
       tests.push({ col, test: col < 0 ? () => false : parseCriteria(value, ctx, { prefixText: true }) })
     }
     alternatives.push(tests)
   }
   for (let r = 1; r < db.rows; r++) {
-    const matches = !alternatives.length || alternatives.some((tests) => tests.every(({ col, test }) => test(cell(db, r, col))))
+    const matches = !alternatives.length || alternatives.some((tests) => {
+      work.consume()
+      return tests.every(({ col, test }) => {
+        work.consume()
+        return test(cell(db, r, col))
+      })
+    })
     if (matches) records.push(r)
   }
+  work.flush()
   return records
 }
 

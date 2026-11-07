@@ -2,7 +2,7 @@
 
 import { maxOf, minOf } from '../../../../collections.js'
 
-import { consumeWork } from '../budget.js'
+import { consumeWork, WorkCounter } from '../budget.js'
 import { alignedRanges, denseRange, forEachLogical } from '../ranges.js'
 import { logicalSize, checkArraySize } from '../types.js'
 import { Errors, isError, matrix, type FunctionContext, type FunctionSpec, type Scalar, type Value } from '../types.js'
@@ -522,14 +522,22 @@ function probRange(ctx: FunctionContext, args: Args): number {
 function frequency(ctx: FunctionContext, args: Args): Value {
   const data = arrayNumbers(ctx, args[0])
   const bins = arrayNumbers(ctx, args[1])
-  const order = bins.map((b, i) => ({ b, i })).sort((x, y) => x.b - y.b)
+  const work = new WorkCounter()
+  const order = bins.map((b, i) => ({ b, i })).sort((x, y) => {
+    work.consume()
+    return x.b - y.b
+  })
   checkArraySize(bins.length + 1, 1)
   const counts = new Array<number>(bins.length + 1).fill(0)
   for (const v of data) {
-    const slot = order.find((o) => v <= o.b)
+    const slot = order.find((o) => {
+      work.consume()
+      return v <= o.b
+    })
     if (slot) counts[slot.i] = counts[slot.i]! + 1
     else counts[bins.length] = counts[bins.length]! + 1
   }
+  work.flush()
   return matrix(counts.length, 1, counts)
 }
 

@@ -387,6 +387,7 @@ export class Interpreter {
     const areas: Area[] = []
     for (const x of a.areas) {
       for (const y of b.areas) {
+        consumeWork()
         if (x.sheet !== y.sheet) continue
         const top = Math.max(x.top, y.top)
         const left = Math.max(x.left, y.left)

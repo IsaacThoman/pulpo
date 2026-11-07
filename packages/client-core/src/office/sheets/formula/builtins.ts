@@ -6,6 +6,7 @@
 
 import { maxOf } from '../../../collections.js'
 
+import { consumeWork } from './budget.js'
 import { broadcastRanges, rangeSlice } from './ranges.js'
 import { logicalSize, matrixGet, omittedCells } from './types.js'
 
@@ -287,6 +288,7 @@ const MAP: OwnedFunction = (it, args, scope) => {
   const data: Scalar[] = new Array(rows * cols)
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
+      consumeWork(grids.length)
       let missing = false
       const values = grids.map((grid) => {
         const gr = grid.rows === 1 ? 0 : r

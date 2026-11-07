@@ -276,6 +276,7 @@ export function matrixCol(m: Matrix, col: number): Scalar[] {
 }
 
 export function transpose(m: Matrix): Matrix {
+  consumeWork(m.rows * m.cols)
   const data: Scalar[] = new Array(m.rows * m.cols)
   for (let row = 0; row < m.rows; row++) for (let col = 0; col < m.cols; col++) data[col * m.rows + row] = m.data[row * m.cols + col] ?? null
   const size = logicalSize(m)

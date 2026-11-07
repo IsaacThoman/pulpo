@@ -17,3 +17,18 @@ export function consumeWork(count = 1): void {
   remaining -= count
   if (remaining < 0) throw new CalculationStopped()
 }
+
+/** Batch hot inner-loop charges, with at most 63 units pending until flush. */
+export class WorkCounter {
+  private pending = 0
+
+  consume(count = 1): void {
+    this.pending += count
+    if (this.pending >= 64) this.flush()
+  }
+
+  flush(): void {
+    consumeWork(this.pending)
+    this.pending = 0
+  }
+}

@@ -1,89 +1,10 @@
-import { readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import ts from 'typescript'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { FormulaEngine } from './engine.js'
 import { EVALUATOR_FUNCTIONS } from './builtins.js'
 import { functionRegistry } from './functions/index.js'
 import { TEXT_FORMAT_FUNCTIONS } from './functions/text-format.js'
-import type { FunctionSpec } from './types.js'
 
-/**
- * Independently count loop bodies in a fresh copy of the production interpreter. A missing
- * consumeWork must fail deterministically, even if the loop happens to run quickly on CI.
- * The watchdog also interrupts a regressed/infinite loop before it hangs the test runner.
- * Nothing is instrumented in the shipped engine; imports share this loader's module cache,
- * including CalculationStopped's identity and the synchronous budget state.
- */
-function guardedEngine(omitSubstituteCharge = false) {
-  let active = false, iterations = 0, tripped = false
-  const maxIterations = 2_000
-  const tick = () => {
-    if (active && ++iterations > maxIterations) {
-      tripped = true
-      active = false
-      throw new Error('Unbudgeted formula loop')
-    }
-  }
-  const cache = new Map<string, { exports: Record<string, unknown> }>()
-  const load = (file: string): Record<string, unknown> => {
-    const cached = cache.get(file)
-    if (cached) return cached.exports
-    const module = { exports: {} }
-    cache.set(file, module)
-    let source = readFileSync(file, 'utf8')
-    if (omitSubstituteCharge && file.endsWith('/functions/text.ts')) source = source.replace('for (let i = 0; i < instance; i++) {\n          consumeWork()', 'for (let i = 0; i < instance; i++) {')
-    const code = ts.transpileModule(source, {
-      fileName: file,
-      compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.CommonJS, esModuleInterop: true },
-      transformers: { before: [(context) => {
-        const visit: ts.Visitor = (node) => {
-          const next = ts.visitEachChild(node, visit, context)
-          if (ts.isForStatement(next) || ts.isForOfStatement(next) || ts.isForInStatement(next) || ts.isWhileStatement(next) || ts.isDoStatement(next)) {
-            const body = next.statement
-            const tickStatement = ts.factory.createExpressionStatement(ts.factory.createCallExpression(ts.factory.createIdentifier('__formulaGuardTick'), undefined, []))
-            const block = ts.factory.createBlock([tickStatement, ...(ts.isBlock(body) ? body.statements : [body])], true)
-            if (ts.isForStatement(next)) return ts.factory.updateForStatement(next, next.initializer, next.condition, next.incrementor, block)
-            if (ts.isForOfStatement(next)) return ts.factory.updateForOfStatement(next, next.awaitModifier, next.initializer, next.expression, block)
-            if (ts.isForInStatement(next)) return ts.factory.updateForInStatement(next, next.initializer, next.expression, block)
-            if (ts.isWhileStatement(next)) return ts.factory.updateWhileStatement(next, next.expression, block)
-            return ts.factory.updateDoStatement(next, block, next.expression)
-          }
-          return next
-        }
-        return (source) => ts.visitNode(source, visit) as ts.SourceFile
-      }] },
-    }).outputText
-    const nativeRequire = createRequire(file)
-    const requireLocal = (id: string) => id.startsWith('.')
-      ? load(resolve(dirname(file), id.replace(/\.js$/, '.ts')))
-      : nativeRequire(id)
-    new Function('module', 'exports', 'require', '__formulaGuardTick', code)(module, module.exports, requireLocal, tick)
-    return module.exports
-  }
-  const root = dirname(fileURLToPath(import.meta.url))
-  const Engine = load(resolve(root, 'engine.ts')).FormulaEngine as typeof FormulaEngine
-  const registry = load(resolve(root, 'functions/index.ts')).functionRegistry as typeof functionRegistry
-  const textFunctions = load(resolve(root, 'functions/text-format.ts')).TEXT_FORMAT_FUNCTIONS as FunctionSpec[]
-  const engine = new Engine({ functions: registry(textFunctions), random: () => 0.5, maxWork: 100 })
-  engine.setSheets(['Sheet1'])
-  return {
-    engine,
-    run(formula: string) {
-      engine.setCell(0, 2, 2, { formula })
-      iterations = 0
-      tripped = false
-      active = true
-      const start = performance.now()
-      try {
-        const result = engine.recalc()
-        return { stoppedEarly: result.stoppedEarly, iterations, tripped, ms: performance.now() - start }
-      } finally { active = false }
-    },
-  }
-}
+import { guardedEngine } from './budget-test-utils.js'
 
 const targeted: Record<string, string[]> = {
   WORKDAY: ['1000000,1000000', '1000000,-500000'],
@@ -128,7 +49,7 @@ describe('registry-wide adversarial value budget', () => {
   it('proves the watchdog detects an uncharged loop', () => {
     // Remove the real budget charge from a copy of SUBSTITUTE, proving this guard catches
     // the exact class of regression even when the interpreter turns the watchdog into #VALUE!.
-    const unbudgeted = guardedEngine(true)
+    const unbudgeted = guardedEngine({ omitSubstituteCharge: true })
     const args = targeted.SUBSTITUTE![0]!
     expect(unbudgeted.run(`SUBSTITUTE(${args})`).tripped).toBe(true)
     expect(guarded.run(`SUBSTITUTE(${args})`).stoppedEarly).toBe(true)
@@ -172,4 +93,87 @@ it('propagates exhausted budgets through nested and lifted calls and lambda comb
     engine.setCell(0, 2, 2, { formula })
     expect(engine.recalc().stoppedEarly, formula).toBe(true)
   }
+})
+
+// Inputs stay small enough to pass argument-size charges. Their product exceeds the budget.
+const shapeCases: Record<string, string[]> = {
+  ...Object.fromEntries(['DSUM', 'DAVERAGE', 'DCOUNT', 'DCOUNTA', 'DMAX', 'DMIN', 'DPRODUCT', 'DSTDEV', 'DSTDEVP', 'DVAR', 'DVARP', 'DGET'].map((name) => [name, ['A1:A513,1,B1:B513']])),
+  COUNTIF: ['A2:A513,B2:B513'], SUMIF: ['A2:A513,B2:B513,A2:A513'], AVERAGEIF: ['A2:A513,B2:B513,A2:A513'],
+  COUNTIFS: ['A2:A513,B2:B513', Array(64).fill('A2:A513,1').join(',')],
+  SUMIFS: ['A2:A513,A2:A513,B2:B513', 'A2:A513,' + Array(64).fill('A2:A513,1').join(',')],
+  AVERAGEIFS: ['A2:A513,A2:A513,B2:B513'], MAXIFS: ['A2:A513,A2:A513,B2:B513'], MINIFS: ['A2:A513,A2:A513,B2:B513'],
+  MATCH: ['B2:B513,A2:A513,0', 'E2:E513,D2:D513,0'],
+  XMATCH: ['B2:B513,A2:A513,0', 'E2:E513,D2:D513,2'],
+  XLOOKUP: ['B2:B513,A2:A513,A2:A513', 'E2:E513,D2:D513,A2:A513,,2'],
+  VLOOKUP: ['B2:B513,A2:A513,1,FALSE'], HLOOKUP: ['B2:B513,A2:SS2,1,FALSE'],
+  FREQUENCY: ['B2:B513,A2:A513'],
+  SORT: ['A2:A513,TRANSPOSE(A2:A513)', 'F2:F513'], SORTBY: ['A2:A513,' + Array(40).fill('A2:A513,1').join(',')],
+  UNIQUE: ['A2:B513'], FILTER: ['A2:B513,A2:A513'], TRANSPOSE: ['A2:B513'],
+  MMULT: ['G2:AL33,G2:AL33'],
+  MAP: ['A2:A513,LAMBDA(x,SUM(B2:B513))'],
+  REDUCE: ['0,A2:A513,LAMBDA(a,x,a+SUM(B2:B513))'], SCAN: ['0,A2:A513,LAMBDA(a,x,a+SUM(B2:B513))'],
+  BYROW: ['A2:A513,LAMBDA(x,SUM(B2:B513))'], BYCOL: ['TRANSPOSE(A2:A513),LAMBDA(x,SUM(B2:B513))'],
+  MAKEARRAY: ['512,1,LAMBDA(r,c,SUM(B2:B513))'],
+  TEXTSPLIT: ['REPT("a",1000),D2:D513', '"a",,";"'],
+}
+
+describe('registry-wide adversarial shape budget', () => {
+  let shape: ReturnType<typeof guardedEngine>
+  const populate = (engine: FormulaEngine) => {
+    engine.setCell(0, 0, 0, { value: 'value' })
+    engine.setCell(0, 0, 1, { value: 'value' })
+    for (let row = 1; row <= 512; row++) {
+      for (const [col, value] of [[0, 1], [1, 2], [3, 'a'.repeat(30) + 'b'], [4, '*a*a*a*a*c'], [5, (row * 137) % 512]] as const) engine.setCell(0, row, col, { value })
+    }
+    for (let row = 1; row <= 32; row++) for (let col = 6; col < 38; col++) engine.setCell(0, row, col, { value: 1 })
+  }
+  beforeAll(() => {
+    shape = guardedEngine({ maxWork: 12_000, maxIterations: 100_000, callbacks: true })
+    populate(shape.engine)
+  })
+  it('detects missing predicate charges inside native array callbacks', () => {
+    const unbudgeted = guardedEngine({ omitShapeCharges: true, maxWork: 12_000, maxIterations: 100_000, callbacks: true })
+    populate(unbudgeted.engine)
+    expect(unbudgeted.run('DSUM(A1:A513,1,B1:B513)').tripped).toBe(true)
+    expect(shape.run('DSUM(A1:A513,1,B1:B513)').stoppedEarly).toBe(true)
+  })
+  it('charges sorting comparisons beyond linear input sizes', () => {
+    const sorted = guardedEngine({ maxWork: 4_000, maxIterations: 100_000, callbacks: true })
+    populate(sorted.engine)
+    expect(sorted.run('SORT(F2:F513)').stoppedEarly).toBe(true)
+  })
+  for (const name of names) it(name, () => {
+    const spec = functions.get(name)
+    const cases = new Set(shapeCases[name] ?? [])
+    // New functions automatically get pairs of range arguments at each accepted position,
+    // including crossed row/column shapes. Targeted cases above exercise valid quadratic paths.
+    const count = spec ? Math.min(spec.maxArgs, Math.max(spec.minArgs, 3)) : 3
+    for (let i = 0; i < count; i++) for (let j = i + 1; j < count; j++) {
+      for (const other of ['B2:B513', 'TRANSPOSE(B2:B513)']) cases.add(Array.from({ length: count }, (_, k) => k === i ? 'A2:A513' : k === j ? other : '1').join(','))
+    }
+    for (const args of cases) {
+      const formula = `${name}(${args})`
+      const result = shape.run(formula)
+      expect(result.tripped, `${formula.slice(0, 160)} exceeded ${result.iterations} independent iterations`).toBe(false)
+    }
+  })
+  for (const formula of ['A2:A513+TRANSPOSE(B2:B513)', 'A2:A513&TRANSPOSE(B2:B513)', 'IFERROR(DSUM(A1:A513,1,B1:B513),0)', ...Object.entries(shapeCases).flatMap(([name, cases]) => cases.map((args) => `${name}(${args})`))]) {
+    // Linear functions may complete; every expensive path must actually stop early.
+    if (/^(UNIQUE|FILTER|TRANSPOSE)\(/.test(formula) || formula === 'TEXTSPLIT("a",,";")' || formula === 'SORT(F2:F513)') continue
+    it(`stops ${formula.slice(0, 100)}`, () => {
+      expect(shape.run(formula).stoppedEarly, formula).toBe(true)
+    })
+  }
+})
+
+it('interrupts the reported 10,000 by 10,000 database scan in the production engine', () => {
+  const engine = new FormulaEngine({ functions, maxWork: 100_000 })
+  engine.setSheets(['Sheet1'])
+  for (const col of [0, 1]) engine.setCell(0, 0, col, { value: 'value' })
+  for (let row = 1; row <= 10_000; row++) {
+    engine.setCell(0, row, 0, { value: 1 })
+    engine.setCell(0, row, 1, { value: 2 })
+  }
+  engine.setCell(0, 0, 2, { formula: 'DSUM(A1:A10001,1,B1:B10001)' })
+  expect(engine.recalc().stoppedEarly).toBe(true)
 })
