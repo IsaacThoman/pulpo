@@ -9,6 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ui, uit } from '@/i18n/ui'
 import { formatBytes } from '@/lib/attachments'
 import { cn } from '@/lib/utils'
+import { pageTitle, useDocumentTitle } from '@/lib/document-title'
 import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
 import { Markdown } from '@/components/chat/Markdown'
@@ -223,6 +224,8 @@ function FileHeader({ node, ancestors, view, onDownload, children }: {
   const place = useMemo<FilesViewPlace | null>(() => node ? { layout: view.layout, view: { kind: 'file', id: node.id } } : null, [node, view.layout])
   const item = useMemo<AgentItem | null>(() => node ? { id: node.id } : null, [node])
   usePublishFilesView(place ?? { layout: view.layout, view: { kind: 'folder', id: null } }, item)
+  // Only the full page names the tab; a file beside another view leaves that view's title.
+  useDocumentTitle(view.layout === 'page' && node ? pageTitle(node.name, ui("Files")) : null)
   const goMain = useMainNavigate()
   return (
     <header className={cn('flex items-center gap-1.5 border-b px-4 py-1.5', view.layout === 'panel' ? 'side-panel-header' : 'mobile-page-content')}>

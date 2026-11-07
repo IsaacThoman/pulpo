@@ -118,7 +118,7 @@ describe('ChatRow', () => {
 
   it('focuses the inline rename from the options button menu', async () => {
     mount()
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Chat options' }), { key: 'Enter' })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Options for Sorting Algorithms' }), { key: 'Enter' })
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }))
     const input = await screen.findByRole('textbox', { name: 'Rename chat' })
     await waitFor(() => expect(document.activeElement).toBe(input))

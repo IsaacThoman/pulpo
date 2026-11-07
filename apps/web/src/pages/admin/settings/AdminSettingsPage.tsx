@@ -55,7 +55,7 @@ export function AdminSettingsPage() {
   return (
     <div className="@container">
       <div className="flex min-w-0 flex-col gap-6 @[46rem]:flex-row">
-        <nav className="settings-section-nav flex min-w-0 shrink-0 gap-1 overflow-x-auto @[46rem]:block @[46rem]:w-44 @[46rem]:space-y-0.5">
+        <nav aria-label={ui("Settings sections")} className="settings-section-nav flex min-w-0 shrink-0 gap-1 overflow-x-auto @[46rem]:block @[46rem]:w-44 @[46rem]:space-y-0.5">
           {sections.map((s) => (
             <button
               key={s.id}

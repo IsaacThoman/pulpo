@@ -15,6 +15,21 @@ export function hasPrimaryModifier(event: { metaKey: boolean; ctrlKey: boolean }
   return isApple ? event.metaKey : event.ctrlKey
 }
 
+const INTERACTIVE = [
+  'a[href]', 'button', 'select', 'summary',
+  '[role="button"]', '[role="link"]', '[role="tab"]', '[role="checkbox"]', '[role="switch"]', '[role="radio"]',
+  '[role="menuitem"]', '[role="combobox"]', '[role="slider"]', '[role="separator"][tabindex]',
+].join(', ')
+
+/**
+ * Buttons, links, and other controls take Enter, Space, and arrow keys themselves, so the file
+ * browser leaves those keys to them (Enter on "Grid view" switches the view; it does not open
+ * the selected folder).
+ */
+export function isInteractiveTarget(target: EventTarget | null): boolean {
+  return target instanceof Element && Boolean(target.closest(INTERACTIVE))
+}
+
 /** Keys typed into fields, menus, and dialogs belong to them, not to the file browser. */
 export function isEditableTarget(target: EventTarget | null): boolean {
   return target instanceof Element && Boolean(target.closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"]'))

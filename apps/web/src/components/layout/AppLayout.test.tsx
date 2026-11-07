@@ -88,7 +88,8 @@ describe('narrow desktop layout', () => {
     expect(sidebar.getAttribute('aria-hidden')).toBe('true')
     fireEvent.keyDown(window, { key: 'b', metaKey: true })
     expect(sidebar.getAttribute('aria-hidden')).toBe('false')
-    fireEvent.click(screen.getByRole('button', { name: 'Close sidebar' }))
+    // The backdrop is a pointer target only; it is hidden from assistive technology.
+    fireEvent.click(view.container.querySelector('.mobile-sidebar-backdrop')!)
     expect(sidebar.getAttribute('aria-hidden')).toBe('true')
     fireEvent.click(opener)
     fireEvent.keyDown(window, { key: 'Escape' })
@@ -99,12 +100,66 @@ describe('narrow desktop layout', () => {
     expect(opener.getAttribute('aria-expanded')).toBe('false')
   })
 
+  it('makes the open drawer modal: focus moves in, the page behind is inert, and focus returns', async () => {
+    narrow = true
+    Reflect.deleteProperty(window, 'pulpoDesktop')
+    const view = mount()
+    const sidebar = view.container.querySelector('aside')!
+    const opener = screen.getByRole('button', { name: 'Open sidebar' })
+    const main = view.container.querySelector('main')!
+    opener.focus()
+    fireEvent.click(opener)
+    expect(main.closest('[inert]')).not.toBeNull()
+    expect(opener.hasAttribute('inert')).toBe(true)
+    expect(screen.getByText('Skip to message').closest('a')!.hasAttribute('inert')).toBe(true)
+    await act(() => new Promise(requestAnimationFrame))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Toggle sidebar' }))
+    // Tab wraps from the drawer's last control to its first, and Shift+Tab back.
+    screen.getByRole('button', { name: 'Navigate' }).focus()
+    fireEvent.keyDown(document.activeElement!, { key: 'Tab' })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Toggle sidebar' }))
+    fireEvent.keyDown(document.activeElement!, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Navigate' }))
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(sidebar.getAttribute('aria-hidden')).toBe('true')
+    expect(main.closest('[inert]')).toBeNull()
+    await act(() => new Promise(requestAnimationFrame))
+    expect(document.activeElement).toBe(opener)
+  })
+
   it('keeps mobile web controls in the page header', () => {
     narrow = true
     Reflect.deleteProperty(window, 'pulpoDesktop')
     const view = mount()
     expect(view.container.querySelector('.desktop-sidebar-titlebar')).toBeNull()
     expect(screen.getByRole('button', { name: 'Model picker' }).parentElement?.tagName).toBe('HEADER')
+  })
+})
+
+describe('skip link and shortcuts', () => {
+  it('starts the page with a skip link to the main content', () => {
+    const view = mount()
+    const links = view.container.querySelectorAll('a[href], button')
+    expect(links[0]?.textContent).toBe('Skip to message')
+    const main = view.container.querySelector('main')!
+    fireEvent.click(links[0]!)
+    expect(document.activeElement).toBe(main)
+  })
+
+  it('leaves Cmd/Ctrl+B to editors that handle it, and to rich text', () => {
+    const view = mount()
+    const sidebar = view.container.querySelector('aside')!
+    const editor = document.createElement('div')
+    editor.setAttribute('contenteditable', 'true')
+    view.container.querySelector('main')!.append(editor)
+    fireEvent.keyDown(editor, { key: 'b', metaKey: true })
+    expect(sidebar.getAttribute('data-collapsed')).toBe('false')
+    const handled = new KeyboardEvent('keydown', { key: 'b', metaKey: true, bubbles: true, cancelable: true })
+    handled.preventDefault()
+    act(() => { window.dispatchEvent(handled) })
+    expect(sidebar.getAttribute('data-collapsed')).toBe('false')
+    fireEvent.keyDown(window, { key: 'b', metaKey: true })
+    expect(sidebar.getAttribute('data-collapsed')).toBe('true')
   })
 })
 

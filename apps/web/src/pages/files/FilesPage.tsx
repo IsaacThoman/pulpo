@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type DragEvent, type FocusEvent, type MouseEvent, type PointerEvent, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { FILE_SCOPE_ROOT, MAX_CHAT_FILE_SCOPES, type FileFolderLayout, type FileGridPosition, type FileListing, type FileNode, type TrashItem } from '@pulpo/contracts'
@@ -21,6 +21,7 @@ import {
   Link2,
   List,
   Maximize2,
+  MoreHorizontal,
   PanelRight,
   Loader2,
   Palette,
@@ -53,6 +54,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
+import { pageTitle, useDocumentTitle } from '@/lib/document-title'
 import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
 import { createDoc, createFolder, fetchFolder, fetchFolderLayout, folderLayoutQueryKey, folderQueryKey, updateFolderLayout, uploadFile } from '@/features/files/api'
@@ -83,7 +85,7 @@ import {
   type NavigationKey,
 } from '@/features/files/browser/selection'
 import { readFileSort, sortFileNodes, toggleFileSort, TRASH_SORT, uniqueChildName, writeFileSort, type FileSort, type FileSortKey } from '@/features/files/browser/sort'
-import { hasPrimaryModifier, isAppleShortcut, isEditableTarget, shortcutLabel } from '@/features/files/browser/shortcuts'
+import { hasPrimaryModifier, isAppleShortcut, isEditableTarget, isInteractiveTarget, shortcutLabel } from '@/features/files/browser/shortcuts'
 import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
 import { AgentMenuItems, OpenChatToLeftItem, SplitViewButton } from '@/features/side-panel/AgentActions'
 import { splitView, usePublishFilesView, type FilesViewPlace } from '@/features/side-panel/agent'
@@ -151,11 +153,12 @@ function SortHeader({ label, sortKey, sort, onSort, className }: {
     <button
       type="button"
       onClick={() => onSort(sortKey)}
-      aria-sort={active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}
+      // The header is not a table's, so the sort order is part of the button's name instead of aria-sort.
+      aria-label={active ? (sort.direction === 'asc' ? uit`${label}, sorted ascending` : uit`${label}, sorted descending`) : undefined}
       className={cn('flex min-w-0 cursor-pointer items-center gap-1 rounded text-left hover:text-foreground', active && 'text-foreground', className)}
     >
       <span className="truncate">{label}</span>
-      {active && <Icon className="size-3 shrink-0" />}
+      {active && <Icon aria-hidden="true" className="size-3 shrink-0" />}
     </button>
   )
 }
@@ -169,7 +172,9 @@ if (typeof window !== 'undefined') {
   window.addEventListener('pointerdown', (event) => { lastPointerDown = event.target instanceof Element ? event.target : null }, true)
 }
 
-function ownsKeys(layout: FilesViewPlace['layout'], root: HTMLElement | null): boolean {
+function ownsKeys(layout: FilesViewPlace['layout'], root: HTMLElement | null, target: EventTarget | null): boolean {
+  // Keys go where focus is, when it is anywhere in particular (the list, a toolbar, a chat beside).
+  if (target instanceof Element && target !== document.body && target !== document.documentElement) return Boolean(root?.contains(target))
   if (layout === 'panel') return Boolean(root && lastPointerDown && root.contains(lastPointerDown))
   return !lastPointerDown?.closest('[data-side-panel]')
 }
@@ -216,6 +221,9 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const agentItem = useMemo(() => ({ id: folderId ?? FILE_SCOPE_ROOT }), [folderId])
   // Trashed items are not files the agent can work on.
   usePublishFilesView(place, filesEnabled && !inTrash && !listing.isError ? agentItem : null)
+  // The page names the tab after the open folder; the route's title covers My files and the trash.
+  const shownFolderName = listing.data?.folder?.name
+  useDocumentTitle(!panel && shownFolderName ? pageTitle(shownFolderName, inTrash ? ui("Trash") : ui("Files")) : null)
   const ops = useFileOperations()
   const trashOps = useTrashOperations()
   const resolveFileSuggestion = useResolveFileSuggestion()
@@ -248,6 +256,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const rootRef = useRef<HTMLDivElement>(null)
   const lastPointerType = useRef('mouse')
   const typeahead = useRef({ text: '', at: 0 })
+  const optionIdBase = useId()
 
   const trashName = ui("Trash")
   const trashColor = useSettings((state) => state.trashColor)
@@ -576,12 +585,36 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     itemsRef.current?.querySelector<HTMLElement>(`[data-file-id="${id}"]`)?.scrollIntoView({ block: 'nearest' })
   }
 
+  // The item menu opened from the keyboard returns focus to where it was (the list) on closing.
+  const menuReturnFocus = useRef<HTMLElement | null>(null)
+  /** Shift+F10 or the Menu key: the menu for the focused item, or the folder's when none is selected. */
+  const openKeyboardMenu = (anchor?: HTMLElement) => {
+    menuReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const target = selection.focus && selection.ids.has(selection.focus) ? byId.get(selection.focus) : selectedNodes[0]
+    const element = anchor ?? (target ? itemsRef.current?.querySelector<HTMLElement>(`[data-file-id="${target.id}"]`) : itemsRef.current)
+    const rect = element?.getBoundingClientRect()
+    openMenuAt(rect ? { x: rect.left + (anchor ? 0 : 16), y: anchor ? rect.bottom : rect.top + Math.min(rect.height, 32) } : { x: 0, y: 0 }, target ?? null)
+  }
+  const closeMenu = () => {
+    setMenu(null)
+    const returnTo = menuReturnFocus.current
+    menuReturnFocus.current = null
+    if (returnTo?.isConnected) requestAnimationFrame(() => returnTo.focus({ preventScroll: true }))
+  }
+
   // One window listener that always sees the latest state, like a desktop file manager.
   const handleKey = (event: KeyboardEvent) => {
     if (event.defaultPrevented || isEditableTarget(event.target) || renamingId || moving || restoring || pendingDeletion || menu) return
-    if (!ownsKeys(layout, rootRef.current)) return
+    if (!ownsKeys(layout, rootRef.current, event.target)) return
     const mod = hasPrimaryModifier(event)
     const key = event.key
+    // Enter, Space, and arrows on the header's buttons and links work those controls.
+    if (!mod && isInteractiveTarget(event.target)) return
+    if (key === 'ContextMenu' || (key === 'F10' && event.shiftKey && !mod)) {
+      event.preventDefault()
+      openKeyboardMenu()
+      return
+    }
     if (NAVIGATION_KEYS.has(key) && !mod) {
       event.preventDefault()
       const current = selection.focus ? order.indexOf(selection.focus) : -1
@@ -809,7 +842,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       event.stopPropagation()
       openMenuAt({ x: event.clientX, y: event.clientY }, node)
     },
-    onMenuButton: (event: MouseEvent<HTMLButtonElement>) => {
+    onMenuButton: (event: MouseEvent<HTMLElement>) => {
       const rect = event.currentTarget.getBoundingClientRect()
       openMenuAt({ x: rect.left, y: rect.bottom }, node)
     },
@@ -999,6 +1032,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       <FileItem
         key={node.id}
         node={node}
+        optionId={`${optionIdBase}-${node.id}`}
         view={view}
         position={gridPositions?.get(node.id)}
         selected={selection.ids.has(node.id)}
@@ -1012,6 +1046,24 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         {...itemHandlers(node)}
       />
     ))
+    // One Tab stop for the whole list: arrows move between items, and screen readers follow the
+    // focused item through aria-activedescendant.
+    const activeId = selection.focus && byId.has(selection.focus) ? `${optionIdBase}-${selection.focus}` : undefined
+    const listboxProps = {
+      role: 'listbox' as const,
+      'aria-multiselectable': true,
+      'aria-label': inTrash ? ui("Trash") : ui("Files"),
+      'aria-activedescendant': activeId,
+      tabIndex: 0,
+      className: cn('outline-none', !activeId && 'focus-visible:ring-2 focus-visible:ring-ring'),
+      onFocus: (event: FocusEvent<HTMLDivElement>) => { if (event.target === event.currentTarget && event.currentTarget.matches(':focus-visible')) setKeyboardFocus(true) },
+      // Clicking an item focuses the list without scrolling the (possibly large) canvas into view.
+      onMouseDown: (event: MouseEvent<HTMLDivElement>) => {
+        if ((event.target as Element).closest('input, textarea, button, a')) return
+        event.preventDefault()
+        event.currentTarget.focus({ preventScroll: true })
+      },
+    }
     let width = 0, height = 0
     for (const place of gridPositions?.values() ?? []) {
       width = Math.max(width, place.x + GRID_CELL.width)
@@ -1021,10 +1073,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       // One spare cell past the last item leaves room to drag things further out.
       <div
         ref={itemsRef}
-        role="listbox"
-        aria-multiselectable
-        aria-label={inTrash ? ui("Trash") : ui("Files")}
-        className="relative"
+        {...listboxProps}
+        className={cn('relative rounded-xl', listboxProps.className)}
         style={{ width: Math.max(canvasWidth, width + GRID_CELL.width), height: height + GRID_CELL.height }}
       >
         {items}
@@ -1047,7 +1097,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
           <SortHeader label={ui("Size")} sortKey="size" sort={sort} onSort={changeSort} className="justify-end" />
           <span />
         </div>
-        <div ref={itemsRef} role="listbox" aria-multiselectable aria-label={inTrash ? ui("Trash") : ui("Files")} className="divide-y">{items}</div>
+        <div ref={itemsRef} {...listboxProps} className={cn('divide-y', listboxProps.className)}>{items}</div>
       </div>
     )
   }
@@ -1114,6 +1164,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         {!onlyTrash && <SelectionAction label={ui("Duplicate")} onClick={() => void duplicate()}><CopyPlus /></SelectionAction>}
         {!hasSystem && <SelectionAction label={trashLabel} destructive onClick={() => void trashSelection()}><Trash2 /></SelectionAction>}
         </>}
+        {/* Every item action, as on right-click: the keyboard's way to the rows' "⋯" menus. */}
+        <SelectionAction label={ui("More actions")} onClick={(event) => openKeyboardMenu(event.currentTarget)}><MoreHorizontal /></SelectionAction>
       </div>
     </TooltipProvider>
   )
@@ -1149,6 +1201,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     onPointerDown: startMarquee,
     onContextMenu: (event: MouseEvent) => {
       if (!event.currentTarget.contains(event.target as Node)) return
+      // Shift+F10 already opened the focused item's menu (see handleKey).
+      if (menuReturnFocus.current) { event.preventDefault(); return }
       if ((event.target as Element).closest('[data-file-id], input, a, [data-slot="scroll-area-scrollbar"]')) return
       event.preventDefault()
       if (!listing.isError || inTrash) openMenuAt({ x: event.clientX, y: event.clientY }, null)
@@ -1187,7 +1241,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         </div>
       )}
 
-      <FileContextMenu point={menu?.point ?? null} onClose={() => setMenu(null)}>
+      <FileContextMenu point={menu?.point ?? null} onClose={closeMenu}>
         {inTrash ? (
           menu?.scope === 'items' ? trashItemMenu : (
             <>

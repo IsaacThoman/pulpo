@@ -364,3 +364,62 @@ describe('chats in Files', () => {
     useSettings.setState({ trashRetention: '30d' })
   })
 })
+
+describe('keyboard', () => {
+  // jsdom has no layout to scroll.
+  beforeEach(() => { Element.prototype.scrollIntoView = vi.fn() })
+  it('leaves Enter on header buttons to the buttons, not to the selected folder', async () => {
+    showFiles()
+    fireEvent.click(await screen.findByRole('option', { name: /^Projects/ }))
+    const grid = screen.getByRole('button', { name: 'Grid view' })
+    grid.focus()
+    fireEvent.keyDown(grid, { key: 'Enter' })
+    fireEvent.keyDown(grid, { key: ' ' })
+    fireEvent.keyDown(grid, { key: 'ArrowDown' })
+    expect(screen.getByTestId('location').textContent).toBe('/files')
+    expect(screen.getByRole('option', { name: /^Projects/ }).getAttribute('aria-selected')).toBe('true')
+    // From the list itself, Enter still opens the folder.
+    const list = screen.getByRole('listbox')
+    list.focus()
+    fireEvent.keyDown(list, { key: 'Enter' })
+    expect(screen.getByTestId('location').textContent).toBe('/files/f/folder')
+  })
+
+  it('is one Tab stop that follows the focused item with aria-activedescendant', async () => {
+    showFiles()
+    await screen.findByRole('option', { name: /Notes.md/ })
+    const list = screen.getByRole('listbox')
+    expect(list.tabIndex).toBe(0)
+    expect(list.getAttribute('aria-activedescendant')).toBeNull()
+    list.focus()
+    fireEvent.keyDown(list, { key: 'ArrowDown' })
+    const active = document.getElementById(list.getAttribute('aria-activedescendant')!)
+    expect(active?.getAttribute('role')).toBe('option')
+    expect(active?.getAttribute('aria-selected')).toBe('true')
+    // Options hold no controls of their own; their menus open from the keyboard instead.
+    expect(list.querySelector('button, a, input')).toBeNull()
+  })
+
+  it('opens the focused item menu with Shift+F10 or from the selection bar, and returns focus to the list', async () => {
+    showFiles()
+    fireEvent.click(await screen.findByRole('option', { name: /Notes.md/ }))
+    const list = screen.getByRole('listbox')
+    list.focus()
+    fireEvent.keyDown(list, { key: 'F10', shiftKey: true })
+    await screen.findByRole('menuitem', { name: /^Rename/ })
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+    await act(() => new Promise(requestAnimationFrame))
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(document.activeElement).toBe(list)
+    fireEvent.click(screen.getByRole('button', { name: 'More actions' }))
+    expect(await screen.findByRole('menuitem', { name: /^Rename/ })).toBeTruthy()
+  })
+
+  it('puts the sort order in the sort button name instead of aria-sort', async () => {
+    showFiles()
+    await screen.findByRole('option', { name: /Notes.md/ })
+    const name = screen.getByRole('button', { name: /^Name/ })
+    expect(name.hasAttribute('aria-sort')).toBe(false)
+    expect(name.getAttribute('aria-label')).toMatch(/^Name, sorted (ascending|descending)$/)
+  })
+})
