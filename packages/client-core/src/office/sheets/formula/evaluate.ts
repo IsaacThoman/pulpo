@@ -51,10 +51,8 @@ export interface EvalHost {
   /** Index of a sheet by name (case-insensitive), or -1. */
   sheetIndex(name: string): number
   readCell(sheet: number, row: number, col: number): Scalar
-  /** Contents of an area; may trim whole-column/row areas to the used part (see `usedArea`). */
+  /** Contents may omit a uniform blank tail; logicalSize always retains the original bounds. */
   readArea(area: Area): Matrix
-  /** The part of an area worth materializing: areas reaching the grid edge stop at the used range. */
-  usedArea(area: Area): Area
   /** The spill range anchored at a cell, if it has one (`A1#`). */
   spillArea(sheet: number, row: number, col: number): Area | undefined
   /** `=…` text of the formula in a cell (`{=…}` for legacy array formulas), if any. */

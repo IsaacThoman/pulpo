@@ -372,7 +372,8 @@ function rowOrColumn(rows: boolean): OwnedFunction {
     if (!args.length || !args[0]) return (rows ? it.row : it.col) + 1
     const ref = referenceArg(it, args[0], scope)
     if (isError(ref)) return ref
-    const area = it.host.usedArea(ref.areas[0]!)
+    // Coordinates describe the reference, including cells beyond the populated prefix.
+    const area = ref.areas[0]!
     const start = rows ? area.top : area.left
     const count = rows ? areaRows(area) : areaCols(area)
     if (count === 1 || it.legacy) return start + 1

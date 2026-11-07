@@ -1557,6 +1557,7 @@ export class FormulaEngine {
     if (calc?.current) calc.reads.push({ sheet, top: area.top, left: area.left, bottom: area.bottom, right: area.right })
   }
 
+  /** Storage optimization only: readArea restores logical bounds before exposing the matrix. */
   private usedArea(area: Area): Area {
     const sheet = this.sheets[area.sheet]
     if (!sheet) return area
@@ -1650,7 +1651,6 @@ export class FormulaEngine {
         return this.cellValue(sheet, row, col, true)
       },
       readArea: (area) => this.readArea(area),
-      usedArea: (area) => this.usedArea(area),
       spillArea: (sheetIndex, row, col) => {
         const sheet = this.sheets[sheetIndex]
         const cell = sheet?.get(row, col)

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { MAX_COLS, MAX_ROWS, parseCellName } from '../address.js'
+import { OWNED_FUNCTIONS } from './builtins.js'
 import { functionRegistry } from './functions/index.js'
 import { FormulaEngine } from './engine.js'
 import { forEachLogical } from './ranges.js'
@@ -173,29 +174,179 @@ function canonical(value: ReturnType<FormulaEngine['evaluateFormula']>): unknown
   return { ...logicalSize(value), runs }
 }
 
+// Owned functions are dispatched before the library registry. Valid argument templates keep
+// geometry functions (and lazy/lambda functions) off meaningless argument-error paths.
+const ownedRangeCases: Record<string, string[]> = {
+  IF: ['IF(TRUE,R,0)'], IFS: ['IFS(TRUE,R)'],
+  IFERROR: ['IFERROR(R,7)'], IFNA: ['IFNA(R,7)'],
+  SWITCH: ['SWITCH(1,1,R)'], CHOOSE: ['CHOOSE(1,R)'],
+  LET: ['LET(x,R,x)'], LAMBDA: ['LAMBDA(x,x)(R)'],
+  ISOMITTED: ['LAMBDA(x,ISOMITTED(x))(R)'],
+  MAP: ['MAP(R,LAMBDA(x,x+1))'], REDUCE: ['REDUCE(0,TAKE(R,100,100),LAMBDA(x,y,x+y))'],
+  SCAN: ['SCAN(0,R,LAMBDA(x,y,x+y))'],
+  BYROW: ['BYROW(R,LAMBDA(x,SUM(x)))'], BYCOL: ['BYCOL(R,LAMBDA(x,SUM(x)))'],
+  MAKEARRAY: ['MAKEARRAY(1,COLUMNS(R),LAMBDA(x,y,y))'],
+  ROW: ['ROW(R)'], COLUMN: ['COLUMN(R)'], ROWS: ['ROWS(R)'], COLUMNS: ['COLUMNS(R)'],
+  AREAS: ['AREAS(R)', 'AREAS((R,Sheet2!A1))'], OFFSET: ['OFFSET(R,0,0)'],
+  INDIRECT: ['INDIRECT("R")'], INDEX: ['INDEX(R,0,0)', 'INDEX((Sheet2!A1,R),0,0,2)'],
+  ISREF: ['ISREF(R)', 'ISREF(INDEX(R,0,0))'],
+  ISFORMULA: ['ISFORMULA(R)'], FORMULATEXT: ['FORMULATEXT(R)'],
+  CELL: ['CELL("address",R)', 'CELL("row",R)', 'CELL("col",R)', 'CELL("contents",R)'],
+  INFO: ['IF(ISREF(R),INFO("numfile"))'], SHEET: ['SHEET(R)'], SHEETS: ['SHEETS(R)'],
+}
+
+function geometryProbes(formula: string): string[] {
+  return [formula, `INDEX(${formula},100,1)`, `INDEX(${formula},1,100)`, `ROWS(${formula})`, `COLUMNS(${formula})`]
+}
+
+function expectAxisInvariant(template: string, horizontal: boolean, empty: boolean): void {
+  const engine = book()
+  if (!empty) {
+    set(engine, 0, 'A1', 2)
+    set(engine, 0, horizontal ? 'B1' : 'A2', 3)
+  }
+  const axis = horizontal ? '1:1' : 'A:A'
+  const full = horizontal ? 'A1:XFD1' : `A1:A${MAX_ROWS}`
+  const formula = template.replaceAll('__RANGE__', `Sheet1!${axis}`)
+  const probes = geometryProbes(formula)
+  const before = probes.map((probe) => canonical(engine.evaluateFormula(probe, 2)))
+  const compare = (): void => {
+    probes.forEach((probe, i) => {
+      expect(canonical(engine.evaluateFormula(probe, 2)), probe).toEqual(before[i])
+      expect(canonical(engine.evaluateFormula(probe.replaceAll(axis, full), 2)), probe).toEqual(before[i])
+    })
+  }
+  compare()
+  // Extending both axes still leaves the probes at row/column 100 outside the used area.
+  set(engine, 0, 'K11', 99)
+  compare()
+}
+
 describe('registry whole-axis invariance', () => {
+  it('covers every evaluator-owned function as well as the library registry', () => {
+    expect(Object.keys(ownedRangeCases).sort()).toEqual([...OWNED_FUNCTIONS.keys()].sort())
+  })
+  for (const [name, templates] of Object.entries(ownedRangeCases)) {
+    it(`evaluator ${name}`, () => {
+      for (const horizontal of [false, true]) for (const empty of [true, false]) {
+        for (const template of templates) expectAxisInvariant(template.replaceAll(/\bR\b/g, '__RANGE__'), horizontal, empty)
+      }
+    })
+  }
   for (const spec of functionRegistry().values()) {
     it(spec.name, () => {
-      for (const horizontal of [false, true]) {
-        for (const transform of ['R', '1/(R)', '(R+1)']) {
-          const axis = horizontal ? '1:1' : 'A:A'
-          const full = horizontal ? 'A1:XFD1' : `A1:A${MAX_ROWS}`
+      for (const horizontal of [false, true]) for (const empty of [true, false]) {
+        for (const transform of ['__RANGE__', '1/(__RANGE__)', '(__RANGE__+1)']) {
           const count = spec.maxArgs <= 8 ? spec.maxArgs : spec.minArgs + 1
           for (let pos = 0; pos < count; pos++) {
-            const engine = book()
-            set(engine, 0, 'A1', 2)
-            set(engine, 0, horizontal ? 'B1' : 'A2', 3)
-            const args = Array.from({ length: count }, (_, i) => i === pos ? transform.replace('R', `Sheet1!${axis}`) : '1')
-            const formula = `${spec.name}(${args.join(',')})`
-            const before = canonical(engine.evaluateFormula(formula, 2))
-            expect(canonical(engine.evaluateFormula(formula.replaceAll(axis, full), 2)), formula).toEqual(before)
-            set(engine, 0, horizontal ? 'K3' : 'C11', 99)
-            expect(canonical(engine.evaluateFormula(formula, 2)), formula).toEqual(before)
+            const args = Array.from({ length: count }, (_, i) => i === pos ? transform : '1')
+            expectAxisInvariant(`${spec.name}(${args.join(',')})`, horizontal, empty)
           }
         }
       }
     })
   }
+})
+
+describe('reference geometry beyond the populated prefix', () => {
+  for (const horizontal of [false, true]) {
+    const axis = horizontal ? '1:1' : 'A:A'
+    const full = horizontal ? 'A1:XFD1' : `A1:A${MAX_ROWS}`
+    const length = horizontal ? MAX_COLS : MAX_ROWS
+    const rows = horizontal ? 1 : length
+    const cols = horizontal ? length : 1
+    const coordinate = horizontal ? 'COLUMN' : 'ROW'
+    const index = horizontal ? '1,100' : '100,1'
+    const last = horizontal ? `1,${length}` : `${length},1`
+    const dimension = horizontal ? 'COLUMNS' : 'ROWS'
+    const take = horizontal ? ',,100' : ',100'
+    const drop = horizontal ? ',,99' : ',99'
+    const choose = horizontal ? 'CHOOSECOLS' : 'CHOOSEROWS'
+    const formulas: [string, Scalar][] = [
+      ['ROWS(R)', rows], ['COLUMNS(R)', cols], ['AREAS(R)', 1], ['ISREF(R)', true],
+      ['AREAS((R,Sheet2!A1))', 2],
+      ['CELL("address",R)', 'Sheet1!$A$1'],
+      ['CELL("row",R)', 1], ['CELL("col",R)', 1],
+      ['ISREF(INDEX(R,0,0))', true], ['ISREF(OFFSET(R,0,0))', true],
+      [`${dimension}(OFFSET(R,0,0))`, length],
+      [`${dimension}(INDEX((Sheet2!A1,R),0,0,2))`, length],
+      [`INDEX(OFFSET(R,0,0),${index})`, 0],
+      [`INDEX(INDEX(R,0,0),${last})`, 0],
+      [`${coordinate}(INDEX(R,${index}))`, 100],
+      [`CELL("${horizontal ? 'col' : 'row'}",INDEX(R,${index}))`, 100],
+      [`INDEX(TAKE(R${take}),${index})`, 0],
+      [`${dimension}(TAKE(R${take}))`, 100],
+      [`INDEX(DROP(R${drop}),${index})`, 0],
+      [`${dimension}(DROP(R${drop}))`, length - 99],
+      [`INDEX(${choose}(R,100,-1),${horizontal ? '1,2' : '2,1'})`, 0],
+      [`${dimension}(${choose}(R,100,-1))`, 2],
+      [`INDEX(EXPAND(TAKE(R${take}),${horizontal ? '1,101' : '101,1'},7),${index})`, 0],
+      [`INDEX(EXPAND(TAKE(R${take}),${horizontal ? '1,101' : '101,1'},7),${horizontal ? '1,101' : '101,1'})`, 7],
+      [`${dimension}(EXPAND(TAKE(R${take}),${horizontal ? '1,101' : '101,1'}))`, 101],
+      // Nonuniform coordinate arrays must respect the materialization limit, independent of data.
+      [`INDEX(${coordinate}(R),${index})`, horizontal ? 100 : Errors.NUM],
+      [`${dimension}(${coordinate}(R))`, horizontal ? length : Errors.NUM],
+      [`INDEX(SEQUENCE(ROWS(R),COLUMNS(R)),${index})`, horizontal ? 100 : Errors.NUM],
+      [`${dimension}(SEQUENCE(ROWS(R),COLUMNS(R)))`, horizontal ? length : Errors.NUM],
+      [`INDEX(ROW(OFFSET(R,0,0,100,1)),100)`, 100],
+      [`INDEX(COLUMN(OFFSET(R,0,0,1,100)),1,100)`, 100],
+    ]
+    it.each(formulas)(`${axis}: %s`, (template, expected) => {
+      const engine = book()
+      for (const stage of ['empty', 'small', 'expanded']) {
+        if (stage === 'small') set(engine, 0, 'B2', 7)
+        if (stage === 'expanded') set(engine, 0, 'CV20', 99)
+        for (const range of [axis, full]) {
+          const formula = template.replaceAll(/\bR\b/g, `Sheet1!${range}`)
+          expect(engine.evaluateFormula(formula, 2), `${stage}: ${formula}`).toEqual(expected)
+        }
+      }
+    })
+  }
+
+  it('reproduces COLUMN(1:1) versus the 100-column explicit range', () => {
+    const engine = book()
+    for (const range of ['1:1', 'A1:CV1']) {
+      expect(engine.evaluateFormula(`INDEX(COLUMN(${range}),1,100)`)).toBe(100)
+    }
+  })
+
+  it('preserves shifted coordinate origins and rejects oversized nonuniform arrays', () => {
+    const engine = book()
+    for (const [formula, expected] of [
+      ['INDEX(ROW(Sheet1!A100:A199),100)', 199],
+      ['ROWS(ROW(Sheet1!A100:A199))', 100],
+      ['INDEX(COLUMN(Sheet1!CV1:XFD1),1,100)', 199],
+      ['COLUMNS(COLUMN(Sheet1!CV1:XFD1))', MAX_COLS - 99],
+      ['ROWS(ROW(Sheet1!A1:A1000001))', Errors.NUM],
+      ['COLUMN(Sheet1!A:A)', 1], ['ROW(Sheet1!1:1)', 1],
+    ] as const) expect(engine.evaluateFormula(formula, 2), formula).toEqual(expected)
+  })
+
+  it('sizes coordinate and reference spills from logical bounds on an empty sheet', () => {
+    const engine = book()
+    engine.setCell(2, 0, 0, { formula: 'COLUMN(Sheet1!1:1)' })
+    engine.setCell(2, 1, 1, { formula: 'COLUMN(Sheet1!1:1)' })
+    engine.setCell(2, 2, 0, { formula: 'ROW(Sheet1!A:A)' })
+    engine.setCell(2, 3, 0, { formula: 'OFFSET(Sheet1!1:1,0,0)' })
+    engine.setCell(2, 4, 0, { formula: 'INDEX(Sheet1!1:1,0,0)' })
+    engine.setCell(2, 5, 0, { formula: 'TAKE(Sheet1!A:A,100)' })
+    for (const expanded of [false, true]) {
+      if (expanded) set(engine, 0, 'CV20', 99)
+      engine.recalc({ full: true })
+      expect(engine.getSpill(2, 0, 0)).toEqual({ rows: 1, cols: MAX_COLS })
+      expect(engine.getValue(2, 0, 99)).toBe(100)
+      expect(engine.getValue(2, 0, MAX_COLS - 1)).toBe(MAX_COLS)
+      expect(engine.getValue(2, 1, 1)).toEqual(Errors.SPILL)
+      expect(engine.getValue(2, 2, 0)).toEqual(Errors.NUM)
+      for (const row of [3, 4]) {
+        expect(engine.getSpill(2, row, 0)).toEqual({ rows: 1, cols: MAX_COLS })
+        expect(engine.getValue(2, row, 99)).toBe(0)
+      }
+      expect(engine.getSpill(2, 5, 0)).toEqual({ rows: 100, cols: 1 })
+      expect(engine.getValue(2, 104, 0)).toBe(0)
+    }
+  })
 })
 
 it('joins logical blanks with bounded text output, including cycling delimiter ranges', () => {
