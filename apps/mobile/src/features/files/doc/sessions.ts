@@ -1,4 +1,5 @@
 import { DocSessionController, type DocSocket, type DocSyncStatus } from '@pulpo/client-core/doc-sync'
+import { LIVE_FORMATS } from '@pulpo/client-core/office'
 import * as Y from 'yjs'
 import { SqliteDocPersistence } from './persistence'
 import type { DocStore } from './store'
@@ -73,6 +74,8 @@ export class DocSessionRegistry {
     private readonly namespace: string,
     private readonly store: DocStore,
     private readonly schemaVersion: number,
+    /** Each live format's schema this app edits (`MOBILE_SCHEMA_VERSIONS`), announced on joins. */
+    private readonly schemaVersions?: Record<string, number>,
   ) {}
 
   acquire(docId: string, options: { background?: boolean } = {}): DocHandle {
@@ -202,6 +205,9 @@ export class DocSessionRegistry {
     const controller = new DocSessionController({
       docId,
       schemaVersion: this.schemaVersion,
+      schemaVersions: this.schemaVersions,
+      // Any format's content counts, so a cached copy of a text document shows offline too.
+      hasContent: (doc) => LIVE_FORMATS.some((format) => format.hasContent(doc)),
       persistence: (doc) => {
         persistence = new SqliteDocPersistence(this.store, this.namespace, docId, doc, this.schemaVersion)
         return persistence
@@ -232,6 +238,12 @@ export class DocSessionRegistry {
           void gone.persistence.discard()
         }
         this.replaced.delete(docId)
+      }
+      // This device's copy is of an earlier document under the same id (a file made a document
+      // again): it is never merged; the next session starts without it.
+      if (status.state === 'error' && status.error === 'stale_copy' && !entry.discarded) {
+        entry.discarded = true
+        void persistence.discard()
       }
       if (entry.users === 0 && !entry.stale && done(entry)) this.closeSoon(entry, 0)
     })

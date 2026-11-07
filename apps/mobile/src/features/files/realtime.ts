@@ -3,6 +3,7 @@ import type { PulpoSocket } from '../../providers/realtimeStore'
 import { registerAccountCleanup } from '../../store/accountCleanup'
 import { useSessionStore } from '../../store/session'
 import { clearMarkdownExports } from './api'
+import { clearOfficePdfExports } from './officeConversion'
 import { filesCapability } from './availability'
 import { bindMobileDocSocket, closeDocSessions } from './doc/accountSessions'
 import { clearUploads, resumeUploads } from './uploads'
@@ -12,6 +13,7 @@ registerAccountCleanup(async (namespace) => {
   await closeDocSessions(namespace)
   await clearUploads(namespace)
   clearMarkdownExports()
+  clearOfficePdfExports()
 })
 
 /**

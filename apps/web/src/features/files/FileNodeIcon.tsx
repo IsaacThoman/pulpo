@@ -13,6 +13,7 @@ import {
   FolderArchive,
   MessageSquare,
   PanelLeft,
+  Presentation,
   Trash2,
   type LucideIcon,
 } from 'lucide-react'
@@ -20,6 +21,9 @@ import { cn } from '@/lib/utils'
 import { TRASH_FOLDER_ID } from '@/features/trash/folder'
 import { FILE_COLOR_CLASSES, FILE_ICON_GLYPHS } from './appearance'
 import { ARCHIVE_EXTENSIONS, CODE_EXTENSIONS, fileExtension, SHEET_EXTENSIONS } from './file-display'
+
+/** Slide decks: PowerPoint's own formats and the ones that convert to them. */
+const PRESENTATION_EXTENSIONS = new Set(['pptx', 'pptm', 'potx', 'potm', 'ppsx', 'ppsm', 'ppt', 'pps', 'pot', 'odp', 'key'])
 
 type IconNode = Pick<FileNode, 'kind' | 'name' | 'mimeType'> & Partial<Pick<FileNode, 'id' | 'systemRole' | 'target' | 'color' | 'icon'>>
 
@@ -63,6 +67,9 @@ function ItemIcon({ node, className }: { node: IconNode; className?: string }) {
   return <Glyph className={cn(classes, tint?.text ?? color)} />
 }
 
+/** Word documents, uploaded or live. */
+const WORD_EXTENSIONS = new Set(['doc', 'docx', 'dotx', 'docm', 'dotm', 'odt', 'rtf'])
+
 /** A file's glyph and color from its type: the extension decides, then the MIME type. */
 function fileGlyph(node: IconNode): [LucideIcon, string] {
   // Markdown looks the same before and after it becomes editable.
@@ -74,6 +81,8 @@ function fileGlyph(node: IconNode): [LucideIcon, string] {
   if (mime.startsWith('audio/')) return [FileAudio, 'text-amber-500']
   if (mime === 'application/pdf' || extension === 'pdf') return [FileText, 'text-red-500']
   if (SHEET_EXTENSIONS.has(extension)) return [FileSpreadsheet, 'text-emerald-600']
+  if (PRESENTATION_EXTENSIONS.has(extension)) return [Presentation, 'text-orange-500']
+  if (WORD_EXTENSIONS.has(extension)) return [FileText, 'text-blue-600']
   if (ARCHIVE_EXTENSIONS.has(extension)) return [FileArchive, 'text-muted-foreground']
   if (CODE_EXTENSIONS.has(extension)) return [FileCode, 'text-muted-foreground']
   if (extension === 'md' || mime.startsWith('text/')) return [FileText, 'text-muted-foreground']

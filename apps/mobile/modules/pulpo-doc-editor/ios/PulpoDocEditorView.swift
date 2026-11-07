@@ -163,6 +163,14 @@ public final class PulpoDocEditorView: ExpoView, WKNavigationDelegate, WKUIDeleg
     toolbarModel.active = Set(state.active)
     toolbarModel.disabled = Set(state.disabled)
     toolbarModel.tint = UIColor(hexString: state.tint).map { Color(uiColor: $0) } ?? .accentColor
+    let items = state.items.map { item in
+      DocEditorToolbarItem(
+        command: item.command, label: item.label, systemImage: item.systemImage,
+        options: item.options.map { MenuOption(command: $0.command, label: $0.label, systemImage: $0.systemImage) },
+        separatorBefore: item.separatorBefore
+      )
+    }
+    if items != toolbarModel.items { toolbarModel.items = items }
     let visible = state.visible
     if visible != accessoryInstalled {
       accessoryInstalled = visible
@@ -231,7 +239,12 @@ public final class PulpoDocEditorView: ExpoView, WKNavigationDelegate, WKUIDeleg
   ) {
     // The page itself; links are opened by the app (the editor reports taps on them).
     let url = navigationAction.request.url
-    decisionHandler(url?.scheme == editorScheme && url?.host == editorURL.host && navigationAction.targetFrame?.isMainFrame == true ? .allow : .cancel)
+    let isPage = url?.scheme == editorScheme && url?.host == editorURL.host && navigationAction.targetFrame?.isMainFrame == true
+    // A notebook's HTML outputs: iframes the page fills with `srcdoc`, sandboxed without scripts.
+    // They load as about:srcdoc (or about:blank first); nothing else may load in a frame.
+    let isOutputFrame = navigationAction.targetFrame.map { !$0.isMainFrame } == true
+      && (url?.absoluteString == "about:srcdoc" || url?.absoluteString == "about:blank")
+    decisionHandler(isPage || isOutputFrame ? .allow : .cancel)
   }
 
   public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {

@@ -1,6 +1,7 @@
 import type { ImageSourcePropType } from 'react-native';
 import { materialSymbolNames } from './symbolNames';
 const icons: Record<string, ImageSourcePropType> = {
+  'wrap_text': require('../../assets/material/wrap_text.xml'),
   'bot': require('../../assets/material/bot.xml'),
   'bot-off': require('../../assets/material/bot-off.xml'),
   'pulpo_frown': require('../../assets/material/pulpo_frown.xml'),
@@ -10,6 +11,10 @@ const icons: Record<string, ImageSourcePropType> = {
   'science': require('../../assets/material/science.xml'),
   'account_circle': require('../../assets/material/account_circle.xml'),
   'add': require('../../assets/material/add.xml'),
+  'add_to_photos': require('../../assets/material/add_to_photos.xml'),
+  'shapes': require('../../assets/material/shapes.xml'),
+  'slideshow': require('../../assets/material/slideshow.xml'),
+  'text_fields': require('../../assets/material/text_fields.xml'),
   'remove': require('../../assets/material/remove.xml'),
   'alternate_email': require('../../assets/material/alternate_email.xml'),
   'arrow_back': require('../../assets/material/arrow_back.xml'),
@@ -139,6 +144,8 @@ const icons: Record<string, ImageSourcePropType> = {
   'cloud_sync': require('../../assets/material/cloud_sync.xml'),
   'checklist': require('../../assets/material/checklist.xml'),
   'format_size': require('../../assets/material/format_size.xml'),
+  'format_align_left': require('../../assets/material/format_align_left.xml'),
+  'format_underlined': require('../../assets/material/format_underlined.xml'),
   'format_bold': require('../../assets/material/format_bold.xml'),
   'format_italic': require('../../assets/material/format_italic.xml'),
   'format_strikethrough': require('../../assets/material/format_strikethrough.xml'),
@@ -156,5 +163,19 @@ const icons: Record<string, ImageSourcePropType> = {
   'add_comment': require('../../assets/material/add_comment.xml'),
   'folder_open': require('../../assets/material/folder_open.xml'),
   'block': require('../../assets/material/block.xml'),
+  'format_color_fill': require('../../assets/material/format_color_fill.xml'),
+  'format_align_center': require('../../assets/material/format_align_center.xml'),
+  'format_align_right': require('../../assets/material/format_align_right.xml'),
+  'numbers': require('../../assets/material/numbers.xml'),
+  'attach_money': require('../../assets/material/attach_money.xml'),
+  'percent': require('../../assets/material/percent.xml'),
+  'vertical_align_top': require('../../assets/material/vertical_align_top.xml'),
+  'vertical_align_bottom': require('../../assets/material/vertical_align_bottom.xml'),
+  'align_horizontal_left': require('../../assets/material/align_horizontal_left.xml'),
+  'align_horizontal_right': require('../../assets/material/align_horizontal_right.xml'),
+  'ac_unit': require('../../assets/material/ac_unit.xml'),
+  'sort_by_alpha': require('../../assets/material/sort_by_alpha.xml'),
+  'filter_list': require('../../assets/material/filter_list.xml'),
+  'circle': require('../../assets/material/circle.xml'),
 };
 export function materialIcon(name: string): ImageSourcePropType { return icons[materialSymbolNames[name] ?? name] ?? icons.info; }

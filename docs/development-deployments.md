@@ -20,6 +20,10 @@ Use the `production-api`, `production-worker`, and `production-web` Dockerfile
 targets, readiness routing, and shutdown budgets described in
 [production deployments](production-deployments.md). These targets describe
 runtime roles and are also appropriate for persistent development.
+The optional office converter uses the same proposed HTTP relay as production; see the
+[networking recommendation](https://github.com/IsaacThoman/pulpo/blob/feat-office-conversion/infra/office-converter/README.md#coolify-networking-investigation-read-only-2026-11-05-utc).
+After adding it to the infrastructure Compose, API/worker reach `pulpo-dev-office-relay:8080`,
+while the converter remains exclusively on the internal network. This has not been deployed.
 
 ## CI configuration
 

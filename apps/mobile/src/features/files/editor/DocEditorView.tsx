@@ -3,16 +3,22 @@ import * as Crypto from 'expo-crypto'
 import { requireNativeViewManager } from 'expo-modules-core'
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore, type Ref } from 'react'
 import { Alert, Platform, type StyleProp, type ViewStyle } from 'react-native'
-import { promptText } from '../../../platform/materialActions'
+import { promptText, showActions } from '../../../platform/materialActions'
 import PulpoDocEditor from '../../../../modules/pulpo-doc-editor'
 import { useAppTheme } from '../../../theme'
 import type { DocHandle } from '../doc/sessions'
 import { EditorBridge, type EditorBridgeState } from './bridge'
-import { EDITOR_BUNDLE } from './editorBundle.generated'
+import { EDITOR_BUNDLES, type MobileEditorFormat } from './bundles'
 import { editorTheme, normalizeHref } from './presentation'
-import type { ReviewAction } from './protocol'
+import { notebookToolbarState, NOTEBOOK_TOOLBAR } from './notebookToolbar'
+import type { DocxCommand, NotebookCommand, PresentationCommand, ReviewAction, SheetCommand, TextCommand } from './protocol'
+import { presentationToolbarState } from './presentationToolbar'
+import { SHEET_TOOLBAR, sheetToolbarMenu, sheetToolbarState } from './sheetToolbar'
+import { TEXT_TOOLBAR, textToolbarState, type NativeToolbarItem } from './textToolbar'
+import { DOCX_TOOLBAR, docxToolbarState } from './docxToolbar'
+import { fetchDocAsset } from '../api'
 
-type NativeToolbar = { visible: boolean; active: string[]; disabled: string[]; tint: string }
+type NativeToolbar = { visible: boolean; active: string[]; disabled: string[]; tint: string; items: NativeToolbarItem[] }
 type NativeProps = {
   ref?: Ref<NativeRef>
   style?: StyleProp<ViewStyle>
@@ -37,6 +43,10 @@ const NativeDocEditor = PulpoDocEditor
 /** Whether this binary has the native editor host (older binaries and other platforms do not). */
 export const docEditorAvailable = NativeDocEditor !== null
 
+/** The native web view host itself, for pages that are not a document session (a deck's review diff). */
+export { NativeDocEditor }
+export type { NativeProps as NativeDocEditorProps, NativeRef as NativeDocEditorRef }
+
 /**
  * Sessions whose editor is closing: the native host pulls the page's whole state one last time,
  * and the session is held until it is merged (or a short wait passes).
@@ -59,12 +69,39 @@ PulpoDocEditor?.addListener('onFinalState', ({ instanceId, state }) => {
   pending.handle.release()
 })
 
+/** Asks for text where a Word command needs some (a link's address, a comment), then runs it. */
+function promptThen(title: string, initial: string, message: string | undefined, run: (value: string) => void, remove?: () => void): void {
+  if (Platform.OS === 'ios') {
+    Alert.prompt(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      ...(remove ? [{ text: 'Remove', style: 'destructive' as const, onPress: remove }] : []),
+      { text: 'Save', isPreferred: true, onPress: (value?: string) => { if (value?.trim()) run(value.trim()) } },
+    ], 'plain-text', initial)
+  } else {
+    promptText({ title, message, value: initial, confirmLabel: 'Save', onSubmit: (value) => value.trim() ? run(value.trim()) : remove?.() })
+  }
+}
+
+function runDocxToolbar(bridge: EditorBridge, command: DocxCommand, link: string | null): void {
+  if (command === 'link') {
+    promptThen(link ? 'Edit link' : 'Add link', link ?? 'https://', link ? 'Leave empty to remove the link.' : undefined, (value) => bridge.docxCommand('link', normalizeHref(value)), link ? () => bridge.docxCommand('link', '') : undefined)
+    return
+  }
+  if (command === 'comment') {
+    promptThen('Add comment', '', 'On the selected text.', (value) => bridge.docxCommand('comment', value))
+    return
+  }
+  bridge.docxCommand(command)
+}
+
 const noSubscription = () => () => {}
-const INITIAL: EditorBridgeState = { loaded: false, formatting: null, focused: false, suggestions: { count: 0, index: null, active: null }, incompatible: false }
+const INITIAL: EditorBridgeState = { loaded: false, formatting: null, focused: false, suggestions: { count: 0, index: null, active: null }, text: null, sheet: null, notebook: null, presentation: null, incompatible: false }
 const initialState = () => INITIAL
 
 export interface DocEditorHandle {
   format(command: FormatCommand, href?: string): void
+  /** A text or notebook editor's command. */
+  command(command: TextCommand | SheetCommand | NotebookCommand | PresentationCommand): void
   /** A formatting bar's command, asking for a link's address where needed. */
   toolbar(command: FormatCommand): void
   review(action: ReviewAction): void
@@ -75,6 +112,14 @@ export interface DocEditorHandle {
 }
 
 interface Props {
+  /** The document's live format, which picks the editor page (Markdown unless given). */
+  format?: MobileEditorFormat
+  /** The file name, for editors that depend on it (a code file's language). */
+  name?: string
+  /** Fetches the document's assets for the page (a notebook's images). */
+  fetchAsset?: (hash: string) => Promise<Uint8Array>
+  /** The document's id, for editors that load its assets (pictures in Word documents). */
+  docId?: string
   /** The document's session; the editor takes its own hold on it while it closes. */
   acquire: () => DocHandle
   editable: boolean
@@ -87,9 +132,14 @@ interface Props {
   onStateChange?: (state: EditorBridgeState) => void
   onLink?: (href: string) => void
   onResolved?: () => void
+  /** Overrides the web view's background (black while a deck's slide show runs). */
+  pageBackground?: string
 }
 
 export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEditorView({
+  format = 'markdown',
+  name,
+  docId,
   acquire,
   editable,
   placeholder,
@@ -100,11 +150,14 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
   onStateChange,
   onLink,
   onResolved,
+  fetchAsset,
+  pageBackground,
 }, ref) {
   const native = useRef<NativeRef>(null)
   const theme = useAppTheme()
-  const latest = useRef({ acquire, editable, placeholder, sessionLabel, sessionColor, theme, bottomPadding, onLink, onResolved })
-  latest.current = { acquire, editable, placeholder, sessionLabel, sessionColor, theme, bottomPadding, onLink, onResolved }
+  const bundle = EDITOR_BUNDLES[format]
+  const latest = useRef({ acquire, editable, placeholder, sessionLabel, sessionColor, theme, bottomPadding, onLink, onResolved, bundle, name, fetchAsset, docId })
+  latest.current = { acquire, editable, placeholder, sessionLabel, sessionColor, theme, bottomPadding, onLink, onResolved, bundle, name, fetchAsset, docId }
   const [instance, setInstance] = useState<{ id: string; bridge: EditorBridge; handle: DocHandle } | null>(null)
 
   // The session and page are made once per mounted editor, in an effect so that a discarded
@@ -122,9 +175,16 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
       placeholder: props.placeholder,
       user: { name: props.sessionLabel, color: props.sessionColor },
       theme: editorTheme(props.theme, props.bottomPadding),
-      schemaVersion: EDITOR_BUNDLE.schemaVersion,
+      schemaVersion: props.bundle.schemaVersion,
+      format: props.bundle.format,
+      name: props.name,
       onLink: (href) => latest.current.onLink?.(href),
       onResolved: () => latest.current.onResolved?.(),
+      fetchAsset: (hash) => {
+        if (latest.current.fetchAsset) return latest.current.fetchAsset(hash)
+        const id = latest.current.docId
+        return id ? fetchDocAsset(id, hash) : Promise.reject(new Error('No document'))
+      },
     })
     // This session's caret is labeled for other devices viewing the document.
     controller.provider.awareness.setLocalStateField('user', { name: props.sessionLabel, color: props.sessionColor })
@@ -157,8 +217,29 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
     bridge?.setTheme(editorTheme(theme, bottomPadding))
   }, [bridge, theme, bottomPadding])
 
+  useEffect(() => {
+    if (name) bridge?.setName(name)
+  }, [bridge, name])
+
   const runToolbar = (command: string) => {
     if (!bridge) return
+    if (format === 'document') {
+      runDocxToolbar(bridge, command as DocxCommand, state.docx?.link ?? null)
+      return
+    }
+    if (format === 'text' || format === 'notebook' || format === 'presentation') {
+      bridge.command(command as TextCommand | NotebookCommand | PresentationCommand)
+      return
+    }
+    if (format === 'sheet') {
+      // A menu's own command arrives where the bar can't show menus itself: offer its choices.
+      const menu = sheetToolbarMenu(command)
+      if (menu) {
+        const active = new Set(sheetToolbarState(state).active)
+        showActions(menu.label, menu.options.map((option) => ({ label: option.label, icon: option.systemImage, selected: active.has(option.command), onPress: () => bridge.command(option.command) })))
+      } else bridge.command(command as SheetCommand)
+      return
+    }
     if (command !== 'link') {
       bridge.format(command as FormatCommand)
       return
@@ -187,6 +268,7 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
 
   useImperativeHandle(ref, () => ({
     format: (command, href) => bridge?.format(command, href),
+    command: (command) => bridge?.command(command),
     toolbar: (command) => runToolbarRef.current(command),
     review: (action) => bridge?.review(action),
     focus: (at) => bridge?.focus(at),
@@ -196,19 +278,21 @@ export const DocEditorView = forwardRef<DocEditorHandle, Props>(function DocEdit
   }), [bridge])
 
   if (!NativeDocEditor || !instance || !bridge) return null
-  const formatting = state.formatting
+  const formatting = format === 'text' ? textToolbarState(state) : format === 'notebook' ? notebookToolbarState(state) : format === 'presentation' ? presentationToolbarState(state) : format === 'document' ? docxToolbarState(state) : format === 'sheet' ? sheetToolbarState(state) : state.formatting
   return (
     <NativeDocEditor
       ref={native}
       style={style}
       instanceId={instance.id}
-      html={EDITOR_BUNDLE.html}
-      pageBackground={editorTheme(theme).background}
+      html={bundle.html}
+      pageBackground={pageBackground ?? editorTheme(theme).background}
       toolbar={{
-        visible: editable && state.loaded,
+        // Decks have an always-on bar of their own (PresentationBar), not a keyboard accessory.
+        visible: editable && state.loaded && format !== 'presentation',
         active: formatting?.active ?? [],
         disabled: formatting?.disabled ?? [],
         tint: theme.blue,
+        items: Platform.OS !== 'ios' ? [] : format === 'text' ? [...TEXT_TOOLBAR] : format === 'notebook' ? [...NOTEBOOK_TOOLBAR] : format === 'document' ? [...DOCX_TOOLBAR] : format === 'sheet' ? [...SHEET_TOOLBAR] : [],
       }}
       onMessage={({ nativeEvent }) => bridge.receive(nativeEvent.data)}
       onTerminate={() => bridge.reset()}

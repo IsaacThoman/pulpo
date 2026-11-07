@@ -19,6 +19,14 @@ import { cachedFileUri, recordCachedFile } from './cache'
  * the bearer session; Files routes answer 403 `files_disabled` while an administrator has Files off.
  */
 
+/** A live document's asset (a picture in a Word document) by its SHA-256. */
+export async function fetchDocAsset(docId: string, hash: string): Promise<Uint8Array> {
+  const path = `/api/files/${encodeURIComponent(docId)}/assets/${hash}`
+  const response = await fetch(apiUrl(path), { headers: nativeAuthorizationHeaders(path) })
+  if (!response.ok) throw new ApiError(response.status, 'asset_unavailable', `The picture could not load (${response.status})`)
+  return new Uint8Array(await response.arrayBuffer())
+}
+
 export function fetchFolder(folderId: string | null, signal?: AbortSignal): Promise<FileListing> {
   return apiRequest<FileListing>(folderId ? `/api/files?parentId=${encodeURIComponent(folderId)}` : '/api/files', { signal })
 }
@@ -268,6 +276,44 @@ export function exportFile(name: string, content: string | Uint8Array): File {
   file.create()
   file.write(content)
   return file
+}
+
+/** Writes bytes to a shareable temporary file with the given name. */
+export function bytesExportFile(name: string, bytes: Uint8Array): File {
+  return exportFile(name, bytes)
+}
+
+/** A live document as its real file, exported by the server, in a shareable temporary file. */
+export async function liveExportFile(node: FileNode): Promise<File> {
+  const directory = new Directory(Paths.cache, EXPORT_DIRECTORY)
+  directory.create({ idempotent: true, intermediates: true })
+  const destination = new File(directory, safeName(node.name))
+  if (destination.exists) destination.delete()
+  const url = apiUrl(`/api/files/${node.id}/export`)
+  return File.downloadFileAsync(url, destination, { idempotent: true, headers: nativeAuthorizationHeaders(url) })
+}
+
+/** Both versions of a live document's agent change as plain text, for the review diff. */
+export function fetchChangeText(changeId: string): Promise<{ name: string; format: string; before: string; after: string }> {
+  return apiRequest(`/api/file-changes/${changeId}/text`)
+}
+
+/** Bytes from an API path, with this device's credentials. */
+async function fetchApiBytes(path: string): Promise<Uint8Array> {
+  const url = apiUrl(path)
+  const response = await fetch(url, { headers: nativeAuthorizationHeaders(url) })
+  if (!response.ok) throw new ApiError(response.status, 'request_failed', `Request failed (${response.status})`)
+  return new Uint8Array(await response.arrayBuffer())
+}
+
+/** One of a live document's assets (a notebook's image), by its SHA-256. */
+export function fetchFileAsset(fileId: string, hash: string): Promise<Uint8Array> {
+  return fetchApiBytes(`/api/files/${fileId}/assets/${hash}`)
+}
+
+/** One side of a live document's agent change as the file's bytes, for format diffs. */
+export function fetchChangeContent(changeId: string, side: 'before' | 'after'): Promise<Uint8Array> {
+  return fetchApiBytes(`/api/file-changes/${changeId}/content/${side}`)
 }
 
 /** Writes text to a shareable temporary file with the given name. */

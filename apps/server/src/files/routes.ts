@@ -1,6 +1,8 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
-import { updateFileFolderLayoutSchema, copyFileNodesSchema, createFileDocSchema, createFileFolderSchema, fileNodeIdsSchema, importFileUrlSchema, moveFileNodesSchema, updateFileNodeSchema, type FileChangeConflictBody } from '@pulpo/contracts'
+import { liveFormatOfName } from '@pulpo/client-core/office'
+import { convertOfficeFileSchema, updateFileFolderLayoutSchema, copyFileNodesSchema, createFileDocSchema, createFileFolderSchema, fileNodeIdsSchema, importFileUrlSchema, moveFileNodesSchema, updateFileNodeSchema, type FileChangeConflictBody } from '@pulpo/contracts'
+import { assertWithinStorageAllowance } from '../attachments/storage-quota.js'
 import { db } from '../database/client.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { getBlobStore } from '../storage/index.js'
@@ -8,6 +10,7 @@ import { resolveFileAccess } from './access.js'
 import { convertBlobToDocInTx, previewMarkdownConversion } from './conversion.js'
 import { copyFileNodes } from './copy-service.js'
 import { createDoc, readDocMarkdown } from './doc-store.js'
+import { deleteObjects } from './live-docs.js'
 import { parseFileInput, requireFilesUser } from './request.js'
 import {
   createFolder,
@@ -25,7 +28,9 @@ import {
   toFileNode,
   updateFileNode,
 } from './tree-service.js'
-import { registerFileUploadRoutes } from './upload-routes.js'
+import { registerLiveDocRoutes } from './live-routes.js'
+import { exportFileAsPdf, convertFileToEditable } from './office/service.js'
+import { fileContentDisposition, registerFileUploadRoutes } from './upload-routes.js'
 import { importUrlAsDoc } from './url-import.js'
 import { listTrashedFiles } from '../trash/service.js'
 import { getFolderLayout, normalizeInput, updateFolderLayout } from './layout-service.js'
@@ -38,6 +43,14 @@ import { reviewFileChange, reviewNodeSuggestion, reviewReplyChanges } from './ag
 const idParams = z.object({ id: z.uuid() })
 const changeParams = z.object({ changeId: z.uuid() })
 const reviewParams = z.object({ id: z.uuid(), action: z.enum(['accept', 'reject']) })
+const officeConversionRateLimit = { rateLimit: { max: 20, timeWindow: '1 minute' } }
+
+/** Aborted when the client goes away before the answer is sent, so its conversion stops. */
+function clientSignal(reply: FastifyReply): AbortSignal {
+  const controller = new AbortController()
+  reply.raw.once('close', () => { if (!reply.raw.writableFinished) controller.abort() })
+  return controller.signal
+}
 
 export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
   // What an agent reply changed in Files: undo and redo its direct changes, review its suggestions.
@@ -169,7 +182,8 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
   })
 
   // Uploaded Markdown keeps its bytes until someone edits it. The dry run shows what converting
-  // to an editable document would change, so clients can warn before reformatting.
+  // to an editable document would change, so clients can warn before reformatting. Formats whose
+  // codec keeps every byte (text and code) convert directly.
   app.get('/api/files/:id/conversion', async (request) => {
     const user = await requireFilesUser(request)
     const access = await resolveFileAccess(db, user.id, idParams.parse(request.params).id)
@@ -180,16 +194,50 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/files/:id/convert', async (request) => {
     const user = await requireFilesUser(request)
     const id = idParams.parse(request.params).id
+    // Until the upload is deleted after commit, the document (and the original bytes some formats
+    // keep beside it) are stored as well, so their size must fit the allowance.
+    const found = await resolveFileAccess(db, user.id, id)
+    const reserveBytes = found?.node.kind === 'blob' && (liveFormatOfName(found.node.name)?.id ?? 'markdown') !== 'markdown' ? found.node.sizeBytes : undefined
+    const writtenKeys: string[] = []
     const result = await mutateFileTree(user.id, async (tx) => {
       const access = await resolveFileAccess(tx, user.id, id)
       if (!access || access.node.trashedAt) throw notFound('File')
       if (access.node.kind === 'doc') return { node: toFileNode(access.node), objectKey: null }
-      const converted = await convertBlobToDocInTx(tx, access.node)
+      const converted = await convertBlobToDocInTx(tx, access.node, writtenKeys)
+      // What the document holds is known only now; the storage lock is held when reserved.
+      if (reserveBytes !== undefined) await assertWithinStorageAllowance(tx, user.id)
       return { node: toFileNode(converted.row), objectKey: converted.objectKey }
+    }, undefined, { reserveBytes }).catch(async (error: unknown) => {
+      // The document's asset objects were stored before its rows, which rolled back.
+      await deleteObjects(writtenKeys)
+      throw error
     })
     // The uploaded object goes only after the document is committed, so a failure keeps the file.
     if (result.objectKey) await getBlobStore().delete(result.objectKey).catch(() => undefined)
     return result.node
+  })
+
+  // Office files: a converted copy beside the original (docx/xlsx/pptx), or a PDF export, made by
+  // the office converter service (files/office). Both run while the client waits.
+  app.post('/api/files/:id/conversions', { config: officeConversionRateLimit }, async (request, reply) => {
+    const user = await requireFilesUser(request)
+    const { id } = idParams.parse(request.params)
+    const { to } = convertOfficeFileSchema.parse(request.body)
+    const node = await convertFileToEditable(user.id, id, to, clientSignal(reply))
+    reply.code(201)
+    return node
+  })
+
+  app.get('/api/files/:id/pdf', { config: officeConversionRateLimit }, async (request, reply) => {
+    const user = await requireFilesUser(request)
+    const { id } = idParams.parse(request.params)
+    const { inline } = z.object({ inline: z.enum(['1', 'true']).optional() }).parse(request.query)
+    const pdf = await exportFileAsPdf(user.id, id, clientSignal(reply))
+    reply.type('application/pdf')
+      .header('content-disposition', fileContentDisposition(inline ? 'inline' : 'attachment', pdf.name))
+      .header('x-content-type-options', 'nosniff')
+      .header('cache-control', 'private, no-store')
+    return reply.send(Buffer.from(pdf.bytes.buffer, pdf.bytes.byteOffset, pdf.bytes.byteLength))
   })
 
   app.get('/api/files/:id/markdown', async (request) => {
@@ -221,4 +269,5 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
   })
 
   await registerFileUploadRoutes(app)
+  await registerLiveDocRoutes(app)
 }

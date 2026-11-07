@@ -150,9 +150,10 @@ describe.skipIf(!enabled)('Markdown file conversion', () => {
     expect(ydocToMarkdown(doc)).toBe('text')
   })
 
-  it('only creates editable documents with Markdown names', async () => {
-    await expect(createDoc(userId, { parentId: null, name: 'notes.txt' })).rejects.toMatchObject({ code: 'file_not_markdown' })
-    expect(await createDoc(userId, { parentId: null, name: 'notes.md' })).toMatchObject({ kind: 'doc' })
+  it('only creates editable documents with names of a live format', async () => {
+    await expect(createDoc(userId, { parentId: null, name: 'notes.bin' })).rejects.toMatchObject({ code: 'file_not_live' })
+    expect(await createDoc(userId, { parentId: null, name: 'notes.md' })).toMatchObject({ kind: 'doc', format: 'markdown', mimeType: 'text/markdown' })
+    expect(await createDoc(userId, { parentId: null, name: 'notes.txt' })).toMatchObject({ kind: 'doc', format: 'text', mimeType: 'text/plain' })
   })
 
   it('repairs documents whose names are not Markdown into plain files', async () => {

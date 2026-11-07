@@ -1,0 +1,11 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <!-- Untrusted pages (HTML attachments, notebooks) run here, never in the app's own web views. -->
+    <activity
+      android:name="expo.modules.pulpoattachmentpreview.PulpoWebPreviewActivity"
+      android:exported="false"
+      android:launchMode="standard"
+      android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density"
+      android:theme="@android:style/Theme.Material.NoActionBar" />
+  </application>
+</manifest>

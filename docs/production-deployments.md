@@ -22,6 +22,8 @@ Services connect on the `coolify` network with unique `pulpo-prod-*` aliases.
 API/worker use `pulpo-prod-postgres`, `pulpo-prod-redis`, `pulpo-prod-ollama`, and
 `pulpo-prod-seaweed-s3`. No infrastructure service publishes a host port. Set the infrastructure's custom build command to `true`: it uses prebuilt images and needs no build-time secret interpolation.
 
+The infrastructure files also define the optional office converter (`office` Compose profile). It stays isolated on `pulpo-prod-office`. Coolify Dockerfile applications do not persist a second network through custom Docker options. Before enabling it, add the dual-network HTTP relay described in [the converter deployment recommendation](https://github.com/IsaacThoman/pulpo/blob/feat-office-conversion/infra/office-converter/README.md#coolify-networking-investigation-read-only-2026-11-05-utc), then set API/worker `OFFICE_CONVERTER_URL=http://pulpo-prod-office-relay:8080` and the matching token. That recommendation includes the exact proposed Compose service; it has not been deployed.
+
 Traefik routes `/api`, `/v1`, `/socket.io`, `/health`, and `/ready` on the public
 hostname directly to the API. The web application handles remaining paths.
 The API route needs higher priority than the web route and a sticky load-balancer

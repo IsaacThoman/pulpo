@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ydocToMarkdown } from '@pulpo/client-core/doc-schema'
+import { liveFormat, liveFormatOfName } from '@pulpo/client-core/office'
 import { isMarkdownName, type FileConversionPreview, type FileNode } from '@pulpo/contracts'
 import { ChevronRight, CloudCheck, CloudOff, Download, FolderOpen, HardDrive, Loader2, Pencil, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -16,6 +17,7 @@ import {
   convertToDoc,
   downloadDocMarkdown,
   downloadFile,
+  downloadLiveDoc,
   fetchConversionPreview,
   fetchFileBlob,
   fetchFileNode,
@@ -23,28 +25,33 @@ import {
   filesQueryKey,
   updateFileNode,
 } from '@/features/files/api'
-import { filesErrorMessage } from '@/features/files/file-display'
+import { filePreviewKind, filesErrorMessage, MAX_INLINE_PREVIEW_BYTES, previewFillsView } from '@/features/files/file-display'
+import { OfficeConversionBanner, OfficeFileHeaderActions, OfficePdfPreview } from '@/features/files/OfficeFile'
+import { officeFileActions, useOfficeConversion } from '@/features/files/office-file'
 import { DocEditor } from '@/features/files/editor/DocEditor'
 import type { DocSyncStatus } from '@pulpo/client-core/doc-sync'
 import { useDocSession, type PresencePeer } from '@/features/files/editor/use-doc-session'
 import { useSuggestionRecount } from '@/features/files/editor/use-suggestion-recount'
 import { FilePreviewBody } from '@/features/files/FilePreview'
+import { ApiLiveAssetStore } from '@/features/files/live/assets'
+import { liveWebFormat, type LiveFormatWeb } from '@/features/files/live/registry'
 import { FileSuggestionBanner } from '@/features/files/FileSuggestion'
 import { MarkdownConversionDialog } from '@/features/files/MarkdownConversionDialog'
 import { revealFileInPlace } from '@/features/files/reveal'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
 import { locationIsCurrent, openBeside, panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import { SplitViewButton } from '@/features/side-panel/AgentActions'
-import { usePublishFilesView, type AgentItem, type FilesViewPlace } from '@/features/side-panel/agent'
+import { runWithAgent, usePublishFilesView, type AgentItem, type FilesViewPlace } from '@/features/side-panel/agent'
 import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
 
 function statusProblem(status: DocSyncStatus): string | null {
   if (status.state === 'closed') {
     if (status.reason === 'trashed') return ui("This document was moved to the trash. Restore it to keep editing.")
-    if (status.reason === 'converted') return ui("This file was renamed without a Markdown extension, so it's no longer editable.")
+    if (status.reason === 'converted') return ui("This file was renamed to another type, so it's no longer editable here.")
     return ui("This document was deleted.")
   }
-  if (status.state !== 'error' || status.error === 'rate_limited') return null
+  // A stale copy is dropped and the session starts over by itself (see useDocSession).
+  if (status.state !== 'error' || status.error === 'rate_limited' || status.error === 'stale_copy') return null
   switch (status.error) {
     case 'schema_outdated': return ui("A newer version of Pulpo is available. Reload to keep editing.")
     case 'doc_too_large': return ui("This document is too large to edit.")
@@ -313,6 +320,81 @@ function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view:
   )
 }
 
+/**
+ * A live document of a format other than Markdown: the same header, presence, sync state, and
+ * problems as Markdown documents, around the format's own editor.
+ */
+function OpenLiveDoc({ userId, docId, view, web }: { userId: string; docId: string; view: FileViewContext; web: LiveFormatWeb }) {
+  const nodeQuery = useQuery({ queryKey: fileNodeQueryKey(userId, docId), queryFn: () => fetchFileNode(docId) })
+  const { session, status, peers } = useDocSession(userId, docId, web.format)
+  const [everSynced, setEverSynced] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+  const chatWidth = useSettings((state) => state.chatWidth)
+  const assets = useMemo(() => new ApiLiveAssetStore(docId), [docId])
+  const go = useMainNavigate()
+  const conversion = useOfficeConversion(() => {})
+  const { Editor } = web
+
+  useEffect(() => setEverSynced(false), [docId])
+  useEffect(() => { if (status.state === 'synced') setEverSynced(true) }, [status.state])
+
+  const node = nodeQuery.data?.node
+  const ancestors = nodeQuery.data?.ancestors ?? []
+  const parentPath = node?.parentId ? `/files/f/${node.parentId}` : '/files'
+  const problem = statusProblem(status)
+  const hasContent = Boolean(session?.hasCachedContent)
+  const loaded = everSynced || hasContent
+  const editable = !problem && Boolean(node && !node.trashedAt) && loaded
+  const loading = <div className="grid h-64 place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <FileHeader
+        node={node}
+        ancestors={ancestors}
+        view={view}
+        onDownload={() => {
+          if (!node) return
+          void (async () => downloadLiveDoc(node, session && loaded ? await web.exportFile(session.doc, node.name, assets) : undefined))()
+            .catch((cause: unknown) => setNotice(filesErrorMessage(cause)))
+        }}
+      >
+        {node && <OfficeFileHeaderActions node={node} conversion={conversion} compact={view.layout === 'panel'} />}
+        <Presence peers={peers} />
+        <SyncIndicator status={status} />
+      </FileHeader>
+      <SuggestionBanner node={node} ancestors={ancestors} view={view} />
+
+      {(problem || notice) && (
+        <div role="alert" className={cn('flex items-center gap-2 border-b px-4 py-2 text-sm sm:px-6', problem ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'bg-destructive/5 text-destructive')}>
+          <TriangleAlert className="size-4 shrink-0" />
+          <span className="min-w-0 flex-1">{problem ?? notice}</span>
+          {status.state === 'error' && <Button size="sm" variant="outline" onClick={() => window.location.reload()}>{ui("Reload")}</Button>}
+          {status.state === 'closed' && <Button asChild size="sm" variant="outline"><Link to={status.reason === 'trashed' ? '/files/trash' : parentPath}>{status.reason === 'trashed' ? ui("Open trash") : ui("Back to My files")}</Link></Button>}
+        </div>
+      )}
+
+      <div className="min-h-0 flex-1">
+        {/* Before the first sync, show nothing rather than an empty file someone could type into. */}
+        {session && node && loaded ? (
+          <Suspense fallback={loading}>
+            <Editor
+              key={docId}
+              session={session}
+              name={node.name}
+              editable={editable}
+              width={view.layout === 'panel' ? 'fill' : chatWidth === 'full' ? 'wide' : 'narrow'}
+              assets={assets}
+              onRunWithAgent={web.runsWithAgent && editable ? () => runWithAgent(docId, { layout: view.layout, view: view.panel ?? { kind: 'file', id: docId } }, go) : undefined}
+            />
+          </Suspense>
+        ) : loading}
+      </div>
+      <span className="sr-only" aria-live="polite">{peers.length ? uit`${peers.length} other sessions are editing` : ''}</span>
+    </div>
+  )
+}
+
 function contentWidth(view: FileViewContext, chatWidth: 'full' | 'narrow'): string {
   if (view.layout === 'panel') return 'w-full px-5 py-5'
   return cn('mx-auto w-full px-4 py-8 sm:px-6', chatWidth === 'full' ? 'max-w-[min(100%,90rem)]' : 'max-w-5xl')
@@ -401,9 +483,39 @@ function MarkdownFileView({ node, ancestors, view }: { node: FileNode; ancestors
   )
 }
 
-/** Any other uploaded file: a preview filling the page or panel, with download. */
+/**
+ * Any other uploaded file: a preview filling the page or panel, with download. Office files the
+ * browser cannot show are previewed as PDF and offer conversion, when the server can convert.
+ */
 function BlobFileView({ node, ancestors, view }: { node: FileNode; ancestors: FileNode[]; view: FileViewContext }) {
+  const queryClient = useQueryClient()
+  const userId = useAuth((state) => state.user?.id)
   const [notice, setNotice] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  // Files of a format whose codec keeps every byte become live documents without asking.
+  const format = liveFormatOfName(node.name)
+  const editable = Boolean(format?.lossless && liveWebFormat({ kind: 'doc', format: format.id })) && node.sizeBytes <= (format?.maxFileBytes ?? 0)
+  const edit = async () => {
+    setBusy(true)
+    setNotice(null)
+    try {
+      await convertToDoc(node.id)
+      // The route re-reads the node and switches to the editor.
+      await queryClient.invalidateQueries({ queryKey: filesQueryKey(userId) })
+    } catch (cause) {
+      setNotice(filesErrorMessage(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const navigate = useNavigate()
+  const officeEnabled = useAuth((state) => state.officeConversionEnabled)
+  const conversion = useOfficeConversion((created) => {
+    // The copy opens where the original is shown.
+    if (view.layout === 'panel') useSidePanel.getState().open({ kind: 'file', id: created.id })
+    else navigate(`/files/d/${created.id}`)
+  })
+  const office = officeFileActions(node, officeEnabled)
   return (
     <div className="flex h-full min-h-0 flex-col">
       <FileHeader
@@ -413,11 +525,19 @@ function BlobFileView({ node, ancestors, view }: { node: FileNode; ancestors: Fi
         onDownload={() => void downloadFile(node).catch((cause: unknown) => setNotice(filesErrorMessage(cause)))}
       >
         <span className="hidden text-xs text-muted-foreground tabular-nums sm:inline">{formatBytes(node.sizeBytes)}</span>
+        {editable && (
+          <Button size="sm" disabled={busy || node.trashedAt !== null} onClick={() => void edit()}>
+            {busy ? <Loader2 className="animate-spin" /> : <Pencil />} {ui("Edit")}
+          </Button>
+        )}
+        <OfficeFileHeaderActions node={node} conversion={conversion} compact={view.layout === 'panel'} />
       </FileHeader>
       <SuggestionBanner node={node} ancestors={ancestors} view={view} />
+      <OfficeConversionBanner node={node} />
       {notice && <p role="alert" className="border-b bg-destructive/5 px-4 py-2 text-sm text-destructive sm:px-6">{notice}</p>}
-      <div className="min-h-0 flex-1 overflow-auto bg-muted/20 p-4">
-        <FilePreviewBody node={node} />
+      <div className={previewFillsView(filePreviewKind(node)) ? 'min-h-0 flex-1 overflow-hidden' : 'min-h-0 flex-1 overflow-auto bg-muted/20 p-4'}>
+        {/* Large files are not rendered on every open, as other previews are not downloaded. */}
+        {office.pdf && !filePreviewKind(node) && node.sizeBytes <= MAX_INLINE_PREVIEW_BYTES && !node.trashedAt ? <OfficePdfPreview node={node} /> : <FilePreviewBody node={node} />}
       </div>
     </div>
   )
@@ -437,7 +557,10 @@ function FileViewMessage({ message, view, back }: { message: string; view: FileV
   )
 }
 
-/** Opens a file by what its name says it is: Markdown is edited, anything else previews. */
+/**
+ * Opens a file by what it is: documents in their format's editor, uploaded Markdown read-only
+ * until converted, and anything else as a preview (uploaded text and code with an Edit button).
+ */
 function FileRoute({ userId, fileId, view }: { userId: string; fileId: string; view: FileViewContext }) {
   const nodeQuery = useQuery({ queryKey: fileNodeQueryKey(userId, fileId), queryFn: () => fetchFileNode(fileId) })
   if (nodeQuery.isPending) return <div className="grid h-full place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
@@ -445,7 +568,15 @@ function FileRoute({ userId, fileId, view }: { userId: string; fileId: string; v
   const back = node?.parentId ? `/files/f/${node.parentId}` : '/files'
   if (nodeQuery.isError || !node) return <FileViewMessage message={filesErrorMessage(nodeQuery.error)} view={view} back={back} />
   if (node.kind === 'folder') return <FileViewMessage message={ui("Folders open in the Files view.")} view={view} back={`/files/f/${node.id}`} />
-  if (node.kind === 'doc') return <OpenDoc key={`doc:${fileId}`} userId={userId} docId={fileId} view={view} />
+  if (node.kind === 'doc') {
+    const web = liveWebFormat(node)
+    if (web) return <OpenLiveDoc key={`live:${fileId}`} userId={userId} docId={fileId} view={view} web={web} />
+    // A format this build does not know yet (a newer server); Markdown otherwise.
+    if (node.format && node.format !== 'markdown' && !liveFormat(node.format)) {
+      return <FileViewMessage message={ui("This document needs a newer version of Pulpo. Reload to open it.")} view={view} back={back} />
+    }
+    return <OpenDoc key={`doc:${fileId}`} userId={userId} docId={fileId} view={view} />
+  }
   const ancestors = nodeQuery.data.ancestors
   if (isMarkdownName(node.name)) return <MarkdownFileView key={`md:${fileId}`} node={node} ancestors={ancestors} view={view} />
   return <BlobFileView key={`blob:${fileId}`} node={node} ancestors={ancestors} view={view} />

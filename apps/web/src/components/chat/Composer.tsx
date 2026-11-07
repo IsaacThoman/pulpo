@@ -372,15 +372,6 @@ export function Composer({
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`
   }, [])
-  useEffect(() => registerComposerInsert((text) => {
-    setValue((current) => appendToDraft(current, text))
-    requestAnimationFrame(() => {
-      autosize()
-      const textarea = ref.current
-      textarea?.focus()
-      textarea?.setSelectionRange(textarea.value.length, textarea.value.length)
-    })
-  }), [autosize])
 
   const sharedComposerState: ComposerState = {
     content: preservedDraftRef.current?.value ?? value,
@@ -391,7 +382,7 @@ export function Composer({
   }
   const currentComposerState = useRef(sharedComposerState)
   currentComposerState.current = sharedComposerState
-  const { sync: composerSync, skipNextEdit } = useComposerSync(syncEnabled ? userId : undefined, draftId, sharedComposerState, draftHydrated && !handoffBusy, Boolean(editingExisting || recovery || submitting || shelfBusy), (remote) => {
+  const { sync: composerSync, skipNextEdit, ready: draftReady } = useComposerSync(syncEnabled ? userId : undefined, draftId, sharedComposerState, draftHydrated && !handoffBusy, Boolean(editingExisting || recovery || submitting || shelfBusy), (remote) => {
     if (handoffBusyRef.current) return
     const currentIds = preservedDraftRef.current?.attachmentIds ?? attachmentIdsRef.current
     const liveUploads = useUploadOutbox.getState().uploads
@@ -420,6 +411,20 @@ export function Composer({
       onSyncControls?.(remote)
     }
   }, Boolean(editingExisting || recovery))
+  // Only once the draft has loaded and its sync has opened: text inserted earlier would be
+  // replaced by the stored draft or the synced checkpoint.
+  useEffect(() => {
+    if (!draftReady) return
+    return registerComposerInsert((text) => {
+      setValue((current) => appendToDraft(current, text))
+      requestAnimationFrame(() => {
+        autosize()
+        const textarea = ref.current
+        textarea?.focus()
+        textarea?.setSelectionRange(textarea.value.length, textarea.value.length)
+      })
+    })
+  }, [autosize, draftReady])
 
   useImperativeHandle(temporaryControlRef, () => ({
     toggle: async () => {

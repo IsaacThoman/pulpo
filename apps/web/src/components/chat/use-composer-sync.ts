@@ -1,5 +1,5 @@
 import { useComposerSyncPreference } from '@/stores/composer-sync-preference'
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { composerPatch, sameComposerContent } from '@pulpo/client-core'
 import type { ComposerState } from '@pulpo/contracts'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
@@ -16,9 +16,13 @@ export function useComposerSync(userId: string | undefined, draftId: string, sta
   const applying = useRef(false)
   const hiddenSubmission = useRef<ComposerState | null>(null)
   const opened = useRef<string | null>(null)
+  // The draft this composer's sync has opened and reconciled, for `ready`: until then a checkpoint can still replace it.
+  const [openedIdentity, setOpenedIdentity] = useState<string | null>(null)
   const sync = enabled && !state.temporary && userId ? webComposerSync(userId) : null
   useEffect(() => {
     if (!sync || !hydrated) return
+    // A new open (another draft, or sync turned back on) is not ready until it resolves.
+    setOpenedIdentity(null)
     let disposed = false
     let close: (() => void) | undefined
     baseline.current = latest.current.state
@@ -26,7 +30,7 @@ export function useComposerSync(userId: string | undefined, draftId: string, sta
     wasEditing.current = false
     applying.current = false
     hiddenSubmission.current = null
-    void sync.open(draftId, latest.current.state, (checkpoint) => {
+    void sync.open(draftId, () => latest.current.state, (checkpoint) => {
       if (disposed || latest.current.state.temporary || !useComposerSyncPreference.getState().enabled || useComposerSyncPreference.getState().generation !== generation || latest.current.identity !== identity) return
       opened.current = identity
       let remote = { ...checkpoint.snapshot.state, ...checkpoint.pending }
@@ -41,7 +45,15 @@ export function useComposerSync(userId: string | undefined, draftId: string, sta
         baseline.current = remote
         latest.current.apply(remote)
       }
-    }).then((cleanup) => { if (disposed) cleanup(); else close = cleanup })
+    }).then((cleanup) => {
+      if (disposed) {
+        cleanup()
+        return
+      }
+      close = cleanup
+      // Opening resolves once the draft is reconciled with the server (or at once offline).
+      setOpenedIdentity(identity)
+    })
     return () => { disposed = true; opened.current = null; close?.() }
   }, [sync, draftId, hydrated, identity, generation])
   useLayoutEffect(() => {
@@ -62,5 +74,10 @@ export function useComposerSync(userId: string | undefined, draftId: string, sta
     baseline.current = state
     sync.edit(draftId, patch)
   })
-  return { sync, skipNextEdit: () => { hiddenSubmission.current = latest.current.state; applying.current = true } }
+  return {
+    sync,
+    /** Whether text put into the draft now stays: it is loaded, and synced drafts have their checkpoint. */
+    ready: hydrated && (!sync || openedIdentity === identity),
+    skipNextEdit: () => { hiddenSubmission.current = latest.current.state; applying.current = true },
+  }
 }

@@ -1,13 +1,17 @@
 import type { FileNode } from '@pulpo/contracts'
-import { isMarkdownName } from '@pulpo/contracts'
+import { canExportOfficePdf, isMarkdownName, officeConversionTarget, type OfficeEditableFormat } from '@pulpo/contracts'
+import { liveFormatOfName } from '@pulpo/client-core/office'
 import { isQuizFileName } from '@pulpo/client-core/quiz'
 import type { ContextMenuAction } from '../../native/ItemContextMenuView'
 import { isTrashFolder } from '../trash/folder'
 import { appearanceActionTitle, hasAppearance } from './appearance'
 import { isBuiltIn, openedKind } from './display'
+import { inAppViewer, MAX_IN_APP_VIEWER_BYTES } from './viewers/content'
+import { editorBundleFor } from './editor/bundles'
 
 export type FileItemActionId =
   | 'open'
+  | 'edit'
   | 'add-to-chat'
   | 'open-in-new-chat'
   | 'rename'
@@ -17,6 +21,8 @@ export type FileItemActionId =
   | 'pin'
   | 'unpin'
   | 'share'
+  | 'convert-office'
+  | 'export-pdf'
   | 'accept-suggestion'
   | 'reject-suggestion'
   | 'trash'
@@ -27,11 +33,14 @@ export interface FileItemActionContext {
   agent: 'new-chat' | 'current-chat' | 'none'
   /** Whether the list can enter selection mode from this menu. */
   selectable: boolean
+  /** Whether the server can convert office files (capabilities.files.officeConversion). */
+  officeConversion?: boolean
 }
 
 /** The menu for an item, as on the web's context menu, in the order iOS menus put them. */
 export function fileItemActions(node: FileNode, context: FileItemActionContext): ContextMenuAction[] {
   const actions: ContextMenuAction[] = [{ id: 'open', title: 'Open', systemImage: openedKind(node) === 'folder' ? 'folder' : 'arrow.up.forward.app', section: 0 }]
+  if (editableUpload(node)) actions.push({ id: 'edit', title: 'Edit', systemImage: 'pencil.line', section: 0 })
   // Chats and shortcuts cannot be attached to a chat; trashed shortcut targets cannot be opened.
   const attachable = node.kind !== 'chat' && node.kind !== 'shortcut' && node.status === 'ready'
   if (attachable && context.agent === 'current-chat') {
@@ -58,9 +67,29 @@ export function fileItemActions(node: FileNode, context: FileItemActionContext):
   if (node.kind !== 'chat') actions.push({ id: 'duplicate', title: 'Duplicate', systemImage: 'plus.square.on.square', section: 2 })
   actions.push({ id: node.pinned ? 'unpin' : 'pin', title: node.pinned ? 'Unpin' : 'Pin', systemImage: node.pinned ? 'pin.slash' : 'pin', section: 2 })
   if ((node.kind === 'blob' || node.kind === 'doc') && node.status === 'ready') actions.push({ id: 'share', title: node.kind === 'doc' ? 'Export…' : 'Share…', systemImage: 'square.and.arrow.up', section: 2 })
+  const office = officeActions(node, context.officeConversion === true)
+  if (office.pdf) actions.push({ id: 'export-pdf', title: 'Export as PDF…', systemImage: 'doc.richtext.fill', section: 2 })
+  if (office.target) actions.push({ id: 'convert-office', title: `Convert to .${office.target}`, systemImage: 'arrow.up.doc', section: 2 })
   if (context.selectable) actions.push({ id: 'select', title: 'Select', systemImage: 'checkmark.circle', section: 3 })
   actions.push({ id: 'trash', title: node.kind === 'chat' ? 'Delete Chat' : 'Move to Trash', systemImage: 'trash', section: 4, destructive: true })
   return actions
+}
+
+/**
+ * An uploaded file of a format whose codec keeps every byte (text, code, spreadsheets), which becomes an
+ * editable document without asking, as on the web. Uploaded Markdown has its own screen.
+ */
+export function editableUpload(node: FileNode): boolean {
+  if (node.kind !== 'blob' || node.status !== 'ready' || node.trashedAt) return false
+  const format = liveFormatOfName(node.name)
+  return Boolean(format?.lossless && editorBundleFor(format.id)) && node.sizeBytes <= (format?.maxFileBytes ?? 0)
+}
+
+/** What can be done with an item: convert it (to `target`) and export it as PDF. */
+export function officeActions(node: Pick<FileNode, 'kind' | 'name' | 'status'>, enabled: boolean): { target: OfficeEditableFormat | null; pdf: boolean } {
+  if (!enabled || (node.kind !== 'blob' && node.kind !== 'doc') || node.status !== 'ready') return { target: null, pdf: false }
+  if (node.kind === 'doc' && !['document', 'sheet', 'presentation'].includes(liveFormatOfName(node.name)?.id ?? '')) return { target: null, pdf: false }
+  return { target: node.kind === 'blob' ? officeConversionTarget(node.name) : null, pdf: canExportOfficePdf(node.name) }
 }
 
 /** Color and Icon… (Color… for a built-in folder), for files and folders as on the web. */
@@ -91,6 +120,10 @@ export type FileOpenTarget =
   | { type: 'markdown'; id: string; name: string }
   /** A `.quiz` file, taken in the app. */
   | { type: 'quiz'; id: string; name: string }
+  /** CSV/TSV, code, or text, read in the app's viewer. */
+  | { type: 'viewer'; id: string; name: string }
+  /** A Jupyter notebook, shown in the sandboxed web preview. */
+  | { type: 'notebook'; id: string; name: string }
   /** An uploaded file; `node` is missing behind a shortcut, whose target's details load first. */
   | { type: 'file'; id: string; node?: FileNode }
   | { type: 'chat'; id: string }
@@ -105,7 +138,8 @@ export function fileOpenTarget(node: FileNode): FileOpenTarget {
     if (target.kind === 'chat') return { type: 'chat', id: target.id }
     if (target.kind === 'doc') return { type: 'document', id: target.id, name: target.name }
     if (isMarkdownName(target.name)) return { type: 'markdown', id: target.id, name: target.name }
-    return isQuizFileName(target.name) ? { type: 'quiz', id: target.id, name: target.name } : { type: 'file', id: target.id }
+    if (isQuizFileName(target.name)) return { type: 'quiz', id: target.id, name: target.name }
+    return inAppTarget(target.id, target.name, target.mimeType) ?? { type: 'file', id: target.id }
   }
   if (node.status === 'pending') return { type: 'unavailable', reason: `“${node.name}” is still uploading.` }
   if (node.kind === 'folder') return { type: 'folder', id: node.id, name: node.name }
@@ -113,5 +147,13 @@ export function fileOpenTarget(node: FileNode): FileOpenTarget {
   if (node.kind === 'doc') return { type: 'document', id: node.id, name: node.name }
   if (isMarkdownName(node.name)) return { type: 'markdown', id: node.id, name: node.name }
   if (isQuizFileName(node.name)) return { type: 'quiz', id: node.id, name: node.name }
-  return { type: 'file', id: node.id, node }
+  return inAppTarget(node.id, node.name, node.mimeType, node.sizeBytes) ?? { type: 'file', id: node.id, node }
+}
+
+/** Files the app reads itself; anything larger than its viewers take goes to the system viewer. */
+function inAppTarget(id: string, name: string, mimeType: string | null | undefined, sizeBytes = 0): FileOpenTarget | null {
+  if (sizeBytes > MAX_IN_APP_VIEWER_BYTES) return null
+  const viewer = inAppViewer(name, mimeType)
+  if (viewer === 'notebook') return { type: 'notebook', id, name }
+  return viewer ? { type: 'viewer', id, name } : null
 }

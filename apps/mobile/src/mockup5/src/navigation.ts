@@ -22,4 +22,9 @@ export type RootStackParamList = {
   FileMarkdown: { fileId: string; name?: string };
   /** A quiz to take: a `.quiz` file in Files, or one already on the device (a chat attachment). */
   FileQuiz: { fileId: string; name?: string } | { uri: string; name: string };
+  /**
+   * CSV/TSV, code, or text read in the app: a file in Files, or one already on the device (a chat
+   * attachment). `notice` explains why a notebook shows as text.
+   */
+  FileViewer: ({ fileId: string; name?: string } | { uri: string; name: string; mimeType?: string }) & { notice?: string };
 };

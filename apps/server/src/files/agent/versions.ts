@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import type { FileAccessMode } from '@pulpo/contracts'
+import { fileTypeForName, isTextFile } from '@pulpo/client-core/files'
 import { mimeTypeFromName } from '../../attachments/generated.js'
 import { canonicalUploadedMimeType } from '../../attachments/policy.js'
 import { db } from '../../database/client.js'
@@ -40,16 +41,17 @@ export function blobVersion(snapshot: BlobSnapshot): string {
   return snapshot.checksum ?? `key-${createHash('sha256').update(snapshot.objectKey).digest('hex')}`
 }
 
-const TEXT_EXTENSIONS = /\.(txt|md|markdown|csv|tsv|json|jsonl|ya?ml|toml|xml|html?|css|js|jsx|ts|tsx|py|rb|go|rs|java|kt|swift|c|h|cpp|hpp|cs|php|sh|sql|log|ini|cfg|conf|env)$/i
-
-/** Whether an uploaded file can be shown and searched as text. */
+/**
+ * Whether an uploaded file can be shown and searched as text, by the file-type table every client
+ * shares (code, Markdown, CSV, HTML, SVG, notebooks, and `text/*`; never zipped Office files).
+ */
 export function readsAsText(name: string, mimeType: string | null): boolean {
-  const mime = mimeType ?? ''
-  return mime.startsWith('text/') || /json|xml|yaml|csv|javascript|typescript|markdown/.test(mime) || TEXT_EXTENSIONS.test(name)
+  return isTextFile(name, mimeType)
 }
 
 function blobMimeType(name: string, bytes: Uint8Array, fallback: string | null): string {
-  const expected = mimeTypeFromName(name) ?? (TEXT_EXTENSIONS.test(name) ? 'text/plain' : fallback ?? 'application/octet-stream')
+  // Text is stored as text/plain rather than its own type (HTML, SVG) so it is never served as a page.
+  const expected = mimeTypeFromName(name) ?? (fileTypeForName(name)?.text ? 'text/plain' : fallback ?? 'application/octet-stream')
   // Image types are believed only when the bytes are that image.
   return canonicalUploadedMimeType(expected, bytes)
 }
@@ -90,13 +92,17 @@ export async function hasVersion(executor: FileExecutor, objectKey: string): Pro
 }
 
 /**
- * Change rows that still need an object: Write-mode rows keep both sides for undo and redo,
- * and pending suggestions keep what they propose.
+ * Change rows that still need an object: Write-mode rows keep both sides for undo and redo, and
+ * pending suggestions keep what they propose (for live documents, also the proposal's update and
+ * the version it was proposed against, which its diff shows).
  */
-function referencesObject(objectKey: string | typeof fileVersions.objectKey) {
+export function referencesObject(objectKey: string | typeof fileVersions.objectKey) {
   return sql`(
     (${fileChanges.mode} = 'write' and (${fileChanges.before}->>'objectKey' = ${objectKey} or ${fileChanges.after}->>'objectKey' = ${objectKey}))
-    or (${fileChanges.status} = 'pending' and ${fileChanges.after}->>'objectKey' = ${objectKey})
+    or (${fileChanges.status} = 'pending' and (
+      ${fileChanges.after}->>'objectKey' = ${objectKey} or ${fileChanges.after}->>'forkKey' = ${objectKey}
+      or (${fileChanges.before}->>'format' is not null and ${fileChanges.before}->>'objectKey' = ${objectKey})
+    ))
   )`
 }
 

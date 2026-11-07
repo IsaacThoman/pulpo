@@ -35,6 +35,47 @@ export function isMarkdownName(name: string): boolean {
   return /\.(md|markdown)$/i.test(name)
 }
 
+/** The Office Open XML formats Pulpo's editors open, which other office files convert to. */
+export const officeEditableFormatSchema = z.enum(['docx', 'xlsx', 'pptx'])
+export type OfficeEditableFormat = z.infer<typeof officeEditableFormatSchema>
+
+/**
+ * Office files the server's conversion service (OFFICE_CONVERTER_URL) turns into an editable
+ * format: legacy Microsoft Office, OpenDocument, RTF, WordPerfect, Apple iWork, and Office
+ * templates. Keep in step with `packages/office-converter/src/formats.ts`.
+ */
+const OFFICE_CONVERSIONS: Record<string, OfficeEditableFormat> = {
+  doc: 'docx', rtf: 'docx', odt: 'docx', ott: 'docx', wpd: 'docx', pages: 'docx', dotx: 'docx',
+  xls: 'xlsx', ods: 'xlsx', ots: 'xlsx', numbers: 'xlsx', xltx: 'xlsx',
+  ppt: 'pptx', pps: 'pptx', odp: 'pptx', otp: 'pptx', key: 'pptx', potx: 'pptx',
+}
+
+/** A file name's extension, lowercased, or '' when it has none. */
+export function fileExtension(name: string): string {
+  const dot = name.lastIndexOf('.')
+  return dot > 0 ? name.slice(dot + 1).toLowerCase() : ''
+}
+
+/** The editable format an office file converts to, or null when it is not one (or already is). */
+export function officeConversionTarget(name: string): OfficeEditableFormat | null {
+  const extension = fileExtension(name)
+  return Object.hasOwn(OFFICE_CONVERSIONS, extension) ? OFFICE_CONVERSIONS[extension]! : null
+}
+
+/** Whether an office file can be exported as PDF: anything convertible, and the editable formats themselves. */
+export function canExportOfficePdf(name: string): boolean {
+  return officeConversionTarget(name) !== null || officeEditableFormatSchema.safeParse(fileExtension(name)).success
+}
+
+/** "Report.doc" converted to docx is "Report.docx"; the caller still picks a free name. */
+export function convertedFileName(name: string, format: OfficeEditableFormat | 'pdf'): string {
+  const dot = name.lastIndexOf('.')
+  return `${truncateCodePoints(dot > 0 ? name.slice(0, dot) : name, FILE_NAME_MAX_LENGTH - format.length - 1)}.${format}`
+}
+
+export const convertOfficeFileSchema = z.object({ to: officeEditableFormatSchema })
+export type ConvertOfficeFile = z.infer<typeof convertOfficeFileSchema>
+
 function splitExtension(name: string): [base: string, extension: string] {
   const dot = name.lastIndexOf('.')
   // Dotfiles such as ".env" have no extension to preserve, and a very long "extension" is just text.
@@ -101,6 +142,12 @@ export const fileNodeSchema = z.object({
   sizeBytes: z.number().int().nonnegative(),
   /** Uploaded bytes' checksum; unchanged by renames or moves. Older servers may omit it. */
   contentChecksum: z.string().nullable().optional(),
+  /**
+   * The live format of a collaborative document (`markdown`, `text`, …; see
+   * `@pulpo/client-core/office`), which decides its editor. Null for other kinds. Older servers
+   * omit it, and their documents are all Markdown.
+   */
+  format: z.string().nullable().optional(),
   revision: z.number().int().nonnegative(),
   trashedAt: z.string().nullable(),
   createdAt: z.string(),
@@ -142,6 +189,7 @@ export const FILE_DOC_MAX_MARKDOWN_LENGTH = 2_000_000
 
 export const createFileDocSchema = z.object({
   parentId: z.uuid().nullable().default(null),
+  /** The name's extension picks the live format (`Notes.md`, `main.py`); without one, a Markdown document. */
   name: fileNameSchema.optional(),
   /** Initial content, e.g. when importing an uploaded .md file. */
   markdown: z.string().max(FILE_DOC_MAX_MARKDOWN_LENGTH).optional(),
@@ -359,6 +407,8 @@ export type DocSyncError =
   | 'doc_too_large'
   | 'invalid_update'
   | 'rate_limited'
+  /** The device's copy is of an earlier document under the same id; drop it and join afresh. */
+  | 'stale_copy'
   | 'failed'
 
 export interface DocJoinInput {
@@ -367,11 +417,25 @@ export interface DocJoinInput {
   stateVector: Uint8Array
   /** The client's awareness clientID, so the server can clear its cursor when the socket leaves. */
   awarenessClientId: number
+  /** The Markdown schema the client edits in; the only version clients from before live formats send. */
   schemaVersion: number
+  /**
+   * The schema version of each live format the client can edit, by format id. The server checks
+   * the document's format against it; without it, the client is taken to edit Markdown only.
+   */
+  schemaVersions?: Record<string, number>
 }
 
 export type DocJoinResult =
-  | { ok: true; update: Uint8Array; stateVector: Uint8Array }
+  /** `format` is the document's live format; older servers omit it (Markdown). */
+  | {
+    ok: true
+    update: Uint8Array
+    stateVector: Uint8Array
+    format?: string
+    /** The document's generation (see `DOC_META_MAP`); absent for documents made before it. */
+    generation?: string
+  }
   | { ok: false; error: DocSyncError }
 
 export type DocAck = { ok: true } | { ok: false; error: DocSyncError }
@@ -383,7 +447,7 @@ export interface DocUpdateMessage {
 
 export interface DocClosedEvent {
   docId: string
-  /** `converted`: renamed to a non-Markdown name, so it became an ordinary file. */
+  /** `converted`: renamed to a name of another format (or none), so it became an ordinary file. */
   reason: 'trashed' | 'deleted' | 'converted'
 }
 
@@ -437,6 +501,13 @@ export interface FileChangeSummary {
   toSizeBytes?: number
   /** False once the item is permanently deleted or the change expired. */
   available: boolean
+  /** The live format of a document. Older servers omit it. */
+  format?: string | null
+  /**
+   * The content before and after the change can be compared (`GET /api/file-changes/:id/content/before|after`):
+   * new versions of live documents other than Markdown, whose suggestions are whole-file proposals.
+   */
+  contentDiff?: boolean
 }
 
 export interface FileChangesResponse {

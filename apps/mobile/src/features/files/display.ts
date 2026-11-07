@@ -62,6 +62,11 @@ export function openedKind(node: Pick<FileNode, 'kind' | 'target'>): FileNode['k
 const SYSTEM_BLUE = '#0A84FF'
 
 /** An item's symbol and color, as on the web: custom icon and color first, then its kind's. */
+/** Slide decks, as the web's file icons group them. */
+const PRESENTATION_EXTENSIONS = new Set(['pptx', 'pptm', 'potx', 'potm', 'ppsx', 'ppsm', 'ppt', 'pps', 'pot', 'odp', 'key'])
+/** Word-processing files, which show as Word documents whether or not they open live. */
+const WORD_EXTENSIONS = new Set(['doc', 'docx', 'dotx', 'docm', 'dotm', 'odt', 'rtf'])
+
 export function fileIcon(node: IconSubject, fallbackTint = SYSTEM_BLUE): { symbol: string; tint: string } {
   const source = node.kind === 'shortcut' && node.target
     ? { ...node.target, color: node.color ?? node.target.color, icon: node.icon ?? node.target.icon }
@@ -77,7 +82,8 @@ export function fileIcon(node: IconSubject, fallbackTint = SYSTEM_BLUE): { symbo
   if (source.icon) return { symbol: FILE_ICON_SYMBOLS[source.icon], tint: tint ?? fallbackTint }
   if (kind === 'folder') return { symbol: 'folder.fill', tint: tint ?? fallbackTint }
   if (kind === 'chat') return { symbol: 'bubble.left.fill', tint: tint ?? '#8E8E93' }
-  if (kind === 'doc') return { symbol: 'doc.text.fill', tint: tint ?? SYSTEM_BLUE }
+  // Markdown documents have their own icon; text and code documents look like their files.
+  if (kind === 'doc' && isMarkdownName(source.name)) return { symbol: 'doc.text.fill', tint: tint ?? SYSTEM_BLUE }
   const mime = (source.mimeType ?? '').toLowerCase()
   const extension = fileExtension(source.name)
   if (mime.startsWith('image/')) return { symbol: 'photo.fill', tint: tint ?? '#34C759' }
@@ -85,8 +91,10 @@ export function fileIcon(node: IconSubject, fallbackTint = SYSTEM_BLUE): { symbo
   if (mime.startsWith('audio/')) return { symbol: 'waveform', tint: tint ?? '#FF2D55' }
   if (mime === 'application/pdf' || extension === 'pdf') return { symbol: 'doc.fill', tint: tint ?? '#FF3B30' }
   if (isMarkdownName(source.name)) return { symbol: 'doc.plaintext.fill', tint: tint ?? '#8E8E93' }
+  if (WORD_EXTENSIONS.has(extension)) return { symbol: 'doc.text.image.fill', tint: tint ?? SYSTEM_BLUE }
   if (ARCHIVE_EXTENSIONS.has(extension)) return { symbol: 'doc.zipper', tint: tint ?? '#8E8E93' }
   if (SHEET_EXTENSIONS.has(extension)) return { symbol: 'tablecells.fill', tint: tint ?? '#34C759' }
+  if (PRESENTATION_EXTENSIONS.has(extension)) return { symbol: 'rectangle.on.rectangle', tint: tint ?? '#FF9500' }
   if (CODE_EXTENSIONS.has(extension)) return { symbol: 'chevron.left.forwardslash.chevron.right', tint: tint ?? '#5856D6' }
   return { symbol: 'doc.fill', tint: tint ?? '#8E8E93' }
 }
@@ -95,9 +103,10 @@ export function fileKindLabel(node: Pick<FileNode, 'kind' | 'name' | 'target'>):
   if (node.kind === 'folder') return 'Folder'
   if (node.kind === 'chat') return 'Chat'
   if (node.kind === 'shortcut') return `Shortcut to ${node.target?.name ?? 'an item'}`
-  if (node.kind === 'doc') return 'Document'
+  if (node.kind === 'doc' && isMarkdownName(node.name)) return 'Document'
   if (isMarkdownName(node.name)) return 'Markdown'
   const extension = fileExtension(node.name)
+  if (WORD_EXTENSIONS.has(extension)) return 'Word document'
   return extension ? `${extension.toUpperCase()} file` : 'File'
 }
 
@@ -154,8 +163,24 @@ export function fileNameErrorMessage(error: FileNameError): string {
   return FILE_NAME_ERRORS[error]
 }
 
+/** Office conversion failures (files/office on the server); several are 5xx, which are not "offline". */
+const OFFICE_ERRORS: Record<string, string> = {
+  office_file_encrypted: 'Password-protected files can’t be converted. Remove the password and upload it again.',
+  office_conversion_failed: 'This file couldn’t be converted. It may be damaged.',
+  office_file_unreadable: 'This file’s contents don’t match its name, so it can’t be converted.',
+  office_file_too_large: 'This file is too large to convert.',
+  office_conversion_timeout: 'Converting took too long. Try again later.',
+  office_converter_busy: 'The converter is busy. Try again in a moment.',
+  office_converter_unavailable: 'The converter isn’t available right now. Try again later.',
+  office_conversion_unavailable: 'This server can’t convert office files.',
+  office_conversion_unsupported: 'This file can’t be converted to that format.',
+  office_conversion_rate_limited: 'Wait for your other conversions to finish, then try again.',
+  office_pdf_export_failed: 'This file couldn’t be exported as PDF. Try again later.',
+}
+
 /** The Files API's known failures in words; anything else keeps the server's message. */
 export function filesErrorMessage(error: unknown, name?: string): string {
+  if (error instanceof ApiError && error.code.startsWith('office_')) return OFFICE_ERRORS[error.code] ?? error.message
   if (isNetworkError(error)) return 'You’re offline. Try again when you’re connected.'
   if (error instanceof ApiError) {
     switch (error.code) {
@@ -173,6 +198,11 @@ export function filesErrorMessage(error: unknown, name?: string): string {
       case 'file_too_large_to_edit': return 'This file is too large to edit.'
       case 'file_not_text': return 'This file isn’t plain text, so it can’t be edited.'
       case 'file_not_markdown': return 'Only .md and .markdown files can be edited.'
+      case 'file_not_live': return 'Only Markdown, text, and code files can be edited here.'
+      case 'file_not_editable': return 'This file can’t be edited as text without changing it.'
+      case 'file_unreadable': return 'This file is damaged and can’t be opened for editing.'
+      case 'file_encrypted': return 'This file is encrypted, so it can’t be edited.'
+      case 'file_format_unknown': return 'This document needs a newer version of Pulpo.'
       case 'not_found': return 'This item no longer exists.'
       case 'file_system_folder': return 'Built-in folders can’t be renamed, moved, or trashed.'
       case 'file_chat_copy': return 'Chats can’t be copied here. Duplicate them from the chat menu.'

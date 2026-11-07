@@ -1,0 +1,8 @@
+export * from './controller.js'
+export { SlideCanvas, type SlideCanvasOptions } from './canvas.js'
+export { SlideList, type SlideListOptions } from './thumbnails.js'
+export { NotesEditor } from './notes.js'
+export { Presenter, printSlides, type PresenterOptions } from './present.js'
+export { InlineTextEditor, type TextEditorStyle } from './text-editor.js'
+export { ensureStyles } from './styles.js'
+export { mountPresentationEditor, type PresentationEditor, type PresentationEditorOptions } from './editor.js'

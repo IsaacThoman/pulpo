@@ -27,8 +27,18 @@ RUN apt-get update \
         ca-certificates \
         curl \
         ffmpeg \
+        fontconfig \
+        fonts-crosextra-caladea \
+        fonts-crosextra-carlito \
+        fonts-dejavu-core \
+        fonts-liberation \
+        fonts-noto-cjk \
+        fonts-noto-color-emoji \
         git \
         jq \
+        libreoffice-calc-nogui \
+        libreoffice-impress-nogui \
+        libreoffice-writer-nogui \
         openssh-client \
         pkg-config \
         poppler-utils \
@@ -64,6 +74,7 @@ RUN apt-get update \
     && printf 'Defaults env_keep += "HTTP_PROXY HTTPS_PROXY http_proxy https_proxy NO_PROXY no_proxy"\n' >> /etc/sudoers.d/agent \
     && chmod 0440 /etc/sudoers.d/agent \
     && visudo --check \
+    && fc-cache --force \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -73,8 +84,9 @@ COPY infra/workspace-image/requirements.txt /opt/pulpo/requirements.txt
 RUN python3 -m venv /opt/pulpo/python \
     && /opt/pulpo/python/bin/pip install --no-cache-dir --only-binary=:all: -r /opt/pulpo/requirements.txt \
     && /opt/pulpo/python/bin/pip check \
+    && /opt/pulpo/python/bin/python -m ipykernel install --prefix /opt/pulpo/python --name python3 \
     && chown -R agent:agent /opt/pulpo/python \
-    && for executable in python python3 pip pip3; do \
+    && for executable in python python3 pip pip3 jupyter; do \
         printf '#!/bin/sh\nexec /opt/pulpo/python/bin/%s "$@"\n' "$executable" > /usr/local/bin/$executable; \
         chmod 0755 /usr/local/bin/$executable; \
     done

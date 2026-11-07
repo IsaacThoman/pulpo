@@ -1,0 +1,5 @@
+id	name	city	amount	date	note
+1	Zoë	Zürich	1234.50	2024-01-15	plain
+2	José	São Paulo	-17	2024-02-29	accents
+3	李雷	北京	0.1	2023-12-31	CJK
+4	Emoji	🌍	1e3	2024-06-30	astral plane

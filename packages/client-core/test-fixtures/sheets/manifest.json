@@ -1,0 +1,826 @@
+{
+ "description": "Sheets engine fixtures. expect: open | refuse:strict | refuse:encrypted | refuse:corrupt | open-or-refuse (must not crash or hang).",
+ "poiCommit": "7f4d36854109efa17152b27a5fb1b2c7d842c314",
+ "files": [
+  {
+   "path": "poi/shared_formulas.xlsx",
+   "group": "formulas",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/shared_formulas.xlsx",
+   "license": "Apache-2.0",
+   "notes": "shared formulas (t=\"shared\" with ref/si) and cached values",
+   "size": 10137,
+   "sha256": "31612d513b5ea5aaa69764779f87ac52588687770f3ccbf4b420ec21bc70561f"
+  },
+  {
+   "path": "poi/FormulaEvalTestData_Copy.xlsx",
+   "group": "formulas",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/FormulaEvalTestData_Copy.xlsx",
+   "license": "Apache-2.0",
+   "notes": "POI's function test sheet: ~1300 formulas over ~200 functions with Excel cached values (incl. errors); also hyperlinks",
+   "size": 65011,
+   "sha256": "01b21647d53501e8ec10f4eb522945d41ea3c8d1fdd57f8b0142ec34884c33eb"
+  },
+  {
+   "path": "poi/MatrixFormulaEvalTestData.xlsx",
+   "group": "formulas",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/MatrixFormulaEvalTestData.xlsx",
+   "license": "Apache-2.0",
+   "notes": "array (CSE) formulas: MMULT, MINVERSE, TRANSPOSE, MDETERM, range arithmetic; merged cells",
+   "size": 14875,
+   "sha256": "12f1dcef889c20fe54a09857790ba9803a7b061cc9fc5b85d0038cd6c86faa79"
+  },
+  {
+   "path": "poi/55906-MultiSheetRefs.xlsx",
+   "group": "formulas",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/55906-MultiSheetRefs.xlsx",
+   "license": "Apache-2.0",
+   "notes": "cross-sheet and 3D (Sheet1:Sheet3!A1) references",
+   "size": 9507,
+   "sha256": "7a5cb4687ad8835a83fee98bf451b400b8ec7c2ae7fa88793930cab648c6e362"
+  },
+  {
+   "path": "poi/xlookup.xlsx",
+   "group": "formulas",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/xlookup.xlsx",
+   "license": "Apache-2.0",
+   "notes": "_xlfn.XLOOKUP/XMATCH, dynamic-array spill with xl/metadata.xml (Excel Online)",
+   "size": 12031,
+   "sha256": "4d8fd3db6469df14f280964b3a447e0be027eda0e2195ca62693e92d8d353910"
+  },
+  {
+   "path": "poi/StructuredReferences.xlsx",
+   "group": "formulas",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/StructuredReferences.xlsx",
+   "license": "Apache-2.0",
+   "notes": "table structured references (Table1[[#This Row],[col]])",
+   "size": 10459,
+   "sha256": "a746e336176f8157c50a0a3b017c4633b7b1d546bd1b8af0f8165a48d1bacc56"
+  },
+  {
+   "path": "poi/testNames.xlsm",
+   "group": "formulas",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/testNames.xlsm",
+   "license": "Apache-2.0",
+   "notes": "defined names: constants, array constant, ranges, an OFFSET() formula name; macro-enabled (vbaProject.bin)",
+   "size": 13290,
+   "sha256": "2283c7bbffb916e9764b3dd0338a48f2a8b1685e6acc0e93482c3433578fd85f"
+  },
+  {
+   "path": "poi/styles.xlsx",
+   "group": "styles",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/styles.xlsx",
+   "license": "Apache-2.0",
+   "notes": "fonts, rich text runs in shared strings, theme fill with tint, named cell styles",
+   "size": 9309,
+   "sha256": "4b544c197c391a8eb1711e9c6a962fd6371a96815dded21aa2461d71e27a046c"
+  },
+  {
+   "path": "poi/50784-font_theme_colours.xlsx",
+   "group": "styles",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/50784-font_theme_colours.xlsx",
+   "license": "Apache-2.0",
+   "notes": "font colours given as theme indexes",
+   "size": 12342,
+   "sha256": "5e5042f855d93ef36fa96db64f1a21f800f9ce4a662514fd0c0fa202e06d9545"
+  },
+  {
+   "path": "poi/50786-indexed_colours.xlsx",
+   "group": "styles",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/50786-indexed_colours.xlsx",
+   "license": "Apache-2.0",
+   "notes": "legacy indexed colours",
+   "size": 7537,
+   "sha256": "ce6233e534aabcb238a5a6906bf39fed060feff3abc15655d62450cc4213e3e4"
+  },
+  {
+   "path": "poi/50846-border_colours.xlsx",
+   "group": "styles",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/50846-border_colours.xlsx",
+   "license": "Apache-2.0",
+   "notes": "border colours (theme/indexed/rgb)",
+   "size": 12381,
+   "sha256": "dc7edf8efebcf6ba23705a459d7c416d445bd57b8c42fc4c473d961762c62d8a"
+  },
+  {
+   "path": "poi/NumberFormatTests.xlsx",
+   "group": "styles",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/NumberFormatTests.xlsx",
+   "license": "Apache-2.0",
+   "notes": "date1904=1 workbook; ~300 number formats with Excel's TEXT() results cached; frozen panes",
+   "size": 21470,
+   "sha256": "a11d437ee538abe36d630a4795dd30d5823a68dce02a404a45e085dd49c4435d"
+  },
+  {
+   "path": "poi/WidthsAndHeights.xlsx",
+   "group": "layout",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/WidthsAndHeights.xlsx",
+   "license": "Apache-2.0",
+   "notes": "column widths, row heights, hidden rows/columns (Excel Online)",
+   "size": 8597,
+   "sha256": "72a84c23b2939f31fa6357867e6b34d3454efb84c830739c10797f767de1007e"
+  },
+  {
+   "path": "poi/GroupTest.xlsx",
+   "group": "layout",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/GroupTest.xlsx",
+   "license": "Apache-2.0",
+   "notes": "row/column outline groups, collapsed levels",
+   "size": 8149,
+   "sha256": "a14e6d478004720480cb99844fd6b00260c804bfa02b3da3f496e2c1fb5c8949"
+  },
+  {
+   "path": "poi/TwoSheetsOneHidden.xlsx",
+   "group": "layout",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/TwoSheetsOneHidden.xlsx",
+   "license": "Apache-2.0",
+   "notes": "hidden sheet",
+   "size": 7962,
+   "sha256": "3e9749837cac5a19a7628d7e60c1a1c6d0ff7657f27fa7904b217b96e0dc534f"
+  },
+  {
+   "path": "poi/SheetTabColors.xlsx",
+   "group": "layout",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/SheetTabColors.xlsx",
+   "license": "Apache-2.0",
+   "notes": "sheet tab colours",
+   "size": 7008,
+   "sha256": "1e0bc29719430c8e221465ce026e78063587516ef5037acafc466ce835356930"
+  },
+  {
+   "path": "poi/right-to-left.xlsx",
+   "group": "layout",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/right-to-left.xlsx",
+   "license": "Apache-2.0",
+   "notes": "right-to-left sheet view; threaded comments + persons part",
+   "size": 14478,
+   "sha256": "419ef388b20501009a8c546f20ca0371abac168389b556ba47c52f48f0e7f3b0"
+  },
+  {
+   "path": "poi/unicodeSheetName.xlsx",
+   "group": "layout",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/unicodeSheetName.xlsx",
+   "license": "Apache-2.0",
+   "notes": "non-ASCII sheet names",
+   "size": 8924,
+   "sha256": "2d7414dd71e5b3e33602c19ad454f072771ea164d7477a3b3b4cddf6c622dc67"
+  },
+  {
+   "path": "poi/NewStyleConditionalFormattings.xlsx",
+   "group": "conditional-formatting",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/NewStyleConditionalFormattings.xlsx",
+   "license": "Apache-2.0",
+   "notes": "cellIs/expression/colorScale/dataBar/iconSet (all built-in sets) plus x14 extLst variants (custom icons, 3Stars, x14 data bar)",
+   "size": 13378,
+   "sha256": "1e97af3b87636bd0a759c25439a21b928c2ff3b9a3c57ca49ae24cb1ccdb7e2f"
+  },
+  {
+   "path": "poi/simple-monthly-budget.xlsx",
+   "group": "conditional-formatting",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/simple-monthly-budget.xlsx",
+   "license": "Apache-2.0",
+   "notes": "Excel template: x14 data bars in extLst, two tables, bar chart + picture in one drawing, customXml, tab colours, merges",
+   "size": 18700,
+   "sha256": "cae00c6894b95743017aeded4186f15a12c2d8382d71760029df490d58197db6"
+  },
+  {
+   "path": "poi/conditional_formatting_multiple_ranges.xlsx",
+   "group": "conditional-formatting",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/conditional_formatting_multiple_ranges.xlsx",
+   "license": "Apache-2.0",
+   "notes": "one rule applying to a multi-range sqref",
+   "size": 9487,
+   "sha256": "2ee236b3134d0494f44fc122b59ba883762a87415a332a3bd1cb972f7e0fcb0d"
+  },
+  {
+   "path": "poi/DataValidations-49244.xlsx",
+   "group": "data-validation",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/DataValidations-49244.xlsx",
+   "license": "Apache-2.0",
+   "notes": "list/whole/decimal/date/textLength validations with prompts and errors",
+   "size": 10705,
+   "sha256": "8066b12c878d74aa35b55b22dc9daba9a56e91332a35cf96c4fc0f6af6bd3bd1"
+  },
+  {
+   "path": "poi/WithMoreVariousData.xlsx",
+   "group": "hyperlinks-comments",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/WithMoreVariousData.xlsx",
+   "license": "Apache-2.0",
+   "notes": "hyperlinks (URL, file, internal) and comments",
+   "size": 11409,
+   "sha256": "9cf5ac25bbe59ee30d954983e7803a854909be6d53e184933d4c47e8f6b248bb"
+  },
+  {
+   "path": "poi/sharedhyperlink.xlsx",
+   "group": "hyperlinks-comments",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/sharedhyperlink.xlsx",
+   "license": "Apache-2.0",
+   "notes": "a <hyperlink> whose ref spans A3:A5 (openpyxl splits it per cell)",
+   "size": 9080,
+   "sha256": "91329edc5d293926c0294b6443449d90b3ac9d53a174c2f5c4d9e59ecea8fc73"
+  },
+  {
+   "path": "poi/SimpleWithComments.xlsx",
+   "group": "hyperlinks-comments",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/SimpleWithComments.xlsx",
+   "license": "Apache-2.0",
+   "notes": "legacy comments (notes) with VML",
+   "size": 10060,
+   "sha256": "d7d337b3436e863487d26439a57ef749950c599862325d7bce7e830acf1df0ba"
+  },
+  {
+   "path": "poi/64759.xlsx",
+   "group": "hyperlinks-comments",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/64759.xlsx",
+   "license": "Apache-2.0",
+   "notes": "threaded comments (xl/threadedComments + xl/persons) with legacy fallback note",
+   "size": 11679,
+   "sha256": "43f3c765678160e26fab0e3963782a941fb3d41a6a4a9904a48656aa284d68e8"
+  },
+  {
+   "path": "poi/ExcelTables.xlsx",
+   "group": "tables",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/ExcelTables.xlsx",
+   "license": "Apache-2.0",
+   "notes": "a styled table with a defined name",
+   "size": 9457,
+   "sha256": "1e43011440eb39000d1751abaf9ded42d37b26f91b4f586a94bf91ce8ecbe9e5"
+  },
+  {
+   "path": "poi/Excel_file_with_trash_item.xlsx",
+   "group": "tables",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/Excel_file_with_trash_item.xlsx",
+   "license": "Apache-2.0",
+   "notes": "autoFilter, hidden rows, customXml",
+   "size": 47318,
+   "sha256": "e9c4515c22be30487a9ce3c081e74cf58b5143aa42b6dc07e891aa261066fa98"
+  },
+  {
+   "path": "poi/bug63189.xlsx",
+   "group": "drawings",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/bug63189.xlsx",
+   "license": "Apache-2.0",
+   "notes": "embedded PNG picture",
+   "size": 11027,
+   "sha256": "0671f497436a34ac15ae63f22407e6eb791be03efde38f87b10adf41e2051104"
+  },
+  {
+   "path": "poi/WithDrawing.xlsx",
+   "group": "drawings",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/WithDrawing.xlsx",
+   "license": "Apache-2.0",
+   "notes": "pictures (png/jpeg) plus emf/wmf media; openpyxl sees 2 images",
+   "size": 101696,
+   "sha256": "97b1ab359d6aecbe37864f30c85106e386f0a19bea8f290103927362a2701066"
+  },
+  {
+   "path": "poi/WithEmbeded.xlsx",
+   "group": "drawings",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/WithEmbeded.xlsx",
+   "license": "Apache-2.0",
+   "notes": "embedded OLE objects (xl/embeddings) with EMF previews - preserve only",
+   "size": 23668,
+   "sha256": "2bdaa7dbae4e739a5b1dc2654ccaeb15fe4d6a62cd47ab742db78100a7dcf9de"
+  },
+  {
+   "path": "poi/WithThreeCharts.xlsx",
+   "group": "charts",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/WithThreeCharts.xlsx",
+   "license": "Apache-2.0",
+   "notes": "line, pie (exploded, titled) and bar charts on one sheet",
+   "size": 13841,
+   "sha256": "629b69bd250d9b4e173eb2088eb80b656b7748b0287cd7b0df0c2dc22c6af7b0"
+  },
+  {
+   "path": "poi/SimpleScatterChart.xlsx",
+   "group": "charts",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/SimpleScatterChart.xlsx",
+   "license": "Apache-2.0",
+   "notes": "scatter chart plus a chartsheet",
+   "size": 18278,
+   "sha256": "c3024ac94d6d42cbe48d20a798eda98b06d8dba6e2ed2b1fcda10659883c7be4"
+  },
+  {
+   "path": "poi/InlineStrings.xlsx",
+   "group": "values",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/InlineStrings.xlsx",
+   "license": "Apache-2.0",
+   "notes": "t=\"inlineStr\" cells, no shared strings",
+   "size": 7843,
+   "sha256": "bdfd54e82e7eec3a16bc12708dd2fbb8ebee12921215f6ed78fd32a84bfbfd74"
+  },
+  {
+   "path": "poi/SimpleMacro.xlsm",
+   "group": "macro-template",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/SimpleMacro.xlsm",
+   "license": "Apache-2.0",
+   "notes": "macro-enabled workbook with vbaProject.bin (must be preserved, never executed)",
+   "size": 13796,
+   "sha256": "f76c986f4ebc25c2cc57c088b2511a1269f4bd61d6223a2ab58db351da348ba6"
+  },
+  {
+   "path": "poi/test.xltx",
+   "group": "macro-template",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/test.xltx",
+   "license": "Apache-2.0",
+   "notes": "template content type (spreadsheetml.template.main+xml)",
+   "size": 8566,
+   "sha256": "9e1322b8e16429aaef818ced79d3a5b031dd593b13142708c186d82b92ec5178"
+  },
+  {
+   "path": "poi/sheetProtection_allLocked.xlsx",
+   "group": "protection",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/sheetProtection_allLocked.xlsx",
+   "license": "Apache-2.0",
+   "notes": "sheet protection with all actions locked",
+   "size": 7871,
+   "sha256": "ea89db75ac2ab78d1dced2ccd6f57d8ad200f015ac9e49b988f1a9df2fc36d83"
+  },
+  {
+   "path": "poi/workbookProtection-workbook_password-2013.xlsx",
+   "group": "protection",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/workbookProtection-workbook_password-2013.xlsx",
+   "license": "Apache-2.0",
+   "notes": "workbook structure protection with SHA-512 password hash",
+   "size": 8171,
+   "sha256": "0ca1ab7d0e90087316072f89d181067c91c170f0718b109a8ee20867b23c58c2"
+  },
+  {
+   "path": "poi/RepeatingRowsCols.xlsx",
+   "group": "print",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/RepeatingRowsCols.xlsx",
+   "license": "Apache-2.0",
+   "notes": "print titles (repeating rows/columns) as _xlnm.Print_Titles",
+   "size": 20758,
+   "sha256": "ff67241b278977c97f8f540fe935e087763db0c0e404bd71777f913a3d698c0b"
+  },
+  {
+   "path": "poi/HeaderFooterComplexFormats.xlsx",
+   "group": "print",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/HeaderFooterComplexFormats.xlsx",
+   "license": "Apache-2.0",
+   "notes": "headers/footers with formatting codes",
+   "size": 9543,
+   "sha256": "70828c7e2e8b0068410009e7ab5054e475d1195ad6c6f4303e03732ab8f7ca9c"
+  },
+  {
+   "path": "poi/ExcelPivotTableSample.xlsx",
+   "group": "pivot",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/ExcelPivotTableSample.xlsx",
+   "license": "Apache-2.0",
+   "notes": "pivot table + pivot cache (preserve only)",
+   "size": 19460,
+   "sha256": "f0ef1d61c9f3d8b27b18a876b8e24676314c6450ed64a725a7bfaa603fdd67e3"
+  },
+  {
+   "path": "poi/ref-56737.xlsx",
+   "group": "external-links",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/ref-56737.xlsx",
+   "license": "Apache-2.0",
+   "notes": "external workbook link (xl/externalLinks) with cached values",
+   "size": 10427,
+   "sha256": "8d319dad6cbcd0d2279add01365d59f5ef4f5a60938d6dafdbe8d1cfbf47cc87"
+  },
+  {
+   "path": "poi/sample.xlsx",
+   "group": "strict-pair",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/sample.xlsx",
+   "license": "Apache-2.0",
+   "notes": "transitional twin of sample.strict.xlsx; rich text, formulas",
+   "size": 12348,
+   "sha256": "7c88883ea9ff72d8f90239cb1a5f5d9744014b611d9b1588a090ba7629a381de"
+  },
+  {
+   "path": "poi/sample.strict.xlsx",
+   "group": "refuse",
+   "expect": "refuse:strict",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/sample.strict.xlsx",
+   "license": "Apache-2.0",
+   "notes": "Strict OOXML (purl.oclc.org namespaces); openpyxl silently loads it as a workbook with ZERO sheets",
+   "size": 11937,
+   "sha256": "0696839769a9e5b44639b64ca9b1b6bf18ce8fead412c28f11f98e6bbd658de0"
+  },
+  {
+   "path": "poi/protected_passtika.xlsx",
+   "group": "refuse",
+   "expect": "refuse:encrypted",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/protected_passtika.xlsx",
+   "license": "Apache-2.0",
+   "notes": "password-encrypted OOXML: OLE2/CFB container with EncryptionInfo + EncryptedPackage streams",
+   "size": 12800,
+   "sha256": "e58713895915de62efead6d99018245cc5490cddd2493c84508b4a67fb001581"
+  },
+  {
+   "path": "poi/MalformedSSTCount.xlsx",
+   "group": "malformed",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/MalformedSSTCount.xlsx",
+   "license": "Apache-2.0",
+   "notes": "sharedStrings count/uniqueCount wrong (written by LibreOffice)",
+   "size": 6266,
+   "sha256": "c3c025bed1736a240e0e91960aaaaebd795d95b54a7b977c2e451406aa1f9462"
+  },
+  {
+   "path": "poi/59746_NoRowNums.xlsx",
+   "group": "malformed",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/59746_NoRowNums.xlsx",
+   "license": "Apache-2.0",
+   "notes": "<row>/<c> elements without r= attributes (positional), outlines",
+   "size": 5927,
+   "sha256": "ebb5f8647fa9495bc49f08c7b42916bbef68527301d72053273376fb73fa62ff"
+  },
+  {
+   "path": "poi/invalid_cell_reference.xlsx",
+   "group": "malformed",
+   "expect": "open-or-refuse",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/invalid_cell_reference.xlsx",
+   "license": "Apache-2.0",
+   "notes": "cell with r=\"B\" (no row); openpyxl refuses it, Excel repairs",
+   "size": 3227,
+   "sha256": "dcef0b8054b8a24944c95e60307f8a6fc2cb408ba33e60af7e59538a28043eb4"
+  },
+  {
+   "path": "poi/clusterfuzz-testcase-minimized-XLSX2CSVFuzzer-5636439151607808.xlsx",
+   "group": "malformed",
+   "expect": "refuse:corrupt",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/clusterfuzz-testcase-minimized-XLSX2CSVFuzzer-5636439151607808.xlsx",
+   "license": "Apache-2.0",
+   "notes": "372-byte truncated zip (fuzzer output)",
+   "size": 372,
+   "sha256": "57c472b9fbb1a5ca1337189465c010cfab59516d532e446b172f2a4d5f88e23f"
+  },
+  {
+   "path": "poi/poc-xmlbomb.xlsx",
+   "group": "malformed",
+   "expect": "refuse:corrupt",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/poc-xmlbomb.xlsx",
+   "license": "Apache-2.0",
+   "notes": "billion-laughs entity expansion in sheet XML; must never be expanded",
+   "size": 5240,
+   "sha256": "5edcd16d3efccd3a8ae5e0bddd7ae5ed52abb0359ba71af81370cbf869ab8d56"
+  },
+  {
+   "path": "poi/xxe_in_schema.xlsx",
+   "group": "malformed",
+   "expect": "open",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/xxe_in_schema.xlsx",
+   "license": "Apache-2.0",
+   "notes": "XML map whose schema references http://localhost; must never be fetched",
+   "size": 9801,
+   "sha256": "95dc84089f255d5878d89fdc1826edd112a9addd88b25a444f323aadc870c79d"
+  },
+  {
+   "path": "poi/duplicate-filename.xlsx",
+   "group": "malformed",
+   "expect": "open-or-refuse",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/spreadsheet/duplicate-filename.xlsx",
+   "license": "Apache-2.0",
+   "notes": "zip with two entries named xl/worksheets/sheet1.xml (Excel Online)",
+   "size": 10721,
+   "sha256": "5aa65f91139a76cdd4d80e71e1483aa13e6d35ea1dd97017d61ff3d4849c7ba7"
+  },
+  {
+   "path": "poi/protect-encrypted.xlsx",
+   "group": "refuse",
+   "expect": "refuse:encrypted",
+   "source": "https://github.com/apache/poi/blob/7f4d36854109efa17152b27a5fb1b2c7d842c314/test-data/poifs/protect.xlsx",
+   "license": "Apache-2.0",
+   "notes": "password-encrypted OOXML (CFB container, standard encryption), from POI test-data/poifs/protect.xlsx (renamed)",
+   "size": 12968,
+   "sha256": "b0b9fc98374334f39f3ebde005894ae9be69bbaed11788b54ae1dafb954e980d"
+  },
+  {
+   "path": "generated/gen-formulas.xlsx",
+   "group": "formulas",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "~170 formulas over ~150 functions/operators by group (math, operators, stats, logical, text, lookup, date, info, financial, refs, errors), CSE arrays, global/local/constant/formula defined names, 3D refs, a Volatile sheet. NO cached values",
+   "cachedValues": false
+  },
+  {
+   "path": "generated/gen-values.xlsx",
+   "group": "values",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "every value type: ints/floats/edge doubles, -0, empty string, whitespace, newlines, unicode, _xHHHH_ escapes, booleans, dates/times, error literals, 32767-char text, rich text; 'Sparse' sheet with XFD1 and A1048576",
+   "cachedValues": false
+  },
+  {
+   "path": "generated/gen-1904.xlsx",
+   "group": "values",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "date1904 workbook with dates, datetime and formulas over them",
+   "cachedValues": false
+  },
+  {
+   "path": "generated/gen-styles.xlsx",
+   "group": "styles",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "fonts (underline kinds, strike, super/subscript, theme/tint/indexed colours), all 18 pattern fills + gradients, all 13 border styles + diagonal, every alignment, ~30 number formats (locale, conditional sections, elapsed time), protection, named + builtin styles",
+   "cachedValues": false
+  },
+  {
+   "path": "generated/gen-conditional-formatting.xlsx",
+   "group": "conditional-formatting",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "every cellIs operator, expression (+stopIfTrue), 2/3-colour scales, data bars, icon sets (reverse, showValue=0), top/bottom N/%, above/below average, stdDev, duplicate/unique, text rules, blanks/errors, timePeriod, multi-range sqref, overlapping priorities",
+   "cachedValues": false
+  },
+  {
+   "path": "generated/gen-data-validation.xlsx",
+   "group": "data-validation",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "list (inline, range, defined name, hidden arrow), whole/decimal/date/time/textLength/custom, prompts, all three error styles, multi-range sqref",
+   "cachedValues": false
+  },
+  {
+   "path": "generated/gen-layout.xlsx",
+   "group": "layout",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "merged cells, freeze panes, widths/heights (incl. tiny), hidden rows/cols, 2-level outlines, summaryBelow=0, zoom, tab colours, print setup (A4 landscape fit-to-width, margins, header/footer codes, print titles, print area), hidden + veryHidden sheets, password-protected sheet, right-to-left sheet, custom default row height/col width",
+   "cachedValues": false
+  },
+  {
+   "path": "generated/gen-tables.xlsx",
+   "group": "tables",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "table with totals row, calculated column and structured-reference formulas (#This Row, #Headers, #Data, #Totals); second table; autoFilter with value filter + sort state + hidden filtered rows",
+   "cachedValues": false
+  },
+  {
+   "path": "generated/gen-links-comments.xlsx",
+   "group": "hyperlinks-comments",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "URL, mailto, internal location (quoted sheet), relative file links, HYPERLINK(); comments (multi-line, sized, unicode, two sheets)",
+   "cachedValues": false
+  },
+  {
+   "path": "generated/gen-image.xlsx",
+   "group": "drawings",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "three PNGs: string anchor, twoCellAnchor (editAs=oneCell, offsets), oneCellAnchor with ext",
+   "cachedValues": false
+  },
+  {
+   "path": "generated/gen-charts.xlsx",
+   "group": "charts",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "column, stacked bar, line (markers/smooth), 100% area, pie, doughnut, scatter, bar+line combo on a secondary axis, and a chartsheet",
+   "cachedValues": false
+  },
+  {
+   "path": "generated/gen-multisheet.xlsx",
+   "group": "layout",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "8 sheets with awkward names (spaces, apostrophe, unicode, numeric, hyphen), tab colours, hidden sheet, quoted cross-sheet + 3D refs, global/local (same name on two sheets)/hidden defined names, active sheet != first, workbook structure lock",
+   "cachedValues": false
+  },
+  {
+   "path": "generated/gen-template.xltx",
+   "group": "macro-template",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "openpyxl template (template content type)",
+   "cachedValues": false
+  },
+  {
+   "path": "libreoffice/gen-formulas.lo.xlsx",
+   "group": "libreoffice-oracle",
+   "expect": "open",
+   "source": "generate_fixtures.py --libreoffice (LibreOffice 26.8 headless --convert-to xlsx)",
+   "license": "project",
+   "notes": "LibreOffice-calculated cached values for gen-formulas.xlsx (formula oracle)",
+   "cachedValues": true
+  },
+  {
+   "path": "libreoffice/gen-values.lo.xlsx",
+   "group": "libreoffice-oracle",
+   "expect": "open-or-refuse",
+   "source": "generate_fixtures.py --libreoffice (LibreOffice 26.8 headless --convert-to xlsx)",
+   "license": "project",
+   "notes": "LibreOffice export of gen-values.xlsx; NOTE LibreOffice wrote 1.7976931348623157e308 as <v>INF</v> (openpyxl cannot load it) and rounds numbers to 15 significant digits",
+   "cachedValues": true
+  },
+  {
+   "path": "libreoffice/gen-1904.lo.xlsx",
+   "group": "libreoffice-oracle",
+   "expect": "open",
+   "source": "generate_fixtures.py --libreoffice (LibreOffice 26.8 headless --convert-to xlsx)",
+   "license": "project",
+   "notes": "LibreOffice export of gen-1904.xlsx (1904 date system kept)",
+   "cachedValues": true
+  },
+  {
+   "path": "libreoffice/gen-tables.lo.xlsx",
+   "group": "libreoffice-oracle",
+   "expect": "open",
+   "source": "generate_fixtures.py --libreoffice (LibreOffice 26.8 headless --convert-to xlsx)",
+   "license": "project",
+   "notes": "LibreOffice export of gen-tables.xlsx with structured-reference results",
+   "cachedValues": true
+  },
+  {
+   "path": "libreoffice/gen-conditional-formatting.lo.xlsx",
+   "group": "libreoffice-oracle",
+   "expect": "open",
+   "source": "generate_fixtures.py --libreoffice (LibreOffice 26.8 headless --convert-to xlsx)",
+   "license": "project",
+   "notes": "LibreOffice export of gen-conditional-formatting.xlsx (LibreOffice writes x14 extLst CF)",
+   "cachedValues": true
+  },
+  {
+   "path": "csv/utf8-lf.csv",
+   "group": "csv",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "UTF-8, no BOM, LF; accents, CJK, astral-plane emoji"
+  },
+  {
+   "path": "csv/utf8-bom-crlf.csv",
+   "group": "csv",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "UTF-8 with BOM, CRLF"
+  },
+  {
+   "path": "csv/utf8-cr.csv",
+   "group": "csv",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "UTF-8, classic-Mac CR-only line endings"
+  },
+  {
+   "path": "csv/utf8-no-trailing-newline.csv",
+   "group": "csv",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "last record not newline-terminated"
+  },
+  {
+   "path": "csv/utf16le-bom.csv",
+   "group": "csv",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "UTF-16LE with BOM, comma-delimited, CRLF"
+  },
+  {
+   "path": "csv/utf16le-bom-excel-unicode-text.txt",
+   "group": "csv",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "UTF-16LE with BOM, TAB-delimited (Excel 'Unicode Text' export shape)"
+  },
+  {
+   "path": "csv/tab-delimited.tsv",
+   "group": "csv",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "UTF-8 TSV"
+  },
+  {
+   "path": "csv/quoted-fields.csv",
+   "group": "csv",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "quoted fields with embedded commas, doubled quotes, LF and CRLF inside quotes, padded spaces, quoted vs unquoted empty, and one malformed field (text after closing quote)"
+  },
+  {
+   "path": "csv/ragged-rows.csv",
+   "group": "csv",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "rows with 1-5 fields, blank line"
+  },
+  {
+   "path": "csv/trailing-empty-fields.csv",
+   "group": "csv",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "trailing empty fields and trailing blank lines"
+  },
+  {
+   "path": "csv/semicolon-european.csv",
+   "group": "csv",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "semicolon delimiter, decimal comma, dd.mm.yyyy dates, quoted field containing ';', thousands '.'"
+  },
+  {
+   "path": "csv/windows-1252.csv",
+   "group": "csv",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "Windows-1252 bytes (é ï ö á, € = 0x80, curly quotes) - invalid as UTF-8"
+  },
+  {
+   "path": "csv/header-only.csv",
+   "group": "csv",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "header row only"
+  },
+  {
+   "path": "csv/empty.csv",
+   "group": "csv",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "0 bytes"
+  },
+  {
+   "path": "csv/long-field.csv",
+   "group": "csv",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "one 40,000-char field (beyond Excel's 32,767-char cell limit)"
+  },
+  {
+   "path": "csv/type-inference-and-injection.csv",
+   "group": "csv",
+   "expect": "open",
+   "source": "packages/client-core/scripts/sheets/generate_fixtures.py",
+   "license": "project",
+   "notes": "leading zeros, 20-digit ints, scientific, %, currency, -0, booleans, ambiguous dates, times, #N/A, and CSV-injection payloads (=, +, -, @) that must stay text"
+  }
+ ]
+}

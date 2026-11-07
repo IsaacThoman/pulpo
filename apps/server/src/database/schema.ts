@@ -930,6 +930,9 @@ export const fileNodes = pgTable('file_nodes', {
   // Set while the item is an agent's suggestion awaiting review (see file_changes). Not a foreign
   // key: backups leave out change history, and a restored suggestion can still be reviewed.
   suggestionChangeId: uuid('suggestion_change_id'),
+  // A document's live format (`markdown`, `text`, …), which picks its codec and editor. Its name's
+  // extension always belongs to this format: renaming it to another converts it to a file.
+  format: text('format'),
   ...timestamps,
 }, (table) => [
   uniqueIndex('file_nodes_owner_system_role_unique').on(table.ownerUserId, table.systemRole).where(sql`${table.systemRole} is not null`),
@@ -950,21 +953,27 @@ export const fileNodes = pgTable('file_nodes', {
   check('file_nodes_name_check', sql`char_length(${table.name}) between 1 and 255`),
   check('file_nodes_size_check', sql`${table.sizeBytes} >= 0`),
   check('file_nodes_blob_check', sql`(${table.kind} = 'blob') = (${table.objectKey} is not null)`),
+  check('file_nodes_format_check', sql`(${table.kind} = 'doc') = (${table.format} is not null)`),
   check('file_nodes_system_role_check', sql`${table.systemRole} is null or (${table.systemRole} in ('chats', 'archive') and ${table.kind} = 'folder' and ${table.parentId} is null)`),
   // The Sidebar folder is the sidebar itself, so it cannot be pinned there.
   check('file_nodes_pinned_check', sql`not ${table.pinned} or ${table.systemRole} is distinct from 'chats'`),
   index('file_nodes_owner_pinned_idx').on(table.ownerUserId).where(sql`${table.pinned}`),
 ])
 
-/** Collaborative document state: a compacted Yjs update plus Markdown derived from it. */
+/** Collaborative document state: a compacted Yjs update plus the text derived from it. */
 export const fileDocs = pgTable('file_docs', {
   nodeId: uuid('node_id').primaryKey().references(() => fileNodes.id, { onDelete: 'cascade' }),
   state: bytea('state').notNull(),
   stateBytes: integer('state_bytes').notNull(),
   // Log rows not yet folded into `state`; drives compaction scheduling.
   pendingUpdates: integer('pending_updates').notNull().default(0),
+  // The document's plain text (`codec.toText`): Markdown for Markdown documents, the content for
+  // text files. Derived at compaction for previews, search, and agents' cat and grep.
   markdown: text('markdown').notNull().default(''),
   schemaVersion: integer('schema_version').notNull(),
+  // Also stored in the Y.Doc (`DOC_META_MAP`), so devices drop copies of an earlier document made
+  // under the same id. Null for documents made before generations.
+  generation: uuid('generation'),
   lastEditedAt: timestamp('last_edited_at', { withTimezone: true }).notNull().defaultNow(),
   ...timestamps,
 })
@@ -981,6 +990,27 @@ export const fileDocUpdates = pgTable('file_doc_updates', {
 }, (table) => [
   index('file_doc_updates_node_seq_idx').on(table.nodeId, table.seq),
   check('file_doc_updates_origin_check', sql`${table.origin} in ('client', 'agent', 'import', 'restore')`),
+])
+
+/**
+ * Binary parts of a live document (images, embedded objects, fonts) kept outside its Y.Doc, which
+ * refers to them by SHA-256. Each document has its own copies, under its own object keys, so
+ * copying a document copies them and deleting one deletes them. They count toward storage.
+ */
+export const fileDocAssets = pgTable('file_doc_assets', {
+  nodeId: uuid('node_id').notNull().references(() => fileDocs.nodeId, { onDelete: 'cascade' }),
+  hash: text('hash').notNull(),
+  ownerUserId: uuid('owner_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  objectKey: text('object_key').notNull(),
+  mimeType: text('mime_type').notNull(),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.nodeId, table.hash] }),
+  uniqueIndex('file_doc_assets_object_key_unique').on(table.objectKey),
+  index('file_doc_assets_owner_idx').on(table.ownerUserId),
+  check('file_doc_assets_hash_check', sql`${table.hash} ~ '^[0-9a-f]{64}$'`),
+  check('file_doc_assets_size_check', sql`${table.sizeBytes} >= 0`),
 ])
 
 /**

@@ -12,6 +12,7 @@ import {
   verifyPasskeyAuthenticationInputSchema,
 } from '@pulpo/contracts'
 import { DOC_SCHEMA_VERSION } from '@pulpo/client-core/doc-schema'
+import { liveSchemaVersions } from '@pulpo/client-core/office'
 import { db } from '../database/client.js'
 import { applicationSettings, passwordCredentials, users } from '../database/schema.js'
 import { getConfig } from '../config.js'
@@ -20,6 +21,7 @@ import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { parseAuthSettings, parseDictationSettings, parseWebToolsSettings } from '../settings/application-settings.js'
 import { webExtractAvailable } from '../agent/web-tools.js'
+import { officeConversionAvailable } from '../files/office/converter.js'
 import { newUserStorageLimit } from '../billing/storage-entitlements.js'
 import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
 import {
@@ -86,8 +88,11 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         files: {
           enabled: auth.filesEnabled,
           docSchemaVersion: DOC_SCHEMA_VERSION,
+          liveFormats: liveSchemaVersions(),
           // As /api/auth/settings tells the web client (urlImportEnabled).
           urlImport: auth.filesEnabled && webExtractAvailable(parseWebToolsSettings(webToolsSetting?.value)),
+          // As /api/auth/settings tells the web client (officeConversionEnabled).
+          officeConversion: auth.filesEnabled && officeConversionAvailable(),
         },
         appStoreBilling: acceptedAppStoreEnvironments(config).length
           ? {

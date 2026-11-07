@@ -1,29 +1,42 @@
 #!/usr/bin/env node
-// Builds the document editor that runs in the app's web view (editor/) into one self-contained
-// HTML page and writes it into src/features/files/editor/editorBundle.generated.ts, which ships
-// inside the JavaScript bundle. Run `npm run build:editor -w @pulpo/mobile` after changing the
-// editor, the shared document schema, or their dependencies; a test checks the bundle is current.
+// Builds each live format's editor that runs in the app's web view (editor/ for Markdown,
+// editor/<format>/ for the others) into one self-contained HTML page, and writes it into its
+// generated module under src/features/files/editor/, which ships inside the JavaScript bundle.
+// Run `npm run build:editor -w @pulpo/mobile` after changing an editor, the shared schemas, or
+// their dependencies; a test checks every bundle is current.
 import { createHash } from 'node:crypto'
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'vite'
-import { clientCoreSource, docEditorInputHash, mobileRoot } from './doc-editor-inputs.mjs'
+import { clientCoreSource, EDITOR_BUNDLES, editorInputHash, mobileRoot } from './doc-editor-inputs.mjs'
 
-const editorRoot = join(mobileRoot, 'editor')
-const output = join(mobileRoot, 'src/features/files/editor/editorBundle.generated.ts')
-
-/** The editor page as built from the current sources; the test compares it with the committed one. */
-export async function buildDocEditorPage() {
+/** A format's editor page as built from the current sources; the test compares it with the committed one. */
+export async function buildEditorPage(format) {
+  const spec = EDITOR_BUNDLES[format]
   const result = await build({
     configFile: false,
-    root: editorRoot,
+    root: spec.root,
     logLevel: 'warn',
     // Built from client-core's sources, so the bundle never depends on a stale dist/.
     resolve: {
+      // Production exports always: under a test runner NODE_ENV is `test`, which would pick packages'
+      // development builds (devlop's assertions) and make the page differ from `npm run build:editor`.
+      conditions: ['module', 'browser', 'production'],
       alias: [
         { find: /^@pulpo\/client-core\/doc-editor$/, replacement: join(clientCoreSource, 'doc-editor/index.ts') },
         { find: /^@pulpo\/client-core\/doc-schema$/, replacement: join(clientCoreSource, 'doc-schema/index.ts') },
+        { find: /^@pulpo\/client-core\/office\/text$/, replacement: join(clientCoreSource, 'office/text/index.ts') },
+        { find: /^@pulpo\/client-core\/office\/text\/view$/, replacement: join(clientCoreSource, 'office/text/view/index.ts') },
+        { find: /^@pulpo\/client-core\/office$/, replacement: join(clientCoreSource, 'office/index.ts') },
+        { find: /^@pulpo\/client-core\/office\/notebook$/, replacement: join(clientCoreSource, 'office/notebook/index.ts') },
+        { find: /^@pulpo\/client-core\/office\/notebook\/view$/, replacement: join(clientCoreSource, 'office/notebook/view/index.ts') },
+        { find: /^@pulpo\/client-core\/office\/presentation$/, replacement: join(clientCoreSource, 'office/presentation/index.ts') },
+        { find: /^@pulpo\/client-core\/office\/presentation\/view$/, replacement: join(clientCoreSource, 'office/presentation/view/index.ts') },
+        { find: /^@pulpo\/client-core\/office\/docx\/view$/, replacement: join(clientCoreSource, 'office/docx/view/index.ts') },
+        { find: /^@pulpo\/client-core\/office\/docx\/format$/, replacement: join(clientCoreSource, 'office/docx/format.ts') },
+        { find: /^@pulpo\/client-core\/office\/sheets$/, replacement: join(clientCoreSource, 'office/sheets/index.ts') },
+        { find: /^@pulpo\/client-core\/office\/sheets\/view$/, replacement: join(clientCoreSource, 'office/sheets/view/index.ts') },
       ],
     },
     define: { 'process.env.NODE_ENV': JSON.stringify('production') },
@@ -33,7 +46,8 @@ export async function buildDocEditorPage() {
       minify: true,
       cssCodeSplit: false,
       sourcemap: false,
-      lib: { entry: join(editorRoot, 'main.ts'), formats: ['iife'], name: 'PulpoDocEditor', fileName: () => 'editor.js' },
+      // An IIFE is one script: languages the web loads on demand are inlined here.
+      lib: { entry: join(spec.root, spec.entry), formats: ['iife'], name: 'PulpoDocEditor', fileName: () => 'editor.js' },
     },
   })
 
@@ -49,34 +63,47 @@ export async function buildDocEditorPage() {
     "default-src 'none'",
     `script-src 'sha256-${scriptHash}'`,
     "style-src 'unsafe-inline'",
-    'img-src data:',
+    // `blob:` URLs come only from bytes the page already holds (a deck's pictures), never the network.
+    spec.blobMedia ? 'img-src data: blob:' : 'img-src data:',
+    ...(spec.blobMedia ? ['media-src blob:'] : []),
     "base-uri 'none'",
     "form-action 'none'",
   ].join('; ')
-  const template = readFileSync(join(editorRoot, 'index.html'), 'utf8')
-  const entry = '<script type="module" src="./main.ts"></script>'
+  const template = readFileSync(join(spec.root, 'index.html'), 'utf8')
+  const entry = `<script type="module" src="./${spec.entry}"></script>`
   if (!template.includes(entry) || !template.includes('%CSP%')) throw new Error('The editor template no longer matches the build script')
   // Function replacements: the bundle contains `$` sequences that string replacements would expand.
   const html = template
     .replace('%CSP%', () => csp)
     .replace(entry, () => `<style>${String(style)}</style>\n<script>${safeScript}</script>`)
 
-  const schemaVersion = Number(/DOC_SCHEMA_VERSION = (\d+)/.exec(readFileSync(join(clientCoreSource, 'doc-schema/version.ts'), 'utf8'))?.[1])
+  const schemaVersion = Number(spec.schemaVersion.pattern.exec(readFileSync(spec.schemaVersion.file, 'utf8'))?.[1])
   const protocolVersion = Number(/EDITOR_PROTOCOL_VERSION = (\d+)/.exec(readFileSync(join(mobileRoot, 'src/features/files/editor/protocol.ts'), 'utf8'))?.[1])
   if (!schemaVersion || !protocolVersion) throw new Error('Could not read the schema or protocol version')
   return { html, schemaVersion, protocolVersion }
 }
 
-// Run as a script (not imported by the test): write the module.
+/** The Markdown editor page, as the bundle test has always built it. */
+export function buildDocEditorPage() {
+  return buildEditorPage('markdown')
+}
+
+// Run as a script (not imported by the test): write the modules, or only the formats named.
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const { html, schemaVersion, protocolVersion } = await buildDocEditorPage()
-  writeFileSync(output, `// Generated by scripts/build-doc-editor.mjs from editor/ and @pulpo/client-core. Do not edit.
-export const EDITOR_BUNDLE = {
+  const formats = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(EDITOR_BUNDLES)
+  for (const format of formats) {
+    const spec = EDITOR_BUNDLES[format]
+    if (!spec) throw new Error(`No editor bundle for ${format}`)
+    const { html, schemaVersion, protocolVersion } = await buildEditorPage(format)
+    writeFileSync(spec.output, `// Generated by scripts/build-doc-editor.mjs from ${format === 'markdown' ? 'editor/' : `editor/${format}/`} and @pulpo/client-core. Do not edit.
+export const ${spec.exportName} = {
+  format: '${format}',
   schemaVersion: ${schemaVersion},
   protocolVersion: ${protocolVersion},
-  inputHash: '${docEditorInputHash()}',
+  inputHash: '${editorInputHash(format)}',
   html: ${JSON.stringify(html)},
 } as const
 `)
-  console.log(`Wrote ${output} (${Math.round(html.length / 1024)} KiB)`)
+    console.log(`Wrote ${spec.output} (${Math.round(html.length / 1024)} KiB)`)
+  }
 }

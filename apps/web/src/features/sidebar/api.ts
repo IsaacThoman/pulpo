@@ -349,10 +349,13 @@ export function orderPinnedItems(ids: string[], incoming: readonly FileNode[] = 
   }, () => apiRequest('/api/sidebar/pinned', { method: 'PUT', body: { ids } }))
 }
 
-/** Creates an untitled Markdown file at the top of `folderId` (the Files server picks a free name). */
-export function newSidebarFile(folderId: string): Promise<FileNode | undefined> {
+/**
+ * Creates an untitled file at the top of `folderId` (the Files server picks a free name):
+ * Markdown, unless `name` gives another live format.
+ */
+export function newSidebarFile(folderId: string, name = `${ui("Untitled")}.md`): Promise<FileNode | undefined> {
   useFolderExpansion.getState().setExpanded(folderId, true)
-  return mutate(null, () => createDoc(folderId, `${ui("Untitled")}.md`))
+  return mutate(null, () => createDoc(folderId, name))
 }
 
 /** Uploads files to the top of `folderId`, one at a time, reporting failures as toasts. */

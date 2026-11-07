@@ -28,14 +28,18 @@ import { FilesToastHost } from '../components/FilesToastHost'
 import { FolderPickerSheet } from '../components/FolderPickerSheet'
 import { UrlImportRows } from '../components/UrlImportRows'
 import { filesErrorMessage, isBuiltIn } from '../display'
-import { fileItemActions, trashItemActions, type FileItemActionId, type TrashItemActionId } from '../itemActions'
+import { fileItemActions, officeActions, trashItemActions, type FileItemActionId, type TrashItemActionId } from '../itemActions'
 import { shareFileItem, useFileDownloads, useOpenFileItem } from '../open'
-import { useFileOperations } from '../operations'
+import { refreshFiles, useFileOperations } from '../operations'
 import { useItemAppearance } from '../itemAppearance'
+import { convertToDoc } from '../api'
+import { newLiveFiles } from '../liveFormats'
+import { useSessionStore } from '../../../store/session'
 import { folderQuery } from '../queries'
 import { cancelUpload, enqueueUploads, pickUploads, resumeUploads, retryUpload, useFileUploads, type QueuedUpload } from '../uploads'
 import { useFilesNamespace } from '../useFilesNamespace'
 import { promptUrlImport, usePendingUrlImports, useUrlImportEnabled } from '../urlImport'
+import { convertOfficeFile, shareOfficePdf, useOfficeConversionEnabled } from '../officeConversion'
 
 type Props = NativeStackScreenProps<RootStackParamList, 'FilesFolder'>
 
@@ -102,6 +106,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
   const legacyView = useMemo(() => legacyChats ? legacyTrashView(legacyChats, retention) : null, [legacyChats, retention])
   const trashView = !inTrash ? undefined : legacyView ?? trashListing.data ?? undefined
   const operations = useFileOperations(namespace)
+  const officeConversion = useOfficeConversionEnabled()
   const trashOperations = useTrashOperations(namespace, legacyTrash)
   const setAppearance = useItemAppearance(namespace)
   const trashColor = usePreferencesStore((state) => state.trashColor)
@@ -178,10 +183,12 @@ export function FilesFolderScreen({ navigation, route }: Props) {
   const newFolder = useCallback(() => promptName('New Folder', 'Untitled folder', 'Create', (name) => {
     void operations.createFolder(folderId, name).then((created) => { if (created) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success) })
   }), [folderId, operations])
-  const newDocument = useCallback(async () => {
-    const created = await operations.createDocument(folderId, children)
+  const newDocument = useCallback(async (name?: string) => {
+    const created = await operations.createDocument(folderId, children, name)
     if (created) navigation.push('FileDocument', { fileId: created.id, name: created.name, created: true })
   }, [children, folderId, navigation, operations])
+  const config = useSessionStore((state) => state.config)
+  const liveFiles = useMemo(() => newLiveFiles(config), [config])
   const importUrl = useCallback(() => promptUrlImport({ namespace, parentId: folderId, queryClient }), [folderId, namespace, queryClient])
   const upload = useCallback(async (source: 'photos' | 'camera' | 'files') => {
     try {
@@ -304,6 +311,18 @@ export function FilesFolderScreen({ navigation, route }: Props) {
     }
   }, [confirmDeleteForever, openNode, startSelection, trashOperations])
 
+  /** Runs an office action with the row's progress spinner, reporting failures in a toast. */
+  const officeTask = useCallback(async (node: FileNode, task: () => Promise<void>) => {
+    useFileDownloads.getState().set(node.id, true)
+    try {
+      await task()
+    } catch (error) {
+      operations.fail(error, node.name)
+    } finally {
+      useFileDownloads.getState().set(node.id, false)
+    }
+  }, [operations])
+
   const runFileAction = useCallback((node: FileNode, action: string) => {
     const id = action as FileItemActionId
     switch (id) {
@@ -318,6 +337,27 @@ export function FilesFolderScreen({ navigation, route }: Props) {
       case 'pin': void operations.setPinned([node], true); return
       case 'unpin': void operations.setPinned([node], false); return
       case 'share': void shareFileItem(node).catch((error) => operations.fail(error, node.name)); return
+      case 'edit':
+        void convertToDoc(node.id)
+          .then(async (doc) => {
+            await refreshFiles(queryClient, namespace)
+            navigation.push('FileDocument', { fileId: doc.id, name: doc.name })
+          })
+          .catch((error: unknown) => operations.fail(error, node.name))
+        return
+      case 'export-pdf': void officeTask(node, () => shareOfficePdf(node)); return
+      case 'convert-office': {
+        const target = officeActions(node, true).target
+        if (!target) return
+        operations.notify(`Converting “${node.name}”…`)
+        void officeTask(node, async () => {
+          // The copy appears beside the original once the folder refreshes.
+          const created = await convertOfficeFile(node.id, target)
+          await operations.refresh()
+          operations.notify(`Converted to “${created.name}”`)
+        })
+        return
+      }
       case 'accept-suggestion': void operations.resolveSuggestion(node, 'accept'); return
       case 'reject-suggestion':
         Alert.alert(`Remove “${node.name}”?`, 'The agent suggested this item. Removing it deletes it, and anything you added inside moves up a level.', [
@@ -330,14 +370,14 @@ export function FilesFolderScreen({ navigation, route }: Props) {
       case 'open-in-new-chat':
         return
     }
-  }, [openNode, operations, startSelection, trashItems])
+  }, [namespace, navigation, officeTask, openNode, operations, queryClient, startSelection, trashItems])
   const runAction = inTrash ? runTrashAction : runFileAction
 
   // Trashed items are restored into a chosen folder only while Files is on.
   const restoreTo = Boolean(trashView?.files && filesEnabled)
   const actionsFor = useCallback((node: FileNode) => inTrash
     ? trashItemActions(node, { files: restoreTo, selectable: true })
-    : fileItemActions(node, { agent: 'none', selectable: true }), [inTrash, restoreTo])
+    : fileItemActions(node, { agent: 'none', selectable: true, officeConversion }), [inTrash, officeConversion, restoreTo])
   const press = useCallback((node: FileNode) => {
     if (!selecting) {
       openNode(node)
@@ -404,6 +444,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
     menu: {
       items: [
         { type: 'action', label: 'New Document', icon: { type: 'sfSymbol', name: 'doc.badge.plus' }, onPress: () => { void newDocument() } },
+        ...liveFiles.map((entry) => ({ type: 'action', label: entry.label, icon: { type: 'sfSymbol' as const, name: entry.systemImage as 'doc.plaintext' }, onPress: () => { void newDocument(entry.name) } } as const)),
         { type: 'action', label: 'New Folder', icon: { type: 'sfSymbol', name: 'folder.badge.plus' }, onPress: newFolder },
         ...(urlImportEnabled ? [{ type: 'action', label: 'Import from URL', icon: { type: 'sfSymbol', name: 'link' }, onPress: importUrl } as const] : []),
         {
@@ -503,6 +544,7 @@ export function FilesFolderScreen({ navigation, route }: Props) {
         right={<View style={styles.androidActions}>
           {inTrash ? null : <MaterialIconButton icon="plus" label="Add" onPress={() => showActions('Add', [
             { label: 'New document', icon: 'doc.badge.plus', onPress: () => { void newDocument() } },
+            ...liveFiles.map((entry) => ({ label: entry.label.replace(/ (\w)/g, (_match, letter: string) => ` ${letter.toLowerCase()}`), icon: entry.systemImage, onPress: () => { void newDocument(entry.name) } })),
             { label: 'New folder', icon: 'folder.badge.plus', onPress: newFolder },
             ...(urlImportEnabled ? [{ label: 'Import from URL', icon: 'link', onPress: importUrl }] : []),
             { label: 'Photo library', icon: 'photo.on.rectangle', onPress: () => { void upload('photos') } },

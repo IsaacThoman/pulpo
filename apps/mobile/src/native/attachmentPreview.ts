@@ -26,8 +26,9 @@ export const supportsNativeImageTransition = Platform.OS === 'ios'
   && typeof PulpoAttachmentPreview?.animateImageTransition === 'function'
 export const supportsNativeImageGallery = Platform.OS === 'ios'
   && typeof PulpoAttachmentPreview?.previewImages === 'function'
-// Binaries built before the web preview fall back to Quick Look after an over-the-air update.
-export const supportsWebDocumentPreview = Platform.OS === 'ios'
+// Binaries built before the web preview fall back to Quick Look (or the system viewer on Android)
+// after an over-the-air update.
+export const supportsWebDocumentPreview = (Platform.OS === 'ios' || Platform.OS === 'android')
   && typeof PulpoAttachmentPreview?.previewWebDocument === 'function'
 
 const imagePreviewBusyRetryDelays = [60, 100, 160, 240]

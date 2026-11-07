@@ -13,7 +13,17 @@ export {
   SHEET_EXTENSIONS,
   type FilePreviewKind,
 } from '@pulpo/client-core/files'
-import { fileExtension } from '@pulpo/client-core/files'
+import { fileExtension, type FilePreviewKind } from '@pulpo/client-core/files'
+
+/** Previews read as text (decoded with an encoding fallback) rather than shown from a URL. */
+export function isTextPreview(kind: FilePreviewKind): boolean {
+  return kind === 'markdown' || kind === 'quiz' || kind === 'text' || kind === 'table' || kind === 'html' || kind === 'svg' || kind === 'notebook'
+}
+
+/** Viewers that fill the file view edge to edge and scroll themselves, with their own toolbar. */
+export function previewFillsView(kind: FilePreviewKind): boolean {
+  return kind === 'text' || kind === 'table' || kind === 'html' || kind === 'svg' || kind === 'notebook'
+}
 
 /** The folder items dropped on `node` go into: the folder itself, or the folder a shortcut opens. */
 export function dropFolderOf(node: FileNode): string | undefined {
@@ -61,6 +71,11 @@ export function filesErrorMessage(error: unknown, name?: string): string {
       case 'file_too_large_to_edit': return ui("This file is too large to edit")
       case 'file_not_text': return ui("This file isn't plain text, so it can't be edited")
       case 'file_not_markdown': return ui("Only .md and .markdown files can be edited")
+      case 'file_not_live': return ui("Only Markdown, text, and code files can be edited here")
+      case 'file_not_editable': return ui("This file can't be edited as text without changing it")
+      case 'file_unreadable': return ui("This file is damaged and can't be opened for editing")
+      case 'file_encrypted': return ui("This file is encrypted, so it can't be edited")
+      case 'file_format_unknown': return ui("This document needs a newer version of Pulpo")
       case 'not_found': return ui("This item no longer exists")
       case 'file_system_folder': return ui("This folder is built in and cannot be renamed, moved, trashed, or recolored")
       case 'file_chat_copy': return ui("Chats cannot be copied here; duplicate them from the chat menu")
@@ -70,6 +85,16 @@ export function filesErrorMessage(error: unknown, name?: string): string {
       case 'url_import_failed': return ui("This page could not be imported. Check the link and try again.")
       case 'url_import_unavailable': return ui("Importing from a URL is not available")
       case 'file_shortcut_to_shortcut': return ui("Create a shortcut to the item this shortcut opens instead")
+      case 'office_file_encrypted': return ui("Password-protected files can't be converted")
+      case 'office_conversion_failed': return ui("This file couldn't be converted. It may be damaged.")
+      case 'office_file_unreadable': return ui("This file's contents don't match its name")
+      case 'office_file_too_large': return ui("This file is too large to convert")
+      case 'office_conversion_timeout': return ui("Converting took too long. Try again later.")
+      case 'office_converter_busy': return ui("The converter is busy. Try again in a moment.")
+      case 'office_converter_unavailable': return ui("The converter isn't available. Try again later.")
+      case 'office_conversion_unavailable': return ui("This server can't convert office files")
+      case 'office_conversion_unsupported': return ui("This file can't be converted to that format")
+      case 'office_conversion_rate_limited': return ui("Wait for your other conversions to finish")
       default: return error.message
     }
   }

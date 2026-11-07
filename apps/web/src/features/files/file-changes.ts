@@ -1,5 +1,5 @@
 import type { FileChangeConflict, FileChangeSummary } from '@pulpo/contracts'
-import { fileChangeConflictsOf, fileChangeLabelOf } from '@pulpo/client-core/files'
+import { fileChangeConflictsOf, fileChangeLabelOf, wholeFileProposal } from '@pulpo/client-core/files'
 import { ui, uit } from '@/i18n/ui'
 import { ApiError } from '@/lib/api'
 
@@ -37,7 +37,7 @@ export function fileChangeDescription(change: FileChangeSummary): string {
   })()
   const status = (() => {
     switch (change.status) {
-      case 'pending': return change.nodeKind === 'doc' && change.kind === 'update'
+      case 'pending': return change.nodeKind === 'doc' && change.kind === 'update' && !wholeFileProposal(change)
         ? ui("Suggested; review it in the document")
         : ui("Suggested; waiting for you to accept or reject it")
       case 'accepted': return ui("Accepted")

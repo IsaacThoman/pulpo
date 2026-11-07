@@ -1,13 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { FileNode } from '@pulpo/contracts'
 import { Loader2 } from 'lucide-react'
+import { decodeTextBytes } from '@pulpo/client-core/files'
 import { parseQuiz } from '@pulpo/client-core/quiz'
 import { Markdown } from '@/components/chat/Markdown'
 import { QuizCard } from '@/components/chat/QuizCard'
+import { CodeViewer } from '@/components/viewers/CodeViewer'
+import { DelimitedGrid } from '@/components/viewers/DelimitedGrid'
+import { HtmlViewer } from '@/components/viewers/HtmlViewer'
+import { NotebookViewer } from '@/components/viewers/NotebookViewer'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { fetchFileBlob, fileStreamUrl } from './api'
-import { filePreviewKind, filesErrorMessage, MAX_INLINE_PREVIEW_BYTES } from './file-display'
+import { filePreviewKind, filesErrorMessage, isTextPreview, MAX_INLINE_PREVIEW_BYTES, previewFillsView } from './file-display'
 
 type PreviewState =
   | { status: 'loading' }
@@ -28,8 +33,9 @@ function QuizFilePreview({ node, text }: { node: FileNode; text: string }) {
 }
 
 /**
- * Inline preview of an uploaded file: images, PDFs, media, and text. Used by the side panel and
- * the full-page file view.
+ * Inline preview of an uploaded file: images, PDFs, media, Markdown, quizzes, and the file viewers
+ * (code and text, CSV/TSV grids, sandboxed HTML/SVG, notebooks). Used by the side panel and the
+ * full-page file view. Viewers that fill the view (`previewFillsView`) scroll themselves.
  */
 export function FilePreviewBody({ node }: { node: FileNode }) {
   const [state, setState] = useState<PreviewState>({ status: 'loading' })
@@ -45,8 +51,10 @@ export function FilePreviewBody({ node }: { node: FileNode }) {
     setState({ status: 'loading' })
     void (async () => {
       try {
-        if (kind === 'markdown' || kind === 'text' || kind === 'quiz') {
-          const text = await (await fetchFileBlob(node)).text()
+        if (isTextPreview(kind)) {
+          // Decoded with a fallback, so CSVs saved as Windows-1252 or UTF-16 read correctly.
+          const bytes = new Uint8Array(await (await fetchFileBlob(node)).arrayBuffer())
+          const { text } = decodeTextBytes(bytes)
           if (!cancelled) setState({ status: 'text', text })
           return
         }
@@ -77,8 +85,15 @@ export function FilePreviewBody({ node }: { node: FileNode }) {
 
   // Media uses the height left below the view's header.
   const media = 'max-h-[calc(100dvh-10rem)]'
+  const fills = previewFillsView(kind)
+  if (state.status === 'text' && state.text.length > 0 && fills) {
+    if (kind === 'table') return <DelimitedGrid key={node.revision} text={state.text} name={node.name} mimeType={node.mimeType} />
+    if (kind === 'html' || kind === 'svg') return <HtmlViewer key={node.revision} text={state.text} name={node.name} kind={kind} mimeType={node.mimeType} />
+    if (kind === 'notebook') return <NotebookViewer key={node.revision} text={state.text} name={node.name} />
+    return <CodeViewer key={node.revision} text={state.text} name={node.name} mimeType={node.mimeType} />
+  }
   return (
-    <>
+    <div className={cn(fills && 'size-full overflow-auto p-4')}>
       {state.status === 'loading' && <div className="grid h-64 place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>}
       {state.status === 'error' && <p className="p-8 text-center text-sm text-destructive">{state.message}</p>}
       {state.status === 'unsupported' && <p className="p-8 text-center text-sm text-muted-foreground">{ui("No preview is available for this file. Download it to open it.")}</p>}
@@ -89,7 +104,6 @@ export function FilePreviewBody({ node }: { node: FileNode }) {
       {state.status === 'text' && !state.text.trim() && <p className="p-8 text-center text-sm text-muted-foreground">{ui("This file is empty.")}</p>}
       {state.status === 'text' && state.text.trim() && kind === 'markdown' && <div className="px-6 py-4"><Markdown content={state.text} /></div>}
       {state.status === 'text' && state.text.trim() && kind === 'quiz' && <QuizFilePreview node={node} text={state.text} />}
-      {state.status === 'text' && state.text.trim() && kind === 'text' && <pre className="overflow-auto p-4 font-mono text-xs whitespace-pre-wrap">{state.text}</pre>}
-    </>
+    </div>
   )
 }

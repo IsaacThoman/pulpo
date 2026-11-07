@@ -41,6 +41,82 @@
     "./doc-editor/summary": {
       "types": "./dist/doc-editor/summary.d.ts",
       "import": "./dist/doc-editor/summary.js"
+    },
+    "./office": {
+      "types": "./dist/office/index.d.ts",
+      "import": "./dist/office/index.js"
+    },
+    "./office/ooxml": {
+      "types": "./dist/office/ooxml/index.d.ts",
+      "import": "./dist/office/ooxml/index.js"
+    },
+    "./highlight": {
+      "types": "./dist/highlight.d.ts",
+      "import": "./dist/highlight.js"
+    },
+    "./office/delimited": {
+      "types": "./dist/office/delimited/index.d.ts",
+      "import": "./dist/office/delimited/index.js"
+    },
+    "./office/notebook": {
+      "types": "./dist/office/notebook/index.d.ts",
+      "import": "./dist/office/notebook/index.js"
+    },
+    "./office/formats": {
+      "types": "./dist/office/formats.d.ts",
+      "import": "./dist/office/formats.js"
+    },
+    "./office/codecs": {
+      "types": "./dist/office/codecs.d.ts",
+      "import": "./dist/office/codecs.js"
+    },
+    "./office/markdown": {
+      "types": "./dist/office/markdown/index.d.ts",
+      "import": "./dist/office/markdown/index.js"
+    },
+    "./office/text": {
+      "types": "./dist/office/text/index.d.ts",
+      "import": "./dist/office/text/index.js"
+    },
+    "./office/text/view": {
+      "types": "./dist/office/text/view/index.d.ts",
+      "import": "./dist/office/text/view/index.js"
+    },
+    "./office/notebook/view": {
+      "types": "./dist/office/notebook/view/index.d.ts",
+      "import": "./dist/office/notebook/view/index.js"
+    },
+    "./office/presentation": {
+      "types": "./dist/office/presentation/index.d.ts",
+      "import": "./dist/office/presentation/index.js"
+    },
+    "./office/presentation/view": {
+      "types": "./dist/office/presentation/view/index.d.ts",
+      "import": "./dist/office/presentation/view/index.js"
+    },
+    "./office/docx": {
+      "types": "./dist/office/docx/index.d.ts",
+      "import": "./dist/office/docx/index.js"
+    },
+    "./office/docx/format": {
+      "types": "./dist/office/docx/format.d.ts",
+      "import": "./dist/office/docx/format.js"
+    },
+    "./office/docx/view": {
+      "types": "./dist/office/docx/view/index.d.ts",
+      "import": "./dist/office/docx/view/index.js"
+    },
+    "./office/sheets": {
+      "types": "./dist/office/sheets/index.d.ts",
+      "import": "./dist/office/sheets/index.js"
+    },
+    "./office/sheets/view": {
+      "types": "./dist/office/sheets/view/index.d.ts",
+      "import": "./dist/office/sheets/view/index.js"
+    },
+    "./collections": {
+      "types": "./dist/collections.d.ts",
+      "import": "./dist/collections.js"
     }
   },
   "scripts": {
@@ -48,6 +124,27 @@
     "test": "vitest run --exclude \"**/dist/**\""
   },
   "dependencies": {
+    "@codemirror/autocomplete": "^6.20.4",
+    "@codemirror/commands": "^6.11.1",
+    "@codemirror/lang-cpp": "^6.0.3",
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-go": "^6.0.1",
+    "@codemirror/lang-html": "^6.4.12",
+    "@codemirror/lang-java": "^6.0.2",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-php": "^6.0.2",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/lang-rust": "^6.0.2",
+    "@codemirror/lang-sql": "^6.10.0",
+    "@codemirror/lang-xml": "^6.1.0",
+    "@codemirror/lang-yaml": "^6.1.3",
+    "@codemirror/language": "^6.13.1",
+    "@codemirror/legacy-modes": "^6.5.5",
+    "@codemirror/search": "^6.7.2",
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.15",
+    "@lezer/highlight": "^1.2.5",
     "@pulpo/contracts": "0.1.0",
     "@tiptap/core": "^3.31.3",
     "@tiptap/extension-code": "^3.31.3",
@@ -61,7 +158,12 @@
     "@tiptap/pm": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
     "@tiptap/y-tiptap": "^3.0.9",
+    "@types/hast": "^3.0.4",
+    "@xmldom/xmldom": "^0.9.12",
+    "fflate": "^0.8.3",
+    "lowlight": "^3.3.0",
     "marked": "^15.0.12",
+    "y-codemirror.next": "^0.3.6",
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.33"
   },

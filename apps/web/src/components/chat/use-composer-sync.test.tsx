@@ -139,3 +139,33 @@ describe('temporary composer isolation', () => {
     view.unmount()
   })
 })
+
+it('keeps typing and attachments added while the local checkpoint is loading', async () => {
+  let loaded!: (value: null) => void
+  registry.sync!.dispose()
+  registry.sync = new ComposerSync({ load: () => new Promise((resolve) => { loaded = resolve }), save: async () => {} }, 'slow-disk')
+  const view = renderHook(useDraft)
+  expect(view.result.current.ready).toBe(false)
+  const attachment = { id: 'file', name: 'notes.txt', mimeType: 'text/plain', size: 4 }
+  await act(async () => view.result.current.setState((state) => ({ ...state, content: 'typed while opening', attachments: [attachment] })))
+  await act(async () => loaded(null))
+  await waitFor(() => expect(view.result.current.ready).toBe(true))
+  expect(view.result.current.state.content).toBe('typed while opening')
+  expect(view.result.current.state.attachments).toEqual([attachment])
+  view.unmount()
+})
+
+it('waits for reconciliation again when sync is re-enabled for the same draft', async () => {
+  const view = renderHook(useDraft)
+  await waitFor(() => expect(view.result.current.ready).toBe(true))
+  await act(async () => useComposerSyncPreference.setState({ enabled: false }))
+  expect(view.result.current.ready).toBe(true)
+  let loaded!: (value: null) => void
+  registry.sync!.dispose()
+  registry.sync = new ComposerSync({ load: () => new Promise((resolve) => { loaded = resolve }), save: async () => {} }, 'reopened')
+  await act(async () => useComposerSyncPreference.setState({ enabled: true }))
+  expect(view.result.current.ready).toBe(false)
+  await act(async () => loaded(null))
+  await waitFor(() => expect(view.result.current.ready).toBe(true))
+  view.unmount()
+})

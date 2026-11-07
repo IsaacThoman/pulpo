@@ -1,11 +1,31 @@
 import SwiftUI
 import UIKit
 
+/** A choice in a live format's toolbar menu. */
+struct DocEditorToolbarOption: Identifiable, Equatable {
+  let command: String
+  let label: String
+  let systemImage: String
+  var id: String { command }
+}
+
+/** A button a live format puts on the bar (see `DocEditorToolbarState.items`); with options, a menu of them. */
+struct DocEditorToolbarItem: Identifiable, Equatable {
+  let command: String
+  let label: String
+  let systemImage: String
+  var options: [DocEditorToolbarOption] = []
+  var separatorBefore = false
+  var id: String { command }
+}
+
 /** What the formatting bar shows; JavaScript sets it from what the editor reports. */
 final class DocEditorToolbarModel: ObservableObject {
   @Published var active: Set<String> = []
   @Published var disabled: Set<String> = []
   @Published var tint: Color = .accentColor
+  /** Set for formats with their own bar (text and code); empty for the document editor's. */
+  @Published var items: [DocEditorToolbarItem] = []
 }
 
 private struct ToolbarButton: View {
@@ -37,12 +57,7 @@ private struct ToolbarButton: View {
   }
 }
 
-private struct MenuOption: Identifiable {
-  let command: String
-  let label: String
-  let systemImage: String
-  var id: String { command }
-}
+typealias MenuOption = DocEditorToolbarOption
 
 private struct ToolbarMenu: View {
   let label: String
@@ -78,6 +93,8 @@ private struct ToolbarMenu: View {
     }
     .menuStyle(.button)
     .buttonStyle(.plain)
+    .disabled(model.disabled.contains(identifier))
+    .opacity(model.disabled.contains(identifier) ? 0.35 : 1)
     .accessibilityLabel(label)
     .accessibilityIdentifier("doc-toolbar-\(identifier)")
   }
@@ -96,6 +113,19 @@ struct DocEditorToolbar: View {
   var body: some View {
     HStack(spacing: 0) {
       ScrollView(.horizontal, showsIndicators: false) {
+        if !model.items.isEmpty {
+          HStack(spacing: 2) {
+            ForEach(model.items) { item in
+              if item.separatorBefore { ToolbarSeparator() }
+              if item.options.isEmpty {
+                ToolbarButton(command: item.command, label: item.label, systemImage: item.systemImage, model: model, action: action)
+              } else {
+                ToolbarMenu(label: item.label, systemImage: item.systemImage, identifier: item.command, options: item.options, model: model, action: action)
+              }
+            }
+          }
+          .padding(.horizontal, 8)
+        } else {
         HStack(spacing: 2) {
           ToolbarButton(command: "undo", label: "Undo", systemImage: "arrow.uturn.backward", model: model, action: action)
           ToolbarButton(command: "redo", label: "Redo", systemImage: "arrow.uturn.forward", model: model, action: action)
@@ -126,6 +156,7 @@ struct DocEditorToolbar: View {
           ToolbarButton(command: "divider", label: "Divider", systemImage: "minus", model: model, action: action)
         }
         .padding(.horizontal, 8)
+        }
       }
       ToolbarSeparator()
       Button {

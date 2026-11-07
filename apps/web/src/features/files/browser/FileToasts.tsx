@@ -14,10 +14,10 @@ function ToastItem({ toast }: { toast: FileToast }) {
   const [hovered, setHovered] = useState(false)
 
   useEffect(() => {
-    if (hovered || undoing) return
+    if (hovered || undoing || toast.persistent) return
     const timer = window.setTimeout(() => dismiss(toast.id), TOAST_DURATION_MS)
     return () => window.clearTimeout(timer)
-  }, [dismiss, hovered, toast.id, undoing])
+  }, [dismiss, hovered, toast.id, toast.persistent, undoing])
 
   const undo = async () => {
     if (!toast.undo) return

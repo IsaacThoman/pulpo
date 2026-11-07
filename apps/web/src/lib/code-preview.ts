@@ -53,11 +53,14 @@ export type SandboxOutboundMessage =
   | { type: 'pulpo-sandbox:error'; message: string }
   /** Stylesheets the code imports from other files; the preview renders without them. */
   | { type: 'pulpo-sandbox:missing-styles'; files: string[] }
+  /** The rendered page's height in CSS pixels, for frames that fit their content. */
+  | { type: 'pulpo-sandbox:size'; height: number }
 
 export function isSandboxOutboundMessage(value: unknown): value is SandboxOutboundMessage {
   if (!value || typeof value !== 'object') return false
-  const message = value as { type?: unknown; message?: unknown; files?: unknown }
+  const message = value as { type?: unknown; message?: unknown; files?: unknown; height?: unknown }
   if (message.type === 'pulpo-sandbox:ready' || message.type === 'pulpo-sandbox:rendered') return true
+  if (message.type === 'pulpo-sandbox:size') return typeof message.height === 'number' && Number.isFinite(message.height) && message.height >= 0
   if (message.type === 'pulpo-sandbox:missing-styles') {
     return Array.isArray(message.files) && message.files.every((file) => typeof file === 'string')
   }

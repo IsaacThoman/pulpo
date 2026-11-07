@@ -161,7 +161,7 @@ describe.skipIf(!enabled)('full application backup audit with PostgreSQL and loc
     const body = Buffer.from('File bytes 🐙\u0000')
     await context.store!.put(fileKey, body, { contentType: 'application/octet-stream' })
     await db.insert(schema.fileNodes).values([
-      { id: nodeId, ownerUserId: userId, parentId, kind: 'doc', name: 'Notes.md' },
+      { id: nodeId, ownerUserId: userId, parentId, kind: 'doc', format: 'markdown', name: 'Notes.md' },
       { id: fileId, ownerUserId: userId, parentId, kind: 'blob', name: 'file.bin', objectKey: fileKey, checksum: hash(body), sizeBytes: body.byteLength },
     ])
     const initial = initialDocState('# Original 🐙')

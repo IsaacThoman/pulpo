@@ -42,10 +42,21 @@ describe('Files item menus', () => {
 describe('opening Files items', () => {
   const blob = (name: string) => ({ id: 'file', kind: 'blob', name, status: 'ready', mimeType: 'application/json' }) as unknown as FileNode
 
-  it('takes quizzes in the app, and previews other files', () => {
+  it('takes quizzes in the app, reads tables, code, and notebooks in its viewers, and previews other files', () => {
     expect(fileOpenTarget(blob('Capitals.QUIZ'))).toEqual({ type: 'quiz', id: 'file', name: 'Capitals.QUIZ' })
     expect(fileOpenTarget(blob('Notes.md'))).toMatchObject({ type: 'markdown' })
-    expect(fileOpenTarget(blob('data.json'))).toMatchObject({ type: 'file', id: 'file' })
+    expect(fileOpenTarget(blob('data.json'))).toEqual({ type: 'viewer', id: 'file', name: 'data.json' })
+    expect(fileOpenTarget(blob('sales.csv'))).toEqual({ type: 'viewer', id: 'file', name: 'sales.csv' })
+    expect(fileOpenTarget(blob('main.swift'))).toEqual({ type: 'viewer', id: 'file', name: 'main.swift' })
+    expect(fileOpenTarget(blob('analysis.ipynb'))).toEqual({ type: 'notebook', id: 'file', name: 'analysis.ipynb' })
+    expect(fileOpenTarget(blob('page.html'))).toMatchObject({ type: 'file', id: 'file' })
+    expect(fileOpenTarget(blob('Report.docx'))).toMatchObject({ type: 'file', id: 'file' })
+    expect(fileOpenTarget(blob('photo.png'))).toMatchObject({ type: 'file', id: 'file' })
+  })
+
+  it('sends files too large for the in-app viewers to the system viewer', () => {
+    const huge = { ...blob('huge.log'), sizeBytes: 26 * 1024 * 1024 } as FileNode
+    expect(fileOpenTarget(huge)).toMatchObject({ type: 'file' })
   })
 
   it('takes a quiz behind a shortcut in the app', () => {

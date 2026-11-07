@@ -6,11 +6,13 @@ import type {
   FileNode,
   FileUploadReservation,
   MoveFileNodes,
+  OfficeEditableFormat,
   UpdateFileFolderLayout,
   UpdateFileNode,
 } from '@pulpo/contracts'
 import { formatAttachmentSizeLimit } from '@pulpo/client-core'
-import { ApiError, apiDownloadUrl, apiRequest, authenticatedFetch, downloadApiFile, fetchApiBlob } from '@/lib/api'
+import { convertedFileName } from '@pulpo/contracts'
+import { ApiError, apiDownloadUrl, apiRequest, authenticatedFetch, downloadApiFile, fetchApiBlob, fetchApiBlobResponse } from '@/lib/api'
 import { uit } from '@/i18n/ui'
 import { useAuth } from '@/stores/auth'
 
@@ -64,6 +66,27 @@ export function convertToDoc(id: string): Promise<FileNode> {
   return apiRequest<FileNode>(`/api/files/${id}/convert`, { method: 'POST' })
 }
 
+/** A converted copy of an office file beside it ("Report.doc" gets "Report.docx"); the original stays. */
+export function convertOfficeFile(id: string, to: OfficeEditableFormat): Promise<FileNode> {
+  return apiRequest<FileNode>(`/api/files/${id}/conversions`, { method: 'POST', body: { to } })
+}
+
+/** An office file rendered as PDF by the server, for previews. Nothing is stored. */
+export function fetchFilePdf(node: Pick<FileNode, 'id'>, signal?: AbortSignal): Promise<Blob> {
+  return fetchApiBlob(`/api/files/${node.id}/pdf?inline=1`, { signal })
+}
+
+/** Saves an office file as "<name>.pdf". Failures carry the server's reason (password-protected, damaged…). */
+export async function downloadFileAsPdf(node: Pick<FileNode, 'id' | 'name'>): Promise<void> {
+  const blob = await fetchApiBlob(`/api/files/${node.id}/pdf`)
+  const url = URL.createObjectURL(blob.slice(0, blob.size, 'application/pdf'))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = convertedFileName(node.name, 'pdf')
+  anchor.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+}
+
 /** An open editor exports its local snapshot, including offline edits; the browser fetches others. */
 export async function downloadDocMarkdown(node: Pick<FileNode, 'id' | 'name'>, snapshot?: string): Promise<void> {
   const markdown = snapshot ?? (await apiRequest<{ name: string; markdown: string }>(`/api/files/${node.id}/markdown`)).markdown
@@ -73,6 +96,31 @@ export async function downloadDocMarkdown(node: Pick<FileNode, 'id' | 'name'>, s
   anchor.download = /\.(md|markdown)$/i.test(node.name) ? node.name : `${node.name}.md`
   anchor.click()
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+}
+
+/** Saves bytes under a file's name, like a download the browser started itself. */
+function saveBytes(bytes: Uint8Array, name: string, mimeType: string): void {
+  const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: mimeType }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = name
+  anchor.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+}
+
+/**
+ * Downloads a live document as its real file: the open editor's export when given (it includes
+ * offline edits), or the server's.
+ */
+export async function downloadLiveDoc(node: Pick<FileNode, 'id' | 'name' | 'mimeType'>, snapshot?: Uint8Array): Promise<void> {
+  if (snapshot) return saveBytes(snapshot, node.name, node.mimeType ?? 'application/octet-stream')
+  return downloadApiFile(`/api/files/${node.id}/export`, node.name)
+}
+
+/** One side of a live document's agent change, for its review diff. */
+export async function fetchChangeContent(changeId: string, side: 'before' | 'after'): Promise<Uint8Array> {
+  const response = await fetchApiBlobResponse(`/api/file-changes/${changeId}/content/${side}`)
+  return new Uint8Array(await response.arrayBuffer())
 }
 
 export function updateFileNode(id: string, input: UpdateFileNode): Promise<FileNode> {

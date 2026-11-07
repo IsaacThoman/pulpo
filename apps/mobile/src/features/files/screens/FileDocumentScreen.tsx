@@ -1,9 +1,13 @@
 import type { FileNode } from '@pulpo/contracts'
+import { liveFormat, liveFormatOfName } from '@pulpo/client-core/office'
+import { exportNotebookFile } from '@pulpo/client-core/office/notebook'
+import { exportTextFile, textFileFacts } from '@pulpo/client-core/office/text'
 import { describeHunkSummary } from '@pulpo/client-core/doc-editor/summary'
 import { sessionColor, type DocSessionSnapshot, type DocSyncStatus } from '@pulpo/client-core/doc-sync'
 import type { NativeStackHeaderItem, NativeStackScreenProps } from '@react-navigation/native-stack'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import * as Haptics from 'expo-haptics'
+import { StatusBar } from 'expo-status-bar'
 import * as WebBrowser from 'expo-web-browser'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { ActivityIndicator, Alert, Keyboard, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
@@ -26,10 +30,21 @@ import { FolderPickerSheet } from '../components/FolderPickerSheet'
 import { accountDocSessions } from '../doc/accountSessions'
 import type { DocHandle } from '../doc/sessions'
 import type { EditorBridgeState } from '../editor/bridge'
+import { editorBundleFor, type MobileEditorFormat } from '../editor/bundles'
 import { docEditorAvailable, DocEditorView, type DocEditorHandle } from '../editor/DocEditorView'
+import { NOTEBOOK_TOOLBAR, notebookToolbarState } from '../editor/notebookToolbar'
+import { SHEET_TOOLBAR, sheetToolbarState } from '../editor/sheetToolbar'
+import { TEXT_TOOLBAR, textToolbarState } from '../editor/textToolbar'
+import { PRESENTATION_TOOLBAR, presentationToolbarState } from '../editor/presentationToolbar'
+import type { PresentationCommand } from '../editor/protocol'
+import { PRESENTATION_BAR_HEIGHT, PresentationBar } from '../components/PresentationBar'
+import { apiUrl, nativeAuthorizationHeaders } from '../../../api/client'
+import { DOCX_TOOLBAR, docxToolbarState } from '../editor/docxToolbar'
 import { deviceSessionLabel } from '../editor/presentation'
-import { fetchDocMarkdown } from '../api'
+import { fetchDocMarkdown, fetchFileAsset } from '../api'
 import { filesErrorMessage } from '../display'
+import { officeActions } from '../itemActions'
+import { shareOfficePdf, useOfficeConversionEnabled } from '../officeConversion'
 import { openFilesLinkInApp } from '../links'
 import { shareFileItem } from '../open'
 import { useFileOperations } from '../operations'
@@ -52,13 +67,14 @@ function documentProblem(status: DocSyncStatus, node: FileNode | undefined, sche
     return { title: 'This document is in the trash', detail: 'Restore it to edit it again.', action: 'restore' }
   }
   if (status.state === 'closed' && status.reason === 'deleted') return { title: 'This document was deleted', detail: 'It’s no longer in Files.', action: 'back' }
-  if (status.state === 'closed' && status.reason === 'converted') return { title: 'This is now an ordinary file', detail: 'It was renamed without a Markdown extension.', action: 'back' }
+  if (status.state === 'closed' && status.reason === 'converted') return { title: 'This is now an ordinary file', detail: 'It was renamed to another type of file.', action: 'back' }
   if (status.state === 'error') {
     switch (status.error) {
       case 'unauthorized': return { title: 'You can’t edit this document', detail: 'Files may have been turned off.', action: 'back' }
       case 'doc_too_large': return { title: 'This document is too large', detail: 'Edits can’t be saved until some content is removed on another device.', action: 'retry' }
       case 'not_found': return { title: 'This document was deleted', detail: 'It’s no longer in Files.', action: 'back' }
       case 'rate_limited': return null
+      case 'stale_copy': return null
       default: return { title: 'Changes aren’t being saved', detail: 'Pulpo couldn’t sync this document. Your edits are kept on this device.', action: 'retry' }
     }
   }
@@ -88,11 +104,24 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const queryClient = useQueryClient()
   const namespace = useFilesNamespace()
   const filesEnabled = useFilesEnabled()
-  const schemaSupported = useDocSchemaSupported()
   const operations = useFileOperations(namespace)
+  const officeConversionEnabled = useOfficeConversionEnabled()
+  const [exportingPdf, setExportingPdf] = useState(false)
   const fileId = route.params.fileId
   const nodeQuery = useQuery({ ...fileNodeQuery(namespace, fileId), enabled: Boolean(namespace) && filesEnabled })
   const node = nodeQuery.data?.node
+  const canExportPdf = Boolean(node && !node.trashedAt && officeActions(node, officeConversionEnabled).pdf)
+  // The document's live format picks its editor; only Markdown has suggestions inline.
+  const formatId = node?.format ?? 'markdown'
+  const schemaSupported = useDocSchemaSupported(formatId) && Boolean(editorBundleFor(formatId))
+  const editorFormat: MobileEditorFormat = formatId === 'text' || formatId === 'notebook' || formatId === 'presentation' || formatId === 'document' || formatId === 'sheet' ? formatId : 'markdown'
+  const isText = editorFormat === 'text'
+  const isNotebook = editorFormat === 'notebook'
+  /** Formats other than Markdown keep their extension, have no inline suggestions, and fall back to their text. */
+  const isLive = editorFormat !== 'markdown'
+  const isDeck = editorFormat === 'presentation'
+  const isWord = editorFormat === 'document'
+  const isSheet = editorFormat === 'sheet'
   const editor = useRef<DocEditorHandle>(null)
   const [handle, setHandle] = useState<DocHandle | null>(null)
   const [editorState, setEditorState] = useState<EditorBridgeState | null>(null)
@@ -139,10 +168,16 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   // A document just created opens ready to type in, once.
   const focusedNew = useRef(false)
   useEffect(() => {
-    if (!route.params.created || focusedNew.current || !editorState?.loaded || !editorState.formatting?.editable) return
+    const ready = editorState?.loaded && (isText ? editorState.text && !editorState.text.readOnly : isNotebook ? editorState.notebook && !editorState.notebook.readOnly : isWord ? editorState.docx?.editable : isSheet ? editorState.sheet && !editorState.sheet.readOnly : editorState.formatting?.editable)
+    if (isDeck || !route.params.created || focusedNew.current || !ready) return
     focusedNew.current = true
     editor.current?.focus('start')
-  }, [editorState?.formatting?.editable, editorState?.loaded, route.params.created])
+  }, [editorState, isDeck, isNotebook, isText, isWord, isSheet, route.params.created])
+
+  // A copy of an earlier document under this id was dropped; start over without it.
+  useEffect(() => {
+    if (status.state === 'error' && status.error === 'stale_copy') restartSession()
+  }, [restartSession, status])
 
   // A document turned into an ordinary file opens as one.
   useEffect(() => {
@@ -158,10 +193,12 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   useEffect(() => { setLoadedOnce(false) }, [handle])
   const problem = documentProblem(status, node, schemaSupported)
   // A session still in memory from earlier (e.g. lingering after closing) holds the document too.
-  const inMemory = Boolean(handle && handle.controller.doc.getXmlFragment('default').length > 0)
+  const inMemory = Boolean(handle && liveFormat(formatId)?.hasContent(handle.controller.doc))
   const usable = Boolean(session) && (loadedOnce || inMemory || status.state === 'synced' || status.state === 'syncing' || session?.hasCachedContent === true)
   const editable = filesEnabled && !problem && usable && node?.kind === 'doc' && docEditorAvailable
   const title = node?.name ?? route.params.name ?? 'Document'
+  // Markdown documents read without their extension; code files keep theirs, which says what they are.
+  const shownTitle = isLive ? title : title.replace(/\.(md|markdown)$/i, '')
   // Without a usable copy (an outdated app, or offline before the first sync) the server's Markdown is shown.
   const readOnlyFallback = !docEditorAvailable || (!usable && (problem?.action === 'update' || status.state === 'offline'))
   const fallback = useQuery({
@@ -173,10 +210,22 @@ export function FileDocumentScreen({ navigation, route }: Props) {
 
   const rename = useCallback(() => {
     if (!node) return
-    const submit = (name: string) => { void operations.rename(node, name.endsWith('.md') || name.endsWith('.markdown') ? name : `${name}.md`) }
-    const base = node.name.replace(/\.(md|markdown)$/i, '')
+    const text = (node.format ?? 'markdown') !== 'markdown'
+    const submit = (name: string) => {
+      if (!text) {
+        void operations.rename(node, name.endsWith('.md') || name.endsWith('.markdown') ? name : `${name}.md`)
+        return
+      }
+      // A name of another type turns the document into an ordinary file; say so first.
+      if (liveFormatOfName(name)?.id === node.format) void operations.rename(node, name)
+      else Alert.alert('Rename to another type?', `“${name}” is a different type of file, so it would become an ordinary file you can’t edit here.`, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Rename', style: 'destructive', onPress: () => { void operations.rename(node, name) } },
+      ])
+    }
+    const base = text ? node.name : node.name.replace(/\.(md|markdown)$/i, '')
     if (Platform.OS === 'ios') {
-      Alert.prompt('Rename', 'Documents keep their .md extension.', [
+      Alert.prompt('Rename', text ? undefined : 'Documents keep their .md extension.', [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Rename', isPreferred: true, onPress: (value?: string) => { if (value?.trim()) submit(value.trim()) } },
       ], 'plain-text', base)
@@ -187,13 +236,53 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const exportDocument = useCallback(async () => {
     if (!node) return
     try {
+      // Decks export through the server, which holds their pictures.
+      if (isDeck) {
+        await shareFileItem(node)
+        return
+      }
       // An open editor exports its own copy, which includes edits not yet synced.
+      if (isNotebook) {
+        // The open copy includes edits not yet synced; without it (or its images) the server exports.
+        let bytes: Uint8Array | undefined
+        if (handle && usable) {
+          const assets = { put: () => Promise.reject(new Error('Read only')), get: (hash: string) => fetchFileAsset(node.id, hash) }
+          bytes = await exportNotebookFile(handle.controller.doc, { assets }).catch(() => undefined)
+        }
+        await shareFileItem(node, undefined, bytes)
+        return
+      }
+      // Word documents export on the server, which holds their pictures and original parts.
+      if (isWord) {
+        await shareFileItem(node)
+        return
+      }
+      if (isText) {
+        // A file kept with its original bytes (mixed line breaks, a legacy encoding) is exported
+        // exactly by the server, which holds them; while edits wait to sync, this copy has more.
+        const serverExact = handle && textFileFacts(handle.controller.doc).original && status.state === 'synced'
+        const bytes = handle && usable && !serverExact ? await exportTextFile(handle.controller.doc, { assets: { put: () => Promise.reject(new Error('Read only')), get: () => Promise.reject(new Error('Not on this device')) } }) : undefined
+        await shareFileItem(node, undefined, bytes)
+        return
+      }
+      // Spreadsheets are written by the server's codec, which the app doesn't ship; edits waiting to sync aren't in it yet.
+      if (isSheet) {
+        await shareFileItem(node)
+        return
+      }
       const markdown = editorState?.loaded ? await editor.current?.exportMarkdown() : undefined
       await shareFileItem(node, markdown)
     } catch (error) {
       operations.fail(error, node.name)
     }
-  }, [editorState?.loaded, node, operations])
+  }, [editorState?.loaded, handle, isDeck, isNotebook, isText, isWord, isSheet, node, operations, status.state, usable])
+  /** A deck's pictures, fetched for the editor page (which has no network of its own). */
+  const fetchAsset = useCallback(async (hash: string) => {
+    const url = apiUrl(`/api/files/${fileId}/assets/${hash}`)
+    const response = await fetch(url, { headers: nativeAuthorizationHeaders(url) })
+    if (!response.ok) throw new Error(`The picture could not be loaded (${response.status})`)
+    return new Uint8Array(await response.arrayBuffer())
+  }, [fileId])
   const trash = useCallback(() => {
     if (!node) return
     Alert.alert(`Move “${node.name}” to the trash?`, undefined, [
@@ -208,6 +297,13 @@ export function FileDocumentScreen({ navigation, route }: Props) {
     ])
   }, [navigation, operations, node])
 
+  const exportPdf = useCallback(async () => {
+    if (!node) return
+    setExportingPdf(true)
+    try { await shareOfficePdf(node) } catch (error) { operations.fail(error, node.name) }
+    finally { setExportingPdf(false) }
+  }, [node, operations])
+
   const menu: NativeStackHeaderItem = useMemo(() => ({
     type: 'menu',
     label: 'Document',
@@ -215,7 +311,12 @@ export function FileDocumentScreen({ navigation, route }: Props) {
     identifier: 'doc-menu',
     menu: {
       items: [
-        { type: 'action', label: 'Find in Document', icon: { type: 'sfSymbol', name: 'magnifyingglass' }, disabled: !editorState?.loaded, onPress: () => editor.current?.showFind() },
+        isNotebook
+          ? { type: 'action', label: 'Clear All Outputs', icon: { type: 'sfSymbol', name: 'eye.slash' }, disabled: !editorState?.loaded || !editable, onPress: () => editor.current?.command('clearAllOutputs') }
+          : isDeck
+          ? { type: 'action', label: 'Present', icon: { type: 'sfSymbol', name: 'play.rectangle' }, disabled: !editorState?.loaded, onPress: () => editor.current?.command('present') }
+          : { type: 'action', label: isText ? 'Find and Replace' : isSheet ? 'Find in Spreadsheet' : 'Find in Document', icon: { type: 'sfSymbol', name: 'magnifyingglass' }, disabled: !editorState?.loaded, onPress: () => { if (isText || isSheet) editor.current?.command('find'); else editor.current?.showFind() } },
+        ...(canExportPdf ? [{ type: 'action' as const, label: 'Export as PDF', icon: { type: 'sfSymbol' as const, name: 'doc.text' as const }, disabled: exportingPdf, onPress: () => { void exportPdf() } }] : []),
         { type: 'action', label: 'Export…', icon: { type: 'sfSymbol', name: 'square.and.arrow.up' }, disabled: !node, onPress: () => { void exportDocument() } },
         {
           type: 'submenu',
@@ -232,12 +333,12 @@ export function FileDocumentScreen({ navigation, route }: Props) {
         { type: 'action', label: 'Move to Trash', icon: { type: 'sfSymbol', name: 'trash' }, destructive: true, disabled: !node || Boolean(node.trashedAt), onPress: trash },
       ],
     },
-  }), [editorState?.loaded, exportDocument, navigation, node, nodeQuery.data?.ancestors, operations, rename, trash])
+  }), [canExportPdf, exportingPdf, exportPdf, editable, editorState?.loaded, exportDocument, isNotebook, isDeck, isText, isSheet, navigation, node, nodeQuery.data?.ancestors, operations, rename, trash])
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: title.replace(/\.(md|markdown)$/i, ''),
-      headerShown: Platform.OS === 'ios',
+      title: shownTitle,
+      headerShown: Platform.OS === 'ios' && !presenting,
       headerLargeTitle: false,
       headerBackTitle: 'Back',
       unstable_headerRightItems: Platform.OS === 'ios' && filesEnabled ? () => [
@@ -258,12 +359,18 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   })
 
   const suggestions = editorState?.suggestions
-  const reviewVisible = Boolean(suggestions?.count) && !keyboardVisible && editorState?.loaded
+  const reviewVisible = !isLive && Boolean(suggestions?.count) && !keyboardVisible && editorState?.loaded
   const reviewBarHeight = reviewVisible ? 116 : 0
   // Android draws its formatting bar above the keyboard; the editor keeps the caret clear of it.
   const formattingBarVisible = Platform.OS === 'android' && keyboardVisible && editable && Boolean(editorState?.loaded)
-  const editorBottomPadding = reviewBarHeight + (formattingBarVisible ? FORMATTING_BAR_HEIGHT : 0)
+  // A running slide show gets the whole screen: no header, status bar, or deck bar.
+  const presenting = isDeck && editorState?.presentation?.presenting === true
+  const presentationBarVisible = isDeck && editable && Boolean(editorState?.loaded) && !presenting
+  const navigationBarPadding = Platform.OS === 'android' && isSheet && !keyboardVisible ? insets.bottom : 0
+  const editorBottomPadding = reviewBarHeight + (formattingBarVisible && !isDeck ? FORMATTING_BAR_HEIGHT : 0) + (presentationBarVisible ? PRESENTATION_BAR_HEIGHT + insets.bottom : 0) + navigationBarPadding
   const showAndroidMenu = () => showActions(title, [
+    ...(isDeck ? [{ label: 'Present', icon: 'play.rectangle', onPress: () => editor.current?.command('present') }] : []),
+    ...(canExportPdf ? [{ label: 'Export as PDF', icon: 'doc.text', disabled: exportingPdf, onPress: () => { void exportPdf() } }] : []),
     { label: 'Export', icon: 'square.and.arrow.up', onPress: () => { void exportDocument() } },
     { label: 'Rename', icon: 'pencil', onPress: rename },
     { label: 'Move', icon: 'folder', onPress: () => setMoving(true) },
@@ -306,7 +413,9 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   const body = readOnlyFallback ? (
     fallback.data ? (
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={[styles.fallback, { paddingBottom: insets.bottom + 24 }]}>
-        <SafeMarkdown>{fallback.data.markdown}</SafeMarkdown>
+        {isLive
+          ? <Text selectable style={[isWord ? null : styles.code, { color: theme.text }]}>{fallback.data.markdown}</Text>
+          : <SafeMarkdown>{fallback.data.markdown}</SafeMarkdown>}
       </ScrollView>
     ) : fallback.isError || (!fallback.isFetching && !fallback.data) ? (
       <View style={styles.center}>
@@ -315,19 +424,25 @@ export function FileDocumentScreen({ navigation, route }: Props) {
         <Text style={[styles.centerBody, { color: theme.secondary }]}>Open this document once while connected to keep a copy on this device.</Text>
       </View>
     ) : <View style={styles.center}><ActivityIndicator color={theme.secondary} /></View>
-  ) : handle && session ? (
+    // The node says which editor the document needs; wait for it rather than guess Markdown.
+  ) : handle && session && node ? (
     <DocEditorView
-      key={generation}
+      key={`${generation}:${editorFormat}`}
       ref={editor}
+      format={editorFormat}
+      name={node?.name}
+      docId={fileId}
       acquire={() => accountDocSessions(namespace).acquire(fileId)}
       editable={editable}
       placeholder="Start writing…"
       sessionLabel={deviceSessionLabel()}
       sessionColor={sessionColor(handle.controller.doc.clientID)}
       bottomPadding={editorBottomPadding}
+      pageBackground={presenting ? '#000000' : undefined}
       style={styles.flex}
       onStateChange={setEditorState}
       onResolved={onResolved}
+      fetchAsset={fetchAsset}
       onLink={(href) => {
         // Files links on this instance open here, as on the web.
         if (openFilesLinkInApp(href, useSessionStore.getState().instanceUrl)) return
@@ -376,17 +491,18 @@ export function FileDocumentScreen({ navigation, route }: Props) {
   if (!filesEnabled) {
     return (
       <View style={[styles.flex, { backgroundColor: theme.background, paddingTop: Platform.OS === 'android' ? insets.top : 0 }]}>
-        {Platform.OS === 'android' ? <PageHeader title={title.replace(/\.(md|markdown)$/i, '')} onBack={() => navigation.goBack()} /> : null}
+        {Platform.OS === 'android' ? <PageHeader title={shownTitle} onBack={() => navigation.goBack()} /> : null}
         <FilesTurnedOff />
       </View>
     )
   }
 
   return (
-    <View style={[styles.flex, { backgroundColor: theme.isDark ? theme.background : theme.elevated, paddingTop: Platform.OS === 'android' ? insets.top : 0 }]}>
-      {Platform.OS === 'android' ? (
+    <View style={[styles.flex, { backgroundColor: presenting ? '#000' : theme.isDark ? theme.background : theme.elevated, paddingTop: Platform.OS === 'android' && !presenting ? insets.top : 0 }]}>
+      {presenting ? <StatusBar hidden style="light" /> : null}
+      {Platform.OS === 'android' && !presenting ? (
         <PageHeader
-          title={title.replace(/\.(md|markdown)$/i, '')}
+          title={shownTitle}
           onBack={() => navigation.goBack()}
           right={<View style={styles.androidActions}>
             <SyncIndicator status={status} />
@@ -397,11 +513,30 @@ export function FileDocumentScreen({ navigation, route }: Props) {
       {banner}
       {Platform.OS === 'android' ? <KeyboardAvoidingView behavior="padding" style={styles.flex}>{body}</KeyboardAvoidingView> : body}
       <FormattingBar
-        formatting={editorState?.formatting ?? null}
-        visible={formattingBarVisible}
-        onCommand={(command) => editor.current?.toolbar(command)}
+        formatting={isText ? (editorState?.text ? textToolbarState(editorState) : null) : isNotebook ? (editorState?.notebook ? notebookToolbarState(editorState) : null) : isWord ? (editorState?.docx ? docxToolbarState(editorState) : null) : isSheet ? (editorState?.sheet ? sheetToolbarState(editorState) : null) : editorState?.formatting ?? null}
+        items={isText ? TEXT_TOOLBAR : isNotebook ? NOTEBOOK_TOOLBAR : isWord ? DOCX_TOOLBAR : isSheet ? SHEET_TOOLBAR : undefined}
+        visible={formattingBarVisible && !isDeck}
+        onCommand={(command) => editor.current?.toolbar(command as never)}
         onDismissKeyboard={() => editor.current?.dismissKeyboard()}
       />
+      <PresentationBar
+        items={PRESENTATION_TOOLBAR}
+        state={editorState ? presentationToolbarState(editorState) : { active: [], disabled: [] }}
+        visible={presentationBarVisible}
+        onCommand={(command) => editor.current?.command(command as PresentationCommand)}
+      />
+      {presenting ? (
+        <Pressable
+          accessibilityLabel="End Slide Show"
+          accessibilityRole="button"
+          hitSlop={10}
+          onPress={() => editor.current?.command('endShow')}
+          style={[styles.endShow, { top: insets.top + 8 }]}
+          testID="end-slide-show"
+        >
+          <SymbolView name="xmark" size={14} tintColor="#fff" />
+        </Pressable>
+      ) : null}
       {reviewBar}
       <FilesToastHost bottomOffset={reviewBarHeight} />
       {moving && node ? (
@@ -426,11 +561,13 @@ export function FileDocumentScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
+  endShow: { position: 'absolute', right: 16, width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.18)' },
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 10 },
   centerTitle: { fontSize: 20, fontWeight: '600', textAlign: 'center' },
   centerBody: { fontSize: 15, lineHeight: 21, textAlign: 'center' },
   fallback: { paddingHorizontal: 20, paddingTop: 12 },
+  code: { fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 13, lineHeight: 19 },
   syncIndicator: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
   androidActions: { flexDirection: 'row', alignItems: 'center' },
   peers: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 4 },

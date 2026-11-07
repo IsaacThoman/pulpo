@@ -1,4 +1,5 @@
 import type { FormatCommand, FormattingState, HunkSummary } from '@pulpo/client-core/doc-editor'
+import type { TextEditorState } from '@pulpo/client-core/office/text/view'
 
 /**
  * Messages between the app and the document editor running in its web view.
@@ -8,6 +9,12 @@ import type { FormatCommand, FormattingState, HunkSummary } from '@pulpo/client-
  * loses edits the app has seen. Every message after `ready` carries the `session` it belongs to;
  * the editor reloads with a new session, and both sides drop messages from earlier ones.
  * Updates are idempotent CRDT merges, and either side can ask for what it lacks with `sync`.
+ *
+ * Each live format ships its own page (Markdown's TipTap editor, text's CodeMirror editor, the
+ * spreadsheet grid) that speaks this protocol: the sync messages are shared, and each format adds
+ * its own commands and state (`format`/`review`/`formatting` for Markdown, `command`/`textState`
+ * for text, `command`/`sheetState`/`selection` for spreadsheets). A page says which format and
+ * schema version it edits in `ready`.
  */
 export const EDITOR_PROTOCOL_VERSION = 1
 
@@ -42,6 +49,8 @@ export type HostMessage =
     theme: EditorTheme
     /** Other sessions' awareness (base64), so their carets show at once. */
     awareness?: string
+    /** The file name, for formats whose editor depends on it (a code file's language). */
+    name?: string
   }
   | { type: 'update'; session: number; update: string }
   /** Asks the editor for every update the app lacks, given the app's state vector (base64). */
@@ -55,6 +64,113 @@ export type HostMessage =
   | { type: 'blur'; session: number }
   /** Asks for the document's Markdown, without pending suggestions (the base view). */
   | { type: 'export'; session: number; requestId: string }
+  /** A text or notebook editor command from the app's toolbar or menu. */
+  | { type: 'command'; session: number; command: TextCommand | SheetCommand | NotebookCommand | PresentationCommand }
+  /** The file was renamed; text editors pick their language from the name. */
+  | { type: 'name'; session: number; name: string }
+  /** A Word editor command from the app's toolbar; `value` carries a link's address. */
+  | { type: 'docxCommand'; session: number; command: DocxCommand; value?: string }
+  /** An asset the page asked for (base64), or null when it can't be had (offline, missing). */
+  | { type: 'asset'; session: number; hash: string; data: string | null }
+
+  /** The answer to the editor's `asset` request: the bytes (base64), or why there are none. */
+  | { type: 'asset'; session: number; requestId: string; data?: string; error?: string }
+  /**
+   * Shows an agent's proposed deck against the current one instead of an editor: both versions
+   * as .pptx bytes (base64). The page answers `loaded`, or `error` when a version cannot be read.
+   */
+  | { type: 'presentationDiff'; session: number; before: string; after: string; theme: EditorTheme }
+
+export type TextCommand = 'undo' | 'redo' | 'indentMore' | 'indentLess' | 'find' | 'wrap'
+
+/** A notebook editor's commands: the keyboard bar's, and the screen menu's (clearing outputs). */
+export type NotebookCommand = 'undo' | 'redo' | 'indentMore' | 'indentLess' | 'insertBelow' | 'moveUp' | 'moveDown' | 'toggleType' | 'delete' | 'toggleOutputs' | 'clearAllOutputs'
+
+/** What a notebook editor's toolbar shows. */
+export interface NotebookToolbarState {
+  canUndo: boolean
+  canRedo: boolean
+  /** The active cell's type, or null without one. */
+  cellType: 'code' | 'markdown' | 'raw' | null
+  /** A cell is being edited (the keyboard is up). */
+  editing: boolean
+  outputsCollapsed: boolean
+  readOnly: boolean
+  cells: number
+}
+
+/** The presentation editor's toolbar. */
+export type PresentationCommand = 'undo' | 'redo' | 'newSlide' | 'textBox' | 'shape' | 'bold' | 'italic' | 'bullets' | 'delete' | 'present' | 'endShow'
+
+/** What a presentation editor's toolbar shows. */
+export interface PresentationEditorState {
+  canUndo: boolean
+  canRedo: boolean
+  bold: boolean
+  italic: boolean
+  bullets: boolean
+  /** Text formatting applies (text is being edited, or a shape with text is selected). */
+  canFormatText: boolean
+  /** Shapes are selected, so Delete removes them (otherwise it removes the slide). */
+  hasSelection: boolean
+  slideCount: number
+  readOnly: boolean
+  /** The slide show is running: the app gives the page the whole screen. Older pages omit it. */
+  presenting?: boolean
+}
+
+export type DocxCommand =
+  | 'undo' | 'redo' | 'bold' | 'italic' | 'underline' | 'strike' | 'bulletList' | 'numberedList'
+  | 'indent' | 'outdent' | 'alignLeft' | 'alignCenter' | 'alignRight' | 'heading1' | 'heading2' | 'normal'
+  | 'link' | 'comment' | 'suggest' | 'layout'
+
+/** What a Word editor's toolbar shows as on or unavailable. */
+export interface DocxPhoneState {
+  /** Older bundles omit this; false disables unsupported comment creation in stories. */
+  canComment?: boolean
+  bold: boolean
+  italic: boolean
+  underline: boolean
+  strike: boolean
+  list: 'bullet' | 'decimal' | 'multilevel' | null
+  alignment: 'left' | 'center' | 'right' | 'both'
+  styleId: string | null
+  link: string | null
+  canUndo: boolean
+  canRedo: boolean
+  suggesting: boolean
+  layout: 'print' | 'web'
+  focused: boolean
+  /** False until the app lets the page edit (and while it is read-only). */
+  editable: boolean
+}
+
+/** The spreadsheet toolbar's commands; each acts on the selection, as the web toolbar's do. */
+export type SheetCommand =
+  | 'undo' | 'redo' | 'bold' | 'italic' | 'wrap'
+  | 'alignLeft' | 'alignCenter' | 'alignRight'
+  | 'fillNone' | 'fillYellow' | 'fillGreen' | 'fillBlue' | 'fillRed' | 'fillGray'
+  | 'formatGeneral' | 'formatNumber' | 'formatCurrency' | 'formatPercent' | 'formatDate' | 'formatText'
+  | 'insertRowAbove' | 'insertRowBelow' | 'insertColumnLeft' | 'insertColumnRight' | 'deleteRow' | 'deleteColumn'
+  | 'freezeRow' | 'sortAscending' | 'sortDescending' | 'filter' | 'find'
+
+/** What a spreadsheet's toolbar shows: undo state, and the active cell's format and the sheet's. */
+export interface SheetEditorState {
+  canUndo: boolean
+  canRedo: boolean
+  readOnly: boolean
+  /** CSV and TSV files hold values only: formats and further sheets don't apply. */
+  valuesOnly: boolean
+  /** A cell or the formula bar is being edited, or the find bar is open. */
+  focused: boolean
+  editing: boolean
+  /** `B3` or `B3:D9`. */
+  selection: string
+  /** Toolbar commands that are on for the active cell (`bold`, `alignCenter`, `formatPercent`, …). */
+  active: SheetCommand[]
+  frozenRows: number
+  hasFilter: boolean
+}
 
 export interface ActiveSuggestion {
   id: string
@@ -65,16 +181,36 @@ export interface ActiveSuggestion {
 /** The editor to the app. */
 export type EditorMessage =
   /** The page loaded; the app answers with `init` for a new session. */
-  | { type: 'ready'; protocolVersion: number; schemaVersion: number }
+  /** `format` is the live format the page edits; pages from before it are Markdown. */
+  | { type: 'ready'; protocolVersion: number; schemaVersion: number; format?: string }
   | { type: 'loaded'; session: number }
   /** A local edit, or what the app lacked after `sync` (base64). */
   | { type: 'update'; session: number; update: string }
   /** Asks the app for what the editor lacks (state vector, base64). */
   | { type: 'sync'; session: number; stateVector: string }
   | { type: 'formatting'; session: number; formatting: FormattingState; focused: boolean }
+  /** What a text editor's toolbar shows: undo state, cursor position, wrapping. */
+  | { type: 'textState'; session: number; state: TextEditorState }
+  /** What a notebook editor's toolbar shows. */
+  | { type: 'notebookState'; session: number; state: NotebookToolbarState }
+  /** What a Word editor's toolbar shows. */
+  | { type: 'docxState'; session: number; state: DocxPhoneState }
+  /** What a spreadsheet's toolbar shows. */
+  | { type: 'sheetState'; session: number; state: SheetEditorState }
+  /** The spreadsheet's own selection (by row and column ids), for other sessions' awareness. */
+  | { type: 'selection'; session: number; selection: unknown }
   | { type: 'suggestions'; session: number; count: number; index: number | null; active: ActiveSuggestion | null }
-  /** The editor's own cursor, as Yjs relative positions, for other sessions' awareness. */
-  | { type: 'cursor'; session: number; cursor: { anchor: unknown; head: unknown } | null }
+  /** The editor's own cursor, as Yjs relative positions, for other sessions' awareness; notebooks add the cell it is on. */
+  | { type: 'cursor'; session: number; cursor: { anchor: unknown; head: unknown } | null; notebook?: unknown; presentation?: { slide: string | null; shapes: string[]; editing?: string | null } | null }
+  /** Asks the app for a document asset (an image in a notebook's outputs) by hash. */
+  | { type: 'asset'; session: number; hash: string }
+  /** What a presentation editor's toolbar shows. */
+  | { type: 'presentationState'; session: number; state: PresentationEditorState }
+  /**
+   * Asks the app for an asset's bytes (an image in a deck): the page has no network access, so the
+   * app fetches them from the document's assets.
+   */
+  | { type: 'asset'; session: number; requestId: string; hash: string }
   /** The owner resolved suggestions in the editor (review buttons, undo, or typing). */
   | { type: 'resolved'; session: number }
   | { type: 'link'; session: number; href: string }

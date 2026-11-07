@@ -190,3 +190,40 @@ it('follows a remote start with focus and preserves remaining text and uploads i
   expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('remaining edits')
   expect(view.getAllByText('remaining.txt').length).toBeGreaterThan(0)
 })
+
+it('accepts hand-off text after a delayed reconcile and preserves typing and pending uploads', async () => {
+  const { canInsertIntoComposer, insertIntoComposer } = await import('./composer-focus')
+  let reconcile!: (value: { ok: true; snapshot: ComposerSnapshot }) => void
+  const snapshot: ComposerSnapshot = { draftId: 'new', state: emptyComposerState(), revision: 0, clearedRevision: 0, mutationId: null }
+  const read = vi.fn(() => new Promise<{ ok: true; snapshot: ComposerSnapshot }>((resolve) => { reconcile = resolve }))
+  fixture.sync = new ComposerSync({ load: async () => null, save: async () => {} }, 'delayed')
+  fixture.sync.connect({ read, write: async (input) => ({ ok: true, snapshot: { ...snapshot, revision: snapshot.revision + 1, state: { ...snapshot.state, ...input.patch } } }) })
+  const pending = { localId: 'pending', name: 'pending.txt', size: 1, mimeType: 'text/plain', status: 'uploading' as const }
+  useUploadOutbox.setState({ uploads: { pending: { ...pending, chatId: null, temporary: false, previewUrl: null, managed: true, attempt: 0 } } })
+  rememberRuntimeComposerDraft('account', 'new', { content: '', attachmentIds: ['pending'], attachments: [pending] })
+  const view = render(<MemoryRouter><TooltipProvider><Composer chatId={null} modelId="model" /></TooltipProvider></MemoryRouter>)
+  await waitFor(() => expect(read).toHaveBeenCalled())
+  expect(canInsertIntoComposer()).toBe(false)
+  const input = view.getByRole('textbox') as HTMLTextAreaElement
+  expect(input.disabled).toBe(false)
+  fireEvent.change(input, { target: { value: 'typed before reconciliation' } })
+  expect(input.value).toBe('typed before reconciliation')
+  await act(async () => reconcile({ ok: true, snapshot }))
+  await waitFor(() => expect(canInsertIntoComposer()).toBe(true))
+  await act(async () => { expect(insertIntoComposer('Quiz results')).toBe(true) })
+  expect(input.value).toBe('typed before reconciliation\n\nQuiz results')
+  expect(view.getAllByText('pending.txt').length).toBeGreaterThan(0)
+  expect(useUploadOutbox.getState().uploads.pending?.chatId).toBeNull()
+})
+
+it.each([false, true])('accepts inserted text into a hydrated local draft (temporary: %s)', async (temporary) => {
+  const { canInsertIntoComposer, insertIntoComposer } = await import('./composer-focus')
+  fixture.sync = null
+  const id = temporary ? 'temporary:new' : 'new'
+  if (temporary) rememberRuntimeComposerDraft('account', id, { content: 'saved draft', attachments: [], attachmentIds: [] })
+  else await saveComposerDraft('account', id, { content: 'saved draft', attachments: [] })
+  const view = render(<MemoryRouter><TooltipProvider><Composer chatId={null} modelId="model" temporary={temporary} syncEnabled={false} /></TooltipProvider></MemoryRouter>)
+  await waitFor(() => expect(canInsertIntoComposer()).toBe(true))
+  await act(async () => { expect(insertIntoComposer('Run this notebook')).toBe(true) })
+  expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('saved draft\n\nRun this notebook')
+})

@@ -1,4 +1,5 @@
 import type { FormatCommand, FormattingState } from '@pulpo/client-core/doc-editor'
+import type { TextEditorState } from '@pulpo/client-core/office/text/view'
 import { encodeAwarenessUpdate, type Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import { base64ToBytes, bytesToBase64 } from './base64'
@@ -9,7 +10,16 @@ import {
   type EditorMessage,
   type EditorTheme,
   type HostMessage,
+  type NotebookCommand,
+  type NotebookToolbarState,
+  type PresentationCommand,
+  type PresentationEditorState,
+  type DocxCommand,
+  type DocxPhoneState,
   type ReviewAction,
+  type SheetCommand,
+  type SheetEditorState,
+  type TextCommand,
 } from './protocol'
 
 /**
@@ -27,6 +37,16 @@ export interface EditorBridgeState {
   formatting: FormattingState | null
   focused: boolean
   suggestions: { count: number; index: number | null; active: ActiveSuggestion | null }
+  /** What a text editor reports (text and code files). */
+  text: TextEditorState | null
+  /** What a notebook editor reports. */
+  notebook: NotebookToolbarState | null
+  /** What a presentation editor reports. */
+  presentation: PresentationEditorState | null
+  /** What a Word editor reports. */
+  docx?: DocxPhoneState | null
+  /** What a spreadsheet editor reports. */
+  sheet: SheetEditorState | null
   /** The editor's page reported a protocol or schema this app cannot use. */
   incompatible: boolean
 }
@@ -42,7 +62,13 @@ export interface EditorBridgeOptions {
   theme: EditorTheme
   /** The schema version this app's provider joins with; the page must have been built for it. */
   schemaVersion: number
+  /** The live format the page must edit (Markdown unless given). */
+  format?: string
+  /** The file name, for editors that depend on it (a code file's language). */
+  name?: string
   onLink?: (href: string) => void
+  /** Fetches a document asset for the page (notebook images); without it the page shows none. */
+  fetchAsset?: (hash: string) => Promise<Uint8Array>
   /** The owner resolved suggestions in the editor; replies' change counts may be stale. */
   onResolved?: () => void
   onError?: (message: string) => void
@@ -53,6 +79,10 @@ const INITIAL_STATE: EditorBridgeState = {
   formatting: null,
   focused: false,
   suggestions: { count: 0, index: null, active: null },
+  text: null,
+  notebook: null,
+  presentation: null,
+  sheet: null,
   incompatible: false,
 }
 
@@ -123,6 +153,22 @@ export class EditorBridge {
     this.post({ type: 'format', session: this.session, command, href })
   }
 
+  /** A text editor's toolbar command. */
+  command(command: TextCommand | SheetCommand | NotebookCommand | PresentationCommand): void {
+    this.post({ type: 'command', session: this.session, command })
+  }
+
+  /** A Word editor's toolbar command. */
+  docxCommand(command: DocxCommand, value?: string): void {
+    this.post({ type: 'docxCommand', session: this.session, command, value })
+  }
+
+  setName(name: string): void {
+    if (this.options.name === name) return
+    this.options = { ...this.options, name }
+    this.post({ type: 'name', session: this.session, name })
+  }
+
   review(action: ReviewAction): void {
     this.post({ type: 'review', session: this.session, action })
   }
@@ -164,20 +210,25 @@ export class EditorBridge {
     this.options.doc.off('update', this.onDocUpdate)
     this.options.awareness.off('update', this.onAwarenessUpdate)
     // This session's cursor leaves with its editor.
-    if (this.options.awareness.getLocalState()) this.options.awareness.setLocalStateField('cursor', null)
+    if (this.options.awareness.getLocalState()) {
+      this.options.awareness.setLocalStateField('cursor', null)
+      if (this.options.format === 'notebook') this.options.awareness.setLocalStateField('notebook', null)
+      this.options.awareness.setLocalStateField('presentation', null)
+      if (this.options.format === 'sheet') this.options.awareness.setLocalStateField('sheet', null)
+    }
     this.rejectExports(new Error('The editor closed'))
     this.listeners.clear()
   }
 
   private start(message: Extract<EditorMessage, { type: 'ready' }>): void {
-    if (message.protocolVersion !== EDITOR_PROTOCOL_VERSION || message.schemaVersion !== this.options.schemaVersion) {
+    if (message.protocolVersion !== EDITOR_PROTOCOL_VERSION || message.schemaVersion !== this.options.schemaVersion || (message.format ?? 'markdown') !== (this.options.format ?? 'markdown')) {
       this.setState({ ...INITIAL_STATE, incompatible: true })
       return
     }
     this.session += 1
     this.rejectExports(new Error('The editor reloaded'))
     this.setState(INITIAL_STATE)
-    const { doc, awareness, editable, placeholder, user, theme } = this.options
+    const { doc, awareness, editable, placeholder, user, theme, name } = this.options
     const others = this.otherClients()
     this.post({
       type: 'init',
@@ -188,6 +239,7 @@ export class EditorBridge {
       user,
       theme,
       awareness: others.length ? bytesToBase64(encodeAwarenessUpdate(awareness, others)) : undefined,
+      name,
     })
   }
 
@@ -206,12 +258,50 @@ export class EditorBridge {
       case 'formatting':
         this.setState({ ...this.state, formatting: message.formatting, focused: message.focused })
         break
+      case 'textState':
+        this.setState({ ...this.state, text: message.state, focused: message.state.focused })
+        break
+      case 'notebookState':
+        this.setState({ ...this.state, notebook: message.state, focused: message.state.editing })
+        break
+      case 'presentationState':
+        this.setState({ ...this.state, presentation: message.state })
+        break
+      case 'docxState':
+        this.setState({ ...this.state, docx: message.state, focused: message.state.focused })
+        break
+      case 'sheetState':
+        this.setState({ ...this.state, sheet: message.state, focused: message.state.focused })
+        break
+      case 'selection':
+        // Only a spreadsheet page shares a selection; other fields of this session's awareness stay the app's.
+        if (this.options.format === 'sheet') this.options.awareness.setLocalStateField('sheet', message.selection ?? null)
+        break
       case 'suggestions':
         this.setState({ ...this.state, suggestions: { count: message.count, index: message.index, active: message.active } })
         break
       case 'cursor':
         this.options.awareness.setLocalStateField('cursor', message.cursor)
+        if (message.notebook !== undefined) this.options.awareness.setLocalStateField('notebook', message.notebook)
+        if (message.presentation !== undefined) this.options.awareness.setLocalStateField('presentation', message.presentation)
         break
+      case 'asset': {
+        if ('requestId' in message) {
+          void this.sendAsset(message.requestId, message.hash)
+          break
+        }
+        const { session } = this
+        const hash = message.hash
+        const fetchAsset = this.options.fetchAsset
+        if (!fetchAsset || !/^[0-9a-f]{64}$/.test(hash)) {
+          this.post({ type: 'asset', session, hash, data: null })
+          break
+        }
+        void fetchAsset(hash).then((bytes) => bytesToBase64(bytes), () => null).then((data) => {
+          if (this.session === session) this.post({ type: 'asset', session, hash, data })
+        })
+        break
+      }
       case 'resolved':
         this.options.onResolved?.()
         break
@@ -225,6 +315,22 @@ export class EditorBridge {
         else pending?.resolve(message.markdown)
         break
       }
+    }
+  }
+
+  /** Answers the page's request for an asset, from the app's own fetch (the page has no network). */
+  private async sendAsset(requestId: string, hash: string): Promise<void> {
+    const session = this.session
+    const fetchAsset = this.options.fetchAsset
+    if (!/^[0-9a-f]{64}$/.test(hash) || !fetchAsset) {
+      this.post({ type: 'asset', session, requestId, error: 'Unavailable' })
+      return
+    }
+    try {
+      const bytes = await fetchAsset(hash)
+      if (session === this.session) this.post({ type: 'asset', session, requestId, data: bytesToBase64(bytes) })
+    } catch (error) {
+      if (session === this.session) this.post({ type: 'asset', session, requestId, error: error instanceof Error ? error.message : 'Unavailable' })
     }
   }
 
