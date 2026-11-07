@@ -44,7 +44,8 @@ export function AppStorePlans({ kit, offer, limits, onChanged }: {
     const title = planTitleColor(plan, theme.isDark)
     const period = periodLabel(item)
     const current = subscription?.plan === plan
-    const pending = subscription?.pendingPlan === plan
+    // A canceled subscription keeps the product it would have renewed as, but nothing starts at renewal.
+    const pending = subscription?.pendingPlan === plan && !subscription.cancelAtPeriodEnd
     // The current plan's button manages the subscription, so it is tinted rather than filled.
     const button = current || pending
       ? { background: planTintColor(plan, theme.isDark), text: title }
