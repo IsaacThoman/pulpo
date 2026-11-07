@@ -2679,12 +2679,19 @@ const esUi: Record<string, string> = {
   "Options for {{0}}": "Opciones de {{0}}",
   "{{0}}, {{1}} pending": "{{0}}, {{1}} pendientes",
   "Admin sections": "Secciones de administración",
-  "Usage sections": "Secciones de uso",
   "Friends sections": "Secciones de amigos",
-  "Settings sections": "Secciones de configuración",
   "{{0}}, sorted ascending": "{{0}}, orden ascendente",
   "{{0}}, sorted descending": "{{0}}, orden descendente",
   "More actions": "Más acciones",
+  "Amber": "Ámbar",
+  "Selected": "Seleccionado",
+  "Settings sections": "Secciones de ajustes",
+  "Usage sections": "Secciones de uso",
+  "Role for {{0}}": "Rol de {{0}}",
+  "Enable {{0}}": "Activar {{0}}",
+  "Search models": "Buscar modelos",
+  "Filter models": "Filtrar modelos",
+  "Search API keys": "Buscar claves de API",
 }
 
 export default esUi

@@ -182,7 +182,7 @@ export function PasskeySettings() {
           ) : <div className="divide-y rounded-lg border px-3">
             {data.passkeys.map((passkey) => <div key={passkey.id} className="py-3">
               {editingId === passkey.id ? <div className="flex items-center gap-2">
-                <Input autoFocus maxLength={80} value={name} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && name.trim()) void rename(passkey) }} />
+                <Input autoFocus aria-label={ui("Passkey name")} maxLength={80} value={name} onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && name.trim()) void rename(passkey) }} />
                 <Button size="sm" disabled={!name.trim() || loading} onClick={() => void rename(passkey)}>{ui("Save")}</Button>
                 <Button size="sm" variant="ghost" onClick={resetAction}>{ui("Cancel")}</Button>
               </div> : <div className="flex items-center gap-3">
