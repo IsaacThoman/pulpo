@@ -37,7 +37,7 @@ export function preferencesWithModelDefaults(values?: Record<string, unknown>): 
     automaticChatExpiration: parsedAutomaticChatExpiration.success ? parsedAutomaticChatExpiration.data : '24h',
     newChatAutoExpire: parsedNewChatAutoExpire.success ? parsedNewChatAutoExpire.data : false,
     chatSortMode: parsedChatSortMode.success ? parsedChatSortMode.data : 'default',
-    fileDoubleClickAction: parsedFileDoubleClickAction.success ? parsedFileDoubleClickAction.data : 'open',
+    fileDoubleClickAction: parsedFileDoubleClickAction.success ? parsedFileDoubleClickAction.data : 'openBeside',
     sidebarPins: sidebarPinsSchema.parse(values?.sidebarPins ?? {}),
     // Null is a choice (no color); a missing or unknown value is the default red.
     trashColor: trashColorSchema.catch(DEFAULT_TRASH_COLOR).parse(values?.trashColor),
