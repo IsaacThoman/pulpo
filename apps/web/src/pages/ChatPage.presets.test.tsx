@@ -203,15 +203,17 @@ it.each([
   composer.setSelectionRange(5, 11)
 
   // Select a new value, then reselect it; both should return to the same caret.
+  // The model picker is a dialog with a combobox and listbox; the others are menus.
+  const popupRole = picker === 'model' ? 'dialog' : 'menu'
   for (const repeat of [false, true]) {
     const trigger = view.getByRole('button', { name: picker === 'presets' ? 'Generation options'
       : picker === 'agent' ? `Agent options, ${repeat ? 'Disabled' : 'Pulpo Agent'}`
-      : repeat ? 'Other Model' : 'Test Model' })
+      : `Model: ${repeat ? 'Other Model' : 'Test Model'}` })
     fireEvent.keyDown(trigger, { key: 'ArrowDown' })
-    const menu = await view.findByRole('menu')
+    const menu = await view.findByRole(popupRole)
     if (picker === 'model') {
-      fireEvent.change(within(menu).getByRole('textbox'), { target: { value: 'Other Model' } })
-      fireEvent.click(within(menu).getByText('Other Model'))
+      fireEvent.change(within(menu).getByRole('combobox'), { target: { value: 'Other Model' } })
+      fireEvent.click(within(menu).getByRole('option', { name: 'Other Model' }))
     } else {
       const choice = within(menu).getByRole(picker === 'agent' ? 'menuitemradio' : 'menuitem', {
         name: picker === 'agent' ? 'Disabled' : 'Low',
@@ -227,11 +229,11 @@ it.each([
     await waitFor(() => expect(document.activeElement).toBe(composer))
     expect(composer.value).toBe('keep typing here')
     expect([composer.selectionStart, composer.selectionEnd]).toEqual([5, 11])
-    expect(view.queryByRole('menu')).toBeNull()
+    expect(view.queryByRole(popupRole)).toBeNull()
 
     // Dismissing a reopened picker should restore its trigger, not reuse the selection.
     fireEvent.keyDown(trigger, { key: 'ArrowDown' })
-    fireEvent.keyDown(await view.findByRole('menu'), { key: 'Escape' })
+    fireEvent.keyDown(await view.findByRole(popupRole), { key: 'Escape' })
     await waitFor(() => expect(document.activeElement).toBe(trigger))
   }
 })
