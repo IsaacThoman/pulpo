@@ -1731,7 +1731,7 @@ export const managementAccountSettingsSchema = z.object({
   automaticChatExpiration: automaticChatExpirationSchema.default('24h'),
   newChatAutoExpire: newChatAutoExpireSchema,
   chatSortMode: chatSortModeSchema.default('default'),
-  fileDoubleClickAction: fileDoubleClickActionSchema.default('open'),
+  fileDoubleClickAction: fileDoubleClickActionSchema.default('openBeside'),
   trashColor: trashColorSchema.default(DEFAULT_TRASH_COLOR),
   defaultModelId: z.string().max(120).nullable().default(null),
   generation: z.record(z.string(), z.record(z.string(), z.string())).default({}),
