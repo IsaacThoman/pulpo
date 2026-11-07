@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
     products: vi.fn(), purchase: vi.fn(), finish: vi.fn(), sync: vi.fn(), currentEntitlements: vi.fn(), showManageSubscriptions: vi.fn(),
   },
   api: { appStoreAccountToken: vi.fn(), syncAppStoreTransaction: vi.fn() },
+  insets: { top: 0, bottom: 0, left: 0, right: 0 },
+  scrollContent: [] as unknown[],
 }))
 vi.mock('react-native', () => {
   type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string }
@@ -22,12 +24,16 @@ vi.mock('react-native', () => {
     Platform: { OS: 'ios' },
     StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 1 },
     ActivityIndicator: () => createElement('progress'),
-    ScrollView: element('div'),
+    ScrollView: ({ children, contentContainerStyle }: Props & { contentContainerStyle?: unknown }) => {
+      mocks.scrollContent.push(contentContainerStyle)
+      return createElement('div', null, children)
+    },
     View: element('div'),
     Text: element('span'),
     Pressable: ({ children, onPress, disabled }: Props) => createElement('button', { onClick: onPress, disabled }, children),
   }
 })
+vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => mocks.insets }))
 vi.mock('../../mockup5/src/theme', () => ({
   useAppTheme: () => ({ isDark: false, red: '#C5221F', background: '#F5F5F7', elevated: '#FFFFFF', accent: '#111114', accentText: '#FFFFFF', text: '#000000', secondary: '#666666', separator: '#DDDDDD', blue: '#007AFF' }),
 }))
@@ -62,7 +68,12 @@ beforeEach(() => {
   mocks.api.syncAppStoreTransaction.mockResolvedValue({ plan: 'fat' })
   onChanged.mockResolvedValue(undefined)
 })
-afterEach(() => { cleanup(); vi.resetAllMocks() })
+afterEach(() => {
+  cleanup()
+  vi.resetAllMocks()
+  mocks.insets = { top: 0, bottom: 0, left: 0, right: 0 }
+  mocks.scrollContent = []
+})
 
 describe('App Store plan cards', () => {
   it('sells both plans at the App Store’s prices with the web’s selling points and the required terms', async () => {
@@ -130,5 +141,12 @@ describe('App Store plan cards', () => {
     mount()
     fireEvent.click(await screen.findByText('Try Again'))
     expect(await screen.findByText('Choose Eight')).toBeTruthy()
+  })
+
+  it('keeps the plans clear of a side safe area, like iPhone Duo’s vertical bar', async () => {
+    mocks.insets = { top: 0, bottom: 0, left: 0, right: 84 }
+    mount()
+    await screen.findByText('Choose Eight')
+    expect(mocks.scrollContent.at(-1)).toContainEqual({ paddingLeft: 20, paddingRight: 104 })
   })
 })

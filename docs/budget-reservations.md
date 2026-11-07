@@ -35,6 +35,24 @@ the reservation is settled or released. Retries, such as compaction dropping
 older history after the summary request overflows, therefore hold one attempt
 at a time instead of accumulating.
 
+## Abandoned reservations
+
+The generation job that owns a reservation settles or releases it. When the job
+finds its response already finished, for example after a cancel before it
+started, or the job ends some other way without settling, the worker closes the
+reservation on its way out.
+
+A maintenance sweep (`abandoned-reservations`, every five minutes) is the
+backstop for holds no job owns any more: a crashed or failed job, a lost queue
+entry, or a failure between finishing a response and settling it. It checks
+reservations pending for over 15 minutes and skips any whose generation job is
+still active, waiting, or delayed. Agent responses waiting for workspace
+capacity or a cost-limit decision keep their job active, so they are left alone.
+A response still marked queued or in progress is failed first ("Generation
+stopped unexpectedly"). Then recorded model calls, tool runs, and usage are
+charged as in a normal settlement, and the rest of the hold is released. Each
+closed hold is logged as `reservation.abandoned_closed`.
+
 ## Per-model configuration
 
 In **Admin → Models**, edit **Minimum output allocation** beside **Max output
@@ -74,7 +92,8 @@ reserved, and its incurred cost is settled even if its output is rejected.
 
 - `npm run test -w @pulpo/server -- src/accounting src/billing/allocation.test.ts src/responses/model-calls.test.ts`
 - With a migrated disposable `pulpo_budget_test` database, set `DATABASE_URL` and
-  `PULPO_BUDGET_POSTGRES_TEST=1` to run the accounting PostgreSQL tests.
+  `PULPO_BUDGET_POSTGRES_TEST=1` to run the accounting PostgreSQL tests and
+  `src/responses/abandoned-reservations.postgres.test.ts`.
 - `npm run test:public-api -w @pulpo/server` exercises actual request/queue/worker
   payloads against a local fixture provider, including browser and multi-turn
   agent limits, fallback pricing, billed retries, truncation, and settlement.

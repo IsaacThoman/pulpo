@@ -34,7 +34,7 @@ it('loads built renderer assets from the desktop origin after a nested-route rel
     const assets = [...`${html}${sandbox}`.matchAll(/(?:src|href)="([^"]+)"/g)].map((match) => match[1])
     expect(assets.some((asset) => asset.endsWith('.js'))).toBe(true)
     expect(assets.some((asset) => asset.endsWith('.css'))).toBe(true)
-    for (const route of ['/', '/login', '/c/reload-test', '/usage/friends', '/admin/usage/requests', '/c/reload-test/']) {
+    for (const route of ['/', '/login', '/c/reload-test', '/friends/leaderboard', '/admin/usage/requests', '/c/reload-test/']) {
       for (const asset of assets) {
         const url = new URL(asset, `https://desktop.pulpo.invalid${route}`)
         expect(url.pathname, `${route}: ${asset}`).toMatch(/^\/assets\//)
