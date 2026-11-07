@@ -243,6 +243,7 @@ export function ApiKeysPage() {
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="pl-9"
+            aria-label={ui("Search API keys")}
             placeholder={ui("Search by name…")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}

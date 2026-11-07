@@ -1,12 +1,17 @@
 import { useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/stores/auth'
 import { ui } from '@/i18n/ui'
+import { AuthFormError, PasswordVisibilityToggle } from './auth-form'
+import { errorFieldProps } from './error-field-props'
+
+const ERROR_ID = 'setup-error'
+const usernameHintId = 'setup-username-hint'
 
 export function SetupPage() {
   const { t } = useTranslation()
@@ -21,6 +26,7 @@ export function SetupPage() {
   const [confirm, setConfirm] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [mismatch, setMismatch] = useState(false)
   const [loading, setLoading] = useState(false)
 
   if (user) return <Navigate to="/" replace />
@@ -29,7 +35,9 @@ export function SetupPage() {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     setError(null)
+    setMismatch(false)
     if (password !== confirm) {
+      setMismatch(true)
       setError(t('auth.passwordMismatch'))
       return
     }
@@ -54,34 +62,32 @@ export function SetupPage() {
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="setup-name">{t('auth.displayName')}</Label>
-          <Input id="setup-name" autoComplete="name" placeholder={ui("Ada Lovelace")} value={name} onChange={(event) => setName(event.target.value)} required />
+          <Input id="setup-name" autoComplete="name" placeholder={ui("Ada Lovelace")} value={name} onChange={(event) => setName(event.target.value)} required {...errorFieldProps(ERROR_ID, false, Boolean(error) && !mismatch)} />
         </div>
         <div className="space-y-2">
           <Label htmlFor="setup-email">{t('auth.email')}</Label>
-          <Input id="setup-email" type="email" autoComplete="email" placeholder={ui("jon@pulpo.baby")} value={email} onChange={(event) => setEmail(event.target.value)} required />
+          <Input id="setup-email" type="email" autoComplete="email" placeholder={ui("jon@pulpo.baby")} value={email} onChange={(event) => setEmail(event.target.value)} required {...errorFieldProps(ERROR_ID, false, Boolean(error) && !mismatch)} />
         </div>
         <div className="space-y-2">
           <Label htmlFor="setup-username">{t('auth.username')}</Label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">@</span>
-            <Input id="setup-username" autoComplete="username" placeholder={ui("ada_lovelace")} value={username} onChange={(event) => setUsername(event.target.value.replace(/^@/, '').toLowerCase())} className="pl-7" minLength={3} maxLength={30} pattern="[a-z0-9][a-z0-9_]{1,28}[a-z0-9]" title={t('auth.usernameRequirements')} required />
+            <Input id="setup-username" autoComplete="username" placeholder={ui("ada_lovelace")} value={username} onChange={(event) => setUsername(event.target.value.replace(/^@/, '').toLowerCase())} className="pl-7" minLength={3} maxLength={30} pattern="[a-z0-9][a-z0-9_]{1,28}[a-z0-9]" title={t('auth.usernameRequirements')} required aria-describedby={[usernameHintId, error && !mismatch ? ERROR_ID : ''].filter(Boolean).join(' ')} />
           </div>
-          <p className="text-xs text-muted-foreground">{t('auth.usernameHint')}</p>
+          <p id={usernameHintId} className="text-xs text-muted-foreground">{t('auth.usernameHint')}</p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="setup-password">{t('auth.password')}</Label>
           <div className="relative">
-            <Input id="setup-password" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder={t('auth.passwordRequirements')} value={password} onChange={(event) => setPassword(event.target.value)} className="pr-10" minLength={8} required />
-            <button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute top-1/2 right-2 -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:text-foreground" tabIndex={-1} aria-label={showPassword ? t('auth.hidePassword') : t('auth.showPassword')}>
-              {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-            </button>
+            <Input id="setup-password" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder={t('auth.passwordRequirements')} value={password} onChange={(event) => setPassword(event.target.value)} className="pr-10" minLength={8} required {...errorFieldProps(ERROR_ID, mismatch, Boolean(error))} />
+            <PasswordVisibilityToggle shown={showPassword} onToggle={() => setShowPassword((value) => !value)} controls="setup-password" />
           </div>
         </div>
         <div className="space-y-2">
           <Label htmlFor="setup-confirm">{t('auth.confirmPassword')}</Label>
-          <Input id="setup-confirm" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder="••••••••" value={confirm} onChange={(event) => setConfirm(event.target.value)} required />
+          <Input id="setup-confirm" type={showPassword ? 'text' : 'password'} autoComplete="new-password" placeholder="••••••••" value={confirm} onChange={(event) => setConfirm(event.target.value)} required {...errorFieldProps(ERROR_ID, mismatch, Boolean(error))} />
         </div>
-        {error && <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div>}
+        {error && <AuthFormError id={ERROR_ID}>{error}</AuthFormError>}
         <Button type="submit" className="w-full" disabled={loading}>
           {loading && <Loader2 className="animate-spin" />}
           {t('auth.createAdministrator')}

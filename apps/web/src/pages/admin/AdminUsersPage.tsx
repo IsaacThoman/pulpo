@@ -29,7 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { ui, activeLocale } from '@/i18n/ui'
+import { ui, uit, activeLocale } from '@/i18n/ui'
 import { EditUserDialog } from './EditUserDialog'
 
 interface AdminBillingUser {
@@ -215,6 +215,7 @@ function AdminUsersTable({ storageKey }: { storageKey: string | null }) {
           <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="w-52 pl-8"
+            aria-label={ui("Search users")}
             placeholder={ui("Search…")}
             value={query}
             onChange={(e) => setView((view) => ({ ...view, query: e.target.value }))}
@@ -252,7 +253,7 @@ function AdminUsersTable({ storageKey }: { storageKey: string | null }) {
                       if (role === 'admin' && u.role !== 'admin') setPromoteUser(u)
                       else void patchUser(u.id, { role })
                     }}>
-                      <SelectTrigger className="h-7 w-24 text-xs">
+                      <SelectTrigger aria-label={uit`Role for ${u.name}`} className="h-7 w-24 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -351,9 +352,9 @@ function AdminUsersTable({ storageKey }: { storageKey: string | null }) {
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label>{ui("Role")}</Label>
+              <Label htmlFor="add-user-role">{ui("Role")}</Label>
               <Select name="role" defaultValue="user">
-                <SelectTrigger className="w-full">
+                <SelectTrigger id="add-user-role" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -364,20 +365,20 @@ function AdminUsersTable({ storageKey }: { storageKey: string | null }) {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>{ui("Display name")}</Label>
-              <Input name="name" placeholder={ui("Display name")} required />
+              <Label htmlFor="add-user-name">{ui("Display name")}</Label>
+              <Input id="add-user-name" name="name" placeholder={ui("Display name")} required />
             </div>
             <div className="space-y-1.5">
-              <Label>{ui("Username")}</Label>
-              <Input name="username" placeholder={ui("username")} minLength={3} maxLength={30} pattern="[a-z0-9][a-z0-9_]{1,28}[a-z0-9]" required />
+              <Label htmlFor="add-user-username">{ui("Username")}</Label>
+              <Input id="add-user-username" name="username" placeholder={ui("username")} minLength={3} maxLength={30} pattern="[a-z0-9][a-z0-9_]{1,28}[a-z0-9]" required />
             </div>
             <div className="space-y-1.5">
-              <Label>{ui("Email")}</Label>
-              <Input name="email" type="email" placeholder={ui("name@example.com")} required />
+              <Label htmlFor="add-user-email">{ui("Email")}</Label>
+              <Input id="add-user-email" name="email" type="email" placeholder={ui("name@example.com")} required />
             </div>
             <div className="space-y-1.5">
-              <Label>{ui("Password")}</Label>
-              <Input name="password" type="password" minLength={8} placeholder={ui("Temporary password")} required />
+              <Label htmlFor="add-user-password">{ui("Password")}</Label>
+              <Input id="add-user-password" name="password" type="password" minLength={8} placeholder={ui("Temporary password")} required />
             </div>
           </div>
           <DialogFooter>
@@ -463,7 +464,7 @@ function InviteQuotaCell({ user, onChanged }: { user: MonitorUser; onChanged: ()
     onChanged()
   }
 
-  if (editing) return <Input autoFocus className="ml-auto h-7 w-16 text-right text-xs" type="number" min="0" max="1000" step="1" value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => void save()} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setEditing(false) }} />
+  if (editing) return <Input autoFocus aria-label={ui("Invites")} className="ml-auto h-7 w-16 text-right text-xs" type="number" min="0" max="1000" step="1" value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => void save()} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setEditing(false) }} />
 
   return <button type="button" title={ui("Edit invite quota")} className="rounded-md px-1.5 py-0.5 hover:bg-accent" onClick={() => { setValue(String(quota)); setEditing(true) }}>
     {quota}
@@ -483,7 +484,7 @@ function BillingPlanCell({ row, onChanged }: { row: AdminBillingUser | undefined
     <Select value={row.plan} onValueChange={(plan: AdminBillingUser['plan']) => {
       void apiRequest(`/api/admin/billing/users/${row.userId}/plan`, { method: 'PATCH', body: { plan } }).then(onChanged)
     }}>
-      <SelectTrigger className="h-7 w-28 text-xs"><SelectValue /></SelectTrigger>
+      <SelectTrigger aria-label={ui("Plan")} className="h-7 w-28 text-xs"><SelectValue /></SelectTrigger>
       <SelectContent>
         <SelectItem value="baby">{ui("Baby")}</SelectItem>
         <SelectItem value="eight">{ui("Eight")}</SelectItem>
@@ -514,7 +515,7 @@ function WeeklyLimitCell({ row, onChanged }: { row: AdminBillingUser | undefined
     onChanged()
   }
 
-  if (editing) return <Input autoFocus className="ml-auto h-7 w-20 text-right text-xs" type="number" min="0" step="0.01" value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => void save()} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setEditing(false) }} />
+  if (editing) return <Input autoFocus aria-label={ui("Weekly limit")} className="ml-auto h-7 w-20 text-right text-xs" type="number" min="0" step="0.01" value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => void save()} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setEditing(false) }} />
 
   return <span className="inline-flex items-center justify-end gap-1">
     <button type="button" title={ui("Edit weekly limit")} className="rounded-md px-1.5 py-0.5 hover:bg-accent" onClick={() => { setValue((row.weeklyLimitMicros / 1_000_000).toFixed(2)); setEditing(true) }}>
@@ -541,7 +542,7 @@ function FiveHourLimitCell({ row, onChanged }: { row: AdminBillingUser | undefin
     onChanged()
   }
 
-  if (editing) return <Input autoFocus className="ml-auto h-7 w-20 text-right text-xs" type="number" min="0" step="0.01" value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => void save()} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setEditing(false) }} />
+  if (editing) return <Input autoFocus aria-label={ui("5-hour limit")} className="ml-auto h-7 w-20 text-right text-xs" type="number" min="0" step="0.01" value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => void save()} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setEditing(false) }} />
 
   return <span className="inline-flex items-center justify-end gap-1">
     <button type="button" title={ui("Edit 5-hour limit")} className="rounded-md px-1.5 py-0.5 hover:bg-accent" onClick={() => { setValue((row.fiveHourLimitMicros / 1_000_000).toFixed(2)); setEditing(true) }}>
@@ -570,7 +571,7 @@ function DailyLimitCell({ row, onChanged }: { row: AdminBillingUser | undefined;
     onChanged()
   }
 
-  if (editing) return <Input autoFocus className="ml-auto h-7 w-20 text-right text-xs" type="number" min="0" step="0.01" value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => void save()} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setEditing(false) }} />
+  if (editing) return <Input autoFocus aria-label={ui("Daily limit")} className="ml-auto h-7 w-20 text-right text-xs" type="number" min="0" step="0.01" value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => void save()} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setEditing(false) }} />
 
   return <span className="inline-flex items-center justify-end gap-1">
     <span className="text-xs text-muted-foreground" title={ui("Usage tier")}>{row.dailyLimitOverridden ? ui("Custom") : ui("T{{tier}}", { tier: row.usageTier })}</span>
@@ -616,6 +617,7 @@ function BalanceCell({ user }: { user: MonitorUser }) {
       step="0.01"
       min="0"
       autoFocus
+      aria-label={ui("Balance")}
       value={value}
       onChange={(e) => setValue(e.target.value)}
       onFocus={(e) => e.target.select()}
@@ -668,6 +670,7 @@ function StorageCell({ user, row, onChanged }: { user: MonitorUser; row: AdminBi
       step="100"
       min="0"
       autoFocus
+      aria-label={ui("File storage")}
       value={value}
       onChange={(event) => setValue(event.target.value)}
       onFocus={(event) => event.target.select()}

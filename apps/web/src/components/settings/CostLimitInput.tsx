@@ -11,9 +11,14 @@ function formatDollars(micros: number): string {
 export function CostLimitInput({
   value,
   onChange,
+  id,
+  'aria-describedby': describedBy,
 }: {
   value: number
   onChange: (value: number) => void
+  /** Lets an external visible label point at the input (its own label already includes that text). */
+  id?: string
+  'aria-describedby'?: string
 }) {
   const [draft, setDraft] = useState(() => formatDollars(value))
 
@@ -31,7 +36,9 @@ export function CostLimitInput({
     <div className="flex items-center gap-2">
       <span className="text-sm text-muted-foreground">$</span>
       <Input
+        id={id}
         aria-label={ui("Cost threshold in US dollars")}
+        aria-describedby={describedBy}
         className="w-24 tabular-nums"
         type="number"
         inputMode="decimal"

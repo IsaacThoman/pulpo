@@ -18,7 +18,11 @@ vi.mock('@tanstack/react-query', () => ({ useQuery: () => ({ data: { data: mocks
 })) } }) }))
 vi.mock('@/components/settings/DeviceSettings', () => ({ DeviceSessionListView: () => null }))
 vi.mock('@/components/ProfileAvatar', () => ({ ProfileAvatar: () => null }))
-vi.mock('@/i18n/ui', () => ({ ui: (text: string) => text, activeLocale: () => 'en-US' }))
+vi.mock('@/i18n/ui', () => ({
+  ui: (text: string) => text,
+  uit: (strings: TemplateStringsArray, ...values: unknown[]) => strings.reduce((text, part, index) => `${text}${part}${index < values.length ? String(values[index]) : ''}`, ''),
+  activeLocale: () => 'en-US',
+}))
 import { AdminUsersPage } from './AdminUsersPage'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
