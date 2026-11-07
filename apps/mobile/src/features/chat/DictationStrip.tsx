@@ -118,7 +118,7 @@ export function DictationStatus({ phase, seconds, source, colors }: {
       <Reanimated.View style={[styles.statusLayer, styles.recordingRow, waveformStyle]}>
         <DictationWaveform source={source} color={colors.text} />
         <Text
-          maxFontSizeMultiplier={1.4}
+          maxFontSizeMultiplier={2}
           numberOfLines={1}
           style={[styles.elapsed, { color: dictationNearsLimit(seconds) ? colors.warning : colors.muted }]}
         >
@@ -126,7 +126,7 @@ export function DictationStatus({ phase, seconds, source, colors }: {
         </Text>
       </Reanimated.View>
       <Reanimated.View style={[styles.statusLayer, styles.labelLayer, labelStyle]}>
-        <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={[styles.label, { color: colors.muted }]}>{label}</Text>
+        <Text maxFontSizeMultiplier={2} numberOfLines={1} style={[styles.label, { color: colors.muted }]}>{label}</Text>
       </Reanimated.View>
     </View>
   )

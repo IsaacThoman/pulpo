@@ -41,7 +41,7 @@ export function QuizCard({ quiz, progressKey, exportable = true }: { quiz: Quiz;
       </View>
       {hasQuestions && cards.length ? (
         <View style={styles.modes}>
-          <Segmented options={MODES} value={mode} onChange={(next) => update(progressKey, { mode: next })} />
+          <Segmented label="Mode" options={MODES} value={mode} onChange={(next) => update(progressKey, { mode: next })} />
         </View>
       ) : null}
       {mode === 'quiz'
@@ -266,7 +266,7 @@ function FlipCard({ card }: { card: Flashcard }) {
       <View style={styles.faceText}>
         <SafeMarkdown large={side === 'Front'} selectable={false}>{text}</SafeMarkdown>
       </View>
-      <Text style={[styles.flipHint, { color: theme.tertiary }]}>Tap to flip</Text>
+      <Text style={[styles.flipHint, { color: theme.secondary }]}>Tap to flip</Text>
     </Reanimated.View>
   )
   return (

@@ -18,6 +18,7 @@ public final class PulpoFileClipboardModule: Module {
     Name("PulpoFileClipboard")
 
     OnCreate {
+      PulpoSwiftUIModifiers.register()
       DispatchQueue.main.async { AccessibilityFrameRefresh.observeKeyboard() }
     }
 

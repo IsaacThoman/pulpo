@@ -66,8 +66,9 @@ private struct TemporaryChatHeaderContent: View {
 
   private var leadingIconColor: Color {
     if model.leadingAction == "expiration" {
+      // Teal 700 in light mode: teal 500 is only 2.5:1 on white.
       return model.expirationEnabled
-        ? Color(red: 0.078, green: 0.722, blue: 0.651)
+        ? colorScheme == .dark ? Color(red: 0.078, green: 0.722, blue: 0.651) : Color(red: 0.059, green: 0.463, blue: 0.431)
         : iconColor
     }
     return iconColor
@@ -168,6 +169,10 @@ private struct TemporaryChatHeaderContent: View {
     .accessibilityHidden(!model.expanded)
     .accessibilityLabel(leadingAccessibilityLabel)
     .modifier(AccessibilityToggleState(isOn: leadingToggleState))
+    // The icons stay 18 points at every text size; touch and hold shows them enlarged.
+    .accessibilityShowsLargeContentViewer {
+      Label(leadingAccessibilityLabel, systemImage: model.leadingAction == "expiration" ? "hourglass" : "bookmark")
+    }
   }
 
   private var trailingButton: some View {
@@ -191,6 +196,9 @@ private struct TemporaryChatHeaderContent: View {
     }
     .buttonStyle(.plain)
     .accessibilityLabel(trailingAccessibilityLabel)
+    .accessibilityShowsLargeContentViewer {
+      Label(trailingAccessibilityLabel, systemImage: model.trailingAction == "ghost" ? "theatermasks" : "square.and.pencil")
+    }
     .modifier(AccessibilityToggleState(isOn: trailingToggleState))
   }
 }
