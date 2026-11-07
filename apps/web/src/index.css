@@ -688,10 +688,12 @@ html[data-desktop-os="darwin"] .desktop-model-titlebar-slot[data-collapsed="true
   left: 84px;
 }
 
+/* The link is padded to a 24px target with matching negative margins (see ModelSelector);
+   the +4px offsets that taller box so the label stays centered. */
 html[data-desktop="true"] .desktop-model-titlebar-slot[data-collapsed="true"] .model-selector-set-default {
   top: 50%;
   left: calc(100% + 4px);
-  transform: translateY(-50%);
+  transform: translateY(calc(-50% + 4px));
 }
 
 html[data-desktop-os="win32"] .desktop-model-titlebar-slot[data-collapsed="true"] .model-selector-set-default {
@@ -727,14 +729,14 @@ html[data-desktop="true"] .desktop-model-titlebar-slot[data-position-animation-a
     top: 50%;
     left: calc(100% + 4px);
     clip-path: inset(0 100% 0 0);
-    transform: translateY(-50%);
+    transform: translateY(calc(-50% + 4px));
   }
 
   100% {
     top: 50%;
     left: calc(100% + 4px);
     clip-path: inset(0 0 0 0);
-    transform: translateY(-50%);
+    transform: translateY(calc(-50% + 4px));
   }
 }
 
@@ -743,14 +745,14 @@ html[data-desktop="true"] .desktop-model-titlebar-slot[data-position-animation-a
     top: 50%;
     left: calc(100% + 4px);
     clip-path: inset(0 0 0 0);
-    transform: translateY(-50%);
+    transform: translateY(calc(-50% + 4px));
   }
 
   49.9% {
     top: 50%;
     left: calc(100% + 4px);
     clip-path: inset(0 0 0 100%);
-    transform: translateY(-50%);
+    transform: translateY(calc(-50% + 4px));
   }
 
   50.1% {
