@@ -17,6 +17,15 @@ public final class PulpoFileClipboardModule: Module {
   public func definition() -> ModuleDefinition {
     Name("PulpoFileClipboard")
 
+    OnCreate {
+      DispatchQueue.main.async { AccessibilityFrameRefresh.observeKeyboard() }
+    }
+
+    /// After a transform-driven move settles (the drawer), so hosted SwiftUI controls report where they are.
+    Function("refreshAccessibilityFrames") {
+      DispatchQueue.main.async { AccessibilityFrameRefresh.refresh() }
+    }
+
     AsyncFunction("copyFile") { (uri: URL) in
       guard uri.isFileURL, FileManager.default.fileExists(atPath: uri.path) else {
         throw ClipboardFileNotFoundException(uri.absoluteString)

@@ -5,7 +5,7 @@ import Reanimated, { FadeInDown, FadeOutDown } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { liquidGlassAvailable } from '../../../platform/glass'
 import { useAppTheme } from '../../../theme'
-import { useFilesToasts } from '../toasts'
+import { filesToastAnnouncement, setFilesToastScreenReaderEnabled, useFilesToasts } from '../toasts'
 
 /** The last toast read out, so a host mounted while it shows (or a second host) doesn't repeat it. */
 let announcedToastId = 0
@@ -21,9 +21,15 @@ export function FilesToastHost({ bottomOffset = 0, glass = true }: { bottomOffse
   const dismiss = useFilesToasts((state) => state.dismiss)
   const [undoing, setUndoing] = useState(false)
   useEffect(() => {
+    let mounted = true
+    void AccessibilityInfo.isScreenReaderEnabled().then((enabled) => { if (mounted) setFilesToastScreenReaderEnabled(enabled) })
+    const subscription = AccessibilityInfo.addEventListener('screenReaderChanged', setFilesToastScreenReaderEnabled)
+    return () => { mounted = false; subscription.remove() }
+  }, [])
+  useEffect(() => {
     if (!toast || toast.id === announcedToastId) return
     announcedToastId = toast.id
-    AccessibilityInfo.announceForAccessibility(toast.message)
+    AccessibilityInfo.announceForAccessibility(filesToastAnnouncement(toast))
   }, [toast])
   if (!toast) return null
   const content = (

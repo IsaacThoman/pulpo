@@ -35,7 +35,7 @@ function ConflictSheet({ action, conflicts, onClose }: { action: 'undo' | 'redo'
   const theme = useAppTheme()
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <SafeAreaView edges={['bottom']} style={[styles.flex, { backgroundColor: theme.isDark ? theme.elevated : theme.background }]}>
+      <SafeAreaView onAccessibilityEscape={onClose} edges={['bottom']} style={[styles.flex, { backgroundColor: theme.isDark ? theme.elevated : theme.background }]}>
         <View style={[styles.sheetHeader, { borderBottomColor: theme.separator }]}>
           <Text accessibilityRole="header" style={[styles.sheetTitle, { color: theme.text }]}>{action === 'undo' ? 'Can’t Undo' : 'Can’t Redo'}</Text>
           <Pressable accessibilityRole="button" hitSlop={10} onPress={onClose} style={styles.sheetDone}><Text style={[styles.sheetDoneLabel, { color: theme.blue }]}>Done</Text></Pressable>

@@ -1,3 +1,5 @@
+import { spokenRemaining } from './format'
+
 export function visibleHistoryChats<T extends { deletedAt: number | null; temporary: boolean }>(chats: T[]): T[] {
   return chats.filter((chat) => chat.deletedAt === null && !chat.temporary)
 }
@@ -99,6 +101,12 @@ export function resolveHistoryChatExpiryMenuAction(
   if (expiresAt !== null) return { kind: 'disable' }
   if (automaticChatExpiration === 'disabled') return null
   return { kind: 'enable', periodLabel: automaticChatExpiration }
+}
+
+/** A drawer row's spoken label: its title and the time shown beside it, plus when it expires. */
+export function historyChatAccessibilityLabel(chat: Pick<HistoryChatSummary, 'title' | 'time' | 'expiresAt'>, now = Date.now()): string {
+  const expiry = chat.expiresAt === null ? null : `expires ${chat.expiresAt <= now ? 'now' : `in ${spokenRemaining(chat.expiresAt - now)}`}`
+  return [chat.title, chat.time, expiry].filter(Boolean).join(', ')
 }
 
 type HistoryChatSource = {

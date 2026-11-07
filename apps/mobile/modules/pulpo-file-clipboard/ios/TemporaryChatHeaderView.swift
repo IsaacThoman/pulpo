@@ -73,18 +73,23 @@ private struct TemporaryChatHeaderContent: View {
     return iconColor
   }
 
+  // The expiration and temporary controls are switches: a fixed name, with their state as the value.
   private var leadingAccessibilityLabel: String {
-    if model.leadingAction == "expiration" {
-      return model.expirationEnabled ? "Disable automatic expiration" : "Enable automatic expiration"
-    }
+    if model.leadingAction == "expiration" { return "Automatic expiration" }
     return model.saving ? "Saving chat" : "Save chat"
   }
 
+  private var leadingToggleState: Bool? {
+    model.leadingAction == "expiration" ? model.expirationEnabled : nil
+  }
+
   private var trailingAccessibilityLabel: String {
-    if model.trailingAction == "ghost" {
-      return model.active ? "Disable temporary chat" : "Enable temporary chat"
-    }
+    if model.trailingAction == "ghost" { return "Temporary chat" }
     return model.active ? "New temporary chat" : "New chat"
+  }
+
+  private var trailingToggleState: Bool? {
+    model.trailingAction == "ghost" ? model.active : nil
   }
 
   /// Stacked, the capsule hangs from the header row and the secondary action
@@ -145,6 +150,8 @@ private struct TemporaryChatHeaderContent: View {
           .controlSize(.small)
           .opacity(model.leadingAction == "save" && model.saving ? 1 : 0)
       }
+      // The button's label names it; the stacked icons and spinner are decorative.
+      .accessibilityHidden(true)
       .frame(width: 44, height: 44)
       .foregroundStyle(leadingIconColor)
       .contentShape(Rectangle())
@@ -160,6 +167,7 @@ private struct TemporaryChatHeaderContent: View {
     .disabled(!model.expanded || (model.leadingAction == "save" && (model.saveDisabled || model.saving)))
     .accessibilityHidden(!model.expanded)
     .accessibilityLabel(leadingAccessibilityLabel)
+    .modifier(AccessibilityToggleState(isOn: leadingToggleState))
   }
 
   private var trailingButton: some View {
@@ -176,12 +184,32 @@ private struct TemporaryChatHeaderContent: View {
           .opacity(model.trailingAction == "new-chat" ? 1 : 0)
           .scaleEffect(model.trailingAction == "new-chat" ? 1 : 0.72)
       }
+      .accessibilityHidden(true)
       .frame(width: 44, height: 44)
       .foregroundStyle(iconColor)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .accessibilityLabel(trailingAccessibilityLabel)
+    .modifier(AccessibilityToggleState(isOn: trailingToggleState))
+  }
+}
+
+/// Switch semantics for a button that turns a setting on or off: "On"/"Off" as its value,
+/// plus the toggle trait where iOS has it.
+private struct AccessibilityToggleState: ViewModifier {
+  let isOn: Bool?
+
+  func body(content: Content) -> some View {
+    if let isOn {
+      if #available(iOS 17.0, *) {
+        content.accessibilityValue(isOn ? "On" : "Off").accessibilityAddTraits(.isToggle)
+      } else {
+        content.accessibilityValue(isOn ? "On" : "Off")
+      }
+    } else {
+      content
+    }
   }
 }
 

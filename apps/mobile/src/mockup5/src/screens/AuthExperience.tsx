@@ -1,5 +1,6 @@
 import { MaterialButton, MaterialField } from '../../../platform/MaterialUI';
 import { useSubpageBack } from '../../../platform/useSubpageBack';
+import { useAccessibilityAnnouncement } from '../../../platform/accessibilityAnnouncement';
 import { DeleteAccountAction } from '../../../components/DeleteAccount';
 import type { ComponentProps, PropsWithChildren, ReactNode } from 'react';
 import { useRef, useState } from 'react';
@@ -77,7 +78,7 @@ function AuthShell({ title, subtitle, children, footer, colors }: PropsWithChild
   return <KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'padding' : undefined} style={[styles.root, { backgroundColor: colors.background, paddingLeft: insets.left, paddingRight: insets.right }]}>
     <ScrollView alwaysBounceVertical={false} automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, compact && styles.compactContent, { paddingTop: insets.top + (compact ? 14 : 42), paddingBottom: insets.bottom + (compact ? 8 : 24) }]}>
       <View style={[styles.brand, compact && styles.compactBrand]}>
-        <Image source={require('../../assets/pulpo-smiley.png')} style={[styles.logo, compact && styles.compactLogo]} />
+        <Image accessible={false} accessibilityElementsHidden importantForAccessibility="no" source={require('../../assets/pulpo-smiley.png')} style={[styles.logo, compact && styles.compactLogo]} />
         <Text style={[styles.brandName, compact && styles.compactBrandName, { color: colors.text }]}>Pulpo</Text>
       </View>
       <View style={[styles.heading, compact && styles.compactHeading]}>
@@ -94,7 +95,7 @@ function AuthField({ colors, icon, invalid = false, label, ...props }: AuthField
   const compact = useCompactAuthLayout();
   if (Platform.OS === 'android') return <MaterialField label={label} icon={typeof icon === 'string' ? icon : undefined} error={invalid ? 'Check this value' : undefined} autoCapitalize="none" {...props} />;
   return <View style={[styles.field, compact && styles.compactField, { backgroundColor: colors.surface, borderColor: invalid ? colors.destructive : colors.border }]}>
-    <SymbolView name={icon} tintColor={colors.textFaint} size={18} />
+    <SymbolView accessibilityElementsHidden importantForAccessibility="no-hide-descendants" name={icon} tintColor={colors.textFaint} size={18} />
     <TextInput accessibilityLabel={label} placeholder={label} placeholderTextColor={colors.textFaint} autoCapitalize="none" style={[styles.input, compact && styles.compactInput, { color: colors.text }]} {...props} />
   </View>;
 }
@@ -139,6 +140,7 @@ function InviteCodeField({ colors, value, disabled, error, onChangeText, onSubmi
   const [focused, setFocused] = useState(false);
   const compact = useCompactAuthLayout();
   const activeIndex = Math.min(value.length, INVITE_CODE_LENGTH - 1);
+  useAccessibilityAnnouncement(error);
   return <View style={styles.inviteCode}>
     <Text accessible={false} style={[styles.inviteCodeLabel, { color: colors.text }]} onPress={() => inputRef.current?.focus()}>Invite code</Text>
     <View>
@@ -222,6 +224,9 @@ export function AuthExperience() {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const pendingActionRef = useRef(false);
   const [inviteError, setInviteError] = useState('');
+  // iOS ignores the alert role and live regions below; speak errors and status as they appear.
+  useAccessibilityAnnouncement(error);
+  useAccessibilityAnnouncement(pendingFeedback);
   const [passkeyFallback, setPasskeyFallback] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
 
@@ -386,7 +391,7 @@ export function AuthExperience() {
         </View>
       </View> : null}
       <Text numberOfLines={1} ellipsizeMode="middle" style={[styles.pendingHelp, { color: colors.textMuted }]}>Signed in as <Text style={[styles.helpLink, { color: colors.text }]}>{session.user.email}</Text></Text>
-      {pendingFeedback ? <Text accessibilityLiveRegion="polite" style={[styles.pendingHelp, { color: colors.textMuted }]}>{pendingFeedback}</Text> : null}
+      {pendingFeedback ? <Text style={[styles.pendingHelp, { color: colors.textMuted }]}>{pendingFeedback}</Text> : null}
       {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
       <View style={styles.pendingActions}>
         <SecondaryAuthButton label="Sign out" colors={colors} icon="rectangle.portrait.and.arrow.right" loading={pendingAction === 'signout'} disabled={pendingAction !== null} onPress={() => { void signOut(); }} />

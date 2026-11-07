@@ -1,5 +1,5 @@
-import { memo, useCallback, useEffect, useState, type ReactNode } from 'react'
-import { Pressable, StyleSheet, Text, View, type ColorValue, type LayoutChangeEvent } from 'react-native'
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { AccessibilityInfo, findNodeHandle, Pressable, StyleSheet, Text, View, type ColorValue, type LayoutChangeEvent } from 'react-native'
 import Reanimated, {
   Easing,
   ReduceMotion,
@@ -20,6 +20,7 @@ import {
   formatDictationElapsed,
 } from '@pulpo/client-core'
 import { SymbolView } from '../../platform/SymbolView'
+import { useAccessibilityAnnouncement } from '../../platform/accessibilityAnnouncement'
 import type { DictationLevelSource, DictationState } from './dictation'
 import { DICTATION_WAVEFORM_HEIGHT, dictationStatusLabel, dictationStripEntering, dictationStripExiting, useStalled } from './dictationMotion'
 
@@ -106,11 +107,12 @@ export function DictationStatus({ phase, seconds, source, colors }: {
   const waveformStyle = useAnimatedStyle(() => ({ opacity: visibility.value }))
   const labelStyle = useAnimatedStyle(() => ({ opacity: 1 - visibility.value }))
   const label = dictationStatusLabel(phase, seconds)
+  // Speak each phase once; the recording timer would otherwise talk every second.
+  useAccessibilityAnnouncement(recording ? 'Recording' : label)
   return (
     <View
       accessible
       accessibilityLabel={label}
-      accessibilityLiveRegion={recording ? 'none' : 'polite'}
       style={styles.status}
     >
       <Reanimated.View style={[styles.statusLayer, styles.recordingRow, waveformStyle]}>
@@ -159,11 +161,19 @@ export function DictationStrip({ leading, trailing, ...status }: {
   leading: ReactNode
   trailing: ReactNode
 }) {
+  const finish = useRef<View>(null)
+  const recording = status.phase === 'recording'
+  // The toolbar the screen reader was on is gone; land on Finish as soon as it can be used.
+  useEffect(() => {
+    if (!recording) return
+    const tag = findNodeHandle(finish.current)
+    if (tag) AccessibilityInfo.setAccessibilityFocus(tag)
+  }, [recording])
   return (
     <Reanimated.View entering={dictationStripEntering} exiting={dictationStripExiting} style={styles.strip}>
       {leading}
       <DictationStatus {...status} />
-      {trailing}
+      <View ref={finish} collapsable={false}>{trailing}</View>
     </Reanimated.View>
   )
 }

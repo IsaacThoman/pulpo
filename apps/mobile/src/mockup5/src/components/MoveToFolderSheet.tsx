@@ -31,7 +31,7 @@ export function MoveToFolderSheet({ folderId, folders, disabledIds, onMove, onOt
     onClose();
   };
   return <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-    <SafeAreaView style={[styles.flex, { backgroundColor: theme.background }]}>
+    <SafeAreaView onAccessibilityEscape={onClose} style={[styles.flex, { backgroundColor: theme.background }]}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.header}><Text accessibilityRole="header" style={[styles.title, { color: theme.text }]}>Move to folder</Text>{button('Cancel', onClose)}</View>
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>

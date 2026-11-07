@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   createHistoryProjector,
+  historyChatAccessibilityLabel,
   historyChatSections,
   historyChatSummary,
   resolveHistoryChatExpiryMenuAction,
@@ -239,5 +240,17 @@ describe('large history projection', () => {
     expect(moved[0]).not.toBe(first[0])
     expect(moved[0]?.inFilesRoot).toBe(true)
     expect(reuseHistoryChatSummaries(first, moved)[0]).toBe(moved[0])
+  })
+})
+
+describe('historyChatAccessibilityLabel', () => {
+  it('reads the title with the time shown beside it', () => {
+    expect(historyChatAccessibilityLabel(summary('Trip plans', { time: '5:07 PM' }))).toBe('Trip plans, 5:07 PM')
+  })
+
+  it('says when an expiring chat expires', () => {
+    const now = 1_000_000
+    expect(historyChatAccessibilityLabel(summary('Scratch', { time: 'Nov 2', expiresAt: now + 3 * 86_400_000 }), now)).toBe('Scratch, Nov 2, expires in 3 days')
+    expect(historyChatAccessibilityLabel(summary('Scratch', { time: 'Nov 2', expiresAt: now - 1 }), now)).toBe('Scratch, Nov 2, expires now')
   })
 })
