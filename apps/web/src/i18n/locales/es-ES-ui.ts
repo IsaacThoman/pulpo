@@ -2655,6 +2655,9 @@ const esUi: Record<string, string> = {
   "App Store": "App Store",
   "App Store sandbox purchases": "Compras de sandbox del App Store",
   "TestFlight and App Review purchases grant this account a plan. Turning this off ends its sandbox subscriptions.": "Las compras de TestFlight y de la revisión de App Store otorgan un plan a esta cuenta. Al desactivarlo, finalizan sus suscripciones de sandbox.",
+  "Pulpo was updated": "Pulpo se actualizó",
+  "Reload to get the latest version.": "Recarga para obtener la versión más reciente.",
+  "Reload the page to try again.": "Recarga la página para volver a intentarlo.",
 }
 
 export default esUi
