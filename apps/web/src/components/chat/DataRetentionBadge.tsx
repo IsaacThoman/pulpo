@@ -21,7 +21,7 @@ export function DataRetentionBadge({ tag, className }: { tag: BadgeTag; classNam
         <button
           type="button"
           aria-label={tag.description ? `${tag.name}. ${tag.description}` : tag.name}
-          className={cn('inline-flex cursor-default rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50', className)}
+          className={cn('inline-flex cursor-default rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring', className)}
         >
           <DataRetentionBadgeMark tag={tag} />
         </button>
