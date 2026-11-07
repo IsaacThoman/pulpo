@@ -3,6 +3,7 @@
  * library is wired in. Deliberately minimal; not Excel-complete.
  */
 
+import { denseRange, forEachLogical } from './ranges.js'
 import { maxOf, minOf } from '../../../collections.js'
 
 import { Errors, isError, isMatrix, isReference, matrix, type FunctionContext, type FunctionSpec, type Scalar, type Value } from './types.js'
@@ -13,9 +14,20 @@ function eachScalar(ctx: FunctionContext, values: (Value | undefined)[], visit: 
   for (const value of values) {
     if (value === undefined) continue
     if (isReference(value)) {
-      for (const area of ctx.resolveAreas(value)) for (const item of area.data) if (visit(item, false) === false) return
+      let stopped = false
+      for (const area of ctx.resolveAreas(value)) {
+        forEachLogical(area, (item, count) => {
+          // These stand-in aggregates ignore blank multiplicity; all other values repeat.
+          for (let i = 0; i < (item === null ? 1 : count) && !stopped; i++) stopped = visit(item, false) === false
+        }, { weightedTail: true })
+        if (stopped) return
+      }
     } else if (isMatrix(value)) {
-      for (const item of value.data) if (visit(item, false) === false) return
+      let stopped = false
+      forEachLogical(value, (item, count) => {
+        for (let i = 0; i < (item === null ? 1 : count) && !stopped; i++) stopped = visit(item, false) === false
+      }, { weightedTail: true })
+      if (stopped) return
     } else if (typeof value !== 'object' || value === null || isError(value)) {
       if (visit(value, true) === false) return
     }
@@ -142,7 +154,7 @@ const SPECS: FunctionSpec[] = [
     maxArgs: 1,
     args: ['any'],
     fn: (ctx, [arg]) => {
-      const source = isReference(arg) ? ctx.resolve(arg) : isMatrix(arg) ? arg : matrix(1, 1, [(arg ?? null) as Scalar])
+      const source = denseRange(isReference(arg) ? ctx.resolve(arg) : isMatrix(arg) ? arg : matrix(1, 1, [(arg ?? null) as Scalar]))
       const data: Scalar[] = []
       for (let c = 0; c < source.cols; c++) for (let r = 0; r < source.rows; r++) data.push(source.data[r * source.cols + c] ?? null)
       return matrix(source.cols, source.rows, data)
@@ -155,7 +167,7 @@ const SPECS: FunctionSpec[] = [
     args: ['any'],
     xlfn: true,
     fn: (ctx, args) => {
-      const parts = args.map((arg) => (isReference(arg) ? ctx.resolve(arg) : isMatrix(arg) ? arg : matrix(1, 1, [(arg ?? null) as Scalar])))
+      const parts = args.map((arg) => denseRange(isReference(arg) ? ctx.resolve(arg) : isMatrix(arg) ? arg : matrix(1, 1, [(arg ?? null) as Scalar])))
       const cols = maxOf(parts.map((part) => part.cols))
       const data: Scalar[] = []
       for (const part of parts) for (let r = 0; r < part.rows; r++) for (let c = 0; c < cols; c++) data.push(c < part.cols ? (part.data[r * part.cols + c] ?? null) : Errors.NA)

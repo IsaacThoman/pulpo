@@ -18,7 +18,8 @@ import {
   type Scalar,
   type Value,
 } from '../types.js'
-import { broadcastAt } from './coerce.js'
+import { broadcastRanges } from '../ranges.js'
+import { logicalSize, matrixGet } from '../types.js'
 import { functionRegistry } from './index.js'
 
 export interface TestContextOptions {
@@ -131,31 +132,18 @@ export function invoke(spec: FunctionSpec, ctx: FunctionContext, args: (Value | 
     if (kindAt(i) !== 'scalar' || arg === undefined) return arg
     if (isReference(arg)) {
       const m = ctx.resolve(arg)
-      return m.rows === 1 && m.cols === 1 ? (m.data[0] ?? null) : m
+      return logicalSize(m).rows === 1 && logicalSize(m).cols === 1 ? matrixGet(m, 0, 0) : m
     }
-    if (isMatrix(arg) && arg.rows === 1 && arg.cols === 1) return arg.data[0] ?? null
+    if (isMatrix(arg) && logicalSize(arg).rows === 1 && logicalSize(arg).cols === 1) return matrixGet(arg, 0, 0)
     return arg
   })
   const lifted = prepared.map((arg, i) => (kindAt(i) === 'scalar' && isMatrix(arg) ? arg : undefined))
   if (!lifted.some(Boolean)) return spec.fn(ctx, prepared)
-  let rows = 1
-  let cols = 1
-  for (const m of lifted) {
-    if (!m) continue
-    rows = Math.max(rows, m.rows)
-    cols = Math.max(cols, m.cols)
-  }
-  const data: Scalar[] = []
-  for (let r = 0; r < rows; r++)
-    for (let c = 0; c < cols; c++) {
-      const elementArgs = prepared.map((arg, i) => {
-        const m = lifted[i]
-        return m ? broadcastAt(m, r, c) : arg
-      })
-      const result = spec.fn(ctx, elementArgs)
-      data.push(isMatrix(result) ? (result.data[0] ?? null) : isReference(result) ? (ctx.resolve(result).data[0] ?? null) : (result as Scalar))
-    }
-  return matrix(rows, cols, data)
+  return broadcastRanges(lifted.map((m) => m ?? null), (cells) => {
+    const elementArgs = prepared.map((arg, i) => lifted[i] ? cells[i] : arg)
+    const result = spec.fn(ctx, elementArgs)
+    return isMatrix(result) ? matrixGet(result, 0, 0) : isReference(result) ? matrixGet(ctx.resolve(result), 0, 0) : result as Scalar
+  })
 }
 
 const REGISTRY = functionRegistry()

@@ -177,19 +177,21 @@ describe('registry whole-axis invariance', () => {
   for (const spec of functionRegistry().values()) {
     it(spec.name, () => {
       for (const horizontal of [false, true]) {
-        const axis = horizontal ? '1:1' : 'A:A'
-        const full = horizontal ? 'A1:XFD1' : `A1:A${MAX_ROWS}`
-        const count = spec.maxArgs <= 8 ? spec.maxArgs : spec.minArgs + 1
-        for (let pos = 0; pos < count; pos++) {
-          const engine = book()
-          set(engine, 0, 'A1', 2)
-          set(engine, 0, horizontal ? 'B1' : 'A2', 3)
-          const args = Array.from({ length: count }, (_, i) => i === pos ? `Sheet1!${axis}` : '1')
-          const formula = `${spec.name}(${args.join(',')})`
-          const before = canonical(engine.evaluateFormula(formula, 2))
-          expect(canonical(engine.evaluateFormula(formula.replaceAll(axis, full), 2)), formula).toEqual(before)
-          set(engine, 0, horizontal ? 'K3' : 'C11', 99)
-          expect(canonical(engine.evaluateFormula(formula, 2)), formula).toEqual(before)
+        for (const transform of ['R', '1/(R)', '(R+1)']) {
+          const axis = horizontal ? '1:1' : 'A:A'
+          const full = horizontal ? 'A1:XFD1' : `A1:A${MAX_ROWS}`
+          const count = spec.maxArgs <= 8 ? spec.maxArgs : spec.minArgs + 1
+          for (let pos = 0; pos < count; pos++) {
+            const engine = book()
+            set(engine, 0, 'A1', 2)
+            set(engine, 0, horizontal ? 'B1' : 'A2', 3)
+            const args = Array.from({ length: count }, (_, i) => i === pos ? transform.replace('R', `Sheet1!${axis}`) : '1')
+            const formula = `${spec.name}(${args.join(',')})`
+            const before = canonical(engine.evaluateFormula(formula, 2))
+            expect(canonical(engine.evaluateFormula(formula.replaceAll(axis, full), 2)), formula).toEqual(before)
+            set(engine, 0, horizontal ? 'K3' : 'C11', 99)
+            expect(canonical(engine.evaluateFormula(formula, 2)), formula).toEqual(before)
+          }
         }
       }
     })
@@ -229,11 +231,16 @@ it('streams counting and A-aggregates over transformed whole-column tails', () =
 
 it('handles an error that exists only in an omitted tail lazily', () => {
   const source = { ...matrix(1, 1, [2]), logicalRows: MAX_ROWS, omittedValue: Errors.DIV0 }
-  const functions = functionRegistry([{ name: 'TAIL', minArgs: 0, maxArgs: 0, fn: () => source }])
+  const functions = functionRegistry([
+    { name: 'TAIL', minArgs: 0, maxArgs: 0, fn: () => source },
+    { name: 'NATAIL', minArgs: 0, maxArgs: 0, fn: () => ({ ...source, omittedValue: Errors.NA }) },
+  ])
   const engine = new FormulaEngine({ functions })
   engine.setSheets(['Results'])
   expect(engine.evaluateFormula('INDEX(IFERROR(TAIL(),7),100)')).toBe(7)
   expect(engine.evaluateFormula('INDEX(IFNA(TAIL(),7),100)')).toEqual(Errors.DIV0)
+  expect(engine.evaluateFormula('INDEX(IFNA(NATAIL(),7),100)')).toBe(7)
+  expect(engine.evaluateFormula('SUM(IFNA(NATAIL(),0))')).toBe(2)
 })
 
 // Cached results from LibreOffice 26.8.2.2, recalculated via a fresh headless profile.
@@ -252,4 +259,25 @@ it('matches the LibreOffice logical-range sample', () => {
     ['MINA(Sheet1!B:B)', 2], ['MAXA(Sheet1!B:B)', 3], ['PRODUCT(Sheet1!B:B)', 6],
     ['MATCH(3,Sheet1!B:B,0)', 2], ['ROWS(Sheet1!A:A)', 1048576], ['COLUMNS(Sheet1!1:1)', 16384],
   ] as const) expect(engine.evaluateFormula(formula, 2), formula).toBe(expected)
+})
+
+
+it('replaces whole-column division errors in reductions', () => {
+  const engine = book()
+  set(engine, 0, 'A1', 1)
+  for (const range of ['Sheet1!A:A', 'Sheet1!A1:A10']) {
+    expect(engine.evaluateFormula(`SUM(IFERROR(1/${range},0))`, 2)).toBe(1)
+  }
+  set(engine, 0, 'C11', 99)
+  expect(engine.evaluateFormula('SUM(IFERROR(1/Sheet1!A:A,0))', 2)).toBe(1)
+})
+
+it('preserves errors and nonblank values in compact cached spills', () => {
+  for (const tail of [Errors.NA, 7]) {
+    const engine = book()
+    const cached = { ...matrix(1, 1, [2]), logicalRows: 10, omittedValue: tail }
+    engine.setCell(2, 0, 0, { formula: 'UNIMPLEMENTED()', cached })
+    expect(engine.getSpill(2, 0, 0)).toEqual({ rows: 10, cols: 1 })
+    expect(engine.getValue(2, 9, 0)).toEqual(tail)
+  }
 })

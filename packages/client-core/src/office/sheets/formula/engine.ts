@@ -1350,8 +1350,11 @@ export class FormulaEngine {
     cell.value = cached.data[0] ?? null
     if (formula.array) {
       this.replaceSpill(cell, { rows: formula.array.rows, cols: formula.array.cols, data: this.fill(cached, formula.array), fixed: true }, false)
-    } else if (cached.rows * cached.cols > 1 && cell.row + cached.rows <= MAX_ROWS && cell.col + cached.cols <= MAX_COLS) {
-      this.replaceSpill(cell, { rows: cached.rows, cols: cached.cols, data: cached, fixed: false }, false)
+    } else {
+      const size = logicalSize(cached)
+      if (size.rows * size.cols > 1 && cell.row + size.rows <= MAX_ROWS && cell.col + size.cols <= MAX_COLS) {
+        this.replaceSpill(cell, { ...size, data: cached, fixed: false }, false)
+      }
     }
   }
 
