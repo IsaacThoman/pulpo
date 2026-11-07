@@ -1,15 +1,19 @@
 import { parseXml } from '../../ooxml/package.js'
 import { attr, boolAttr, child, children, numberAttr } from '../codec/xml.js'
+import { cellStyle } from '../styles/cell-style.js'
+import { Stylesheet } from '../styles/stylesheet.js'
+import { clearRules } from './clipboard-state.js'
 import { sortedFormula, outsideSortFormulas } from '../model/sort-formulas.js'
 import { MAX_COLS, MAX_ROWS, parseRangeName, rangeContains, type CellRange } from '../address.js'
 import { parseFormula, type Node } from '../formula/parse.js'
 import { MAX_EXPANDED_CELLS } from '../limits.js'
 import { randomId } from '../model/axis.js'
+import { columnIntervalProps, columnIntervals } from '../model/column-intervals.js'
 import { toA1Form, toIdForm } from '../model/formula-ids.js'
 import { formatA1Reference, rewriteReferences, shiftFormula } from '../model/references.js'
 import type { AutoFilter, BorderEdge, BorderStyle, CellData, DataValidation, Hyperlink, Note, SheetTable, SheetColor, StyleProp, StyleProps } from '../model/schema.js'
 import { deleteAxis, insertAxis, type AxisKind } from '../model/structure.js'
-import type { SheetModel } from '../model/workbook.js'
+import { splitCellKey, type SheetModel } from '../model/workbook.js'
 import { sortPositions } from './sort-positions.js'
 import { parseInput } from '../numfmt/parse.js'
 import { isErrorValue, type CellValue, type SheetValues } from '../values.js'
@@ -27,6 +31,20 @@ export function isWholeColumns(range: CellRange): boolean {
 
 export function isWholeRows(range: CellRange): boolean {
   return range.left === 0 && range.right >= MAX_COLS - 1
+}
+
+/** Shared preflight for commands which expand rectangles, before starting a transaction. */
+export function canExpandRanges(ranges: CellRange[]): boolean {
+  let count = 0
+  return ranges.every((range) => {
+    if (![range.top, range.left, range.bottom, range.right].every(Number.isInteger) || range.top < 0 || range.left < 0 || range.bottom >= MAX_ROWS || range.right >= MAX_COLS || range.bottom < range.top || range.right < range.left) return false
+    count += (range.bottom - range.top + 1) * (range.right - range.left + 1)
+    return count <= MAX_EXPANDED_CELLS
+  })
+}
+
+export function assertExpandableRanges(ranges: CellRange[]): void {
+  if (!canExpandRanges(ranges)) throw new DataOperationError('size')
 }
 
 /** Clamps whole-row/column ranges to the used area (plus the range itself when smaller). */
@@ -63,20 +81,24 @@ export function contentFromInput(sheet: SheetModel, text: string, options: Input
 /** Types into one cell (the formula bar's Enter). Applies an inferred number format to General cells. */
 export function setCellInput(sheet: SheetModel, row: number, col: number, text: string, options: InputOptions & { currentFormat?: string } = {}): void {
   const { data, numFmt } = contentFromInput(sheet, text, options)
+  const currentFormat = numFmt ? options.currentFormat ?? cellStyle(sheet, new Stylesheet(sheet.workbook.metaValue('stylesXml')), row, col).numFmt : undefined
   sheet.workbook.transact(() => {
     sheet.setCell(row, col, data)
-    if (numFmt && (options.currentFormat ?? 'General') === 'General') sheet.setStyle({ top: row, left: col, bottom: row, right: col }, { numFmt })
+    if (numFmt && currentFormat === 'General') sheet.setStyle({ top: row, left: col, bottom: row, right: col }, { numFmt })
   })
 }
 
 /** Fills every cell of the ranges with the same input (Ctrl+Enter). Relative references move. */
 export function fillInput(sheet: SheetModel, ranges: CellRange[], origin: { row: number; col: number }, text: string, options: InputOptions = {}): void {
+  if (text === '') { clearContents(sheet, ranges); return }
+  assertExpandableRanges(ranges)
+  const styles = new Stylesheet(sheet.workbook.metaValue('stylesXml'))
   sheet.workbook.transact(() => {
     for (const range of ranges) {
       for (let row = range.top; row <= range.bottom; row++) {
         for (let col = range.left; col <= range.right; col++) {
           const shifted = text.startsWith('=') && !options.valuesOnly ? `=${shiftFormula(text.slice(1), row - origin.row, col - origin.col)}` : text
-          setCellInput(sheet, row, col, shifted, options)
+          setCellInput(sheet, row, col, shifted, { ...options, currentFormat: cellStyle(sheet, styles, row, col).numFmt })
         }
       }
     }
@@ -95,8 +117,73 @@ export function clearContents(sheet: SheetModel, ranges: CellRange[]): void {
   })
 }
 
+/** Remove stored axis formats, including positional row slots and compact imported columns. */
+function clearAxisFormats(sheet: SheetModel, ranges: CellRange[]): void {
+  for (const kind of ['row', 'col'] as const) {
+    const selected = ranges.filter(kind === 'row' ? isWholeRows : isWholeColumns)
+    if (!selected.length) continue
+    const meta = kind === 'row' ? sheet.rowMeta : sheet.colMeta
+    for (const key of [...meta.keys()]) {
+      const split = key.lastIndexOf('|')
+      const id = key.slice(0, split), prop = key.slice(split + 1)
+      if (prop !== 'xf' && !prop.startsWith('s.')) continue
+      const position = kind === 'row' ? sheet.rowMetaPosition(id, prop) : sheet.cols.indexOf(id)
+      if (position >= 0 && selected.some((r) => kind === 'row' ? position >= r.top && position <= r.bottom : position >= r.left && position <= r.right)) meta.delete(key)
+    }
+  }
+  let intervals = columnIntervals(sheet)
+  for (const range of ranges.filter(isWholeColumns)) {
+    intervals = intervals.flatMap((interval) => {
+      if (interval.to < range.left || interval.from > range.right || interval.props.xf === undefined) return [interval]
+      const { xf: _xf, ...props } = interval.props
+      return [
+        ...(interval.from < range.left ? [{ ...interval, to: range.left - 1 }] : []),
+        { from: Math.max(interval.from, range.left), to: Math.min(interval.to, range.right), props },
+        ...(interval.to > range.right ? [{ ...interval, from: range.right + 1 }] : []),
+      ]
+    })
+  }
+  if (JSON.stringify(intervals) !== JSON.stringify(columnIntervals(sheet))) sheet.raw.set('colTail', intervals)
+}
+
+function formattedRows(sheet: SheetModel): number[] {
+  const rows = new Set<number>()
+  for (const key of sheet.rowMeta.keys()) {
+    const split = key.lastIndexOf('|'), prop = key.slice(split + 1)
+    if (prop !== 'xf' && !prop.startsWith('s.')) continue
+    const row = sheet.rowMetaPosition(key.slice(0, split), prop)
+    if (row >= 0) rows.add(row)
+  }
+  return [...rows]
+}
+
+/** Explicit resets are needed where an unselected axis would otherwise reapply its style. */
+function inheritedFormatResets(sheet: SheetModel, ranges: CellRange[]): CellRange[] {
+  const rows = new Set<number>(), cols = new Set<number>()
+  for (const kind of ['row', 'col'] as const) {
+    for (const key of (kind === 'row' ? sheet.rowMeta : sheet.colMeta).keys()) {
+      const split = key.lastIndexOf('|'), prop = key.slice(split + 1)
+      if (prop !== 'xf' && !prop.startsWith('s.')) continue
+      const id = key.slice(0, split)
+      const position = kind === 'row' ? sheet.rowMetaPosition(id, prop) : sheet.cols.indexOf(id)
+      if (position >= 0) (kind === 'row' ? rows : cols).add(position)
+    }
+  }
+  for (const interval of columnIntervals(sheet)) if (interval.props.xf !== undefined) for (let col = Math.max(0, interval.from); col <= Math.min(MAX_COLS - 1, interval.to); col++) cols.add(col)
+  const resets: CellRange[] = []
+  for (const range of ranges) {
+    if (!isWholeRows(range)) for (const row of rows) if (row >= range.top && row <= range.bottom) resets.push({ ...range, top: row, bottom: row })
+    if (!isWholeColumns(range)) for (const col of cols) if (col >= range.left && col <= range.right) resets.push({ ...range, left: col, right: col })
+  }
+  assertExpandableRanges(resets)
+  return resets
+}
+
 export function clearFormats(sheet: SheetModel, ranges: CellRange[]): void {
+  const resets = inheritedFormatResets(sheet, ranges)
+  const defaults = new Stylesheet(sheet.workbook.metaValue('stylesXml')).resolve(0)
   sheet.workbook.transact(() => {
+    clearAxisFormats(sheet, ranges)
     for (const raw of ranges) {
       const range = clampToUsed(sheet, raw)
       for (const map of [sheet.xf, sheet.fmt] as const) {
@@ -106,21 +193,47 @@ export function clearFormats(sheet: SheetModel, ranges: CellRange[]): void {
           if (position && rangeContains(range, position.row, position.col)) map.delete(key)
         }
       }
+      clearRules(sheet, 'cf', raw)
+    }
+    for (const range of resets) for (let row = range.top; row <= range.bottom; row++) for (let col = range.left; col <= range.right; col++) {
+      const overrides = { ...sheet.axisOverrides('col', sheet.cols.idAt(col)), ...sheet.axisOverrides('row', sheet.rows.idAt(row)) }
+      const patch = Object.fromEntries(Object.keys(overrides).map((prop) => [prop, defaults[prop as StyleProp]])) as StylePatch
+      if (sheet.rowProp(row, 'xf') !== undefined || sheet.colProp(col, 'xf') !== undefined || columnIntervalProps(sheet, col).xf !== undefined) sheet.setBaseXf(row, col, 0)
+      if (Object.keys(patch).length) sheet.setStyle({ top: row, bottom: row, left: col, right: col }, patch)
     }
   })
 }
 
+export function clearAll(sheet: SheetModel, ranges: CellRange[]): void {
+  // Clear Formats can require explicit resets at intersections with inherited formats.
+  // Prepare that work before deleting values, so refusal never leaves a partial Clear All.
+  inheritedFormatResets(sheet, ranges)
+  sheet.workbook.transact(() => {
+    clearContents(sheet, ranges)
+    clearFormats(sheet, ranges)
+  })
+}
+
+function preflightStyle(sheet: SheetModel, ranges: CellRange[], dense: CellRange[] = []): number[] {
+  const rowFormats = formattedRows(sheet)
+  const intersections = ranges.filter((r) => isWholeColumns(r) && !isWholeRows(r)).flatMap((r) => rowFormats.map((row) => ({ ...r, top: row, bottom: row })))
+  // Include blank intersections where row formats take precedence over column formats.
+  const rowWork = ranges.filter((r) => isWholeColumns(r) && isWholeRows(r)).flatMap(() => rowFormats.length ? [{ top: 0, bottom: rowFormats.length - 1, left: 0, right: 0 }] : [])
+  assertExpandableRanges([...dense, ...rowWork, ...intersections, ...ranges.map((r) => isWholeColumns(r) ? { top: 0, bottom: 0, left: r.left, right: r.right } : isWholeRows(r) ? { top: r.top, bottom: r.bottom, left: 0, right: 0 } : r)])
+  return rowFormats
+}
+
 /** Applies style properties to ranges; whole rows/columns style the row/column and their cells. */
 export function applyStyle(sheet: SheetModel, ranges: CellRange[], patch: StylePatch): void {
+  const rowFormats = preflightStyle(sheet, ranges)
   sheet.workbook.transact(() => {
     for (const range of ranges) {
       if (isWholeColumns(range) || isWholeRows(range)) {
         const kind = isWholeColumns(range) && !isWholeRows(range) ? 'col' : 'row'
         if (isWholeColumns(range) && isWholeRows(range)) {
-          // Select all: style every used column (and their cells).
-          const used = sheet.usedRange()
-          const cols = Array.from({ length: (used?.right ?? 0) + 1 }, (_, index) => index)
-          sheet.setAxisStyle('col', cols, patch)
+          // Every column, including blank columns outside the used area.
+          sheet.setAxisStyle('col', span(0, MAX_COLS - 1), patch)
+          if (rowFormats.length) sheet.setAxisStyle('row', rowFormats, patch)
         } else {
           const positions = kind === 'col' ? span(range.left, range.right) : span(range.top, range.bottom)
           sheet.setAxisStyle(kind, positions, patch)
@@ -133,6 +246,7 @@ export function applyStyle(sheet: SheetModel, ranges: CellRange[], patch: StyleP
           if (!position || !rangeContains(used, position.row, position.col)) continue
           sheet.setStyle({ top: position.row, left: position.col, bottom: position.row, right: position.col }, patch)
         }
+        if (isWholeColumns(range) && !isWholeRows(range)) for (const row of rowFormats) sheet.setStyle({ ...range, top: row, bottom: row }, patch)
         continue
       }
       sheet.setStyle(range, patch)
@@ -149,9 +263,13 @@ export type BorderPreset = 'all' | 'outer' | 'inner' | 'horizontal' | 'vertical'
 /** Applies a border preset like Excel's borders menu. */
 export function applyBorders(sheet: SheetModel, ranges: CellRange[], preset: BorderPreset, style: BorderStyle = 'thin', color?: SheetColor): void {
   const edge = (edgeStyle: BorderStyle = style): BorderEdge => (color ? { style: edgeStyle, color } : { style: edgeStyle })
+  const axis = ranges.filter((r) => (isWholeColumns(r) || isWholeRows(r)) && (preset === 'all' || preset === 'none'))
+  const dense = ranges.filter((r) => !axis.includes(r))
+  preflightStyle(sheet, axis, dense)
   sheet.workbook.transact(() => {
-    for (const raw of ranges) {
-      const range = clampToUsed(sheet, raw)
+    const border = preset === 'none' ? null : edge()
+    applyStyle(sheet, axis, { borderTop: border, borderBottom: border, borderLeft: border, borderRight: border })
+    for (const range of dense) {
       for (let row = range.top; row <= range.bottom; row++) {
         for (let col = range.left; col <= range.right; col++) {
           const patch: StylePatch = {}
@@ -236,6 +354,7 @@ export type MergeMode = 'all' | 'across' | 'center'
 
 /** Merges each range (or each row of it, `across`); keeps the top-left content like Excel. */
 export function mergeRanges(sheet: SheetModel, ranges: CellRange[], mode: MergeMode = 'all'): void {
+  assertExpandableRanges(ranges)
   sheet.workbook.transact(() => {
     for (const range of ranges) {
       const targets = mode === 'across' ? span(range.top, range.bottom).map((row) => ({ ...range, top: row, bottom: row })) : [range]
@@ -286,14 +405,37 @@ export function expandToMerges(range: CellRange, merges: CellRange[]): CellRange
 // ── Rows and columns ───────────────────────────────────────────────────────
 
 export function insertLines(sheet: SheetModel, kind: AxisKind, at: number, count: number): void {
+  assertExpandableRanges([kind === 'row' ? { top: at, bottom: at + count - 1, left: 0, right: 0 } : { left: at, right: at + count - 1, top: 0, bottom: 0 }])
+  if (at > 0) {
+    const source = (kind === 'row' ? sheet.rows : sheet.cols).idAt(at - 1)
+    let properties = 1
+    for (const key of (kind === 'row' ? sheet.rowMeta : sheet.colMeta).keys()) {
+      const bar = key.lastIndexOf('|'), prop = key.slice(bar + 1)
+      if (['hidden', 'manualHidden', 'level', 'collapsed', 'keep'].includes(prop)) continue
+      if (kind === 'row' ? sheet.rowMetaPosition(key.slice(0, bar), prop) === at - 1 : key.slice(0, bar) === source) properties++
+    }
+    for (const map of [sheet.xf, sheet.fmt]) for (const key of map.keys()) {
+      const owner = map === sheet.fmt ? key.slice(0, key.lastIndexOf('|')) : key
+      const ids = splitCellKey(owner)
+      if ((kind === 'row' ? ids.row : ids.col) === source) properties++
+    }
+    if (properties * count > MAX_EXPANDED_CELLS) throw new DataOperationError('size')
+  }
   insertAxis(sheet, kind, at, count)
 }
 
 export function deleteLines(sheet: SheetModel, kind: AxisKind, at: number, count: number): void {
+  if (count <= 0) return
+  assertExpandableRanges([kind === 'row' ? { top: at, bottom: at + count - 1, left: 0, right: 0 } : { left: at, right: at + count - 1, top: 0, bottom: 0 }])
   deleteAxis(sheet, kind, at, count)
 }
 
+function checkAxisPositions(kind: AxisKind, positions: number[]): void {
+  if (positions.length > MAX_EXPANDED_CELLS || positions.some((p) => !Number.isInteger(p) || p < 0 || p >= (kind === 'row' ? MAX_ROWS : MAX_COLS))) throw new DataOperationError('size')
+}
+
 export function setHidden(sheet: SheetModel, kind: AxisKind, positions: number[], hidden: boolean): void {
+  checkAxisPositions(kind, positions)
   sheet.workbook.transact(() => {
     if (kind === 'col') { sheet.setColProp(positions, 'hidden', hidden || undefined); return }
     const filter = sheet.filter.get('value') as AutoFilter | undefined
@@ -308,6 +450,7 @@ export function setHidden(sheet: SheetModel, kind: AxisKind, positions: number[]
 
 /** Sets row heights (points) or column widths (character units) by hand. */
 export function setSize(sheet: SheetModel, kind: AxisKind, positions: number[], size: number): void {
+  checkAxisPositions(kind, positions)
   sheet.workbook.transact(() => {
     if (kind === 'row') {
       sheet.setRowProp(positions, 'size', size)
@@ -330,6 +473,7 @@ export function setFrozen(sheet: SheetModel, rows: number, cols: number): void {
 
 /** Groups rows or columns one outline level deeper (or shallower with `delta = -1`). */
 export function setOutline(sheet: SheetModel, kind: AxisKind, positions: number[], delta: 1 | -1): void {
+  checkAxisPositions(kind, positions)
   sheet.workbook.transact(() => {
     for (const position of positions) {
       const current = (kind === 'row' ? sheet.rowProp(position, 'level') : sheet.colProp(position, 'level')) ?? 0
@@ -409,7 +553,7 @@ export interface SortKey {
 }
 
 export const DATA_ERRORS = {
-  size: 'This range is too large to sort safely. Select a smaller range.',
+  size: 'This range is too large to edit safely. Select a smaller range.',
   arrays: 'Cannot sort a range containing spilled or legacy array formulas.',
   merges: 'To do this, all the merged cells need to be the same size.',
   filter: 'Cannot change this filter safely. Only value-list filters are supported.',
@@ -490,13 +634,14 @@ export function sortRange(sheet: SheetModel, range: CellRange, keys: SortKey[], 
           if (boolAttr(list, 'blank')) values.push('')
           return { col: numberAttr(column, 'colId') ?? 0, values }
         })
-        tableFilter = { range: sheet.rangeIds({ ...rect, bottom: rect.bottom - Number(table.totalsRow) }), columns }
+        const filterRect = { ...rect, bottom: rect.bottom - Number(table.totalsRow) }
+        tableFilter = { range: { top: sheet.rows.idAt(filterRect.top), bottom: sheet.rows.idAt(filterRect.bottom), left: sheet.cols.idAt(filterRect.left), right: sheet.cols.idAt(filterRect.right) }, columns }
       }
       area = { ...rect, top: rect.top + (table.headerRow ? 1 : 0), bottom: rect.bottom - (table.totalsRow ? 1 : 0) }
     }
     if (!keys.length || keys.some((key) => !Number.isInteger(key.col) || key.col < area.left || key.col > area.right)) throw new DataOperationError('keys')
     if (area.top >= area.bottom) return
-    if ((area.bottom - area.top + 1) * (area.right - area.left + 1) > MAX_EXPANDED_CELLS) throw new DataOperationError('size')
+    assertExpandableRanges([area])
     const merges = sheet.mergedRanges().map((merge) => merge.range).filter((r) => intersects(r, area))
     const blockHeight = merges.length ? merges[0]!.bottom - merges[0]!.top + 1 : 1
     const blockWidth = merges.length ? merges[0]!.right - merges[0]!.left + 1 : 1
@@ -646,6 +791,7 @@ function checkFilter(filter: AutoFilter): void {
 function filterVisibility(sheet: SheetModel, filter: AutoFilter, display: (row: number, col: number) => string): { filtered: Set<string>; manual: Set<string> } {
   checkFilter(filter)
   const range = sheet.resolveRange(filter.range)!
+  assertExpandableRanges([range])
   const previous = new Set(filter.hiddenRows)
   const filtered = new Set<string>()
   const manual = new Set<string>()
@@ -660,6 +806,7 @@ function filterVisibility(sheet: SheetModel, filter: AutoFilter, display: (row: 
 }
 
 export function setAutoFilter(sheet: SheetModel, range: CellRange | undefined, display?: (row: number, col: number) => string): void {
+  if (range) { range = clampToUsed(sheet, range); assertExpandableRanges([range]) }
   const existing = sheet.filter.get('value') as AutoFilter | undefined
   let visibility: ReturnType<typeof filterVisibility> | undefined
   if (existing) {

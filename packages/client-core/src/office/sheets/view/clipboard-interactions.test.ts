@@ -537,3 +537,21 @@ it.skipIf(process.env.PULPO_SHEETS_FIDELITY !== '1' || !existsSync('/Application
     rmSync(work, { recursive: true, force: true })
   }
 }, 120_000)
+
+it.each(['row', 'col'] as const)('copies stale cuts after inherited %s formats change, preserving the changed source', (axis) => {
+  const { sheet, view } = setup()
+  sheet.setCell(0, 0, { v: 'source' })
+  sheet.setAxisStyle(axis, [0], { bold: true, numFmt: '0.000' })
+  const payload = view.clipboard.copyPayload(true)!
+  sheet.setAxisStyle(axis, [0], { bold: false, numFmt: '0.00%' })
+  view.select({ top: 3, left: 3, bottom: 3, right: 3 })
+  view.clipboard.paste({ html: toHtml(payload) }, { formats: true })
+  expect(view.styleAt(3, 3)).toMatchObject({ bold: true, numFmt: '0.000' })
+  expect(sheet.cell(0, 0)?.v).toBe('source')
+  view.select({ top: 4, left: 4, bottom: 4, right: 4 })
+  view.clipboard.paste({ html: toHtml(payload) })
+  expect(sheet.cell(0, 0)?.v).toBe('source')
+  expect(sheet.cell(4, 4)?.v).toBe('source')
+  expect(view.styleAt(4, 4).bold).toBe(true)
+  expect(view.styleAt(0, 0).bold).toBe(false)
+})

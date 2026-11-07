@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
-import { MAX_ROWS } from '../address.js'
+import { MAX_ROWS, MAX_COLS, type CellRange } from '../address.js'
 import { toA1Form } from '../model/formula-ids.js'
 import type { ConditionalFormat } from '../model/schema.js'
 import { WorkbookModel, type SheetModel } from '../model/workbook.js'
@@ -260,4 +260,116 @@ describe('colors and layout', () => {
     expect(layout.step(0, 1)).toBe(2)
     expect(layout.total).toBe(20 * 998 + 50)
   })
+})
+
+const fullSelections: [string, CellRange][] = [
+  ['column', { top: 0, left: 0, bottom: MAX_ROWS - 1, right: 0 }],
+  ['row', { top: 0, left: 0, bottom: 0, right: MAX_COLS - 1 }],
+  ['sheet', { top: 0, left: 0, bottom: MAX_ROWS - 1, right: MAX_COLS - 1 }],
+]
+
+describe.each(fullSelections)('selection safety: whole %s', (_kind, range) => {
+  it('preflights Ctrl+Enter and merge before any write', () => {
+    for (const command of [
+      (target: SheetModel) => commands.fillInput(target, [range], { row: 0, col: 0 }, 'new'),
+      (target: SheetModel) => commands.mergeRanges(target, [range]),
+      (target: SheetModel) => commands.mergeRanges(target, [range], 'across'),
+    ]) {
+      const target = sheet()
+      target.setCell(0, 0, { v: 'keep' })
+      const before = Y.encodeStateAsUpdate(target.workbook.doc)
+      if (commands.canExpandRanges([range])) command(target)
+      else { expect(() => command(target)).toThrow(commands.DataOperationError); expect(Y.encodeStateAsUpdate(target.workbook.doc)).toEqual(before) }
+    }
+  })
+
+  it('styles blank tails and clears only formats, without expanding cells', () => {
+    const target = sheet()
+    target.setCell(0, 0, { v: 1 })
+    target.setRowProp([0], 'size', 27)
+    target.setColProp([0], 'hidden', true)
+    commands.applyStyle(target, [range], { bold: true, numFmt: '0.00%' })
+    const axis = _kind === 'row' ? 'row' : 'col'
+    const id = axis === 'row' ? target.rows.idAt(0) : target.cols.idAt(_kind === 'sheet' ? MAX_COLS - 1 : 0)
+    expect(target.axisOverrides(axis, id)).toEqual({ bold: true, numFmt: '0.00%' })
+    expect(target.cells.size).toBe(1)
+    expect(target.fmt.size).toBe(2)
+    commands.clearFormats(target, [range])
+    expect(target.axisOverrides(axis, id)).toEqual({})
+    expect(target.fmt.size).toBe(0)
+    expect(target.cell(0, 0)?.v).toBe(1)
+    expect(target.rowProp(0, 'size')).toBe(27)
+    expect(target.colProp(0, 'hidden')).toBe(true)
+    commands.fillInput(target, [range], { row: 0, col: 0 }, '')
+    expect(target.cells.size).toBe(0)
+  })
+
+  it.each(['all', 'none', 'outer'] as const)('bounds borders: %s', (preset) => {
+    const target = sheet()
+    const before = Y.encodeStateAsUpdate(target.workbook.doc)
+    if (preset === 'outer' && !commands.canExpandRanges([range])) {
+      expect(() => commands.applyBorders(target, [range], preset)).toThrow(commands.DataOperationError)
+      expect(Y.encodeStateAsUpdate(target.workbook.doc)).toEqual(before)
+    } else {
+      commands.applyBorders(target, [range], preset)
+      expect(target.cells.size).toBe(0)
+      if (preset !== 'outer') expect(target.fmt.size).toBe(0)
+    }
+  })
+
+  it('clears stored contents, unmerges, filters and applies validation sparsely', () => {
+    const target = sheet()
+    target.setCell(0, 0, { v: 'selected' })
+    target.setCell(2, 2, { v: 'outside' })
+    commands.clearContents(target, [range])
+    expect(target.cell(0, 0)).toBeUndefined()
+    expect(target.cell(2, 2)?.v).toBe(_kind === 'sheet' ? undefined : 'outside')
+    commands.setValidation(target, [range], { type: 'whole' })
+    expect(commands.validationAt(target, 0, 0)?.type).toBe('whole')
+    commands.setAutoFilter(target, range)
+    commands.setAutoFilter(target, undefined)
+    target.merges.set('test', { range: target.rangeIds({ top: 0, left: 0, bottom: 1, right: 1 }) })
+    commands.unmergeRanges(target, [range])
+    expect(target.merges.size).toBe(0)
+  })
+})
+
+it('checks all dense ranges before applying the first one', () => {
+  const target = sheet()
+  const ranges = [{ top: 0, left: 0, bottom: 0, right: 0 }, { top: 1, left: 1, bottom: MAX_ROWS - 2, right: 10 }]
+  const before = Y.encodeStateAsUpdate(target.workbook.doc)
+  for (const command of [
+    () => commands.fillInput(target, ranges, { row: 0, col: 0 }, 'x'),
+    () => commands.applyStyle(target, ranges, { bold: true }),
+    () => commands.applyBorders(target, ranges, 'outer'),
+    () => commands.mergeRanges(target, ranges),
+  ]) { expect(command).toThrow(commands.DataOperationError); expect(Y.encodeStateAsUpdate(target.workbook.doc)).toEqual(before) }
+})
+
+it('clears imported column intervals without changing adjacent formats or widths', () => {
+  const target = sheet()
+  target.raw.set('colTail', [{ from: 0, to: MAX_COLS - 1, props: { xf: 5, size: 19, hidden: true } }])
+  target.setColProp([0], 'xf', 6)
+  target.setRowProp([0], 'xf', 7)
+  commands.clearFormats(target, [{ top: 0, bottom: MAX_ROWS - 1, left: 0, right: 0 }])
+  expect(target.colProp(0, 'xf')).toBeUndefined()
+  expect(target.rowProp(0, 'xf')).toBe(7)
+  expect(target.raw.get('colTail')).toEqual([
+    { from: 0, to: 0, props: { size: 19, hidden: true } },
+    { from: 1, to: MAX_COLS - 1, props: { xf: 5, size: 19, hidden: true } },
+  ])
+})
+
+it('clears both legacy and positional row styles after sorting, preserving row geometry', () => {
+  const target = sheet()
+  put(target, [[2], [1]])
+  target.setRowProp([0], 'xf', 4)
+  target.rowMeta.set(`${target.rows.idAt(0)}|s.bold`, true)
+  target.setRowProp([0], 'size', 30)
+  commands.sortRange(target, { top: 0, left: 0, bottom: 1, right: 0 }, [{ col: 0 }], (row) => target.cell(row, 0)?.v ?? null)
+  commands.applyStyle(target, [fullSelections[1]![1]], { italic: true })
+  commands.clearFormats(target, [fullSelections[1]![1]])
+  expect(target.rowProp(0, 'xf')).toBeUndefined()
+  expect(target.axisOverrides('row', target.rows.idAt(0))).toEqual({})
+  expect(target.rowProp(0, 'size')).toBe(30)
 })

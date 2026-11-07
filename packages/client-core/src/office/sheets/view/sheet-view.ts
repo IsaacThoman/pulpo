@@ -8,6 +8,7 @@ import { cellName, MAX_COLS, MAX_ROWS, parseCellName, parseRangeName, rangeConta
 import { toA1Form, toIdForm } from '../model/formula-ids.js'
 import type { AutoFilter, DrawingObject, Hyperlink, Note, RangeIds, SheetColor, SheetFormat, StyleProps } from '../model/schema.js'
 import { WorkbookModel, type SheetModel } from '../model/workbook.js'
+import { cellStyle } from '../styles/cell-style.js'
 import { Stylesheet, type ResolvedStyle } from '../styles/stylesheet.js'
 import { CachedValues, isErrorValue, type CellValue, type SheetValues } from '../values.js'
 import { cssColor, readThemeColors, type ThemeColors } from './colors.js'
@@ -1123,10 +1124,15 @@ export class SheetView {
       this.interactions.showMessage(validation.error || this.labels.invalidValue, edit.row, edit.col)
       return false
     }
+    const fillRanges = edit.ranges.map((range) => sheet.resolveRange(range)).filter((range): range is CellRange => !!range)
+    if (options.fill && edit.text !== '' && !commands.canExpandRanges(fillRanges)) {
+      this.interactions.showMessage(this.labels.dataErrors.size, row, col)
+      return false
+    }
     this.editing = undefined
     this.pointing = undefined
     const options2 = { valuesOnly: this.valuesOnly, date1904: this.workbook.date1904, currentFormat: this.display.style(edit.row, edit.col).numFmt }
-    if (options.fill) commands.fillInput(sheet, edit.ranges.map((range) => sheet.resolveRange(range)).filter((range): range is CellRange => !!range), { row, col }, edit.text, options2)
+    if (options.fill) commands.fillInput(sheet, fillRanges, { row, col }, edit.text, options2)
     else if (edit.text !== this.inputText(edit.row, edit.col)) commands.setCellInput(sheet, edit.row, edit.col, edit.text, options2)
     this.interactions.onEditEnd()
     this.publishAwareness()
@@ -1206,9 +1212,12 @@ export class SheetView {
     const sheet = bang > 0 ? this.workbook.sheetByName(formula.slice(0, bang).replace(/^'|'$/g, '')) : this.sheet
     const range = parseRangeName(formula.slice(bang + 1).replace(/\$/g, ''))
     if (!sheet || !range) return undefined
+    const bounded = commands.clampToUsed(sheet, range)
+    bounded.bottom = Math.min(bounded.bottom, bounded.top + 1000)
+    if (!commands.canExpandRanges([bounded])) return undefined
     const items: string[] = []
-    for (let row = range.top; row <= Math.min(range.bottom, range.top + 1000); row++) {
-      for (let col = range.left; col <= range.right; col++) {
+    for (let row = bounded.top; row <= bounded.bottom; row++) {
+      for (let col = bounded.left; col <= bounded.right; col++) {
         const value = this.values.get(sheet, row, col)
         if (value !== null && value !== '') items.push(isErrorValue(value) ? value.e : String(value))
       }
@@ -1241,7 +1250,12 @@ export class SheetView {
     if (this.readOnly) return
     if (!this.commitEdit()) return
     for (const sheet of this.workbook.sheets()) this.undoManager.addToScope([sheet.positionRows.order, sheet.positionRows.dead])
-    change()
+    try {
+      change()
+    } catch (error) {
+      if (!(error instanceof commands.DataOperationError)) throw error
+      this.interactions.showMessage(this.labels.dataErrors[error.reason], this.selection.active.row, this.selection.active.col)
+    }
     this.scheduleRender()
     this.notify()
   }
@@ -1288,12 +1302,7 @@ export class SheetView {
   }
 
   clearAll(): void {
-    this.run(() =>
-      this.workbook.transact(() => {
-        commands.clearContents(this.sheet, this.targetRanges)
-        commands.clearFormats(this.sheet, this.targetRanges)
-      }),
-    )
+    this.run(() => commands.clearAll(this.sheet, this.targetRanges))
   }
 
   merge(mode: commands.MergeMode = 'all'): void {
@@ -1330,6 +1339,11 @@ export class SheetView {
   }
 
   selectedLines(kind: 'row' | 'col'): number[] {
+    const projected = this.selection.ranges.map((r) => kind === 'row' ? { top: r.top, bottom: Math.min(r.bottom, this.rowCount - 1), left: 0, right: 0 } : { left: r.left, right: Math.min(r.right, this.colCount - 1), top: 0, bottom: 0 })
+    if (!commands.canExpandRanges(projected)) {
+      this.interactions.showMessage(this.labels.dataErrors.size, this.selection.active.row, this.selection.active.col)
+      return []
+    }
     const positions = new Set<number>()
     for (const range of this.selection.ranges) {
       const [from, to] = kind === 'row' ? [range.top, Math.min(range.bottom, this.rowCount - 1)] : [range.left, Math.min(range.right, this.colCount - 1)]
@@ -1348,6 +1362,11 @@ export class SheetView {
   autoFit(kind: 'row' | 'col', positions = this.selectedLines(kind)): void {
     const used = this.sheet.usedRange()
     if (!used) return
+    const ranges = positions.map((p) => kind === 'col' ? { ...used, left: p, right: p } : { ...used, top: p, bottom: p })
+    if (!commands.canExpandRanges(ranges)) {
+      this.interactions.showMessage(this.labels.dataErrors.size, this.selection.active.row, this.selection.active.col)
+      return
+    }
     const sizes = new Map<number, number>()
     for (const position of positions) {
       let best = 0
@@ -1636,6 +1655,10 @@ export class SheetView {
   replace(query: string, replacement: string, options: FindOptions = {}, only?: { sheetId: string; row: number; col: number }): number {
     if (!query || this.readOnly) return 0
     const targets = only ? [only] : this.find(query, { ...options, formulas: true })
+    if (targets.length > MAX_EXPANDED_CELLS) {
+      this.interactions.showMessage(this.labels.dataErrors.size, this.selection.active.row, this.selection.active.col)
+      return 0
+    }
     const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), options.matchCase ? 'g' : 'gi')
     let changed = 0
     if (!this.commitEdit()) return 0
@@ -1646,9 +1669,9 @@ export class SheetView {
         const data = sheet.cell(target.row, target.col)
         if (!data) continue
         const input = data.f !== undefined ? `=${toA1Form(data.f, sheet)}` : String(data.v ?? '')
-        const next = options.entireCell ? (input.toLowerCase() === query.toLowerCase() || (options.matchCase && input === query) ? replacement : input) : input.replace(pattern, () => replacement)
+        const next = options.entireCell ? ((options.matchCase ? input === query : input.toLowerCase() === query.toLowerCase()) ? replacement : input) : input.replace(pattern, () => replacement)
         if (next === input) continue
-        commands.setCellInput(sheet, target.row, target.col, next, { valuesOnly: this.valuesOnly, date1904: this.workbook.date1904 })
+        commands.setCellInput(sheet, target.row, target.col, next, { valuesOnly: this.valuesOnly, date1904: this.workbook.date1904, currentFormat: cellStyle(sheet, this.stylesheet, target.row, target.col).numFmt })
         changed++
       }
     })

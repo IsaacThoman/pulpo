@@ -5,7 +5,7 @@ import { ui } from '@/i18n/ui'
 export function sheetViewLabels(): SheetViewLabels {
   return {
     dataErrors: {
-      size: ui("This range is too large to sort safely. Select a smaller range."),
+      size: ui("This range is too large to edit safely. Select a smaller range."),
       arrays: ui("Cannot sort a range containing spilled or legacy array formulas."),
       merges: ui("To do this, all the merged cells need to be the same size."),
       filter: ui("Cannot change this filter safely. Only value-list filters are supported."),

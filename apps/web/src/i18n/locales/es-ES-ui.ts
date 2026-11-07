@@ -3248,7 +3248,7 @@ const esUi: Record<string, string> = {
   "Sorting a shared document requires an exclusive editing lock. Sort a local copy instead.": "Ordenar un documento compartido requiere un bloqueo de edición exclusivo. Ordena una copia local.",
   "The sheet changed while preparing the sort. Try again.": "La hoja cambió mientras se preparaba la ordenación. Inténtalo de nuevo.",
   "Cannot safely sort filtered formulas or formulas with references to other rows or sheets. Sort values instead.": "No se pueden ordenar de forma segura fórmulas filtradas o con referencias a otras filas u hojas. Ordena valores.",
-  "This range is too large to sort safely. Select a smaller range.": "Este rango es demasiado grande para ordenarlo de forma segura. Selecciona un rango más pequeño.",
+  "This range is too large to edit safely. Select a smaller range.": "Este rango es demasiado grande para editarlo de forma segura. Selecciona un rango más pequeño.",
 }
 
 export default esUi
