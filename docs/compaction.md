@@ -113,6 +113,42 @@ All assistant messages, tool calls, tool results, reasoning, images, and
 attachments are dropped. Earlier summaries are never kept as user messages;
 their content reaches the model through the new summary.
 
+That is the stored form, and Codex chat (and agent runs on a Codex model)
+sends it as is, since Codex models are trained on it. Other models read a run
+of bare user messages as open requests. Anthropic's API also merges
+consecutive user messages into one turn, so the new prompt arrives at the end
+of a list of earlier questions, and Claude Haiku was seen answering those
+again after a compaction. So for every other model, chat and agent
+requests fold the retained messages and the summary into one user message
+just before sending (`renderCompactedHead` in `compaction/prompt.ts`):
+
+- It says the message stands in for the compacted part of the conversation
+  and is not a new message from the user.
+- It lists the retained messages, oldest first, each in an
+  `<earlier_user_message>` tag, and says they were already handled and the
+  summary says what was done. A turn that failed counts as handled too; the
+  summary records how it went.
+- It puts the summary in a `<conversation_summary>` tag, without the Codex
+  prefix.
+- It ends by telling the model to reply to the user's next message.
+
+When no user message follows the head (a mid-run or overflow-recovery
+compaction in an agent run), the newest retained message is the request still
+in progress, and the text says so instead. Folding happens only on the way to
+the provider, in both the main requests and the summary request, so the
+cached prefix stays the same. Stored histories, checkpoints, and later
+compactions keep the Codex form. A history whose head is already folded, or
+that has no head, is sent unchanged.
+
+Only heads that Pulpo built are folded. That means the response lineage, or
+the current agent run, must hold a completed `user_messages` compaction item.
+A public API client that sends its own Codex-style history (Codex's summary
+prefix included) reaches the model exactly as sent. So does a first message
+that happens to start with the prefix.
+
+The summary prompt also asks which of the user's requests have already been
+answered.
+
 Agent runs skip a threshold compaction (`pre_response` or `agent_mid_run`)
 without calling the summarizer when it could not save more than about one
 summary's worth of history (2,000 tokens, or the summary output cap if that is

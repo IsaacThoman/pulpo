@@ -1,19 +1,24 @@
 import type { AssistantMessage, Message, UserMessage } from '@earendil-works/pi-ai'
-import { isSummaryText, summaryMessageText } from './prompt.js'
+import { isSummaryText, renderCompactedHead, summaryMessageText } from './prompt.js'
 import { selectRetainedUserMessages, type RetainedUserMessage } from './retained-user-messages.js'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
 
-/** Text of a real user message; parts joined with '' like Codex, images dropped. */
-export function piUserMessageText(message: unknown): string | undefined {
+/** Text of any user message, summaries included; parts joined with '' like Codex, images dropped. */
+function piUserContentText(message: unknown): string | undefined {
   if (!isRecord(message) || message.role !== 'user') return undefined
   const { content } = message
-  const text = typeof content === 'string'
+  return typeof content === 'string'
     ? content
     : Array.isArray(content)
       ? content.map((part) => isRecord(part) && part.type === 'text' && typeof part.text === 'string' ? part.text : '').join('')
       : ''
-  if (!text.trim() || isSummaryText(text)) return undefined
+}
+
+/** Text of a real user message; parts joined with '' like Codex, images dropped. */
+export function piUserMessageText(message: unknown): string | undefined {
+  const text = piUserContentText(message)
+  if (!text?.trim() || isSummaryText(text)) return undefined
   return text
 }
 
@@ -41,6 +46,14 @@ export function buildCompactedPiHistory(
     messages: [...retained.map((message) => piUserTextMessage(message.text, timestamp)), piSummaryMessage(summary, timestamp)],
     retained,
   }
+}
+
+/** Wire form of a history for models not trained on Codex's bare compacted head; see compactedContextText. */
+export function renderCompactedPiHistory(messages: readonly Message[]): Message[] {
+  return renderCompactedHead(messages, {
+    userText: piUserContentText,
+    message: (text, summary) => piUserTextMessage(text, summary.timestamp),
+  })
 }
 
 const toolCallIds = (message: AssistantMessage) =>

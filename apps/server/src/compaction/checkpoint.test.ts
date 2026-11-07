@@ -4,6 +4,7 @@ import {
   USER_MESSAGES_STRATEGY,
   checkpointRetainedUserTexts,
   findLatestCheckpoint,
+  hasUserMessagesCompaction,
   isUserMessagesCheckpoint,
   type HistoryResponseRow,
 } from './checkpoint.js'
@@ -85,5 +86,19 @@ describe('user_messages checkpoints', () => {
 
   it('tolerates items stored without retained turns', () => {
     expect(checkpointRetainedUserTexts({ ...checkpoint(), retained_turns: undefined } as unknown as CompactionItem)).toEqual([])
+  })
+})
+
+describe('hasUserMessagesCompaction', () => {
+  it('finds a completed user_messages compaction of any phase', () => {
+    expect(hasUserMessagesCompaction([[], [checkpoint({ strategy: USER_MESSAGES_STRATEGY })]])).toBe(true)
+    expect(hasUserMessagesCompaction([[checkpoint({ strategy: USER_MESSAGES_STRATEGY, phase: 'agent_mid_run' })]])).toBe(true)
+  })
+
+  it('ignores failed, legacy and missing compactions', () => {
+    expect(hasUserMessagesCompaction([[checkpoint({ strategy: USER_MESSAGES_STRATEGY, status: 'failed' })]])).toBe(false)
+    expect(hasUserMessagesCompaction([[checkpoint()]])).toBe(false)
+    expect(hasUserMessagesCompaction([null, 'text', [{ type: 'message' }]])).toBe(false)
+    expect(hasUserMessagesCompaction([])).toBe(false)
   })
 })

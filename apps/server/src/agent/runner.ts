@@ -39,6 +39,8 @@ import { storeGeneratedAttachment } from '../attachments/generated.js'
 import type { AttachmentTimelineItem } from './timeline.js'
 import { createWebProviderClients, createWebTools, type WebProviderExecution } from './web-tools.js'
 import { createModelImageInterceptor, interceptAgentContextImages } from '../responses/image-ocr.js'
+import { renderCompactedPiHistory } from '../compaction/pi-history.js'
+import { hasUserMessagesCompaction } from '../compaction/checkpoint.js'
 import { agentSummaryContext, agentSummaryText, completeAgentSummary, createAgentCompactor, interruptedCompactionItems, type AgentRequestFrame } from './compaction.js'
 import { hardContextLimit, summaryMaxOutputTokens } from '../compaction/policy.js'
 import { CompactionError, CompactionOverflowError } from '../compaction/summarize.js'
@@ -511,8 +513,17 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await emit('pulpo.compaction.updated', publicItem)
     await snapshotIfDue()
   }
+  /**
+   * Codex models are trained on the bare compacted head; others get it labeled as already handled.
+   * Only a head Pulpo built is folded: one from a compaction in this run or the inherited history.
+   */
+  const lineageCompacted = hasUserMessagesCompaction(lineage.map((response) => response.output))
+  const wireHistory = (messages: Message[]): Message[] => !active.codex && (lineageCompacted || hasUserMessagesCompaction([compactionItems]))
+    ? renderCompactedPiHistory(messages)
+    : messages
   /** Everything streamFn changes in a provider request without bookkeeping; the summarizer shares it so its prefix is identical. */
   const prepareProviderContext = async (context: Context): Promise<Context> => {
+    context = { ...context, messages: wireHistory(context.messages) }
     if (!toolsDisabled) context = { ...context, systemPrompt: [context.systemPrompt, await manager.contextNotice()].filter(Boolean).join('\n\n') }
     let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor, active.provider)
     preparedContext = adaptToolResultImagesForProvider(
@@ -608,7 +619,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   /** One billed summarizer attempt: the real history sent like a normal turn, with low reasoning and no tool use. */
   const summarizeAgentHistory = async (history: Message[], frame: AgentRequestFrame): Promise<string> => {
     const maxTokens = summaryMaxTokens()
-    const request = await prepareProviderContext(agentSummaryContext(history, frame))
+    // Rendered before the prompt is appended, so the head reads as it did in the main requests.
+    const request = await prepareProviderContext(agentSummaryContext(wireHistory(history), frame))
     const { parameters } = resolveAgentModelParameters(active.model, record.response.parameters)
     const billed = await trackBilledInternalModelCall({
       responseId,

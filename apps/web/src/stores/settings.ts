@@ -110,7 +110,7 @@ export const DEFAULT_SETTINGS = {
   defaultModelId: '',
   sidebarPins: DEFAULT_SIDEBAR_PINS,
   chatSortMode: 'default' as ChatSortMode,
-  fileDoubleClickAction: 'open' as FileDoubleClickAction,
+  fileDoubleClickAction: 'openBeside' as FileDoubleClickAction,
   trashColor: DEFAULT_TRASH_COLOR as FileColor | null,
   generation: {},
 }

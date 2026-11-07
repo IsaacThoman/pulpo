@@ -1,4 +1,4 @@
-import { isSummaryText, summaryMessageText } from './prompt.js'
+import { isSummaryText, renderCompactedHead, summaryMessageText } from './prompt.js'
 import { selectRetainedUserMessages, type RetainedUserMessage } from './retained-user-messages.js'
 
 type UserTextItem = { role: 'user'; content: [{ type: 'input_text'; text: string }] }
@@ -9,16 +9,21 @@ const itemType = (item: unknown) => isRecord(item) && typeof item.type === 'stri
 const isUserMessage = (item: unknown) =>
   isRecord(item) && item.role === 'user' && (item.type === undefined || item.type === 'message')
 
-/** Text of a real user message; input_text parts joined with '' like Codex. */
-export function responsesUserText(item: unknown): string | undefined {
+/** Text of any user message, summaries included; input_text parts joined with '' like Codex. */
+function responsesUserContentText(item: unknown): string | undefined {
   if (!isUserMessage(item)) return undefined
   const { content } = item as Record<string, unknown>
-  const text = typeof content === 'string'
+  return typeof content === 'string'
     ? content
     : Array.isArray(content)
       ? content.map((part) => isRecord(part) && part.type === 'input_text' && typeof part.text === 'string' ? part.text : '').join('')
       : ''
-  if (!text.trim() || isSummaryText(text)) return undefined
+}
+
+/** Text of a real user message; input_text parts joined with '' like Codex. */
+export function responsesUserText(item: unknown): string | undefined {
+  const text = responsesUserContentText(item)
+  if (!text?.trim() || isSummaryText(text)) return undefined
   return text
 }
 
@@ -45,6 +50,14 @@ export function buildCompactedResponsesHistory(
     items: [...retained.map((message) => responsesUserTextItem(message.text)), responsesSummaryItem(summary)],
     retained,
   }
+}
+
+/** Wire form of a history for models not trained on Codex's bare compacted head; see compactedContextText. */
+export function renderCompactedResponsesHistory(items: readonly unknown[]): unknown[] {
+  return renderCompactedHead(items, {
+    userText: responsesUserContentText,
+    message: (text) => responsesUserTextItem(text),
+  })
 }
 
 const CALL_TYPES = new Set(['function_call', 'custom_tool_call'])
