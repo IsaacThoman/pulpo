@@ -170,3 +170,22 @@ describe('Markdown line breaks', () => {
     expect(markup).toContain('katex-display')
   })
 })
+
+describe('Markdown accessibility', () => {
+  it('makes scrollable code and tables keyboard reachable regions', () => {
+    const markup = renderToStaticMarkup(
+      <Markdown content={'```js\nconsole.log(1)\n```\n\n| a |\n| --- |\n| 1 |'} />,
+    )
+
+    expect(markup).toMatch(/<pre tabindex="0" role="region" aria-label="js code"/)
+    expect(markup).toMatch(/<div tabindex="0" role="region" aria-label="Table"/)
+  })
+
+  it('gives code actions a 24px target and a status region for copying', () => {
+    const markup = renderToStaticMarkup(<Markdown content={'```js\nconsole.log(1)\n```'} />)
+
+    expect(markup).toMatch(/aria-label="Download code"[^>]*class="[^"]*size-6/)
+    expect(markup).toMatch(/aria-label="Copy code"[^>]*class="[^"]*size-6/)
+    expect(markup).toContain('<span role="status" class="sr-only"></span>')
+  })
+})
