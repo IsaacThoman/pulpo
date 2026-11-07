@@ -66,8 +66,12 @@ describe('fixture corpus', () => {
       expect(entry.expect.startsWith('refuse:'), `${entry.path} opened but should be refused`).toBe(false)
       const output = await codec.exportFile(result.doc, { name, assets: result.assets })
       if (/\.(csv|tsv)$/i.test(name)) {
-        // Exactly the bytes that were read.
-        expect(Buffer.from(output).equals(bytes)).toBe(true)
+        // Valid fields keep their exact bytes. This fixture also includes a malformed field
+        // with text after its closing quote; export must repair it rather than emit bad CSV.
+        const expected = entry.path === 'csv/quoted-fields.csv'
+          ? Buffer.from(bytes.toString().replace('"quoted, then text"x,next', '"quoted, then textx",next'))
+          : bytes
+        expect(Buffer.from(output).equals(expected)).toBe(true)
         return
       }
       // The export opens again with the same contents, and applying it to the document loses

@@ -1,3 +1,4 @@
+import { csvNumber } from '../codec/csv-field.js'
 import { parseXml } from '../../ooxml/package.js'
 import { attr, boolAttr, child, children, numberAttr } from '../codec/xml.js'
 import { cellStyle } from '../styles/cell-style.js'
@@ -70,8 +71,8 @@ export function contentFromInput(sheet: SheetModel, text: string, options: Input
   if (text.startsWith('=') && text.length > 1 && !options.valuesOnly) return { data: { f: toIdForm(text.slice(1), sheet), dynamic: true } }
   if (options.valuesOnly) {
     // CSV keeps exactly what was typed; numbers still count as numbers.
-    const n = /^-?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(text.trim()) ? Number(text) : NaN
-    return { data: Number.isFinite(n) ? { v: n, ...(String(n) !== text ? { raw: text } : {}) } : { v: text } }
+    const n = csvNumber(text)
+    return { data: n !== undefined ? { v: n, ...(String(n) !== text ? { raw: text } : {}) } : { v: text } }
   }
   const parsed = parseInput(text, { date1904: !!options.date1904 })
   const value = parsed.value

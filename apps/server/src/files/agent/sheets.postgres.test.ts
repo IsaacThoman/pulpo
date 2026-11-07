@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { and, eq } from 'drizzle-orm'
 import { MemoryLiveAssetStore } from '@pulpo/client-core/office'
 import { OoxmlPackage } from '@pulpo/client-core/office/ooxml'
-import { SheetCodec, WorkbookModel, insertAxis } from '@pulpo/client-core/office/sheets'
+import { SheetCodec, WorkbookModel, insertAxis, parseCsv } from '@pulpo/client-core/office/sheets'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import { db, queryClient } from '../../database/client.js'
@@ -163,6 +163,31 @@ describe.skipIf(!enabled)('agent edits to spreadsheets', () => {
     for (const { update } of published) Y.applyUpdate(editor, update)
     await appendDocUpdate({ nodeId: id, ownerUserId: files.userId, actorUserId: files.userId, update: Y.encodeStateAsUpdate(editor, vector), origin: 'client' })
     expect(Buffer.from(await exported(created!.nodeId!)).toString()).toBe('name;amount\r\n"Smith; J.";2,5\r\nRoe;007\r\n')
+  })
+
+  it('quotes unsafe preserved CSV fields on agent pull and subsequent push', async () => {
+    await files.attach({ [projects]: 'write' })
+    const path = '/workspace/files/Projects/data.csv'
+    files.put(path, 'value,neighbor\noriginal,untouched\n')
+    const [created] = await push([{ local: path, remote: 'Projects/data.csv' }])
+    const id = created!.nodeId!
+    // Old clients, pasted snapshots, or restored state can still contain unsafe raw text.
+    await userEdit(id, (model) => {
+      const sheet = model.sheets()[0]!
+      sheet.setCell(1, 0, { v: 1, raw: '1\n' })
+      sheet.setCell(1, 1, { v: 'still,here\r\nnext', raw: 'still,here\r\nnext' })
+    })
+    await files.newReply()
+    const [pulled] = await pull('Projects/data.csv', path)
+    const bytes = files.workspace.files.get(path)!
+    expect(parseCsv(bytes.toString(), ',').rows.map((row) => row.fields)).toEqual([
+      ['value', 'neighbor'], ['1', 'still,here\r\nnext'],
+    ])
+    files.put(path, bytes.toString().replace('value,neighbor', 'updated,neighbor'))
+    expect((await push([{ local: path, remote: 'Projects/data.csv', base: { nodeId: id, version: pulled!.version } }]))[0]!.status).toBe('updated')
+    expect(parseCsv(Buffer.from(await exported(id)).toString(), ',').rows.map((row) => row.fields)).toEqual([
+      ['updated', 'neighbor'], ['1', 'still,here\r\nnext'],
+    ])
   })
 
   it('suggests a new version and merges it with later user edits when accepted', async () => {

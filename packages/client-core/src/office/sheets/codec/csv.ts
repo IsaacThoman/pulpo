@@ -3,6 +3,7 @@ import { LiveFormatError } from '../../live-format.js'
 import { MAX_COLS, MAX_ROWS } from '../address.js'
 import type { CellData, CellScalar, CsvDialect } from '../model/schema.js'
 import { WorkbookModel, type SheetModel } from '../model/workbook.js'
+import { csvNumber, decodeCsvField, preservedCsvField, quoteCsvField } from './csv-field.js'
 import { numberText, type ValueSource } from './write-worksheet.js'
 
 /**
@@ -13,17 +14,15 @@ import { numberText, type ValueSource } from './write-worksheet.js'
 
 export const CSV_LIMITS = { maxBytes: 200 * 1024 * 1024, maxCells: 2_000_000, maxFieldLength: 32_767 * 4 }
 
-const NUMBER = /^-?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/
-
 /** Windows-1252's 0x80–0x9F block, for encoding back. */
 const CP1252_HIGH = '€\u0081‚ƒ„…†‡ˆ‰Š‹Œ\u008DŽ\u008F\u0090‘’“”•–—˜™š›œ\u009DžŸ'
 
 export function decodeText(bytes: Uint8Array): { text: string; encoding: CsvDialect['encoding']; bom: boolean } {
-  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return { text: new TextDecoder('utf-8').decode(bytes.subarray(3)), encoding: 'utf-8', bom: true }
-  if (bytes[0] === 0xff && bytes[1] === 0xfe) return { text: new TextDecoder('utf-16le').decode(bytes.subarray(2)), encoding: 'utf-16le', bom: true }
-  if (bytes[0] === 0xfe && bytes[1] === 0xff) return { text: new TextDecoder('utf-16be').decode(bytes.subarray(2)), encoding: 'utf-16be', bom: true }
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return { text: new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes.subarray(3)), encoding: 'utf-8', bom: true }
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) return { text: new TextDecoder('utf-16le', { ignoreBOM: true }).decode(bytes.subarray(2)), encoding: 'utf-16le', bom: true }
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) return { text: new TextDecoder('utf-16be', { ignoreBOM: true }).decode(bytes.subarray(2)), encoding: 'utf-16be', bom: true }
   try {
-    return { text: new TextDecoder('utf-8', { fatal: true }).decode(bytes), encoding: 'utf-8', bom: false }
+    return { text: new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes), encoding: 'utf-8', bom: false }
   } catch {
     // Not UTF-8: most likely a legacy Windows export.
     return { text: new TextDecoder('windows-1252').decode(bytes), encoding: 'windows-1252', bom: false }
@@ -210,20 +209,20 @@ export function readCsv(doc: Y.Doc, bytes: Uint8Array, format: 'csv' | 'tsv'): v
       if (keep.last !== undefined || keep.ending !== undefined) sheet.rowMeta.set(`${rowId}|keep`, keep)
       row.fields.forEach((field, colIndex) => {
         // Empty fields keep their source too, independently of the policy for newly typed cells.
-        sheet.cells.set(`${rowId}:${sheet.cols.idAt(colIndex)}`, fieldData(field, row.quoted[colIndex]!, row.sources[colIndex]!))
+        sheet.cells.set(`${rowId}:${sheet.cols.idAt(colIndex)}`, fieldData(field, row.quoted[colIndex]!, row.sources[colIndex]!, dialect))
       })
     })
   })
 }
 
 /** A field's cell: its value, and its exact text when writing the value back would differ. */
-function fieldData(field: string, quoted: boolean, source: string): CellData {
-  if (field === '' && !quoted) return { raw: source }
-  if (NUMBER.test(field)) {
-    const n = Number(field)
-    if (Number.isFinite(n)) return String(n) === field && !quoted ? { v: n } : { v: n, raw: source }
-  }
-  return quoted ? { v: field, raw: source } : { v: field }
+function fieldData(field: string, quoted: boolean, source: string, dialect: CsvDialect): CellData {
+  // The parser tolerates damaged input, but only a valid original may become verbatim raw.
+  const raw = decodeCsvField(source, dialect) === field ? source : undefined
+  if (field === '' && !quoted) return raw !== undefined ? { raw } : {}
+  const n = csvNumber(field)
+  if (n !== undefined) return { v: n, ...(raw !== undefined && (String(n) !== field || quoted) ? { raw } : {}) }
+  return { v: field, ...((quoted || field.startsWith('\uFEFF')) && raw !== undefined ? { raw } : {}) }
 }
 
 function formatField(value: CellScalar | { e: string }): string {
@@ -232,12 +231,6 @@ function formatField(value: CellScalar | { e: string }): string {
   if (typeof value === 'number') return numberText(value).replace('E', 'E+').replace('E+-', 'E-')
   if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE'
   return value
-}
-
-function quoteField(text: string, dialect: CsvDialect): string {
-  const needs = text.includes(dialect.delimiter) || text.includes(dialect.quote) || text.includes('\n') || text.includes('\r')
-  if (!needs && dialect.quoting !== 'always') return text
-  return dialect.quote + text.split(dialect.quote).join(dialect.quote + dialect.quote) + dialect.quote
 }
 
 /** Writes the active or first visible sheet as CSV/TSV, in the dialect it was read with. */
@@ -256,6 +249,10 @@ export function writeCsv(doc: Y.Doc, format: 'csv' | 'tsv', values?: ValueSource
   // The extension decides between tabs and the delimiter the file was read with.
   if (format === 'tsv') dialect.delimiter = '\t'
   else if (model.metaValue('format') !== format && dialect.delimiter === '\t') dialect.delimiter = ','
+  if (dialect.delimiter.length !== 1 || dialect.quote.length !== 1 || dialect.delimiter === dialect.quote
+    || /[\r\n\uFEFF]/.test(dialect.delimiter + dialect.quote) || !['\r\n', '\r', '\n'].includes(dialect.lineEnding)) {
+    throw new LiveFormatError('unsupported', 'Invalid CSV dialect')
+  }
   const active = model.metaValue('activeSheet')
   const sheet = (active ? model.sheet(active) : undefined) ?? model.sheets().find((entry) => entry.state === 'visible') ?? model.sheets()[0]
   const lines = sheet ? sheetLines(sheet, dialect, values) : []
@@ -301,16 +298,21 @@ function sheetLines(sheet: SheetModel, dialect: CsvDialect, values?: ValueSource
     if (outputLength > CSV_LIMITS.maxBytes) throw new LiveFormatError('too_large', 'This file is too large to export')
     const fields: string[] = new Array(rowWidth).fill(empty)
     for (const { col, data } of cells) {
-      if (data.raw !== undefined) fields[col] = data.raw
-      else {
-        const value = data.f !== undefined ? (values?.(sheet, row, col, data) ?? (data.t === 'e' ? { e: String(data.v) } : (data.v ?? null))) : data.t === 'e' ? { e: String(data.v) } : (data.v ?? null)
-        fields[col] = quoteField(formatField(value), dialect)
-      }
+      const value = data.f !== undefined ? (values?.(sheet, row, col, data) ?? (data.t === 'e' ? { e: String(data.v) } : (data.v ?? null))) : data.t === 'e' ? { e: String(data.v) } : (data.v ?? null)
+      const raw = preservedCsvField(data, value, dialect)
+      fields[col] = raw !== undefined && !(row === 0 && col === 0 && !dialect.bom && raw.startsWith('\uFEFF')) ? raw : quoteCsvField(formatField(value), dialect)
       outputLength += fields[col]!.length - empty.length
       if (outputLength > CSV_LIMITS.maxBytes) throw new LiveFormatError('too_large', 'This file is too large to export')
     }
-    const ending = row < lastRow ? (keep?.ending || dialect.lineEnding) : dialect.trailingNewline ? (keep?.ending || dialect.lineEnding) : ''
+    const rowEnding = keep?.ending && ['\r\n', '\r', '\n'].includes(keep.ending) ? keep.ending : dialect.lineEnding
+    const ending = row < lastRow || dialect.trailingNewline ? rowEnding : ''
+    // An unterminated, single empty field otherwise disappears into the previous record/EOF.
+    if (!ending && fields.length === 1 && fields[0] === '') {
+      fields[0] = dialect.quote + dialect.quote
+      outputLength += 2
+    }
     outputLength += ending.length
+    if (outputLength > CSV_LIMITS.maxBytes) throw new LiveFormatError('too_large', 'This file is too large to export')
     lines.push(fields.join(dialect.delimiter) + ending)
   }
   return lines

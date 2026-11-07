@@ -103,7 +103,7 @@ export interface CellData {
     fa?: string
     fc?: string
   }
-  /** The exact text a CSV/TSV field had, written back while the cell is unchanged ("007", "1.50"). */
+  /** Original encoded CSV/TSV field ("007", "1.50"); export validates its syntax and value before reuse. */
   raw?: string
   /** Phonetic text (`rPh`/`phoneticPr`) of an inline or shared string, kept as XML. */
   phonetic?: string
