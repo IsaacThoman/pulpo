@@ -4,6 +4,7 @@ import * as Y from 'yjs'
 import type { Awareness } from 'y-protocols/awareness'
 import type { LiveAssetStore } from '../../live-format.js'
 import { MAX_EXPANDED_CELLS } from '../limits.js'
+import { normalizeRanges, subtractRanges } from '../range-set.js'
 import { columnIntervalProps } from '../model/column-intervals.js'
 import { cellName, MAX_COLS, MAX_ROWS, parseCellName, parseRangeName, rangeContains, rangeName, type CellRange } from '../address.js'
 import { toA1Form, toIdForm } from '../model/formula-ids.js'
@@ -1130,16 +1131,12 @@ export class SheetView {
     }
     edit.row = row
     edit.col = col
-    const validation = commands.validationAt(sheet, row, col)
-    if (validation && validation.showErrorMessage !== false && validation.errorStyle !== 'warning' && validation.errorStyle !== 'information' && !this.passesValidation(validation, edit.text)) {
-      this.interactions.showMessage(validation.error || this.labels.invalidValue, edit.row, edit.col)
-      return false
-    }
     const fillRanges = edit.ranges.map((range) => sheet.resolveRange(range)).filter((range): range is CellRange => !!range)
     if (options.fill && edit.text !== '' && !commands.canExpandRanges(fillRanges)) {
       this.interactions.showMessage(this.labels.dataErrors.size, row, col)
       return false
     }
+    if (!this.validateEdit(options.fill ? fillRanges : [{ top: row, bottom: row, left: col, right: col }], edit, !!options.fill)) return false
     const writes = options.fill ? fillRanges : edit.text !== this.inputText(row, col) ? [{ top: row, bottom: row, left: col, right: col }] : []
     if (!this.canWriteArrays(sheet, writes)) return false
     this.editing = undefined
@@ -1171,18 +1168,56 @@ export class SheetView {
     this.notify()
   }
 
-  private passesValidation(validation: ReturnType<typeof commands.validationAt> & object, text: string): boolean {
+  /** Visit only rule-covered destinations, before any document transaction or undo entry. */
+  private validateEdit(ranges: CellRange[], edit: EditState, fill: boolean): boolean {
+    const covered: CellRange[] = []
+    let remaining = ranges
+    for (const raw of this.sheet.dv.values()) {
+      const validation = raw as DataValidation
+      const ruleRanges = validation.ranges.map((ids) => this.sheet.resolveRange(ids)).filter((range): range is CellRange => !!range)
+      if (validation.showErrorMessage !== false && validation.errorStyle !== 'warning' && validation.errorStyle !== 'information' && (edit.text !== '' || validation.allowBlank === false)) {
+        for (const rule of ruleRanges) {
+          for (const range of remaining) covered.push({ top: Math.max(range.top, rule.top), bottom: Math.min(range.bottom, rule.bottom), left: Math.max(range.left, rule.left), right: Math.min(range.right, rule.right) })
+        }
+      }
+      // Match validationAt's first-rule precedence without expanding shadowed coverage.
+      remaining = subtractRanges(remaining, ruleRanges)
+      if (!remaining.length) break
+    }
+    let failure: { row: number; col: number; validation: DataValidation } | undefined
+    for (const range of normalizeRanges(covered)) {
+      // Rectangles may span different row bands. Keep the first failure in worksheet order.
+      cells: for (let row = range.top; row <= range.bottom; row++) {
+        for (let col = range.left; col <= range.right; col++) {
+          if (failure && (row > failure.row || (row === failure.row && col >= failure.col))) break cells
+          const validation = commands.validationAt(this.sheet, row, col)
+          if (!validation || validation.showErrorMessage === false || validation.errorStyle === 'warning' || validation.errorStyle === 'information') continue
+          const text = fill ? commands.fillInputText(edit.text, edit, row, col, { valuesOnly: this.valuesOnly }) : edit.text
+          if (!this.passesValidation(validation, text, row, col)) {
+            failure = { row, col, validation }
+            break cells
+          }
+        }
+      }
+    }
+    if (!failure) return true
+    this.ensureExtent(failure.row, failure.col)
+    this.scrollIntoView(failure.row, failure.col)
+    this.scheduleRender()
+    this.interactions.showMessage(failure.validation.error || this.labels.invalidValue, failure.row, failure.col)
+    return false
+  }
+
+  private passesValidation(validation: DataValidation, text: string, row: number, col: number): boolean {
     if (text === '') return validation.allowBlank !== false
     if (validation.type === 'list') {
-      const items = this.listItems(validation)
+      const items = this.listItems(validation, { row, col })
       return !items || items.some((item) => item.toLowerCase() === text.toLowerCase())
     }
     if (validation.type === 'none') return true
-    const row = this.editing?.row ?? this.selection.active.row
-    const col = this.editing?.col ?? this.selection.active.col
     const anchor = ruleAnchor(this.sheet, validation.ranges)
     if (!anchor) return true
-    const input = commands.contentFromInput(this.sheet, text, { date1904: this.workbook.date1904 }).data ?? { v: null }
+    const input = commands.contentFromInput(this.sheet, text, { date1904: this.workbook.date1904, valuesOnly: this.valuesOnly }).data ?? { v: null }
     const scalar = (result: CellValue | CellValue[][] | undefined) => Array.isArray(result) ? result[0]?.[0] : result
     const evaluate = (formula: string | undefined, proposed = false) => formula === undefined ? undefined : scalar(evaluateRuleFormula(this.sheet, this.values, formula, anchor, row, col, proposed ? input : undefined))
     if (validation.type === 'custom') {
@@ -1222,10 +1257,9 @@ export class SheetView {
   }
 
   /** The choices of a list validation: literal items, or the values of its range. */
-  listItems(validation: Pick<DataValidation, 'formula1' | 'ranges'>): string[] | undefined {
+  listItems(validation: Pick<DataValidation, 'formula1' | 'ranges'>, target = this.editing ?? this.selection.active): string[] | undefined {
     if (!validation.formula1) return undefined
-    const row = this.editing?.row ?? this.selection.active.row
-    const col = this.editing?.col ?? this.selection.active.col
+    const { row, col } = target
     const anchor = ruleAnchor(this.sheet, validation.ranges)
     if (!anchor) return undefined
     const formula = ruleFormula(this.sheet, validation.formula1, anchor, row, col)

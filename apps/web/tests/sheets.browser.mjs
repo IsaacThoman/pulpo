@@ -95,6 +95,45 @@ try {
     await context.close()
   })
 
+  await step('Ctrl+Enter preflights destination validation atomically and retains the draft', async () => {
+    const { page: validation, errors: validationErrors, context } = await open()
+    await validation.evaluate(() => {
+      const view = window.__sheets.views[0]
+      const sheet = view.workbook.addSheet('Validation regression')
+      view.setActiveSheet(sheet.id)
+      sheet.setCell(0, 1, { v: 1 })
+      sheet.setCell(1, 1, { v: 100 })
+      sheet.dv.set('test', { ranges: [sheet.rangeIds({ top: 0, left: 0, bottom: 1, right: 0 })], type: 'whole', operator: 'greaterThan', formula1: 'B1', error: 'Value is too small' })
+      view.undoManager.clear()
+    })
+    await go(validation, 'A1:A2')
+    const before = await validation.evaluate(() => JSON.stringify(window.__sheets.views[0].workbook.doc.toJSON()))
+    await validation.keyboard.type('50')
+    await validation.keyboard.press(`${mod}+Enter`)
+    await validation.getByRole('alert').filter({ hasText: 'Value is too small' }).waitFor()
+    const rejected = await validation.evaluate(() => {
+      const view = window.__sheets.views[0]
+      return { doc: JSON.stringify(view.workbook.doc.toJSON()), undo: view.undoManager.undoStack.length, draft: view.editing?.text }
+    })
+    assert.deepEqual(rejected, { doc: before, undo: 0, draft: '50' })
+    await validation.keyboard.press('Escape')
+    await go(validation, 'A1:A2')
+    await validation.keyboard.type('150')
+    await validation.keyboard.press(`${mod}+Enter`)
+    assert.deepEqual(await Promise.all([0, 1].map((row) => inputText(validation, row, 0))), ['150', '150'])
+    await validation.keyboard.press(`${mod}+z`)
+    assert.deepEqual(await Promise.all([0, 1].map((row) => inputText(validation, row, 0))), ['', ''])
+    // Paste and fill-handle commands keep their existing bulk-entry behavior.
+    await validation.evaluate(() => {
+      const view = window.__sheets.views[0]
+      view.goTo('A1')
+      view.clipboard.paste({ text: '50\n50' }, { values: true })
+    })
+    assert.deepEqual(await Promise.all([0, 1].map((row) => inputText(validation, row, 0))), ['50', '50'])
+    assert.deepEqual(validationErrors, [])
+    await context.close()
+  })
+
   await step('typed legacy-array members are refused; dynamic spill blockers can be cleared', async () => {
     const { page: arrays, errors: arrayErrors, context } = await open()
     await arrays.evaluate(() => {

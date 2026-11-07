@@ -121,12 +121,17 @@ export function fillInput(sheet: SheetModel, ranges: CellRange[], origin: { row:
     for (const range of ranges) {
       for (let row = range.top; row <= range.bottom; row++) {
         for (let col = range.left; col <= range.right; col++) {
-          const shifted = text.startsWith('=') && !options.valuesOnly ? `=${shiftFormula(text.slice(1), row - origin.row, col - origin.col)}` : text
+          const shifted = fillInputText(text, origin, row, col, options)
           writeCellInput(sheet, row, col, shifted, { ...options, currentFormat: cellStyle(sheet, styles, row, col).numFmt })
         }
       }
     }
   })
+}
+
+/** The exact typed input at a fill destination, shared by validation preflight and writing. */
+export function fillInputText(text: string, origin: { row: number; col: number }, row: number, col: number, options: InputOptions = {}): string {
+  return text.startsWith('=') && !options.valuesOnly ? `=${shiftFormula(text.slice(1), row - origin.row, col - origin.col)}` : text
 }
 
 export function clearContents(sheet: SheetModel, ranges: CellRange[]): void {
