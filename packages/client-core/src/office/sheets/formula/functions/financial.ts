@@ -5,9 +5,9 @@ import { forEachLogical, denseRange } from '../ranges.js'
 
 
 import { Errors, isError, type FunctionContext, type FunctionSpec, type Scalar, type Value } from '../types.js'
-import { bool, check, defInt, defNum, define, fail, int, num, omitted, toMatrix, type Args } from './coerce.js'
+import { bool, check, defInt, defNum, define, fail, int, num, omitted, optNum, toMatrix, type Args } from './coerce.js'
 import { partsOf, yearfrac } from './datetime.js'
-import { dateToSerial } from '../../dates.js'
+import { dateToSerial, serialToEpochMs } from '../../dates.js'
 import { collectNumbers } from './iterate.js'
 
 // ---------------------------------------------------------------------------------------------
@@ -33,7 +33,7 @@ export function pv(rate: number, nper: number, pmtValue: number, fvValue: number
 }
 
 function ipmt(rate: number, per: number, nper: number, pvValue: number, fvValue: number, type: number): number {
-  check(per >= 1 && per <= nper)
+  check(per >= 1 && per < nper + 1)
   const payment = pmt(rate, nper, pvValue, fvValue, type)
   if (per === 1) return type === 1 ? 0 : -pvValue * rate
   const balance = type === 1 ? fv(rate, per - 2, payment, pvValue, 1) - payment : fv(rate, per - 1, payment, pvValue, 0)
@@ -64,7 +64,7 @@ function rate(ctx: FunctionContext, args: Args): number {
   const pvValue = num(args[2], ctx)
   const fvValue = defNum(args, 3, 0, ctx)
   const type = typeArg(ctx, args, 4)
-  let r = defNum(args, 5, 0.1, ctx)
+  let r = optNum(args, 5, 0.1, ctx)
   check(nper > 0)
   // Excel gives up when 20 Newton steps do not converge to 1e-7; once converged, polish a little.
   for (let i = 0; i < 20; i++) {
@@ -173,10 +173,11 @@ function strictNumbers(ctx: FunctionContext, value: Value | undefined): number[]
 
 function xflows(ctx: FunctionContext, valuesArg: Value | undefined, datesArg: Value | undefined): { values: number[]; years: number[] } {
   const values = strictNumbers(ctx, valuesArg)
-  const dates = strictNumbers(ctx, datesArg).map(Math.floor)
+  const dates = strictNumbers(ctx, datesArg).map(Math.trunc)
+  for (const d of dates) check(d >= 0 && d <= (ctx.date1904 ? 2_957_003 : 2_958_465), Errors.VALUE)
   if (values.length !== dates.length) return fail(Errors.NUM)
   const d0 = dates[0]!
-  for (const d of dates) check(d >= d0)
+  // XIRR allows dates before the first cash flow (MS-OI29500 18.17.7.350).
   return { values, years: dates.map((d) => (d - d0) / 365) }
 }
 
@@ -188,7 +189,7 @@ function xnpv(r: number, values: number[], years: number[]): number {
 function xirr(ctx: FunctionContext, args: Args): number {
   const { values, years } = xflows(ctx, args[0], args[1])
   const guess = defNum(args, 2, 0.1, ctx)
-  check(values.some((v) => v > 0) && values.some((v) => v < 0))
+  check(guess > -1 && values.some((v) => v > 0) && values.some((v) => v < 0))
   const df = (r: number): number => {
     consumeWork(values.length)
     return values.reduce((s, v, i) => s - (years[i]! * v) / (1 + r) ** (years[i]! + 1), 0)
@@ -201,6 +202,7 @@ function mirr(ctx: FunctionContext, args: Args): number {
   const financeRate = num(args[1], ctx)
   const reinvestRate = num(args[2], ctx)
   const n = values.length
+  if (financeRate === -1 || reinvestRate === -1) return fail(Errors.DIV0)
   let positive = 0
   let negative = 0
   values.forEach((v, i) => {
@@ -219,7 +221,7 @@ function db(ctx: FunctionContext, args: Args): number {
   const salvage = num(args[1], ctx)
   const life = num(args[2], ctx)
   const period = int(args[3], ctx)
-  const month = omitted(args, 4) ? 12 : int(args[4], ctx)
+  const month = args.length <= 4 ? 12 : int(args[4], ctx)
   check(cost >= 0 && salvage >= 0 && life > 0 && period >= 1 && month >= 1 && month <= 12)
   check(period <= (month === 12 ? life : life + 1))
   if (cost === 0) return 0
@@ -235,7 +237,8 @@ function db(ctx: FunctionContext, args: Args): number {
 
 function ddbPeriod(cost: number, salvage: number, life: number, period: number, factor: number): number {
   const r = factor / life
-  if (r >= 1) return period === 1 ? Math.max(0, cost - salvage) : 0
+  if (r >= 1) return period <= 1 ? Math.max(0, cost - salvage) : 0
+  if (period < 1) return Math.max(0, cost - Math.max(salvage, cost * (1 - r) ** period))
   const prior = cost * (1 - (1 - r) ** (period - 1))
   const dep = cost * r * (1 - r) ** (period - 1)
   return Math.max(0, Math.min(dep, cost - salvage - prior))
@@ -274,8 +277,8 @@ function vdbCumulative(cost: number, salvage: number, life: number, t: number, f
 // Securities
 
 function settlementMaturity(ctx: FunctionContext, args: Args): [number, number] {
-  const settlement = Math.floor(num(args[0], ctx))
-  const maturity = Math.floor(num(args[1], ctx))
+  const settlement = financialDate(ctx, args[0])
+  const maturity = financialDate(ctx, args[1])
   partsOf(ctx, settlement)
   partsOf(ctx, maturity)
   check(settlement < maturity)
@@ -286,7 +289,8 @@ function tbill(ctx: FunctionContext, args: Args): [number, number] {
   const [settlement, maturity] = settlementMaturity(ctx, args)
   const s = partsOf(ctx, settlement)
   // At most one year apart.
-  const limit = dateToSerial(s.year + 1, s.month, s.day, ctx.date1904)
+  const last = new Date(Date.UTC(s.year + 1, s.month, 0)).getUTCDate()
+  const limit = dateToSerial(s.year + 1, s.month, Math.min(s.day, last), ctx.date1904)
   check(maturity <= limit)
   return [settlement, maturity]
 }
@@ -324,8 +328,25 @@ function couponDays(ctx: FunctionContext, previous: number, next: number, basis:
 }
 
 function dayCount(ctx: FunctionContext, from: number, to: number, basis: number): number {
-  if (basis === 0 || basis === 4) return Math.round(yearfrac(ctx, from, to, basis) * 360)
-  return to - from
+  if (from === to) return 0
+  if (basis !== 0 && basis !== 4) return to - from
+  // A previous quasi-coupon may precede the date system's epoch. Only inputs,
+  // not internal schedule boundaries, are restricted to nonnegative serials.
+  const parts = (serial: number) => {
+    if (serial >= 0) return partsOf(ctx, serial)
+    const d = new Date(serialToEpochMs(serial, ctx.date1904))
+    return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() }
+  }
+  const a = parts(from), b = parts(to)
+  let d1 = a.day, d2 = b.day
+  const feb = (p: typeof a) => p.month === 2 && p.day === new Date(Date.UTC(p.year, 2, 0)).getUTCDate()
+  if (basis === 4) { d1 = Math.min(d1, 30); d2 = Math.min(d2, 30) }
+  else if (d1 === 31 && d2 === 31) { d1 = 30; d2 = 30 }
+  else if (d1 === 31) d1 = 30
+  else if (d1 === 30 && d2 === 31) d2 = 30
+  else if (feb(a) && feb(b)) { d1 = 30; d2 = 30 }
+  else if (feb(a)) d1 = 30
+  return (b.year - a.year) * 360 + (b.month - a.month) * 30 + d2 - d1
 }
 
 function bondArgs(ctx: FunctionContext, args: Args, frequencyIndex: number) {
@@ -338,7 +359,7 @@ function bondArgs(ctx: FunctionContext, args: Args, frequencyIndex: number) {
   const E = couponDays(ctx, c.previous, c.next, basis, frequency)
   const A = dayCount(ctx, c.previous, settlement, basis)
   const DSC = basis === 0 || basis === 4 ? E - A : c.next - settlement
-  return { settlement, maturity, frequency, basis, N: c.count, E, A, DSC }
+  return { settlement, maturity, frequency, basis, previous: c.previous, next: c.next, N: c.count, E, A, DSC }
 }
 
 function bondPrice(rateValue: number, yld: number, redemption: number, b: ReturnType<typeof bondArgs>): number {
@@ -375,29 +396,185 @@ function yieldFn(ctx: FunctionContext, args: Args): number {
     const dirty = pr + (b.A / b.E) * coupon
     return ((redemption + coupon - dirty) / dirty) * ((b.frequency * b.E) / b.DSC)
   }
-  let lo = -0.99
-  let hi = 10
-  // Price falls as the yield rises: bisect on the price equation.
-  for (let i = 0; i < 200; i++) {
-    consumeWork()
-    const mid = (lo + hi) / 2
-    if (bondPrice(rateValue, mid, redemption, b) > pr) lo = mid
-    else hi = mid
-  }
-  return (lo + hi) / 2
+  return securityYield((yld) => bondPrice(rateValue, yld, redemption, b), pr, b.frequency)
 }
 
 function accrint(ctx: FunctionContext, args: Args): number {
-  const issue = Math.floor(num(args[0], ctx))
-  const settlement = Math.floor(num(args[2], ctx))
+  const issue = financialDate(ctx, args[0])
+  const first = financialDate(ctx, args[1])
+  const settlement = financialDate(ctx, args[2])
+  const method = omitted(args, 7) ? true : bool(args[7], ctx)
   const rateValue = num(args[3], ctx)
-  const par = defNum(args, 4, 1000, ctx)
+  // MS-OI29500 18.17.7.2(c) specifies Office's 0.001 default, unlike the
+  // ISO standard and Support page (1000). Explicit par is unaffected.
+  const par = defNum(args, 4, 0.001, ctx)
   const frequency = int(args[5], ctx)
   const basis = defInt(args, 6, 0, ctx)
   partsOf(ctx, issue)
   partsOf(ctx, settlement)
   check(rateValue > 0 && par > 0 && [1, 2, 4].includes(frequency) && basis >= 0 && basis <= 4 && issue < settlement)
-  return par * rateValue * yearfrac(ctx, issue, settlement, basis)
+  const start = !method && settlement > first ? first : issue
+  return par * rateValue / frequency * couponFraction(ctx, start, settlement, first, frequency, basis)
+}
+
+/** Validate even dates that affect only a coupon schedule, not the selected interval. */
+function financialDate(ctx: FunctionContext, value: Value | undefined): number {
+  const serial = int(value, ctx)
+  partsOf(ctx, serial)
+  check(serial >= 0)
+  return serial
+}
+
+function basisArg(ctx: FunctionContext, args: Args, index: number): number {
+  const basis = defInt(args, index, 0, ctx)
+  check(basis >= 0 && basis <= 4)
+  return basis
+}
+
+/** Dates stay anchored to the original day (including end-of-month), never a clamped intermediate. */
+function couponShift(ctx: FunctionContext, anchor: number, months: number): number {
+  const p = partsOf(ctx, anchor)
+  const total = p.year * 12 + p.month - 1 + months
+  const year = Math.floor(total / 12), month = total - year * 12 + 1
+  const last = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const eom = p.day === new Date(Date.UTC(p.year, p.month, 0)).getUTCDate()
+  return dateToSerial(year, month, eom ? last : Math.min(last, p.day), ctx.date1904)
+}
+
+/** Sum Ai/NLi on the quasi-coupon grid. Actual/actual uses each period's actual length. */
+function couponFraction(ctx: FunctionContext, from: number, to: number, anchor: number, frequency: number, basis: number): number {
+  if (from === to) return 0
+  if (from > to) return -couponFraction(ctx, to, from, anchor, frequency, basis)
+  const p = partsOf(ctx, from), a = partsOf(ctx, anchor)
+  const months = 12 / frequency
+  let k = Math.floor(((p.year - a.year) * 12 + p.month - a.month) / months)
+  while (couponShift(ctx, anchor, k * months) > from) { consumeWork(); k-- }
+  let result = 0
+  let previous = couponShift(ctx, anchor, k * months)
+  while (previous < to) {
+    consumeWork()
+    const next = couponShift(ctx, anchor, ++k * months)
+    const start = Math.max(previous, from), end = Math.min(next, to)
+    result += dayCount(ctx, start, end, basis) / couponDays(ctx, previous, next, basis, frequency)
+    previous = next
+  }
+  return result
+}
+
+function duration(ctx: FunctionContext, args: Args, modified: boolean): number {
+  const coupon = num(args[2], ctx), yld = num(args[3], ctx)
+  check(coupon >= 0 && yld >= 0)
+  const b = bondArgs(ctx, args, 4)
+  const maturityTime = (b.N - 1 + b.DSC / b.E) / b.frequency
+  if (coupon === 0) return modified ? maturityTime / (1 + yld / b.frequency) : maturityTime
+  let weighted = 0, total = 0
+  for (let k = 0; k < b.N; k++) {
+    consumeWork()
+    const t = k + b.DSC / b.E
+    // The fractional discount is common to all cash flows and cancels.
+    const amount = (100 * coupon / b.frequency + (k === b.N - 1 ? 100 : 0)) / (1 + yld / b.frequency) ** k
+    total += amount
+    weighted += t * amount
+  }
+  const result = weighted / total / b.frequency
+  return modified ? result / (1 + yld / b.frequency) : result
+}
+
+function discountSecurity(ctx: FunctionContext, args: Args, name: string): number {
+  const [settlement, maturity] = settlementMaturity(ctx, args)
+  const value = num(args[2], ctx), redemption = num(args[3], ctx)
+  const basis = basisArg(ctx, args, 4)
+  check(value > 0 && redemption > 0)
+  const fraction = yearfrac(ctx, settlement, maturity, basis)
+  if (name === 'PRICEDISC') return redemption * (1 - value * fraction)
+  if (name === 'YIELDDISC') return (redemption / value - 1) / fraction
+  if (name === 'DISC') return (1 - value / redemption) / fraction
+  if (name === 'INTRATE') return (redemption / value - 1) / fraction
+  check(redemption * fraction < 1)
+  return value / (1 - redemption * fraction)
+}
+
+function maturitySecurity(ctx: FunctionContext, args: Args, yieldValue: boolean): number {
+  const [settlement, maturity] = settlementMaturity(ctx, args)
+  const issue = financialDate(ctx, args[2])
+  const rateValue = num(args[3], ctx), value = num(args[4], ctx)
+  const basis = basisArg(ctx, args, 5)
+  check(issue < settlement && rateValue >= 0 && (yieldValue ? value > 0 : value >= 0))
+  const DIM = yearfrac(ctx, issue, maturity, basis)
+  const DSM = yearfrac(ctx, settlement, maturity, basis)
+  const A = yearfrac(ctx, issue, settlement, basis)
+  if (yieldValue) return ((1 + rateValue * DIM) / (value / 100 + rateValue * A) - 1) / DSM
+  return 100 * ((1 + rateValue * DIM) / (1 + value * DSM) - rateValue * A)
+}
+
+/** Odd last periods use simple interest; odd first periods discount quasi-coupon cash flows. */
+function oddSecurity(ctx: FunctionContext, args: Args, first: boolean, yieldValue: boolean): number {
+  const [settlement, maturity] = settlementMaturity(ctx, args)
+  const anchor = financialDate(ctx, args[2])
+  const firstCoupon = first ? financialDate(ctx, args[3]) : 0
+  const i = first ? 4 : 3
+  const rateValue = num(args[i], ctx), value = num(args[i + 1], ctx), redemption = num(args[i + 2], ctx)
+  const frequency = int(args[i + 3], ctx), basis = basisArg(ctx, args, i + 4)
+  check([1, 2, 4].includes(frequency) && rateValue >= 0 && redemption > 0 && (yieldValue ? value > 0 : value >= 0))
+  check(first ? anchor < settlement && settlement < firstCoupon && firstCoupon < maturity : anchor < settlement)
+  const coupon = 100 * rateValue / frequency
+  if (!first) {
+    const DC = couponFraction(ctx, anchor, maturity, anchor, frequency, basis)
+    const A = couponFraction(ctx, anchor, settlement, anchor, frequency, basis)
+    const DSC = couponFraction(ctx, settlement, maturity, anchor, frequency, basis)
+    return yieldValue ? (redemption + coupon * DC - value - coupon * A) / (value + coupon * A) * frequency / DSC
+      : (redemption + coupon * DC) / (1 + value * DSC / frequency) - coupon * A
+  }
+  const schedule = coupons(ctx, firstCoupon, maturity, frequency)
+  check(schedule.previous === firstCoupon)
+  const N = schedule.count + 1
+  const A = couponFraction(ctx, anchor, settlement, firstCoupon, frequency, basis)
+  const DFC = couponFraction(ctx, anchor, firstCoupon, firstCoupon, frequency, basis)
+  const DSC = couponFraction(ctx, settlement, firstCoupon, firstCoupon, frequency, basis)
+  const calculate = (yld: number): number => {
+    const q = 1 + yld / frequency
+    let result = coupon * DFC / q ** DSC + redemption / q ** (N - 1 + DSC)
+    for (let k = 1; k < N; k++) { consumeWork(); result += coupon / q ** (k + DSC) }
+    return result - coupon * A
+  }
+  return yieldValue ? securityYield(calculate, value, frequency) : calculate(value)
+}
+
+function securityYield(calculate: (yld: number) => number, priceValue: number, frequency: number): number {
+  let lo = -frequency + 1e-10, hi = 1
+  while (calculate(hi) > priceValue) { consumeWork(); hi *= 2; check(Number.isFinite(hi)) }
+  for (let k = 0; k < 200; k++) {
+    consumeWork()
+    const mid = (lo + hi) / 2
+    if (calculate(mid) > priceValue) lo = mid
+    else hi = mid
+  }
+  return (lo + hi) / 2
+}
+
+function amortization(ctx: FunctionContext, args: Args, declining: boolean): number {
+  const cost = num(args[0], ctx), purchased = financialDate(ctx, args[1]), first = financialDate(ctx, args[2])
+  const salvage = num(args[3], ctx), period = int(args[4], ctx), rateValue = num(args[5], ctx)
+  const basis = basisArg(ctx, args, 6)
+  check(cost >= 0 && salvage >= 0 && salvage < cost && period >= 0 && rateValue > 0 && purchased <= first && basis !== 2)
+  const life = 1 / rateValue
+  const fraction = yearfrac(ctx, purchased, first, basis)
+  if (!declining) {
+    const initial = cost * rateValue * fraction
+    return period === 0 ? initial : Math.max(0, Math.min(cost * rateValue, cost - salvage - initial - (period - 1) * cost * rateValue))
+  }
+  check(life >= 3 && !(life > 4 && life < 5))
+  const coefficient = life < 5 ? 1.5 : life <= 6 ? 2 : 2.5
+  const r = rateValue * coefficient
+  let depreciation = Math.round(cost * r * fraction), book = cost - depreciation
+  if (period === 0) return depreciation
+  for (let p = 1; p <= period; p++) {
+    consumeWork()
+    depreciation = Math.round(book * r)
+    if (book - depreciation < salvage) return p === period ? Math.round(book / 2) : 0
+    book -= depreciation
+  }
+  return depreciation
 }
 
 function dollarFraction(ctx: FunctionContext, args: Args, toDecimal: boolean): number {
@@ -430,6 +607,7 @@ export const FINANCIAL_FUNCTIONS: FunctionSpec[] = [
       const pvValue = num(args[3], ctx)
       const fvValue = defNum(args, 4, 0, ctx)
       const type = typeArg(ctx, args, 5)
+      check(per >= 1 && per <= nper)
       return pmt(r, nper, pvValue, fvValue, type) - ipmt(r, per, nper, pvValue, fvValue, type)
     },
   }),
@@ -444,7 +622,7 @@ export const FINANCIAL_FUNCTIONS: FunctionSpec[] = [
         const pvValue = num(args[2], ctx)
         const start = int(args[3], ctx)
         const end = int(args[4], ctx)
-        const type = int(args[5], ctx)
+        const type = num(args[5], ctx)
         check(r > 0 && nper > 0 && pvValue > 0 && start >= 1 && end >= start && end <= nper && (type === 0 || type === 1))
         check(end - start <= 1_000_000 && end < 2 ** 31)
         const payment = pmt(r, nper, pvValue, 0, type)
@@ -495,8 +673,10 @@ export const FINANCIAL_FUNCTIONS: FunctionSpec[] = [
     args: ['scalar', 'any', 'any'],
     fn: (ctx, args) => {
       const r = num(args[0], ctx)
-      check(r > -1)
       const { values, years } = xflows(ctx, args[1], args[2])
+      // MS-OI29500 18.17.7.351 adds the Office restriction rate > 0.
+      check(r > 0)
+      check(years.every((y) => y >= 0))
       return xnpv(r, values, years)
     },
   }),
@@ -536,7 +716,7 @@ export const FINANCIAL_FUNCTIONS: FunctionSpec[] = [
       const salvage = num(args[1], ctx)
       const life = num(args[2], ctx)
       const period = num(args[3], ctx)
-      const factor = defNum(args, 4, 2, ctx)
+      const factor = optNum(args, 4, 2, ctx)
       check(cost >= 0 && salvage >= 0 && life > 0 && period > 0 && period <= life && factor > 0)
       return ddbPeriod(cost, salvage, life, period, factor)
     },
@@ -551,7 +731,7 @@ export const FINANCIAL_FUNCTIONS: FunctionSpec[] = [
       const life = num(args[2], ctx)
       const start = num(args[3], ctx)
       const end = num(args[4], ctx)
-      const factor = defNum(args, 5, 2, ctx)
+      const factor = optNum(args, 5, 2, ctx)
       const noSwitch = omitted(args, 6) ? false : bool(args[6], ctx)
       check(cost >= 0 && salvage >= 0 && life > 0 && start >= 0 && end >= start && end <= life && factor > 0)
       check(end <= 1_000_000)
@@ -669,14 +849,36 @@ export const FINANCIAL_FUNCTIONS: FunctionSpec[] = [
       const discount = num(args[2], ctx)
       check(discount > 0)
       const dsm = maturity - settlement
-      if (dsm <= 182) return (365 * discount) / (360 - discount * dsm)
-      const p = 1 - (discount * dsm) / 360
-      check(p > 0)
-      const a = dsm / 365
-      return (-2 * a + 2 * Math.sqrt(a * a - (2 * a - 1) * (1 - 1 / p))) / (2 * a - 1)
+      // Microsoft Support publishes this equation for the entire accepted term.
+      // Calc uses a different long-bill/day-count convention; see the oracle fixture.
+      return (365 * discount) / (360 - discount * dsm)
     },
   }),
   define({ name: 'PRICE', min: 6, max: 7, fn: price }),
   define({ name: 'YIELD', min: 6, max: 7, fn: yieldFn }),
   define({ name: 'ACCRINT', min: 6, max: 8, fn: accrint }),
+  ...(['COUPDAYBS', 'COUPDAYS', 'COUPDAYSNC', 'COUPNCD', 'COUPNUM', 'COUPPCD'] as const).map((name) => define({
+    name, min: 3, max: 4, fn: (ctx, args) => {
+      const b = bondArgs(ctx, args, 2)
+      return ({ COUPDAYBS: b.A, COUPDAYS: b.E, COUPDAYSNC: b.DSC, COUPNCD: b.next, COUPNUM: b.N, COUPPCD: b.previous })[name]
+    },
+  })),
+  define({ name: 'DURATION', min: 5, max: 6, fn: (ctx, args) => duration(ctx, args, false) }),
+  define({ name: 'MDURATION', min: 5, max: 6, fn: (ctx, args) => duration(ctx, args, true) }),
+  ...(['PRICEDISC', 'YIELDDISC', 'DISC', 'INTRATE', 'RECEIVED'] as const).map((name) => define({ name, min: 4, max: 5, fn: (ctx, args) => discountSecurity(ctx, args, name) })),
+  define({ name: 'PRICEMAT', min: 5, max: 6, fn: (ctx, args) => maturitySecurity(ctx, args, false) }),
+  define({ name: 'YIELDMAT', min: 5, max: 6, fn: (ctx, args) => maturitySecurity(ctx, args, true) }),
+  define({ name: 'ACCRINTM', min: 3, max: 5, fn: (ctx, args) => {
+    const [issue, settlement] = settlementMaturity(ctx, args)
+    const rateValue = num(args[2], ctx), par = defNum(args, 3, 0.001, ctx), basis = basisArg(ctx, args, 4)
+    check(rateValue > 0 && par > 0)
+    return par * rateValue * yearfrac(ctx, issue, settlement, basis)
+  } }),
+  ...(['ODDFPRICE', 'ODDFYIELD', 'ODDLPRICE', 'ODDLYIELD'] as const).map((name) => define({
+    name, min: name.startsWith('ODDF') ? 8 : 7, max: name.startsWith('ODDF') ? 9 : 8,
+    fn: (ctx, args) => oddSecurity(ctx, args, name.startsWith('ODDF'), name.endsWith('YIELD')),
+  })),
+  define({ name: 'AMORLINC', min: 6, max: 7, fn: (ctx, args) => amortization(ctx, args, false) }),
+  define({ name: 'AMORDEGRC', min: 6, max: 7, fn: (ctx, args) => amortization(ctx, args, true) }),
+
 ]

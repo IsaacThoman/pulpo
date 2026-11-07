@@ -1,3 +1,4 @@
+import { dateToSerial } from '../../dates.js'
 import { Errors } from '../types.js'
 import { table } from './test-table.js'
 import { row } from './testing.js'
@@ -124,4 +125,44 @@ table('Securities', [
   ['YIELD', [39493, 42689, 0.0575, 95.04287, 100, 2, 0], 0.0650000068, 1e-8],
   ['PRICE', [39493, 43054, 0.0575, 0.065, 100, 3, 0], Errors.NUM],
   ['ACCRINT', [39508, 39691, 39569, 0.1, 1000, 2, 0], 16.6666666666667, 1e-12],
+])
+
+// Microsoft Support: https://support.microsoft.com/en-us/excel/functions/<name>-function
+// The financial fixture README records MS-OI29500 exceptions to LibreOffice.
+const d = dateToSerial
+const couponExample = [d(2011, 1, 25), d(2011, 11, 15), 2, 1]
+table('Microsoft securities and depreciation examples', [
+  ['ACCRINTM', [39539, 39614, 0.1, 1000, 3], 20.54794521, 1e-9],
+  ['COUPDAYBS', couponExample, 71],
+  ['COUPDAYS', couponExample, 181],
+  ['COUPDAYSNC', couponExample, 110],
+  ['COUPNCD', couponExample, d(2011, 5, 15)],
+  ['COUPPCD', couponExample, d(2010, 11, 15)],
+  ['COUPNUM', [d(2007, 1, 25), d(2008, 11, 15), 2, 1], 4],
+  ['PRICEDISC', [d(2008, 2, 16), d(2008, 3, 1), 0.0525, 100, 2], 99.80, CENTS],
+  ['PRICEMAT', [d(2008, 2, 15), d(2008, 4, 13), d(2007, 11, 11), 0.061, 0.061, 0], 99.98, CENTS],
+  ['YIELDDISC', [d(2008, 2, 16), d(2008, 3, 1), 99.795, 100, 2], 0.052823, 1e-6],
+  ['YIELDMAT', [d(2008, 3, 15), d(2008, 11, 3), d(2007, 11, 8), 0.0625, 100.0123, 0], 0.060954, 1e-6],
+  ['INTRATE', [d(2008, 2, 15), d(2008, 5, 15), 1000000, 1014420, 2], 0.05768, 1e-10],
+  ['RECEIVED', [d(2008, 2, 15), d(2008, 5, 15), 1000000, 0.0575, 2], 1014584.65, CENTS],
+  ['DURATION', [d(2018, 7, 1), d(2048, 1, 1), 0.08, 0.09, 2, 1], 10.9191453, 1e-8],
+  ['MDURATION', [d(2008, 1, 1), d(2016, 1, 1), 0.08, 0.09, 2, 1], 5.736, -0.0005],
+  ['ODDFPRICE', [d(2008, 11, 11), d(2021, 3, 1), d(2008, 10, 15), d(2009, 3, 1), 0.0785, 0.0625, 100, 2, 1], 113.60, CENTS],
+  ['ODDFYIELD', [d(2008, 11, 11), d(2021, 3, 1), d(2008, 10, 15), d(2009, 3, 1), 0.0575, 84.50, 100, 2, 0], 0.0772, -0.00005],
+  ['ODDLPRICE', [d(2008, 2, 7), d(2008, 6, 15), d(2007, 10, 15), 0.0375, 0.0405, 100, 2, 0], 99.88, CENTS],
+  ['ODDLYIELD', [d(2008, 4, 20), d(2008, 6, 15), d(2007, 12, 24), 0.0375, 99.875, 100, 2, 0], 0.04519, -0.000005],
+  ['AMORLINC', [2400, 39679, 39813, 300, 1, 0.15, 1], 360],
+  ['AMORDEGRC', [2400, 39679, 39813, 300, 1, 0.15, 1], 776],
+])
+
+table('Microsoft interval and argument regression cases', [
+  ['ACCRINT', [d(2024, 1, 1), d(2024, 7, 1), d(2024, 10, 1), 0.1, 1000, 2, 0, false], 25],
+  ['ACCRINT', [d(2024, 1, 1), d(2024, 7, 1), d(2024, 10, 1), 0.1, 1000, 2, 0], 75],
+  ['ACCRINT', [d(2024, 1, 1), 'bad date', d(2024, 10, 1), 0.1, 1000, 2], Errors.VALUE],
+  ['ACCRINT', [d(2024, 1, 1), d(2024, 7, 1), d(2024, 10, 1), 0.1, 1000, 2, 0, 'bad logical'], Errors.VALUE],
+  ['CUMIPMT', [0.01, 12, 1000, 1, 12, 0.5], Errors.NUM],
+  ['CUMPRINC', [0.01, 12, 1000, 1, 12, 0.5], Errors.NUM],
+  ['DDB', [2400, 300, 10, 0.5], 2400 * (1 - Math.sqrt(0.8)), 1e-12],
+  ['XIRR', [row(-1000, 400, 800), row(45000, 44999, 45365)], 0.334035858898249, 1e-10],
+  ['XIRR', [row(-1000, 400, 800), row(-1, 0, 365)], Errors.VALUE],
 ])
