@@ -3233,6 +3233,7 @@ const esUi: Record<string, string> = {
   "Insert image": "Insertar imagen",
   "(Blanks)": "(Vacías)",
   "Search": "Buscar",
+  "Show more values": "Mostrar más valores",
   "Clear filter": "Quitar filtro",
   "This value doesn't match the data validation rules for this cell.": "Este valor no cumple las reglas de validación de datos de esta celda.",
   "This chart type can't be shown yet": "Este tipo de gráfico aún no se puede mostrar",

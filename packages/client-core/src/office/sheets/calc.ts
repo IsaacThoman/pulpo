@@ -7,7 +7,7 @@ import { TEXT_FORMAT_FUNCTIONS } from './formula/functions/text-format.js'
 import { errorFromCode, isError, isMatrix, matrix, type FunctionSpec, type Matrix, type Scalar } from './formula/types.js'
 import { toA1Form } from './model/formula-ids.js'
 import type { CellData } from './model/schema.js'
-import type { SheetModel, WorkbookModel } from './model/workbook.js'
+import { WorkbookModel, type SheetModel } from './model/workbook.js'
 import type { CellValue, SheetValues } from './values.js'
 
 let registry: Map<string, FunctionSpec> | undefined
@@ -236,7 +236,19 @@ export class SheetCalc implements SheetValues {
     return Array.from({ length: size.rows }, (_, dr) => Array.from({ length: size.cols }, (_, dc) => this.get(sheet, row + dr, col + dc)))
   }
 
-  evaluate(sheet: SheetModel, row: number, col: number, formula: string): CellValue | CellValue[][] {
+  evaluate(sheet: SheetModel, row: number, col: number, formula: string, input?: CellData): CellValue | CellValue[][] {
+    if (input !== undefined) {
+      // Custom validation must see the proposed input, including through dependent formulas,
+      // without publishing a speculative Yjs edit or changing the live calculator's caches.
+      const doc = new Y.Doc()
+      Y.applyUpdate(doc, Y.encodeStateAsUpdate(this.workbook.doc))
+      const book = new WorkbookModel(doc)
+      const target = book.sheet(sheet.id)!
+      target.setCell(row, col, input)
+      const calc = new SheetCalc(book, { ...this.options, live: false, ignoreCache: true })
+      try { return calc.evaluate(target, row, col, formula) }
+      finally { calc.destroy(); doc.destroy() }
+    }
     const index = this.sheetIndex.get(sheet.id) ?? 0
     const result = this.engine.evaluateFormula(formula, index, row, col)
     if (isMatrix(result)) {

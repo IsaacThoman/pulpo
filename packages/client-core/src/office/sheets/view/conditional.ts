@@ -1,12 +1,12 @@
 import { rangeContains, type CellRange } from '../address.js'
 import { serialToParts } from '../dates.js'
-import { toA1Form } from '../model/formula-ids.js'
-import { shiftFormula } from '../model/references.js'
 import type { CfValue, ConditionalFormat, ConditionalRule, SheetColor } from '../model/schema.js'
 import type { SheetModel } from '../model/workbook.js'
 import type { DifferentialStyle, Stylesheet } from '../styles/stylesheet.js'
-import { isErrorValue, type CellValue, type SheetValues } from '../values.js'
+import { forEachPopulatedValue, isErrorValue, type CellValue, type SheetValues } from '../values.js'
 import { cssColor, type ThemeColors } from './colors.js'
+import { evaluateRuleFormula } from './rule-formula.js'
+export { literalValue } from './rule-formula.js'
 
 /** What conditional formats change about one cell. */
 export interface ConditionalOverlay {
@@ -134,21 +134,12 @@ export class ConditionalFormatter {
     if (block.stats) return block.stats
     const numbers: number[] = []
     const counts = new Map<string, number>()
-    for (const range of block.ranges) {
-      // Whole-column ranges: only the used part matters.
-      const bottom = Math.min(range.bottom, range.top + 100_000)
-      const right = Math.min(range.right, range.left + 1_000)
-      for (let row = range.top; row <= bottom; row++) {
-        for (let col = range.left; col <= right; col++) {
-          const value = this.values.get(this.sheet, row, col)
-          if (value === null) continue
-          const n = numeric(value)
-          if (n !== undefined) numbers.push(n)
-          const key = valueKey(value)
-          counts.set(key, (counts.get(key) ?? 0) + 1)
-        }
-      }
-    }
+    forEachPopulatedValue(this.sheet, this.values, block.ranges, (_row, _col, value) => {
+      const n = numeric(value)
+      if (n !== undefined) numbers.push(n)
+      const key = valueKey(value)
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    })
     const sorted = [...numbers].sort((a, b) => a - b)
     const mean = numbers.length ? numbers.reduce((sum, n) => sum + n, 0) / numbers.length : 0
     const variance = numbers.length > 1 ? numbers.reduce((sum, n) => sum + (n - mean) ** 2, 0) / numbers.length : 0
@@ -158,10 +149,7 @@ export class ConditionalFormatter {
 
   /** Evaluates a rule formula for a cell: written for the block's top-left, moved to the cell. */
   private formula(formula: string, block: Block, row: number, col: number): CellValue | CellValue[][] | undefined {
-    const text = shiftFormula(toA1Form(formula, this.sheet, this.sheet.workbook, { followDeletedRelative: true }), row - block.origin.row, col - block.origin.col)
-    const literal = literalValue(text)
-    if (literal !== undefined) return literal
-    return this.values.evaluate?.(this.sheet, row, col, text)
+    return evaluateRuleFormula(this.sheet, this.values, formula, { top: block.origin.row, left: block.origin.col }, row, col)
   }
 
   private threshold(value: CfValue, block: Block, row: number, col: number): number | undefined {
@@ -208,7 +196,7 @@ export class ConditionalFormatter {
         if (value === null && rule.operator !== 'equal' && rule.operator !== 'notEqual') return false
         const a = scalarOf(rule.formulas?.[0] !== undefined ? this.formula(rule.formulas[0], block, row, col) : undefined)
         const b = scalarOf(rule.formulas?.[1] !== undefined ? this.formula(rule.formulas[1], block, row, col) : undefined)
-        if (isErrorValue(value)) return false
+        if (isErrorValue(value) || isErrorValue(a) || isErrorValue(b)) return false
         const c = compare(value, a)
         const low = compare(a, b) <= 0 ? a : b
         const high = compare(a, b) <= 0 ? b : a
@@ -327,15 +315,6 @@ function mergeDxf(current: DifferentialStyle | undefined, next: DifferentialStyl
     border: { ...next.border, ...current.border },
     ...(current.numFmt ?? next.numFmt ? { numFmt: current.numFmt ?? next.numFmt } : {}),
   }
-}
-
-/** A formula that is just a literal (`5`, `"text"`, `TRUE`), evaluated without an engine. */
-export function literalValue(formula: string): CellValue | undefined {
-  const text = formula.trim()
-  if (/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(text)) return Number(text)
-  if (/^"(?:[^"]|"")*"$/.test(text)) return text.slice(1, -1).replace(/""/g, '"')
-  if (/^(TRUE|FALSE)$/i.test(text)) return text.toUpperCase() === 'TRUE'
-  return undefined
 }
 
 function interpolate(n: number, stops: number[], colors: string[]): string {

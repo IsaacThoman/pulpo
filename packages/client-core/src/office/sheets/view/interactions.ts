@@ -1373,6 +1373,7 @@ export class SheetInteractions {
     const list = document.createElement('div')
     list.style.cssText = 'max-height:180px;overflow:auto;padding:0 6px;'
     popup.appendChild(list)
+    let visibleCount = 1000
     const renderList = () => {
       const query = search.value.toLowerCase()
       const visible = sorted.filter((value) => (value || labels.blanks).toLowerCase().includes(query))
@@ -1391,7 +1392,7 @@ export class SheetInteractions {
       })
       all.append(allBox, document.createTextNode(labels.selectAll))
       rows.push(all)
-      for (const value of visible.slice(0, 1000)) {
+      for (const value of visible.slice(0, visibleCount)) {
         const label = document.createElement('label')
         label.style.cssText = 'display:flex;gap:6px;align-items:center;padding:3px 6px;'
         const box = document.createElement('input')
@@ -1404,9 +1405,16 @@ export class SheetInteractions {
         label.append(box, document.createTextNode(value || labels.blanks))
         rows.push(label)
       }
+      if (visible.length > visibleCount) {
+        const more = document.createElement('button')
+        more.type = 'button'
+        more.textContent = labels.moreFilterValues
+        more.addEventListener('click', () => { visibleCount += 1000; renderList() })
+        rows.push(more)
+      }
       replaceChildrenWith(list, rows)
     }
-    search.addEventListener('input', renderList)
+    search.addEventListener('input', () => { visibleCount = 1000; renderList() })
     renderList()
     const footer = document.createElement('div')
     footer.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;padding:8px 12px 4px;'
@@ -1684,12 +1692,13 @@ export class SheetInteractions {
     if (cached?.key === key && element.dataset.rendered === key) return
     const render = (xml: string | undefined) => {
       if (this.disposed) return
-      const svg = xml ? view.renderChart(xml, { width, height }, (formula) => this.resolveChartRange(formula)) : undefined
-      if (svg) element.innerHTML = svg
+      let rangeLimited = false
+      const svg = xml ? view.renderChart(xml, { width, height }, (formula) => this.resolveChartRange(formula, () => { rangeLimited = true })) : undefined
+      if (svg && !rangeLimited) element.innerHTML = svg
       else {
         element.replaceChildren()
         const placeholder = document.createElement('div')
-        placeholder.textContent = view.labels.chartUnavailable
+        placeholder.textContent = rangeLimited ? view.labels.dataErrors.size : view.labels.chartUnavailable
         placeholder.style.cssText = 'display:flex;align-items:center;justify-content:center;width:100%;height:100%;border:1px dashed #9AA0A6;color:#5F6368;font:12px system-ui,sans-serif;background:rgba(255,255,255,0.8);'
         element.appendChild(placeholder)
       }
@@ -1714,7 +1723,7 @@ export class SheetInteractions {
   }
 
   /** Live values of a chart series formula (`Sheet1!$B$2:$B$9`). */
-  private resolveChartRange(formula: string): CellValue[][] | undefined {
+  private resolveChartRange(formula: string, onLimit?: () => void): CellValue[][] | undefined {
     const view = this.view
     const text = formula.replace(/^\(|\)$/g, '')
     const bang = text.lastIndexOf('!')
@@ -1733,9 +1742,9 @@ export class SheetInteractions {
     const b = parse(end ?? start)
     if (!sheet || !a || !b) return undefined
     const range = { top: Math.min(a.row, b.row), bottom: Math.max(a.row, b.row), left: Math.min(a.col, b.col), right: Math.max(a.col, b.col) }
-    if (!commands.canExpandRanges([range])) return undefined
+    if (!commands.canExpandRanges([range])) { onLimit?.(); return undefined }
     const rows: CellValue[][] = []
-    for (let row = range.top; row <= range.bottom && rows.length < 10_000; row++) {
+    for (let row = range.top; row <= range.bottom; row++) {
       const line: CellValue[] = []
       for (let col = range.left; col <= range.right; col++) line.push(view.values.get(sheet, row, col))
       rows.push(line)

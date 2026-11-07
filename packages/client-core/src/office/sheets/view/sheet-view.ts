@@ -7,14 +7,16 @@ import { MAX_EXPANDED_CELLS } from '../limits.js'
 import { columnIntervalProps } from '../model/column-intervals.js'
 import { cellName, MAX_COLS, MAX_ROWS, parseCellName, parseRangeName, rangeContains, rangeName, type CellRange } from '../address.js'
 import { toA1Form, toIdForm } from '../model/formula-ids.js'
-import type { AutoFilter, DrawingObject, Hyperlink, Note, RangeIds, SheetColor, SheetFormat, StyleProps } from '../model/schema.js'
+import type { AutoFilter, DataValidation, DrawingObject, Hyperlink, Note, RangeIds, SheetColor, SheetFormat, StyleProps } from '../model/schema.js'
 import { WorkbookModel, type SheetModel } from '../model/workbook.js'
 import { cellStyle } from '../styles/cell-style.js'
 import { Stylesheet, type ResolvedStyle } from '../styles/stylesheet.js'
-import { CachedValues, isErrorValue, type CellValue, type SheetValues } from '../values.js'
+import { CachedValues, forEachPopulatedValue, isErrorValue, type CellValue, type SheetValues } from '../values.js'
 import { cssColor, readThemeColors, type ThemeColors } from './colors.js'
 import * as commands from './commands.js'
+import { currentRegion } from './current-region.js'
 import { ConditionalFormatter } from './conditional.js'
+import { evaluateRuleFormula, ruleAnchor, ruleFormula } from './rule-formula.js'
 import { CellDisplay, type CellRender } from './display.js'
 import { canInsertReference, formulaReferences, insertReference, type FunctionDoc } from './formula-assist.js'
 import { AxisLayout, columnWidthToPixels, defaultColumnPixels, pixelsToColumnWidth, POINTS_TO_PIXELS } from './layout.js'
@@ -36,6 +38,7 @@ export interface SheetViewLabels {
   cancel: string
   search: string
   clearFilter: string
+  moreFilterValues: string
   dataErrors: Record<keyof typeof commands.DATA_ERRORS, string>
   invalidValue: string
   chartUnavailable: string
@@ -53,6 +56,7 @@ export const DEFAULT_LABELS: SheetViewLabels = {
   cancel: 'Cancel',
   search: 'Search',
   clearFilter: 'Clear filter',
+  moreFilterValues: 'Show more values',
   invalidValue: "This value doesn't match the data validation rules for this cell.",
   chartUnavailable: "This chart type can't be shown yet",
   imageUnavailable: "This image can't be shown",
@@ -211,6 +215,7 @@ export class SheetView {
   private dpr = 1
   private rowLayout!: AxisLayout
   private colLayout!: AxisLayout
+  private populatedColumns: Map<number, number[]> | undefined
   private rowCount = 1000
   private colCount = 26
   private stylesheet: Stylesheet
@@ -456,6 +461,7 @@ export class SheetView {
 
   /** Recomputes everything that depends on the current sheet. */
   private rebuildSheet(): void {
+    this.populatedColumns = undefined
     this.conditional = new ConditionalFormatter(this.sheet, this.values, this.stylesheet, this.theme)
     this.display = new CellDisplay(this.sheet, this.stylesheet, this.values, this.theme, this.conditional, this.workbook.date1904)
     this.zoom = (this.sheet.viewProp('zoom') ?? 100) / 100
@@ -580,6 +586,7 @@ export class SheetView {
     }
     if (styles) this.display.invalidateStyles()
     if (layout) this.rebuildLayout()
+    this.populatedColumns = undefined
     this.conditional.invalidate()
     // Remote edits may have deleted the rows under the selection.
     if (transaction.origin !== this.origin) this.clampSelection()
@@ -597,6 +604,7 @@ export class SheetView {
 
   private invalidateValues(): void {
     this.valuesRevision++
+    this.populatedColumns = undefined
     this.conditional.invalidate()
     this.interactions.onDocChange()
     this.scheduleRender()
@@ -679,6 +687,17 @@ export class SheetView {
       showGridLines: sheet.viewProp('showGridLines') !== false,
       showHeadings: sheet.viewProp('showHeadings') !== false,
       cell: (row, col) => this.display.render(row, col),
+      populatedColumns: (row) => {
+        if (!this.populatedColumns) {
+          this.populatedColumns = new Map()
+          forEachPopulatedValue(sheet, this.values, [{ top: 0, left: 0, bottom: MAX_ROWS - 1, right: MAX_COLS - 1 }], (r, c) => {
+            const columns = this.populatedColumns!.get(r)
+            if (columns) columns.push(c)
+            else this.populatedColumns!.set(r, [c])
+          })
+        }
+        return this.populatedColumns.get(row) ?? []
+      },
       occupied: (row, col) => {
         const value = this.values.get(sheet, row, col)
         return value !== null && value !== ''
@@ -816,26 +835,17 @@ export class SheetView {
     let sum = 0
     let min: number | undefined
     let max: number | undefined
-    let visited = 0
     const sheet = this.sheet
-    for (const raw of this.selection.ranges) {
-      const range = commands.clampToUsed(sheet, raw)
-      for (let row = range.top; row <= range.bottom && visited < 200_000; row++) {
-        if (this.rowLayout.isHidden(row)) continue
-        for (let col = range.left; col <= range.right && visited < 200_000; col++) {
-          visited++
-          const value = this.values.get(sheet, row, col)
-          if (value === null || value === '') continue
-          count++
-          if (typeof value === 'number') {
-            numbers++
-            sum += value
-            min = min === undefined ? value : Math.min(min, value)
-            max = max === undefined ? value : Math.max(max, value)
-          }
-        }
+    forEachPopulatedValue(sheet, this.values, this.selection.ranges, (row, _col, value) => {
+      if (this.rowLayout.isHidden(row) || value === '') return
+      count++
+      if (typeof value === 'number') {
+        numbers++
+        sum += value
+        min = min === undefined ? value : Math.min(min, value)
+        max = max === undefined ? value : Math.max(max, value)
       }
-    }
+    })
     return { count, numbers, sum, average: numbers ? sum / numbers : undefined, min, max }
   }
 
@@ -1167,25 +1177,34 @@ export class SheetView {
       const items = this.listItems(validation)
       return !items || items.some((item) => item.toLowerCase() === text.toLowerCase())
     }
-    const parsed = commands.contentFromInput(this.sheet, text, { date1904: this.workbook.date1904 }).data?.v
-    const bound = (formula: string | undefined) => {
-      if (formula === undefined) return undefined
-      const result = this.values.evaluate?.(this.sheet, this.editing?.row ?? 0, this.editing?.col ?? 0, toA1Form(formula, this.sheet, this.workbook, { followDeletedRelative: true }))
-      const value = Array.isArray(result) ? result[0]?.[0] : result
-      return typeof value === 'number' ? value : Number(toA1Form(formula, this.sheet, this.workbook, { followDeletedRelative: true }))
+    if (validation.type === 'none') return true
+    const row = this.editing?.row ?? this.selection.active.row
+    const col = this.editing?.col ?? this.selection.active.col
+    const anchor = ruleAnchor(this.sheet, validation.ranges)
+    if (!anchor) return true
+    const input = commands.contentFromInput(this.sheet, text, { date1904: this.workbook.date1904 }).data ?? { v: null }
+    const scalar = (result: CellValue | CellValue[][] | undefined) => Array.isArray(result) ? result[0]?.[0] : result
+    const evaluate = (formula: string | undefined, proposed = false) => formula === undefined ? undefined : scalar(evaluateRuleFormula(this.sheet, this.values, formula, anchor, row, col, proposed ? input : undefined))
+    if (validation.type === 'custom') {
+      const result = evaluate(validation.formula1, true)
+      return result === true || (typeof result === 'number' && result !== 0)
     }
-    const number = validation.type === 'textLength' ? text.length : typeof parsed === 'number' ? parsed : NaN
-    if (validation.type === 'custom') return true
+    const parsed = input.f ? scalar(this.values.evaluate?.(this.sheet, row, col, toA1Form(input.f, this.sheet))) : input.v
+    const number = validation.type === 'textLength' ? String(parsed ?? '').length : typeof parsed === 'number' ? parsed : NaN
+    const bound = (formula: string | undefined) => {
+      const value = evaluate(formula)
+      return typeof value === 'number' ? value : undefined
+    }
     if (Number.isNaN(number)) return false
     if (validation.type === 'whole' && !Number.isInteger(number)) return false
     const a = bound(validation.formula1)
     const b = bound(validation.formula2)
-    if (a === undefined || Number.isNaN(a)) return true
+    if (a === undefined) return false
     switch (validation.operator ?? 'between') {
       case 'between':
-        return b === undefined || (number >= Math.min(a, b) && number <= Math.max(a, b))
+        return b !== undefined && number >= Math.min(a, b) && number <= Math.max(a, b)
       case 'notBetween':
-        return b === undefined || number < Math.min(a, b) || number > Math.max(a, b)
+        return b !== undefined && (number < Math.min(a, b) || number > Math.max(a, b))
       case 'equal':
         return number === a
       case 'notEqual':
@@ -1203,29 +1222,29 @@ export class SheetView {
   }
 
   /** The choices of a list validation: literal items, or the values of its range. */
-  listItems(validation: { formula1?: string }): string[] | undefined {
-    const literal = commands.literalListItems(validation.formula1 && toA1Form(validation.formula1, this.sheet, this.workbook, { followDeletedRelative: true }))
-    if (literal) return literal
+  listItems(validation: Pick<DataValidation, 'formula1' | 'ranges'>): string[] | undefined {
     if (!validation.formula1) return undefined
-    const formula = toA1Form(validation.formula1, this.sheet, this.workbook, { followDeletedRelative: true })
-    const evaluated = this.values.evaluate?.(this.sheet, this.selection.active.row, this.selection.active.col, formula)
-    if (Array.isArray(evaluated)) return evaluated.flat().filter((value) => value !== null && value !== '').map((value) => (isErrorValue(value) ? value.e : String(value)))
-    // Without an engine: read a plain range reference directly.
+    const row = this.editing?.row ?? this.selection.active.row
+    const col = this.editing?.col ?? this.selection.active.col
+    const anchor = ruleAnchor(this.sheet, validation.ranges)
+    if (!anchor) return undefined
+    const formula = ruleFormula(this.sheet, validation.formula1, anchor, row, col)
+    const literal = commands.literalListItems(formula)
+    if (literal) return literal
+    // Plain ranges are read sparsely, avoiding both blank gaps and dense array limits.
     const bang = formula.lastIndexOf('!')
-    const sheet = bang > 0 ? this.workbook.sheetByName(formula.slice(0, bang).replace(/^'|'$/g, '')) : this.sheet
-    const range = parseRangeName(formula.slice(bang + 1).replace(/\$/g, ''))
-    if (!sheet || !range) return undefined
-    const bounded = commands.clampToUsed(sheet, range)
-    bounded.bottom = Math.min(bounded.bottom, bounded.top + 1000)
-    if (!commands.canExpandRanges([bounded])) return undefined
-    const items: string[] = []
-    for (let row = bounded.top; row <= bounded.bottom; row++) {
-      for (let col = bounded.left; col <= bounded.right; col++) {
-        const value = this.values.get(sheet, row, col)
-        if (value !== null && value !== '') items.push(isErrorValue(value) ? value.e : String(value))
-      }
+    const sheet = bang > 0 ? this.workbook.sheetByName(formula.slice(0, bang).replace(/^'|'$/g, '').replace(/''/g, "'")) : this.sheet
+    const range = parseRangeName(formula.slice(bang + 1).replace(/^=/, '').replace(/\$/g, ''))
+    if (sheet && range) {
+      const items: { row: number; col: number; value: string }[] = []
+      forEachPopulatedValue(sheet, this.values, [range], (row, col, value) => {
+        if (value !== '' && !isErrorValue(value)) items.push({ row, col, value: String(value) })
+      })
+      return items.sort((a, b) => a.row - b.row || a.col - b.col).map((item) => item.value)
     }
-    return items
+    const evaluated = evaluateRuleFormula(this.sheet, this.values, validation.formula1, anchor, row, col)
+    const items = Array.isArray(evaluated) ? evaluated.flat() : [evaluated]
+    return items.filter((value): value is string | number | boolean => value !== undefined && value !== null && value !== '' && !isErrorValue(value)).map(String)
   }
 
   /** While editing a formula, clicking or arrowing inserts references. */
@@ -1331,7 +1350,7 @@ export class SheetView {
   /** Inserts rows above/below or columns left/right of the selection, as many as selected. */
   insert(kind: 'row' | 'col', where: 'before' | 'after'): void {
     const range = this.selection.ranges[this.selection.ranges.length - 1]!
-    const count = kind === 'row' ? Math.min(range.bottom - range.top + 1, 10_000) : Math.min(range.right - range.left + 1, 1000)
+    const count = kind === 'row' ? range.bottom - range.top + 1 : range.right - range.left + 1
     const at = kind === 'row' ? (where === 'before' ? range.top : range.bottom + 1) : where === 'before' ? range.left : range.right + 1
     let inserted = false
     this.run(() => { commands.insertLines(this.sheet, kind, at, count); inserted = true })
@@ -1474,23 +1493,7 @@ export class SheetView {
 
   /** The block of filled cells around a cell (Ctrl+A, sort and filter on a single cell). */
   currentRegion(row: number, col: number): CellRange {
-    const filled = (r: number, c: number) => r >= 0 && c >= 0 && this.values.get(this.sheet, r, c) !== null
-    const range = { top: row, left: col, bottom: row, right: col }
-    const anyFilled = (cells: Iterable<[number, number]>) => {
-      for (const [r, c] of cells) if (filled(r, c)) return true
-      return false
-    }
-    const rowCells = (r: number) => [...span(range.left - 1, range.right + 1)].map((c) => [r, c] as [number, number])
-    const colCells = (c: number) => [...span(range.top - 1, range.bottom + 1)].map((r) => [r, c] as [number, number])
-    // Grow while any cell bordering the block (diagonals included) is filled.
-    for (let guard = 0; guard < 10_000; guard++) {
-      if (anyFilled(rowCells(range.top - 1))) range.top--
-      else if (anyFilled(rowCells(range.bottom + 1))) range.bottom++
-      else if (anyFilled(colCells(range.left - 1))) range.left--
-      else if (anyFilled(colCells(range.right + 1))) range.right++
-      else break
-    }
-    return range
+    return currentRegion(this.sheet, this.values, row, col)
   }
 
   /** Turns the autofilter on for the selection (or the data around the active cell), or off. */
@@ -1708,10 +1711,13 @@ export class SheetView {
     this.settleEdit()
     const sheet = this.sheet
     const found = sheet.usedRange()
-    // Prints are capped (a stray cell at XFD1048576 must not make a billion-cell table).
-    const right = Math.min(found?.right ?? 0, 255)
-    const used = found && { ...found, bottom: Math.min(found.bottom, 20_000, Math.floor(MAX_EXPANDED_CELLS / (right + 1)) - 1), right }
+    const used = found
     const escape = (text: string) => text.replace(/[&<>"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]!)
+    // Refuse a dense print beyond the shared budget instead of silently omitting its tail.
+    if (used && !commands.canExpandRanges([{ top: 0, left: 0, bottom: used.bottom, right: used.right }])) {
+      this.interactions.showMessage(this.labels.dataErrors.size, this.selection.active.row, this.selection.active.col)
+      return `<!doctype html><title>${escape(sheet.name)}</title><p>${escape(this.labels.dataErrors.size)}</p>`
+    }
     if (!used) return `<!doctype html><title>${escape(sheet.name)}</title><p></p>`
     const merges = sheet.mergedRanges().map(({ range }) => ({ ...range, bottom: Math.min(range.bottom, used.bottom), right: Math.min(range.right, used.right) })).filter((range) => range.top <= range.bottom && range.left <= range.right)
     const border = (edge: { style: string; color: string } | undefined) => (edge && printColor(edge.color) ? `${edge.style === 'thick' ? 3 : edge.style.startsWith('medium') ? 2 : 1}px ${edge.style === 'double' ? 'double' : /dash|dot|hair/i.test(edge.style) ? 'dashed' : 'solid'} ${edge.color}` : '')
@@ -1768,10 +1774,6 @@ export class SheetView {
   focus(): void {
     this.input.focus({ preventScroll: true })
   }
-}
-
-function* span(from: number, to: number): Generator<number> {
-  for (let index = from; index <= to; index++) yield index
 }
 
 export { cellName, parseCellName }

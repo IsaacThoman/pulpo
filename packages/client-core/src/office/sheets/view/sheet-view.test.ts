@@ -15,7 +15,7 @@ beforeEach(() => {
   vi.stubGlobal('requestAnimationFrame', () => 1)
   vi.stubGlobal('cancelAnimationFrame', () => {})
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
-  const context = new Proxy({ measureText: (text: string) => ({ width: String(text).length * 7 }), getLineDash: () => [] }, {
+  const context = new Proxy({ fillText: vi.fn(), measureText: (text: string) => ({ width: String(text).length * 7 }), getLineDash: () => [] }, {
     get: (target, key) => target[key as keyof typeof target] ?? (() => {}),
   })
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D)
@@ -518,4 +518,126 @@ it.each(['Sheet1!A1:XFD10000', 'Sheet1!A0:B2', 'Sheet1!A1:XFE2', 'Sheet1!A1:A104
   const result = (view.clipboard as unknown as { resolveChartRange(formula: string): unknown }).resolveChartRange(formula)
   expect(result).toBeUndefined()
   expect(read).not.toHaveBeenCalled()
+})
+
+describe('validation formula anchors', () => {
+  it.each(['between', 'notBetween', 'greaterThan', 'lessThan'] as const)('rebases both numeric bounds for %s', (operator) => {
+    const { sheet, view } = setup()
+    sheet.setCell(0, 1, { v: 1 }); sheet.setCell(0, 2, { v: 10 })
+    sheet.setCell(4, 1, { v: 100 }); sheet.setCell(4, 2, { v: 200 })
+    commands.setValidation(sheet, [{ top: 0, left: 0, bottom: 9, right: 0 }], { type: 'whole', operator, formula1: 'B1', formula2: 'C1' })
+    view.goTo('A5')
+    const rejected = operator === 'between' || operator === 'greaterThan' ? '50' : '150'
+    const accepted = operator === 'between' || operator === 'greaterThan' ? '150' : '50'
+    view.beginEdit(rejected)
+    expect(view.commitEdit()).toBe(false)
+    view.setEditText(accepted)
+    expect(view.commitEdit()).toBe(true)
+  })
+
+  it('evaluates custom validation against the draft without publishing speculative edits', () => {
+    const { doc, sheet, view } = setup()
+    sheet.setCell(4, 0, { v: 150 })
+    sheet.setCell(4, 1, { v: 100 })
+    // Includes an indirect dependency on the proposed cell.
+    sheet.setCell(4, 2, { f: toIdForm('A5*2', sheet), dynamic: true })
+    commands.setValidation(sheet, [{ top: 0, left: 0, bottom: 9, right: 0 }], { type: 'custom', formula1: 'AND(A1>B1,C1>200)' })
+    view.goTo('A5')
+    view.beginEdit('50')
+    const before = Y.encodeStateAsUpdate(doc)
+    expect(view.commitEdit()).toBe(false)
+    expect(Y.encodeStateAsUpdate(doc)).toEqual(before)
+    view.setEditText('120')
+    expect(view.commitEdit()).toBe(true)
+    expect(sheet.cell(4, 0)?.v).toBe(120)
+  })
+
+  it.each(['B1:B2', 'OFFSET(B1,0,0,2,1)'])('rebases list source %s from the first sqref rectangle', (formula1) => {
+    const { sheet, view } = setup()
+    sheet.setCell(0, 1, { v: 'old' }); sheet.setCell(4, 1, { v: 'new' }); sheet.setCell(5, 1, { v: 'next' })
+    commands.setValidation(sheet, [{ top: 0, left: 0, bottom: 1, right: 0 }, { top: 4, left: 0, bottom: 5, right: 0 }], { type: 'list', formula1 })
+    view.goTo('A5')
+    expect(view.listItems(commands.validationAt(sheet, 4, 0)!)).toEqual(['new', 'next'])
+    view.beginEdit('old'); expect(view.commitEdit()).toBe(false)
+    view.setEditText('new'); expect(view.commitEdit()).toBe(true)
+  })
+
+  it('reads a complete sparse list without the old 1,001-row cutoff, including with cached values', () => {
+    const { sheet, view } = setup({ values: 'cached' })
+    sheet.setCell(100_002, 1, { v: 'distant' })
+    commands.setValidation(sheet, [{ top: 0, left: 0, bottom: 1, right: 0 }], { type: 'list', formula1: '$B:$B' })
+    expect(view.listItems(commands.validationAt(sheet, 0, 0)!)).toEqual(['distant'])
+  })
+
+  it('keeps OOXML validation messages literal, including leading equals signs', () => {
+    const { sheet, view } = setup()
+    commands.setValidation(sheet, [{ top: 0, left: 0, bottom: 9, right: 0 }], { type: 'whole', formula1: '1', formula2: '10', error: '=B1', prompt: '=C1' })
+    view.goTo('A5'); view.beginEdit('50')
+    expect(view.commitEdit()).toBe(false)
+    expect(view.root.textContent).toContain('=B1')
+  })
+})
+
+describe('complete view domains', () => {
+  it('refreshes distant CF cells and selection summaries after edits and remote changes', () => {
+    const { doc, sheet, view } = setup()
+    sheet.setCell(0, 0, { v: 10 }); sheet.setCell(200_002, 0, { v: 10 })
+    commands.setConditionalFormat(sheet, [{ top: 0, left: 0, bottom: MAX_ROWS - 1, right: 0 }], { rules: [{ type: 'colorScale', priority: 1, colorScale: { values: [{ type: 'min' }, { type: 'max' }], colors: [{ rgb: 'FFFFFFFF' }, { rgb: 'FF000000' }] } }] })
+    view.goTo('A:A')
+    expect(view.getState().summary).toMatchObject({ count: 2, sum: 20, average: 10 })
+    expect(view.scene().cell(0, 0).overlay?.scaleColor).toBe('#FFFFFF')
+    remote(doc, (book) => book.sheets()[0]!.setCell(200_002, 0, { v: 1 }))
+    expect(view.getState().summary).toMatchObject({ count: 2, sum: 11, average: 5.5 })
+    expect(view.scene().cell(0, 0).overlay?.scaleColor).toBe('#000000')
+    sheet.setCell(200_002, 0, undefined)
+    expect(view.getState().summary).toMatchObject({ count: 1, sum: 10 })
+  })
+
+  it('exposes every filter choice using show-more and full-domain search', () => {
+    const { book, sheet, view } = setup()
+    book.transact(() => { for (let row = 0; row <= 1005; row++) sheet.setCell(row, 0, { v: `item-${String(row).padStart(4, '0')}` }) })
+    commands.setAutoFilter(sheet, { top: 0, left: 0, bottom: 1005, right: 0 })
+    const interactions = view.clipboard as unknown as { openFilterMenu(col: number, rect: { x: number; y: number; width: number; height: number }): void }
+    interactions.openFilterMenu(0, { x: 0, y: 0, width: 64, height: 20 })
+    const button = [...view.root.querySelectorAll('button')].find((button) => button.textContent === 'Show more values')!
+    expect(button).toBeDefined()
+    expect(view.root.textContent).not.toContain('item-1005')
+    button.click()
+    expect(view.root.textContent).toContain('item-1005')
+    const search = view.root.querySelector<HTMLInputElement>('input[type="search"]')!
+    search.value = 'item-1005'; search.dispatchEvent(new Event('input'))
+    expect(view.root.textContent).toContain('item-1005')
+  })
+
+  it('keeps chart rows beyond 10,000 and refuses oversize printing visibly', () => {
+    const { sheet, view } = setup()
+    sheet.setCell(10_010, 0, { v: 'last' })
+    const rows = (view.clipboard as unknown as { resolveChartRange(formula: string): unknown[][] }).resolveChartRange('Sheet1!A1:A10011')
+    expect(rows).toHaveLength(10_011)
+    expect(rows[10_010]).toEqual(['last'])
+    expect(view.printHtml()).toContain('last')
+    sheet.setCell(MAX_ROWS - 1, MAX_COLS - 1, { v: 'cannot silently omit' })
+    expect(view.printHtml()).toContain(view.labels.dataErrors.size)
+    expect(view.printHtml()).not.toContain('<table>')
+  })
+
+  it('draws overflowing text whose source is more than 30 columns outside the viewport', () => {
+    const { sheet, view } = setup()
+    sheet.setCell(0, 0, { v: 'long text '.repeat(1000) })
+    view.goTo('AZ1')
+    view.scroller.scrollLeft = view.scene().cols.offset(45)
+    view.resize()
+    view.scroller.scrollTop = 0
+    const fill = vi.spyOn(view.canvas.getContext('2d')!, 'fillText')
+    view.renderNow()
+    expect(fill.mock.calls.some(([text]) => String(text).startsWith('long text'))).toBe(true)
+  })
+})
+
+it('reports the chart range budget instead of silently falling back to cached values', () => {
+  const { view } = setup()
+  const limited = vi.fn()
+  const result = (view.clipboard as unknown as { resolveChartRange(formula: string, onLimit: () => void): unknown }).resolveChartRange('Sheet1!A1:XFD10000', limited)
+  expect(result).toBeUndefined()
+  expect(limited).toHaveBeenCalledOnce()
 })

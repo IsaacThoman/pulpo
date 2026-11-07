@@ -23,6 +23,7 @@ export function sheetViewLabels(): SheetViewLabels {
     cancel: ui("Cancel"),
     search: ui("Search"),
     clearFilter: ui("Clear filter"),
+    moreFilterValues: ui("Show more values"),
     invalidValue: ui("This value doesn't match the data validation rules for this cell."),
     chartUnavailable: ui("This chart type can't be shown yet"),
     imageUnavailable: ui("This image can't be shown"),

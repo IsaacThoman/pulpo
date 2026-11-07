@@ -75,6 +75,8 @@ export interface Scene {
   cell: (row: number, col: number) => CellRender
   /** Whether a cell has content (text overflowing into it must stop). */
   occupied: (row: number, col: number) => boolean
+  /** Sparse sources of text that may overflow into the visible pane from any column. */
+  populatedColumns?: (row: number) => Iterable<number>
   merges: CellRange[]
   selection: { ranges: CellRange[]; active: { row: number; col: number } }
   remote: RemoteSelection[]
@@ -195,9 +197,7 @@ export class GridRenderer {
     const [top, bottom] = pane.rows
     const [left, right] = pane.cols
     // Text can overflow in from cells just outside the pane.
-    const reachLeft = Math.max(0, left - 30)
-    const reachRight = Math.min(scene.cols.count - 1, right + 30)
-    const merges = scene.merges.filter((merge) => merge.bottom >= top && merge.top <= bottom && merge.right >= reachLeft && merge.left <= reachRight)
+    const merges = scene.merges.filter((merge) => merge.bottom >= top && merge.top <= bottom)
     const mergeAt = (row: number, col: number) => merges.find((merge) => rangeContains(merge, row, col))
     const renders = new Map<string, CellRender>()
     const get = (row: number, col: number) => {
@@ -262,11 +262,12 @@ export class GridRenderer {
     // Text.
     for (let row = top; row <= bottom; row++) {
       if (scene.rows.isHidden(row)) continue
-      for (let col = reachLeft; col <= reachRight; col++) {
+      const columns = new Set(scene.populatedColumns?.(row))
+      for (let col = left; col <= right; col++) columns.add(col)
+      for (const col of [...columns].sort((a, b) => a - b)) {
         if (scene.cols.isHidden(col)) continue
         const merge = mergeAt(row, col)
         if (merge && (merge.left !== col || merge.top !== row)) continue
-        if (!merge && (col < left - 30 || col > right + 30)) continue
         const render = merge ? get(merge.top, merge.left) : get(row, col)
         if (!render.text && !render.overlay?.icon) continue
         if (scene.editing && scene.editing.row === row && scene.editing.col === col) continue

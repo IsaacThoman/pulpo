@@ -1,3 +1,4 @@
+import { MAX_COLS, MAX_ROWS, rangeContains, type CellRange } from './address.js'
 import type { CellData, CellScalar } from './model/schema.js'
 import type { SheetModel, WorkbookModel } from './model/workbook.js'
 
@@ -24,8 +25,8 @@ export interface SheetValues {
   get(sheet: SheetModel, row: number, col: number): CellValue
   /** For a formula that spills, the size of its result. */
   spill?(sheet: SheetModel, row: number, col: number): { rows: number; cols: number } | undefined
-  /** Evaluates an A1 formula as if typed in a cell (conditional formats, validation lists). */
-  evaluate?(sheet: SheetModel, row: number, col: number, formula: string): CellValue | CellValue[][]
+  /** Evaluates an A1 formula at a position. Optional input previews a proposed cell without publishing edits. */
+  evaluate?(sheet: SheetModel, row: number, col: number, formula: string, input?: CellData): CellValue | CellValue[][]
   /** Refresh inside a bulk transaction before reading relocated formulas. */
   refresh?(): void
   /** Called after values change (recalculation or remote edits). Returns an unsubscribe function. */
@@ -86,5 +87,33 @@ export class CachedValues implements SheetValues {
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+}
+
+/** Visits populated positions once, including virtual spill/legacy-array members, without scanning blank gaps. */
+export function forEachPopulatedValue(sheet: SheetModel, values: SheetValues, ranges: CellRange[], visit: (row: number, col: number, value: CellValue) => void): void {
+  const spills: CellRange[] = []
+  sheet.forEachCell((row, col, data) => {
+    if (ranges.some((range) => rangeContains(range, row, col))) {
+      const value = values.get(sheet, row, col)
+      if (value !== null) visit(row, col, value)
+    }
+    const size = values.spill?.(sheet, row, col)
+    const rows = size?.rows ?? (data.oversizedArray ? undefined : data.array?.rows) ?? data.spillCache?.length ?? 1
+    const cols = size?.cols ?? (data.oversizedArray ? undefined : data.array?.cols) ?? data.spillCache?.[0]?.length ?? 1
+    if (rows > 1 || cols > 1) spills.push({ top: row, left: col, bottom: Math.min(MAX_ROWS - 1, row + rows - 1), right: Math.min(MAX_COLS - 1, col + cols - 1) })
+  })
+  const seen = new Set<string>()
+  for (const spill of spills) for (const domain of ranges) {
+    const range = { top: Math.max(spill.top, domain.top), left: Math.max(spill.left, domain.left), bottom: Math.min(spill.bottom, domain.bottom), right: Math.min(spill.right, domain.right) }
+    if (range.top > range.bottom || range.left > range.right) continue
+    for (let row = range.top; row <= range.bottom; row++) for (let col = range.left; col <= range.right; col++) {
+      if (sheet.cell(row, col)) continue
+      const key = `${row},${col}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      const value = values.get(sheet, row, col)
+      if (value !== null) visit(row, col, value)
+    }
   }
 }
