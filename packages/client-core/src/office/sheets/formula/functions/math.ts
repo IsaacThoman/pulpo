@@ -3,7 +3,7 @@
 import { maxOf, minOf } from '../../../../collections.js'
 
 import { consumeWork } from '../budget.js'
-import { alignedRanges, rangeSlice } from '../ranges.js'
+import { forEachLogical, alignedRanges, denseRange, rangeSlice } from '../ranges.js'
 import { logicalSize } from '../types.js'
 import { Errors, isError, isReference, matrix, type FunctionContext, type FunctionSpec, type Matrix, type Reference, type Scalar, type Value } from '../types.js'
 import {
@@ -163,11 +163,9 @@ function countA(ctx: FunctionContext, args: Args, skipErrors: boolean): number {
   let count = 0
   for (const arg of args) {
     const m = toMatrix(ctx, arg)
-    for (const v of m.data) {
-      if (v === null) continue
-      if (isError(v) && skipErrors) continue
-      count++
-    }
+    forEachLogical(m, (v, weight) => {
+      if (v !== null && !(isError(v) && skipErrors)) count += weight
+    }, { weightedTail: true })
   }
   return count
 }
@@ -879,7 +877,9 @@ export const MATH_FUNCTIONS: FunctionSpec[] = [
       const x = num(args[0], ctx)
       const n = num(args[1], ctx)
       const m = num(args[2], ctx)
-      const coefficients = toMatrix(ctx, args[3]).data
+      const source = toMatrix(ctx, args[3])
+      forEachLogical(source, (v) => { if (typeof v !== 'number') fail(isError(v) ? v : Errors.VALUE) }, { weightedTail: true })
+      const coefficients = denseRange(source).data
       let total = 0
       coefficients.forEach((c, i) => {
         if (isError(c)) fail(c)

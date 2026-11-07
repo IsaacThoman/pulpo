@@ -8,6 +8,7 @@
  * such as `LOOKUP(2, 1/(A:A="x"), B:B)` return the last match.
  */
 
+import { consumeWork } from '../budget.js'
 import { rangeSlice } from '../ranges.js'
 import { logicalSize, matrixGet, type Matrix } from '../types.js'
 import { MAX_COLS, MAX_ROWS, columnName, quoteSheetName } from '../../address.js'
@@ -52,6 +53,16 @@ export function linearExact(values: readonly Scalar[], lookup: Scalar, wildcards
  * descending: the last position whose value is >= lookup. Values of other types are stepped over.
  */
 export function binaryApprox(values: readonly Scalar[], lookup: Scalar, descending = false): number {
+  return approximate({ length: values.length, at: (i) => values[i] ?? null }, lookup, descending)
+}
+
+interface LookupSequence {
+  length: number
+  at(index: number): Scalar
+  tailStart?: number
+}
+
+function approximate(values: LookupSequence, lookup: Scalar, descending = false): number {
   let lo = 0
   let hi = values.length - 1
   let best = -1
@@ -59,7 +70,11 @@ export function binaryApprox(values: readonly Scalar[], lookup: Scalar, descendi
     const mid = (lo + hi) >> 1
     let j = mid
     let c: number | undefined
-    while (j <= hi && (c = lookupCompare(values[j] ?? null, lookup)) === undefined) j++
+    while (j <= hi && (c = lookupCompare(values.at(j), lookup)) === undefined) {
+      consumeWork()
+      // Every remaining tail value is identical; skip it in one step.
+      j = values.tailStart !== undefined && j >= values.tailStart ? hi + 1 : j + 1
+    }
     if (j > hi || c === undefined) {
       hi = mid - 1
       continue
@@ -123,28 +138,22 @@ function matchType(ctx: FunctionContext, args: Args, index: number): number {
   return t > 0 ? 1 : t < 0 ? -1 : 0
 }
 
-function find(values: readonly Scalar[], lookup: Scalar, type: number): number {
-  if (type === 0) return linearExact(values, lookup, true)
-  return binaryApprox(values, lookup, type < 0)
-}
-
 function vhlookup(ctx: FunctionContext, args: Args, horizontal: boolean): Value {
   const lookup = lookupValue(args[0], ctx)
   const table = toMatrix(ctx, args[1])
   const index = int(args[2], ctx)
-  const approximate = args.length > 3 ? bool(args[3], ctx) : true
+  const useApproximate = args.length > 3 ? bool(args[3], ctx) : true
   if (index < 1) return fail(Errors.VALUE)
   const size = logicalSize(table)
   if (index > (horizontal ? size.rows : size.cols)) return fail(Errors.REF)
   const keys = searchVector(rangeSlice(table, 0, 0, horizontal ? 1 : size.rows, horizontal ? size.cols : 1))
-  const found = approximate ? binaryApprox(keys.values, lookup) : linearExact(keys.values, lookup, true)
-  const at = keys.indexAt(found)
+  const at = useApproximate ? approximate(keys.logical, lookup) : keys.indexAt(linearExact(keys.values, lookup, true))
   if (at < 0) return fail(Errors.NA)
   return horizontal ? cell(table, index - 1, at) : cell(table, at, index - 1)
 }
 
 /** Search a uniform omitted tail with its first and last positions, never a million entries. */
-function searchVector(m: Matrix): { values: Scalar[]; indexAt: (index: number) => number } {
+function searchVector(m: Matrix): { values: Scalar[]; logical: LookupSequence; indexAt: (index: number) => number } {
   const size = logicalSize(m)
   const vertical = size.cols === 1
   const stored = vertical ? m.rows : m.cols
@@ -152,7 +161,13 @@ function searchVector(m: Matrix): { values: Scalar[]; indexAt: (index: number) =
   const values = Array.from({ length: stored }, (_, i) => matrixGet(m, vertical ? i : 0, vertical ? 0 : i))
   if (length > stored) values.push(m.omittedValue ?? null)
   if (length > stored + 1) values.push(m.omittedValue ?? null)
-  return { values, indexAt: (index) => index === stored + 1 ? length - 1 : index }
+  // Approximate binary search must see the original positions: compressing a run changes
+  // its midpoints (and the result on imperfectly sorted data). No tail allocation is needed.
+  const logical: LookupSequence = {
+    length, tailStart: stored,
+    at: (index) => matrixGet(m, vertical ? index : 0, vertical ? 0 : index),
+  }
+  return { values, logical, indexAt: (index) => index === stored + 1 ? length - 1 : index }
 }
 
 function vector(ctx: FunctionContext, value: Value | undefined, error = Errors.NA): ReturnType<typeof searchVector> {
@@ -169,12 +184,12 @@ function lookupFn(ctx: FunctionContext, args: Args): Value {
   if (args.length < 3) {
     const byRow = size.cols > size.rows
     const keys = searchVector(rangeSlice(source, 0, 0, byRow ? 1 : size.rows, byRow ? size.cols : 1))
-    const at = keys.indexAt(binaryApprox(keys.values, lookup))
+    const at = approximate(keys.logical, lookup)
     if (at < 0) return fail(Errors.NA)
     return byRow ? cell(source, size.rows - 1, at) : cell(source, at, size.cols - 1)
   }
   const keys = vector(ctx, args[1])
-  const at = keys.indexAt(binaryApprox(keys.values, lookup))
+  const at = approximate(keys.logical, lookup)
   if (at < 0) return fail(Errors.NA)
   if (isReference(args[2])) {
     const area = args[2].areas[0]!
@@ -249,8 +264,9 @@ export const LOOKUP_FUNCTIONS: FunctionSpec[] = [
     args: ['scalar', 'any', 'scalar'],
     fn: (ctx, args) => {
       const lookup = lookupValue(args[0], ctx)
-      const { values, indexAt } = vector(ctx, args[1])
-      const at = indexAt(find(values, lookup, matchType(ctx, args, 2)))
+      const keys = vector(ctx, args[1])
+      const type = matchType(ctx, args, 2)
+      const at = type === 0 ? keys.indexAt(linearExact(keys.values, lookup, true)) : approximate(keys.logical, lookup, type < 0)
       return at < 0 ? fail(Errors.NA) : at + 1
     },
   }),

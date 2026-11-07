@@ -111,8 +111,8 @@ function sort(ctx: FunctionContext, args: Args): Value {
   if (source.omittedValue != null) source = denseRange(source)
   const byCol = defBool(args, 3, false, ctx)
   const m = byCol ? transpose(source) : source
-  const indexes = omitted(args, 1) ? [1] : toMatrix(ctx, args[1]).data.map((v) => int(v, ctx))
-  const orders = omitted(args, 2) ? [1] : toMatrix(ctx, args[2]).data.map(orderOf)
+  const indexes = omitted(args, 1) ? [1] : denseRange(toMatrix(ctx, args[1])).data.map((v) => int(v, ctx))
+  const orders = omitted(args, 2) ? [1] : denseRange(toMatrix(ctx, args[2])).data.map(orderOf)
   const lines = rowsOf(m)
   const keys = indexes.map((index, k) => {
     if (index < 1 || index > logicalSize(m).cols) fail(Errors.VALUE)

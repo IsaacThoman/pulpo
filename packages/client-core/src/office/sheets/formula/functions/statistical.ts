@@ -3,8 +3,8 @@
 import { maxOf, minOf } from '../../../../collections.js'
 
 import { consumeWork } from '../budget.js'
-import { alignedRanges, denseRange } from '../ranges.js'
-import { logicalSize, checkArraySize, omittedCells } from '../types.js'
+import { alignedRanges, denseRange, forEachLogical } from '../ranges.js'
+import { logicalSize, checkArraySize } from '../types.js'
 import { Errors, isError, matrix, type FunctionContext, type FunctionSpec, type Scalar, type Value } from '../types.js'
 import { bool, check, defNum, define, fail, int, num, optNum, scalarOf, toMatrix, type Args } from './coerce.js'
 import { parseCriteria } from './criteria.js'
@@ -154,7 +154,9 @@ interface Fit {
 
 function numericCells(ctx: FunctionContext, value: Value | undefined): { rows: number; cols: number; data: number[] } {
   const source = toMatrix(ctx, value)
-  if (omittedCells(source) && typeof source.omittedValue !== 'number') fail(isError(source.omittedValue) ? source.omittedValue : Errors.VALUE)
+  forEachLogical(source, (v) => {
+    if (typeof v !== 'number') fail(isError(v) ? v : Errors.VALUE)
+  }, { weightedTail: true })
   const m = denseRange(source)
   const data = m.data.map((v) => {
     if (typeof v === 'number') return v
@@ -548,8 +550,8 @@ function skew(values: number[], population: boolean): number {
 function ifCount(ctx: FunctionContext, args: Args): number {
   const range = criteriaRange(ctx, args[0])
   const predicate = parseCriteria(scalarOf(args[1]), ctx)
-  let count = predicate(range.omittedValue ?? null) ? omittedCells(range) : 0
-  for (const v of range.data) if (predicate(v)) count++
+  let count = 0
+  forEachLogical(range, (v, weight) => { if (predicate(v)) count += weight }, { weightedTail: true })
   return count
 }
 
@@ -581,7 +583,7 @@ const isNew = (name: string): boolean => name.includes('.')
 
 export const STATISTICAL_FUNCTIONS: FunctionSpec[] = [
   define({ name: 'AVERAGE', min: 1, max: 255, args: ['any'], fn: (ctx, args) => { const v = numberSummary(ctx, args); return v.count ? v.total / v.count : fail(Errors.DIV0) } }),
-  aggregate('AVERAGEA', mean, A_OPTIONS),
+  define({ name: 'AVERAGEA', min: 1, max: 255, args: ['any'], fn: (ctx, args) => { const v = numberSummary(ctx, args, A_OPTIONS); return v.count ? v.total / v.count : fail(Errors.DIV0) } }),
   define({
     name: 'COUNT',
     min: 1,
@@ -602,8 +604,7 @@ export const STATISTICAL_FUNCTIONS: FunctionSpec[] = [
           continue
         }
         const range = toMatrix(ctx, arg)
-        for (const v of range.data) if (v !== null) count++
-        if (range.omittedValue !== undefined && range.omittedValue !== null) count += omittedCells(range)
+        forEachLogical(range, (v, weight) => { if (v !== null) count += weight }, { weightedTail: true })
       }
       return count
     },
@@ -615,8 +616,9 @@ export const STATISTICAL_FUNCTIONS: FunctionSpec[] = [
     args: ['any'],
     fn: (ctx, args) => {
       const range = toMatrix(ctx, args[0])
-      const tail = range.omittedValue ?? null
-      return range.data.filter((v) => v === null || v === '').length + (tail === null || tail === '' ? omittedCells(range) : 0)
+      let count = 0
+      forEachLogical(range, (v, weight) => { if (v === null || v === '') count += weight }, { weightedTail: true })
+      return count
     },
   }),
   define({ name: 'COUNTIF', min: 2, max: 2, args: ['any', 'scalar'], fn: ifCount }),
@@ -659,9 +661,9 @@ export const STATISTICAL_FUNCTIONS: FunctionSpec[] = [
       }),
   }),
   define({ name: 'MAX', min: 1, max: 255, args: ['any'], fn: (ctx, args) => numberSummary(ctx, args).max }),
-  aggregate('MAXA', (v) => (v.length ? v.reduce((a, b) => Math.max(a, b)) : 0), A_OPTIONS),
+  define({ name: 'MAXA', min: 1, max: 255, args: ['any'], fn: (ctx, args) => numberSummary(ctx, args, A_OPTIONS).max }),
   define({ name: 'MIN', min: 1, max: 255, args: ['any'], fn: (ctx, args) => numberSummary(ctx, args).min }),
-  aggregate('MINA', (v) => (v.length ? v.reduce((a, b) => Math.min(a, b)) : 0), A_OPTIONS),
+  define({ name: 'MINA', min: 1, max: 255, args: ['any'], fn: (ctx, args) => numberSummary(ctx, args, A_OPTIONS).min }),
   aggregate('MEDIAN', median),
   ...['MODE', 'MODE.SNGL'].map((name) =>
     aggregate(

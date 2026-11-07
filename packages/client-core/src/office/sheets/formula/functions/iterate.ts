@@ -5,8 +5,8 @@
  * and blanks there are skipped. Errors propagate either way unless the function ignores them.
  */
 
-import { alignedRanges } from '../ranges.js'
-import { MAX_ARRAY_CELLS, omittedCells, Errors, isError, isLambda, isMatrix, isReference, type FunctionContext, type Scalar, type Value } from '../types.js'
+import { alignedRanges, forEachLogical } from '../ranges.js'
+import { MAX_ARRAY_CELLS, Errors, isError, isLambda, isMatrix, isReference, type FunctionContext, type Scalar, type Value } from '../types.js'
 import { sum } from './numeric.js'
 import { fail, parseNumber, toMatrix, type Args } from './coerce.js'
 
@@ -34,12 +34,10 @@ export function forEachValue(ctx: FunctionContext, args: Args, visit: (value: Sc
       visit(null, true, 1)
     } else if (isReference(arg)) {
       for (const area of ctx.resolveAreas(arg)) {
-        for (const value of area.data) visit(value, false, 1)
-        if (omittedCells(area)) visit(area.omittedValue ?? null, false, omittedCells(area))
+        forEachLogical(area, (value, count) => visit(value, false, count), { weightedTail: true })
       }
     } else if (isMatrix(arg)) {
-      for (const value of arg.data) visit(value, false, 1)
-      if (omittedCells(arg)) visit(arg.omittedValue ?? null, false, omittedCells(arg))
+      forEachLogical(arg, (value, count) => visit(value, false, count), { weightedTail: true })
     } else if (isLambda(arg)) {
       fail(Errors.VALUE)
     } else {

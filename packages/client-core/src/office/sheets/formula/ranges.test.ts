@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { alignedRanges, broadcastRanges, denseRange } from './ranges.js'
+import { alignedRanges, broadcastRanges, denseRange, forEachLogical } from './ranges.js'
 import { Errors, isMatrix, logicalSize, matrix, matrixGet, type Matrix, type Scalar, type Value } from './types.js'
 import { call, createContext } from './functions/testing.js'
 
@@ -16,10 +16,9 @@ describe('compact positional ranges', () => {
   it('pairs rectangular prefixes by logical coordinates rather than storage offsets', () => {
     const result: Scalar[][] = []
     alignedRanges([a, b], (cells, weight) => { for (let i = 0; i < weight; i++) result.push(cells) })
-    // Rectangular iteration may coalesce blank cells, so compare the multiset of positional tuples.
     const expected: Scalar[][] = []
     for (let r = 0; r < 4; r++) for (let c = 0; c < 5; c++) expected.push([matrixGet(a, r, c), matrixGet(b, r, c)])
-    expect(result.map((value) => JSON.stringify(value)).sort()).toEqual(expected.map((value) => JSON.stringify(value)).sort())
+    expect(result).toEqual(expected)
   })
   it('pairs flattened ranges with different orientations and logical strides', () => {
     const row = { ...matrix(1, 3, [10, 20, 30]), logicalRows: 1, logicalCols: 20 }
@@ -85,4 +84,19 @@ it('broadcasting compact prefixes agrees with expansion across shapes and tail v
     }
     expect(denseRange(result), JSON.stringify([logicalSize(a), logicalSize(b), a.omittedValue, b.omittedValue])).toEqual(matrix(rows, cols, expected))
   }
+})
+
+
+it('visits logical runs in row-major order without expanding the omitted strips', () => {
+  const source = compact(2, 2, [1, 2, 3, 4], 'tail')
+  const result: Scalar[] = []
+  const runs: [Scalar, number][] = []
+  forEachLogical(source, (v) => result.push(v))
+  forEachLogical(source, (v, count) => runs.push([v, count]), { weightedTail: true })
+  expect(result).toEqual(denseRange(source).data)
+  expect(runs).toEqual([[1, 1], [2, 1], ['tail', 3], [3, 1], [4, 1], ['tail', 3], ['tail', 10]])
+  let visits = 0, cells = 0
+  forEachLogical({ ...matrix(1, 1, [1]), logicalRows: 1_048_576 }, (_, count) => { visits++; cells += count }, { weightedTail: true })
+  expect(visits).toBe(2)
+  expect(cells).toBe(1_048_576)
 })

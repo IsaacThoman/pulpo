@@ -7,7 +7,7 @@
 import { maxOf } from '../../../collections.js'
 
 import { broadcastRanges, rangeSlice } from './ranges.js'
-import { logicalSize, matrixGet } from './types.js'
+import { logicalSize, matrixGet, omittedCells } from './types.js'
 
 
 import { MAX_COLS, MAX_ROWS, columnName, quoteSheetName } from '../address.js'
@@ -124,7 +124,7 @@ function errorHandler(onlyNA: boolean): OwnedFunction {
     const value = liftable(it, args[0], scope, null)
     const catches = (v: Scalar) => isError(v) && (!onlyNA || v.code === '#N/A')
     if (isMatrix(value)) {
-      if (!value.data.some(catches)) return value
+      if (!value.data.some(catches) && !(omittedCells(value) && catches(value.omittedValue ?? null))) return value
       const fallback = liftable(it, args[1], scope, 0)
       return liftAll([value, fallback], ([v, f]) => (catches(v!) ? f! : v!))
     }

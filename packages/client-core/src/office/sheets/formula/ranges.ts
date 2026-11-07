@@ -60,9 +60,12 @@ export function alignedRanges(values: Matrix[], visit: (cells: Scalar[], count: 
   const rows = maxOf(values.map((value) => value.rows))
   const cols = maxOf(values.map((value) => value.cols))
   consumeWork(rows * cols * values.length)
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) visit(values.map((value) => matrixGet(value, r, c)), 1)
-  const omitted = total - rows * cols
-  if (omitted > 0) visit(values.map((value) => value.omittedValue ?? null), omitted)
+  const tail = values.map((value) => value.omittedValue ?? null)
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) visit(values.map((value) => matrixGet(value, r, c)), 1)
+    if (cols < first.cols) visit(tail, first.cols - cols)
+  }
+  if (rows < first.rows) visit(tail, (first.rows - rows) * first.cols)
 }
 
 /** Broadcast using logical edges. A compact result is safe only when its omitted region is uniform. */
@@ -113,4 +116,25 @@ export function broadcastRanges(values: (Scalar | Matrix)[], fn: (cells: Scalar[
     return matrix(rows, cols, full)
   }
   return shaped(matrix(storedRows, storedCols, data), rows, cols, tail)
+}
+
+/**
+ * Visit cells in logical row-major order. With weightedTail, each contiguous omitted run is
+ * visited once with its multiplicity; consumers must account for that count. This keeps a
+ * whole column bounded without moving omitted columns past the next row's stored cells.
+ */
+export function forEachLogical(value: Matrix, visit: (cell: Scalar, count: number) => void, options: { weightedTail?: boolean } = {}): void {
+  const { rows, cols } = logicalSize(value)
+  const tail = value.omittedValue ?? null
+  const run = (cell: Scalar, count: number): void => {
+    if (count <= 0) return
+    consumeWork(options.weightedTail ? 1 : count)
+    if (options.weightedTail) visit(cell, count)
+    else for (let i = 0; i < count; i++) visit(cell, 1)
+  }
+  for (let r = 0; r < value.rows; r++) {
+    for (let c = 0; c < value.cols; c++) run(matrixGet(value, r, c), 1)
+    run(tail, cols - value.cols)
+  }
+  run(tail, (rows - value.rows) * cols)
 }

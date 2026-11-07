@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { MAX_COLS, MAX_ROWS, parseCellName } from '../address.js'
 import { functionRegistry } from './functions/index.js'
 import { FormulaEngine } from './engine.js'
-import { isMatrix, logicalSize, matrixGet, type Scalar } from './types.js'
+import { forEachLogical } from './ranges.js'
+import { Errors, isError, isMatrix, logicalSize, matrix, matrixGet, type Scalar } from './types.js'
 
 function book(): FormulaEngine {
-  const engine = new FormulaEngine({ functions: functionRegistry() })
+  const engine = new FormulaEngine({ functions: functionRegistry(), random: () => 0.5, now: () => 1_700_000_000_000 })
   engine.setSheets(['Sheet1', 'Sheet2', 'Results'])
   return engine
 }
@@ -156,4 +157,99 @@ it('sizes spills using logical bounds and reads their omitted cells', () => {
   expect(engine.getValue(2, 3, 1)).toEqual({ code: '#SPILL!' })
   expect(engine.getSpill(2, 5, 0)).toEqual({ rows: 1, cols: MAX_COLS })
   expect(engine.getValue(2, 5, MAX_COLS - 1)).toBe(1)
+})
+
+// The engine must not change results when an unrelated cell expands its stored prefix.
+// In addition to the dense/compact registry test, exercise the actual whole-axis read path
+// for every registered function, including scalar functions that lift over ranges.
+function canonical(value: ReturnType<FormulaEngine['evaluateFormula']>): unknown {
+  if (!isMatrix(value)) return value
+  const runs: { value: Scalar; count: number }[] = []
+  forEachLogical(value, (cell, count) => {
+    const last = runs.at(-1)
+    if (last && (last.value === cell || isError(last.value) && isError(cell) && last.value.code === cell.code)) last.count += count
+    else runs.push({ value: cell, count })
+  }, { weightedTail: true })
+  return { ...logicalSize(value), runs }
+}
+
+describe('registry whole-axis invariance', () => {
+  for (const spec of functionRegistry().values()) {
+    it(spec.name, () => {
+      for (const horizontal of [false, true]) {
+        const axis = horizontal ? '1:1' : 'A:A'
+        const full = horizontal ? 'A1:XFD1' : `A1:A${MAX_ROWS}`
+        const count = spec.maxArgs <= 8 ? spec.maxArgs : spec.minArgs + 1
+        for (let pos = 0; pos < count; pos++) {
+          const engine = book()
+          set(engine, 0, 'A1', 2)
+          set(engine, 0, horizontal ? 'B1' : 'A2', 3)
+          const args = Array.from({ length: count }, (_, i) => i === pos ? `Sheet1!${axis}` : '1')
+          const formula = `${spec.name}(${args.join(',')})`
+          const before = canonical(engine.evaluateFormula(formula, 2))
+          expect(canonical(engine.evaluateFormula(formula.replaceAll(axis, full), 2)), formula).toEqual(before)
+          set(engine, 0, horizontal ? 'K3' : 'C11', 99)
+          expect(canonical(engine.evaluateFormula(formula, 2)), formula).toEqual(before)
+        }
+      }
+    })
+  }
+})
+
+it('joins logical blanks with bounded text output, including cycling delimiter ranges', () => {
+  const engine = book()
+  set(engine, 0, 'A1', 'a')
+  expect(engine.evaluateFormula('TEXTJOIN(",",FALSE,Sheet1!A:A)', 2)).toEqual(Errors.VALUE)
+  expect(engine.evaluateFormula('TEXTJOIN(",",FALSE,Sheet1!A1:A10)', 2)).toBe('a,,,,,,,,,')
+  expect(engine.evaluateFormula('TEXTJOIN(",",TRUE,Sheet1!A:A)', 2)).toBe('a')
+  expect(engine.evaluateFormula('TEXTJOIN("",FALSE,Sheet1!A:A)', 2)).toBe('a')
+  expect(engine.evaluateFormula('CONCAT(Sheet1!A:A)', 2)).toBe('a')
+  expect(engine.evaluateFormula('ARRAYTOTEXT(Sheet1!A:A)', 2)).toEqual(Errors.VALUE)
+  expect(engine.evaluateFormula('ARRAYTOTEXT(Sheet1!A:A,1)', 2)).toEqual(Errors.VALUE)
+  expect(engine.evaluateFormula('TEXTJOIN({"-",""},FALSE,Sheet1!A1:A10)', 2)).toBe('a-----')
+  // A whole-column delimiter is a logical cycle with many empty entries, not just its prefix.
+  expect(engine.evaluateFormula('TEXTJOIN(Sheet1!A:A,FALSE,{1,2,3,4})', 2)).toBe('1a234')
+  expect(engine.evaluateFormula('TEXTJOIN("",FALSE,Sheet1!A:A&"x")', 2)).toEqual(Errors.VALUE)
+})
+
+it('streams counting and A-aggregates over transformed whole-column tails', () => {
+  const engine = book()
+  set(engine, 0, 'A1', 2)
+  for (const [formula, expected] of [
+    ['AVERAGEA(Sheet1!A:A+1)', (MAX_ROWS + 2) / MAX_ROWS],
+    ['MINA(Sheet1!A:A+1)', 1], ['MAXA(Sheet1!A:A+1)', 3],
+    ['PRODUCT(Sheet1!A:A+1)', 3], ['COUNT(Sheet1!A:A+1)', MAX_ROWS],
+    ['COUNTA(Sheet1!A:A&"")', MAX_ROWS], ['COUNTBLANK(Sheet1!A:A&"")', MAX_ROWS - 1],
+    ['SUBTOTAL(3,Sheet1!A:A&"")', MAX_ROWS],
+  ] as const) expect(engine.evaluateFormula(formula, 2), formula).toBe(expected)
+  expect(canonical(engine.evaluateFormula('IFERROR(1/Sheet1!A:A,7)', 2))).toEqual(canonical(engine.evaluateFormula(`IFERROR(1/Sheet1!A1:A${MAX_ROWS},7)`, 2)))
+  expect(engine.evaluateFormula('INDEX(IFERROR(1/Sheet1!A:A,7),100)', 2)).toBe(7)
+})
+
+
+it('handles an error that exists only in an omitted tail lazily', () => {
+  const source = { ...matrix(1, 1, [2]), logicalRows: MAX_ROWS, omittedValue: Errors.DIV0 }
+  const functions = functionRegistry([{ name: 'TAIL', minArgs: 0, maxArgs: 0, fn: () => source }])
+  const engine = new FormulaEngine({ functions })
+  engine.setSheets(['Results'])
+  expect(engine.evaluateFormula('INDEX(IFERROR(TAIL(),7),100)')).toBe(7)
+  expect(engine.evaluateFormula('INDEX(IFNA(TAIL(),7),100)')).toEqual(Errors.DIV0)
+})
+
+// Cached results from LibreOffice 26.8.2.2, recalculated via a fresh headless profile.
+// Calc permits strings beyond Excel's 32,767-character limit, so the full-column
+// TEXTJOIN(FALSE) overflow remains an explicit Excel-limit test above.
+it('matches the LibreOffice logical-range sample', () => {
+  const engine = book()
+  set(engine, 0, 'A1', 'a')
+  set(engine, 0, 'B1', 2)
+  set(engine, 0, 'B2', 3)
+  for (const [formula, expected] of [
+    ['TEXTJOIN(",",FALSE,Sheet1!A1:A10)', 'a,,,,,,,,,'],
+    ['TEXTJOIN(",",TRUE,Sheet1!A:A)', 'a'], ['CONCAT(Sheet1!A:A)', 'a'],
+    ['COUNTBLANK(Sheet1!A:A)', 1048575], ['COUNTA(Sheet1!A:A)', 1],
+    ['COUNT(Sheet1!B:B)', 2], ['AVERAGEA(Sheet1!B:B)', 2.5],
+    ['MINA(Sheet1!B:B)', 2], ['MAXA(Sheet1!B:B)', 3], ['PRODUCT(Sheet1!B:B)', 6],
+    ['MATCH(3,Sheet1!B:B,0)', 2], ['ROWS(Sheet1!A:A)', 1048576], ['COLUMNS(Sheet1!1:1)', 16384],
+  ] as const) expect(engine.evaluateFormula(formula, 2), formula).toBe(expected)
 })

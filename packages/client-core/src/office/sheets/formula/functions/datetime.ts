@@ -4,6 +4,7 @@
  * before March 1900 follow Excel rather than the real calendar.
  */
 
+import { forEachLogical } from '../ranges.js'
 import { dateToSerial, serialToParts, type DateParts } from '../../dates.js'
 import { Errors, isError, type FunctionContext, type FunctionSpec, type Value } from '../types.js'
 import { bool, check, defInt, define, fail, int, num, omitted, optInt, text, toMatrix, type Args } from './coerce.js'
@@ -160,13 +161,13 @@ function weekendMask(ctx: FunctionContext, value: Value | undefined, present: bo
 function holidaySet(ctx: FunctionContext, value: Value | undefined): Set<number> {
   const out = new Set<number>()
   if (value === undefined) return out
-  for (const v of toMatrix(ctx, value).data) {
-    if (v === null) continue
+  forEachLogical(toMatrix(ctx, value), (v) => {
+    if (v === null) return
     if (isError(v)) fail(v)
     const n = typeof v === 'number' ? v : num(v, ctx)
     check(n >= 0)
     out.add(Math.floor(n))
-  }
+  }, { weightedTail: true })
   return out
 }
 

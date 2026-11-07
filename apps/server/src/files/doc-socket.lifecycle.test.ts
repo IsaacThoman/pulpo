@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
+import { TEXT_SCHEMA_VERSION } from '@pulpo/client-core/office/text'
+import { SHEETS_SCHEMA_VERSION } from '@pulpo/client-core/office/sheets'
+import { DOCX_SCHEMA_VERSION } from '@pulpo/client-core/office/docx'
+import { PRESENTATION_SCHEMA_VERSION } from '@pulpo/client-core/office/presentation'
+import { NOTEBOOK_SCHEMA_VERSION } from '@pulpo/client-core/office/notebook'
 import { DOC_GENERATION_KEY, DOC_META_MAP, DOC_SCHEMA_VERSION } from '@pulpo/client-core/doc-schema'
 
 vi.mock('./doc-store.js', () => ({ appendDocUpdate: vi.fn(), loadDocUpdate: vi.fn(), MAX_DOC_UPDATE_BYTES: 1_000_000 }))
@@ -104,13 +109,16 @@ describe('document socket lifecycle', () => {
     asDoc('text')
     // An older client cannot edit text documents, and neither can one with another text schema.
     expect(await socketFixture().join()).toMatchObject({ ok: false, error: 'schema_outdated' })
-    expect(await socketFixture().join(docId, { schemaVersions: { markdown: DOC_SCHEMA_VERSION, text: 99 } })).toMatchObject({ ok: false, error: 'schema_outdated' })
-    expect(await socketFixture().join(docId, { schemaVersions: { markdown: DOC_SCHEMA_VERSION, text: 1 } })).toMatchObject({ ok: true, format: 'text' })
+    expect(await socketFixture().join(docId, { schemaVersions: { markdown: DOC_SCHEMA_VERSION, text: TEXT_SCHEMA_VERSION + 1 } })).toMatchObject({ ok: false, error: 'schema_outdated' })
+    expect(await socketFixture().join(docId, { schemaVersions: { markdown: DOC_SCHEMA_VERSION, text: TEXT_SCHEMA_VERSION } })).toMatchObject({ ok: true, format: 'text' })
     // A client announcing only text cannot open Markdown, and nobody can open a format this server lacks.
     asDoc('markdown')
-    expect(await socketFixture().join(docId, { schemaVersions: { text: 1 } })).toMatchObject({ ok: false, error: 'schema_outdated' })
-    asDoc('sheet')
-    expect(await socketFixture().join(docId, { schemaVersions: { sheet: 1 } })).toMatchObject({ ok: true, format: 'sheet' })
+    expect(await socketFixture().join(docId, { schemaVersions: { text: TEXT_SCHEMA_VERSION } })).toMatchObject({ ok: false, error: 'schema_outdated' })
+    for (const [format, version] of Object.entries({ markdown: DOC_SCHEMA_VERSION, text: TEXT_SCHEMA_VERSION, sheet: SHEETS_SCHEMA_VERSION, document: DOCX_SCHEMA_VERSION, presentation: PRESENTATION_SCHEMA_VERSION, notebook: NOTEBOOK_SCHEMA_VERSION })) {
+      asDoc(format)
+      expect(await socketFixture().join(docId, { schemaVersions: { [format]: version } })).toMatchObject({ ok: true, format })
+      expect(await socketFixture().join(docId, { schemaVersions: { [format]: version - 1 } })).toMatchObject({ ok: false, error: 'schema_outdated' })
+    }
     asDoc('no-such-format')
     expect(await socketFixture().join(docId, { schemaVersions: { 'no-such-format': 1 } })).toMatchObject({ ok: false, error: 'schema_outdated' })
   })

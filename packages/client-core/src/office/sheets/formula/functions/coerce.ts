@@ -4,8 +4,8 @@
  * which keeps Excel's "first error wins" propagation out of every function body.
  */
 
-import { broadcastRanges, denseRange, shaped } from '../ranges.js'
-import { logicalSize, matrixGet, omittedCells } from '../types.js'
+import { broadcastRanges, forEachLogical, denseRange, shaped } from '../ranges.js'
+import { logicalSize, matrixGet } from '../types.js'
 import { consumeWork } from '../budget.js'
 import { serialToParts } from '../../dates.js'
 import { parseNumberText, type ParseOptions } from '../../numfmt/parse.js'
@@ -285,7 +285,9 @@ export function transpose(m: Matrix): Matrix {
 /** A matrix of numbers for linear algebra: every cell must be a number (blanks and text are #VALUE!). */
 export function numericMatrix(ctx: FunctionContext, value: Value | undefined): { rows: number; cols: number; data: number[] } {
   const source = toMatrix(ctx, value)
-  if (omittedCells(source) && typeof source.omittedValue !== 'number') fail(isError(source.omittedValue) ? source.omittedValue : Errors.VALUE)
+  forEachLogical(source, (v) => {
+    if (typeof v !== 'number') fail(isError(v) ? v : Errors.VALUE)
+  }, { weightedTail: true })
   const m = denseRange(source)
   const data = m.data.map((v) => {
     if (typeof v === 'number') return v

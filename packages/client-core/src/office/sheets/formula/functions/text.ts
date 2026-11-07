@@ -1,5 +1,8 @@
 /** Text functions (the number-formatting ones, TEXT/VALUE/FIXED/…, live in text-format.ts). */
 
+import { consumeWork } from '../budget.js'
+import { forEachLogical } from '../ranges.js'
+import { logicalSize, matrixGet } from '../types.js'
 import { maxOf } from '../../../../collections.js'
 
 import { Errors, isError, matrix, type FunctionContext, type FunctionSpec, type Scalar, type Value } from '../types.js'
@@ -37,18 +40,69 @@ function proper(s: string): string {
   return out
 }
 
-/** All values of `any` arguments flattened to text, for CONCAT and TEXTJOIN. */
-function flatTexts(ctx: FunctionContext, args: Args): string[] {
-  const out: string[] = []
-  let length = 0
-  for (const arg of args) {
-    for (const v of toMatrix(ctx, arg).data) {
-      if (isError(v)) fail(v)
-      const part = text(v)
-      length += part.length
-      if (length > MAX_TEXT_LENGTH) fail(Errors.VALUE)
-      out.push(part)
+interface TextRun { text: string; count: number }
+
+function textRuns(ctx: FunctionContext, args: Args, render = (v: Scalar): string => text(v)): TextRun[] {
+  const runs: TextRun[] = []
+  for (const arg of args) forEachLogical(toMatrix(ctx, arg), (value, count) => {
+    runs.push({ text: render(value), count })
+  }, { weightedTail: true })
+  return runs
+}
+
+/** Joins weighted runs, measuring delimiters and values before allocating any repeated text. */
+function joinRuns(values: TextRun[], separators: TextRun[], ignoreEmpty = false): string {
+  let period = 0
+  const ends = separators.map((run) => (period += run.count))
+  const cycleLength = separators.reduce((n, run) => n + run.text.length * run.count, 0)
+  let out = '', seen = 0
+  const append = (part: string, count = 1): void => {
+    if (out.length + part.length * count > MAX_TEXT_LENGTH) fail(Errors.VALUE)
+    if (part.length) out += part.repeat(count)
+  }
+  const delimit = (start: number, count: number): void => {
+    if (!period || !cycleLength || !count) return
+    let offset = start % period
+    const segment = (length: number): void => {
+      let lo = 0, hi = ends.length
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1
+        if (ends[mid]! <= offset) lo = mid + 1
+        else hi = mid
+      }
+      let at = offset
+      for (let i = lo; i < separators.length && at < offset + length; i++) {
+        consumeWork()
+        const take = Math.min(ends[i]!, offset + length) - at
+        append(separators[i]!.text, take)
+        at += take
+      }
     }
+    const first = Math.min(count, period - offset)
+    segment(first)
+    count -= first
+    offset = 0
+    const cycles = Math.floor(count / period)
+    if (cycles) {
+      if (out.length + cycles * cycleLength > MAX_TEXT_LENGTH) fail(Errors.VALUE)
+      const cycle = separators.map((run) => run.text ? run.text.repeat(run.count) : '').join('')
+      append(cycle, cycles)
+    }
+    segment(count % period)
+  }
+  for (const run of values) {
+    if (ignoreEmpty && run.text === '') continue
+    if (out.length + run.text.length * run.count > MAX_TEXT_LENGTH) fail(Errors.VALUE)
+    if (!run.text) {
+      delimit(Math.max(0, seen - 1), run.count - (seen ? 0 : 1))
+    } else {
+      // Nonempty values are bounded by the text limit, even when all delimiters are empty.
+      for (let i = 0; i < run.count; i++) {
+        if (seen + i) delimit(seen + i - 1, 1)
+        append(run.text)
+      }
+    }
+    seen += run.count
   }
   return out
 }
@@ -68,11 +122,8 @@ function checkLength(s: string): string {
 // TEXTBEFORE / TEXTAFTER / TEXTSPLIT
 
 function delimiters(ctx: FunctionContext, value: Value | undefined): string[] {
-  const m = toMatrix(ctx, value)
-  return m.data.map((v) => {
-    if (isError(v)) fail(v)
-    return text(v)
-  })
+  // Repeated delimiters have the same matching behavior; inspect each omitted run once.
+  return textRuns(ctx, [value]).map((run) => run.text)
 }
 
 interface Hit {
@@ -164,9 +215,12 @@ function arrayToText(ctx: FunctionContext, args: Args): string {
     if (typeof v === 'string') return strict ? `"${v.replace(/"/g, '""')}"` : v
     return text(v)
   }
-  if (format === 0) return joinText(m.data.map((v) => render(v, false)), ', ')
+  if (format === 0) return joinRuns(textRuns(ctx, [m], (v) => render(v, false)), [{ text: ', ', count: 1 }])
+  const size = logicalSize(m)
+  // Even empty cells need one separator each, plus braces. Reject before expanding the tail.
+  if (size.rows * size.cols + 1 > MAX_TEXT_LENGTH) fail(Errors.VALUE)
   const rows: string[] = []
-  for (let r = 0; r < m.rows; r++) rows.push(joinText(m.data.slice(r * m.cols, (r + 1) * m.cols).map((v) => render(v, true)), ','))
+  for (let r = 0; r < size.rows; r++) rows.push(joinText(Array.from({ length: size.cols }, (_, c) => render(matrixGet(m, r, c), true)), ','))
   const body = joinText(rows, ';')
   if (body.length + 2 > MAX_TEXT_LENGTH) fail(Errors.VALUE)
   return `{${body}}`
@@ -174,7 +228,7 @@ function arrayToText(ctx: FunctionContext, args: Args): string {
 
 export const TEXT_FUNCTIONS: FunctionSpec[] = [
   define({ name: 'CONCATENATE', min: 1, max: 255, fn: (ctx, args) => joinText(args.map((a) => text(a, ctx))) }),
-  define({ name: 'CONCAT', min: 1, max: 254, args: ['any'], xlfn: true, fn: (ctx, args) => joinText(flatTexts(ctx, args)) }),
+  define({ name: 'CONCAT', min: 1, max: 254, args: ['any'], xlfn: true, fn: (ctx, args) => joinRuns(textRuns(ctx, args), []) }),
   define({
     name: 'TEXTJOIN',
     min: 3,
@@ -182,17 +236,7 @@ export const TEXT_FUNCTIONS: FunctionSpec[] = [
     args: ['any', 'scalar', 'any'],
     xlfn: true,
     fn: (ctx, args) => {
-      const delims = delimiters(ctx, args[0])
-      const ignoreEmpty = bool(args[1], ctx)
-      let values = flatTexts(ctx, args.slice(2))
-      if (ignoreEmpty) values = values.filter((v) => v !== '')
-      let out = ''
-      values.forEach((v, i) => {
-        const delimiter = i > 0 && delims.length ? delims[(i - 1) % delims.length]! : ''
-        if (out.length + delimiter.length + v.length > MAX_TEXT_LENGTH) fail(Errors.VALUE)
-        out += delimiter + v
-      })
-      return checkLength(out)
+      return joinRuns(textRuns(ctx, args.slice(2)), textRuns(ctx, [args[0]]), bool(args[1], ctx))
     },
   }),
   ...['LEFT', 'LEFTB'].map((name) =>

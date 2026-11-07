@@ -1,7 +1,6 @@
 /** Financial functions: annuities, cash-flow analysis, depreciation, rates, and T-bills/bonds. */
 
-import { omittedCells } from '../types.js'
-import { denseRange } from '../ranges.js'
+import { forEachLogical, denseRange } from '../ranges.js'
 
 
 import { Errors, isError, type FunctionContext, type FunctionSpec, type Scalar, type Value } from '../types.js'
@@ -147,7 +146,9 @@ function irr(ctx: FunctionContext, args: Args): number {
 
 function strictNumbers(ctx: FunctionContext, value: Value | undefined): number[] {
   const source = toMatrix(ctx, value)
-  if (omittedCells(source) && typeof source.omittedValue !== 'number') fail(isError(source.omittedValue) ? source.omittedValue : Errors.VALUE)
+  forEachLogical(source, (v) => {
+    if (typeof v !== 'number') fail(isError(v) ? v : Errors.VALUE)
+  }, { weightedTail: true })
   return denseRange(source).data.map((v: Scalar) => {
     if (isError(v)) return fail(v)
     if (typeof v !== 'number') return fail(Errors.VALUE)
@@ -558,11 +559,11 @@ export const FINANCIAL_FUNCTIONS: FunctionSpec[] = [
     args: ['scalar', 'any'],
     fn: (ctx, args) => {
       let value = num(args[0], ctx)
-      for (const r of toMatrix(ctx, args[1]).data) {
+      forEachLogical(toMatrix(ctx, args[1]), (r, count) => {
         if (isError(r)) return fail(r)
         if (r !== null && typeof r !== 'number') return fail(Errors.VALUE)
-        value *= 1 + (r ?? 0)
-      }
+        value *= (1 + (r ?? 0)) ** count
+      }, { weightedTail: true })
       return value
     },
   }),
