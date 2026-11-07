@@ -92,9 +92,17 @@ describe('concurrent editing', () => {
             }
             break
           }
-          case 8:
-            commands.mergeRanges(sheet, [{ top: row, left: col, bottom: row + 1, right: col + 1 }])
+          case 8: {
+            const before = Y.encodeStateAsUpdate(model.doc)
+            try {
+              commands.mergeRanges(sheet, [{ top: row, left: col, bottom: row + 1, right: col + 1 }])
+            } catch (error) {
+              expect(error).toBeInstanceOf(commands.DataOperationError)
+              expect((error as commands.DataOperationError).reason).toBe('merges')
+              expect(Y.encodeStateAsUpdate(model.doc)).toEqual(before)
+            }
             break
+          }
           case 9:
             if (sheets.length < 3) model.addSheet(model.uniqueSheetName(`S${step}`))
             break

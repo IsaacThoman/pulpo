@@ -558,3 +558,31 @@ it.each(['row', 'col'] as const)('copies stale cuts after inherited %s formats c
   expect(view.styleAt(4, 4).bold).toBe(true)
   expect(view.styleAt(0, 0).bold).toBe(false)
 })
+
+it.each([{}, { values: true }, { formats: true }])('paste into part of a range hyperlink preserves outside coverage, mode %j', (mode) => {
+  const { sheet, view } = setup()
+  sheet.setCell(0, 1, { v: 'source' })
+  commands.setRangeLinks(sheet, [rect(0, 0, 9, 0)], { target: 'https://example.com/old' })
+  const data = copy(view, rect(0, 1))
+  paste(view, data, rect(4, 0), mode)
+  expect(sheet.linkAt(3, 0)?.target).toBe('https://example.com/old')
+  expect(sheet.linkAt(4, 0)?.target).toBe(mode.values || mode.formats ? 'https://example.com/old' : undefined)
+  expect(sheet.linkAt(5, 0)?.target).toBe('https://example.com/old')
+  if (!mode.values && !mode.formats) {
+    view.undo()
+    expect(sheet.linkAt(4, 0)?.target).toBe('https://example.com/old')
+  }
+})
+
+it('applies hyperlink edits to the selected range and undoes the split in one step', () => {
+  const { sheet, view } = setup()
+  commands.setRangeLinks(sheet, [rect(0, 0, 9, 0)], { target: 'https://example.com/old' })
+  view.select(rect(3, 0, 5, 0))
+  view.setLink(undefined)
+  expect([2, 3, 4, 5, 6].map((r) => sheet.linkAt(r, 0)?.target)).toEqual(['https://example.com/old', undefined, undefined, undefined, 'https://example.com/old'])
+  view.undo()
+  expect([3, 4, 5].map((r) => sheet.linkAt(r, 0)?.target)).toEqual(Array(3).fill('https://example.com/old'))
+  view.select(rect(3, 0, 5, 0))
+  view.setLink({ target: 'https://example.com/new' })
+  expect([2, 3, 4, 5, 6].map((r) => sheet.linkAt(r, 0)?.target)).toEqual(['https://example.com/old', 'https://example.com/new', 'https://example.com/new', 'https://example.com/new', 'https://example.com/old'])
+})

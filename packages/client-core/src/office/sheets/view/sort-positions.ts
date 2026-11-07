@@ -34,7 +34,7 @@ export function sortPositions(sheet: SheetModel, area: CellRange): () => void {
   const rowProps = [...sheet.rowMeta.entries()].filter(([key]) => !key.startsWith('~p') && !/\|(hidden|manualHidden)$/.test(key))
   const links = [...sheet.links.entries()].filter(([, raw]) => {
     const range = (raw as { range?: { top?: string; bottom?: string; left?: string; right?: string } }).range
-    return range && (range.top !== range.bottom || range.left !== range.right)
+    return range && (range.top?.startsWith('~p') || range.top !== range.bottom || range.left !== range.right)
   })
   return () => {
     sheet.enablePositions()

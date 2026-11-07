@@ -3,7 +3,8 @@ import { parseXml } from '../../ooxml/package.js'
 import { attr, boolAttr, child, children, numberAttr } from '../codec/xml.js'
 import { cellStyle } from '../styles/cell-style.js'
 import { Stylesheet } from '../styles/stylesheet.js'
-import { clearRules } from './clipboard-state.js'
+import { clearLinks, clearRules, metadataRangeIds, putRangeLink, rebaseRule } from '../model/range-metadata.js'
+import { normalizeRanges, intersects, contains } from '../range-set.js'
 import { sortedFormula, outsideSortFormulas } from '../model/sort-formulas.js'
 import { MAX_COLS, MAX_ROWS, parseRangeName, rangeContains, type CellRange } from '../address.js'
 import { DataOperationError } from './data-errors.js'
@@ -13,7 +14,7 @@ import { randomId } from '../model/axis.js'
 import { columnIntervalProps, columnIntervals } from '../model/column-intervals.js'
 import { toA1Form, toIdForm } from '../model/formula-ids.js'
 import { formatA1Reference, rewriteReferences, shiftFormula } from '../model/references.js'
-import type { AutoFilter, BorderEdge, BorderStyle, CellData, DataValidation, Hyperlink, Note, SheetTable, SheetColor, StyleProp, StyleProps } from '../model/schema.js'
+import type { AutoFilter, BorderEdge, BorderStyle, CellData, ConditionalFormat, DataValidation, Hyperlink, Note, SheetTable, SheetColor, StyleProp, StyleProps } from '../model/schema.js'
 import { deleteAxis, insertAxis, type AxisKind } from '../model/structure.js'
 import { splitCellKey, type SheetModel } from '../model/workbook.js'
 import { sortPositions } from './sort-positions.js'
@@ -217,8 +218,8 @@ export function clearFormats(sheet: SheetModel, ranges: CellRange[]): void {
           if (position && rangeContains(range, position.row, position.col)) map.delete(key)
         }
       }
-      clearRules(sheet, 'cf', raw)
     }
+    clearRules(sheet, 'cf', ranges)
     for (const range of resets) for (let row = range.top; row <= range.bottom; row++) for (let col = range.left; col <= range.right; col++) {
       const overrides = { ...sheet.axisOverrides('col', sheet.cols.idAt(col)), ...sheet.axisOverrides('row', sheet.rows.idAt(row)) }
       const patch = Object.fromEntries(Object.keys(overrides).map((prop) => [prop, defaults[prop as StyleProp]])) as StylePatch
@@ -236,6 +237,12 @@ export function clearAll(sheet: SheetModel, ranges: CellRange[]): void {
   sheet.workbook.transact(() => {
     clearContents(sheet, ranges)
     clearFormats(sheet, ranges)
+    clearRules(sheet, 'dv', ranges)
+    clearLinks(sheet, ranges)
+    for (const key of [...sheet.notes.keys()]) {
+      const point = sheet.position(key)
+      if (point && ranges.some((r) => rangeContains(r, point.row, point.col))) sheet.notes.delete(key)
+    }
   })
 }
 
@@ -380,6 +387,16 @@ export type MergeMode = 'all' | 'across' | 'center'
 /** Merges each range (or each row of it, `across`); keeps the top-left content like Excel. */
 export function mergeRanges(sheet: SheetModel, ranges: CellRange[], mode: MergeMode = 'all'): void {
   assertExpandableRanges(ranges)
+  const targets = ranges.flatMap((range) => mode === 'across'
+    ? span(range.top, range.bottom).map((row) => ({ ...range, top: row, bottom: row })) : [range])
+  const cellCount = (areas: CellRange[]) => areas.reduce((count, r) => count + (r.bottom - r.top + 1) * (r.right - r.left + 1), 0)
+  if (cellCount(normalizeRanges(ranges)) !== cellCount(ranges)) throw new DataOperationError('merges')
+  const existingMerges = sheet.mergedRanges()
+  for (const target of targets) {
+    for (const merge of existingMerges) {
+      if (intersects(merge.range, target) && !contains(target, merge.range)) throw new DataOperationError('merges')
+    }
+  }
   const cleared = ranges.flatMap((r) => mode === 'across'
     ? [{ ...r, left: r.left + 1 }]
     : [{ ...r, top: r.top + 1 }, { ...r, bottom: r.top, left: r.left + 1 }]).filter((r) => r.top <= r.bottom && r.left <= r.right)
@@ -390,7 +407,7 @@ export function mergeRanges(sheet: SheetModel, ranges: CellRange[], mode: MergeM
       for (const target of targets) {
         if (target.top === target.bottom && target.left === target.right) continue
         // Existing merges inside go; contents other than the first go.
-        for (const merge of sheet.mergedRanges()) if (intersects(merge.range, target)) sheet.merges.delete(merge.id)
+        for (const merge of existingMerges) if (intersects(merge.range, target)) sheet.merges.delete(merge.id)
         for (let row = target.top; row <= target.bottom; row++) {
           for (let col = target.left; col <= target.right; col++) {
             if (row !== target.top || col !== target.left) sheet.cells.delete(sheet.keyAt(row, col))
@@ -407,10 +424,6 @@ export function unmergeRanges(sheet: SheetModel, ranges: CellRange[]): void {
   sheet.workbook.transact(() => {
     for (const merge of sheet.mergedRanges()) if (ranges.some((range) => intersects(merge.range, range))) sheet.merges.delete(merge.id)
   })
-}
-
-function intersects(a: CellRange, b: CellRange): boolean {
-  return a.left <= b.right && b.left <= a.right && a.top <= b.bottom && b.top <= a.bottom
 }
 
 /** Grows a range to cover every merge it touches (selections snap to merged cells). */
@@ -683,7 +696,7 @@ export function sortRange(sheet: SheetModel, range: CellRange, keys: SortKey[], 
     const snapshots = order.map((row) => cols.map((col) => snapshotCell(sheet, row, col)))
     const manual = order.map((row) => visibility?.manual.has(sheet.rows.idAt(row)) ?? !!(sheet.rowProp(row, 'manualHidden') || sheet.rowProp(row, 'hidden')))
     const restorePositions = permute ? sortPositions(sheet, area) : undefined
-    const rangeLinks = [...sheet.links.entries()].filter(([, raw]) => { const link = raw as Hyperlink; return link.range && (link.range.top !== link.range.bottom || link.range.left !== link.range.right) })
+    const rangeLinks = [...sheet.links.entries()].filter(([, raw]) => { const link = raw as Hyperlink; return link.range && (link.range.top?.startsWith('~p') || link.range.top !== link.range.bottom || link.range.left !== link.range.right) })
     const movedFormulas = permute ? order.map((row) => cols.map((col) => {
       const key = sheet.keyAt(row, col)
       const f = sheet.cellData(key)?.f
@@ -732,7 +745,7 @@ export function sortRange(sheet: SheetModel, range: CellRange, keys: SortKey[], 
           const key = sheet.keyAt(targetRow, col)
           if (snapshot.note) sheet.notes.set(key, snapshot.note)
           else sheet.notes.delete(key)
-          if (rangeLinks.some(([k]) => k === key) || snapshot.link?.range && (snapshot.link.range.top !== snapshot.link.range.bottom || snapshot.link.range.left !== snapshot.link.range.right)) {
+          if (rangeLinks.some(([k]) => k === key) || snapshot.link?.range && (snapshot.link.range.top?.startsWith('~p') || snapshot.link.range.top !== snapshot.link.range.bottom || snapshot.link.range.left !== snapshot.link.range.right)) {
             if (!rangeLinks.some(([k]) => k === key)) sheet.links.delete(key)
             return
           }
@@ -854,35 +867,49 @@ export function setNote(sheet: SheetModel, row: number, col: number, note: Note 
   })
 }
 
+/** Set/remove one cell, preserving the rest of any imported multi-cell hyperlink. */
 export function setLink(sheet: SheetModel, row: number, col: number, link: Hyperlink | undefined): void {
+  const point = { top: row, bottom: row, left: col, right: col }
+  const range = link?.range ? sheet.resolveRange(link.range) : point
+  setRangeLinks(sheet, range ? [range] : [], link)
+}
+
+export function setRangeLinks(sheet: SheetModel, ranges: CellRange[], link: Hyperlink | undefined): void {
+  const selected = normalizeRanges(ranges)
   sheet.workbook.transact(() => {
-    sheet.ensure(row, col)
-    const key = sheet.keyAt(row, col)
-    const current = sheet.linkAt(row, col)
-    if (current?.range) for (const [owner, raw] of sheet.links) if (raw === current) sheet.links.delete(owner)
-    if (link && (link.target || link.location)) sheet.links.set(key, link)
-    else sheet.links.delete(key)
+    clearLinks(sheet, selected)
+    if (link && (link.target || link.location)) for (const range of selected) {
+      // Single-cell links follow records; range links, including split survivors, stay positional.
+      if (range.top === range.bottom && range.left === range.right) {
+        sheet.ensure(range.top, range.left)
+        const { range: _range, ...value } = link
+        sheet.links.set(sheet.keyAt(range.top, range.left), value)
+      } else putRangeLink(sheet, range, link)
+    }
   })
 }
 
 export function setValidation(sheet: SheetModel, ranges: CellRange[], validation: Omit<DataValidation, 'ranges'> | undefined): void {
+  const selected = normalizeRanges(ranges)
   sheet.workbook.transact(() => {
-    // Ranges move out of existing rules first (one cell has one rule).
-    for (const [id, raw] of [...sheet.dv.entries()]) {
-      const existing = raw as DataValidation
-      const resolved = existing.ranges.map((ids) => sheet.resolveRange(ids))
-      if (resolved.some((range) => range && ranges.some((target) => intersects(range, target)))) {
-        const remaining = existing.ranges.filter((_, index) => !ranges.some((target) => resolved[index] && contains(target, resolved[index]!)))
-        if (remaining.length) sheet.dv.set(id, { ...existing, ranges: remaining })
-        else sheet.dv.delete(id)
-      }
+    clearRules(sheet, 'dv', selected)
+    if (validation && selected.length) {
+      const value = { ...validation, ranges: [] } as DataValidation
+      sheet.dv.set(randomId(), { ...rebaseRule(value, sheet, ranges[0]!, selected[0]!), ranges: selected.map((range) => metadataRangeIds(sheet, range)) })
     }
-    if (validation) sheet.dv.set(randomId(), { ...validation, ranges: ranges.map((range) => sheet.rangeIds(range)) })
   })
 }
 
-function contains(outer: CellRange, inner: CellRange): boolean {
-  return inner.top >= outer.top && inner.bottom <= outer.bottom && inner.left >= outer.left && inner.right <= outer.right
+/** Replacing/clearing CF differs from adding another Excel rule, which may overlap it. */
+export function setConditionalFormat(sheet: SheetModel, ranges: CellRange[], format: Omit<ConditionalFormat, 'ranges'> | undefined, mode: 'replace' | 'add' = 'replace'): void {
+  const selected = normalizeRanges(ranges)
+  sheet.workbook.transact(() => {
+    if (!format || mode === 'replace') clearRules(sheet, 'cf', selected)
+    if (format && selected.length) {
+      const value = { ...format, ranges: [] } as ConditionalFormat
+      sheet.cf.set(randomId(), { ...rebaseRule(value, sheet, ranges[0]!, selected[0]!), ranges: selected.map((range) => metadataRangeIds(sheet, range)) })
+    }
+  })
 }
 
 /** The validation rule covering a cell, if any. */

@@ -1513,7 +1513,7 @@ export class SheetView {
     this.run(() =>
       this.workbook.transact(() => {
         if (link?.display && !this.sheet.cell(row, col)) assertArrayWrite(this.sheet, [{ top: row, bottom: row, left: col, right: col }])
-        commands.setLink(this.sheet, row, col, link)
+        commands.setRangeLinks(this.sheet, this.targetRanges, link)
         if (link?.display && !this.sheet.cell(row, col)) this.sheet.setCell(row, col, { v: link.display })
       }),
     )

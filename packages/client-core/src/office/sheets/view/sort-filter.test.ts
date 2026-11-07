@@ -477,13 +477,14 @@ describe('sort and filter audit matrix', () => {
     expect(toA1Form(sheet.cell(3, 1)!.f!, sheet)).toBe('#REF!')
   })
 
-  it('removes positional range hyperlinks after sorting', () => {
+  it('removes only selected coverage from positional range hyperlinks after sorting', () => {
     const { sheet, sort } = setup([['2'], ['1']])
     commands.setLink(sheet, 0, 0, { target: 'https://example.com', range: sheet.rangeIds(rect(0, 0, 1, 0)) })
     sort()
     commands.setLink(sheet, 0, 0, undefined)
     expect(sheet.linkAt(0, 0)).toBeUndefined()
-    expect(sheet.links.size).toBe(0)
+    expect(sheet.linkAt(1, 0)?.target).toBe('https://example.com')
+    expect(sheet.links.size).toBe(1)
   })
 
   it.each([false, true])('keeps formulas outside the sort pointing at their original positions, partial=%s', (partial) => {

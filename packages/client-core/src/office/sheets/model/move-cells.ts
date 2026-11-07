@@ -1,3 +1,5 @@
+import { clearLinks, clearRules, metadataRangeIds, putRangeLink, rebaseRule } from './range-metadata.js'
+import { subtractRanges } from '../range-set.js'
 import { freezeSortFormulas } from './sort-formulas.js'
 import { PACKAGE_RELATIONSHIPS_NS, parseXml, relativeTarget } from '../../ooxml/package.js'
 import { child, children, serializeNode } from '../codec/xml.js'
@@ -5,7 +7,6 @@ import { referenceParts, resolveXml } from '../codec/reference-xml.js'
 import type * as Y from 'yjs'
 import { rangeContains, parseRangeName, type CellRange } from '../address.js'
 import { randomId } from './axis.js'
-import { shiftFormula } from './references.js'
 import { mapXmlReferences } from '../codec/reference-xml.js'
 import { formatIdToken, mapIdTokens, toA1Form, toIdForm, type IdEnd } from './formula-ids.js'
 import type { AutoFilter, ConditionalFormat, DataValidation, DrawingObject, Hyperlink, RangeIds, SheetTable } from './schema.js'
@@ -83,10 +84,25 @@ export function moveCells(source: SheetModel, target: SheetModel, range: CellRan
     relocateMap(source.xf, target.xf)
     relocateMap(source.fmt, target.fmt, (key) => key.slice(0, key.lastIndexOf('|')))
     relocateMap(source.notes, target.notes)
-    relocateMap(source.links, target.links)
-    const relocateRange = (ids: RangeIds): RangeIds => {
-      const rect = source.resolveRange(ids)
-      return rect && contains(range, rect) ? target.rangeIds(shift(rect)) : ids
+    const movingLinks = [...source.links].flatMap(([key, raw]) => {
+      const link = raw as Hyperlink, point = source.position(key)
+      const rect = link.range ? source.resolveRange(link.range) : point && { top: point.row, bottom: point.row, left: point.col, right: point.col }
+      if (!rect || !intersects(rect, range)) return []
+      return [{ link, rect: { top: Math.max(rect.top, range.top), bottom: Math.min(rect.bottom, range.bottom), left: Math.max(rect.left, range.left), right: Math.min(rect.right, range.right) } }]
+    })
+    clearLinks(source, [range])
+    clearLinks(target, [destination])
+    // Newly split survivors still use their original sheet's location-reference context.
+    for (const owner of new Set([source, target])) for (const raw of owner.links.values()) {
+      const link = raw as Hyperlink
+      if (!locations.has(link)) locations.set(link, { owner, formula: link.location && toIdForm(link.location, owner) })
+    }
+    for (const { link, rect } of movingLinks) {
+      const moved = shift(rect)
+      let next: Hyperlink
+      if (link.range) next = putRangeLink(target, moved, link)
+      else { next = { ...link }; target.links.set(target.keyAt(moved.top, moved.left), next) }
+      locations.set(next, locations.get(link)!)
     }
     for (const [from, to] of [[source.merges as Y.Map<unknown>, target.merges as Y.Map<unknown>], [source.tables, target.tables]] as const) {
       for (const [id, raw] of [...from]) {
@@ -122,39 +138,20 @@ export function moveCells(source: SheetModel, target: SheetModel, range: CellRan
         target.filter.set('sort', { ...sort, range: target.rangeIds(shift(rect)), sort: relocateSort(sort.sort) })
       } else if (owner === source && intersects(range, rect) || owner === target && intersects(destination, rect)) owner.filter.delete('sort')
     }
-    const subtract = (rect: CellRange, cut: CellRange): CellRange[] => {
-      if (!intersects(rect, cut)) return [rect]
-      const top = Math.max(rect.top, cut.top), bottom = Math.min(rect.bottom, cut.bottom)
-      const left = Math.max(rect.left, cut.left), right = Math.min(rect.right, cut.right)
-      return [
-        { ...rect, bottom: top - 1 }, { ...rect, top: bottom + 1 },
-        { top, bottom, left: rect.left, right: left - 1 }, { top, bottom, left: right + 1, right: rect.right },
-      ].filter((entry) => entry.top <= entry.bottom && entry.left <= entry.right)
-    }
-    const rebase = (value: ConditionalFormat | DataValidation, origin: CellRange, next: CellRange) => {
-      const formula = (f: string) => toIdForm(shiftFormula(toA1Form(f, source), next.top - origin.top, next.left - origin.left), source)
-      if ('rules' in value) return { ...value, rules: value.rules.map((rule) => ({ ...rule, ...(rule.formulas ? { formulas: rule.formulas.map(formula) } : {}), ...Object.fromEntries(['colorScale', 'dataBar', 'iconSet'].flatMap((key) => { const entry = rule[key as 'colorScale']; return entry ? [[key, { ...entry, values: entry.values.map((v) => v.type === 'formula' && v.value ? { ...v, value: formula(v.value) } : v) }]] : [] })) })) }
-      return { ...value, ...(value.formula1 ? { formula1: formula(value.formula1) } : {}), ...(value.formula2 ? { formula2: formula(value.formula2) } : {}) }
-    }
     for (const [from, to] of [[source.cf, target.cf], [source.dv, target.dv]] as const) {
-      if (source !== target) for (const [id, raw] of [...to]) {
-        const value = raw as ConditionalFormat | DataValidation
-        const ranges = value.ranges.flatMap((ids) => { const rect = target.resolveRange(ids); return rect ? subtract(rect, destination).map((r) => target.rangeIds(r)) : [] })
-        if (ranges.length) to.set(id, { ...value, ranges })
-        else to.delete(id)
-      }
+      if (source !== target) clearRules(target, from === source.cf ? 'cf' : 'dv', destination)
       for (const [id, raw] of [...from]) {
         const value = raw as ConditionalFormat | DataValidation
         const rects = value.ranges.flatMap((ids) => { const rect = source.resolveRange(ids); return rect ? [rect] : [] })
         const origin = rects[0]
         if (!origin) continue
         const moving = rects.filter((rect) => intersects(rect, range)).map((rect) => ({ top: Math.max(rect.top, range.top), bottom: Math.min(rect.bottom, range.bottom), left: Math.max(rect.left, range.left), right: Math.min(rect.right, range.right) }))
-        const staying = rects.flatMap((rect) => subtract(rect, range)).flatMap((rect) => source === target ? subtract(rect, destination) : [rect])
+        const staying = subtractRanges(rects, source === target ? [range, destination] : [range])
         if (!moving.length && staying.length === rects.length && staying.every((r, i) => JSON.stringify(r) === JSON.stringify(rects[i]))) continue
-        if (staying.length) from.set(id, { ...rebase(value, origin, staying[0]!), ranges: staying.map((rect) => source.rangeIds(rect)) })
+        if (staying.length) from.set(id, { ...rebaseRule(value, source, origin, staying[0]!), ranges: staying.map((rect) => metadataRangeIds(source, rect)) })
         else from.delete(id)
         if (!moving.length) continue
-        const moved = { ...rebase(value, origin, moving[0]!), ranges: moving.map((rect) => target.rangeIds(shift(rect))) }
+        const moved = { ...rebaseRule(value, source, origin, moving[0]!), ranges: moving.map((rect) => metadataRangeIds(target, shift(rect))) }
         ruleOrigins.set(moved, source)
         to.set(source === target && staying.length ? randomId() : id, moved)
       }
@@ -174,7 +171,7 @@ export function moveCells(source: SheetModel, target: SheetModel, range: CellRan
       for (const [key, raw] of [...owner.links]) {
         const link = raw as Hyperlink
         const original = locations.get(link)
-        owner.links.set(key, { ...link, ...(original?.formula ? { location: toA1Form(redirect(original.formula, original.owner, owner), owner) } : {}), ...(owner === target && original?.owner === source && link.range ? { range: relocateRange(link.range) } : {}) })
+        owner.links.set(key, { ...link, ...(original?.formula ? { location: toA1Form(redirect(original.formula, original.owner, owner), owner) } : {}) })
       }
       for (const [id, raw] of [...owner.cf]) {
         const value = raw as ConditionalFormat

@@ -1,3 +1,4 @@
+export { normalizeRanges, subtractRanges, unionRanges } from './range-set.js'
 export * from './address.js'
 export * from './dates.js'
 export * from './values.js'

@@ -78,6 +78,16 @@ Interactive content writes share `view/array-guard.ts`: typing and the formula b
 
 Dynamic spill members accept edits, matching Excel: an obstruction is stored and the anchor displays `#SPILL!`; clearing that obstruction restores the spill. Table-driven view tests cover partial/whole legacy arrays and dynamic spills across the write paths, and Chromium checks typed legacy-member refusal and spill recovery. Whole-file `applyFile` remains outside this interactive guard. No document-schema or live-format contract changed.
 
+## Range metadata edits
+
+Selection edits use the shared `range-set.ts` algebra for subtraction, union and normalization of multi-rectangle `sqref` coverage. It sweeps rectangle boundaries without expanding cells, removes overlap and duplicates, and coalesces adjacent rectangles in both orientations. The result is deterministic and disjoint, with no pair that can be combined into one rectangle. Validation set/clear, conditional-format replacement/clear (including Clear Formats), hyperlink set/remove, clipboard/fill rules, cut relocation and Clear All preserve coverage outside the selected union. For example, clearing validation at A5 from A1:A10 exports `sqref="A1:A4 A6:A10"`.
+
+Surviving rule rectangles share one formula origin and statistical domain. If the first covered cell changes, relative references are rebased; absolute references stay fixed. Formula thresholds in color scales, data bars and icon sets are rebased too. New and surviving range metadata uses schema-v2 `~p` worksheet slots, including singleton remnants of multi-cell hyperlinks, so later sorts keep it positional and row/column insertion or deletion still adjusts its bounds. Hyperlinks export one `ref` per surviving rectangle; CF and DV export a space-separated `sqref` list.
+
+`setConditionalFormat` distinguishes replacing coverage from adding another overlapping Excel rule (`mode: 'add'`). Merge commands refuse partial overlaps before making any changes; fully contained merges can be replaced, and unmerge removes intersected merged cells whole. Cell locking remains a cell/axis style, so partial unlocking already preserves neighboring protection. Protected ranges in worksheet XML are preserved but have no selection-editing command.
+
+The range tests include a seeded cell-set oracle, command tables, formula rebasing, positional survivors after structural edits and sorting, codec round trips, and openpyxl coverage checks. The opt-in `PULPO_OFFICE_FIDELITY=1` check round-trips the split validation, conditional-format and hyperlink coverage through LibreOffice.
+
 ## On mobile
 
 The app runs the same core in its locked-down web view (`apps/mobile/editor/sheet/`, about 0.7 MB inlined), on the replica of the document the app owns, as the text editor does (see [Live formats](./live-formats.md)):

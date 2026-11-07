@@ -1,3 +1,4 @@
+import { clearLinks } from '../model/range-metadata.js'
 import { r1c1ToA1 } from '../formula/translate.js'
 import { Stylesheet } from '../styles/stylesheet.js'
 import { randomId } from '../model/axis.js'
@@ -1001,6 +1002,7 @@ export class SheetInteractions {
           commands.setCellInputs(sheet, inputs)
         }
         if (placeOptions.formats) commands.unmergeRanges(sheet, [destination])
+        if (internal && all) clearLinks(sheet, [destination])
         for (let dr = 0; dr < rows; dr++) for (let dc = 0; dc < cols; dc++) {
           const r = dr % height, c = dc % width
           const to = { row: origin.row + dr, col: origin.col + dc }
@@ -1011,7 +1013,7 @@ export class SheetInteractions {
             if (all) {
               const key = sheet.keyAt(to.row, to.col)
               if (snapshot.note) sheet.notes.set(key, snapshot.note); else sheet.notes.delete(key)
-              if (snapshot.link) sheet.links.set(key, { ...snapshot.link, ...(snapshot.link.range ? { range: sheet.rangeIds({ top: to.row, bottom: to.row, left: to.col, right: to.col }) } : {}) }); else sheet.links.delete(key)
+              if (snapshot.link) { const { range: _range, ...link } = snapshot.link; sheet.links.set(key, link) } else sheet.links.delete(key)
             }
           } else {
             const cell = cells[r]?.[c] ?? { text: '' }
