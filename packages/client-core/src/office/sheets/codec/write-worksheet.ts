@@ -396,7 +396,7 @@ function writeSheetData(sheet: SheetModel, context: WorksheetWriteContext): { ro
     const data = sheet.cellData(key)
     const style = cellStyleIndex(sheet, styles, ids.row, ids.col, key)
     const spill = spilled.get(`${row}:${col}`)
-    const xml = data ? writeCell(sheet, row, col, data, style, context) : spill !== undefined ? writeValueCell(row, col, spill, style, context) : style ? `<c r="${cellName(row, col)}" s="${style}"/>` : ''
+    const xml = data ? writeCell(sheet, row, col, data, style, context) : spill !== undefined ? writeValueCell(row, col, spill, style, context) : style !== undefined ? `<c r="${cellName(row, col)}" s="${style}"/>` : ''
     if (!xml) continue
     entry(row).cells.set(col, xml)
     touch(row, col)

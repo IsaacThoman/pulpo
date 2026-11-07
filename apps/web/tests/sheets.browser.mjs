@@ -71,6 +71,30 @@ try {
     assert.equal(await inputText(page, 20, 1), '', 'Escape cancels')
   })
 
+  await step('Select All Ctrl+Enter refuses expansion and stays responsive', async () => {
+    const { page: safety, errors: safetyErrors, context } = await open()
+    await go(safety, 'XFD1048576')
+    await safety.keyboard.press(`${mod}+a`)
+    const before = await safety.evaluate(() => window.__sheets.views[0].sheet.cells.size)
+    await safety.keyboard.type('too large')
+    const started = performance.now()
+    await safety.keyboard.press(`${mod}+Enter`)
+    const state = await safety.evaluate(() => {
+      const view = window.__sheets.views[0]
+      return { cells: view.sheet.cells.size, draft: view.editing?.text, selection: view.getState().selectionLabel }
+    })
+    assert.ok(performance.now() - started < 2000, 'oversized fill must promptly return control to the event loop')
+    assert.equal(state.cells, before, 'refusal writes no cells')
+    assert.equal(state.draft, 'too large', 'refusal retains the draft')
+    await safety.keyboard.press('Escape')
+    await go(safety, 'A20')
+    await safety.keyboard.type('still responsive')
+    await safety.keyboard.press('Enter')
+    assert.equal(await inputText(safety, 19, 0), 'still responsive')
+    assert.deepEqual(safetyErrors, [])
+    await context.close()
+  })
+
   await step('formula with arrow-key pointing and colored references', async () => {
     await go(page, 'C20')
     await page.keyboard.type('=B20*')

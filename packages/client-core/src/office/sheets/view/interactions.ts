@@ -1,6 +1,5 @@
 import { r1c1ToA1 } from '../formula/translate.js'
 import { Stylesheet } from '../styles/stylesheet.js'
-import { MAX_EXPANDED_CELLS } from '../limits.js'
 import { randomId } from '../model/axis.js'
 import { canWriteArrays, contains, intersects, offsetRange, pasteRules, placeRule, snapshotRules } from './clipboard-state.js'
 import { moveCells } from '../model/move-cells.js'
@@ -720,6 +719,10 @@ export class SheetInteractions {
   /** Fills the selection from its first row (Ctrl+D) or column (Ctrl+R). */
   private fillFromEdge(direction: 'down' | 'right'): void {
     const view = this.view
+    if (!commands.canExpandRanges(view.selection.ranges)) {
+      this.showMessage(view.labels.dataErrors.size, view.selection.active.row, view.selection.active.col)
+      return
+    }
     view.workbook.transact(() => {
       for (const range of view.selection.ranges) {
         if (direction === 'down' && range.bottom > range.top) this.fill({ ...range, bottom: range.top }, range, true)
@@ -737,7 +740,7 @@ export class SheetInteractions {
     if (view.readOnly) return
     const vertical = target.top !== source.top || target.bottom !== source.bottom
     const backward = vertical ? target.top < source.top : target.left < source.left
-    if (!contains(target, source) || target.top < 0 || target.left < 0 || target.bottom >= MAX_ROWS || target.right >= MAX_COLS || (target.bottom - target.top + 1) * (target.right - target.left + 1) > MAX_EXPANDED_CELLS) return
+    if (!contains(target, source) || !commands.canExpandRanges([target])) return
     const extension = vertical ? backward ? { ...target, bottom: source.top - 1 } : { ...target, top: source.bottom + 1 } : backward ? { ...target, right: source.left - 1 } : { ...target, left: source.right + 1 }
     if (!canWriteArrays(sheet, extension, view.values)) return
     // These fill patterns need shape-aware repetition; reject them before any write.
@@ -814,7 +817,7 @@ export class SheetInteractions {
     if (view.selection.ranges.length !== 1) return undefined
     const sheet = view.sheet
     const range = commands.clampToUsed(sheet, view.selection.ranges[0]!)
-    if ((range.bottom - range.top + 1) * (range.right - range.left + 1) > MAX_EXPANDED_CELLS) return undefined
+    if (!commands.canExpandRanges([range])) return undefined
     const sourceRows = span(range.top, range.bottom).filter((row) => cut || !view.rows.isHidden(row))
     // Like Excel, hidden columns remain part of a normal copied rectangle.
     const sourceCols = span(range.left, range.right)
@@ -884,7 +887,8 @@ export class SheetInteractions {
     if (!sheet) return ''
     return JSON.stringify({
       cells: span(range.top, range.bottom).map((row) => span(range.left, range.right).map((col) => [sheet.keyAt(row, col), commands.snapshotCell(sheet, row, col)])),
-      metadata: [sheet.merges, sheet.tables, sheet.cf, sheet.dv, sheet.filter, sheet.drawings, sheet.raw].map((map) => [...map]),
+      stylesXml: sheet.workbook.metaValue('stylesXml'),
+      metadata: [sheet.merges, sheet.tables, sheet.cf, sheet.dv, sheet.filter, sheet.drawings, sheet.raw, sheet.rowMeta, sheet.colMeta].map((map) => [...map]),
     })
   }
 
@@ -932,7 +936,7 @@ export class SheetInteractions {
     const rows = tile ? selectedHeight : height, cols = tile ? selectedWidth : width
     const destination = { top: origin.row, left: origin.col, bottom: origin.row + rows - 1, right: origin.col + cols - 1 }
     // Preflight is outside the transaction: failures must not leave a partial paste behind.
-    if (destination.bottom >= MAX_ROWS || destination.right >= MAX_COLS || rows * cols > MAX_EXPANDED_CELLS) return
+    if (!commands.canExpandRanges([destination])) return
     if (placeOptions.values && !canWriteArrays(sheet, destination, view.values)) return
     if (relocate) {
       const source = view.workbook.sheet(cut.sheet)!
@@ -1711,10 +1715,12 @@ export class SheetInteractions {
     const a = parse(start)
     const b = parse(end ?? start)
     if (!sheet || !a || !b) return undefined
+    const range = { top: Math.min(a.row, b.row), bottom: Math.max(a.row, b.row), left: Math.min(a.col, b.col), right: Math.max(a.col, b.col) }
+    if (!commands.canExpandRanges([range])) return undefined
     const rows: CellValue[][] = []
-    for (let row = Math.min(a.row, b.row); row <= Math.max(a.row, b.row) && rows.length < 10_000; row++) {
+    for (let row = range.top; row <= range.bottom && rows.length < 10_000; row++) {
       const line: CellValue[] = []
-      for (let col = Math.min(a.col, b.col); col <= Math.max(a.col, b.col); col++) line.push(view.values.get(sheet, row, col))
+      for (let col = range.left; col <= range.right; col++) line.push(view.values.get(sheet, row, col))
       rows.push(line)
     }
     return rows

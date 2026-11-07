@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
+import { SheetCodec } from '../codec/codec.js'
+import { MAX_ROWS, MAX_COLS, type CellRange } from '../address.js'
+import * as commands from './commands.js'
 import { MemoryLiveAssetStore } from '../../assets.js'
 import { insertAxis, deleteAxis } from '../model/structure.js'
 import { toIdForm } from '../model/formula-ids.js'
@@ -341,4 +344,178 @@ describe('concurrent sheet tab changes', () => {
       for (const replica of replicas) replica.destroy()
     })
   }
+})
+
+const wholeSelections: [string, CellRange][] = [
+  ['column', { top: 0, left: 0, bottom: MAX_ROWS - 1, right: 0 }],
+  ['row', { top: 0, left: 0, bottom: 0, right: MAX_COLS - 1 }],
+  ['sheet', { top: 0, left: 0, bottom: MAX_ROWS - 1, right: MAX_COLS - 1 }],
+]
+
+describe.each(wholeSelections)('whole %s commands', (_name, range) => {
+  it('handles Ctrl+Enter without a partial write or lost draft', () => {
+    const { sheet, view } = setup()
+    view.select(range)
+    view.beginEdit('bounded')
+    const before = Y.encodeStateAsUpdate(view.workbook.doc)
+    expect(view.commitEdit({ fill: true })).toBe(commands.canExpandRanges([range]))
+    if (!commands.canExpandRanges([range])) {
+      expect(Y.encodeStateAsUpdate(view.workbook.doc)).toEqual(before)
+      expect(view.editing?.text).toBe('bounded')
+      view.cancelEdit()
+      view.select({ top: 1, left: 1, bottom: 1, right: 1 })
+      view.beginEdit('responsive')
+      expect(view.commitEdit()).toBe(true)
+      expect(sheet.cell(1, 1)?.v).toBe('responsive')
+    } else expect(sheet.cell(0, MAX_COLS - 1)?.v).toBe('bounded')
+  })
+
+  it.each(['clearContents', 'clearFormats', 'clearAll', 'numberFormat', 'decimals', 'borders', 'merge', 'unmerge', 'fill', 'copy', 'paste', 'replace', 'sort', 'filter', 'autoFit', 'hide', 'resize', 'deleteLines'] as const)('bounds %s', (command) => {
+    const { sheet, view } = setup()
+    sheet.setCell(0, 0, { v: 'find' })
+    sheet.setCell(1, 1, { v: 2 })
+    view.select(range)
+    switch (command) {
+      case 'clearContents': view.clearContents(); expect(sheet.cell(0, 0)).toBeUndefined(); break
+      case 'clearFormats': view.clearFormats(); break
+      case 'clearAll': view.clearAll(); expect(sheet.cell(0, 0)).toBeUndefined(); break
+      case 'numberFormat': view.setNumberFormat('0.00'); expect(view.styleAt(0, 0).numFmt).toBe('0.00'); break
+      case 'decimals': view.changeDecimals(1); expect(view.styleAt(0, 0).numFmt).toBe('0.0'); break
+      case 'borders': view.setBorders('all'); expect(view.styleAt(0, 0).borderTop?.style).toBe('thin'); break
+      case 'merge': view.merge(); break
+      case 'unmerge': view.unmerge(); break
+      case 'fill': view.clipboard.fill({ top: 0, left: 0, bottom: 0, right: 0 }, range, true); break
+      case 'copy': expect(view.clipboard.copyPayload()?.internal?.cells.length).toBeLessThanOrEqual(2); break
+      case 'paste': view.clipboard.paste({ text: 'paste' }); expect(sheet.cell(0, 0)?.v).toBe(_name === 'row' ? 'paste' : 'find'); break
+      case 'replace': expect(view.replace('find', 'replaced')).toBe(1); break
+      case 'sort': view.sort(false); break
+      case 'filter': view.toggleFilter(); view.toggleFilter(); break
+      case 'autoFit': view.autoFit('col'); break
+      case 'hide': view.hideLines('row', true); break
+      case 'resize': view.resizeLines('col', 80); break
+      case 'deleteLines': view.deleteLines('row'); break
+    }
+    // Sparse commands do not materialize the worksheet rectangle.
+    expect(sheet.cells.size).toBeLessThanOrEqual(command === 'fill' || command === 'paste' ? MAX_COLS + 2 : 2)
+  })
+})
+
+it.each(['cell', 'row', 'column'] as const)('clears inherited formats at a %s intersection and preserves unselected cells', (selection) => {
+  const { sheet, view } = setup()
+  commands.applyStyle(sheet, [wholeSelections[0]![1]], { bold: true, numFmt: '0.00%' })
+  commands.applyStyle(sheet, [wholeSelections[1]![1]], { italic: true })
+  const target = selection === 'row' ? wholeSelections[1]![1] : selection === 'column' ? wholeSelections[0]![1] : { top: 0, bottom: 0, left: 0, right: 0 }
+  view.select(target)
+  view.clearFormats()
+  expect(view.styleAt(0, 0)).toMatchObject({ bold: false, italic: false, numFmt: 'General' })
+  if (selection !== 'column') expect(view.styleAt(1, 0).bold).toBe(true)
+  if (selection !== 'row') expect(view.styleAt(0, 1).italic).toBe(true)
+})
+
+it('clears imported axis bases and number formats with single-cell exceptions', () => {
+  const { sheet, view } = setup()
+  const base = view.stylesheetFor.intern(undefined, { bold: true, numFmt: '0.00%' })
+  sheet.workbook.meta.set('stylesXml', view.stylesheetFor.toXml())
+  sheet.setColProp([0], 'xf', base)
+  sheet.setCell(0, 0, { v: 0.5 })
+  expect(view.displayText(0, 0)).toBe('50.00%')
+  view.clearFormats()
+  expect(view.styleAt(0, 0).bold).toBe(false)
+  expect(view.displayText(0, 0)).toBe('0.5')
+  expect(view.styleAt(1, 0).bold).toBe(true)
+})
+
+it.each(['clearFormats', 'clearAll'] as const)('removes conditional formats sparsely with %s', (command) => {
+  const { sheet, view } = setup()
+  sheet.cf.set('rule', { ranges: [sheet.rangeIds({ top: 0, left: 0, bottom: MAX_ROWS - 1, right: 1 })], rules: [{ type: 'expression', priority: 1, formulas: ['TRUE'] }] })
+  view.select(wholeSelections[0]![1])
+  view[command]()
+  expect([...sheet.cf.values()].flatMap((raw) => (raw as { ranges: Parameters<typeof sheet.resolveRange>[0][] }).ranges.map((r) => sheet.resolveRange(r)))).toEqual([{ top: 0, left: 1, bottom: MAX_ROWS - 1, right: 1 }])
+})
+
+it('rejects Clear All before removing contents when inherited reset expansion is too large', () => {
+  const { sheet, view } = setup()
+  commands.applyStyle(sheet, [wholeSelections[0]![1]], { bold: true })
+  sheet.setCell(0, 0, { v: 'keep' })
+  view.select({ top: 0, left: 0, bottom: MAX_ROWS - 2, right: 1 })
+  const before = Y.encodeStateAsUpdate(view.workbook.doc)
+  view.clearAll()
+  expect(Y.encodeStateAsUpdate(view.workbook.doc)).toEqual(before)
+  expect(sheet.cell(0, 0)?.v).toBe('keep')
+})
+
+it('rejects deleting all physical rows before allocating them', () => {
+  const { sheet, view } = setup()
+  sheet.cells.set(sheet.keyAt(MAX_ROWS - 1, 0), { v: 'last' })
+  view.goTo('A1048576')
+  view.select(wholeSelections[2]![1])
+  const before = Y.encodeStateAsUpdate(view.workbook.doc)
+  view.deleteLines('row')
+  expect(Y.encodeStateAsUpdate(view.workbook.doc)).toEqual(before)
+})
+
+it('applies Select All formatting over blank row-style exceptions', () => {
+  const { sheet, view } = setup()
+  sheet.setAxisStyle('row', [3], { bold: false })
+  view.select(wholeSelections[2]![1])
+  view.setStyle({ bold: true })
+  expect(view.styleAt(3, 10).bold).toBe(true)
+  expect(view.styleAt(5, MAX_COLS - 1).bold).toBe(true)
+})
+
+it('applies whole-column formatting over imported and override row styles at blank intersections', () => {
+  const { sheet, view } = setup()
+  sheet.setAxisStyle('row', [3], { bold: false })
+  view.select(wholeSelections[0]![1])
+  view.setStyle({ bold: true })
+  expect(view.styleAt(3, 0).bold).toBe(true)
+  expect(view.styleAt(3, 1).bold).toBe(false)
+})
+
+it.each(['row', 'col'] as const)('retains each target inherited number format in fill and replace: %s', (axis) => {
+  const { sheet, view } = setup()
+  sheet.setAxisStyle(axis, [1], { numFmt: '0.000' })
+  view.select({ top: 0, left: 0, bottom: 1, right: 1 })
+  view.beginEdit('50%')
+  expect(view.commitEdit({ fill: true })).toBe(true)
+  expect(view.styleAt(1, 1).numFmt).toBe('0.000')
+  expect(view.styleAt(0, 0).numFmt).toBe('0%')
+  sheet.setCell(1, 1, { v: 'find' })
+  expect(view.replace('find', '50%')).toBe(1)
+  expect(view.styleAt(1, 1).numFmt).toBe('0.000')
+})
+
+it.each(['row', 'col'] as const)('round-trips a cleared blank cell under an imported %s base', async (axis) => {
+  const { doc, sheet, view } = setup()
+  const base = view.stylesheetFor.intern(undefined, { bold: true, numFmt: '0.000%' })
+  sheet.workbook.meta.set('stylesXml', view.stylesheetFor.toXml())
+  if (axis === 'row') sheet.setRowProp([0], 'xf', base)
+  else sheet.setColProp([0], 'xf', base)
+  view.clearFormats()
+  expect(view.styleAt(0, 0).bold).toBe(false)
+  const codec = new SheetCodec()
+  const imported = new Y.Doc()
+  const context = { name: 'cleared.xlsx', assets: view.options.assets }
+  await codec.importFile(imported, await codec.exportFile(doc, context), context)
+  const container = document.createElement('div')
+  const loaded = new SheetView({ container, doc: imported, assets: context.assets, user: { name: 'Test', color: '#123456' } })
+  views.push(loaded)
+  expect(loaded.styleAt(0, 0)).toMatchObject({ bold: false, numFmt: 'General' })
+  expect(loaded.styleAt(axis === 'row' ? 0 : 1, axis === 'row' ? 1 : 0).bold).toBe(true)
+})
+
+it.each(['row', 'col'] as const)('bounds copied cell-format amplification when inserting a %s', (axis) => {
+  const { sheet, view } = setup()
+  for (let i = 0; i < 101; i++) sheet.setStyle(axis === 'row' ? { top: 0, bottom: 0, left: i, right: i } : { top: i, bottom: i, left: 0, right: 0 }, { bold: true })
+  const before = Y.encodeStateAsUpdate(view.workbook.doc)
+  expect(() => commands.insertLines(sheet, axis, 1, 10000)).toThrow(commands.DataOperationError)
+  expect(Y.encodeStateAsUpdate(view.workbook.doc)).toEqual(before)
+})
+
+it.each(['Sheet1!A1:XFD10000', 'Sheet1!A0:B2', 'Sheet1!A1:XFE2', 'Sheet1!A1:A1048577'])('bounds chart range expansion for %s', (formula) => {
+  const { view } = setup()
+  const read = vi.spyOn(view.values, 'get')
+  const result = (view.clipboard as unknown as { resolveChartRange(formula: string): unknown }).resolveChartRange(formula)
+  expect(result).toBeUndefined()
+  expect(read).not.toHaveBeenCalled()
 })

@@ -1,6 +1,6 @@
-import { columnIntervalProps } from '../model/column-intervals.js'
-import type { BorderEdge, HorizontalAlign, RichRun, StyleProps, VerticalAlign } from '../model/schema.js'
-import { splitCellKey, type SheetModel } from '../model/workbook.js'
+import { cellStyle } from '../styles/cell-style.js'
+import type { BorderEdge, HorizontalAlign, RichRun, VerticalAlign } from '../model/schema.js'
+import type { SheetModel } from '../model/workbook.js'
 import { formatValue } from '../numfmt/index.js'
 import type { ResolvedStyle, Stylesheet } from '../styles/stylesheet.js'
 import { isErrorValue, type CellValue, type SheetValues } from '../values.js'
@@ -57,12 +57,7 @@ export class CellDisplay {
     const key = this.sheet.keyAt(row, col)
     const cached = this.styleCache.get(key)
     if (cached) return cached
-    const { row: rowId, col: colId } = splitCellKey(key)
-    const sheet = this.sheet
-    const base = sheet.xf.get(key) ?? sheet.rowProp(sheet.rows.indexOf(rowId), 'xf') ?? (sheet.colMeta.get(`${colId}|xf`) as number | undefined) ?? columnIntervalProps(sheet, col).xf
-    const overrides: Partial<StyleProps> = { ...sheet.axisOverrides('col', colId), ...sheet.axisOverrides('row', rowId), ...sheet.cellOverrides(key) }
-    const resolved = this.styles.resolve(base)
-    const style = Object.keys(overrides).length ? { ...resolved, ...overrides } : resolved
+    const style = cellStyle(this.sheet, this.styles, row, col)
     this.styleCache.set(key, style)
     return style
   }

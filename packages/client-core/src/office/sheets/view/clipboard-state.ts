@@ -63,11 +63,11 @@ export function snapshotRules<T extends DataValidation | ConditionalFormat>(shee
   return result
 }
 
-/** Replace destination metadata only for the modes which carry it. Rebase survivors as well. */
-export function pasteRules<T extends DataValidation | ConditionalFormat>(sheet: SheetModel, kind: 'dv' | 'cf', rules: ClipboardRule<T>[], destination: CellRange, sourceRows: number[], sourceCols: number[], dxf?: number[]): void {
+/** Clears rule coverage without expanding the selected cells. */
+export function clearRules(sheet: SheetModel, kind: 'dv' | 'cf', destination: CellRange): void {
   const collection = sheet[kind]
   for (const [id, raw] of [...collection]) {
-    const value = raw as T
+    const value = raw as DataValidation | ConditionalFormat
     const rects = value.ranges.map((r) => sheet.resolveRange(r)).filter((r): r is CellRange => !!r)
     if (!rects.some((r) => intersects(r, destination))) continue
     const staying = rects.flatMap((r) => subtract(r, destination))
@@ -77,6 +77,11 @@ export function pasteRules<T extends DataValidation | ConditionalFormat>(sheet: 
       collection.set(id, { ...mapFormulas(value, (f) => toIdForm(shiftFormula(toA1Form(f, sheet), next.top - first.top, next.left - first.left), sheet)), ranges: staying.map((r) => sheet.rangeIds(r)) })
     }
   }
+}
+
+/** Replace destination metadata only for the modes which carry it. Rebase survivors as well. */
+export function pasteRules<T extends DataValidation | ConditionalFormat>(sheet: SheetModel, kind: 'dv' | 'cf', rules: ClipboardRule<T>[], destination: CellRange, sourceRows: number[], sourceCols: number[], dxf?: number[]): void {
+  clearRules(sheet, kind, destination)
   const height = sourceRows.length, width = sourceCols.length
   for (let dr = 0; dr <= destination.bottom - destination.top; dr += height) for (let dc = 0; dc <= destination.right - destination.left; dc += width) {
     for (const rule of rules) {
