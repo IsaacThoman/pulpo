@@ -5,6 +5,8 @@
  * inverse normal refined with Halley steps, and a bracketing root finder for the other inverses.
  */
 
+import { consumeWork } from '../budget.js'
+
 const LANCZOS_G = 7
 const LANCZOS = [
   0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313, -176.61502916214059, 12.507343278686905,
@@ -27,13 +29,19 @@ export function lgamma(x: number): number {
   x -= 1
   let a = LANCZOS[0]!
   const t = x + LANCZOS_G + 0.5
-  for (let i = 1; i < LANCZOS.length; i++) a += LANCZOS[i]! / (x + i)
+  for (let i = 1; i < LANCZOS.length; i++) {
+    consumeWork()
+    a += LANCZOS[i]! / (x + i)
+  }
   return LN_SQRT_2PI + (x + 0.5) * Math.log(t) - t + Math.log(a)
 }
 
 function gammaInteger(n: number): number {
   let r = 1
-  for (let i = 2; i < n; i++) r *= i
+  for (let i = 2; i < n; i++) {
+    consumeWork()
+    r *= i
+  }
   return r
 }
 
@@ -47,7 +55,10 @@ export function gamma(x: number): number {
     x -= 1
     let a = LANCZOS[0]!
     const t = x + LANCZOS_G + 0.5
-    for (let i = 1; i < LANCZOS.length; i++) a += LANCZOS[i]! / (x + i)
+    for (let i = 1; i < LANCZOS.length; i++) {
+      consumeWork()
+      a += LANCZOS[i]! / (x + i)
+    }
     return Math.sqrt(2 * Math.PI) * t ** (x + 0.5) * Math.exp(-t) * a
   }
   return Math.exp(lgamma(x))
@@ -80,6 +91,7 @@ function gammaSeries(a: number, x: number): number {
   let term = sum
   let ap = a
   for (let n = 0; n < 10_000; n++) {
+    consumeWork()
     ap += 1
     term *= x / ap
     sum += term
@@ -94,6 +106,7 @@ function gammaContinuedFraction(a: number, x: number): number {
   let d = 1 / b
   let h = d
   for (let i = 1; i < 10_000; i++) {
+    consumeWork()
     const an = -i * (i - a)
     b += 2
     d = an * d + b
@@ -127,6 +140,7 @@ function betaContinuedFraction(x: number, a: number, b: number): number {
   d = 1 / d
   let h = d
   for (let m = 1; m <= 10_000; m++) {
+    consumeWork()
     const m2 = 2 * m
     let aa = (m * (b - m) * x) / ((qam + m2) * (a + m2))
     d = 1 + aa * d
@@ -199,6 +213,7 @@ export function normInv(p: number): number {
   }
   // Halley steps against the accurate CDF; work on the smaller tail for precision.
   for (let i = 0; i < 3; i++) {
+    consumeWork()
     const e = p < 0.5 ? normCdf(x) - p : 1 - p - normCdf(-x)
     const u = e * Math.sqrt(2 * Math.PI) * Math.exp((x * x) / 2)
     const next = x - u / (1 + (x * u) / 2)
@@ -222,11 +237,13 @@ export function solveMonotone(f: (x: number) => number, target: number, lo: numb
     hi = Math.max(start, lo + 1)
     let guard = 0
     while (below(hi) && guard++ < 2000) {
+      consumeWork()
       lo = hi
       hi *= 2
     }
   }
   for (let i = 0; i < 400; i++) {
+    consumeWork()
     const mid = (lo + hi) / 2
     if (mid === lo || mid === hi) break
     if (below(mid)) lo = mid

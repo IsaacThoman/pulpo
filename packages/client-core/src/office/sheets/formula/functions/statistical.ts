@@ -332,7 +332,10 @@ function binomCdf(k: number, n: number, p: number): number {
   if (k >= n) return 1
   if (n <= 1000) {
     let total = 0
-    for (let i = 0; i <= k; i++) total += binomPmf(i, n, p)
+    for (let i = 0; i <= k; i++) {
+      consumeWork()
+      total += binomPmf(i, n, p)
+    }
     return Math.min(1, total)
   }
   return betaI(1 - p, n - k, k + 1)
@@ -385,7 +388,10 @@ function hypgeom(ctx: FunctionContext, args: Args, cumulativeIndex: number | und
   const first = Math.max(0, n - (N - K))
   check(k - first <= 10_000_000)
   let total = 0
-  for (let i = first; i <= k; i++) total += hypgeomPmf(i, n, K, N)
+  for (let i = first; i <= k; i++) {
+    consumeWork()
+    total += hypgeomPmf(i, n, K, N)
+  }
   return Math.min(1, total)
 }
 
@@ -902,7 +908,10 @@ export const STATISTICAL_FUNCTIONS: FunctionSpec[] = [
       check(n >= 0 && p >= 0 && p <= 1 && s1 >= 0 && s1 <= n && s2 >= s1 && s2 <= n)
       if (s2 - s1 > 1000) return binomCdf(s2, n, p) - (s1 > 0 ? binomCdf(s1 - 1, n, p) : 0)
       let total = 0
-      for (let k = s1; k <= s2; k++) total += binomPmf(k, n, p)
+      for (let k = s1; k <= s2; k++) {
+        consumeWork()
+        total += binomPmf(k, n, p)
+      }
       return total
     },
   }),
@@ -922,6 +931,7 @@ export const STATISTICAL_FUNCTIONS: FunctionSpec[] = [
           let lo = 0
           let hi = n
           while (lo < hi) {
+            consumeWork()
             const mid = Math.floor((lo + hi) / 2)
             if (binomCdf(mid, n, p) >= alpha) hi = mid
             else lo = mid + 1
@@ -930,6 +940,7 @@ export const STATISTICAL_FUNCTIONS: FunctionSpec[] = [
         }
         let total = 0
         for (let k = 0; k <= n; k++) {
+          consumeWork()
           total += binomPmf(k, n, p)
           if (total >= alpha * (1 - 1e-14)) return k
         }

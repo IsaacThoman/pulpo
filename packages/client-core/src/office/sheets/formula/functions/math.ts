@@ -225,6 +225,7 @@ function toRoman(n: number, form: number): string {
   let out = ''
   for (const [value, symbol] of ROMAN_TABLES[form]!) {
     while (n >= value) {
+      consumeWork()
       out += symbol
       n -= value
     }
@@ -244,6 +245,7 @@ function fromRoman(textValue: string): number {
   }
   let total = 0
   for (let i = 0; i < s.length; i++) {
+    consumeWork()
     const value = ROMAN_VALUES[s[i]!]
     if (value === undefined) fail(Errors.VALUE)
     const next = i + 1 < s.length ? (ROMAN_VALUES[s[i + 1]!] ?? 0) : 0
@@ -585,7 +587,10 @@ export const MATH_FUNCTIONS: FunctionSpec[] = [
     const n = Math.trunc(x)
     check(n >= -1 && n <= 300)
     let r = 1
-    for (let i = n; i > 1; i -= 2) r *= i
+    for (let i = n; i > 1; i -= 2) {
+      consumeWork()
+      r *= i
+    }
     return r
   }),
   define({
@@ -622,6 +627,7 @@ export const MATH_FUNCTIONS: FunctionSpec[] = [
       check(n > 0 && k >= 0 && n >= k)
       let r = 1
       for (let i = n - k + 1; i <= n; i++) {
+        consumeWork()
         r *= i
         if (!Number.isFinite(r)) return fail(Errors.NUM)
       }
@@ -811,6 +817,7 @@ export const MATH_FUNCTIONS: FunctionSpec[] = [
       check(s.length <= 255, Errors.VALUE)
       let value = 0
       for (const ch of s) {
+        consumeWork()
         const d = DIGITS.indexOf(ch)
         check(d >= 0 && d < radix)
         value = value * radix + d

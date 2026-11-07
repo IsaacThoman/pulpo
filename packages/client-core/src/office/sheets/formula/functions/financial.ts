@@ -1,5 +1,6 @@
 /** Financial functions: annuities, cash-flow analysis, depreciation, rates, and T-bills/bonds. */
 
+import { consumeWork } from '../budget.js'
 import { forEachLogical, denseRange } from '../ranges.js'
 
 
@@ -67,6 +68,7 @@ function rate(ctx: FunctionContext, args: Args): number {
   check(nper > 0)
   // Excel gives up when 20 Newton steps do not converge to 1e-7; once converged, polish a little.
   for (let i = 0; i < 20; i++) {
+    consumeWork()
     const [f, df] = annuity(r, nper, pmtValue, pvValue, fvValue, type)
     if (df === 0 || !Number.isFinite(df)) return fail(Errors.NUM)
     const next = r - f / df
@@ -75,6 +77,7 @@ function rate(ctx: FunctionContext, args: Args): number {
     r = next
     if (converged) {
       for (let k = 0; k < 5; k++) {
+        consumeWork()
         const [f2, df2] = annuity(r, nper, pmtValue, pvValue, fvValue, type)
         if (!df2) break
         const polished = r - f2 / df2
@@ -94,7 +97,10 @@ function rate(ctx: FunctionContext, args: Args): number {
 function npv(rateValue: number, values: number[]): number {
   if (rateValue === -1) return fail(Errors.DIV0)
   let total = 0
-  for (let i = 0; i < values.length; i++) total += values[i]! / (1 + rateValue) ** (i + 1)
+  for (let i = 0; i < values.length; i++) {
+    consumeWork()
+    total += values[i]! / (1 + rateValue) ** (i + 1)
+  }
   return total
 }
 
@@ -102,6 +108,7 @@ function npv(rateValue: number, values: number[]): number {
 function solveRate(f: (r: number) => number, df: (r: number) => number, guess: number): number {
   let r = guess
   for (let i = 0; i < 100; i++) {
+    consumeWork()
     const value = f(r)
     const slope = df(r)
     if (!Number.isFinite(value) || !Number.isFinite(slope) || slope === 0) break
@@ -113,12 +120,14 @@ function solveRate(f: (r: number) => number, df: (r: number) => number, guess: n
   // Fallback: scan for a sign change and bisect.
   const grid = [-0.999999, -0.99, -0.9, -0.5, -0.2, -0.1, 0, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 100, 1000]
   for (let i = 0; i < grid.length - 1; i++) {
+    consumeWork()
     let lo = grid[i]!
     let hi = grid[i + 1]!
     let flo = f(lo)
     const fhi = f(hi)
     if (!Number.isFinite(flo) || !Number.isFinite(fhi) || Math.sign(flo) === Math.sign(fhi)) continue
     for (let k = 0; k < 200; k++) {
+      consumeWork()
       const mid = (lo + hi) / 2
       const fm = f(mid)
       if (Math.sign(fm) === Math.sign(flo)) {
@@ -139,8 +148,14 @@ function irr(ctx: FunctionContext, args: Args): number {
   const values = cashFlows(ctx, args[0])
   const guess = defNum(args, 1, 0.1, ctx)
   check(values.some((v) => v > 0) && values.some((v) => v < 0))
-  const f = (r: number): number => values.reduce((s, v, i) => s + v / (1 + r) ** i, 0)
-  const df = (r: number): number => values.reduce((s, v, i) => s - (i * v) / (1 + r) ** (i + 1), 0)
+  const f = (r: number): number => {
+    consumeWork(values.length)
+    return values.reduce((s, v, i) => s + v / (1 + r) ** i, 0)
+  }
+  const df = (r: number): number => {
+    consumeWork(values.length)
+    return values.reduce((s, v, i) => s - (i * v) / (1 + r) ** (i + 1), 0)
+  }
   return solveRate(f, df, guess)
 }
 
@@ -166,6 +181,7 @@ function xflows(ctx: FunctionContext, valuesArg: Value | undefined, datesArg: Va
 }
 
 function xnpv(r: number, values: number[], years: number[]): number {
+  consumeWork(values.length)
   return values.reduce((s, v, i) => s + v / (1 + r) ** years[i]!, 0)
 }
 
@@ -173,7 +189,10 @@ function xirr(ctx: FunctionContext, args: Args): number {
   const { values, years } = xflows(ctx, args[0], args[1])
   const guess = defNum(args, 2, 0.1, ctx)
   check(values.some((v) => v > 0) && values.some((v) => v < 0))
-  const df = (r: number): number => values.reduce((s, v, i) => s - (years[i]! * v) / (1 + r) ** (years[i]! + 1), 0)
+  const df = (r: number): number => {
+    consumeWork(values.length)
+    return values.reduce((s, v, i) => s - (years[i]! * v) / (1 + r) ** (years[i]! + 1), 0)
+  }
   return solveRate((r) => xnpv(r, values, years), df, guess)
 }
 
@@ -230,6 +249,7 @@ function vdbCumulative(cost: number, salvage: number, life: number, t: number, f
   let slAmount = 0
   const periods = Math.ceil(life)
   for (let p = 1; p <= periods && p - 1 < t; p++) {
+    consumeWork()
     let dep: number
     if (straight) dep = slAmount
     else {
@@ -290,7 +310,10 @@ function coupons(ctx: FunctionContext, settlement: number, maturity: number, fre
     return dateToSerial(y, mo, endOfMonth ? last : Math.min(m.day, last), ctx.date1904)
   }
   let k = 0
-  while (couponDate(k + 1) > settlement) k++
+  while (couponDate(k + 1) > settlement) {
+    consumeWork()
+    k++
+  }
   return { previous: couponDate(k + 1), next: couponDate(k), count: k + 1 }
 }
 
@@ -326,7 +349,10 @@ function bondPrice(rateValue: number, yld: number, redemption: number, b: Return
     return (redemption + coupon) / (1 + (t * yld) / f) - (A / E) * coupon
   }
   let price = redemption / (1 + yld / f) ** (N - 1 + DSC / E)
-  for (let k = 1; k <= N; k++) price += coupon / (1 + yld / f) ** (k - 1 + DSC / E)
+  for (let k = 1; k <= N; k++) {
+    consumeWork()
+    price += coupon / (1 + yld / f) ** (k - 1 + DSC / E)
+  }
   return price - coupon * (A / E)
 }
 
@@ -353,6 +379,7 @@ function yieldFn(ctx: FunctionContext, args: Args): number {
   let hi = 10
   // Price falls as the yield rises: bisect on the price equation.
   for (let i = 0; i < 200; i++) {
+    consumeWork()
     const mid = (lo + hi) / 2
     if (bondPrice(rateValue, mid, redemption, b) > pr) lo = mid
     else hi = mid
@@ -423,6 +450,7 @@ export const FINANCIAL_FUNCTIONS: FunctionSpec[] = [
         const payment = pmt(r, nper, pvValue, 0, type)
         let total = 0
         for (let per = start; per <= end; per++) {
+          consumeWork()
           const interest = ipmt(r, per, nper, pvValue, 0, type)
           total += name === 'CUMIPMT' ? interest : payment - interest
         }

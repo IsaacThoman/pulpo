@@ -1,3 +1,4 @@
+import { consumeWork } from '../budget.js'
 /** Engineering functions: base conversions, bit operations, DELTA/GESTEP, ERF, and CONVERT. */
 
 import { Errors, isError, type FunctionContext, type FunctionSpec, type Value } from '../types.js'
@@ -28,6 +29,7 @@ function readBased(ctx: FunctionContext, value: Value | undefined, base: Base): 
   const digits = '0123456789ABCDEF'.slice(0, base.radix)
   let n = 0
   for (const ch of s) {
+    consumeWork()
     const d = digits.indexOf(ch)
     if (d < 0) return fail(Errors.NUM)
     n = n * base.radix + d

@@ -33,6 +33,7 @@ function proper(s: string): string {
   let out = ''
   let previousLetter = false
   for (const ch of s) {
+    consumeWork()
     const isLetter = /\p{L}/u.test(ch)
     out += isLetter ? (previousLetter ? ch.toLowerCase() : ch.toUpperCase()) : ch
     previousLetter = isLetter
@@ -98,6 +99,7 @@ function joinRuns(values: TextRun[], separators: TextRun[], ignoreEmpty = false)
     } else {
       // Nonempty values are bounded by the text limit, even when all delimiters are empty.
       for (let i = 0; i < run.count; i++) {
+        consumeWork()
         if (seen + i) delimit(seen + i - 1, 1)
         append(run.text)
       }
@@ -138,8 +140,10 @@ function findAll(haystack: string, delims: string[], ignoreCase: boolean): Hit[]
   const hits: Hit[] = []
   let i = 0
   while (i <= h.length) {
+    consumeWork()
     let best: Hit | undefined
     for (const d of ds) {
+      consumeWork()
       const at = h.indexOf(d, i)
       if (at >= 0 && (!best || at < best.index || (at === best.index && d.length > best.length))) best = { index: at, length: d.length }
     }
@@ -300,11 +304,13 @@ export const TEXT_FUNCTIONS: FunctionSpec[] = [
         let at = -1
         let from = 0
         for (let i = 0; i < instance; i++) {
+          consumeWork()
           at = source.indexOf(old, from)
           if (at < 0) return source
           from = at + old.length
         }
-        return checkLength(source.slice(0, at) + replacement + source.slice(at + old.length))
+        check(source.length - old.length + replacement.length <= MAX_TEXT_LENGTH, Errors.VALUE)
+        return source.slice(0, at) + replacement + source.slice(at + old.length)
       }
       if (!old) return source
       const parts = source.split(old)

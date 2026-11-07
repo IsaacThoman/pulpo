@@ -3,6 +3,8 @@
  * decimal-correct rounding and the basic sample statistics.
  */
 
+import { consumeWork } from '../budget.js'
+
 import { Errors } from '../types.js'
 import { fail } from './coerce.js'
 
@@ -124,7 +126,10 @@ export function modes(values: readonly number[]): number[] {
 
 /** Greatest common divisor of two non-negative integers. */
 export function gcd2(a: number, b: number): number {
-  while (b) [a, b] = [b, a % b]
+  while (b) {
+    consumeWork()
+    ;[a, b] = [b, a % b]
+  }
   return a
 }
 
@@ -132,7 +137,10 @@ export function gcd2(a: number, b: number): number {
 export function factorial(n: number): number {
   if (n < 0) return NaN
   let result = 1
-  for (let i = 2; i <= n; i++) result *= i
+  for (let i = 2; i <= n; i++) {
+    consumeWork()
+    result *= i
+  }
   return result
 }
 
@@ -142,6 +150,7 @@ export function combin(n: number, k: number): number {
   k = Math.min(k, n - k)
   let result = 1
   for (let i = 1; i <= k; i++) {
+    consumeWork()
     result = (result * (n - k + i)) / i
     if (!Number.isFinite(result)) return Infinity
   }

@@ -198,3 +198,11 @@ checks scaling from 100,000 rows, and exercises many independent spills. Timing-
 formula, number-format, clipboard, and presentation performance suites run in the serial
 `performance` Vitest project after the default-parallel correctness project. Their existing
 budgets remain enforced without competing test workers on two-core CI runners.
+
+### Formula work limits
+
+Each synchronous recalculation shares a work allowance across cells, lifted arrays, retries and lambda calls. Value-driven iteration (financial schedules and solvers, coupon dates, combinatorics, distribution series/inverses, and text scans/builders) consumes that allowance. Array constructors charge their dimensions before allocation; text builders reject results exceeding Excel’s 32,767 UTF-16 code-unit limit before repeating or joining text. EDATE, DATEDIF, DB and basic annuity functions already use arithmetic; GOALSEEK and AMORDEGRC are not registered.
+
+WORKDAY, WORKDAY.INTL, NETWORKDAYS and NETWORKDAYS.INTL count complete weeks arithmetically and inspect at most a week’s remainder. Holidays are deduplicated, filtered to working weekdays and sorted; binary-search ranks count holidays in an interval. WORKDAY selects the final date by binary search when holidays extend its initial arithmetic estimate, so elapsed calendar days do not determine its running time. Serial bounds and Excel’s 1900/1904 calendar behavior still apply.
+
+The registry-wide adversarial budget test includes every registered function and evaluator builtin, large arguments at each position, and valid stress cases for solvers, schedules and lambda combinators. An independently instrumented copy of the interpreter counts loop bodies and interrupts excessive uncharged iteration. Its negative control removes a real loop’s budget charge and verifies detection; brute-force business-day tests cover every valid weekend mask in both date systems, and the opt-in fidelity test compares LibreOffice caches.

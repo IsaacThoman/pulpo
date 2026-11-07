@@ -1,3 +1,4 @@
+import { consumeWork } from '../budget.js'
 import { formatValue, numberToText, roundNumber } from '../../numfmt/index.js'
 import { parseNumberDetailed, parseNumberText } from '../../numfmt/parse.js'
 import { dateParseOptions } from './coerce.js'
@@ -104,6 +105,7 @@ function NUMBERVALUE(_ctx: unknown, args: (Value | undefined)[]): Value {
   if (!text) return 0
   let percents = 0
   while (text.endsWith('%')) {
+    consumeWork()
     text = text.slice(0, -1)
     percents++
   }

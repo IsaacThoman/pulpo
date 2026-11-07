@@ -4,6 +4,7 @@
  * before March 1900 follow Excel rather than the real calendar.
  */
 
+import { consumeWork } from '../budget.js'
 import { forEachLogical } from '../ranges.js'
 import { dateToSerial, serialToParts, type DateParts } from '../../dates.js'
 import { Errors, isError, type FunctionContext, type FunctionSpec, type Value } from '../types.js'
@@ -158,35 +159,85 @@ function weekendMask(ctx: FunctionContext, value: Value | undefined, present: bo
   return fail(Errors.NUM)
 }
 
-function holidaySet(ctx: FunctionContext, value: Value | undefined): Set<number> {
+function holidaySet(ctx: FunctionContext, value: Value | undefined, mask: boolean[]): number[] {
   const out = new Set<number>()
-  if (value === undefined) return out
+  if (value === undefined) return []
   forEachLogical(toMatrix(ctx, value), (v) => {
     if (v === null) return
     if (isError(v)) fail(v)
     const n = typeof v === 'number' ? v : num(v, ctx)
     check(n >= 0)
-    out.add(Math.floor(n))
+    if (!mask[weekdayOf(ctx, Math.floor(n))]) out.add(Math.floor(n))
   }, { weightedTail: true })
-  return out
+  consumeWork(out.size * Math.ceil(Math.log2(out.size + 1)))
+  return [...out].sort((a, b) => a - b)
+}
+
+/** First holiday on or after a serial, so interval counts need no holiday scan. */
+function lowerBound(holidays: number[], serial: number): number {
+  let lo = 0, hi = holidays.length
+  while (lo < hi) {
+    consumeWork()
+    const mid = Math.floor((lo + hi) / 2)
+    if (holidays[mid]! < serial) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+
+/** Inclusive business days: whole weeks, at most six remaining days, and holiday ranks. */
+function businessDays(ctx: FunctionContext, lo: number, hi: number, mask: boolean[], holidays: number[]): number {
+  const length = hi - lo + 1
+  const perWeek = mask.filter((weekend) => !weekend).length
+  let count = Math.floor(length / 7) * perWeek
+  for (let i = 0; i < length % 7; i++) {
+    consumeWork()
+    if (!mask[weekdayOf(ctx, lo + i)]) count++
+  }
+  return count - (lowerBound(holidays, hi + 1) - lowerBound(holidays, lo))
 }
 
 function workday(ctx: FunctionContext, args: Args, intl: boolean): number {
   const start = dateArg(ctx, args[0])
   const days = int(args[1], ctx)
   const mask = intl ? weekendMask(ctx, args[2], !omitted(args, 2)) : weekendMask(ctx, undefined, false)
-  const holidays = holidaySet(ctx, intl ? args[3] : args[2])
+  const holidays = holidaySet(ctx, intl ? args[3] : args[2], mask)
   if (mask.every(Boolean)) return fail(Errors.VALUE)
-  // More working days than there are days in Excel's calendar can only land outside it.
-  check(Math.abs(days) <= 3_000_000)
-  let serial = start
-  let remaining = Math.abs(days)
+  if (days === 0) return start
   const step = days < 0 ? -1 : 1
+  const target = Math.abs(days)
+  const boundary = step < 0 ? 0 : ctx.date1904 ? 2_957_003 : 2_958_465
+  // Even an all-working calendar cannot fit more days than this. Reject before
+  // arithmetic loses unit precision for enormous numeric arguments.
+  check(target <= Math.abs(boundary - start))
+  const perWeek = mask.filter((weekend) => !weekend).length
+  // Leave at least one business day for the remainder: an exact week must land on a
+  // business day even when the starting date is a weekend or holiday.
+  const weeks = Math.floor((target - 1) / perWeek)
+  let serial = start + step * weeks * 7
+  let remaining = (target - 1) % perWeek + 1
   while (remaining > 0) {
+    consumeWork()
     serial += step
-    check(serial >= 0)
-    if (mask[weekdayOf(ctx, serial)] || holidays.has(serial)) continue
-    remaining--
+    if (!mask[weekdayOf(ctx, serial)]) remaining--
+  }
+  check(serial >= 0 && serial <= (ctx.date1904 ? 2_957_003 : 2_958_465))
+  const countTo = (distance: number): number => step > 0
+    ? businessDays(ctx, start + 1, start + distance, mask, holidays)
+    : businessDays(ctx, start - distance, start - 1, mask, holidays)
+  let lo = Math.abs(serial - start)
+  // Holidays can only move the answer farther from the start. Find that distance by
+  // rank, rather than repeatedly extending across a possibly dense holiday calendar.
+  if (countTo(lo) < target) {
+    let hi = Math.abs(boundary - start)
+    check(countTo(hi) >= target)
+    while (lo < hi) {
+      consumeWork()
+      const mid = Math.floor((lo + hi) / 2)
+      if (countTo(mid) < target) lo = mid + 1
+      else hi = mid
+    }
+    serial = start + step * lo
   }
   partsOf(ctx, serial)
   return serial
@@ -196,11 +247,10 @@ function networkdays(ctx: FunctionContext, args: Args, intl: boolean): number {
   const start = dateArg(ctx, args[0])
   const end = dateArg(ctx, args[1])
   const mask = intl ? weekendMask(ctx, args[2], !omitted(args, 2)) : weekendMask(ctx, undefined, false)
-  const holidays = holidaySet(ctx, intl ? args[3] : args[2])
+  const holidays = holidaySet(ctx, intl ? args[3] : args[2], mask)
   const lo = Math.min(start, end)
   const hi = Math.max(start, end)
-  let count = 0
-  for (let s = lo; s <= hi; s++) if (!mask[weekdayOf(ctx, s)] && !holidays.has(s)) count++
+  const count = businessDays(ctx, lo, hi, mask, holidays)
   return start <= end ? count : -count
 }
 
@@ -255,6 +305,7 @@ function days360Nasd(start: Ymd, end: Ymd): number {
 
 function feb29Between(start: Ymd, end: Ymd, startSerial: number, endSerial: number, ctx: FunctionContext): boolean {
   for (let y = start.y; y <= end.y; y++) {
+    consumeWork()
     if (!isLeap(y)) continue
     const feb29 = dateToSerial(y, 2, 29, ctx.date1904)
     if (feb29 >= startSerial && feb29 <= endSerial) return true
