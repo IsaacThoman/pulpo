@@ -5,7 +5,8 @@ import { Stylesheet } from '../styles/stylesheet.js'
 import { clearRules } from './clipboard-state.js'
 import { sortedFormula, outsideSortFormulas } from '../model/sort-formulas.js'
 import { MAX_COLS, MAX_ROWS, parseRangeName, rangeContains, type CellRange } from '../address.js'
-import { parseFormula, type Node } from '../formula/parse.js'
+import { DataOperationError } from './data-errors.js'
+import { assertArrayWrite } from './array-guard.js'
 import { MAX_EXPANDED_CELLS } from '../limits.js'
 import { randomId } from '../model/axis.js'
 import { columnIntervalProps, columnIntervals } from '../model/column-intervals.js'
@@ -79,12 +80,32 @@ export function contentFromInput(sheet: SheetModel, text: string, options: Input
 }
 
 /** Types into one cell (the formula bar's Enter). Applies an inferred number format to General cells. */
-export function setCellInput(sheet: SheetModel, row: number, col: number, text: string, options: InputOptions & { currentFormat?: string } = {}): void {
+export function setCellInput(sheet: SheetModel, row: number, col: number, text: string, options: InputOptions & { currentFormat?: string; inferFormat?: boolean } = {}): void {
+  setCellInputs(sheet, [{ row, col, text, options }])
+}
+
+export interface CellInput {
+  row: number
+  col: number
+  text: string
+  options?: InputOptions & { currentFormat?: string; inferFormat?: boolean }
+}
+
+/** Preflight the complete write set, then commit in one undo step. */
+export function setCellInputs(sheet: SheetModel, inputs: CellInput[]): void {
+  assertArrayWrite(sheet, inputs.map(({ row, col }) => ({ top: row, bottom: row, left: col, right: col })))
+  sheet.workbook.transact(() => {
+    for (const { row, col, text, options } of inputs) writeCellInput(sheet, row, col, text, options)
+  })
+}
+
+/** Low-level writer; the enclosing batch must have passed the shared array guard. */
+function writeCellInput(sheet: SheetModel, row: number, col: number, text: string, options: InputOptions & { currentFormat?: string; inferFormat?: boolean } = {}): void {
   const { data, numFmt } = contentFromInput(sheet, text, options)
   const currentFormat = numFmt ? options.currentFormat ?? cellStyle(sheet, new Stylesheet(sheet.workbook.metaValue('stylesXml')), row, col).numFmt : undefined
   sheet.workbook.transact(() => {
     sheet.setCell(row, col, data)
-    if (numFmt && currentFormat === 'General') sheet.setStyle({ top: row, left: col, bottom: row, right: col }, { numFmt })
+    if (options.inferFormat !== false && numFmt && currentFormat === 'General') sheet.setStyle({ top: row, left: col, bottom: row, right: col }, { numFmt })
   })
 }
 
@@ -92,13 +113,14 @@ export function setCellInput(sheet: SheetModel, row: number, col: number, text: 
 export function fillInput(sheet: SheetModel, ranges: CellRange[], origin: { row: number; col: number }, text: string, options: InputOptions = {}): void {
   if (text === '') { clearContents(sheet, ranges); return }
   assertExpandableRanges(ranges)
+  assertArrayWrite(sheet, ranges)
   const styles = new Stylesheet(sheet.workbook.metaValue('stylesXml'))
   sheet.workbook.transact(() => {
     for (const range of ranges) {
       for (let row = range.top; row <= range.bottom; row++) {
         for (let col = range.left; col <= range.right; col++) {
           const shifted = text.startsWith('=') && !options.valuesOnly ? `=${shiftFormula(text.slice(1), row - origin.row, col - origin.col)}` : text
-          setCellInput(sheet, row, col, shifted, { ...options, currentFormat: cellStyle(sheet, styles, row, col).numFmt })
+          writeCellInput(sheet, row, col, shifted, { ...options, currentFormat: cellStyle(sheet, styles, row, col).numFmt })
         }
       }
     }
@@ -106,6 +128,7 @@ export function fillInput(sheet: SheetModel, ranges: CellRange[], origin: { row:
 }
 
 export function clearContents(sheet: SheetModel, ranges: CellRange[]): void {
+  assertArrayWrite(sheet, ranges)
   sheet.workbook.transact(() => {
     for (const raw of ranges) {
       const range = clampToUsed(sheet, raw)
@@ -208,6 +231,7 @@ export function clearAll(sheet: SheetModel, ranges: CellRange[]): void {
   // Clear Formats can require explicit resets at intersections with inherited formats.
   // Prepare that work before deleting values, so refusal never leaves a partial Clear All.
   inheritedFormatResets(sheet, ranges)
+  assertArrayWrite(sheet, ranges)
   sheet.workbook.transact(() => {
     clearContents(sheet, ranges)
     clearFormats(sheet, ranges)
@@ -355,6 +379,10 @@ export type MergeMode = 'all' | 'across' | 'center'
 /** Merges each range (or each row of it, `across`); keeps the top-left content like Excel. */
 export function mergeRanges(sheet: SheetModel, ranges: CellRange[], mode: MergeMode = 'all'): void {
   assertExpandableRanges(ranges)
+  const cleared = ranges.flatMap((r) => mode === 'across'
+    ? [{ ...r, left: r.left + 1 }]
+    : [{ ...r, top: r.top + 1 }, { ...r, bottom: r.top, left: r.left + 1 }]).filter((r) => r.top <= r.bottom && r.left <= r.right)
+  assertArrayWrite(sheet, cleared)
   sheet.workbook.transact(() => {
     for (const range of ranges) {
       const targets = mode === 'across' ? span(range.top, range.bottom).map((row) => ({ ...range, top: row, bottom: row })) : [range]
@@ -405,6 +433,7 @@ export function expandToMerges(range: CellRange, merges: CellRange[]): CellRange
 // ── Rows and columns ───────────────────────────────────────────────────────
 
 export function insertLines(sheet: SheetModel, kind: AxisKind, at: number, count: number): void {
+  assertArrayWrite(sheet, [], { insert: { kind, at } })
   assertExpandableRanges([kind === 'row' ? { top: at, bottom: at + count - 1, left: 0, right: 0 } : { left: at, right: at + count - 1, top: 0, bottom: 0 }])
   if (at > 0) {
     const source = (kind === 'row' ? sheet.rows : sheet.cols).idAt(at - 1)
@@ -427,6 +456,7 @@ export function insertLines(sheet: SheetModel, kind: AxisKind, at: number, count
 export function deleteLines(sheet: SheetModel, kind: AxisKind, at: number, count: number): void {
   if (count <= 0) return
   assertExpandableRanges([kind === 'row' ? { top: at, bottom: at + count - 1, left: 0, right: 0 } : { left: at, right: at + count - 1, top: 0, bottom: 0 }])
+  assertArrayWrite(sheet, [kind === 'row' ? { top: at, bottom: at + count - 1, left: 0, right: MAX_COLS - 1 } : { left: at, right: at + count - 1, top: 0, bottom: MAX_ROWS - 1 }])
   deleteAxis(sheet, kind, at, count)
 }
 
@@ -552,22 +582,7 @@ export interface SortKey {
   descending?: boolean
 }
 
-export const DATA_ERRORS = {
-  size: 'This range is too large to edit safely. Select a smaller range.',
-  arrays: 'Cannot sort a range containing spilled or legacy array formulas.',
-  merges: 'To do this, all the merged cells need to be the same size.',
-  filter: 'Cannot change this filter safely. Only value-list filters are supported.',
-  tables: 'Select cells inside a single table before sorting it.',
-  keys: 'Sort keys must be columns inside the sorted range.',
-  changed: 'The sheet changed while preparing the sort. Try again.',
-  formulas: 'Cannot sort an opaque What-If data table.',
-} as const
-
-export class DataOperationError extends Error {
-  constructor(readonly reason: keyof typeof DATA_ERRORS) {
-    super(DATA_ERRORS[reason])
-  }
-}
+export { DATA_ERRORS, DataOperationError } from './data-errors.js'
 
 export interface SortOptions {
   caseSensitive?: boolean
@@ -590,20 +605,6 @@ export function compareForSort(a: CellValue, b: CellValue, descending = false, c
     // Excel keeps errors in their original order.
   }
   return descending ? -result : result
-}
-
-/** A currently scalar dynamic formula can start spilling after relocation (e.g. IF(ROW(),…)). */
-function alwaysScalar(node: Node): boolean {
-  switch (node.type) {
-    case 'number': case 'string': case 'bool': case 'error': return true
-    case 'ref': return node.ref.kind === 'cell'
-    case 'paren': return alwaysScalar(node.expr)
-    case 'unary': return alwaysScalar(node.operand)
-    case 'postfix': return node.op === '%' && alwaysScalar(node.operand)
-    case 'binary': return ![':', ' ', ','].includes(node.op) && alwaysScalar(node.left) && alwaysScalar(node.right)
-    case 'call': return !node.sheet && ['SUM', 'PRODUCT', 'MIN', 'MAX', 'COUNT', 'COUNTA', 'COUNTBLANK', 'AVERAGE', 'MEDIAN', 'AND', 'OR'].includes(node.name)
-    default: return false
-  }
 }
 
 /** Sort a snapshot synchronously, with all safety checks completed before the first write. */
@@ -653,25 +654,11 @@ export function sortRange(sheet: SheetModel, range: CellRange, keys: SortKey[], 
     if (filtering) checkFilter(filter!)
     const display = options.display ?? ((r: number, c: number) => String(value(r, c) ?? ''))
     const visibility = filtering ? filterVisibility(sheet, filter!, display) : undefined
-    // Arrays may be anchored outside the selection; checking selected cells alone misses members.
+    assertArrayWrite(sheet, [area], { sort: { values: options.values, value } })
     sheet.forEachCell((row, col, data) => {
-      const size = data.array ?? options.values?.spill?.(sheet, row, col) ?? (data.spillCache ? { rows: data.spillCache.length, cols: data.spillCache[0]?.length ?? 1 } : undefined)
-      if (data.dynamic && rangeContains(area, row, col)) {
-        const result = value(row, col)
-        if (isErrorValue(result) && result.e === '#SPILL!') throw new DataOperationError('arrays')
-      }
-      const potential = data.oversizedArray || data.dynamic && !options.values?.spill
-      const arrayRange = size ? { top: row, left: col, bottom: row + size.rows - 1, right: col + size.cols - 1 } : potential ? { top: row, left: col, bottom: MAX_ROWS - 1, right: MAX_COLS - 1 } : undefined
-      if (arrayRange && intersects(arrayRange, area)) throw new DataOperationError('arrays')
       if (data.keep?.f?.t === 'dataTable') {
         const opaqueRange = data.keep.f.ref && parseRangeName(data.keep.f.ref)
         if (rangeContains(area, row, col) || opaqueRange && intersects(opaqueRange, area)) throw new DataOperationError('formulas')
-      }
-      if (!rangeContains(area, row, col) || data.f === undefined) return
-      const formula = toA1Form(data.f, sheet)
-      if (data.dynamic) {
-        const parsed = parseFormula(formula)
-        if (!parsed.ok || !alwaysScalar(parsed.ast)) throw new DataOperationError('arrays')
       }
     })
     const rows = span(area.top, area.bottom)

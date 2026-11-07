@@ -1,3 +1,4 @@
+import { assertArrayWrite } from './array-guard.js'
 import { maxOf } from '../../../collections.js'
 import * as Y from 'yjs'
 import type { Awareness } from 'y-protocols/awareness'
@@ -1129,6 +1130,8 @@ export class SheetView {
       this.interactions.showMessage(this.labels.dataErrors.size, row, col)
       return false
     }
+    const writes = options.fill ? fillRanges : edit.text !== this.inputText(row, col) ? [{ top: row, bottom: row, left: col, right: col }] : []
+    if (!this.canWriteArrays(sheet, writes)) return false
     this.editing = undefined
     this.pointing = undefined
     const options2 = { valuesOnly: this.valuesOnly, date1904: this.workbook.date1904, currentFormat: this.display.style(edit.row, edit.col).numFmt }
@@ -1260,6 +1263,18 @@ export class SheetView {
     this.notify()
   }
 
+  /** Shared guard and localized feedback for interactive batches outside command wrappers. */
+  canWriteArrays(sheet: SheetModel, ranges: CellRange[]): boolean {
+    try {
+      assertArrayWrite(sheet, ranges)
+      return true
+    } catch (error) {
+      if (!(error instanceof commands.DataOperationError)) throw error
+      this.interactions.showMessage(this.labels.dataErrors[error.reason], this.selection.active.row, this.selection.active.col)
+      return false
+    }
+  }
+
   get targetRanges(): CellRange[] {
     return this.selection.ranges
   }
@@ -1318,8 +1333,9 @@ export class SheetView {
     const range = this.selection.ranges[this.selection.ranges.length - 1]!
     const count = kind === 'row' ? Math.min(range.bottom - range.top + 1, 10_000) : Math.min(range.right - range.left + 1, 1000)
     const at = kind === 'row' ? (where === 'before' ? range.top : range.bottom + 1) : where === 'before' ? range.left : range.right + 1
-    this.run(() => commands.insertLines(this.sheet, kind, at, count))
-    if (where === 'after') {
+    let inserted = false
+    this.run(() => { commands.insertLines(this.sheet, kind, at, count); inserted = true })
+    if (inserted && where === 'after') {
       const shifted = kind === 'row' ? { ...range, top: at, bottom: at + count - 1 } : { ...range, left: at, right: at + count - 1 }
       this.select(shifted, { active: { row: shifted.top, col: shifted.left } })
     }
@@ -1496,6 +1512,7 @@ export class SheetView {
     const { row, col } = this.selection.active
     this.run(() =>
       this.workbook.transact(() => {
+        if (link?.display && !this.sheet.cell(row, col)) assertArrayWrite(this.sheet, [{ top: row, bottom: row, left: col, right: col }])
         commands.setLink(this.sheet, row, col, link)
         if (link?.display && !this.sheet.cell(row, col)) this.sheet.setCell(row, col, { v: link.display })
       }),
@@ -1660,23 +1677,28 @@ export class SheetView {
       return 0
     }
     const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), options.matchCase ? 'g' : 'gi')
-    let changed = 0
     if (!this.commitEdit()) return 0
+    const batches = new Map<SheetModel, commands.CellInput[]>()
+    for (const target of targets) {
+      const sheet = this.workbook.sheet(target.sheetId)
+      const data = sheet?.cell(target.row, target.col)
+      if (!sheet || !data) continue
+      const input = data.f !== undefined ? `=${toA1Form(data.f, sheet)}` : String(data.v ?? '')
+      const next = options.entireCell ? ((options.matchCase ? input === query : input.toLowerCase() === query.toLowerCase()) ? replacement : input) : input.replace(pattern, () => replacement)
+      if (next === input) continue
+      const batch = batches.get(sheet) ?? []
+      batch.push({ row: target.row, col: target.col, text: next, options: { valuesOnly: this.valuesOnly, date1904: this.workbook.date1904, currentFormat: cellStyle(sheet, this.stylesheet, target.row, target.col).numFmt } })
+      batches.set(sheet, batch)
+    }
+    // Preflight every sheet before writing any: Replace All must refuse atomically.
+    for (const [sheet, inputs] of batches) {
+      if (!this.canWriteArrays(sheet, inputs.map(({ row, col }) => ({ top: row, bottom: row, left: col, right: col })))) return 0
+    }
     this.workbook.transact(() => {
-      for (const target of targets) {
-        const sheet = this.workbook.sheet(target.sheetId)
-        if (!sheet) continue
-        const data = sheet.cell(target.row, target.col)
-        if (!data) continue
-        const input = data.f !== undefined ? `=${toA1Form(data.f, sheet)}` : String(data.v ?? '')
-        const next = options.entireCell ? ((options.matchCase ? input === query : input.toLowerCase() === query.toLowerCase()) ? replacement : input) : input.replace(pattern, () => replacement)
-        if (next === input) continue
-        commands.setCellInput(sheet, target.row, target.col, next, { valuesOnly: this.valuesOnly, date1904: this.workbook.date1904, currentFormat: cellStyle(sheet, this.stylesheet, target.row, target.col).numFmt })
-        changed++
-      }
+      for (const [sheet, inputs] of batches) commands.setCellInputs(sheet, inputs)
     })
     this.notify()
-    return changed
+    return [...batches.values()].reduce((count, inputs) => count + inputs.length, 0)
   }
 
   // ── Printing ─────────────────────────────────────────────────────────────

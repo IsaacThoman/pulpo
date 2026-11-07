@@ -6,6 +6,7 @@ export function sheetViewLabels(): SheetViewLabels {
   return {
     dataErrors: {
       size: ui("This range is too large to edit safely. Select a smaller range."),
+      partialArray: ui("You can't change part of an array."),
       arrays: ui("Cannot sort a range containing spilled or legacy array formulas."),
       merges: ui("To do this, all the merged cells need to be the same size."),
       filter: ui("Cannot change this filter safely. Only value-list filters are supported."),

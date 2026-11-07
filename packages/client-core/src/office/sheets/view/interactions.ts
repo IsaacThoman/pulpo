@@ -1,7 +1,7 @@
 import { r1c1ToA1 } from '../formula/translate.js'
 import { Stylesheet } from '../styles/stylesheet.js'
 import { randomId } from '../model/axis.js'
-import { canWriteArrays, contains, intersects, offsetRange, pasteRules, placeRule, snapshotRules } from './clipboard-state.js'
+import { contains, intersects, offsetRange, pasteRules, placeRule, snapshotRules } from './clipboard-state.js'
 import { moveCells } from '../model/move-cells.js'
 import { maxOf, replaceChildrenWith } from '../../../collections.js'
 import { cellName, MAX_COLS, MAX_ROWS, rangeContains, type CellRange } from '../address.js'
@@ -723,14 +723,25 @@ export class SheetInteractions {
       this.showMessage(view.labels.dataErrors.size, view.selection.active.row, view.selection.active.col)
       return
     }
-    view.workbook.transact(() => {
-      for (const range of view.selection.ranges) {
-        if (direction === 'down' && range.bottom > range.top) this.fill({ ...range, bottom: range.top }, range, true)
-        else if (direction === 'right' && range.right > range.left) this.fill({ ...range, right: range.left }, range, true)
-        else if (direction === 'down' && range.top > 0) this.fill({ ...range, top: range.top - 1, bottom: range.top - 1 }, { ...range, top: range.top - 1 }, true)
-        else if (direction === 'right' && range.left > 0) this.fill({ ...range, left: range.left - 1, right: range.left - 1 }, { ...range, left: range.left - 1 }, true)
-      }
+    const jobs = view.selection.ranges.flatMap((range) => {
+      if (direction === 'down' && range.bottom > range.top) return [{ source: { ...range, bottom: range.top }, target: range }]
+      if (direction === 'right' && range.right > range.left) return [{ source: { ...range, right: range.left }, target: range }]
+      if (direction === 'down' && range.top > 0) return [{ source: { ...range, top: range.top - 1, bottom: range.top - 1 }, target: { ...range, top: range.top - 1 } }]
+      if (direction === 'right' && range.left > 0) return [{ source: { ...range, left: range.left - 1, right: range.left - 1 }, target: { ...range, left: range.left - 1 } }]
+      return []
     })
+    const writes = jobs.flatMap(({ source, target }) => this.fillWriteRanges(source, target))
+    if (!view.canWriteArrays(view.sheet, writes)) return
+    view.workbook.transact(() => {
+      for (const { source, target } of jobs) this.fill(source, target, true)
+    })
+  }
+
+  private fillWriteRanges(source: CellRange, target: CellRange): CellRange[] {
+    const vertical = target.top !== source.top || target.bottom !== source.bottom
+    const backward = vertical ? target.top < source.top : target.left < source.left
+    const extension = vertical ? backward ? { ...target, bottom: source.top - 1 } : { ...target, top: source.bottom + 1 } : backward ? { ...target, right: source.left - 1 } : { ...target, left: source.right + 1 }
+    return span(extension.top, extension.bottom).filter((row) => !this.view.rows.isHidden(row)).map((row) => ({ ...extension, top: row, bottom: row }))
   }
 
   /** Extends `source` to `target` with the fill handle's series (or copies, with `copy`). */
@@ -741,8 +752,7 @@ export class SheetInteractions {
     const vertical = target.top !== source.top || target.bottom !== source.bottom
     const backward = vertical ? target.top < source.top : target.left < source.left
     if (!contains(target, source) || !commands.canExpandRanges([target])) return
-    const extension = vertical ? backward ? { ...target, bottom: source.top - 1 } : { ...target, top: source.bottom + 1 } : backward ? { ...target, right: source.left - 1 } : { ...target, left: source.right + 1 }
-    if (!canWriteArrays(sheet, extension, view.values)) return
+    if (!view.canWriteArrays(sheet, this.fillWriteRanges(source, target))) return
     // These fill patterns need shape-aware repetition; reject them before any write.
     if (sheet.mergedRanges().some((m) => intersects(m.range, target))) return
     let arraySource = false
@@ -818,6 +828,7 @@ export class SheetInteractions {
     const sheet = view.sheet
     const range = commands.clampToUsed(sheet, view.selection.ranges[0]!)
     if (!commands.canExpandRanges([range])) return undefined
+    if (cut && !view.canWriteArrays(sheet, [range])) return undefined
     const sourceRows = span(range.top, range.bottom).filter((row) => cut || !view.rows.isHidden(row))
     // Like Excel, hidden columns remain part of a normal copied rectangle.
     const sourceCols = span(range.left, range.right)
@@ -937,10 +948,10 @@ export class SheetInteractions {
     const destination = { top: origin.row, left: origin.col, bottom: origin.row + rows - 1, right: origin.col + cols - 1 }
     // Preflight is outside the transaction: failures must not leave a partial paste behind.
     if (!commands.canExpandRanges([destination])) return
-    if (placeOptions.values && !canWriteArrays(sheet, destination, view.values)) return
+    if (placeOptions.values && !view.canWriteArrays(sheet, relocate && cut.sheet === sheet.id ? [destination, cut.range] : [destination])) return
     if (relocate) {
       const source = view.workbook.sheet(cut.sheet)!
-      if (!canWriteArrays(source, cut.range, view.values)) return
+      if (!view.canWriteArrays(source, [cut.range])) return
       for (const owner of new Set([source, sheet])) for (const collection of [owner.tables, owner.merges]) for (const raw of collection.values()) {
         const rect = owner.resolveRange((raw as { range: import('../model/schema.js').RangeIds }).range)
         if (!rect) continue
@@ -976,6 +987,19 @@ export class SheetInteractions {
           const xml = styles.toXml()
           if (xml !== view.workbook.metaValue('stylesXml')) view.workbook.setMeta('stylesXml', xml)
         }
+        if (!internal && placeOptions.values) {
+          const inputs: commands.CellInput[] = []
+          for (let dr = 0; dr < rows; dr++) for (let dc = 0; dc < cols; dc++) {
+            const cell = cells[dr % height]?.[dc % width] ?? { text: '' }
+            const row = origin.row + dr, col = origin.col + dc
+            const formula = !mode.values && 'formula' in cell && typeof cell.formula === 'string' ? r1c1ToA1(cell.formula, row, col) : undefined
+            const literal = 'stringValue' in cell && cell.stringValue || mode.values && /^[=']/.test(cell.text)
+            // Literal strings bypass formula/number inference, just as internal snapshots do.
+            const text = formula ?? (literal ? `'${cell.text}` : cell.text)
+            inputs.push({ row, col, text, options: { valuesOnly: view.valuesOnly, date1904: view.workbook.date1904, currentFormat: view.styleAt(row, col).numFmt, inferFormat: !mode.values } })
+          }
+          commands.setCellInputs(sheet, inputs)
+        }
         if (placeOptions.formats) commands.unmergeRanges(sheet, [destination])
         for (let dr = 0; dr < rows; dr++) for (let dc = 0; dc < cols; dc++) {
           const r = dr % height, c = dc % width
@@ -991,15 +1015,6 @@ export class SheetInteractions {
             }
           } else {
             const cell = cells[r]?.[c] ?? { text: '' }
-            if (placeOptions.values) {
-              const formula = !mode.values && 'formula' in cell && typeof cell.formula === 'string' ? r1c1ToA1(cell.formula, to.row, to.col) : undefined
-              const literal = 'stringValue' in cell && cell.stringValue || mode.values && /^[=']/.test(cell.text)
-              if (literal && !formula) sheet.setCell(to.row, to.col, { v: cell.text, t: 's' })
-              else if (mode.values) {
-                const { data: content } = commands.contentFromInput(sheet, cell.text, { valuesOnly: view.valuesOnly, date1904: view.workbook.date1904 })
-                sheet.setCell(to.row, to.col, content)
-              } else commands.setCellInput(sheet, to.row, to.col, formula ?? cell.text, { valuesOnly: view.valuesOnly, date1904: view.workbook.date1904, currentFormat: view.styleAt(to.row, to.col).numFmt })
-            }
             if (placeOptions.formats && 'style' in cell) {
               const pasted = cell as { style?: Partial<StyleProps>; color?: string; background?: string }
               const patch: commands.StylePatch = { ...(pasted.style ?? {}) }
@@ -1299,7 +1314,7 @@ export class SheetInteractions {
       option.addEventListener('click', () => {
         if (view.readOnly) return
         this.closePopup()
-        commands.setCellInput(view.sheet, row, col, item, { valuesOnly: view.valuesOnly, currentFormat: view.styleAt(row, col).numFmt })
+        view.dataOperation(() => commands.setCellInput(view.sheet, row, col, item, { valuesOnly: view.valuesOnly, currentFormat: view.styleAt(row, col).numFmt }))
         view.focus()
       })
       popup.appendChild(option)

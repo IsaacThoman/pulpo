@@ -3238,6 +3238,7 @@ const esUi: Record<string, string> = {
   "This chart type can't be shown yet": "Este tipo de gráfico aún no se puede mostrar",
   "This image can't be shown": "Esta imagen no se puede mostrar",
   "Ctrl+click to open the link": "Ctrl+clic para abrir el enlace",
+  "You can't change part of an array.": "No se puede cambiar parte de una matriz.",
   "Cannot sort a range containing spilled or legacy array formulas.": "No se puede ordenar un rango con fórmulas matriciales heredadas o desbordadas.",
   "Cannot sort merged cells. Unmerge the cells first.": "No se pueden ordenar celdas combinadas. Sepáralas primero.",
   "Cannot sort this range with validation, conditional formatting, drawings, or range hyperlinks. Remove them first.": "No se puede ordenar este rango con validación, formato condicional, dibujos o hipervínculos de rango. Quítalos primero.",

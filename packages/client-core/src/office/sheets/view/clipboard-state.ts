@@ -5,7 +5,6 @@ import { toA1Form, toIdForm } from '../model/formula-ids.js'
 import { shiftFormula } from '../model/references.js'
 import type { ConditionalFormat, DataValidation } from '../model/schema.js'
 import type { SheetModel } from '../model/workbook.js'
-import type { SheetValues } from '../values.js'
 import type { ClipboardRule } from './clipboard.js'
 
 export const contains = (a: CellRange, b: CellRange) => a.top <= b.top && a.bottom >= b.bottom && a.left <= b.left && a.right >= b.right
@@ -98,16 +97,4 @@ export function placeRule<T extends DataValidation | ConditionalFormat>(sheet: S
   const translated = mapFormulas(rule.value, (f) => toIdForm(shiftFormula(f, first.top - rule.origin.row, first.left - rule.origin.col), sheet))
   if (kind === 'cf' && dxf) for (const r of (translated as Omit<ConditionalFormat, 'ranges'>).rules) if (r.dxfId !== undefined) r.dxfId = dxf[r.dxfId] ?? r.dxfId
   sheet[kind].set(randomId(), { ...translated, ranges: ranges.map((r) => sheet.rangeIds(r)) })
-}
-
-/** Refuse partial legacy arrays and edits to spill members, before any destination write. */
-export function canWriteArrays(sheet: SheetModel, destination: CellRange, values: SheetValues): boolean {
-  let allowed = true
-  sheet.forEachCell((row, col, data) => {
-    const size = data.array ?? values.spill?.(sheet, row, col)
-    if (!size) return
-    const range = { top: row, left: col, bottom: row + size.rows - 1, right: col + size.cols - 1 }
-    if (intersects(range, destination) && !contains(destination, range)) allowed = false
-  })
-  return allowed
 }

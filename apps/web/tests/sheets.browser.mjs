@@ -95,6 +95,35 @@ try {
     await context.close()
   })
 
+  await step('typed legacy-array members are refused; dynamic spill blockers can be cleared', async () => {
+    const { page: arrays, errors: arrayErrors, context } = await open()
+    await arrays.evaluate(() => {
+      const view = window.__sheets.views[0]
+      view.sheet.setCell(19, 0, { f: 'SEQUENCE(3)', array: { rows: 3, cols: 1 }, spillCache: [[1], [2], [3]] })
+    })
+    await go(arrays, 'A21')
+    await arrays.keyboard.type('99')
+    await arrays.keyboard.press('Enter')
+    await arrays.getByRole('alert').filter({ hasText: "You can't change part of an array." }).waitFor()
+    assert.equal(await inputText(arrays, 20, 0), '')
+    assert.equal(await shown(arrays, 20, 0), '2')
+    assert.equal(await arrays.evaluate(() => window.__sheets.views[0].editing?.text), '99')
+    await arrays.keyboard.press('Escape')
+    await go(arrays, 'D20')
+    await arrays.keyboard.type('=SEQUENCE(3)')
+    await arrays.keyboard.press('Enter')
+    await arrays.keyboard.type('99')
+    await arrays.keyboard.press('Enter')
+    assert.equal(await inputText(arrays, 20, 3), '99')
+    assert.equal(await shown(arrays, 19, 3), '#SPILL!')
+    await go(arrays, 'D21')
+    await arrays.keyboard.press('Delete')
+    assert.equal(await shown(arrays, 19, 3), '1')
+    assert.equal(await shown(arrays, 20, 3), '2')
+    assert.deepEqual(arrayErrors, [])
+    await context.close()
+  })
+
   await step('formula with arrow-key pointing and colored references', async () => {
     await go(page, 'C20')
     await page.keyboard.type('=B20*')

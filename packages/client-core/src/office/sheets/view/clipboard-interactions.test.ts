@@ -266,7 +266,10 @@ describe('clipboard surface matrix', () => {
     paste(view, copy(view, rect(1, 0)), rect(8, 5))
     expect(view.valueAt(8, 5)).toBe(20)
     paste(view, { text: 'obstruction' }, rect(6, 5))
-    expect(view.inputText(6, 5)).toBe(mode.values ? 'obstruction' : '')
+    expect(view.inputText(6, 5)).toBe('obstruction')
+    if (!mode.values) expect(view.valueAt(5, 5)).toEqual({ e: '#SPILL!' })
+    view.clearContents()
+    if (!mode.values) expect(view.valueAt(6, 5)).toBe(20)
   })
 
   it.each([{}, { values: true }])('materializes filtered spill results without spilling extra rows: %j', (mode) => {
