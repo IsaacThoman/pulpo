@@ -106,7 +106,7 @@ try {
   const second = watch(await context.newPage())
   await openDeck(second, id)
   await second.locator('.pp-canvas').getByText('Quarterly review').waitFor({ timeout: 15_000 })
-  await second.getByRole('button', { name: 'New slide' }).click()
+  await second.getByRole('button', { name: 'New slide with layout' }).click()
   await second.getByRole('menuitem', { name: 'Title and Content' }).click()
   await first.locator('.pp-thumbs .pp-thumb').nth(1).waitFor({ timeout: 15_000 })
   await second.locator('.pp-thumbs .pp-thumb').first().click()
