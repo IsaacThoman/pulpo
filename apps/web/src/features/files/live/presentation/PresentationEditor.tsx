@@ -139,15 +139,17 @@ function PresentationEditorView({ controller, startInShow, toolbarSlot, classNam
       if (!inEditor || editable || presenter.current) return
       // PowerPoint for Windows: F5 from the beginning, Shift+F5 from the current slide. Google Slides
       // and PowerPoint for Mac: Cmd/Ctrl+Enter from the current slide, with Shift from the beginning.
-      if (event.key === 'F5') {
-        event.preventDefault()
-        present(event.shiftKey ? 'current' : 'start')
-      } else if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-        event.preventDefault()
-        present(event.shiftKey ? 'start' : 'current')
-      }
+      const mode = event.key === 'F5' ? (event.shiftKey ? 'current' : 'start')
+        : (event.metaKey || event.ctrlKey) && event.key === 'Enter' ? (event.shiftKey ? 'start' : 'current')
+          : undefined
+      if (!mode) return
+      event.preventDefault()
+      present(mode)
+      // The key goes no further: the show now listens on the document, which this key has yet to
+      // reach, and would take its Enter as "next slide".
+      event.stopPropagation()
     }
-    // Capturing, so the app's own Cmd/Ctrl+Shift+Enter (the side panel's) sees the key handled.
+    // Capturing, so this runs before the app's own Cmd/Ctrl+Shift+Enter (the side panel's).
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
   })
