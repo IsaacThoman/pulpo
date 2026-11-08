@@ -1,7 +1,7 @@
 import type { Mark, MarkType, Node as ProseMirrorNode, ResolvedPos } from '@tiptap/pm/model'
 import type { EditorState, Transaction } from '@tiptap/pm/state'
 import { buildRunProperties, normalizeText, slideTextSchema, type TextJSON } from './text.js'
-import { attr, childElements, createElement, NS, parseFragment, parseXmlDocument, serializeNode, type XmlDocument, type XmlElement } from './xml.js'
+import { attr, childElements, createElement, importFragment, NS, parseFragment, parseXmlDocument, serializeNode, type XmlDocument, type XmlElement } from './xml.js'
 
 /**
  * Text formatting as the toolbar applies it: run properties are marks (one per property, so
@@ -396,4 +396,110 @@ export function insertFieldCommand(fieldType: string, text: string, id: string):
     dispatch?.(state.tr.replaceSelectionWith(field, false).scrollIntoView())
     return true
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Outlines (`a:ln`) and text boxes (`a:bodyPr`): edits change one attribute or child and keep
+// the rest (arrowheads, caps, joins, gradient lines, columns, warps) as the file had them.
+
+/** Puts `replacement` where `names` were, in schema order (`order`), or just removes them. */
+function replaceIn(parent: XmlElement, names: readonly string[], order: readonly string[], replacement: XmlElement | undefined): void {
+  for (const existing of childElements(parent)) if (names.includes(existing.localName ?? '')) parent.removeChild(existing)
+  if (!replacement) return
+  const rank = order.indexOf(replacement.localName ?? '')
+  const after = childElements(parent).find((existing) => order.indexOf(existing.localName ?? '') > rank)
+  parent.insertBefore(replacement, after ?? null)
+}
+
+const LN_ORDER = ['noFill', 'solidFill', 'gradFill', 'pattFill', 'prstDash', 'custDash', 'round', 'bevel', 'miter', 'headEnd', 'tailEnd', 'extLst']
+const LINE_FILLS = ['noFill', 'solidFill', 'gradFill', 'pattFill']
+
+export type LineEdit = (ln: XmlElement) => void
+
+/** Arrowhead shapes (`a:headEnd/@type`, `a:tailEnd/@type`). */
+export type Arrowhead = 'none' | 'triangle' | 'stealth' | 'arrow' | 'oval' | 'diamond'
+export type ArrowheadSize = 'sm' | 'med' | 'lg'
+
+/** Applies edits to a shape's own `a:ln` (creating one when it has none, so the style's line still shows through). */
+export function editLineProperties(line: string | undefined, ...edits: LineEdit[]): string {
+  const element = line ? parseFragment(line) : parseFragment(`<a:ln xmlns:a="${NS.a}"/>`)
+  for (const edit of edits) edit(element)
+  return serializeNode(element)
+}
+
+function arrowEnd(name: 'headEnd' | 'tailEnd', type: Arrowhead | undefined, size?: { w?: ArrowheadSize; len?: ArrowheadSize }): LineEdit {
+  return (ln) => {
+    if (!type) return replaceIn(ln, [name], LN_ORDER, undefined)
+    const end = element(ln, `a:${name}`, { type })
+    if (size?.w) end.setAttribute('w', size.w)
+    if (size?.len) end.setAttribute('len', size.len)
+    replaceIn(ln, [name], LN_ORDER, end)
+  }
+}
+
+export const lineEdits = {
+  /** Line width in EMU (12700 per point). */
+  width(emu: number): LineEdit {
+    return (ln) => ln.setAttribute('w', String(Math.round(Math.min(20_116_800, Math.max(0, Number.isFinite(emu) ? emu : 0)))))
+  },
+  /** The line's fill: a fill element as XML (`<a:noFill/>` for no line), or undefined for the style's. */
+  fill(xml: string | undefined): LineEdit {
+    return (ln) => replaceIn(ln, LINE_FILLS, LN_ORDER, xml ? importFragment(ln.ownerDocument as unknown as XmlDocument, xml) : undefined)
+  },
+  /** A preset dash (`dash`, `sysDot`, …); `solid` or undefined draws a solid line. */
+  dash(preset: string | undefined): LineEdit {
+    return (ln) => replaceIn(ln, ['prstDash', 'custDash'], LN_ORDER, preset && preset !== 'solid' ? element(ln, 'a:prstDash', { val: preset }) : undefined)
+  },
+  /** The arrowhead at the line's start; undefined removes it (no arrowhead unless the style has one). */
+  headEnd(type: Arrowhead | undefined, size?: { w?: ArrowheadSize; len?: ArrowheadSize }): LineEdit {
+    return arrowEnd('headEnd', type, size)
+  },
+  /** The arrowhead at the line's end. */
+  tailEnd(type: Arrowhead | undefined, size?: { w?: ArrowheadSize; len?: ArrowheadSize }): LineEdit {
+    return arrowEnd('tailEnd', type, size)
+  },
+}
+
+const BODY_ORDER = ['prstTxWarp', 'noAutofit', 'normAutofit', 'spAutoFit', 'scene3d', 'sp3d', 'flatTx', 'extLst']
+const AUTOFITS = ['noAutofit', 'normAutofit', 'spAutoFit']
+
+export type BodyEdit = (bodyPr: XmlElement) => void
+
+/** Applies edits to a shape's own `a:bodyPr` (creating one: unset properties keep inheriting). */
+export function editBodyProperties(bodyPr: string | undefined, ...edits: BodyEdit[]): string {
+  const element = bodyPr ? parseFragment(bodyPr) : parseFragment(`<a:bodyPr xmlns:a="${NS.a}"/>`)
+  for (const edit of edits) edit(element)
+  return serializeNode(element)
+}
+
+export const bodyEdits = {
+  /** Vertical alignment of the text in its box. */
+  anchor(value: 't' | 'ctr' | 'b'): BodyEdit {
+    return (bodyPr) => bodyPr.setAttribute('anchor', value)
+  },
+  /**
+   * Do not Autofit, Shrink text on overflow (`norm`, with the scale the canvas measured), or
+   * Resize shape to fit text (`shape`).
+   */
+  autofit(mode: 'none' | 'norm' | 'shape', scale?: { fontScale: number; lineReduction: number }): BodyEdit {
+    return (bodyPr) => {
+      const name = mode === 'none' ? 'a:noAutofit' : mode === 'norm' ? 'a:normAutofit' : 'a:spAutoFit'
+      const replacement = element(bodyPr, name)
+      if (mode === 'norm' && scale && scale.fontScale < 100_000) {
+        replacement.setAttribute('fontScale', String(Math.round(scale.fontScale)))
+        replacement.setAttribute('lnSpcReduction', String(Math.round(scale.lineReduction)))
+      }
+      replaceIn(bodyPr, AUTOFITS, BODY_ORDER, replacement)
+    }
+  },
+  /** Margins between the box and its text, in EMU. */
+  insets(insets: Partial<Record<'l' | 't' | 'r' | 'b', number>>): BodyEdit {
+    return (bodyPr) => {
+      for (const [side, value] of Object.entries(insets)) if (value !== undefined && Number.isFinite(value)) bodyPr.setAttribute(`${side}Ins`, String(Math.round(Math.max(0, value))))
+    }
+  },
+  /** Wrap text in shape. */
+  wrap(on: boolean): BodyEdit {
+    return (bodyPr) => bodyPr.setAttribute('wrap', on ? 'square' : 'none')
+  },
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { EMU_PER_PX } from '@pulpo/client-core/office/presentation'
+import { EMU_PER_PX, lineEdits } from '@pulpo/client-core/office/presentation'
 import type { PresentationController } from '@pulpo/client-core/office/presentation/view'
 import { PaintBucket, PenLine } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
@@ -78,11 +78,13 @@ export function FormatPanel({ controller }: { controller: PresentationController
   const line = shape?.line ?? ''
   const lineWidth = Number(/\bw="(\d+)"/.exec(line)?.[1] ?? 9525) / 12_700
   const dash = /prstDash val="(\w+)"/.exec(line)?.[1] ?? 'solid'
+  // Only what changed is written: arrowheads, caps, and the theme's line color stay.
   const setLine = (patch: { width?: number; fill?: string; dash?: string }) => {
-    const width = Math.round((patch.width ?? lineWidth) * 12_700)
-    const fill = patch.fill ?? (/<a:(solidFill|noFill)[\s\S]*?(<\/a:solidFill>|\/>)/.exec(line)?.[0] ?? '<a:solidFill><a:schemeClr val="tx1"/></a:solidFill>')
-    const dashValue = patch.dash ?? dash
-    controller.setShapeProperty('line', `<a:ln w="${width}">${fill}${dashValue === 'solid' ? '' : `<a:prstDash val="${dashValue}"/>`}</a:ln>`)
+    controller.editLine(
+      ...(patch.width !== undefined ? [lineEdits.width(patch.width * 12_700)] : []),
+      ...(patch.fill !== undefined ? [lineEdits.fill(patch.fill)] : []),
+      ...(patch.dash !== undefined ? [lineEdits.dash(patch.dash)] : []),
+    )
   }
   const shadow = /outerShdw/.test(shape?.effects ?? '')
   return (

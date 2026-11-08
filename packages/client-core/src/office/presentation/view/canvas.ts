@@ -5,7 +5,7 @@ import type { Xfrm } from '../model.js'
 import { EMU_PER_PX } from '../render/env.js'
 import { slideEnvironment } from '../render/slide.js'
 import { bodyLayout, textFrameStyles } from '../render/text.js'
-import { serializeNode, parseFragment } from '../xml.js'
+import { bodyEdits, editBodyProperties } from '../formatting.js'
 import { LOCAL_ORIGIN, type ChangeSet, type EditingTarget, type PresentationController } from './controller.js'
 import { readClipboard } from './clipboard-io.js'
 import { dragHasImages, imageSize } from './images.js'
@@ -788,15 +788,7 @@ export class SlideCanvas {
       text.style.setProperty('--pp-fs', String(scale))
     }
     if (Math.abs(scale - layout.body.fontScale) < 0.001) return
-    const bodyPr = shape.bodyPr ? parseFragment(shape.bodyPr) : parseFragment('<a:bodyPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"/>')
-    for (const child of Array.from(bodyPr.childNodes)) if ((child as { localName?: string }).localName === 'normAutofit' || (child as { localName?: string }).localName === 'spAutoFit' || (child as { localName?: string }).localName === 'noAutofit') bodyPr.removeChild(child)
-    const norm = bodyPr.ownerDocument!.createElementNS('http://schemas.openxmlformats.org/drawingml/2006/main', 'a:normAutofit')
-    if (scale < 1) {
-      norm.setAttribute('fontScale', String(Math.round(scale * 100000)))
-      norm.setAttribute('lnSpcReduction', scale < 0.9 ? '20000' : '10000')
-    }
-    bodyPr.insertBefore(norm, bodyPr.firstChild)
-    this.controller.setShapeProperty('bodyPr', serializeNode(bodyPr))
+    this.controller.setShapeProperty('bodyPr', editBodyProperties(shape.bodyPr, bodyEdits.autofit('norm', { fontScale: scale * 100000, lineReduction: scale < 0.9 ? 20000 : 10000 })))
   }
 
   private stopEditing(): void {

@@ -8,15 +8,19 @@ import { slideSections } from '../sections.js'
 import * as commands from '../commands.js'
 import {
   BASELINE,
+  bodyEdits,
   CLEARABLE_MARKS,
   clearMarksAll,
   clearMarksCommand,
   editAllParagraphs,
+  editBodyProperties,
+  editLineProperties,
   highlightXml,
   insertFieldCommand,
   linkAll,
   linkAt,
   linkIn,
+  lineEdits,
   markAll,
   markValueAt,
   markValueIn,
@@ -27,6 +31,9 @@ import {
   setMarkCommand,
   stepFontSizeCommand,
   stepFontSizesAll,
+  type Arrowhead,
+  type BodyEdit,
+  type LineEdit,
   type MarkValue,
   type ParagraphEdit,
   type RunMark,
@@ -39,6 +46,7 @@ import { renderSlide, slideShapeText, slideShapeXfrm, type SlideRenderOptions } 
 import { computedFieldText, resolveTypeface } from '../render/text.js'
 import { textToPlain } from '../text.js'
 import { orderedKeys, presentationRoot, readPart, readParts, readSlideMap } from '../ydoc.js'
+import { NS } from '../xml.js'
 import { readClipboardContents, writeClipboard } from './clipboard-io.js'
 import { imageSize } from './images.js'
 import type { InlineTextEditor } from './text-editor.js'
@@ -629,10 +637,16 @@ export class PresentationController {
     return key
   }
 
-  insertShape(preset: string, xfrm?: Xfrm): string | undefined {
+  /**
+   * Inserts a preset shape, or a line for line and connector presets; `arrows` puts arrowheads
+   * on a line (Arrow: `{ tail: 'triangle' }`, Double Arrow: both), in the same undo step.
+   */
+  insertShape(preset: string, xfrm?: Xfrm, arrows?: { head?: Arrowhead; tail?: Arrowhead }): string | undefined {
     if (!this.guard()) return undefined
     const line = /line|Connector/.test(preset)
-    const [key] = commands.insertShapes(this.doc, this.slideKey!, [commands.presetShape(preset, xfrm ?? this.centered(line ? 2_286_000 : 1_828_800, line ? 0 : 1_371_600), this.nextName(this.labels.shapeNames.shape))], LOCAL_ORIGIN)
+    const shape = commands.presetShape(preset, xfrm ?? this.centered(line ? 2_286_000 : 1_828_800, line ? 0 : 1_371_600), this.nextName(this.labels.shapeNames.shape))
+    if (arrows?.head || arrows?.tail) shape.line = editLineProperties(shape.line, lineEdits.headEnd(arrows.head), lineEdits.tailEnd(arrows.tail))
+    const [key] = commands.insertShapes(this.doc, this.slideKey!, [shape], LOCAL_ORIGIN)
     if (key) this.selectShapes([key])
     return key
   }
@@ -910,12 +924,16 @@ export class PresentationController {
     this.selectShapes(members)
   }
 
-  /** Aligns selected shapes to each other (or to the slide when one is selected). */
-  align(edge: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom'): void {
+  /**
+   * Aligns selected shapes to each other, or to the slide (PowerPoint's Align to Slide). `auto`
+   * aligns one shape to the slide and several to each other.
+   */
+  align(edge: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom', relativeTo: 'auto' | 'slide' | 'selection' = 'auto'): void {
     if (!this.guard() || !this.state.shapes.length) return
     const xfrms = this.state.shapes.map((key) => [key, this.shapeXfrm(this.slideKey!, key)] as const).filter((entry): entry is readonly [string, Xfrm] => entry[1] !== undefined)
     const size = this.size()
-    const bounds = xfrms.length > 1 ? commands.boundsOf(xfrms.map(([, xfrm]) => xfrm)) : { x: 0, y: 0, cx: size.width * EMU_PER_PX, cy: size.height * EMU_PER_PX }
+    const toSlide = relativeTo === 'slide' || (relativeTo === 'auto' && xfrms.length < 2)
+    const bounds = toSlide ? { x: 0, y: 0, cx: size.width * EMU_PER_PX, cy: size.height * EMU_PER_PX } : commands.boundsOf(xfrms.map(([, xfrm]) => xfrm))
     this.doc.transact(() => {
       for (const [key, xfrm] of xfrms) {
         if (edge === 'left') this.setXfrm(key, { x: bounds.x })
@@ -928,26 +946,127 @@ export class PresentationController {
     }, LOCAL_ORIGIN)
   }
 
-  /** Spaces three or more shapes evenly between the outermost ones. */
-  distribute(axis: 'horizontal' | 'vertical'): void {
-    if (!this.guard() || this.state.shapes.length < 3) return
+  /**
+   * Spaces shapes evenly: three or more between the outermost ones, or (`slide`) any number
+   * across the slide, the outermost at its edges and a single shape centered.
+   */
+  distribute(axis: 'horizontal' | 'vertical', relativeTo: 'selection' | 'slide' = 'selection'): void {
+    const toSlide = relativeTo === 'slide'
+    if (!this.guard() || this.state.shapes.length < (toSlide ? 1 : 3)) return
     const horizontal = axis === 'horizontal'
     const xfrms = this.state.shapes
       .map((key) => [key, this.shapeXfrm(this.slideKey!, key)] as const)
       .filter((entry): entry is readonly [string, Xfrm] => entry[1] !== undefined)
       .sort((a, b) => (horizontal ? a[1].x - b[1].x : a[1].y - b[1].y))
-    const start = horizontal ? xfrms[0]![1].x : xfrms[0]![1].y
+    if (!xfrms.length) return
+    const extent = (horizontal ? this.size().width : this.size().height) * EMU_PER_PX
     const last = xfrms[xfrms.length - 1]![1]
-    const end = horizontal ? last.x + last.cx : last.y + last.cy
+    const start = toSlide ? 0 : horizontal ? xfrms[0]![1].x : xfrms[0]![1].y
+    const end = toSlide ? extent : horizontal ? last.x + last.cx : last.y + last.cy
     const total = xfrms.reduce((sum, [, xfrm]) => sum + (horizontal ? xfrm.cx : xfrm.cy), 0)
-    const gap = (end - start - total) / (xfrms.length - 1)
-    let position = start
+    const gap = xfrms.length > 1 ? (end - start - total) / (xfrms.length - 1) : 0
+    let position = xfrms.length > 1 ? start : (extent - total) / 2
     this.doc.transact(() => {
       for (const [key, xfrm] of xfrms) {
         this.setXfrm(key, horizontal ? { x: position } : { y: position })
         position += (horizontal ? xfrm.cx : xfrm.cy) + gap
       }
     }, LOCAL_ORIGIN)
+  }
+
+  /** Selected shapes that flip and rotate: tables, charts, and other graphic frames stay upright, as in PowerPoint. */
+  private turnableShapes(): string[] {
+    return this.state.shapes.filter((key) => {
+      const kind = this.shape(this.slideKey!, key)?.kind
+      return kind !== undefined && kind !== 'graphicFrame' && kind !== 'opaque'
+    })
+  }
+
+  /**
+   * Flip Horizontal or Flip Vertical: each selected shape mirrors in place. A rotated shape's
+   * angle mirrors too, so it looks reflected rather than turned (one undo step).
+   */
+  flip(axis: 'horizontal' | 'vertical'): void {
+    if (!this.guard()) return
+    const keys = this.turnableShapes()
+    this.doc.transact(() => {
+      for (const key of keys) {
+        const xfrm = this.shapeXfrm(this.slideKey!, key)
+        if (!xfrm) continue
+        const rot = xfrm.rot ? (21_600_000 - (((xfrm.rot % 21_600_000) + 21_600_000) % 21_600_000)) % 21_600_000 : 0
+        this.setXfrm(key, axis === 'horizontal' ? { flipH: !xfrm.flipH, rot } : { flipV: !xfrm.flipV, rot })
+      }
+    }, LOCAL_ORIGIN)
+  }
+
+  /** Rotates each selected shape by `degrees` (90 is Rotate Right 90°, -90 Rotate Left 90°). */
+  rotateBy(degrees: number): void {
+    if (!this.guard() || !Number.isFinite(degrees)) return
+    const keys = this.turnableShapes()
+    this.doc.transact(() => {
+      for (const key of keys) {
+        const xfrm = this.shapeXfrm(this.slideKey!, key)
+        if (!xfrm) continue
+        this.setXfrm(key, { rot: ((((xfrm.rot ?? 0) + Math.round(degrees * 60_000)) % 21_600_000) + 21_600_000) % 21_600_000 })
+      }
+    }, LOCAL_ORIGIN)
+  }
+
+  /** Change Shape: the selected shapes take a preset geometry (`ellipse`, `roundRect`, …) and keep their text and look. */
+  changeShape(preset: string): void {
+    if (!this.guard() || !/^[A-Za-z0-9]+$/.test(preset)) return
+    const keys = this.state.shapes.filter((key) => this.shape(this.slideKey!, key)?.kind === 'sp')
+    if (keys.length) commands.setShapeProperty(this.doc, this.slideKey!, keys, 'geom', `<a:prstGeom xmlns:a="${NS.a}" prst="${preset}"><a:avLst/></a:prstGeom>`, LOCAL_ORIGIN)
+  }
+
+  /**
+   * Edits the selected shapes' outlines (see `lineEdits`): only what an edit names changes, so
+   * arrowheads, caps, and gradient lines stay. Each shape keeps its other line properties.
+   */
+  editLine(...edits: LineEdit[]): void {
+    if (!this.guard() || !edits.length) return
+    const keys = this.state.shapes.filter((key) => {
+      const kind = this.shape(this.slideKey!, key)?.kind
+      return kind === 'sp' || kind === 'cxnSp' || kind === 'pic'
+    })
+    this.doc.transact(() => {
+      for (const key of keys) commands.setShapeProperty(this.doc, this.slideKey!, [key], 'line', editLineProperties(this.shape(this.slideKey!, key)?.line, ...edits), LOCAL_ORIGIN)
+    }, LOCAL_ORIGIN)
+  }
+
+  /** Text box options (`bodyEdits`) for the text being edited on the slide, else the selected shapes. */
+  editTextBox(...edits: BodyEdit[]): void {
+    if (!this.guard() || !edits.length) return
+    const editing = this.state.editing
+    const keys = editing ? (editing.row ? [] : [editing.shape]) : this.state.shapes
+    this.doc.transact(() => {
+      for (const key of keys) {
+        const shape = this.shape(this.slideKey!, key)
+        if (shape?.kind === 'sp') commands.setShapeProperty(this.doc, this.slideKey!, [key], 'bodyPr', editBodyProperties(shape.bodyPr, ...edits), LOCAL_ORIGIN)
+      }
+    }, LOCAL_ORIGIN)
+  }
+
+  /** Vertical alignment of text in its box (Align Text: top, middle, bottom). */
+  setTextAnchor(anchor: 't' | 'ctr' | 'b'): void {
+    this.editTextBox(bodyEdits.anchor(anchor))
+  }
+
+  /**
+   * Do not Autofit, Shrink text on overflow, or Resize shape to fit text. Shrinking and
+   * resizing are measured while the text is edited, as PowerPoint files are.
+   */
+  setAutofit(mode: 'none' | 'norm' | 'shape'): void {
+    this.editTextBox(bodyEdits.autofit(mode))
+  }
+
+  /** Text box margins in EMU (any of left, top, right, bottom). */
+  setTextInsets(insets: Partial<Record<'l' | 't' | 'r' | 'b', number>>): void {
+    this.editTextBox(bodyEdits.insets(insets))
+  }
+
+  setTextWrap(wrap: boolean): void {
+    this.editTextBox(bodyEdits.wrap(wrap))
   }
 
   // Text formatting goes to the speaker notes while they are the target, else to the live

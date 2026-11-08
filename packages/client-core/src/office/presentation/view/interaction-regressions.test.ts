@@ -3,7 +3,8 @@ import * as Y from 'yjs'
 import { blankPresentation } from '../blank.js'
 import { copyContent } from '../clipboard.js'
 import { presentationCodec } from '../codec.js'
-import { cellFragment, groupShapes, insertShapes, presetShape, readSlide, readXfrm, setShapeText, tableShape } from '../commands.js'
+import { cellFragment, groupShapes, insertShapes, presetShape, readSlide, readXfrm, setShapeProperty, setShapeText, tableShape } from '../commands.js'
+import { lineEdits } from '../formatting.js'
 import { EMU_PER_PX } from '../render/env.js'
 import { plainToText, textToPlain } from '../text.js'
 import { memoryAssets } from '../testing/assets.js'
@@ -123,6 +124,15 @@ describe('presentation interaction regressions', () => {
     controller.removeSection('section')
     expect(await controller.cutToClipboard()).toBe(false)
     expect(await controller.pasteFromClipboard()).toBe(false)
+    controller.flip('horizontal')
+    controller.rotateBy(90)
+    controller.changeShape('ellipse')
+    controller.editLine(lineEdits.width(12_700))
+    controller.setTextAnchor('b')
+    controller.setAutofit('shape')
+    controller.setTextInsets({ l: 0 })
+    controller.setTextWrap(false)
+    controller.distribute('horizontal', 'slide')
     controller.undo()
     controller.redo()
     await controller.insertImage(new Uint8Array([1]), 'image/png')
@@ -400,5 +410,91 @@ describe('presentation interaction regressions', () => {
     // Every slide selected at once.
     controller.selectAllSlides()
     expect(controller.state.slides).toEqual(controller.slideKeys())
+  })
+
+  it('flips, rotates, aligns and distributes to the slide, and changes shapes', async () => {
+    const { controller, doc, assets } = await open()
+    const slide = controller.state.slide!
+    const width = controller.size().width * EMU_PER_PX
+    const a = controller.insertShape('rect', { x: 100_000, y: 100_000, cx: 1_000_000, cy: 500_000, rot: 1_800_000 })!
+    controller.flip('horizontal')
+    expect(controller.shapeXfrm(slide, a)).toMatchObject({ flipH: true, rot: 19_800_000 })
+    controller.flip('horizontal')
+    expect(controller.shapeXfrm(slide, a)).toMatchObject({ rot: 1_800_000 })
+    expect(controller.shapeXfrm(slide, a)!.flipH).toBeFalsy()
+    controller.flip('vertical')
+    expect(controller.shapeXfrm(slide, a)).toMatchObject({ flipV: true, rot: 19_800_000 })
+    for (let turn = 0; turn < 4; turn++) controller.rotateBy(90)
+    expect(controller.shapeXfrm(slide, a)!.rot).toBe(19_800_000)
+    controller.rotateBy(30)
+    expect(controller.shapeXfrm(slide, a)!.rot).toBeUndefined()
+    const b = controller.insertShape('ellipse', { x: 3_000_000, y: 2_000_000, cx: 2_000_000, cy: 500_000 })!
+    controller.selectShapes([a, b])
+    controller.align('center', 'slide')
+    for (const key of [a, b]) {
+      const xfrm = controller.shapeXfrm(slide, key)!
+      expect(Math.round(xfrm.x + xfrm.cx / 2)).toBe(Math.round(width / 2))
+    }
+    // Centered, the wider ellipse starts further left: it goes to the left edge.
+    controller.distribute('horizontal', 'slide')
+    expect(controller.shapeXfrm(slide, b)!.x).toBe(0)
+    expect(Math.round(controller.shapeXfrm(slide, a)!.x + 1_000_000)).toBe(Math.round(width))
+    // A table stays upright.
+    const table = controller.insertTable(2, 2)!
+    controller.selectShapes([table])
+    controller.rotateBy(90)
+    controller.flip('horizontal')
+    expect(controller.shapeXfrm(slide, table)).not.toHaveProperty('rot')
+    // Change Shape keeps the text.
+    controller.selectShapes([a])
+    setShapeText(doc, slide, a, plainToText('Kept'), LOCAL_ORIGIN)
+    controller.changeShape('ellipse')
+    const { xml } = await exportedSlide(doc, assets)
+    expect(xml).toMatch(/<p:sp>(?:(?!<\/p:sp>).)*prst="ellipse"(?:(?!<\/p:sp>).)*Kept/s)
+  })
+
+  it('draws arrows and edits outlines without losing their arrowheads', async () => {
+    const { controller, doc, assets } = await open()
+    const slide = controller.state.slide!
+    const arrow = controller.insertShape('straightConnector1', undefined, { tail: 'triangle' })!
+    expect(controller.shape(slide, arrow)!.line).toMatch(/<a:tailEnd type="triangle"\/>/)
+    expect(controller.shape(slide, arrow)!.line).not.toMatch(/headEnd/)
+    controller.editLine(lineEdits.width(38_100), lineEdits.dash('dash'))
+    controller.editLine(lineEdits.fill('<a:solidFill><a:srgbClr val="FF0000"/></a:solidFill>'), lineEdits.headEnd('oval', { w: 'lg', len: 'lg' }))
+    const line = controller.shape(slide, arrow)!.line!
+    expect(line).toMatch(/^<a:ln [^>]*w="38100"/)
+    expect(line.indexOf('solidFill')).toBeLessThan(line.indexOf('prstDash'))
+    expect(line.indexOf('prstDash')).toBeLessThan(line.indexOf('headEnd'))
+    expect(line.indexOf('headEnd')).toBeLessThan(line.indexOf('tailEnd'))
+    controller.editLine(lineEdits.dash('solid'), lineEdits.headEnd(undefined))
+    expect(controller.shape(slide, arrow)!.line).toMatch(/^<a:ln[^>]*><a:solidFill><a:srgbClr val="FF0000"\/><\/a:solidFill><a:tailEnd type="triangle"\/><\/a:ln>$/)
+    const both = controller.insertShape('straightConnector1', undefined, { head: 'triangle', tail: 'triangle' })!
+    expect(controller.shape(slide, both)!.line).toMatch(/headEnd type="triangle"[\s\S]*tailEnd type="triangle"/)
+    const { bytes, xml } = await exportedSlide(doc, assets)
+    expect(xml).toMatch(/<a:ln w="38100"><a:solidFill><a:srgbClr val="FF0000"\/><\/a:solidFill><a:tailEnd type="triangle"\/><\/a:ln>/)
+    if (fidelityAvailable()) {
+      const file = writeScratch(scratchDir(), 'arrows.pptx', bytes)
+      const read = JSON.parse(runPython('import sys, json\nfrom pptx import Presentation\nshapes=Presentation(sys.argv[1]).slides[0].shapes\nprint(json.dumps([shapes[-2].line.width, str(shapes[-2].line.color.rgb)]))', file))
+      expect(read).toEqual([38_100, 'FF0000'])
+    }
+  })
+
+  it('sets text box options and keeps the rest of the body properties', async () => {
+    const { controller, doc, assets } = await open()
+    const slide = controller.state.slide!
+    const title = controller.slide(slide)!.shapes[0]!.key
+    controller.selectShapes([title])
+    controller.setTextAnchor('b')
+    controller.setTextInsets({ l: 0, t: 91_440 })
+    controller.setTextWrap(false)
+    controller.setAutofit('shape')
+    expect(controller.formatState().textBox).toEqual({ anchor: 'b', autofit: 'shape', wrap: false, insets: { l: 0, t: 91_440, r: 91_440, b: 45_720 } })
+    const { xml } = await exportedSlide(doc, assets)
+    expect(xml).toMatch(/<a:bodyPr[^>]*anchor="b"[^>]*>.*<a:spAutoFit\/>/s)
+    // A warp the file had stays, and autofit goes after it in schema order.
+    setShapeProperty(doc, slide, [title], 'bodyPr', '<a:bodyPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" anchor="ctr"><a:prstTxWarp prst="textArchUp"><a:avLst/></a:prstTxWarp><a:normAutofit fontScale="62500"/></a:bodyPr>', LOCAL_ORIGIN)
+    controller.setAutofit('none')
+    expect(controller.shape(slide, title)!.bodyPr).toMatch(/anchor="ctr"><a:prstTxWarp prst="textArchUp"><a:avLst\/><\/a:prstTxWarp><a:noAutofit\/><\/a:bodyPr>$/)
+    expect(controller.formatState().textBox?.autofit).toBe('none')
   })
 })

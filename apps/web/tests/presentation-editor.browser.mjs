@@ -328,6 +328,40 @@ try {
     await page.close()
   })
 
+  await check('arrows keep their heads when the format panel changes the line; flips and text box options draw', async () => {
+    const { page, errors } = await open(context, 'blank=1')
+    const key = await page.evaluate(() => window.harness.controllers.a.insertShape('straightConnector1', { x: 1_000_000, y: 1_000_000, cx: 3_000_000, cy: 0 }, { tail: 'triangle' }))
+    const line = () => page.evaluate((shape) => window.harness.controllers.a.shape(window.harness.controllers.a.state.slide, shape).line, key)
+    await page.locator(`.pp-canvas-slide [data-key="${key}"] marker`).first().waitFor({ state: 'attached' })
+    await page.getByRole('button', { name: 'Format panel' }).click()
+    await page.getByRole('combobox', { name: 'Line width' }).selectOption('3')
+    await page.getByRole('combobox', { name: 'Dash type' }).selectOption('dash')
+    assert.match(await line(), /w="38100"/)
+    assert.match(await line(), /<a:prstDash val="dash"\/><a:tailEnd type="triangle"\/>/)
+    await page.locator(`.pp-canvas-slide [data-key="${key}"] marker`).first().waitFor({ state: 'attached' })
+    const reopened = await page.evaluate(async () => {
+      const bytes = Uint8Array.from(atob(await window.harness.exportFile()), (char) => char.charCodeAt(0))
+      const doc = new window.harness.docA.constructor()
+      await window.harness.codec.importFile(doc, bytes, { name: 'Blank.pptx', assets: window.harness.assets })
+      const slides = doc.getMap('presentation').get('slides')
+      return [...slides.values()].flatMap((slide) => [...slide.get('shapes').values()].map((shape) => shape.get('line') ?? '')).join('')
+    })
+    assert.match(reopened, /tailEnd type="triangle"/)
+    // Flip and bottom-anchored text render.
+    const title = await slideShapes(page).first().getAttribute('data-key')
+    await page.evaluate((shape) => {
+      const controller = window.harness.controllers.a
+      controller.selectShapes([shape])
+      controller.setTextAnchor('b')
+      controller.selectShapes([shape])
+      controller.flip('vertical')
+    }, title)
+    await page.locator(`.pp-canvas-slide [data-key="${title}"] .pp-text[data-anchor="b"]`).waitFor({ state: 'attached' })
+    assert.equal(await page.evaluate((shape) => window.harness.controllers.a.shapeXfrm(window.harness.controllers.a.state.slide, shape).flipV, title), true)
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
   await check('manages slides in the strip: add, duplicate, reorder by dragging, hide, delete', async () => {
     const { page, errors } = await open(context, 'deck=generated/layouts-notes-sections.pptx')
     const keys = () => page.evaluate(() => window.harness.controllers.a.slideKeys())
