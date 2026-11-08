@@ -1198,9 +1198,6 @@ export function Composer({
       <div
         className={cn(
           'relative rounded-2xl border bg-card shadow-sm transition-[background-color,box-shadow,border-color] duration-200 focus-within:shadow-md',
-          // Keyboard focus recolors the 1px border without thickening it. The `!` is needed because
-          // the unlayered `* { border-color }` in index.css outranks layered border-color utilities.
-          !temporary && 'has-[[data-composer-input]:focus-visible]:!border-ring',
           (queuedMessages.length > 0 || showShelf && shelfRows.length > 0 || messageEdit || recovery) && '-mt-px rounded-t-xl',
           temporary && '!border-violet-500/50 bg-violet-100/80 dark:!border-violet-600/50 dark:bg-violet-950/60',
           temporary && 'border-dashed',
