@@ -199,13 +199,15 @@ export function TextDocEditor({ session, name, editable, width, toolbarSlot, fil
     target.setWrap(next)
   }
   const print = () => printHtmlDocument(textPrintHtml(name, session.doc.getText('text').toString()))
+  // The search panel takes focus itself, ready to type in; focusing the text after would take it back.
+  const openSearch = () => editor.current?.openSearch()
 
   useEditorShortcuts(shell, {
     print,
     save: onSaveShortcut,
     shortcuts: () => setShortcutsOpen(true),
-    find: run((target) => target.openSearch()),
-    replace: run((target) => target.openSearch()),
+    find: openSearch,
+    replace: openSearch,
     focus: () => editor.current?.focus(),
   })
 
@@ -219,7 +221,7 @@ export function TextDocEditor({ session, name, editable, width, toolbarSlot, fil
         return [
           ...undoRedoEntries({ undo: run((target) => target.undo()), redo: run((target) => target.redo()), canUndo: editable && Boolean(current?.canUndo), canRedo: editable && Boolean(current?.canRedo) }),
           separator,
-          { type: 'item', id: 'find', label: ui("Find and replace"), icon: Search, shortcut: FIND_SHORTCUT, onSelect: run((target) => target.openSearch()) },
+          { type: 'item', id: 'find', label: ui("Find and replace"), icon: Search, shortcut: FIND_SHORTCUT, onSelect: openSearch },
         ]
       },
     },
@@ -243,7 +245,7 @@ export function TextDocEditor({ session, name, editable, width, toolbarSlot, fil
           {button(ui("Undo"), <Undo2 className="size-4" />, run((target) => target.undo()), { disabled: !editable || !state?.canUndo, shortcut: shortcut('z') })}
           {button(ui("Redo"), <Redo2 className="size-4" />, run((target) => target.redo()), { disabled: !editable || !state?.canRedo })}
           <span className="mx-1 h-5 w-px bg-border" />
-          {button(ui("Find and replace"), <Search className="size-4" />, run((target) => target.openSearch()), { shortcut: shortcut('f') })}
+          {button(ui("Find and replace"), <Search className="size-4" />, openSearch, { shortcut: shortcut('f') })}
           {button(ui("Wrap lines"), <WrapText className="size-4" />, run(toggleWrap), { active: state?.wrap ?? false })}
           {state && <IndentMenu indent={state.indent} disabled={!editable} onChange={(indent) => run((target) => target.setIndent(indent))()} />}
           {html && (
