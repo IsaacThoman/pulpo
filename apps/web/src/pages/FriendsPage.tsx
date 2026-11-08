@@ -32,7 +32,7 @@ export function FriendsHandle({ username }: { username: string }) {
   }
   return (
     <p className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-      <span className="shrink-0">{ui("Your handle is")}</span>
+      <span className="hidden shrink-0 sm:inline">{ui("Your handle is")}</span>
       <button
         type="button"
         className="inline-flex min-w-0 cursor-pointer items-center gap-1"
