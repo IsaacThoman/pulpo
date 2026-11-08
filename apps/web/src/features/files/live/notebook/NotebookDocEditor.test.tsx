@@ -1,15 +1,23 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { SocketIOYProvider } from '@pulpo/client-core/doc-sync'
 import { MemoryLiveAssetStore } from '@pulpo/client-core/office'
-import { cellsMap, notebookCodec } from '@pulpo/client-core/office/notebook'
+import { cellMetadata, cellsMap, cellSourceText, notebookCodec, orderedCells } from '@pulpo/client-core/office/notebook'
+import { clearNotebookClipboard } from '@pulpo/client-core/office/notebook/view'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import { NotebookDocEditor } from './NotebookDocEditor'
 
 // jsdom has no layout or scrolling.
-beforeAll(() => { Element.prototype.scrollIntoView = () => {} })
-afterEach(cleanup)
+beforeAll(() => {
+  Element.prototype.scrollIntoView = () => {}
+  Range.prototype.getClientRects = () => ({ length: 0, item: () => null, [Symbol.iterator]: [][Symbol.iterator] }) as unknown as DOMRectList
+  Range.prototype.getBoundingClientRect = () => new DOMRect()
+})
+afterEach(() => {
+  cleanup()
+  clearNotebookClipboard()
+})
 
 describe('notebook output frames', () => {
   // Outputs resolve asynchronously, which takes longer when the suite runs files in parallel.
@@ -82,4 +90,130 @@ it('refreshes a Markdown image when only its attachment asset changes', async ()
     provider.destroy()
     doc.destroy()
   }
+})
+
+async function openNotebook(cells: object[], editable = true) {
+  const doc = new Y.Doc()
+  const assets = new MemoryLiveAssetStore()
+  const provider = new SocketIOYProvider('notebook', doc)
+  await notebookCodec.importFile(doc, new TextEncoder().encode(JSON.stringify({ nbformat: 4, nbformat_minor: 5, metadata: {}, cells })), { name: 'a.ipynb', assets })
+  const view = render(<NotebookDocEditor session={{ doc, provider }} name="a.ipynb" editable={editable} width="narrow" assets={assets} />)
+  const list = await screen.findByRole('list', { name: 'Notebook cells' })
+  return {
+    doc,
+    view,
+    list,
+    sources: () => orderedCells(doc).map(({ cell }) => cellSourceText(cell)),
+    dispose: () => {
+      view.unmount()
+      provider.destroy()
+      doc.destroy()
+    },
+  }
+}
+
+const code = (id: string, source: string, outputs: object[] = []) => ({ id, cell_type: 'code', metadata: {}, execution_count: null, outputs, source })
+
+describe('notebook editor parity', () => {
+  it('lets viewers open hidden code and outputs for themselves without changing the notebook', async () => {
+    const hidden = { ...code('a', 'secret = 1', [{ output_type: 'stream', name: 'stdout', text: 'shown later' }]), metadata: { jupyter: { source_hidden: true, outputs_hidden: true } } }
+    const notebook = await openNotebook([hidden], false)
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Source hidden' }))
+      await waitFor(() => expect(notebook.view.container.textContent).toContain('secret = 1'))
+      fireEvent.click(await screen.findByRole('button', { name: '1 output hidden' }))
+      await waitFor(() => expect(notebook.view.container.textContent).toContain('shown later'))
+      const metadata = cellMetadata(orderedCells(notebook.doc)[0]!.cell)!
+      expect(JSON.parse(metadata.get('jupyter')!)).toEqual({ source_hidden: true, outputs_hidden: true })
+    } finally {
+      notebook.dispose()
+    }
+  })
+
+  it('shows hidden code for everyone when an editor opens it, and gives the keyboard back to the cells', async () => {
+    const notebook = await openNotebook([{ ...code('a', 'x = 1'), metadata: { jupyter: { source_hidden: true } } }])
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Source hidden' }))
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Source hidden' })).toBeNull())
+      expect(cellMetadata(orderedCells(notebook.doc)[0]!.cell)!.has('jupyter')).toBe(false)
+      expect(document.activeElement).toBe(notebook.list)
+    } finally {
+      notebook.dispose()
+    }
+  })
+
+  it('copies and pastes cells with Ctrl+C and Ctrl+V in command mode', async () => {
+    const notebook = await openNotebook([code('a', 'first'), code('b', 'second')])
+    try {
+      notebook.list.focus()
+      fireEvent.keyDown(notebook.list, { key: 'c', ctrlKey: true })
+      // jsdom sends no paste event, as some browsers do not to a focused list: cells copied here still paste.
+      fireEvent.keyDown(notebook.list, { key: 'v', ctrlKey: true })
+      await waitFor(() => expect(notebook.sources()).toEqual(['first', 'first', 'second']))
+    } finally {
+      notebook.dispose()
+    }
+  })
+
+  it('pastes text from elsewhere as a new code cell, one undo step', async () => {
+    const notebook = await openNotebook([code('a', 'first')])
+    try {
+      notebook.list.focus()
+      fireEvent.paste(document, { clipboardData: { getData: (type: string) => (type === 'text/plain' ? 'print("from a web page")' : ''), types: ['text/plain'] } })
+      await waitFor(() => expect(notebook.sources()).toEqual(['first', 'print("from a web page")']))
+      fireEvent.keyDown(notebook.list, { key: 'z' })
+      await waitFor(() => expect(notebook.sources()).toEqual(['first']))
+    } finally {
+      notebook.dispose()
+    }
+  })
+
+  it('toggles line numbers in code cells with Shift+L', async () => {
+    const notebook = await openNotebook([code('a', 'x = 1\ny = 2')])
+    try {
+      await waitFor(() => expect(notebook.view.container.querySelector('.cm-editor')).toBeTruthy())
+      expect(notebook.view.container.querySelector('.cm-lineNumbers')).toBeNull()
+      notebook.list.focus()
+      fireEvent.keyDown(notebook.list, { key: 'L', shiftKey: true })
+      await waitFor(() => expect(notebook.view.container.querySelector('.cm-lineNumbers')).toBeTruthy())
+      fireEvent.keyDown(notebook.list, { key: 'L', shiftKey: true })
+      await waitFor(() => expect(notebook.view.container.querySelector('.cm-lineNumbers')).toBeNull())
+    } finally {
+      notebook.dispose()
+    }
+  })
+
+  it('opens the find bar with Ctrl+F in command mode and gives the keyboard back on Escape', async () => {
+    const notebook = await openNotebook([code('a', 'needle = 1'), code('b', 'print(needle)')])
+    try {
+      notebook.list.focus()
+      fireEvent.keyDown(notebook.list, { key: 'f', ctrlKey: true })
+      const field = await screen.findByRole('textbox', { name: 'Find in notebook' })
+      expect(document.activeElement).toBe(field)
+      fireEvent.change(field, { target: { value: 'needle' } })
+      expect(screen.getByText('1 of 2')).toBeTruthy()
+      fireEvent.keyDown(field, { key: 'Escape' })
+      await waitFor(() => expect(screen.queryByRole('search')).toBeNull())
+      // The match is selected in its cell, ready to type over.
+      await waitFor(() => expect(document.activeElement?.closest('.cm-editor')).toBeTruthy())
+    } finally {
+      notebook.dispose()
+    }
+  })
+
+  it('scrolls tall outputs inside their cell, with a toggle to show them in full', async () => {
+    const offsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get() { return (this as HTMLElement).hasAttribute('data-output-content') ? 2_000 : 0 } })
+    const notebook = await openNotebook([code('a', 'train()', [{ output_type: 'stream', name: 'stdout', text: 'epoch\n'.repeat(2_000) }])])
+    try {
+      await waitFor(() => expect(notebook.view.container.querySelector('[data-output-scroll]')).toBeTruthy())
+      fireEvent.click(screen.getByRole('button', { name: 'Show full output' }))
+      expect(notebook.view.container.querySelector('[data-output-scroll]')).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Scroll output' }))
+      expect(notebook.view.container.querySelector('[data-output-scroll]')).toBeTruthy()
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'offsetHeight', offsetHeight)
+      notebook.dispose()
+    }
+  })
 })
