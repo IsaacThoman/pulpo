@@ -136,233 +136,236 @@ export function PresentationToolbar({ controller, view, onViewChange, formatPane
   const fontLabel = format.resolvedFontFamily ?? format.fontFamily ?? ui("Font")
   const fonts = [...new Set([...(format.fontFamily && !format.fontFamily.startsWith('+') ? [format.fontFamily] : []), ...FONTS])]
   return (
-    <div role="toolbar" aria-label={ui("Presentation")} className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:thin]">
-      <ToolbarButton label={ui("Undo")} shortcut={hint(UNDO_SHORTCUT)} disabled={readOnly || !controller.canUndo()} onClick={() => controller.undo()}>
-        <Undo2 className="size-4" />
-      </ToolbarButton>
-      <ToolbarButton label={ui("Redo")} shortcut={hint(redoShortcut())} disabled={readOnly || !controller.canRedo()} onClick={() => controller.redo()}>
-        <Redo2 className="size-4" />
-      </ToolbarButton>
-      <Divider />
-      {!readOnly && (
-        <>
-          {/* Google Slides' split button: + adds a slide like the current one, the arrow picks a layout. */}
-          <div className="flex shrink-0 items-center" data-new-slide="">
-            <ToolbarButton label={ui("New slide")} shortcut={NEW_SLIDE_HINT} onClick={() => controller.addSlide()}>
-              <Plus className="size-4" />
+    <div role="toolbar" aria-label={ui("Presentation")} className="flex min-w-0 flex-1 items-center gap-0.5">
+      {/* The editing tools scroll when the window is narrow; the view, export, and Present buttons stay in sight. */}
+      <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:thin]" data-toolbar-tools="">
+        <ToolbarButton label={ui("Undo")} shortcut={hint(UNDO_SHORTCUT)} disabled={readOnly || !controller.canUndo()} onClick={() => controller.undo()}>
+          <Undo2 className="size-4" />
+        </ToolbarButton>
+        <ToolbarButton label={ui("Redo")} shortcut={hint(redoShortcut())} disabled={readOnly || !controller.canRedo()} onClick={() => controller.redo()}>
+          <Redo2 className="size-4" />
+        </ToolbarButton>
+        <Divider />
+        {!readOnly && (
+          <>
+            {/* Google Slides' split button: + adds a slide like the current one, the arrow picks a layout. */}
+            <div className="flex shrink-0 items-center" data-new-slide="">
+              <ToolbarButton label={ui("New slide")} shortcut={NEW_SLIDE_HINT} onClick={() => controller.addSlide()}>
+                <Plus className="size-4" />
+              </ToolbarButton>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" aria-label={ui("New slide with layout")} title={ui("New slide with layout")} onMouseDown={(event) => event.preventDefault()} className="-ml-1 grid h-8 w-4 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
+                    <ChevronDown className="size-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" onCloseAutoFocus={(event) => { event.preventDefault(); onDone?.() }}>
+                  <DropdownMenuLabel>{ui("New slide")}</DropdownMenuLabel>
+                  {layouts.map((layout) => (
+                    <DropdownMenuItem key={layout.path} onSelect={() => controller.addSlide(layout.path)}>
+                      {layout.name || ui("Untitled layout")}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            <ToolbarButton label={ui("Text box")} disabled={!onSlide} onClick={() => controller.insertTextBox()}>
+              <Type className="size-4" />
             </ToolbarButton>
+            <ShapeGallery
+              onPick={(preset) => controller.insertShape(preset)}
+              onDone={onDone}
+              trigger={
+                <button type="button" aria-label={ui("Shapes")} title={ui("Shapes")} disabled={!onSlide} onMouseDown={(event) => event.preventDefault()} className={pickerTriggerClass}>
+                  <Shapes className="size-4" />
+                </button>
+              }
+            />
+            <MenuButton label={ui("Line")} icon={<Minus className="size-4 -rotate-45" />} disabled={!onSlide} onDone={onDone}>
+              <MenuEntries entries={asUndoSteps(controller, lineEntries(controller))} close={() => {}} />
+            </MenuButton>
+            <ToolbarButton label={ui("Image")} disabled={!onSlide} onClick={onInsertImage}>
+              <ImagePlus className="size-4" />
+            </ToolbarButton>
+            <TablePicker
+              onPick={(rows, columns) => controller.insertTable(rows, columns)}
+              onDone={onDone}
+              trigger={
+                <button type="button" aria-label={ui("Table")} title={ui("Table")} disabled={!onSlide} onMouseDown={(event) => event.preventDefault()} className={pickerTriggerClass}>
+                  <Table className="size-4" />
+                </button>
+              }
+            />
+            <Divider />
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button type="button" aria-label={ui("New slide with layout")} title={ui("New slide with layout")} onMouseDown={(event) => event.preventDefault()} className="-ml-1 grid h-8 w-4 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
-                  <ChevronDown className="size-3" />
+              <DropdownMenuTrigger asChild disabled={textDisabled}>
+                <button type="button" aria-label={ui("Font")} title={ui("Font")} onMouseDown={(event) => event.preventDefault()} className={cn(triggerClass, 'gap-1 px-2 text-sm')} data-font-menu="">
+                  <span className="w-24 truncate text-left text-foreground" style={{ fontFamily: format.resolvedFontFamily ? cssFontFamily(format.resolvedFontFamily) : undefined }}>{fontLabel}</span>
+                  <ChevronDown className="size-3.5 opacity-60" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" onCloseAutoFocus={(event) => { event.preventDefault(); onDone?.() }}>
-                <DropdownMenuLabel>{ui("New slide")}</DropdownMenuLabel>
-                {layouts.map((layout) => (
-                  <DropdownMenuItem key={layout.path} onSelect={() => controller.addSlide(layout.path)}>
-                    {layout.name || ui("Untitled layout")}
-                  </DropdownMenuItem>
+              <DropdownMenuContent align="start" className="max-h-80" onCloseAutoFocus={(event) => { event.preventDefault(); onDone?.() }}>
+                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{ui("Theme fonts")}</DropdownMenuLabel>
+                <DropdownMenuCheckboxItem role="menuitemradio" checked={format.fontFamily === HEADINGS_FONT} onSelect={() => controller.setMark('font', HEADINGS_FONT)} style={{ fontFamily: cssFontFamily(themeFonts.major) }}>
+                  {uit`${themeFonts.major} (Headings)`}
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuCheckboxItem role="menuitemradio" checked={format.fontFamily === BODY_FONT} onSelect={() => controller.setMark('font', BODY_FONT)} style={{ fontFamily: cssFontFamily(themeFonts.minor) }}>
+                  {uit`${themeFonts.minor} (Body)`}
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{ui("All fonts")}</DropdownMenuLabel>
+                {fonts.map((font) => (
+                  <DropdownMenuCheckboxItem key={font} role="menuitemradio" checked={format.fontFamily === font} onSelect={() => controller.setMark('font', font)} style={{ fontFamily: cssFontFamily(font) }}>
+                    {font}
+                  </DropdownMenuCheckboxItem>
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
-          <ToolbarButton label={ui("Text box")} disabled={!onSlide} onClick={() => controller.insertTextBox()}>
-            <Type className="size-4" />
-          </ToolbarButton>
-          <ShapeGallery
-            onPick={(preset) => controller.insertShape(preset)}
-            onDone={onDone}
-            trigger={
-              <button type="button" aria-label={ui("Shapes")} title={ui("Shapes")} disabled={!onSlide} onMouseDown={(event) => event.preventDefault()} className={pickerTriggerClass}>
-                <Shapes className="size-4" />
-              </button>
-            }
-          />
-          <MenuButton label={ui("Line")} icon={<Minus className="size-4 -rotate-45" />} disabled={!onSlide} onDone={onDone}>
-            <MenuEntries entries={asUndoSteps(controller, lineEntries(controller))} close={() => {}} />
-          </MenuButton>
-          <ToolbarButton label={ui("Image")} disabled={!onSlide} onClick={onInsertImage}>
-            <ImagePlus className="size-4" />
-          </ToolbarButton>
-          <TablePicker
-            onPick={(rows, columns) => controller.insertTable(rows, columns)}
-            onDone={onDone}
-            trigger={
-              <button type="button" aria-label={ui("Table")} title={ui("Table")} disabled={!onSlide} onMouseDown={(event) => event.preventDefault()} className={pickerTriggerClass}>
-                <Table className="size-4" />
-              </button>
-            }
-          />
-          <Divider />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild disabled={textDisabled}>
-              <button type="button" aria-label={ui("Font")} title={ui("Font")} onMouseDown={(event) => event.preventDefault()} className={cn(triggerClass, 'gap-1 px-2 text-sm')} data-font-menu="">
-                <span className="w-24 truncate text-left text-foreground" style={{ fontFamily: format.resolvedFontFamily ? cssFontFamily(format.resolvedFontFamily) : undefined }}>{fontLabel}</span>
-                <ChevronDown className="size-3.5 opacity-60" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="max-h-80" onCloseAutoFocus={(event) => { event.preventDefault(); onDone?.() }}>
-              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{ui("Theme fonts")}</DropdownMenuLabel>
-              <DropdownMenuCheckboxItem role="menuitemradio" checked={format.fontFamily === HEADINGS_FONT} onSelect={() => controller.setMark('font', HEADINGS_FONT)} style={{ fontFamily: cssFontFamily(themeFonts.major) }}>
-                {uit`${themeFonts.major} (Headings)`}
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuCheckboxItem role="menuitemradio" checked={format.fontFamily === BODY_FONT} onSelect={() => controller.setMark('font', BODY_FONT)} style={{ fontFamily: cssFontFamily(themeFonts.minor) }}>
-                {uit`${themeFonts.minor} (Body)`}
-              </DropdownMenuCheckboxItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{ui("All fonts")}</DropdownMenuLabel>
-              {fonts.map((font) => (
-                <DropdownMenuCheckboxItem key={font} role="menuitemradio" checked={format.fontFamily === font} onSelect={() => controller.setMark('font', font)} style={{ fontFamily: cssFontFamily(font) }}>
-                  {font}
-                </DropdownMenuCheckboxItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <FontSizeInput
-            value={format.fontSize ?? null}
-            sizes={FONT_SIZES}
-            max={4000}
-            disabled={textDisabled}
-            onChange={(size) => controller.setFontSize(size)}
-            onStep={(direction) => controller.stepFontSize(direction)}
-            onDone={onDone}
-          />
-          <ToolbarButton label={ui("Bold")} shortcut={hint(mod('b'))} active={format.bold} disabled={textDisabled} onClick={() => controller.toggleMark('b')}>
-            <Bold className="size-4" />
-          </ToolbarButton>
-          <ToolbarButton label={ui("Italic")} shortcut={hint(mod('i'))} active={format.italic} disabled={textDisabled} onClick={() => controller.toggleMark('i')}>
-            <Italic className="size-4" />
-          </ToolbarButton>
-          <ToolbarButton label={ui("Underline")} shortcut={hint(mod('u'))} active={format.underline} disabled={textDisabled} onClick={() => controller.toggleMark('u')}>
-            <Underline className="size-4" />
-          </ToolbarButton>
-          <ToolbarButton label={ui("Strikethrough")} active={format.strike} disabled={textDisabled} onClick={() => controller.toggleMark('strike')}>
-            <Strikethrough className="size-4" />
-          </ToolbarButton>
-          <ColorPicker
-            label={ui("Text color")}
-            icon={<Baseline className="size-4" />}
-            theme={theme}
-            onDone={onDone}
-            noneLabel={ui("Automatic")}
-            disabled={textDisabled}
-            onPick={(choice) => controller.setMark('fill', choice.kind === 'fill' ? choice.xml : undefined)}
-          />
-          <ColorPicker
-            label={ui("Highlight color")}
-            icon={<Highlighter className="size-4" />}
-            theme={theme}
-            onDone={onDone}
-            noneLabel={ui("No highlight")}
-            disabled={textDisabled}
-            current={highlightCss(format.highlight)}
-            onPick={(choice) => controller.setHighlight(choice.kind === 'fill' ? choice.xml : undefined)}
-          />
-          <ToolbarButton label={ui("Link")} shortcut={hint(mod('k'))} active={Boolean(format.link)} disabled={textDisabled} onClick={onLink}>
-            <Link2 className="size-4" />
-          </ToolbarButton>
-          <Divider />
-          {(
-            [
-              ['l', ui("Align left"), AlignLeft, 'l'],
-              ['ctr', ui("Center"), AlignCenter, 'e'],
-              ['r', ui("Align right"), AlignRight, 'r'],
-              ['just', ui("Justify"), AlignJustify, 'j'],
-            ] as const
-          ).map(([value, label, Icon, key]) => (
-            <ToolbarButton key={value} label={label} shortcut={hint(mod(key, { shift: true }))} active={!textDisabled && format.align === value} disabled={textDisabled} onClick={() => controller.setAlign(value)}>
-              <Icon className="size-4" />
+            <FontSizeInput
+              value={format.fontSize ?? null}
+              sizes={FONT_SIZES}
+              max={4000}
+              disabled={textDisabled}
+              onChange={(size) => controller.setFontSize(size)}
+              onStep={(direction) => controller.stepFontSize(direction)}
+              onDone={onDone}
+            />
+            <ToolbarButton label={ui("Bold")} shortcut={hint(mod('b'))} active={format.bold} disabled={textDisabled} onClick={() => controller.toggleMark('b')}>
+              <Bold className="size-4" />
             </ToolbarButton>
-          ))}
-          <ToolbarButton label={ui("Bulleted list")} shortcut={hint(mod('8', { shift: true }))} active={format.bullets === 'char'} disabled={textDisabled} onClick={() => controller.setBullets('char')}>
-            <List className="size-4" />
-          </ToolbarButton>
-          <ToolbarButton label={ui("Numbered list")} shortcut={hint(mod('7', { shift: true }))} active={format.bullets === 'number'} disabled={textDisabled} onClick={() => controller.setBullets('number')}>
-            <ListOrdered className="size-4" />
-          </ToolbarButton>
-          <ToolbarButton label={ui("Decrease list level")} shortcut={hint({ key: 'Tab', shift: true })} disabled={textDisabled} onClick={() => controller.changeLevel(-1)}>
-            <IndentDecrease className="size-4" />
-          </ToolbarButton>
-          <ToolbarButton label={ui("Increase list level")} shortcut={hint({ key: 'Tab' })} disabled={textDisabled} onClick={() => controller.changeLevel(1)}>
-            <IndentIncrease className="size-4" />
-          </ToolbarButton>
-          <MenuButton label={ui("Line spacing")} icon={<AlignHorizontalJustifyCenter className="size-4 rotate-90" />} onDone={onDone}>
-            {LINE_SPACING.map((value) => (
-              <DropdownMenuItem key={value} disabled={textDisabled} onSelect={() => controller.setLineSpacing(value)}>
-                {lineSpacingLabel(value)}
-              </DropdownMenuItem>
+            <ToolbarButton label={ui("Italic")} shortcut={hint(mod('i'))} active={format.italic} disabled={textDisabled} onClick={() => controller.toggleMark('i')}>
+              <Italic className="size-4" />
+            </ToolbarButton>
+            <ToolbarButton label={ui("Underline")} shortcut={hint(mod('u'))} active={format.underline} disabled={textDisabled} onClick={() => controller.toggleMark('u')}>
+              <Underline className="size-4" />
+            </ToolbarButton>
+            <ToolbarButton label={ui("Strikethrough")} active={format.strike} disabled={textDisabled} onClick={() => controller.toggleMark('strike')}>
+              <Strikethrough className="size-4" />
+            </ToolbarButton>
+            <ColorPicker
+              label={ui("Text color")}
+              icon={<Baseline className="size-4" />}
+              theme={theme}
+              onDone={onDone}
+              noneLabel={ui("Automatic")}
+              disabled={textDisabled}
+              onPick={(choice) => controller.setMark('fill', choice.kind === 'fill' ? choice.xml : undefined)}
+            />
+            <ColorPicker
+              label={ui("Highlight color")}
+              icon={<Highlighter className="size-4" />}
+              theme={theme}
+              onDone={onDone}
+              noneLabel={ui("No highlight")}
+              disabled={textDisabled}
+              current={highlightCss(format.highlight)}
+              onPick={(choice) => controller.setHighlight(choice.kind === 'fill' ? choice.xml : undefined)}
+            />
+            <ToolbarButton label={ui("Link")} shortcut={hint(mod('k'))} active={Boolean(format.link)} disabled={textDisabled} onClick={onLink}>
+              <Link2 className="size-4" />
+            </ToolbarButton>
+            <Divider />
+            {(
+              [
+                ['l', ui("Align left"), AlignLeft, 'l'],
+                ['ctr', ui("Center"), AlignCenter, 'e'],
+                ['r', ui("Align right"), AlignRight, 'r'],
+                ['just', ui("Justify"), AlignJustify, 'j'],
+              ] as const
+            ).map(([value, label, Icon, key]) => (
+              <ToolbarButton key={value} label={label} shortcut={hint(mod(key, { shift: true }))} active={!textDisabled && format.align === value} disabled={textDisabled} onClick={() => controller.setAlign(value)}>
+                <Icon className="size-4" />
+              </ToolbarButton>
             ))}
-          </MenuButton>
-          <ToolbarButton label={ui("Clear formatting")} shortcut={hint(mod('\\'))} disabled={textDisabled} onClick={() => controller.clearFormatting()}>
-            <RemoveFormatting className="size-4" />
-          </ToolbarButton>
-          <Divider />
-          <ColorPicker
-            label={ui("Shape fill")}
-            icon={<PaintBucket className="size-4" />}
-            theme={theme}
-            onDone={onDone}
-            allowNone
-            disabled={!shapes.length}
-            onPick={(choice) => controller.setShapeProperty('fill', choice.kind === 'fill' ? choice.xml : '<a:noFill/>')}
-          />
-          <MenuButton label={ui("Arrange")} icon={<Group className="size-4" />} onDone={onDone}>
-            <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.reorder('front')}>
-              <ArrowUpToLine className="size-4" /> {ui("Bring to front")}
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.reorder('forward')}>
-              {ui("Bring forward")}
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.reorder('backward')}>
-              {ui("Send backward")}
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.reorder('back')}>
-              <ArrowDownToLine className="size-4" /> {ui("Send to back")}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem disabled={shapes.length < 2} onSelect={() => controller.group()}>
-              <Group className="size-4" /> {ui("Group")}
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.ungroup()}>
-              <Ungroup className="size-4" /> {ui("Ungroup")}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.align('left')}>{ui("Align left edges")}</DropdownMenuItem>
-            <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.align('center')}>{ui("Align centers")}</DropdownMenuItem>
-            <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.align('right')}>{ui("Align right edges")}</DropdownMenuItem>
-            <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.align('top')}>{ui("Align top edges")}</DropdownMenuItem>
-            <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.align('middle')}>{ui("Align middles")}</DropdownMenuItem>
-            <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.align('bottom')}>{ui("Align bottom edges")}</DropdownMenuItem>
-            <DropdownMenuItem disabled={shapes.length < 3} onSelect={() => controller.distribute('horizontal')}>{ui("Distribute horizontally")}</DropdownMenuItem>
-            <DropdownMenuItem disabled={shapes.length < 3} onSelect={() => controller.distribute('vertical')}>{ui("Distribute vertically")}</DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.duplicateSelection()}>
-              <Copy className="size-4" /> {ui("Duplicate")}
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.deleteSelection()}>
-              <Trash2 className="size-4" /> {ui("Delete")}
-            </DropdownMenuItem>
-          </MenuButton>
-          <MenuButton label={ui("Slide")} icon={<LayoutTemplate className="size-4" />} onDone={onDone}>
-            <DropdownMenuLabel>{ui("Layout")}</DropdownMenuLabel>
-            {layouts.map((layout) => (
-              <DropdownMenuItem key={layout.path} onSelect={() => controller.setLayout(layout.path)}>
-                {layout.name || ui("Untitled layout")}
+            <ToolbarButton label={ui("Bulleted list")} shortcut={hint(mod('8', { shift: true }))} active={format.bullets === 'char'} disabled={textDisabled} onClick={() => controller.setBullets('char')}>
+              <List className="size-4" />
+            </ToolbarButton>
+            <ToolbarButton label={ui("Numbered list")} shortcut={hint(mod('7', { shift: true }))} active={format.bullets === 'number'} disabled={textDisabled} onClick={() => controller.setBullets('number')}>
+              <ListOrdered className="size-4" />
+            </ToolbarButton>
+            <ToolbarButton label={ui("Decrease list level")} shortcut={hint({ key: 'Tab', shift: true })} disabled={textDisabled} onClick={() => controller.changeLevel(-1)}>
+              <IndentDecrease className="size-4" />
+            </ToolbarButton>
+            <ToolbarButton label={ui("Increase list level")} shortcut={hint({ key: 'Tab' })} disabled={textDisabled} onClick={() => controller.changeLevel(1)}>
+              <IndentIncrease className="size-4" />
+            </ToolbarButton>
+            <MenuButton label={ui("Line spacing")} icon={<AlignHorizontalJustifyCenter className="size-4 rotate-90" />} onDone={onDone}>
+              {LINE_SPACING.map((value) => (
+                <DropdownMenuItem key={value} disabled={textDisabled} onSelect={() => controller.setLineSpacing(value)}>
+                  {lineSpacingLabel(value)}
+                </DropdownMenuItem>
+              ))}
+            </MenuButton>
+            <ToolbarButton label={ui("Clear formatting")} shortcut={hint(mod('\\'))} disabled={textDisabled} onClick={() => controller.clearFormatting()}>
+              <RemoveFormatting className="size-4" />
+            </ToolbarButton>
+            <Divider />
+            <ColorPicker
+              label={ui("Shape fill")}
+              icon={<PaintBucket className="size-4" />}
+              theme={theme}
+              onDone={onDone}
+              allowNone
+              disabled={!shapes.length}
+              onPick={(choice) => controller.setShapeProperty('fill', choice.kind === 'fill' ? choice.xml : '<a:noFill/>')}
+            />
+            <MenuButton label={ui("Arrange")} icon={<Group className="size-4" />} onDone={onDone}>
+              <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.reorder('front')}>
+                <ArrowUpToLine className="size-4" /> {ui("Bring to front")}
               </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => controller.duplicateSlides()}>{ui("Duplicate slide")}</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => controller.setSlidesHidden(!controller.slide(controller.state.slide ?? '')?.hidden)}>
-              <EyeOff className="size-4" /> {controller.slide(controller.state.slide ?? '')?.hidden ? ui("Show slide") : ui("Hide slide")}
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={controller.slideKeys().length < 2} onSelect={() => controller.deleteSlides()}>
-              <Trash2 className="size-4" /> {ui("Delete slide")}
-            </DropdownMenuItem>
-          </MenuButton>
-        </>
-      )}
-      <div className="ml-auto flex shrink-0 items-center gap-0.5 pl-1">
+              <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.reorder('forward')}>
+                {ui("Bring forward")}
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.reorder('backward')}>
+                {ui("Send backward")}
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.reorder('back')}>
+                <ArrowDownToLine className="size-4" /> {ui("Send to back")}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={shapes.length < 2} onSelect={() => controller.group()}>
+                <Group className="size-4" /> {ui("Group")}
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.ungroup()}>
+                <Ungroup className="size-4" /> {ui("Ungroup")}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.align('left')}>{ui("Align left edges")}</DropdownMenuItem>
+              <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.align('center')}>{ui("Align centers")}</DropdownMenuItem>
+              <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.align('right')}>{ui("Align right edges")}</DropdownMenuItem>
+              <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.align('top')}>{ui("Align top edges")}</DropdownMenuItem>
+              <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.align('middle')}>{ui("Align middles")}</DropdownMenuItem>
+              <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.align('bottom')}>{ui("Align bottom edges")}</DropdownMenuItem>
+              <DropdownMenuItem disabled={shapes.length < 3} onSelect={() => controller.distribute('horizontal')}>{ui("Distribute horizontally")}</DropdownMenuItem>
+              <DropdownMenuItem disabled={shapes.length < 3} onSelect={() => controller.distribute('vertical')}>{ui("Distribute vertically")}</DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.duplicateSelection()}>
+                <Copy className="size-4" /> {ui("Duplicate")}
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.deleteSelection()}>
+                <Trash2 className="size-4" /> {ui("Delete")}
+              </DropdownMenuItem>
+            </MenuButton>
+            <MenuButton label={ui("Slide")} icon={<LayoutTemplate className="size-4" />} onDone={onDone}>
+              <DropdownMenuLabel>{ui("Layout")}</DropdownMenuLabel>
+              {layouts.map((layout) => (
+                <DropdownMenuItem key={layout.path} onSelect={() => controller.setLayout(layout.path)}>
+                  {layout.name || ui("Untitled layout")}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => controller.duplicateSlides()}>{ui("Duplicate slide")}</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => controller.setSlidesHidden(!controller.slide(controller.state.slide ?? '')?.hidden)}>
+                <EyeOff className="size-4" /> {controller.slide(controller.state.slide ?? '')?.hidden ? ui("Show slide") : ui("Hide slide")}
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled={controller.slideKeys().length < 2} onSelect={() => controller.deleteSlides()}>
+                <Trash2 className="size-4" /> {ui("Delete slide")}
+              </DropdownMenuItem>
+            </MenuButton>
+          </>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center gap-0.5 border-l pl-1">
         <ToolbarButton label={ui("Slide sorter")} active={view === 'sorter'} onClick={() => onViewChange(view === 'sorter' ? 'editor' : 'sorter')}>
           <LayoutGrid className="size-4" />
         </ToolbarButton>
@@ -378,12 +381,14 @@ export function PresentationToolbar({ controller, view, onViewChange, formatPane
         <div className="flex h-8 shrink-0 items-stretch overflow-hidden rounded-md bg-primary text-primary-foreground" data-present="">
           <button
             type="button"
+            aria-label={ui("Present")}
             title={`${ui("Present")} (${formatShortcut({ key: 'Enter', mod: true })})`}
             aria-keyshortcuts={ariaKeyShortcuts({ key: 'Enter', mod: true })}
-            className="flex cursor-pointer items-center gap-1 pr-1.5 pl-2.5 text-sm font-medium hover:bg-primary/90"
+            className="flex cursor-pointer items-center gap-1 pr-1.5 pl-2 text-sm font-medium hover:bg-primary/90 @lg:pl-2.5"
             onClick={() => onPresent('current')}
           >
-            <Play className="size-3.5" /> {ui("Present")}
+            {/* Only the icon where the editor is narrow (the side panel, a phone). */}
+            <Play className="size-3.5" /> <span className="hidden @lg:inline">{ui("Present")}</span>
           </button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

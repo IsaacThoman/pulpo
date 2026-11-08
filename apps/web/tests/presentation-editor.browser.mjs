@@ -1402,6 +1402,10 @@ try {
   await check('the sorter offers no slide inserts and clears the shapes; find closes back to it; toolbar menus hand the keys back to the slide', async () => {
     const { page, errors } = await open(context, 'deck=generated/autoshapes.pptx')
     const bar = page.getByRole('menubar', { name: 'Menu bar' })
+    // Present stays in sight at the toolbar's right while its editing tools scroll (a 1440px window).
+    const toolbar = await page.getByRole('toolbar', { name: 'Presentation' }).boundingBox()
+    const presentButton = await page.getByRole('button', { name: 'Present', exact: true }).boundingBox()
+    assert.ok(presentButton.x + presentButton.width <= toolbar.x + toolbar.width + 0.5, `Present is in sight: ${JSON.stringify({ presentButton, toolbar })}`)
     const shape = slideShapes(page).nth(1)
     const key = await shape.getAttribute('data-key')
     await shape.click()
