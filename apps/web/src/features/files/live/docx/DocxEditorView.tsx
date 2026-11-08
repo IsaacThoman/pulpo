@@ -354,7 +354,7 @@ export function DocxEditorView({ className, onEditor, toolbarSlot, fileMenu, onS
         }}
       />
       {editor && find && <FindBar editor={editor} replaceOpen={find === 'replace'} onClose={() => setFind(null)} />}
-      {editor && editingHeaderFooter && <HeaderFooterBar editor={editor} storyId={editingHeaderFooter} editable={Boolean(state?.untrackedFormattingEditable)} />}
+      {editor && editingHeaderFooter && <HeaderFooterBar editor={editor} storyId={editingHeaderFooter} editable={Boolean(state?.untrackedFormattingEditable)} pages={scroller} />}
       <div className="flex min-h-0 flex-1">
         {editor && panels.outline && <OutlinePanel editor={editor} onClose={() => togglePanel('outline')} />}
         <div ref={setScroller} className="relative min-w-0 flex-1 overflow-auto bg-muted [--docx-desk:var(--muted)]" data-docx-scroller>

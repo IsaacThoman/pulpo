@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
+import { TextSelection } from '@tiptap/pm/state'
 import type { CommentThread, DocxEditor, DocxFormattingState, HeaderFooterKind, Revision } from '@pulpo/client-core/office/docx/view'
 import { ArrowDown, ArrowUp, CaseSensitive, Check, ChevronDown, ChevronUp, Hash, MessageCircleReply, Pencil, Replace, Trash2, WholeWord, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -418,11 +419,29 @@ export function StatusBar({ editor, state, showWordCount, onWordCount, zoom }: {
   )
 }
 
+/** The header or footer (by story id) a laid-out page shows, read from the page bands in `pages`. */
+function storyOnPage(pages: HTMLElement, kind: HeaderFooterKind, page: number): HTMLElement | undefined {
+  const sheet = pages.querySelectorAll('.docx-page')[page - 1]?.getBoundingClientRect()
+  if (!sheet) return undefined
+  return [...pages.querySelectorAll<HTMLElement>(`[data-story^="${kind}:"]`)].find((element) => {
+    if (element.closest('.docx-story-editor')) return false
+    const top = element.getBoundingClientRect().top
+    return top >= sheet.top - 1 && top <= sheet.bottom + 1
+  })
+}
+
 /**
  * The slim bar Docs and Word show while a header or footer is open: which one it is, Different
- * first page, a page number at the cursor, Remove, and Close (Esc).
+ * first page, a page number at the cursor, Remove, and Close (Esc). In a narrow window (the side
+ * panel, a phone) its buttons show icons only.
  */
-export function HeaderFooterBar({ editor, storyId, editable }: { editor: DocxEditor; storyId: string; editable: boolean }) {
+export function HeaderFooterBar({ editor, storyId, editable, pages }: {
+  editor: DocxEditor
+  storyId: string
+  editable: boolean
+  /** The element holding the laid-out pages (the scroller), to find the header a page shows. */
+  pages: HTMLElement | null
+}) {
   // Read afresh on each render (the view re-renders as the editor updates, and this bar after its
   // own change); a collaborator's change to the setting re-renders it too.
   useEditorValue(editor, () => editor.headerFooter().differentFirstPage, 120)
@@ -433,34 +452,50 @@ export function HeaderFooterBar({ editor, storyId, editable }: { editor: DocxEdi
   const name = headerFooterName(kind, type, info.differentOddEven)
   const keep = (event: React.MouseEvent) => event.preventDefault()
   const button = 'flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40'
+  const label = 'hidden @2xl:inline'
+  const differentFirstPage = (on: boolean) => {
+    const page = editor.currentPage()?.index
+    if (!editor.setDifferentFirstPage(on)) return
+    // Word and Docs keep you on the same page: on the section's first page that is now its
+    // first-page header (created when there is none), or the regular one again.
+    if (page !== undefined && pages) {
+      editor.relayout()
+      const shown = storyOnPage(pages, kind, page)
+      const shownId = shown?.dataset.story
+      if (shown && shownId && shownId !== storyId) {
+        if (editor.openStoryEditor(shownId, shown)) editor.run((state) => state.tr.setSelection(TextSelection.atEnd(state.doc)))
+      } else if (!shown && on) editor.addHeaderFooter(kind, 'first')
+      else if (!shown) editor.closeStoryEditor()
+    }
+    rerender()
+    editor.focus()
+  }
+  const pageNumber = ui("Page number")
+  const remove = kind === 'header' ? ui("Remove header") : ui("Remove footer")
   return (
-    <div role="toolbar" aria-label={name} className="flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b bg-muted/40 px-3 text-sm [scrollbar-width:none]" data-docx-header-footer-bar={kind}>
-      <span className="mr-2 shrink-0 font-medium">{name}</span>
+    <div role="toolbar" aria-label={name} className="@container flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b bg-muted/40 px-3 text-sm [scrollbar-width:none]" data-docx-header-footer-bar={kind}>
+      <span className="mr-2 min-w-0 truncate font-medium" title={name}>{name}</span>
       <label className="mr-1 flex shrink-0 cursor-pointer items-center gap-2 text-sm has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
         <input
           type="checkbox"
           checked={info.differentFirstPage}
           disabled={!editable}
-          onChange={(event) => {
-            editor.setDifferentFirstPage(event.target.checked)
-            rerender()
-            editor.focus()
-          }}
+          onChange={(event) => differentFirstPage(event.target.checked)}
           className="size-4 cursor-pointer accent-primary disabled:cursor-not-allowed"
         />
         {ui("Different first page")}
       </label>
-      <button type="button" className={button} disabled={!editable} onMouseDown={keep} onClick={() => editor.insertPageNumber({})}>
+      <button type="button" className={button} aria-label={pageNumber} title={pageNumber} disabled={!editable} onMouseDown={keep} onClick={() => editor.insertPageNumber({})}>
         <Hash className="size-3.5" />
-        {ui("Page number")}
+        <span className={label}>{pageNumber}</span>
       </button>
-      <button type="button" className={button} disabled={!editable} onMouseDown={keep} onClick={() => editor.removeHeaderFooter(kind, type)}>
+      <button type="button" className={button} aria-label={remove} title={remove} disabled={!editable} onMouseDown={keep} onClick={() => editor.removeHeaderFooter(kind, type)}>
         <Trash2 className="size-3.5" />
-        {kind === 'header' ? ui("Remove header") : ui("Remove footer")}
+        <span className={label}>{remove}</span>
       </button>
       <button type="button" className={cn(button, 'ml-auto')} aria-label={kind === 'header' ? ui("Close header") : ui("Close footer")} title={ui("Close (Esc)")} onMouseDown={keep} onClick={() => editor.closeStoryEditor()}>
         <X className="size-3.5" />
-        {ui("Close")}
+        <span className={label}>{ui("Close")}</span>
       </button>
     </div>
   )

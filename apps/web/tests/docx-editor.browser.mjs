@@ -2426,9 +2426,54 @@ try {
       assert.ok(box.x >= 0 && box.x + box.width <= 400, `the submenu spans ${box.x} to ${box.x + box.width}`)
       await page.keyboard.press('Escape')
       await page.keyboard.press('Escape')
+      // The header bar's buttons become icons, so Close stays on screen.
+      await clickEnd('Hanging indent.')
+      await pick('Insert', 'header')
+      const bar = page.getByRole('toolbar', { name: 'Header', exact: true })
+      await bar.waitFor()
+      const fit = await bar.evaluate((element) => [element.scrollWidth, element.clientWidth])
+      assert.ok(fit[0] <= fit[1] + 1, JSON.stringify(fit))
+      const close = await bar.getByRole('button', { name: 'Close header' }).boundingBox()
+      assert.ok(close.x + close.width <= 400, JSON.stringify(close))
+      await bar.getByRole('button', { name: 'Remove header' }).waitFor()
+      await page.keyboard.press('Escape')
+      await bar.waitFor({ state: 'detached' })
     } finally {
       await page.setViewportSize({ width: 1400, height: 1000 })
     }
+  })
+
+  await step('keeps an open header on its page when Different first page changes, and counts the body', async () => {
+    await open('?generate=80')
+    await clickEnd('Section 1')
+    await pick('Insert', 'header')
+    const toolbar = (name) => page.getByRole('toolbar', { name, exact: true })
+    await toolbar('Header').waitFor()
+    await page.keyboard.type('Running head')
+    // The status bar counts the document's words, not the open header's.
+    const words = await page.evaluate(() => window.harness.editors[0].wordCount('body').words)
+    assert.ok(words > 100)
+    await page.locator('[data-docx-words]', { hasText: `${words.toLocaleString('en-US')} words` }).waitFor()
+    // As in Word and Docs, page 1 now shows (and edits) its own first-page header.
+    await page.getByRole('checkbox', { name: 'Different first page' }).check()
+    await toolbar('First page header').waitFor()
+    await page.keyboard.type('Title page')
+    const first = await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      return { story: editor.editingStory, first: editor.headerFooter().header.first, page: editor.currentPage().index }
+    })
+    assert.deepEqual([first.story, first.page], [first.first, 1])
+    await page.locator('.docx-band .docx-story[data-story^="header:"]', { hasText: 'Running head' }).first().waitFor()
+    // Turning it off goes back to the regular header on the same page.
+    await page.getByRole('checkbox', { name: 'Different first page' }).uncheck()
+    await toolbar('Header').waitFor()
+    await page.keyboard.type(' again')
+    assert.equal(await page.evaluate(() => window.harness.editors[0].currentPage().index), 1)
+    await page.keyboard.press('Escape')
+    await page.locator('.docx-story-editor').waitFor({ state: 'detached' })
+    const pages = await page.evaluate(() => window.harness.editors[0].pages)
+    await page.locator('.docx-band .docx-story[data-story^="header:"]', { hasText: 'Running head again' }).nth(pages - 1).waitFor()
+    assert.match(await exported('header'), /Title page/)
   })
 
   await step('lays out a 100-page document within budget', async () => {
