@@ -23,7 +23,7 @@ import { PoolSection } from '@/components/PoolSection'
 import { InviteCodesCard } from '@/components/InviteCodesCard'
 import { ui, uit } from '@/i18n/ui'
 
-export function FriendsHandle({ username }: { username: string }) {
+export function FriendsHandle({ username, label = true }: { username: string; label?: boolean }) {
   const [copied, setCopied] = useState(false)
   const copyHandle = async () => {
     await navigator.clipboard.writeText(username)
@@ -32,7 +32,7 @@ export function FriendsHandle({ username }: { username: string }) {
   }
   return (
     <p className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-      <span className="hidden shrink-0 sm:inline">{ui("Your handle is")}</span>
+      {label && <span className="shrink-0">{ui("Your handle is")}</span>}
       <button
         type="button"
         className="inline-flex min-w-0 cursor-pointer items-center gap-1"
@@ -50,19 +50,21 @@ export function FriendsHandle({ username }: { username: string }) {
 
 /** The viewer's own profile, as friends see it, with the handle they share to be found. */
 export function MyProfileHeader({ profile, friendCount }: { profile: FriendProfile; friendCount?: number }) {
+  const href = `/${profile.username}`
   return (
-    <section className="flex items-center gap-4" aria-label={ui("Your profile")}>
-      <Link to={`/${profile.username}`} className="shrink-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" tabIndex={-1} aria-hidden>
-        <ProfileAvatar name={profile.displayName} avatarUrl={profile.avatarUrl} className="size-14" fallbackClassName="text-base" />
+    <section className="flex flex-col items-center pb-2 pt-4 text-center" aria-label={ui("Your profile")}>
+      <Link to={href} className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" tabIndex={-1} aria-hidden>
+        <ProfileAvatar name={profile.displayName} avatarUrl={profile.avatarUrl} className="size-20" fallbackClassName="text-xl" />
       </Link>
-      <div className="min-w-0 flex-1">
-        <p className="truncate font-medium">{profile.displayName}</p>
-        <FriendsHandle username={profile.username} />
-        {friendCount !== undefined && <p className="text-xs text-muted-foreground">{friendCount === 1 ? ui("1 friend") : uit`${friendCount} friends`}</p>}
+      <h2 className="mt-3 max-w-full truncate text-xl font-semibold">{profile.displayName}</h2>
+      <div className="mt-1 max-w-full"><FriendsHandle username={profile.username} label={false} /></div>
+      <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+        {friendCount !== undefined && <>
+          <span>{friendCount === 1 ? ui("1 friend") : uit`${friendCount} friends`}</span>
+          <span aria-hidden>·</span>
+        </>}
+        <Link to={href} className="rounded-sm font-medium text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{ui("View profile")}</Link>
       </div>
-      <Button asChild size="sm" variant="outline" className="shrink-0">
-        <Link to={`/${profile.username}`}>{ui("View profile")}</Link>
-      </Button>
     </section>
   )
 }
