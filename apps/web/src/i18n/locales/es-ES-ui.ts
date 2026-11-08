@@ -2686,7 +2686,6 @@ const esUi: Record<string, string> = {
   "Daily USD Usage": "Uso diario en USD",
   "Daily Token Usage": "Uso diario de tokens",
   "Daily Calls": "Llamadas diarias",
-  "Chats": "Chats",
   "Attachment": "Archivo adjunto",
   "Sign in": "Iniciar sesión",
   "Sign-in options": "Opciones de inicio de sesión",
