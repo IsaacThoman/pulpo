@@ -137,6 +137,10 @@ export class SheetInteractions {
     this.listen(input, 'cut', (event) => this.onCopy(event as ClipboardEvent, true))
     this.listen(input, 'paste', (event) => this.onPaste(event as ClipboardEvent))
     this.listen(input, 'blur', () => this.closeCompletions())
+    // The idle text is selected whenever the grid holds the keyboard (see resetInput).
+    this.listen(input, 'focus', () => {
+      if (!view.editing && input.value === IDLE_TEXT) input.select()
+    })
     // Safari's pinch gestures (iOS and trackpads).
     this.listen(root, 'gesturestart', (event) => {
       event.preventDefault()
@@ -1361,7 +1365,9 @@ export class SheetInteractions {
   private resetInput(): void {
     const { input } = this.view
     input.value = IDLE_TEXT
-    input.select()
+    // Chromium's select() also focuses the textarea, so a view being built (a new file opening with
+    // its title focused) must not select it; the focus listener selects it once the grid has focus.
+    if (input.ownerDocument.activeElement === input) input.select()
   }
 
   /** Keeps the textarea's text in step with the edit (the formula bar may have changed it). */

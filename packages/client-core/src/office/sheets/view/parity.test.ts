@@ -1342,3 +1342,20 @@ it('summarizes the selection for the status bar', () => {
   view.select({ top: 0, left: 0, bottom: 3, right: 0 })
   expect(view.getState().summary).toEqual({ count: 3, numbers: 2, sum: 6, average: 3, min: 1, max: 5 })
 })
+
+describe('focus on mount', () => {
+  it('leaves the focus where it is while the view is built, and selects the idle text once the grid has it', () => {
+    // Chromium's select() focuses a textarea: a new file opening with its title focused must keep it.
+    const title = document.createElement('input')
+    document.body.appendChild(title)
+    title.focus()
+    const select = vi.spyOn(HTMLTextAreaElement.prototype, 'select')
+    const { view } = setup()
+    expect(select).not.toHaveBeenCalled()
+    expect(document.activeElement).toBe(title)
+    view.focus()
+    expect(document.activeElement).toBe(view.input)
+    expect(select).toHaveBeenCalled()
+    title.remove()
+  })
+})
