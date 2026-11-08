@@ -985,6 +985,30 @@ describe('conditional formatting', () => {
     expect(JSON.stringify([...Array(6).keys()].map((row) => [a.cellRender(row, 0).overlay, a.cellRender(row, 1).overlay]))).toBe(JSON.stringify([...Array(6).keys()].map((row) => [b.cellRender(row, 0).overlay, b.cellRender(row, 1).overlay])))
   })
 
+  it('picks the same winner on every replica when concurrent rules cover the same cells', async () => {
+    const docA = new Y.Doc()
+    const sheet = WorkbookModel.initialize(docA).addSheet('Sheet1')
+    for (let row = 0; row < 4; row++) sheet.setCell(row, 0, { v: row })
+    const docB = new Y.Doc()
+    Y.applyUpdate(docB, Y.encodeStateAsUpdate(docA))
+    const a = mount(docA)
+    const b = mount(docB)
+    for (const view of [a, b]) view.select({ top: 0, left: 0, bottom: 3, right: 0 })
+    a.addConditionalRule(highlightRule('greaterThan', ['0'], 'lightRedFill'))
+    b.addConditionalRule(highlightRule('greaterThan', ['1'], 'greenFillDarkGreenText'))
+    const vectorA = Y.encodeStateVector(docA)
+    const fromA = Y.encodeStateAsUpdate(docA, Y.encodeStateVector(docB))
+    Y.applyUpdate(docA, Y.encodeStateAsUpdate(docB, vectorA), 'remote')
+    Y.applyUpdate(docB, fromA, 'remote')
+    // Both rules have priority 1 and both match row 4: each replica applies them in one order.
+    const fills = (view: SheetView) => [0, 1, 2, 3].map((row) => view.cellRender(row, 0).overlay?.style?.fill?.rgb ?? null)
+    expect(fills(a)).toEqual(fills(b))
+    expect(fills(a)[1]).toBe('FFFFC7CE')
+    // The saved file lists them in that order too.
+    const sheetXml = async (doc: Y.Doc, view: SheetView) => strFromU8(unzipSync(await new SheetCodec().exportFile(doc, { name: 'race.xlsx', assets: view.options.assets }))['xl/worksheets/sheet1.xml']!)
+    expect(await sheetXml(docA, a)).toBe(await sheetXml(docB, b))
+  })
+
   // The fidelity venv from scripts/sheets/setup-fidelity-env.sh (testing/fidelity.ts is Node-only).
   const python = join(process.env.PULPO_SHEETS_VENV ?? join(homedir(), '.cache', 'pulpo-sheets-venv'), 'bin', 'python')
   it.skipIf(process.env.PULPO_SHEETS_FIDELITY !== '1' || !existsSync(python))('writes rules and preset styles that openpyxl and LibreOffice read', async () => {
