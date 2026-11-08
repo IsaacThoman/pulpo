@@ -1637,6 +1637,10 @@ try {
     await clickEnd('Before the table')
     await page.keyboard.press('Shift+Tab')
     assert.ok(await page.evaluate(() => document.activeElement?.closest('.docx-flow') !== null))
+    // Escape, then Shift+Tab, is the keyboard way out of the page.
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Shift+Tab')
+    assert.ok(await page.evaluate(() => document.activeElement !== null && document.activeElement !== document.body && !document.activeElement.closest('.docx-flow')))
     assert.match(await exported(), /\| C0 \| C1 \|/)
     assert.match(await exported(), /\| Row three \|/)
   })
@@ -1824,6 +1828,27 @@ try {
     await page.keyboard.press('Escape')
     assert.equal(await page.evaluate(() => window.harness.editors[0].state().formatPainter), false)
     assert.equal(await paragraph('Line spacing double').locator('span[style*="font-weight: 700"]').count() > 0, true)
+    // From the keyboard: Shift alone keeps it armed; a Shift+arrow selection takes the format.
+    await clickEnd('A normal paragraph with plain text', 0, 5)
+    await page.getByRole('button', { name: 'Format painter' }).click()
+    await page.keyboard.press('Shift')
+    assert.equal(await page.evaluate(() => window.harness.editors[0].state().formatPainter), true)
+    // A click would paint the word under it, so the caret moves without one.
+    await page.evaluate(() => {
+      const view = window.harness.editors[0].view
+      let end
+      view.state.doc.descendants((node, pos) => {
+        if (end === undefined && node.type.name === 'paragraph' && node.textContent.includes('Expanded character spacing')) end = pos + node.nodeSize - 1
+        return end === undefined
+      })
+      view.dispatch(view.state.tr.setSelection(view.state.selection.constructor.create(view.state.doc, end)))
+    })
+    await page.keyboard.down('Shift')
+    for (let step = 0; step < 3; step++) await page.keyboard.press('ArrowLeft')
+    await page.keyboard.up('Shift')
+    await page.waitForFunction(() => !window.harness.editors[0].state().formatPainter)
+    assert.equal(await page.evaluate(() => window.harness.editors[0].state().bold), true)
+    await paragraph('Expanded character spacing').locator('span[style*="font-weight: 700"]', { hasText: 'pt)' }).waitFor()
   })
 
   await step('describes what is under the pointer and pastes host clipboard data through Ctrl+V', async () => {
