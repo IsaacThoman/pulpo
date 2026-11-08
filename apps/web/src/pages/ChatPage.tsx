@@ -107,7 +107,7 @@ function Placeholder({
           aria-label={badge?.kind === 'expiration' && expirationPeriod ? t('chat.expirationBadgeLabel', { period: expirationPeriod }) : undefined}
           data-visible={badge?.kind === 'expiration'}
           role="status"
-          className="chat-landing-badge-transition absolute inset-x-0 bottom-full mb-3 flex items-center justify-center gap-1.5 px-2 text-center text-xs font-medium text-teal-600 dark:text-teal-400"
+          className="chat-landing-badge-transition absolute inset-x-0 bottom-full mb-3 flex items-center justify-center gap-1.5 px-2 text-center text-xs font-medium text-teal-700 dark:text-teal-400"
         >
           <Hourglass className="size-3.5" />
           {expirationPeriod ? t('chat.expiresIn', { period: expirationPeriod }) : null}

@@ -1377,7 +1377,7 @@ export function Composer({
                   ref={toolbarFit.presetsRef}
                   type="button"
                   className={cn(
-                    'group/generation-options flex h-8 min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden rounded-full px-2.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 focus-visible:ring-[3px] data-[pointer-focus]:focus-visible:ring-0',
+                    'group/generation-options flex h-8 min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden rounded-full px-2.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-ring focus-visible:ring-2 data-[pointer-focus]:focus-visible:ring-0',
                     toolbarFit.fit === 2 && 'px-2',
                   )}
                   aria-label={[t('chat.generationOptions'), ...activePresets.map((preset) => (
