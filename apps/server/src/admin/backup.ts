@@ -294,14 +294,14 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     async function* compatibleRows(table: FullBackupTable): AsyncGenerator<RestoreRow> {
       for await (const row of restoreRows(tables.get(table))) {
         const data: Record<string, RestoreRow[]> = { [table]: [row], application_settings: settings, ...(table !== 'diagnostic_policy' ? { diagnostic_policy: archivePolicy } : {}) }
-        if (table === 'users' && !(typeof row.username === 'string' && row.username.trim())) {
+        if (table === 'users') {
           fillMissingUsernames([row], () => {
             let number: number
             do number = randomInt(1, 2_147_483_647)
             while (usernames.has(`pulpo${number}`))
             return number
           })
-          usernames.add(String(row.username))
+          usernames.add(String(row.username).toLowerCase())
         }
         if (table === 'request_logs') {
           data.ocr_attempts = ocrPayloadLogs.has(String(row.id)) ? [{ request_log_id: row.id, request_payload: true }] : []

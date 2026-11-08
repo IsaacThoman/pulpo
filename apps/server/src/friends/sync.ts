@@ -33,6 +33,21 @@ export async function friendPeerIds(
   return friendPeerIdsFromRows(rows, userId)
 }
 
+/**
+ * Accepted friendships feed other users' mutual-friend lists and friends-of-friends suggestions,
+ * so a change to one must also refresh the participants' accepted friends.
+ */
+export async function friendNetworkIds(
+  transaction: DatabaseTransaction,
+  participantIds: string[],
+): Promise<string[]> {
+  const ids = new Set(participantIds)
+  for (const id of participantIds) {
+    for (const peerId of await friendPeerIds(transaction, id, { acceptedOnly: true })) ids.add(peerId)
+  }
+  return [...ids]
+}
+
 export async function bumpAccountRevisions(
   transaction: DatabaseTransaction,
   userIds: string[],

@@ -53,8 +53,39 @@ export function workspaceContinueWithoutAgentAvailableAtMs(workspace: {
 export const roleSchema = z.enum(['pending', 'user', 'admin'])
 export type Role = z.infer<typeof roleSchema>
 
+/** Root URL segments owned by Pulpo and therefore unavailable as profile usernames. */
+export const RESERVED_PROFILE_USERNAMES = [
+  'account-deletion',
+  'admin',
+  'api',
+  'api-keys',
+  'assets',
+  'attachments',
+  'billing',
+  'c',
+  'files',
+  'forgot-password',
+  'friends',
+  'health',
+  'login',
+  'mobile',
+  'pending',
+  'privacy',
+  'ready',
+  'reset-password',
+  'setup',
+  'share',
+  'signup',
+  'support',
+  'usage',
+  'v1',
+] as const
+
+const reservedProfileUsernames = new Set<string>(RESERVED_PROFILE_USERNAMES)
+
 export const usernameSchema = z.string().trim().toLowerCase()
   .regex(/^[a-z0-9][a-z0-9_]{1,28}[a-z0-9]$/, 'Use 3–30 letters, numbers, or underscores; begin and end with a letter or number')
+  .refine((username) => !reservedProfileUsernames.has(username), 'That username is reserved by Pulpo')
 export const profileColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/)
 
 export const userSchema = z.object({
@@ -445,16 +476,33 @@ export const friendConnectionSchema = z.object({
   profile: friendProfileSchema,
   requestedAt: isoDateSchema,
   acceptedAt: isoDateSchema.nullable(),
+  mutualFriends: z.array(friendProfileSchema).optional(),
 })
 export type FriendConnection = z.infer<typeof friendConnectionSchema>
+
+export const friendSuggestionSchema = z.object({
+  profile: friendProfileSchema,
+  mutualFriends: z.array(friendProfileSchema).min(1),
+})
+export type FriendSuggestion = z.infer<typeof friendSuggestionSchema>
 
 export const friendsListSchema = z.object({
   friends: z.array(friendConnectionSchema),
   incoming: z.array(friendConnectionSchema),
   outgoing: z.array(friendConnectionSchema),
   blocked: z.array(friendProfileSchema),
+  suggestions: z.array(friendSuggestionSchema).max(6).optional(),
 })
 export type FriendsList = z.infer<typeof friendsListSchema>
+
+export const friendProfileDetailSchema = z.object({
+  profile: friendProfileSchema,
+  relationship: friendRelationshipSchema,
+  requestId: idSchema.nullable(),
+  friendsSince: isoDateSchema.nullable(),
+  mutualFriends: z.array(friendProfileSchema),
+})
+export type FriendProfileDetail = z.infer<typeof friendProfileDetailSchema>
 
 export const poolMemberSchema = z.object({
   profile: friendProfileSchema,

@@ -8,6 +8,7 @@ import {
   parseAgentCostLimit,
   findCostLimitItem,
   findCostLimitItems,
+  friendsListSchema,
   adminUsageEventSchema,
   animationSpeedSchema,
   automaticChatExpirationSchema,
@@ -61,6 +62,36 @@ import {
   type ResponseEvent,
   type ResponseSnapshot,
 } from './index.js'
+
+describe('friends discovery contracts', () => {
+  const profile = (id: string) => ({
+    id,
+    displayName: `Person ${id.slice(-1)}`,
+    username: `person_${id.slice(-1)}`,
+    avatarUrl: null,
+    profileColor: null,
+  })
+
+  it('accepts mutual-friend context while limiting suggestions to six', () => {
+    const friend = profile('00000000-0000-4000-8000-000000000001')
+    const base = { friends: [], incoming: [], outgoing: [], blocked: [] }
+    expect(friendsListSchema.parse(base).suggestions).toBeUndefined()
+    expect(friendsListSchema.safeParse({
+      ...base,
+      suggestions: Array.from({ length: 6 }, (_, index) => ({
+        profile: profile(`00000000-0000-4000-8000-00000000001${index}`),
+        mutualFriends: [friend],
+      })),
+    }).success).toBe(true)
+    expect(friendsListSchema.safeParse({
+      ...base,
+      suggestions: Array.from({ length: 7 }, (_, index) => ({
+        profile: profile(`00000000-0000-4000-8000-00000000002${index}`),
+        mutualFriends: [friend],
+      })),
+    }).success).toBe(false)
+  })
+})
 
 describe('model composer warnings', () => {
   it('defaults to no warning with a 30 day dismissal and validates patches', () => {
@@ -439,7 +470,7 @@ describe('shared contracts', () => {
       email: 'member@example.com', password: 'password', deviceLabel: 'Isaac’s iPhone',
     }).deviceLabel).toBe('Isaac’s iPhone')
     expect(nativeSetupInputSchema.parse({
-      name: 'Admin', username: 'admin', email: 'admin@example.com', password: 'password', deviceLabel: 'Pulpo for Mac',
+      name: 'Admin', username: 'pulpo_admin', email: 'admin@example.com', password: 'password', deviceLabel: 'Pulpo for Mac',
     }).deviceLabel).toBe('Pulpo for Mac')
     expect(mobileConfigSchema.safeParse({
       mobileApiVersion: 1,
@@ -963,7 +994,7 @@ describe('response snapshot accumulation', () => {
   })
 
   it('normalizes usernames and validates partial profile updates', async () => {
-    const { signupInputSchema, updateProfileInputSchema, usernameSchema } = await import('./index.js')
+    const { RESERVED_PROFILE_USERNAMES, signupInputSchema, updateProfileInputSchema, usernameSchema } = await import('./index.js')
     expect(usernameSchema.parse('  Isaac_2 ')).toBe('isaac_2')
     expect(signupInputSchema.parse({ name: 'Isaac', username: 'Isaac_2', email: 'isaac@example.com', password: 'password' }).username).toBe('isaac_2')
     expect(() => signupInputSchema.parse({ name: 'Isaac', email: 'isaac@example.com', password: 'password' })).toThrow()
@@ -972,6 +1003,9 @@ describe('response snapshot accumulation', () => {
     expect(updateProfileInputSchema.parse({ profileColor: '#10b981' })).toEqual({ profileColor: '#10b981' })
     expect(() => usernameSchema.parse('_isaac')).toThrow()
     expect(() => usernameSchema.parse('is')).toThrow()
+    expect(RESERVED_PROFILE_USERNAMES).toContain('friends')
+    expect(() => usernameSchema.parse('FRIENDS')).toThrow(/reserved/i)
+    expect(() => updateProfileInputSchema.parse({ username: 'admin' })).toThrow(/reserved/i)
     expect(() => updateProfileInputSchema.parse({})).toThrow()
   })
 

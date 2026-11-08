@@ -15,6 +15,7 @@ vi.mock('@/pages/auth/AuthLayout', () => ({ AuthLayout: () => <Outlet /> }))
 vi.mock('@/components/desktop/DesktopInstancePage', () => ({ DesktopInstancePage: () => null }))
 vi.mock('@/components/desktop/DesktopTitleBar', () => ({ DesktopTitleBar: () => null }))
 vi.mock('@/pages/FriendsPage', () => ({ FriendsPage: () => <h1>Combined friends page</h1> }))
+vi.mock('@/pages/FriendProfilePage', () => ({ FriendProfilePage: () => <h1>Friend profile</h1> }))
 vi.mock('@/pages/usage/LeaderboardPage', () => ({
   LeaderboardPage: () => null,
   FriendsLeaderboardPage: () => {
@@ -40,6 +41,13 @@ it('shows People and Leaderboard tabs on the Friends hub', async () => {
   expect(screen.getByRole('link', { name: 'People' }).getAttribute('href')).toBe('/friends')
   expect(screen.getByRole('link', { name: 'Leaderboard' }).getAttribute('href')).toBe('/friends/leaderboard')
   expect(screen.queryByRole('link', { name: 'Personal usage' })).toBeNull()
+})
+
+it('shows profiles at their root username URL', async () => {
+  window.history.replaceState({}, '', '/alice')
+  render(<App />)
+  await screen.findByRole('heading', { name: 'Friend profile' })
+  expect(screen.queryByRole('link', { name: 'People' })).toBeNull()
 })
 
 it('links the leaderboard back to personal usage', async () => {
