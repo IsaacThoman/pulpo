@@ -354,18 +354,6 @@ export function FriendsPage() {
         </>} />)}
       </Section>}
 
-      {suggestions.length > 0 && <Section title={ui("People you may know")} count={suggestions.length}>
-        {suggestions.map((suggestion) => <div key={suggestion.profile.id} className="flex items-center justify-between gap-3 px-4 py-3">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <ProfileIdentity profile={suggestion.profile} href={`/${suggestion.profile.username}`} />
-            <MutualFriends friends={suggestion.mutualFriends} />
-          </div>
-          <Button size="sm" disabled={actionIds.has(`request:${suggestion.profile.id}`)} onClick={() => sendSuggestionRequest(suggestion)}>
-            <UserRoundPlus />{actionIds.has(`request:${suggestion.profile.id}`) ? ui("Sending…") : ui("Add friend")}
-          </Button>
-        </div>)}
-      </Section>}
-
       {userId && <PoolSection
         query={poolQuery}
         currentUserId={userId}
@@ -395,6 +383,18 @@ export function FriendsPage() {
           <h2 className="mt-3 text-sm font-medium">{ui("Add friends")}</h2>
           <p className="mt-1 text-xs text-muted-foreground">{ui("Find someone by their name or Pulpo username.")}</p>
         </div>}
+
+        {suggestions.length > 0 && <Section title={ui("People you may know")} count={suggestions.length}>
+          {suggestions.map((suggestion) => <div key={suggestion.profile.id} className="flex items-center justify-between gap-3 px-4 py-3">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <ProfileIdentity profile={suggestion.profile} href={`/${suggestion.profile.username}`} />
+              <MutualFriends friends={suggestion.mutualFriends} />
+            </div>
+            <Button size="sm" disabled={actionIds.has(`request:${suggestion.profile.id}`)} onClick={() => sendSuggestionRequest(suggestion)}>
+              <UserRoundPlus />{actionIds.has(`request:${suggestion.profile.id}`) ? ui("Sending…") : ui("Add friend")}
+            </Button>
+          </div>)}
+        </Section>}
 
         {data.outgoing.length > 0 && <CollapsibleSection title={ui("Sent requests")} count={data.outgoing.length} open={outgoingOpen} onToggle={() => setOutgoingOpen((value) => !value)}>
           {data.outgoing.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} profileHref={`/${connection.profile.username}`} trailingDetail={`Sent ${friendRequestAge(connection.requestedAt)}`} showMutualFriends actions={<Button size="sm" variant="ghost" disabled={actionIds.has(`cancel:${connection.requestId}`)} onClick={() => void act(`cancel:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request to ${connection.profile.displayName} canceled.`)}>{actionIds.has(`cancel:${connection.requestId}`) ? ui("Canceling…") : ui("Cancel")}</Button>} />)}
