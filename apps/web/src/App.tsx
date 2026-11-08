@@ -148,7 +148,6 @@ export default function App() {
               <Route index element={<LocalizedRoute><FriendsPage /></LocalizedRoute>} />
               <Route path="leaderboard" element={<LocalizedRoute><FriendsLeaderboardPage /></LocalizedRoute>} />
               <Route path="pool" element={<Navigate to="/friends" replace />} />
-              <Route path=":userId" element={<LocalizedRoute><FriendProfilePage /></LocalizedRoute>} />
             </Route>
             <Route path="api-keys" element={<LocalizedRoute><ApiKeysPage /></LocalizedRoute>} />
             <Route path="billing" element={<LocalizedRoute><RequireBilling><BillingPage /></RequireBilling></LocalizedRoute>} />
@@ -175,6 +174,7 @@ export default function App() {
                 <Route path="settings" element={<LocalizedRoute><AdminSettingsPage /></LocalizedRoute>} />
               </Route>
             </Route>
+            <Route path=":username" element={<LocalizedRoute><FriendProfilePage /></LocalizedRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Route>

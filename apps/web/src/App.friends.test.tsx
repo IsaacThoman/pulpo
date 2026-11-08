@@ -43,11 +43,11 @@ it('shows People and Leaderboard tabs on the Friends hub', async () => {
   expect(screen.queryByRole('link', { name: 'Personal usage' })).toBeNull()
 })
 
-it('shows friend profiles inside the Friends hub', async () => {
-  window.history.replaceState({}, '', '/friends/friend-id')
+it('shows profiles at their root username URL', async () => {
+  window.history.replaceState({}, '', '/alice')
   render(<App />)
   await screen.findByRole('heading', { name: 'Friend profile' })
-  expect(screen.getByRole('link', { name: 'People' }).getAttribute('class')).toContain('bg-accent')
+  expect(screen.queryByRole('link', { name: 'People' })).toBeNull()
 })
 
 it('links the leaderboard back to personal usage', async () => {

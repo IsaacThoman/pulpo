@@ -42,7 +42,7 @@ export function MutualFriends({ friends, className }: { friends: FriendProfile[]
     <span className="min-w-0">
       {friends.map((friend, index) => <Fragment key={friend.id}>
         {index > 0 && ', '}
-        <Link className="underline-offset-2 hover:text-foreground hover:underline" to={`/friends/${friend.id}`}>{friend.displayName}</Link>
+        <Link className="underline-offset-2 hover:text-foreground hover:underline" to={`/${friend.username}`}>{friend.displayName}</Link>
       </Fragment>)}
     </span>
   </div>

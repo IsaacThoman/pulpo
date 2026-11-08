@@ -208,21 +208,30 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
     }
   })
 
-  app.get('/api/friends/:userId/profile', async (request) => {
+  app.get('/api/profiles/:username', async (request) => {
     const user = requireUser(request)
-    const { userId } = z.object({ userId: z.uuid() }).parse(request.params)
-    const target = await requireAvailableTarget(userId, user.id)
-    const [relationship, currentFriendRows] = await Promise.all([
-      db.select().from(friendships).where(and(pairWhere(user.id, userId), eq(friendships.status, 'accepted'))).limit(1),
+    const { username } = z.object({ username: z.string().trim().toLowerCase().min(3).max(30) }).parse(request.params)
+    const [target] = await db.select().from(users).where(and(
+      sql<boolean>`lower(${users.username}) = ${username}`,
+      eq(users.blocked, false),
+      ne(users.role, 'pending'),
+    )).limit(1)
+    if (!target || (target.id !== user.id && await blockedBetween(user.id, target.id))) throw notFound('Profile')
+
+    const [relationshipRows, currentFriendRows] = await Promise.all([
+      target.id === user.id
+        ? Promise.resolve([])
+        : db.select().from(friendships).where(pairWhere(user.id, target.id)).limit(1),
       db.select({ userAId: friendships.userAId, userBId: friendships.userBId }).from(friendships).where(and(
         eq(friendships.status, 'accepted'),
         or(eq(friendships.userAId, user.id), eq(friendships.userBId, user.id)),
       )),
     ])
-    const friendship = relationship[0]
-    if (!friendship) throw notFound('Friend')
+    const friendship = relationshipRows[0]
     const currentFriendIds = currentFriendRows.map((row) => row.userAId === user.id ? row.userBId : row.userAId)
-    const mutualIds = (await mutualFriendIdsByTarget([userId], currentFriendIds)).get(userId) ?? []
+    const mutualIds = target.id === user.id
+      ? []
+      : (await mutualFriendIdsByTarget([target.id], currentFriendIds)).get(target.id) ?? []
     const mutualRows = mutualIds.length
       ? await db.select().from(users).where(and(
         inArray(users.id, mutualIds),
@@ -232,7 +241,11 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
       : []
     return {
       profile: publicFriendProfile(target),
-      friendsSince: (friendship.acceptedAt ?? friendship.updatedAt).toISOString(),
+      relationship: friendSearchRelationship(target.id, user.id, friendship ?? null),
+      requestId: friendship?.id ?? null,
+      friendsSince: friendship?.status === 'accepted'
+        ? (friendship.acceptedAt ?? friendship.updatedAt).toISOString()
+        : null,
       mutualFriends: mutualRows
         .map(publicFriendProfile)
         .sort((left, right) => left.displayName.localeCompare(right.displayName) || left.username.localeCompare(right.username)),

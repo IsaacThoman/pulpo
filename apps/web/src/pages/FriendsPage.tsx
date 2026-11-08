@@ -323,7 +323,7 @@ export function FriendsPage() {
               className={`flex items-center justify-between gap-3 border-b px-4 py-3 last:border-b-0 ${activeSearchIndex === index ? 'bg-accent/50' : ''}`}
               onMouseEnter={() => setActiveSearchIndex(index)}
             >
-              <ProfileIdentity profile={result.profile} query={searchQuery} matchedOn={result.matchedOn} href={result.relationship === 'friends' ? `/friends/${result.profile.id}` : undefined} />
+              <ProfileIdentity profile={result.profile} query={searchQuery} matchedOn={result.matchedOn} href={`/${result.profile.username}`} />
               <div className="flex shrink-0 items-center gap-2">
                 {result.relationship === 'none' && <Button size="sm" disabled={actionIds.has(`request:${result.profile.id}`)} onClick={() => sendSearchRequest(result)}><UserRoundPlus />{actionIds.has(`request:${result.profile.id}`) ? ui("Sending…") : ui("Add friend")}</Button>}
                 {result.relationship === 'incoming' && <Button size="sm" disabled={actionIds.has(`accept:${result.requestId}`)} onClick={() => acceptSearchRequest(result)}>{actionIds.has(`accept:${result.requestId}`) ? ui("Accepting…") : ui("Accept")}</Button>}
@@ -339,7 +339,7 @@ export function FriendsPage() {
         : listQuery.error ? <div className="rounded-xl border py-12 text-center"><p className="text-sm text-muted-foreground">{listQuery.error.message}</p><Button className="mt-3" size="sm" variant="outline" onClick={() => void listQuery.refetch()}>{ui("Try again")}</Button></div>
           : null}
       {data && data.incoming.length > 0 && <Section title={ui("Friend requests")} count={data.incoming.length}>
-        {data.incoming.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={`Requested ${friendRequestAge(connection.requestedAt)}`} showMutualFriends actions={<>
+        {data.incoming.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} profileHref={`/${connection.profile.username}`} detail={`Requested ${friendRequestAge(connection.requestedAt)}`} showMutualFriends actions={<>
           <Button size="sm" disabled={actionIds.has(`accept:${connection.requestId}`)} onClick={() => void act(`accept:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}/accept`, { method: 'POST' }), `${connection.profile.displayName} is now your friend.`)}>{actionIds.has(`accept:${connection.requestId}`) ? ui("Accepting…") : ui("Accept")}</Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label={uit`More options for ${connection.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
@@ -355,7 +355,7 @@ export function FriendsPage() {
       {suggestions.length > 0 && <Section title={ui("People you may know")} count={suggestions.length}>
         {suggestions.map((suggestion) => <div key={suggestion.profile.id} className="flex items-center justify-between gap-3 px-4 py-3">
           <div className="min-w-0 flex-1">
-            <ProfileIdentity profile={suggestion.profile} />
+            <ProfileIdentity profile={suggestion.profile} href={`/${suggestion.profile.username}`} />
             <MutualFriends friends={suggestion.mutualFriends} className="pl-[3.25rem]" />
           </div>
           <Button size="sm" disabled={actionIds.has(`request:${suggestion.profile.id}`)} onClick={() => sendSuggestionRequest(suggestion)}>
@@ -377,7 +377,7 @@ export function FriendsPage() {
       />}
       {data && <>
         {friends.length > 0 ? <Section title={ui("Friends")} count={friends.length}>
-          {friends.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} profileHref={`/friends/${connection.profile.id}`} detail={pendingIds.has(connection.profile.id) ? ui("Invitation sent") : undefined} actions={
+          {friends.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} profileHref={`/${connection.profile.username}`} detail={pendingIds.has(connection.profile.id) ? ui("Invitation sent") : undefined} actions={
             <DropdownMenu>
               <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" disabled={actionIds.size > 0} onFocus={(event) => { inviteTriggerRef.current = event.currentTarget }} aria-label={uit`More options for ${connection.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -395,7 +395,7 @@ export function FriendsPage() {
         </div>}
 
         {data.outgoing.length > 0 && <CollapsibleSection title={ui("Sent requests")} count={data.outgoing.length} open={outgoingOpen} onToggle={() => setOutgoingOpen((value) => !value)}>
-          {data.outgoing.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={`Sent ${friendRequestAge(connection.requestedAt)}`} showMutualFriends actions={<Button size="sm" variant="ghost" disabled={actionIds.has(`cancel:${connection.requestId}`)} onClick={() => void act(`cancel:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request to ${connection.profile.displayName} canceled.`)}>{actionIds.has(`cancel:${connection.requestId}`) ? ui("Canceling…") : ui("Cancel")}</Button>} />)}
+          {data.outgoing.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} profileHref={`/${connection.profile.username}`} detail={`Sent ${friendRequestAge(connection.requestedAt)}`} showMutualFriends actions={<Button size="sm" variant="ghost" disabled={actionIds.has(`cancel:${connection.requestId}`)} onClick={() => void act(`cancel:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request to ${connection.profile.displayName} canceled.`)}>{actionIds.has(`cancel:${connection.requestId}`) ? ui("Canceling…") : ui("Cancel")}</Button>} />)}
         </CollapsibleSection>}
 
         {data.blocked.length > 0 && <CollapsibleSection title={ui("Blocked users")} count={data.blocked.length} open={blockedOpen} onToggle={() => setBlockedOpen((value) => !value)}>

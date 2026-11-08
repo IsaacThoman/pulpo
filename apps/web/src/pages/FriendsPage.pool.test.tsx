@@ -13,7 +13,7 @@ vi.mock('@/lib/api', () => ({ apiRequest: mocks.request, ApiError: class extends
 vi.mock('@/stores/auth', () => ({ useAuth: (select: (state: unknown) => unknown) => select({ user: { id: 'me', username: 'me' }, inviteCodesEnabled: false }) }))
 vi.mock('@/lib/runtime-resource', () => ({ useRuntimeImageUrl: () => ({ url: null }) }))
 
-const profile = (id: string): FriendProfile => ({ id, username: id, displayName: id === 'me' ? 'Myself' : id, avatarUrl: null, profileColor: null })
+const profile = (id: string): FriendProfile => ({ id, username: id.toLowerCase().replaceAll(' ', '_'), displayName: id === 'me' ? 'Myself' : id, avatarUrl: null, profileColor: null })
 const connection = (id: string): FriendConnection => ({ profile: profile(id), requestId: `friend-${id}`, requestedAt: '2026-09-01T00:00:00.000Z', acceptedAt: '2026-09-01T00:00:00.000Z' })
 const member = (id: string): PoolMember => ({ profile: profile(id), owner: id === 'me', contributionBalanceMicros: 5_000_000, reservedMicros: id === 'Alice' ? 100_000 : 0, joinedAt: '2026-09-01T00:00:00.000Z' })
 const invitation = (id: string): PoolInvitation => ({ id: `invite-${id}`, poolId: 'pool', inviter: profile('me'), invitee: profile(id), memberCount: 2, createdAt: '2026-09-01T00:00:00.000Z' })
@@ -76,11 +76,11 @@ describe('combined Friends and Pool page', () => {
 
     const requestRegion = screen.getByRole('heading', { name: 'Friend requests' }).closest('section')!
     expect(within(requestRegion).getByText('Mutual friends:')).toBeTruthy()
-    expect(within(requestRegion).getByRole('link', { name: 'Alice' }).getAttribute('href')).toBe('/friends/Alice')
+    expect(within(requestRegion).getByRole('link', { name: 'Alice' }).getAttribute('href')).toBe('/alice')
     const suggestionRegion = screen.getByRole('heading', { name: 'People you may know' }).closest('section')!
     expect(within(suggestionRegion).getByText('Carol')).toBeTruthy()
-    expect(within(suggestionRegion).getByRole('link', { name: 'Bob' }).getAttribute('href')).toBe('/friends/Bob')
-    expect(within(friendsRegion()).getByRole('link', { name: 'Bob' }).getAttribute('href')).toBe('/friends/Bob')
+    expect(within(suggestionRegion).getByRole('link', { name: 'Bob' }).getAttribute('href')).toBe('/bob')
+    expect(within(friendsRegion()).getByRole('link', { name: 'Bob' }).getAttribute('href')).toBe('/bob')
 
     mutation = () => { friends.suggestions = []; return { status: 'pending' } }
     fireEvent.click(within(suggestionRegion).getByRole('button', { name: 'Add friend' }))

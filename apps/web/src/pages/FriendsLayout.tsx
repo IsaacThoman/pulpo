@@ -12,7 +12,6 @@ const TABS = [
 /** Friends hub: managing people and comparing usage with them share one header. */
 export function FriendsLayout() {
   const onLeaderboard = useMatch('/friends/leaderboard')
-  const onProfile = useMatch('/friends/:userId')
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-12 shrink-0 items-center gap-4 border-b px-5">
@@ -26,7 +25,7 @@ export function FriendsLayout() {
               className={({ isActive }) =>
                 cn(
                   'shrink-0 whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm transition-colors',
-                  isActive || (tab.to === '/friends' && Boolean(onProfile))
+                  isActive
                     ? 'bg-accent font-medium'
                     : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
                 )
