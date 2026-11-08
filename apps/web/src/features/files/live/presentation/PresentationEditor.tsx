@@ -143,6 +143,9 @@ function PresentationEditorView({ controller, startInShow, toolbarSlot, classNam
 
   useEffect(() => {
     if (view !== 'sorter' || !sorterHost.current) return
+    // The sorter shows no shapes: a selection left behind would let Format and Arrange change
+    // shapes nobody can see (PowerPoint's Slide Sorter selects only slides).
+    if (controller.state.shapes.length || controller.state.editing) controller.selectShapes([])
     const mounted = new SlideList(sorterHost.current, controller, {
       layout: 'grid',
       onOpen: (key) => handlers.current.openSlide(key),
@@ -211,8 +214,13 @@ function PresentationEditorView({ controller, startInShow, toolbarSlot, classNam
   const openFind = (replace: boolean) => setFind((current) => ({ replace: replace || (current?.replace ?? false), request: (current?.request ?? 0) + 1 }))
   const closeFind = (shown?: FindMatch) => {
     setFind(null)
+    // Nothing shown (no match, or the sorter still open): back to wherever the document was.
+    if (!shown) {
+      focusDocument()
+      return
+    }
     // Back to the text of the match shown, with it selected, as Docs and Slides do.
-    if (shown?.notes) {
+    if (shown.notes) {
       const text = notes.current?.element.querySelector<HTMLElement>('[contenteditable]')
       if (text) {
         text.focus({ preventScroll: true })

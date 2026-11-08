@@ -247,6 +247,25 @@ describe('presentation menus', () => {
     expect([controller.shapeXfrm(slide, left)!.x, controller.shapeXfrm(slide, right)!.x]).toEqual(before.map((xfrm) => xfrm.x))
   })
 
+  it('offers no shapes, pictures, or tables to insert from the sorter, which shows no slide', async () => {
+    const controller = await deck()
+    const sorter = insertMenuEntries(host(controller, { view: 'sorter' }))
+    for (const id of ['text-box', 'image', 'insert-shape', 'insert-line', 'insert-table']) expect(find(sorter, id), id).toMatchObject({ disabled: true })
+    expect(find(sorter, 'new-slide')).toMatchObject({ disabled: false })
+    const editor = insertMenuEntries(host(controller))
+    for (const id of ['text-box', 'image', 'insert-shape', 'insert-line', 'insert-table']) expect(find(editor, id), id).toMatchObject({ disabled: false })
+  })
+
+  it('cuts slides only while at least one stays behind', async () => {
+    const controller = await deck(2)
+    expect(item(editMenuEntries(host(controller, { view: 'sorter' })), 'cut').disabled).toBe(false)
+    controller.selectAllSlides()
+    expect(item(editMenuEntries(host(controller, { view: 'sorter' })), 'cut').disabled).toBe(true)
+    expect(item(slideContextEntries(host(controller), controller.state.slide!), 'cut').disabled).toBe(true)
+    // Copying every slide is fine.
+    expect(item(editMenuEntries(host(controller, { view: 'sorter' })), 'copy').disabled).toBe(false)
+  })
+
   it('offers slide commands on the slide and its thumbnails, sections included', async () => {
     const controller = await deck(3)
     const [a, b] = controller.slideKeys()

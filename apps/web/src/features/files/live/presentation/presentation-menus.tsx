@@ -187,10 +187,12 @@ export function clipboardEntries(controller: PresentationController, target: 'au
   // Speaker notes take the keyboard's Cut and Copy; menus reach only the slide's text.
   const onSlideText = slideTextEditor(controller) !== undefined
   const nothing = target === 'auto' && !controller.state.shapes.length
+  // Cutting slides deletes them, and a deck keeps at least one (as Delete slide does).
+  const everySlide = target === 'slides' && controller.state.slides.length >= controller.slideKeys().length
   return [
     {
       type: 'item', id: 'cut', label: ui("Cut"), icon: Scissors, shortcut: mod('x'),
-      disabled: readOnly || (typing ? !onSlideText : nothing),
+      disabled: readOnly || everySlide || (typing ? !onSlideText : nothing),
       onSelect: () => { if (typing) textClipboard(controller, 'cut'); else void controller.cutToClipboard(target).catch(ignore) },
     },
     {
@@ -280,13 +282,13 @@ function shapeGrid(controller: PresentationController, shapes: readonly string[]
 }
 
 /** Insert ▸ Shape ▸ each gallery group as a grid. */
-export function shapeSubmenu(controller: PresentationController): MenuEntry {
+export function shapeSubmenu(controller: PresentationController, disabled = controller.readOnly): MenuEntry {
   return {
     type: 'submenu',
     id: 'insert-shape',
     label: ui("Shape"),
     icon: Shapes,
-    disabled: controller.readOnly,
+    disabled,
     items: PRESET_SHAPE_GALLERY.filter((group) => group.id !== 'lines').map((group): MenuEntry => ({
       type: 'submenu',
       id: `shape-group-${group.id}`,
@@ -314,13 +316,15 @@ export function insertMenuEntries(host: PresentationMenuHost): MenuEntry[] {
   const onSlideText = slideTextEditor(controller) !== undefined
   const typing = typingText(controller)
   const format = controller.formatState()
+  // The sorter shows no slide to put them on, as in PowerPoint's Slide Sorter.
+  const onSlide = !readOnly && host.view === 'editor'
   return [
-    { type: 'item', id: 'text-box', label: ui("Text box"), icon: Type, disabled: readOnly, onSelect: () => controller.insertTextBox() },
-    { type: 'item', id: 'image', label: ui("Image…"), icon: ImagePlus, disabled: readOnly, onSelect: host.insertImage },
-    shapeSubmenu(controller),
-    { type: 'submenu', id: 'insert-line', label: ui("Line"), icon: Minus, disabled: readOnly, items: lineEntries(controller) },
+    { type: 'item', id: 'text-box', label: ui("Text box"), icon: Type, disabled: !onSlide, onSelect: () => controller.insertTextBox() },
+    { type: 'item', id: 'image', label: ui("Image…"), icon: ImagePlus, disabled: !onSlide, onSelect: host.insertImage },
+    shapeSubmenu(controller, !onSlide),
+    { type: 'submenu', id: 'insert-line', label: ui("Line"), icon: Minus, disabled: !onSlide, items: lineEntries(controller) },
     {
-      type: 'submenu', id: 'insert-table', label: ui("Table"), icon: Table, disabled: readOnly,
+      type: 'submenu', id: 'insert-table', label: ui("Table"), icon: Table, disabled: !onSlide,
       items: [{ type: 'custom', id: 'table-grid', render: (close) => <MenuTableGrid onPick={(rows, columns) => { controller.insertTable(rows, columns); close() }} /> }],
     },
     separator,
