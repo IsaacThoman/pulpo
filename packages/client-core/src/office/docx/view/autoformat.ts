@@ -166,14 +166,21 @@ function linkAddress(view: EditorView, host: AutoformatHost, pos: number): boole
 /** The last change was an autoformat: where the cursor goes when it is undone, and whether Backspace undoes it. */
 interface Undoable { caret: number; list: boolean }
 
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
-
 /** Undoes the autoformat just made, with the cursor after the text it gives back (as the typing left it). */
-function revert(view: EditorView, host: AutoformatHost, undoable: Undoable): boolean {
-  if (!host.undo()) return false
+function revert(view: EditorView, undo: () => boolean, undoable: Undoable): boolean {
+  if (!undo()) return false
   const { doc } = view.state
   view.dispatch(view.state.tr.setSelection(TextSelection.near(doc.resolve(Math.min(undoable.caret, doc.content.size)))))
   return true
+}
+
+/**
+ * Undo right after an autoformat (Ctrl+Z, a toolbar's Undo): `undo` takes the change back, and the
+ * cursor goes after the literal text. False when the last change was not an autoformat.
+ */
+export function undoAutoformat(view: EditorView, undo: () => boolean): boolean {
+  const undoable = key.getState(view.state)
+  return undoable ? revert(view, undo, undoable) : false
 }
 
 export function autoformatPlugin(host: AutoformatHost): Plugin {
@@ -232,13 +239,10 @@ export function autoformatPlugin(host: AutoformatHost): Plugin {
         return true
       },
       handleKeyDown(view, event) {
-        if (view.composing || !view.editable) return false
+        if (view.composing || !view.editable || event.ctrlKey || event.metaKey || event.altKey) return false
         const undoable = key.getState(view.state)
-        const undoKey = (isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'z'
-        if (undoable && undoKey) return revert(view, host, undoable)
-        if (event.ctrlKey || event.metaKey || event.altKey) return false
         // Backspace right after a list starts gives the typed marker back, as in Word.
-        if (undoable?.list && event.key === 'Backspace' && !event.shiftKey && view.state.selection.empty) return revert(view, host, undoable)
+        if (undoable?.list && event.key === 'Backspace' && !event.shiftKey && view.state.selection.empty) return revert(view, host.undo, undoable)
         // An address typed last becomes a link before Enter splits the paragraph; Enter still runs.
         if (event.key === 'Enter' && view.state.selection.empty) linkAddress(view, host, view.state.selection.from)
         return false

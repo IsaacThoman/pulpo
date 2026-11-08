@@ -125,7 +125,7 @@ import {
   type ToggleProperty,
   type WordCount,
 } from './commands.js'
-import { autoformatPlugin, autoformatSettings, type AutoformatOptions, type ListMarker } from './autoformat.js'
+import { autoformatPlugin, autoformatSettings, undoAutoformat, type AutoformatOptions, type ListMarker } from './autoformat.js'
 import { createHeaderFooter, headerFooterInfo, headerFooterOf, headerFooterParagraph, removeHeaderFooter, storyByRelationship, type HeaderFooterInfo } from './headers.js'
 import { DocxViewContext } from './context.js'
 import { computeDecorations } from './decorations.js'
@@ -558,7 +558,7 @@ export class DocxEditor {
         list: (state, marker, from, to) => this.autoformatList(state, marker, from, to),
         linkMarks: (state, href) => hyperlinkMarks(state.schema, href),
         apply: (view, tr, maps) => this.applyAutoformat(view, tr, maps),
-        undo: () => this.undo(),
+        undo: () => !this.readOnly && undo(this.activeView.state),
       }),
       keymap(this.shortcuts()),
       keymap(baseKeymap),
@@ -1297,7 +1297,8 @@ export class DocxEditor {
   undo(): boolean {
     if (this.readOnly) return false
     const view = this.activeView
-    const done = undo(view.state)
+    // Right after an AutoFormat change, undo gives the literal text back with the cursor after it.
+    const done = undoAutoformat(view, () => undo(view.state)) || undo(view.state)
     view.focus()
     return done
   }
