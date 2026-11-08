@@ -100,6 +100,9 @@ export function tableConditionChain(styles: StyleSheet, id: string, condition: (
   return { pPr, rPr, tcPr, tblPr }
 }
 
+/** The text cursor with a brush, while the format painter is on (pages are always white). */
+const PAINTBRUSH_CURSOR = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3v16M2 3h4M2 19h4" stroke="#fff" stroke-width="3.5"/><path d="M4 3v16M2 3h4M2 19h4" stroke="#000" stroke-width="1.5"/><path d="M11 9l7-7 3 3-7 7zM11 9l-1.5 1.5a2 2 0 0 0 0 2.8l.2.2a2 2 0 0 0 2.8 0L14 12" fill="#fff" stroke="#000" stroke-width="1.3"/></svg>')}") 4 11, copy`
+
 /** Layout rules every document shares. */
 export const DOCX_BASE_CSS = `
 .docx-flow,.docx-flow .docx-wrapper{display:flex;flex-direction:column}
@@ -193,4 +196,5 @@ export const DOCX_BASE_CSS = `
 .docx-web .docx-flow-host{position:relative;margin:0 auto;padding:32px 24px 64px;background:#fff}
 .docx-story-editor{position:absolute;z-index:3;background:#fff;outline:1.5px solid #1a73e8;outline-offset:2pt}
 .docx-endnotes{margin-top:24pt;padding-top:6pt;border-top:0.75pt solid #000}
+.docx-painting .docx-flow{cursor:${PAINTBRUSH_CURSOR}}
 `

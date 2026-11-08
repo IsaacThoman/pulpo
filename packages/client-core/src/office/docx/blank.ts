@@ -1,6 +1,6 @@
 import { strToU8, zipSync } from 'fflate'
 import { CONTENT_TYPE, NEW_PART_NAMESPACES, REL } from './names.js'
-import { openTag } from './jsonml.js'
+import { openTag, type JmlElement } from './jsonml.js'
 
 /**
  * The package of a new, blank document: Letter paper with one-inch margins, Calibri 11pt, and
@@ -13,6 +13,40 @@ const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 function heading(level: number, size: number, color: string, before: number, after: number): string {
   return `<w:style w:type="paragraph" w:styleId="Heading${level}"><w:name w:val="heading ${level}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:link w:val="Heading${level}Char"/><w:uiPriority w:val="9"/>${level > 1 ? '<w:unhideWhenUsed/>' : ''}<w:qFormat/><w:pPr><w:keepNext/><w:keepLines/><w:spacing w:before="${before}" w:after="${after}"/><w:outlineLvl w:val="${level - 1}"/></w:pPr><w:rPr><w:rFonts w:asciiTheme="majorHAnsi" w:eastAsiaTheme="majorEastAsia" w:hAnsiTheme="majorHAnsi" w:cstheme="majorBidi"/>${level >= 4 ? '<w:i/><w:iCs/>' : ''}<w:color w:val="${color}" w:themeColor="accent1" w:themeShade="BF"/><w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr></w:style>`
     + `<w:style w:type="character" w:customStyle="1" w:styleId="Heading${level}Char"><w:name w:val="Heading ${level} Char"/><w:basedOn w:val="DefaultParagraphFont"/><w:link w:val="Heading${level}"/><w:uiPriority w:val="9"/><w:rPr><w:rFonts w:asciiTheme="majorHAnsi" w:eastAsiaTheme="majorEastAsia" w:hAnsiTheme="majorHAnsi" w:cstheme="majorBidi"/><w:color w:val="${color}" w:themeColor="accent1" w:themeShade="BF"/><w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr></w:style>`
+}
+
+/** Word's built-in Heading 1–6 (size in half points, accent1 shade, italic, space before in twips). */
+const BUILT_IN_HEADINGS: Record<number, { size?: number; color: string; shade: string; italic?: boolean; before: number }> = {
+  1: { size: 32, color: '2F5496', shade: 'BF', before: 240 },
+  2: { size: 26, color: '2F5496', shade: 'BF', before: 40 },
+  3: { size: 24, color: '1F3763', shade: '7F', before: 40 },
+  4: { color: '2F5496', shade: 'BF', italic: true, before: 40 },
+  5: { color: '2F5496', shade: 'BF', before: 40 },
+  6: { color: '1F3763', shade: '7F', before: 40 },
+}
+
+/**
+ * Word's definition of a built-in heading style and its linked character style, for documents
+ * that lack it (heading shortcuts add it on first use, as Word does).
+ */
+export function builtInHeadingStyles(level: number, basedOn: string | undefined): JmlElement[] | undefined {
+  const heading = BUILT_IN_HEADINGS[level]
+  if (!heading) return undefined
+  const fonts: JmlElement = ['w:rFonts', { 'w:asciiTheme': 'majorHAnsi', 'w:eastAsiaTheme': 'majorEastAsia', 'w:hAnsiTheme': 'majorHAnsi', 'w:cstheme': 'majorBidi' }]
+  const runProperties = (): JmlElement => ['w:rPr', {}, structuredClone(fonts),
+    ...(heading.italic ? [['w:i', {}], ['w:iCs', {}]] as JmlElement[] : []),
+    ['w:color', { 'w:val': heading.color, 'w:themeColor': 'accent1', 'w:themeShade': heading.shade }],
+    ...(heading.size ? [['w:sz', { 'w:val': String(heading.size) }], ['w:szCs', { 'w:val': String(heading.size) }]] as JmlElement[] : [])]
+  const id = `Heading${level}`
+  const base: JmlElement[] = basedOn ? [['w:basedOn', { 'w:val': basedOn }], ['w:next', { 'w:val': basedOn }]] : []
+  return [
+    ['w:style', { 'w:type': 'paragraph', 'w:styleId': id }, ['w:name', { 'w:val': `heading ${level}` }], ...base, ['w:link', { 'w:val': `${id}Char` }],
+      ['w:uiPriority', { 'w:val': '9' }], ...(level > 1 ? [['w:unhideWhenUsed', {}]] as JmlElement[] : []), ['w:qFormat', {}],
+      ['w:pPr', {}, ['w:keepNext', {}], ['w:keepLines', {}], ['w:spacing', { 'w:before': String(heading.before), 'w:after': '0' }], ['w:outlineLvl', { 'w:val': String(level - 1) }]],
+      runProperties()],
+    ['w:style', { 'w:type': 'character', 'w:customStyle': '1', 'w:styleId': `${id}Char` }, ['w:name', { 'w:val': `Heading ${level} Char` }],
+      ['w:basedOn', { 'w:val': 'DefaultParagraphFont' }], ['w:link', { 'w:val': id }], ['w:uiPriority', { 'w:val': '9' }], runProperties()],
+  ]
 }
 
 const STYLES = `${DECLARATION}<w:styles xmlns:w="${W}" xmlns:r="${REL.officeDocument.replace('/officeDocument', '')}">`
