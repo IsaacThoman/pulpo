@@ -4,6 +4,7 @@ import { blankPresentation } from '../blank.js'
 import { copyContent } from '../clipboard.js'
 import { presentationCodec } from '../codec.js'
 import { cellFragment, groupShapes, insertShapes, presetShape, readSlide, readXfrm, tableShape } from '../commands.js'
+import { EMU_PER_PX } from '../render/env.js'
 import { textToPlain } from '../text.js'
 import { memoryAssets } from '../testing/assets.js'
 import { fidelityAvailable, fixture, runPython, scratchDir, writeScratch } from '../testing/fixtures.js'
@@ -291,5 +292,29 @@ describe('presentation interaction regressions', () => {
     a.undo()
     sync(doc, b.doc)
     expect(grid(b, table)).toEqual([['', '', ''], ['', '', 'typed by B']])
+  })
+
+  it('inserts pictures at their aspect ratio, centered on a point and kept on the slide', async () => {
+    const { controller } = await open()
+    const slide = controller.state.slide!
+    const width = controller.size().width * EMU_PER_PX
+    const height = controller.size().height * EMU_PER_PX
+    const bytes = new Uint8Array([1, 2, 3])
+    const wide = (await controller.insertImage(bytes, 'image/png', { width: 4000, height: 1000 }))!
+    const wideXfrm = controller.shapeXfrm(slide, wide)!
+    expect(wideXfrm.cx / wideXfrm.cy).toBeCloseTo(4, 3)
+    expect(wideXfrm.cx).toBeLessThanOrEqual(width * 0.6 + 1)
+    const placed = (await controller.insertImage(bytes, 'image/png', { width: 100, height: 50 }, 'Logo', { x: 1_000_000, y: 2_000_000 }))!
+    const xfrm = controller.shapeXfrm(slide, placed)!
+    expect([xfrm.x + xfrm.cx / 2, xfrm.y + xfrm.cy / 2, xfrm.cx / xfrm.cy]).toEqual([1_000_000, 2_000_000, 2])
+    expect(controller.shape(slide, placed)!.descr).toBe('Logo')
+    const corner = (await controller.insertImage(bytes, 'image/png', { width: 100, height: 50 }, '', { x: width + 5_000_000, y: -10 }))!
+    const clamped = controller.shapeXfrm(slide, corner)!
+    expect([clamped.x + clamped.cx, clamped.y]).toEqual([width, 0])
+    // An unknown size (no decoder) falls back to a 4:3 box in the middle.
+    const unknown = (await controller.insertImage(bytes, 'image/png', { width: 0, height: Number.NaN }))!
+    const fallback = controller.shapeXfrm(slide, unknown)!
+    expect(fallback.cx / fallback.cy).toBeCloseTo(4 / 3, 3)
+    expect(Math.round(fallback.y + fallback.cy / 2)).toBe(Math.round(height / 2))
   })
 })

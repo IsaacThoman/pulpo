@@ -283,6 +283,51 @@ try {
     await page.close()
   })
 
+  await check('pastes and drops images at their aspect ratio; a drop on the slide stays out of the chat', async () => {
+    const { page, errors } = await open(context, 'blank=1')
+    // A 4×2 px PNG.
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAACCAIAAADwyuo0AAAAEElEQVR4nGP4z8AARwzIHABvqgf5gNwAKAAAAABJRU5ErkJggg=='
+    const pictures = () => page.evaluate(() => {
+      const controller = window.harness.controllers.a
+      return controller.slide(controller.state.slide).shapes.filter((shape) => shape.kind === 'pic').map((shape) => ({ ...controller.shapeXfrm(controller.state.slide, shape.key), descr: shape.descr }))
+    })
+    await page.evaluate((base64) => {
+      const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))
+      const data = new DataTransfer()
+      data.items.add(new File([bytes], 'image.png', { type: 'image/png' }))
+      const canvas = document.querySelector('.pp-canvas')
+      canvas.focus()
+      canvas.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+    }, png)
+    await page.waitForFunction(() => window.harness.controllers.a.slide(window.harness.controllers.a.state.slide).shapes.some((shape) => shape.kind === 'pic'))
+    const [pasted] = await pictures()
+    assert.equal(pasted.cx / pasted.cy, 2, `pasted at 2:1, not 4:3 (${pasted.cx}×${pasted.cy})`)
+    const stage = await page.locator('.pp-canvas-stage').boundingBox()
+    const point = { x: stage.x + stage.width * 0.25, y: stage.y + stage.height * 0.75 }
+    const reached = await page.evaluate(([base64, at]) => {
+      let windowDrops = 0
+      window.addEventListener('drop', () => { windowDrops++ })
+      const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))
+      const data = new DataTransfer()
+      data.items.add(new File([bytes], 'wide logo.png', { type: 'image/png' }))
+      const target = document.elementFromPoint(at.x, at.y)
+      const over = new DragEvent('dragover', { dataTransfer: data, clientX: at.x, clientY: at.y, bubbles: true, cancelable: true })
+      target.dispatchEvent(over)
+      target.dispatchEvent(new DragEvent('drop', { dataTransfer: data, clientX: at.x, clientY: at.y, bubbles: true, cancelable: true }))
+      return { accepted: over.defaultPrevented, windowDrops }
+    }, [png, point])
+    assert.deepEqual(reached, { accepted: true, windowDrops: 0 })
+    await page.waitForFunction(() => window.harness.controllers.a.slide(window.harness.controllers.a.state.slide).shapes.filter((shape) => shape.kind === 'pic').length === 2)
+    const dropped = (await pictures())[1]
+    const size = await page.evaluate(() => window.harness.controllers.a.size())
+    assert.equal(dropped.cx / dropped.cy, 2)
+    assert.ok(Math.abs(dropped.x + dropped.cx / 2 - size.width * 0.25 * 9525) < 3 * 9525, 'centered on the drop point (x)')
+    assert.ok(Math.abs(dropped.y + dropped.cy / 2 - size.height * 0.75 * 9525) < 3 * 9525, 'centered on the drop point (y)')
+    assert.equal(dropped.descr, 'wide logo')
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
   await check('manages slides in the strip: add, duplicate, reorder by dragging, hide, delete', async () => {
     const { page, errors } = await open(context, 'deck=generated/layouts-notes-sections.pptx')
     const keys = () => page.evaluate(() => window.harness.controllers.a.slideKeys())

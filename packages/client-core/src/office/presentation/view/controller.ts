@@ -548,7 +548,11 @@ export class PresentationController {
     return key
   }
 
-  async insertImage(bytes: Uint8Array, mimeType: string, size?: { width: number; height: number }, description = ''): Promise<string | undefined> {
+  /**
+   * Inserts a picture at its natural aspect ratio (`size` in px; see `imageSize`), scaled down to
+   * fit the slide, centered on `at` (slide EMU, kept on the slide) or on the slide.
+   */
+  async insertImage(bytes: Uint8Array, mimeType: string, size?: { width: number; height: number }, description = '', at?: { x: number; y: number }): Promise<string | undefined> {
     if (!this.guard()) return undefined
     const slide = this.slideKey!
     const asset = await this.assets.put(bytes, mimeType)
@@ -556,10 +560,16 @@ export class PresentationController {
     const slideSize = this.size()
     const maxWidth = slideSize.width * 0.6
     const maxHeight = slideSize.height * 0.6
-    const width = size?.width ?? 400
-    const height = size?.height ?? 300
+    const known = size && Number.isFinite(size.width) && Number.isFinite(size.height) && size.width > 0 && size.height > 0
+    const width = known ? size.width : 400
+    const height = known ? size.height : 300
     const scale = Math.min(1, maxWidth / width, maxHeight / height)
-    const xfrm = this.centered(Math.round(width * scale * EMU_PER_PX), Math.round(height * scale * EMU_PER_PX))
+    const cx = Math.max(1, Math.round(width * scale * EMU_PER_PX))
+    const cy = Math.max(1, Math.round(height * scale * EMU_PER_PX))
+    const clamp = (value: number, max: number) => Math.round(Math.min(Math.max(0, value), Math.max(0, max)))
+    const xfrm = at && Number.isFinite(at.x) && Number.isFinite(at.y)
+      ? { x: clamp(at.x - cx / 2, slideSize.width * EMU_PER_PX - cx), y: clamp(at.y - cy / 2, slideSize.height * EMU_PER_PX - cy), cx, cy }
+      : this.centered(cx, cy)
     const part = commands.addImagePart(this.doc, asset)
     const [key] = commands.insertShapes(this.doc, slide, [commands.pictureShape(part, xfrm, this.nextName(this.labels.shapeNames.picture), description)], LOCAL_ORIGIN)
     if (key) this.selectShapes([key])

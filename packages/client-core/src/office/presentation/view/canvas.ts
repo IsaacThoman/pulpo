@@ -8,6 +8,7 @@ import { bodyLayout, textFrameStyles } from '../render/text.js'
 import { serializeNode, parseFragment } from '../xml.js'
 import { LOCAL_ORIGIN, type ChangeSet, type EditingTarget, type PresentationController } from './controller.js'
 import { readClipboard, writeClipboard } from './clipboard-io.js'
+import { dragHasImages, imageSize } from './images.js'
 import { MediaPlayer } from './media.js'
 import { ensureStyles } from './styles.js'
 import { InlineTextEditor, type TextEditorStyle } from './text-editor.js'
@@ -126,6 +127,8 @@ export class SlideCanvas {
     this.element.addEventListener('cut', this.onCut)
     this.element.addEventListener('paste', this.onPaste)
     this.element.addEventListener('click', this.onClick)
+    this.element.addEventListener('dragover', this.onDragOver)
+    this.element.addEventListener('drop', this.onDrop)
     if (typeof ResizeObserver !== 'undefined') {
       this.resizeObserver = new ResizeObserver(() => this.layout())
       this.resizeObserver.observe(this.element)
@@ -856,7 +859,8 @@ export class SlideCanvas {
     event.preventDefault()
     const image = Array.from(event.clipboardData?.files ?? []).find((file) => file.type.startsWith('image/'))
     if (image) {
-      void image.arrayBuffer().then((buffer) => this.controller.insertImage(new Uint8Array(buffer), image.type))
+      // A pasted screenshot is named "image.png": no useful alt text.
+      void this.insertImages([image], undefined, false)
       return
     }
     const text = event.clipboardData?.getData('text/plain') ?? ''
@@ -864,6 +868,39 @@ export class SlideCanvas {
       if (payload) void this.controller.paste(payload)
       else if (text) this.pasteText(text)
     })
+  }
+
+  /** Inserts image files at their natural aspect ratio, cascading from `at` (slide EMU) when several. */
+  private async insertImages(files: readonly File[], at: { x: number; y: number } | undefined, describe: boolean): Promise<void> {
+    for (const [index, file] of files.entries()) {
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        const size = await imageSize(file)
+        const offset = index * 182_880
+        // Hosts without an asset store (the mobile page) reject the insert; nothing to show.
+        await this.controller.insertImage(bytes, file.type || 'image/png', size, describe ? file.name.replace(/\.[^.]+$/, '') : '', at && { x: at.x + offset, y: at.y + offset })
+      } catch {
+        // An image that cannot be stored is skipped.
+      }
+    }
+  }
+
+  // The chat composer listens for drops on the whole window: a drop the slide takes must stop here.
+  private readonly onDragOver = (event: DragEvent): void => {
+    if (this.controller.readOnly || !this.controller.state.slide || !dragHasImages(event.dataTransfer)) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+  }
+
+  private readonly onDrop = (event: DragEvent): void => {
+    if (this.controller.readOnly || !this.controller.state.slide) return
+    const files = Array.from(event.dataTransfer?.files ?? []).filter((file) => file.type.startsWith('image/'))
+    if (!files.length) return
+    event.preventDefault()
+    event.stopPropagation()
+    const point = this.slidePoint(event)
+    void this.insertImages(files, { x: point.x * EMU_PER_PX, y: point.y * EMU_PER_PX }, true)
   }
 
   private pasteText(text: string): void {
