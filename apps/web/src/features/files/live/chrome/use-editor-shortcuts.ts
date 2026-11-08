@@ -1,5 +1,6 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import { isAppleShortcut } from '../../browser/shortcuts'
+import { isKeyFromEditorRoot } from './editor-root'
 import { matchesShortcut, typesAscii, type ShortcutSpec } from './shortcuts'
 
 /** What an editor does for the shortcuts every Office and Google editor shares. */
@@ -64,8 +65,10 @@ function isShortcutsKey(event: KeyboardEvent): boolean {
 /**
  * The shared editor keys: print, save, shortcuts, and find and replace where the editor's own
  * keymap did not take them already (keys an editor handled are left alone). They work while
- * focus is in `root`; print and save also while focus is on the page itself and this is the only
- * editor in the main view, but never from the chat composer or another field.
+ * focus is in `root`; print and save also from the editor's own menus and dialogs (portals in
+ * its React tree, noted by `fileEditorRoot` on `root`), and while focus is on the page itself and
+ * this is the only editor in the main view, but never from the chat composer or another field.
+ * On Apple platforms only Cmd counts: Ctrl+P, Ctrl+F, and the like move the caret there.
  */
 export function useEditorShortcuts(root: RefObject<HTMLElement | null>, handlers: EditorShortcutHandlers): void {
   const latest = useRef(handlers)
@@ -76,8 +79,11 @@ export function useEditorShortcuts(root: RefObject<HTMLElement | null>, handlers
     const onKeyDown = (event: KeyboardEvent) => {
       const element = root.current
       if (event.defaultPrevented || !element) return
+      // Ctrl on a Mac is the text field's (Ctrl+P line up, Ctrl+F forward, Ctrl+Cmd+F full screen), as in the editors' own keymaps.
+      if (isAppleShortcut() && event.ctrlKey) return
       const inside = event.target instanceof Node && element.contains(event.target)
-      if (!inside && !(onPage(event.target) && mainViewEditors().length === 1 && mainViewEditors()[0] === registration)) return
+      const ownPortal = !inside && isKeyFromEditorRoot(event, element)
+      if (!inside && !ownPortal && !(onPage(event.target) && mainViewEditors().length === 1 && mainViewEditors()[0] === registration)) return
       const { print, save, shortcuts, find, replace } = latest.current
       const run = (action?: () => void) => {
         event.preventDefault()

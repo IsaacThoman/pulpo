@@ -222,6 +222,47 @@ try {
     await page.close()
   })
 
+  await step('text: prints and saves from an open menu and a dialog; Ctrl on a Mac stays the field\'s', async () => {
+    const { page, errors, bar } = await open('text')
+    await page.locator('.cm-line').first().click()
+    // The menus and dialogs are portals outside the editor, but still its: never the page's print or Save Page.
+    await bar.getByRole('menuitem', { name: 'File' }).click()
+    await page.getByRole('menuitem', { name: 'Print' }).waitFor()
+    await page.keyboard.press('ArrowDown')
+    await page.waitForFunction(() => document.activeElement?.closest('[role="menu"]') !== null)
+    await page.keyboard.press(`${mod}+s`)
+    assert.equal(await page.evaluate(() => window.saved), 1)
+    await page.keyboard.press(`${mod}+p`)
+    await page.waitForFunction(() => window.printed.length === 1)
+    assert.match((await page.evaluate(() => window.printed))[0], /def hello/)
+    await page.keyboard.press('Escape')
+    await page.getByRole('menu').waitFor({ state: 'detached' })
+    await bar.getByRole('menuitem', { name: 'Help' }).click()
+    await page.getByRole('menuitem', { name: 'Keyboard shortcuts' }).click()
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Search shortcuts')
+    await page.keyboard.press(`${mod}+s`)
+    assert.equal(await page.evaluate(() => window.saved), 2)
+    await page.keyboard.press(`${mod}+p`)
+    await page.waitForFunction(() => window.printed.length === 2)
+    assert.equal((await page.evaluate(() => window.printed)).includes('the page'), false)
+    await page.keyboard.press('Escape')
+    await page.getByRole('dialog', { name: 'Keyboard shortcuts' }).waitFor({ state: 'detached' })
+    await page.waitForFunction(() => document.activeElement?.closest('.cm-editor') !== null)
+    if (process.platform === 'darwin') {
+      // In the find field (a plain input in the editor), Ctrl+P is the line-up key, not Print.
+      await page.keyboard.press('Meta+f')
+      await page.waitForFunction(() => document.activeElement?.getAttribute('name') === 'search')
+      // Heard last, after every editor's listener.
+      await page.evaluate(() => window.addEventListener('keydown', (event) => { window.lastKey = { key: event.key, prevented: event.defaultPrevented } }))
+      await page.keyboard.press('Control+p')
+      await page.waitForFunction(() => window.lastKey?.key === 'p')
+      assert.equal(await page.evaluate(() => window.lastKey.prevented), false)
+      assert.equal(await page.evaluate(() => window.printed.length), 2)
+    }
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
   await step('notebook: Search the menus runs an Edit command from command mode, keys back to the cells', async () => {
     const { page, errors } = await open('notebook')
     await page.getByRole('list', { name: 'Notebook cells' }).focus()

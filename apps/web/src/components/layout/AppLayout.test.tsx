@@ -15,6 +15,7 @@ vi.mock('@/features/chat/ChatDataBridge', () => ({ ChatDataBridge: () => null })
 vi.mock('@/features/settings/SettingsBridge', () => ({ SettingsBridge: () => null }))
 vi.mock('./BannerBar', () => ({ BannerBar: () => null }))
 vi.mock('./SearchModal', () => ({ SearchModal: () => <div>Search dialog</div> }))
+vi.mock('@/components/settings/SettingsModal', () => ({ SettingsModal: ({ open }: { open: boolean }) => open ? <div>Settings dialog</div> : null }))
 vi.mock('./Sidebar', () => ({
   Sidebar: ({ mobile, mobileOpen, collapsed, transitions, onToggle, onNavigate }: {
     mobile: boolean; mobileOpen: boolean; collapsed: boolean; transitions: boolean; onToggle: () => void; onNavigate: () => void
@@ -227,6 +228,8 @@ describe('app shortcuts around editors', () => {
   const page = <>
     <div data-file-editor="document"><div role="textbox" tabIndex={0} aria-label="Document body" /></div>
     <div data-file-editor="notebook"><div role="textbox" tabIndex={0} aria-label="Notebook cell" /></div>
+    <div data-file-editor="sheet"><textarea aria-label="Sheet grid" /></div>
+    <div data-file-editor="presentation"><div role="application" tabIndex={0} aria-label="Slide" /></div>
     <textarea aria-label="Composer" />
   </>
   const handled = (event: Event) => event.preventDefault()
@@ -244,6 +247,26 @@ describe('app shortcuts around editors', () => {
     // Notebooks and code bind no Bold: Cmd/Ctrl+B toggles the sidebar there, as in JupyterLab and VS Code.
     fireEvent.keyDown(screen.getByRole('textbox', { name: 'Notebook cell' }), { key: 'b', metaKey: true })
     expect(sidebar.getAttribute('data-collapsed')).toBe('true')
+  })
+
+  it('opens settings with Cmd/Ctrl+comma from spreadsheets and presentations, which bind no Subscript, but not from Word', async () => {
+    const view = mountWith(page)
+    const sidebar = view.container.querySelector('aside')!
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Document body' }), { key: ',', metaKey: true })
+    await act(async () => {})
+    expect(screen.queryByText('Settings dialog')).toBeNull()
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Sheet grid' }), { key: ',', metaKey: true })
+    expect(await screen.findByText('Settings dialog')).toBeTruthy()
+    // Bold stays the spreadsheet's and the presentation's.
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Sheet grid' }), { key: 'b', ctrlKey: true })
+    fireEvent.keyDown(screen.getByRole('application', { name: 'Slide' }), { key: 'b', ctrlKey: true })
+    expect(sidebar.getAttribute('data-collapsed')).toBe('false')
+  })
+
+  it('opens settings with Cmd/Ctrl+comma from a presentation', async () => {
+    mountWith(page)
+    fireEvent.keyDown(screen.getByRole('application', { name: 'Slide' }), { key: ',', ctrlKey: true })
+    expect(await screen.findByText('Settings dialog')).toBeTruthy()
   })
 
   it('ignores keys a field already handled', () => {
