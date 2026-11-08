@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   apiRequest: vi.fn(),
   alert: vi.fn(),
   showActions: vi.fn(),
+  push: vi.fn(),
 }))
 const { passthrough, modifier } = vi.hoisted(() => ({
   passthrough: ({ children }: { children?: unknown }) => children,
@@ -39,9 +40,9 @@ vi.mock('@expo/ui/swift-ui', () => ({
   TextField: ({ onTextChange, modifiers }: { onTextChange: (value: string) => void; modifiers?: Modifier[] }) => createElement('input', { 'aria-label': modifier(modifiers, 'accessibilityLabel') as string, onChange: (event: { target: { value: string } }) => onTextChange(event.target.value) }),
   useNativeState: (value: string) => ({ get: () => value, set: vi.fn() }),
 }))
-vi.mock('@expo/ui/swift-ui/modifiers', () => Object.fromEntries([
-  'accessibilityLabel', 'autocorrectionDisabled', 'buttonStyle', 'controlSize', 'disabled', 'font', 'foregroundStyle', 'frame', 'labelStyle', 'lineLimit', 'scrollDismissesKeyboard', 'textFieldStyle', 'textInputAutocapitalization', 'tint',
-].map((type) => [type, (value: unknown) => ({ type, value })])))
+vi.mock('@expo/ui/swift-ui/modifiers', () => ({ shapes: { rectangle: () => ({}) }, ...Object.fromEntries([
+  'accessibilityLabel', 'autocorrectionDisabled', 'buttonStyle', 'contentShape', 'controlSize', 'disabled', 'font', 'foregroundStyle', 'frame', 'labelStyle', 'lineLimit', 'padding', 'scrollDismissesKeyboard', 'textFieldStyle', 'textInputAutocapitalization', 'tint',
+].map((type) => [type, (value: unknown) => ({ type, value })])) }))
 vi.mock('../../platform/MaterialUI', () => ({
   MaterialButton: ({ label, onPress, disabled, loading }: { label: string; onPress: () => void; disabled?: boolean; loading?: boolean }) => createElement('button', { onClick: onPress, disabled: disabled || loading }, label),
   MaterialIconButton: ({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) => createElement('button', { onClick: onPress, disabled, 'aria-label': label }),
@@ -57,7 +58,8 @@ vi.mock('../../mockup5/src/components/PrototypeUI', () => ({
   SectionTitle: ({ children, trailing }: { children: ReactNode; trailing?: ReactNode }) => createElement('h2', null, children, trailing),
   EmptyState: ({ title, detail }: { title: string; detail: string }) => createElement('div', null, title, detail),
   Field: ({ label, onChangeText }: { label: string; onChangeText: (value: string) => void }) => createElement('input', { 'aria-label': label, onChange: (event: { target: { value: string } }) => onChangeText(event.target.value) }),
-  ListRow: ({ title, detail, value, onPress, children }: { title: string; detail?: string; value?: string; onPress?: () => void; children?: ReactNode }) => createElement(onPress ? 'button' : 'div', { onClick: onPress }, ...[title, detail, value].filter(Boolean).map((text) => createElement('span', { key: text }, text)), children),
+  // A pressable row's title is its own button, so presses on its trailing actions don't open it, as in React Native.
+  ListRow: ({ title, detail, value, onPress, children }: { title: string; detail?: string; value?: string; onPress?: () => void; children?: ReactNode }) => createElement('div', null, onPress ? createElement('button', { onClick: onPress }, title) : createElement('span', null, title), ...[detail, value].filter(Boolean).map((text) => createElement('span', { key: text }, text)), children),
 }))
 vi.mock('../usage-limits/UsageLimitsSettings', () => ({
   NativeUsageLimit: ({ row }: { row: { label: string; remainingPercentage: number } }) => createElement('div', null, `${row.label}: ${row.remainingPercentage}% left`),
@@ -78,7 +80,7 @@ vi.mock('../../store/session', () => ({
 import { FriendsScreen } from './FriendsScreen'
 
 const profile = (id: string): FriendProfile => ({ id, displayName: id, username: id.toLowerCase(), avatarUrl: null, profileColor: null })
-const connection = (id: string): FriendConnection => ({ requestId: `request-${id}`, profile: profile(id), requestedAt: new Date().toISOString(), acceptedAt: null })
+const connection = (id: string, mutualFriends?: FriendProfile[]): FriendConnection => ({ requestId: `request-${id}`, profile: profile(id), requestedAt: new Date().toISOString(), acceptedAt: null, ...(mutualFriends ? { mutualFriends } : {}) })
 const member = (id: string, owner = false) => ({ profile: profile(id), owner, contributionBalanceMicros: 5_000_000, reservedMicros: 100_000, joinedAt: '2026-09-01T00:00:00.000Z' })
 
 let friends: FriendsList
@@ -89,7 +91,7 @@ const lastAlert = () => mocks.alert.mock.calls.at(-1) as [string, string | undef
 const pressAlert = (label: string) => lastAlert()[2].find((button) => button.text === label)!.onPress!()
 
 beforeEach(() => {
-  friends = { friends: ['Alice', 'Bob', 'Cara'].map(connection), incoming: [connection('Dan')], outgoing: [connection('Eve')], blocked: [profile('Finn')] }
+  friends = { friends: ['Alice', 'Bob', 'Cara'].map((id) => connection(id)), incoming: [connection('Dan')], outgoing: [connection('Eve')], blocked: [profile('Finn')] }
   summary = { accountBalanceMicros: 5_000_000, incomingInvitations: [], pool: { id: 'pool', ownerUserId: 'me', pooledBalanceMicros: 10_000_000, members: [member('me', true), member('Alice')], pendingInvitations: [], sharedUsage: null } }
   searchResults = []
   mocks.apiRequest.mockImplementation(async (path: string, options?: { method?: string; body?: { userId?: string } }) => {
@@ -114,7 +116,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); mocks.usageLimits = true })
 
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><FriendsScreen {...({ navigation: { goBack: vi.fn() }, route: {} } as unknown as ComponentProps<typeof FriendsScreen>)} /></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><FriendsScreen {...({ navigation: { goBack: vi.fn(), push: mocks.push }, route: {} } as unknown as ComponentProps<typeof FriendsScreen>)} /></QueryClientProvider>)
 }
 
 /** The actions in a person's menu: inline on iOS, a Material menu on Android. */
@@ -241,6 +243,24 @@ describe.each(['ios', 'android'])('Friends on %s', (platform) => {
     await waitFor(() => expect(writes()).toEqual([['/api/friends/requests/request-Dan', { method: 'DELETE' }]]))
     await screen.findByText('Add')
     expect(screen.queryByText('Accept')).toBeNull()
+  })
+
+  it('suggests friends of friends and sends a request from the suggestion', async () => {
+    friends.suggestions = [{ profile: profile('Gus'), mutualFriends: [profile('Alice'), profile('Bob')] }]
+    friends.incoming = [connection('Dan', [profile('Cara')])]
+    mount()
+    await screen.findByText('People you may know')
+    expect(screen.getByText('@gus · 2 mutuals')).toBeTruthy()
+    expect(screen.getByText('@dan · Requested today · 1 mutual')).toBeTruthy()
+    fireEvent.click(screen.getByText('Add'))
+    await waitFor(() => expect(writes()).toEqual([['/api/friends/requests', { method: 'POST', body: { userId: 'Gus' } }]]))
+  })
+
+  it('opens a person’s profile from their row', async () => {
+    mount()
+    const bob = await screen.findByText('Bob')
+    fireEvent.click(bob.closest('button')!)
+    expect(mocks.push).toHaveBeenCalledWith('FriendProfile', { username: 'bob' })
   })
 
   it('cancels a sent request from the collapsed list', async () => {
