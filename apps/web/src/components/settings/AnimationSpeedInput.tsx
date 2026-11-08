@@ -14,9 +14,14 @@ function formatSpeed(value: number): string {
 export function AnimationSpeedInput({
   value,
   onChange,
+  id,
+  'aria-describedby': describedBy,
 }: {
   value: number
   onChange: (value: number) => void
+  /** Lets an external visible label point at the input (its own label already includes that text). */
+  id?: string
+  'aria-describedby'?: string
 }) {
   const [draft, setDraft] = useState(() => formatSpeed(value))
 
@@ -35,7 +40,9 @@ export function AnimationSpeedInput({
 
   return (
     <Input
+      id={id}
       aria-label={ui("Animation speed multiplier")}
+      aria-describedby={describedBy}
       className="w-24 tabular-nums"
       type="number"
       min={ANIMATION_SPEED_MIN}

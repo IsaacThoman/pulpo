@@ -65,14 +65,14 @@ export function PersonalizationSection() {
               <div className="flex items-start gap-3">
                 <div className="min-w-0 flex-1 space-y-3">
                   <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem]">
-                    <div>
-                      <div className="mb-1 text-xs text-muted-foreground">{ui("Button title")}</div>
+                    <label className="block">
+                      <span className="mb-1 block text-xs text-muted-foreground">{ui("Button title")}</span>
                       <Input
                         value={preset.title}
                         maxLength={80}
                         onChange={(event) => update(index, { title: event.target.value })}
                       />
-                    </div>
+                    </label>
                     <div>
                       <div className="mb-1 text-xs text-muted-foreground">{ui("Accent color")}</div>
                       <div className="flex gap-2">
@@ -93,8 +93,8 @@ export function PersonalizationSection() {
                       </div>
                     </div>
                   </div>
-                  <div>
-                    <div className="mb-1 text-xs text-muted-foreground">{ui("Instructions")}</div>
+                  <label className="block">
+                    <span className="mb-1 block text-xs text-muted-foreground">{ui("Instructions")}</span>
                     <Textarea
                       rows={7}
                       value={preset.instructions}
@@ -102,13 +102,15 @@ export function PersonalizationSection() {
                       onChange={(event) => update(index, { instructions: event.target.value })}
                       placeholder={ui("Prepended when this preset is enabled.")}
                     />
-                  </div>
+                  </label>
                   <div className="flex items-center justify-between gap-4 rounded-lg border px-3 py-2">
                     <div>
-                      <div className="text-sm">{ui("Enabled by default")}</div>
-                      <div className="text-xs text-muted-foreground">{ui("Applies only while a user has no explicit choice for this preset.")}</div>
+                      <label htmlFor={`instruction-preset-${preset.id}-default`} className="block text-sm">{ui("Enabled by default")}</label>
+                      <div id={`instruction-preset-${preset.id}-default-hint`} className="text-xs text-muted-foreground">{ui("Applies only while a user has no explicit choice for this preset.")}</div>
                     </div>
                     <Switch
+                      id={`instruction-preset-${preset.id}-default`}
+                      aria-describedby={`instruction-preset-${preset.id}-default-hint`}
                       checked={preset.defaultEnabled}
                       onCheckedChange={(value) => update(index, { defaultEnabled: value })}
                     />

@@ -2,7 +2,7 @@
 import { StrictMode } from 'react'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { SaveBar } from './kit'
+import { NumField, SaveBar, SelectField, TextAreaField, TextField, Toggle } from './kit'
 
 function deferred() {
   let resolve!: () => void
@@ -78,4 +78,22 @@ it('prevents concurrent saves and allows retry after a failure', async () => {
   await act(async () => { fireEvent.click(view.getByRole('button', { name: 'Save failed — retry' })) })
   expect(onSave).toHaveBeenCalledTimes(2)
   expect(view.getByRole('button', { name: 'Saved ✓' })).toBeTruthy()
+})
+
+it('names each kit control by its visible label and describes it with its hint', () => {
+  const view = render(<>
+    <Toggle label="Enable Codex connection" hint="Allow users to connect Codex." checked={false} onChange={() => {}} />
+    <TextField label="Public URL" value="https://pulpo.test" disabled />
+    <NumField label="Max file size" value={10} suffix="MB" />
+    <SelectField label="Default user role" value="user" onChange={() => {}} options={[{ value: 'user', label: 'User' }]} />
+    <TextAreaField label="Title prompt" hint="Used to name chats." value="" onChange={() => {}} />
+  </>)
+  const toggle = view.getByRole('switch', { name: 'Enable Codex connection' })
+  expect(document.getElementById(toggle.getAttribute('aria-describedby')!)?.textContent).toBe('Allow users to connect Codex.')
+  expect(view.getByRole('textbox', { name: 'Public URL' })).toBeTruthy()
+  const size = view.getByRole('spinbutton', { name: 'Max file size' })
+  expect(document.getElementById(size.getAttribute('aria-describedby')!)?.textContent).toBe('MB')
+  expect(view.getByRole('combobox', { name: 'Default user role' })).toBeTruthy()
+  const prompt = view.getByRole('textbox', { name: 'Title prompt' })
+  expect(document.getElementById(prompt.getAttribute('aria-describedby')!)?.textContent).toBe('Used to name chats.')
 })

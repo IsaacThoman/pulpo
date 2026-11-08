@@ -1,11 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { ChevronDown, Search, Star } from 'lucide-react'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { ModelIcon } from '@/components/ModelIcon'
@@ -13,11 +9,16 @@ import { ProviderLogo } from '@/components/ProviderLogo'
 import { resolveProviderOrder, useModels } from '@/stores/models'
 import { cn } from '@/lib/utils'
 import { useSettings } from '@/stores/settings'
-import { ui } from '@/i18n/ui'
+import { ui, uit } from '@/i18n/ui'
 import { CODEX_LAB_ID } from '@/lib/catalog-model'
 import { useMenuTriggerFocus } from './use-menu-trigger-focus'
 
 type DragKind = 'model' | 'provider'
+
+/** Rail key for the Favorites view (`provider === null`). */
+const FAVORITES_TAB = '\u0000favorites'
+const REORDER_KEYS = 'Alt+ArrowUp Alt+ArrowDown'
+const railFocusRing = 'outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
 export function ModelSelector({
   value,
@@ -29,18 +30,34 @@ export function ModelSelector({
   onSelectClose?: () => void
 }) {
   const { t } = useTranslation()
+  const baseId = useId()
+  const listboxId = `${baseId}-models`
+  const hintId = `${baseId}-hint`
+  const emptyId = `${baseId}-empty`
   const menuFocus = useMenuTriggerFocus(onSelectClose)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [provider, setProvider] = useState<string | null>(null) // null = favorites
   const [confirmReset, setConfirmReset] = useState(false)
+  const [activeId, setActiveId] = useState<string | null>(null)
+  // Only highlight the active option once the keyboard is in use, so pointer users see the same hover styling as before.
+  const [keyboardNav, setKeyboardNav] = useState(false)
+  const [searchFocused, setSearchFocused] = useState(false)
+  const [announcement, setAnnouncement] = useState('')
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragKind, setDragKind] = useState<DragKind | null>(null)
   const [drop, setDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   const dragIdRef = useRef<string | null>(null)
   const dragKindRef = useRef<DragKind | null>(null)
   const didDragRef = useRef(false)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const openedByTouchRef = useRef(false)
+  const tabRefs = useRef(new Map<string, HTMLButtonElement>())
+  const refocusTabRef = useRef<string | null>(null)
   const resetConfirmationRef = useRef<HTMLDivElement | null>(null)
+  const resetConfirmButtonRef = useRef<HTMLButtonElement | null>(null)
+  const resetButtonRef = useRef<HTMLButtonElement | null>(null)
+  const restoreResetFocusRef = useRef(false)
   const favorites = useModels((s) => s.favoriteModelIds)
   const providerOrder = useModels((s) => s.providerOrder)
   const toggleFavorite = useModels((s) => s.toggleFavorite)
@@ -76,6 +93,23 @@ export function ModelSelector({
   const favoritesActive = provider === null && !searching
   const canReorderModels = favoritesActive && rows.length > 1
   const canReorderProviders = providers.length > 1
+  const activeIndex = (() => {
+    const index = rows.findIndex((m) => m.id === activeId)
+    if (index >= 0) return index
+    if (rows.length === 0) return -1
+    return searching ? 0 : Math.max(0, rows.findIndex((m) => m.id === value))
+  })()
+  const activeRow = activeIndex >= 0 ? rows[activeIndex] : undefined
+  const optionId = (index: number) => `${baseId}-option-${index}`
+  const activeOptionId = activeRow ? optionId(activeIndex) : undefined
+  const showKeyboardCursor = keyboardNav && searchFocused
+  const providerName = (id: string) => enabled.find((m) => m.providerGroupId === id)?.provider ?? ui('Provider')
+  const railTabs = [FAVORITES_TAB, ...(codexAvailable ? [CODEX_LAB_ID] : []), ...providers]
+  const currentTab = provider ?? FAVORITES_TAB
+  const emptyText = provider === null && !searching ? t('chat.noFavorites') : t('chat.noModels')
+  const liveText = announcement || (searching
+    ? rows.length === 0 ? emptyText : rows.length === 1 ? ui('1 model') : uit`${rows.length} models`
+    : '')
 
   useEffect(() => {
     if (!confirmReset) return
@@ -83,13 +117,52 @@ export function ModelSelector({
       behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
       block: 'nearest',
     })
+    resetConfirmButtonRef.current?.focus({ preventScroll: true })
   }, [confirmReset])
+
+  useEffect(() => {
+    if (confirmReset || !restoreResetFocusRef.current) return
+    restoreResetFocusRef.current = false
+    ;(resetButtonRef.current ?? inputRef.current)?.focus({ preventScroll: true })
+  }, [confirmReset])
+
+  // Keep the keyboard-active option visible while arrowing through a long list.
+  useEffect(() => {
+    if (!open || !showKeyboardCursor || !activeOptionId) return
+    document.getElementById(activeOptionId)?.scrollIntoView({ block: 'nearest' })
+  }, [open, showKeyboardCursor, activeOptionId])
+
+  // React may move a reordered tab's DOM node, which drops focus; put it back.
+  useEffect(() => {
+    const key = refocusTabRef.current
+    if (!key) return
+    refocusTabRef.current = null
+    tabRefs.current.get(key)?.focus()
+  }, [providers])
 
   const pick = (id: string) => {
     menuFocus.onSelect()
     onChange(id)
     setOpen(false)
     setQuery('')
+  }
+
+  const showProvider = (next: string | null) => {
+    setProvider(next)
+    setActiveId(null)
+    setConfirmReset(false)
+  }
+
+  const toggleFavoriteFor = (id: string) => {
+    const model = rows.find((m) => m.id === id) ?? enabled.find((m) => m.id === id)
+    const wasFavorite = favorites.includes(id)
+    // Removing a favorite from the Favorites view removes its row; keep the cursor on a neighbour.
+    if (favoritesActive && wasFavorite) {
+      const index = rows.findIndex((m) => m.id === id)
+      setActiveId(rows[index + 1]?.id ?? rows[index - 1]?.id ?? null)
+    }
+    toggleFavorite(id)
+    if (model) setAnnouncement(wasFavorite ? uit`Removed ${model.name} from favorites` : uit`Added ${model.name} to favorites`)
   }
 
   const clearDrag = () => {
@@ -120,9 +193,82 @@ export function ModelSelector({
     if (drop?.id !== id || drop.edge !== edge) setDrop({ id, edge })
   }
 
+  const onSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing) return
+    setKeyboardNav(true)
+    setAnnouncement('')
+    const move = (index: number) => {
+      const next = rows[Math.min(Math.max(index, 0), rows.length - 1)]
+      if (next) setActiveId(next.id)
+    }
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && e.altKey) {
+      // Keyboard alternative to dragging favorites.
+      e.preventDefault()
+      if (!canReorderModels || !activeRow) return
+      const up = e.key === 'ArrowUp'
+      const target = rows[activeIndex + (up ? -1 : 1)]
+      if (!target) return
+      reorderFavorites(activeRow.id, target.id, up ? 'before' : 'after')
+      setActiveId(activeRow.id)
+      setAnnouncement(uit`Moved ${activeRow.name} to position ${activeIndex + (up ? 0 : 2)} of ${rows.length}`)
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      move(activeIndex + 1)
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      move(activeIndex - 1)
+    } else if (e.key === 'PageDown' || e.key === 'PageUp') {
+      e.preventDefault()
+      move(e.key === 'PageDown' ? rows.length - 1 : 0)
+    } else if (e.key === 'Enter' && activeRow) {
+      e.preventDefault()
+      if (e.shiftKey) toggleFavoriteFor(activeRow.id)
+      else pick(activeRow.id)
+    }
+  }
+
+  const onRailKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const index = railTabs.findIndex((key) => tabRefs.current.get(key) === e.target)
+    if (index < 0) return
+    const key = railTabs[index]
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && e.altKey) {
+      // Keyboard alternative to dragging providers; Favorites and Codex stay pinned.
+      e.preventDefault()
+      const position = providers.indexOf(key)
+      const up = e.key === 'ArrowUp'
+      const target = providers[position + (up ? -1 : 1)]
+      if (position < 0 || !canReorderProviders || !target) return
+      refocusTabRef.current = key
+      reorderProviders(key, target, up ? 'before' : 'after', availableProviders)
+      setAnnouncement(uit`Moved ${providerName(key)} to position ${position + (up ? 0 : 2)} of ${providers.length}`)
+      return
+    }
+    let next = -1
+    if (e.key === 'ArrowDown') next = (index + 1) % railTabs.length
+    else if (e.key === 'ArrowUp') next = (index - 1 + railTabs.length) % railTabs.length
+    else if (e.key === 'Home') next = 0
+    else if (e.key === 'End') next = railTabs.length - 1
+    if (next < 0) return
+    e.preventDefault()
+    const nextKey = railTabs[next]
+    tabRefs.current.get(nextKey)?.focus()
+    showProvider(nextKey === FAVORITES_TAB ? null : nextKey)
+  }
+
+  const tabProps = (key: string, active: boolean) => ({
+    role: 'tab' as const,
+    'aria-selected': active,
+    'aria-controls': listboxId,
+    tabIndex: key === currentTab ? 0 : -1,
+    ref: (node: HTMLButtonElement | null) => {
+      if (node) tabRefs.current.set(key, node)
+      else tabRefs.current.delete(key)
+    },
+  })
+
   return (
     <div className="model-selector relative min-w-0">
-      <DropdownMenu
+      <Popover
         open={open}
         onOpenChange={(v) => {
           setOpen(v)
@@ -130,12 +276,30 @@ export function ModelSelector({
             setQuery('')
             setProvider(null)
             setConfirmReset(false)
+            setActiveId(null)
+            setAnnouncement('')
             clearDrag()
           }
         }}
       >
-      <DropdownMenuTrigger asChild>
-        <button className="flex max-w-full min-w-0 cursor-pointer select-none items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium transition-colors hover:bg-accent">
+      <PopoverTrigger asChild>
+        <button
+          className="flex max-w-full min-w-0 cursor-pointer select-none items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
+          aria-label={uit`Model: ${selected.name}`}
+          onPointerDown={(e) => {
+            openedByTouchRef.current = e.pointerType === 'touch'
+            setKeyboardNav(false)
+          }}
+          onKeyDown={(e) => {
+            openedByTouchRef.current = false
+            setKeyboardNav(true)
+            // Like the menu button it replaces, ArrowDown opens the picker.
+            if (e.key === 'ArrowDown' && !open) {
+              e.preventDefault()
+              setOpen(true)
+            }
+          }}
+        >
           <ModelIcon model={selected} className="size-5 shrink-0" boxed={false} />
           <span className="min-w-0 truncate">{selected.name}</span>
           <ChevronDown
@@ -145,35 +309,70 @@ export function ModelSelector({
             )}
           />
         </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent {...menuFocus.contentProps} align="start" className="w-[300px] select-none p-0">
+      </PopoverTrigger>
+      <PopoverContent
+        {...menuFocus.contentProps}
+        align="start"
+        aria-label={ui('Choose a model')}
+        className="w-[300px] select-none overflow-hidden p-0"
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          // Don't summon the on-screen keyboard for touch users; they can tap the search field.
+          if (!openedByTouchRef.current) inputRef.current?.focus()
+        }}
+      >
         {/* search */}
         <div className="flex items-center gap-2 border-b px-3">
-          <Search className="size-4 text-muted-foreground" />
+          <Search className="size-4 text-muted-foreground" aria-hidden="true" />
           <input
+            ref={inputRef}
             value={query}
+            role="combobox"
+            aria-label={t('chat.searchModels')}
+            aria-expanded="true"
+            aria-controls={listboxId}
+            aria-autocomplete="list"
+            aria-activedescendant={activeOptionId}
+            aria-describedby={rows.length === 0 ? `${emptyId} ${hintId}` : hintId}
+            aria-keyshortcuts={`Shift+Enter ${REORDER_KEYS}`}
+            autoComplete="off"
+            spellCheck={false}
             onChange={(e) => {
               setQuery(e.target.value)
+              setActiveId(null)
+              setAnnouncement('')
               setConfirmReset(false)
             }}
+            onKeyDown={onSearchKeyDown}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
             placeholder={t('chat.searchModels')}
             className="h-10 flex-1 select-text bg-transparent text-sm outline-none placeholder:select-none placeholder:text-muted-foreground"
           />
         </div>
+        <p id={hintId} hidden>
+          {ui('Use the up and down arrow keys to browse models and Enter to choose one. Shift+Enter adds or removes a favorite, and Alt with the up or down arrow reorders favorites. Press Tab to reach the providers.')}
+        </p>
+        <div role="status" className="sr-only">{liveText}</div>
 
         <div className="flex h-[264px] min-h-0">
           {/* provider rail */}
-          <div className="flex min-h-0 flex-col items-center gap-0.5 overflow-y-auto border-r px-1.5 py-2">
+          <div
+            role="tablist"
+            aria-orientation="vertical"
+            aria-label={ui('Model providers')}
+            onKeyDown={onRailKeyDown}
+            className="flex min-h-0 flex-col items-center gap-0.5 overflow-y-auto border-r px-1.5 py-2"
+          >
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  onClick={() => {
-                    setProvider(null)
-                    setConfirmReset(false)
-                  }}
+                  {...tabProps(FAVORITES_TAB, favoritesActive)}
+                  onClick={() => showProvider(null)}
                   className={cn(
-                    'group/star flex size-8 shrink-0 cursor-pointer items-center justify-center bg-transparent shadow-none outline-none ring-0 transition-transform duration-150 hover:bg-transparent focus:bg-transparent focus-visible:ring-0',
+                    'group/star flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-transparent shadow-none transition-transform duration-150 hover:bg-transparent focus:bg-transparent',
+                    railFocusRing,
                     favoritesActive
                       ? 'text-foreground'
                       : 'text-muted-foreground hover:text-amber-500'
@@ -181,6 +380,7 @@ export function ModelSelector({
                   aria-label={t('chat.favorites')}
                 >
                   <Star
+                    aria-hidden="true"
                     className="size-4 fill-none stroke-current transition-colors duration-150 group-hover/star:stroke-amber-500"
                   />
                 </button>
@@ -193,9 +393,11 @@ export function ModelSelector({
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    onClick={() => { setProvider(CODEX_LAB_ID); setConfirmReset(false) }}
+                    {...tabProps(CODEX_LAB_ID, provider === CODEX_LAB_ID && !searching)}
+                    onClick={() => showProvider(CODEX_LAB_ID)}
                     className={cn(
                       'group/prov flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-all duration-150',
+                      railFocusRing,
                       provider === CODEX_LAB_ID && !searching
                         ? 'bg-accent text-foreground shadow-sm ring-1 ring-border/60'
                         : 'text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -209,7 +411,7 @@ export function ModelSelector({
               </Tooltip>
             )}
 
-            <div className="my-1 h-px w-5 shrink-0 bg-border" />
+            <div className="my-1 h-px w-5 shrink-0 bg-border" aria-hidden="true" />
 
             {providers.map((p) => {
               const active = provider === p && !searching
@@ -223,6 +425,8 @@ export function ModelSelector({
                   <TooltipTrigger asChild>
                     <button
                       type="button"
+                      {...tabProps(p, active)}
+                      aria-keyshortcuts={canReorderProviders ? REORDER_KEYS : undefined}
                       draggable={canReorderProviders}
                       onDragStart={(e) => {
                         if (!canReorderProviders) return
@@ -243,17 +447,17 @@ export function ModelSelector({
                           didDragRef.current = false
                           return
                         }
-                        setProvider(p)
-                        setConfirmReset(false)
+                        showProvider(p)
                       }}
                       className={cn(
                         'group/prov relative flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-all duration-150',
+                        railFocusRing,
                         active
                           ? 'bg-accent text-foreground shadow-sm ring-1 ring-border/60'
                           : 'text-muted-foreground hover:bg-accent hover:text-foreground',
                         isDragging && 'opacity-40'
                       )}
-                      aria-label={p}
+                      aria-label={providerName(p)}
                     >
                       {showLineBefore && (
                         <div className="pointer-events-none absolute inset-x-1 -top-px h-0.5 rounded-full bg-foreground/35" />
@@ -262,7 +466,7 @@ export function ModelSelector({
                         <div className="pointer-events-none absolute inset-x-1 -bottom-px h-0.5 rounded-full bg-foreground/35" />
                       )}
                       <ProviderLogo
-                        provider={enabled.find((m) => m.providerGroupId === p)?.provider ?? p}
+                        provider={providerName(p)}
                         icon={enabled.find((m) => m.providerGroupId === p)?.labLogo}
                         customIcon={enabled.find((m) => m.providerGroupId === p)?.labCustomIcon}
                         variant={active ? 'filled' : 'outline'}
@@ -273,7 +477,7 @@ export function ModelSelector({
                       />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="right">{enabled.find((m) => m.providerGroupId === p)?.provider ?? p}</TooltipContent>
+                  <TooltipContent side="right">{providerName(p)}</TooltipContent>
                 </Tooltip>
               )
             })}
@@ -282,13 +486,19 @@ export function ModelSelector({
           {/* model list */}
           <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-1.5">
             {rows.length === 0 && (
-              <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-                {provider === null && !searching ? t('chat.noFavorites') : t('chat.noModels')}
+              <div id={emptyId} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                {emptyText}
               </div>
             )}
-            {rows.map((m) => {
+            <div
+              id={listboxId}
+              role="listbox"
+              aria-label={searching ? ui('Search results') : provider === null ? t('chat.favorites') : providerName(provider)}
+            >
+            {rows.map((m, index) => {
               const isFav = favorites.includes(m.id)
               const isSelected = m.id === value
+              const isActive = index === activeIndex
               const isDragging = dragKind === 'model' && dragId === m.id
               const showLineBefore =
                 dragKind === 'model' && drop?.id === m.id && drop.edge === 'before' && !isDragging
@@ -297,6 +507,10 @@ export function ModelSelector({
               return (
                 <div
                   key={m.id}
+                  id={optionId(index)}
+                  role="option"
+                  aria-selected={isSelected}
+                  aria-label={isFav ? uit`${m.name}, favorite` : m.name}
                   draggable={canReorderModels}
                   onDragStart={(e) => {
                     if (!canReorderModels) return
@@ -312,9 +526,14 @@ export function ModelSelector({
                     clearDrag()
                   }}
                   onDragEnd={clearDrag}
+                  onPointerMove={() => {
+                    if (keyboardNav) setKeyboardNav(false)
+                    if (activeId !== m.id) setActiveId(m.id)
+                  }}
                   className={cn(
                     'group relative flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors',
                     isSelected ? 'bg-accent/70' : 'hover:bg-accent',
+                    isActive && showKeyboardCursor && 'bg-accent ring-2 ring-inset ring-ring/50',
                     isDragging && 'opacity-40'
                   )}
                   onClick={() => {
@@ -336,19 +555,22 @@ export function ModelSelector({
                   )}
                   <span className="flex-1 truncate text-left text-sm">{m.name}</span>
 
-                  {/* favorite star — stronger hover */}
-                  <button
+                  {/* favorite star — stronger hover. Options can't contain focusable controls, so keyboard
+                      users toggle it with Shift+Enter (announced via the search field's description). */}
+                  <span
+                    aria-hidden="true"
+                    data-favorite-toggle={isFav ? 'remove' : 'add'}
                     className={cn(
                       'group/favorite flex size-7 cursor-pointer items-center justify-center bg-transparent transition-colors duration-150',
                       isFav
                         ? 'opacity-100 text-amber-400'
-                        : 'opacity-0 text-muted-foreground group-hover:opacity-100 hover:text-amber-500'
+                        : cn('text-muted-foreground group-hover:opacity-100 hover:text-amber-500', isActive && showKeyboardCursor ? 'opacity-100' : 'opacity-0')
                     )}
                     onClick={(e) => {
                       e.stopPropagation()
-                      toggleFavorite(m.id)
+                      toggleFavoriteFor(m.id)
+                      inputRef.current?.focus({ preventScroll: true })
                     }}
-                    aria-label={isFav ? t('chat.removeFavorite') : t('chat.addFavorite')}
                   >
                     <Star
                       className={cn(
@@ -358,29 +580,36 @@ export function ModelSelector({
                           : 'group-hover/favorite:fill-amber-400 group-hover/favorite:text-amber-500'
                       )}
                     />
-                  </button>
+                  </span>
                 </div>
               )
             })}
+            </div>
             {favoritesActive && newAccountFavoritesLoaded && !favoritesFollowDefaults && (
               confirmReset ? (
-                <div ref={resetConfirmationRef} className="mx-2 my-1.5 scroll-mb-2 rounded-md bg-muted/60 px-2.5 py-2 text-xs">
+                <div ref={resetConfirmationRef} role="group" aria-label={t('chat.resetFavorites')} className="mx-2 my-1.5 scroll-mb-2 rounded-md bg-muted/60 px-2.5 py-2 text-xs">
                   <p className="text-foreground">{t('chat.replaceFavorites')}</p>
                   <div className="mt-1.5 flex items-center gap-3">
                     <button
+                      ref={resetConfirmButtonRef}
                       type="button"
-                      className="cursor-pointer font-medium text-foreground underline-offset-4 hover:underline"
+                      className="cursor-pointer rounded-sm font-medium text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
                       onClick={() => {
                         resetFavorites()
                         setConfirmReset(false)
+                        setAnnouncement(ui('Favorites reset'))
+                        inputRef.current?.focus({ preventScroll: true })
                       }}
                     >
                       {t('chat.resetFavorites')}
                     </button>
                     <button
                       type="button"
-                      className="cursor-pointer text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                      onClick={() => setConfirmReset(false)}
+                      className="cursor-pointer rounded-sm text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      onClick={() => {
+                        restoreResetFocusRef.current = true
+                        setConfirmReset(false)
+                      }}
                     >
                       {t('common.cancel')}
                     </button>
@@ -388,8 +617,9 @@ export function ModelSelector({
                 </div>
               ) : (
                 <button
+                  ref={resetButtonRef}
                   type="button"
-                  className="mx-2 my-1 block cursor-pointer text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+                  className="mx-2 my-1 block cursor-pointer rounded-sm text-xs text-muted-foreground underline-offset-4 outline-none transition-colors hover:text-foreground hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   onClick={() => setConfirmReset(true)}
                 >
                   {t('chat.resetFavorites')}
@@ -398,12 +628,12 @@ export function ModelSelector({
             )}
           </div>
         </div>
-      </DropdownMenuContent>
-      </DropdownMenu>
+      </PopoverContent>
+      </Popover>
       {value && value !== defaultModelId && (
         <button
           type="button"
-          className="model-selector-set-default absolute left-9 top-7 cursor-pointer whitespace-nowrap text-[11px] leading-4 text-muted-foreground transition-colors hover:text-foreground"
+          className="model-selector-set-default absolute left-9 top-7 -my-1 cursor-pointer py-1 whitespace-nowrap text-[11px] leading-4 text-muted-foreground transition-colors hover:text-foreground"
           onClick={() => setSetting('defaultModelId', value)}
         > {ui("Set as default")} </button>
       )}

@@ -156,7 +156,7 @@ export function SignedInAccountsSettings({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="py-3">
-      <div className="text-sm font-medium">{ui('Signed-in accounts')}</div>
+      <h3 className="text-sm font-medium">{ui('Signed-in accounts')}</h3>
       <p className="mt-0.5 text-xs text-muted-foreground">{uit`Stay signed in to up to ${MAX_SIGNED_IN_ACCOUNTS} accounts on this device and switch between them.`}</p>
       <div className="mt-3 space-y-1">
         {accounts.map((account) => (

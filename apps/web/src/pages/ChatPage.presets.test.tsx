@@ -3,7 +3,7 @@ import 'fake-indexeddb/auto'
 import { Profiler, type ComponentProps } from 'react'
 import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate, type InitialEntry } from 'react-router-dom'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest'
 import { ComposerSync } from '@pulpo/client-core'
 import { emptyComposerState, type ComposerSnapshot, type ComposerWrite } from '@pulpo/contracts'
 import type { Model } from '@/lib/types'
@@ -103,7 +103,7 @@ function enableSync() {
 }
 function renderChat(path: InitialEntry = '/') {
   return render(<Profiler id="chat" onRender={() => {
-    const label = document.querySelector('button[aria-label="Generation options"]')?.textContent
+    const label = document.querySelector('button[aria-label^="Generation options"]')?.textContent
     if (label) renderedControls.push(label)
   }}><MemoryRouter initialEntries={[path]}><TooltipProvider><Routes>
     <Route path="/" element={<ChatPage />} />
@@ -112,17 +112,20 @@ function renderChat(path: InitialEntry = '/') {
 }
 async function selectControls(view: ReturnType<typeof renderChat>) {
   for (const choice of ['Low', 'Fast']) {
-    fireEvent.keyDown(view.getByRole('button', { name: 'Generation options' }), { key: 'ArrowDown' })
-    fireEvent.click(await view.findByRole('menuitem', { name: choice }))
+    fireEvent.keyDown(view.getByRole('button', { name: /^Generation options/ }), { key: 'ArrowDown' })
+    fireEvent.click(await view.findByRole('menuitemradio', { name: choice }))
   }
   fireEvent.keyDown(view.getByRole('button', { name: 'Agent options, Pulpo Agent' }), { key: 'ArrowDown' })
   fireEvent.click(await view.findByRole('menuitemradio', { name: 'Disabled' }))
-  await waitFor(() => expect(view.getByRole('button', { name: 'Generation options' }).textContent).toContain('Low'))
+  await waitFor(() => expect(view.getByRole('button', { name: /^Generation options/ }).textContent).toContain('Low'))
 }
 function expectControls(view: ReturnType<typeof renderChat>, temporary = false) {
-  const label = view.getByRole('button', { name: 'Generation options' }).textContent
-  expect(label).toContain('Low')
-  expect(label).toContain('Fast')
+  const trigger = view.getByRole('button', { name: /^Generation options/ })
+  expect(trigger.textContent).toContain('Low')
+  expect(trigger.textContent).toContain('Fast')
+  // The visible values are part of the trigger's name (label in name).
+  expect(trigger.getAttribute('aria-label')).toMatch(/^Generation options, .*Low/)
+  expect(trigger.getAttribute('aria-label')).toContain('Fast')
   expect(view.getByRole('button', { name: 'Agent options, Disabled' }).textContent).toContain('Disabled')
   expect(useSettings.getState().generation[model.id]).toEqual(temporary ? defaults : selected)
   expect(useSettings.getState().agentModes[model.id]).toBe(true)
@@ -145,8 +148,72 @@ it.each([false, true])('remembers new-chat preset choices without relying on a s
   clearRuntimeComposerDrafts(userId)
   const reopened = renderChat()
   await reopened.findByRole('button', { name: 'Try a suggestion' })
-  expect(reopened.getByRole('button', { name: 'Generation options' }).textContent).toContain('Low')
-  expect(reopened.getByRole('button', { name: 'Generation options' }).textContent).toContain('Fast')
+  expect(reopened.getByRole('button', { name: /^Generation options/ }).textContent).toContain('Low')
+  expect(reopened.getByRole('button', { name: /^Generation options/ }).textContent).toContain('Fast')
+})
+
+function finishResponse(changes: { error?: string } = {}) {
+  useChat.setState((state) => ({ streamingIds: [], chats: state.chats.map((chat) => ({
+    ...chat, messages: chat.messages.map((message) => message.role === 'assistant'
+      ? { ...message, done: true, content: 'Answer', ...changes } : message),
+  })) }))
+}
+
+it('announces generation without making the streamed text live', async () => {
+  fixture.showMessages = true
+  const chatId = useChat.getState().sendMessage(null, 'hello', model.id, [], false, false, {
+    targetChatId: crypto.randomUUID(), responseId: crypto.randomUUID(), presetSelections: defaults, agentMode: false,
+  })
+  const view = renderChat(`/c/${chatId}`)
+  const status = await view.findByText('Generating response…')
+  expect(status.getAttribute('role')).toBe('status')
+  expect(view.getByRole('heading', { level: 1 }).className).toContain('sr-only')
+
+  act(() => finishResponse())
+  await waitFor(() => expect(status.textContent).toBe('Response complete'))
+  expect(status.contains(view.getByText('Answer'))).toBe(false)
+})
+
+it('announces a failed reply', async () => {
+  fixture.showMessages = true
+  const chatId = useChat.getState().sendMessage(null, 'hello', model.id, [], false, false, {
+    targetChatId: crypto.randomUUID(), responseId: crypto.randomUUID(), presetSelections: defaults, agentMode: false,
+  })
+  const view = renderChat(`/c/${chatId}`)
+  const status = await view.findByText('Generating response…')
+  act(() => finishResponse({ error: 'Provider unavailable' }))
+  await waitFor(() => expect(status.textContent).toBe('Response failed'))
+  expect(view.getByRole('alert').textContent).toBe('Provider unavailable')
+})
+
+it('keeps keyboard focus in the composer after Stop', async () => {
+  Object.defineProperty(window, 'matchMedia', { configurable: true, value: (query: string) => ({ matches: query === '(pointer: fine)', addEventListener() {}, removeEventListener() {} }) })
+  onTestFinished(() => {
+    Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) })
+  })
+  fixture.showMessages = true
+  const chatId = useChat.getState().sendMessage(null, 'hello', model.id, [], false, false, {
+    targetChatId: crypto.randomUUID(), responseId: crypto.randomUUID(), presetSelections: defaults, agentMode: false,
+  })
+  const view = renderChat(`/c/${chatId}`)
+  const stop = await view.findByRole('button', { name: 'Stop generating' })
+  act(() => stop.focus())
+  fireEvent.click(stop)
+
+  await waitFor(() => expect(document.activeElement).toBe(view.getByRole('textbox', { name: 'Message' })))
+  expect(view.getByText('Generation stopped').getAttribute('role')).toBe('status')
+})
+
+it('marks the selected generation option in each group', async () => {
+  useSettings.setState({ generation: {} })
+  const view = renderChat()
+  await view.findByRole('button', { name: 'Try a suggestion' })
+  await selectControls(view)
+  fireEvent.keyDown(view.getByRole('button', { name: /^Generation options/ }), { key: 'ArrowDown' })
+  const menu = await view.findByRole('menu')
+  const checked = within(menu).getAllByRole('menuitemradio', { checked: true }).map((item) => item.textContent)
+  expect(checked).toEqual(expect.arrayContaining(['Low', 'Fast']))
+  expect(within(menu).getAllByRole('group').length).toBeGreaterThan(0)
 })
 
 it.each([
@@ -171,8 +238,8 @@ it.each([
   if (syncEnabled) await waitFor(() => expect(snapshots.has(chatId)).toBe(true))
   fireEvent.change(view.getByRole('textbox'), { target: { value: 'keep this unsent draft' } })
   for (const choice of ['Low', 'Fast']) {
-    fireEvent.keyDown(view.getByRole('button', { name: 'Generation options' }), { key: 'ArrowDown' })
-    fireEvent.click(await view.findByRole('menuitem', { name: choice }))
+    fireEvent.keyDown(view.getByRole('button', { name: /^Generation options/ }), { key: 'ArrowDown' })
+    fireEvent.click(await view.findByRole('menuitemradio', { name: choice }))
   }
   fireEvent.keyDown(view.getByRole('button', { name: `Agent options, ${initialAgentMode ? 'Pulpo Agent' : 'Disabled'}` }), { key: 'ArrowDown' })
   fireEvent.click(await view.findByRole('menuitemradio', { name: initialAgentMode ? 'Disabled' : 'Pulpo Agent' }))
@@ -203,17 +270,19 @@ it.each([
   composer.setSelectionRange(5, 11)
 
   // Select a new value, then reselect it; both should return to the same caret.
+  // The model picker is a dialog with a combobox and listbox; the others are menus.
+  const popupRole = picker === 'model' ? 'dialog' : 'menu'
   for (const repeat of [false, true]) {
-    const trigger = view.getByRole('button', { name: picker === 'presets' ? 'Generation options'
+    const trigger = view.getByRole('button', { name: picker === 'presets' ? /^Generation options/
       : picker === 'agent' ? `Agent options, ${repeat ? 'Disabled' : 'Pulpo Agent'}`
-      : repeat ? 'Other Model' : 'Test Model' })
+      : `Model: ${repeat ? 'Other Model' : 'Test Model'}` })
     fireEvent.keyDown(trigger, { key: 'ArrowDown' })
-    const menu = await view.findByRole('menu')
+    const menu = await view.findByRole(popupRole)
     if (picker === 'model') {
-      fireEvent.change(within(menu).getByRole('textbox'), { target: { value: 'Other Model' } })
-      fireEvent.click(within(menu).getByText('Other Model'))
+      fireEvent.change(within(menu).getByRole('combobox'), { target: { value: 'Other Model' } })
+      fireEvent.click(within(menu).getByRole('option', { name: 'Other Model' }))
     } else {
-      const choice = within(menu).getByRole(picker === 'agent' ? 'menuitemradio' : 'menuitem', {
+      const choice = within(menu).getByRole('menuitemradio', {
         name: picker === 'agent' ? 'Disabled' : 'Low',
       })
       if (repeat) {
@@ -227,11 +296,11 @@ it.each([
     await waitFor(() => expect(document.activeElement).toBe(composer))
     expect(composer.value).toBe('keep typing here')
     expect([composer.selectionStart, composer.selectionEnd]).toEqual([5, 11])
-    expect(view.queryByRole('menu')).toBeNull()
+    expect(view.queryByRole(popupRole)).toBeNull()
 
     // Dismissing a reopened picker should restore its trigger, not reuse the selection.
     fireEvent.keyDown(trigger, { key: 'ArrowDown' })
-    fireEvent.keyDown(await view.findByRole('menu'), { key: 'Escape' })
+    fireEvent.keyDown(await view.findByRole(popupRole), { key: 'Escape' })
     await waitFor(() => expect(document.activeElement).toBe(trigger))
   }
 })
@@ -274,8 +343,8 @@ it.each([
   if (!temporary) {
     fireEvent.click(view.getByRole('button', { name: 'New chat' }))
     await view.findByRole('button', { name: 'Try a suggestion' })
-    expect(view.getByRole('button', { name: 'Generation options' }).textContent).toContain('Low')
-    expect(view.getByRole('button', { name: 'Generation options' }).textContent).toContain('Fast')
+    expect(view.getByRole('button', { name: /^Generation options/ }).textContent).toContain('Low')
+    expect(view.getByRole('button', { name: /^Generation options/ }).textContent).toContain('Fast')
   }
 })
 
@@ -333,7 +402,7 @@ it('gives an existing synced draft priority over the last submitted controls', a
   enableSync()
   const view = renderChat(`/c/${chatId}`)
   await waitFor(() => expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('newer shared draft'))
-  const label = view.getByRole('button', { name: 'Generation options' }).textContent
+  const label = view.getByRole('button', { name: /^Generation options/ }).textContent
   expect(label).toContain('Medium')
   expect(label).toContain('Auto')
   expect(view.getByRole('button', { name: 'Agent options, Pulpo Agent' }).textContent).toContain('Pulpo Agent')

@@ -181,7 +181,7 @@ it('keeps attachments, presets, and agent controls usable while recording', asyn
   await view.recording()
   const leftControls = [
     view.getByRole('button', { name: /^(Add files or folders|Attach files)$/ }),
-    view.getByRole('button', { name: 'Generation options' }),
+    view.getByRole('button', { name: /^Generation options/ }),
     view.getByRole('button', { name: /^Agent options/ }),
   ]
   for (const control of leftControls) {
@@ -192,9 +192,9 @@ it('keeps attachments, presets, and agent controls usable while recording', asyn
   // Only the trailing actions are swapped for the dictation bar.
   expect(view.getByRole('button', { name: 'Dictate' }).closest('[inert]')).toBe(view.face('draft'))
   expect(view.getByRole('button', { name: 'Send message' }).closest('[inert]')).toBe(view.face('draft'))
-  fireEvent.keyDown(view.getByRole('button', { name: 'Generation options' }), { key: 'ArrowDown' })
-  fireEvent.click(await view.findByRole('menuitem', { name: 'High' }))
-  await waitFor(() => expect(view.getByRole('button', { name: 'Generation options' }).textContent).toContain('High'))
+  fireEvent.keyDown(view.getByRole('button', { name: /^Generation options/ }), { key: 'ArrowDown' })
+  fireEvent.click(await view.findByRole('menuitemradio', { name: 'High' }))
+  await waitFor(() => expect(view.getByRole('button', { name: /^Generation options/ }).textContent).toContain('High'))
   expect(view.dictating()).toBe(true)
   fireEvent.click(view.getByRole('button', { name: 'Finish dictation' }))
   await waitFor(() => expect(view.textarea.value).toBe('hello from dictation'))

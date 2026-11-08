@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
@@ -42,7 +42,16 @@ export function Section({
   )
 }
 
-/** horizontal label + control row */
+/** Props a field row hands its control so the visible label and hint name and describe it. */
+export interface FieldControlProps {
+  id: string
+  'aria-describedby'?: string
+}
+
+/**
+ * Horizontal label + control row. Pass a render function as children to receive the ids
+ * that tie the visible label (`<label htmlFor>`) and hint (`aria-describedby`) to the control.
+ */
 export function Field({
   label,
   hint,
@@ -51,16 +60,24 @@ export function Field({
 }: {
   label: string
   hint?: string
-  children: ReactNode
+  children: ReactNode | ((control: FieldControlProps) => ReactNode)
   indent?: boolean
 }) {
+  const baseId = useId()
+  const controlId = `${baseId}-control`
+  const hintId = hint ? `${baseId}-hint` : undefined
+  const labelsControl = typeof children === 'function'
   return (
     <div className={cn('flex min-w-0 flex-col items-stretch gap-2 @xl:flex-row @xl:items-center @xl:justify-between @xl:gap-6', indent && 'pl-4')}>
       <div className="min-w-0 wrap-anywhere">
-        <div className="text-sm">{label}</div>
-        {hint && <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
+        {labelsControl
+          ? <label htmlFor={controlId} className="block text-sm">{label}</label>
+          : <div className="text-sm">{label}</div>}
+        {hint && <div id={hintId} className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
       </div>
-      <div className="min-w-0 max-w-full self-start @xl:shrink-0 @xl:self-auto [&_input]:max-w-full [&_[data-slot=select-trigger]]:max-w-full">{children}</div>
+      <div className="min-w-0 max-w-full self-start @xl:shrink-0 @xl:self-auto [&_input]:max-w-full [&_[data-slot=select-trigger]]:max-w-full">
+        {typeof children === 'function' ? children({ id: controlId, 'aria-describedby': hintId }) : children}
+      </div>
     </div>
   )
 }
@@ -80,7 +97,7 @@ export function Toggle({
 }) {
   return (
     <Field label={label} hint={hint} indent={indent}>
-      <Switch checked={checked} onCheckedChange={onChange} />
+      {(control) => <Switch {...control} checked={checked} onCheckedChange={onChange} />}
     </Field>
   )
 }
@@ -106,13 +123,16 @@ export function TextField({
 }) {
   return (
     <Field label={label} hint={hint} indent={indent}>
-      <Input
-        className={cn('w-64', mono && 'font-mono text-xs')}
-        value={value}
-        onChange={(e) => onChange?.(e.target.value)}
-        placeholder={placeholder}
-        disabled={disabled}
-      />
+      {(control) => (
+        <Input
+          {...control}
+          className={cn('w-64', mono && 'font-mono text-xs')}
+          value={value}
+          onChange={(e) => onChange?.(e.target.value)}
+          placeholder={placeholder}
+          disabled={disabled}
+        />
+      )}
     </Field>
   )
 }
@@ -152,8 +172,10 @@ export function NumField({
 
   return (
     <Field label={label} hint={hint} indent={indent}>
-      <div className="flex items-center gap-2">
+      {(control) => <div className="flex items-center gap-2">
         <Input
+          id={control.id}
+          aria-describedby={[control['aria-describedby'], suffix ? `${control.id}-suffix` : undefined].filter(Boolean).join(' ') || undefined}
           type="number"
           min={min}
           max={max}
@@ -175,8 +197,8 @@ export function NumField({
             setDraft(normalized.toFixed(decimals))
           }}
         />
-        {suffix && <span className="text-xs text-muted-foreground">{suffix}</span>}
-      </div>
+        {suffix && <span id={`${control.id}-suffix`} className="text-xs text-muted-foreground">{suffix}</span>}
+      </div>}
     </Field>
   )
 }
@@ -205,8 +227,9 @@ export function SecretField({
   const setShow = onShowChange ?? setLocalShow
   return (
     <Field label={label} hint={hint} indent={indent}>
-      <div className="relative">
+      {(control) => <div className="relative">
         <Input
+          {...control}
           type={show ? 'text' : 'password'}
           className="w-64 pr-8 font-mono text-xs"
           value={value}
@@ -221,7 +244,7 @@ export function SecretField({
         >
           {show ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
         </button>}
-      </div>
+      </div>}
     </Field>
   )
 }
@@ -245,18 +268,20 @@ export function SelectField<T extends string>({
 }) {
   return (
     <Field label={label} hint={hint} indent={indent}>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className={width}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
-              {o.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {(control) => (
+        <Select value={value} onValueChange={onChange}>
+          <SelectTrigger {...control} className={width}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {options.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
     </Field>
   )
 }
@@ -276,11 +301,14 @@ export function TextAreaField({
   rows?: number
   mono?: boolean
 }) {
+  const baseId = useId()
   return (
     <div>
-      <div className="text-sm">{label}</div>
-      {hint && <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
+      <label htmlFor={`${baseId}-control`} className="block text-sm">{label}</label>
+      {hint && <div id={`${baseId}-hint`} className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
       <Textarea
+        id={`${baseId}-control`}
+        aria-describedby={hint ? `${baseId}-hint` : undefined}
         className={cn('mt-2', mono && 'font-mono text-xs')}
         rows={rows}
         value={value}

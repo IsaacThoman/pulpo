@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { MessageSquare, Search } from 'lucide-react'
-import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useChat } from '@/stores/chat'
 import { getCatalogModel } from '@/stores/catalog'
 import { apiRequest } from '@/lib/api'
@@ -32,6 +32,8 @@ export function SearchModal({
   const navigate = useNavigate()
   const [remote, setRemote] = useState<ServerChat[]>([])
   const escapedRef = useRef(false)
+  const listboxId = useId()
+  const optionId = (index: number) => `${listboxId}-option-${index}`
 
   useEffect(() => {
     if (open) {
@@ -81,6 +83,11 @@ export function SearchModal({
     setCursor((current) => Math.min(current, Math.max(0, results.length - 1)))
   }, [results.length])
 
+  // Focus stays in the input, so keep the active option visible as the arrow keys move it.
+  useEffect(() => {
+    document.getElementById(`${listboxId}-option-${cursor}`)?.scrollIntoView?.({ block: 'nearest' })
+  }, [cursor, listboxId])
+
   const go = (idx: number) => {
     const c = results[idx]
     if (!c) return
@@ -93,16 +100,24 @@ export function SearchModal({
       <DialogContent
         className="top-[20%] flex max-h-[calc(80dvh-1rem)] translate-y-0 flex-col gap-0 overflow-hidden p-0 sm:max-w-xl"
         showCloseButton={false}
+        aria-describedby={undefined}
         onEscapeKeyDown={() => { escapedRef.current = true }}
         onCloseAutoFocus={(event) => {
           // Escaping search means "back to typing", not back to the search trigger.
           if (escapedRef.current && focusComposer()) event.preventDefault()
         }}
       >
+        <DialogTitle className="sr-only">{ui("Search chats")}</DialogTitle>
         <div className="flex items-center gap-2 border-b px-4">
-          <Search className="size-4 text-muted-foreground" />
+          <Search aria-hidden="true" className="size-4 text-muted-foreground" />
           <input
             autoFocus
+            role="combobox"
+            aria-label={ui("Search chats and messages")}
+            aria-autocomplete="list"
+            aria-expanded={results.length > 0}
+            aria-controls={results.length > 0 ? listboxId : undefined}
+            aria-activedescendant={results[cursor] ? optionId(cursor) : undefined}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value.slice(0, MAX_QUERY_LENGTH))
@@ -122,15 +137,24 @@ export function SearchModal({
             placeholder={ui("Search chats and messages…")}
             className="h-12 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
-          <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{ui("esc")}</kbd>
+          <kbd aria-hidden="true" className="rounded border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{ui("esc")}</kbd>
+        </div>
+        <div role="status" className="sr-only">
+          {!query.trim() ? '' : results.length === 0 ? ui("No results") : results.length === 1 ? ui("1 result") : ui("{{count}} results", { count: results.length })}
         </div>
         <div className="max-h-[320px] min-h-0 overflow-y-auto p-1.5">
           {results.length === 0 && (
             <div className="px-3 py-8 text-center text-sm text-muted-foreground">{ui("No results")}</div>
           )}
+          {results.length > 0 && <div id={listboxId} role="listbox" aria-label={ui("Chats")}>
           {results.map((c, i) => (
             <button
               key={c.id}
+              id={optionId(i)}
+              type="button"
+              role="option"
+              aria-selected={i === cursor}
+              tabIndex={-1}
               className={cn(
                 'flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-2 text-left text-sm',
                 i === cursor ? 'bg-accent' : 'hover:bg-accent/60'
@@ -144,6 +168,7 @@ export function SearchModal({
               <span className="text-xs text-muted-foreground">{timeAgo(c.updatedAt)}</span>
             </button>
           ))}
+          </div>}
         </div>
       </DialogContent>
     </Dialog>

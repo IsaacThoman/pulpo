@@ -116,7 +116,7 @@ function QuestionDots({ quiz, progress, onSelect }: { quiz: Quiz; progress: Quiz
               'flex size-8 cursor-pointer items-center justify-center rounded-full text-sm tabular-nums transition-colors',
               chosen === undefined && 'bg-muted text-muted-foreground hover:text-foreground',
               chosen !== undefined && chosen === question.answer && 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
-              chosen !== undefined && chosen !== question.answer && 'bg-destructive/15 text-destructive',
+              chosen !== undefined && chosen !== question.answer && 'bg-destructive/10 text-destructive',
               current && 'ring-2 ring-primary/60',
             )}
           >
@@ -232,7 +232,7 @@ function FlashcardFace({ side, hidden, back = false, children }: { side: string;
       aria-hidden={hidden}
       data-testid={back ? 'quiz-flashcard-back' : 'quiz-flashcard-front'}
       className={cn(
-        'col-start-1 row-start-1 flex min-h-48 flex-col items-center justify-center gap-3 rounded-xl border bg-muted/30 px-6 py-8 backface-hidden transition-colors group-hover/flashcard:bg-muted/50 group-focus-visible/flashcard:ring-[3px] group-focus-visible/flashcard:ring-ring/50',
+        'col-start-1 row-start-1 flex min-h-48 flex-col items-center justify-center gap-3 rounded-xl border bg-muted/30 px-6 py-8 backface-hidden transition-colors group-hover/flashcard:bg-muted/50 group-focus-visible/flashcard:ring-2 group-focus-visible/flashcard:ring-ring',
         back && 'rotate-y-180',
       )}
     >
