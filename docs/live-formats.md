@@ -198,10 +198,10 @@ Fields the editor doesn't model are kept: unknown keys anywhere, metadata, and w
   - Cells can be dragged to move them, and collaborators' cursors and cells show.
   - The active cell's toolbar has duplicate, move, insert above and below, delete, and a menu (hide code or outputs, clear outputs, cut, copy, paste, split, merge). Its menus and the toolbar's give the keyboard back to the notebook when they close.
   - Find and replace (Ctrl/Cmd+F, Ctrl+H; also from a cell, seeded with its selected text) opens a bar above the cells with the match count, previous and next (Enter, Shift+Enter), match case, whole words, and regular expressions. Matches are marked in the cells; a match in rendered Markdown shows that cell's source. Escape closes it and leaves the match selected in its cell.
-  - The table of contents lists the Markdown headings, marks the active cell's section, and goes to a heading on click (over the cells in the side panel).
+  - The table of contents lists the Markdown headings, marks the active cell's section, and goes to a heading on click. It stays open from one notebook to the next, except in the side panel, where it floats over the cells and opens only when asked.
   - View options: line numbers (Shift+L) and wrapping long lines in code cells, which are this browser's preferences, and collapse or expand all code or outputs, which the notebook records. Viewers who can't edit can still open hidden code or outputs for themselves; the notebook keeps them hidden.
   - Outputs taller than 28rem scroll inside their cell, with a toggle (or Shift+O) to show them in full.
-  - Ctrl/Cmd+C, X, and V work on selected cells in command mode; pasting text copied elsewhere adds a code cell.
+  - Ctrl/Cmd+C, X, and V work on selected cells in command mode; pasting text copied elsewhere adds a code cell. Text selected in an output or rendered Markdown copies as text instead.
   - The status bar shows `Ln, Col` while editing and `Cell n of m` otherwise.
   - **Run with agent** opens a new chat with the notebook attached for direct edits and asks the agent to run it.
 - **On mobile** (`editor/notebook`). The same core is drawn for phones:

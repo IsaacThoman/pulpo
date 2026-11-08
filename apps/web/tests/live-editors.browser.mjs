@@ -59,6 +59,8 @@ try {
   const notebookList = (page) => page.locator('[data-replica="a"]').getByRole('list', { name: 'Notebook cells' })
   const active = (page) => page.locator('[data-replica="a"] [data-cell-key][data-active]')
   const shot = async (page, name) => { if (screenshots) await page.screenshot({ path: join(screenshots, `${name}.png`) }) }
+  // A chosen menu item closes its menu with an animation; keys pressed meanwhile still go to the menu.
+  const menuClosed = (page) => page.getByRole('menu').waitFor({ state: 'detached' })
   const focused = (page) => page.evaluate(() => {
     const element = document.activeElement
     return { tag: element?.tagName, name: element?.getAttribute('name'), label: element?.getAttribute('aria-label'), role: element?.getAttribute('role'), editor: Boolean(element?.closest('.cm-editor')) }
@@ -143,6 +145,7 @@ try {
     await page.keyboard.press(`${mod}+End`)
     await page.getByRole('button', { name: 'Indentation' }).click()
     await page.getByRole('menuitem', { name: 'Tab width 4' }).click()
+    await menuClosed(page)
     await page.keyboard.type('x')
     assert.ok((await page.evaluate(() => window.harness.text())).endsWith('x'), 'typing reaches the document')
     await page.context().close()
@@ -209,12 +212,14 @@ try {
     const count = (await cells(page)).length
     await page.getByRole('button', { name: 'Cell type' }).click()
     await page.getByRole('menuitem', { name: 'Markdown' }).click()
+    await menuClosed(page)
     await page.keyboard.press('b')
     assert.equal((await cells(page)).length, count + 1, 'B inserts a cell right after choosing from the menu')
     await page.keyboard.press('d')
     await page.keyboard.press('d')
     await page.getByRole('button', { name: 'View options' }).click()
     await page.getByRole('menuitemcheckbox', { name: /Line numbers/ }).click()
+    await menuClosed(page)
     await page.locator('[data-replica="a"] .cm-lineNumbers').first().waitFor()
     await page.keyboard.press('j')
     await page.keyboard.press('Shift+l')
@@ -229,11 +234,13 @@ try {
     await page.keyboard.press('Escape')
     await plot.getByRole('button', { name: 'More cell actions' }).click()
     await page.getByRole('menuitem', { name: 'Hide code' }).click()
+    await menuClosed(page)
     await plot.getByRole('button', { name: 'Source hidden' }).waitFor()
     assert.equal((await cells(page))[3].sourceHidden, true)
     assert.equal((await focused(page)).role, 'list', 'the menu gives the keyboard back')
     await page.getByRole('button', { name: 'View options' }).click()
     await page.getByRole('menuitem', { name: 'Collapse all outputs' }).click()
+    await menuClosed(page)
     const hidden = (await cells(page)).filter((cell) => cell.outputsHidden).length
     assert.ok(hidden >= 2, `${hidden} cells with hidden outputs`)
     await page.locator('[data-replica="a"]').getByRole('button', { name: 'Undo' }).click()
@@ -273,6 +280,14 @@ try {
     await page.keyboard.type('x = 1')
     await page.keyboard.press('Control+m')
     await page.keyboard.press('a')
+    // Ctrl+M M with Ctrl still held makes Markdown, as Ctrl+M Ctrl+B would insert.
+    await page.keyboard.down('Control')
+    await page.keyboard.press('m')
+    await page.keyboard.press('m')
+    await page.keyboard.up('Control')
+    assert.equal((await cells(page))[1].type, 'markdown')
+    await page.keyboard.press('Control+m')
+    await page.keyboard.press('y')
     const after = await cells(page)
     assert.deepEqual(after.map((cell) => cell.source), ['## Title', '', 'x = 1'])
     assert.equal(await active(page).getAttribute('data-mode'), 'edit')
@@ -306,6 +321,15 @@ try {
     await page.waitForFunction((expected) => window.harness.cells().length === expected, count + 2)
     assert.equal((await cells(page))[2].source, 'print("pasted from elsewhere")')
     assert.equal((await cells(page))[2].type, 'code')
+    // Text selected in an output copies as text, as anywhere on a page; no cells are copied.
+    const stream = page.locator('[data-replica="a"] [data-output="stream"]').first()
+    await stream.click({ clickCount: 3 })
+    const selected = await page.evaluate(() => String(window.getSelection()))
+    assert.ok(selected.trim(), 'output text is selected')
+    assert.equal((await focused(page)).role, 'list', 'the cell list has the keyboard')
+    await page.keyboard.press(`${mod}+c`)
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), selected)
+    assert.equal((await cells(page)).length, count + 2)
     await page.context().close()
   })
 

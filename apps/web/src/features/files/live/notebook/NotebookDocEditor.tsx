@@ -423,7 +423,7 @@ const NotebookCell = memo(function NotebookCell(props: CellProps) {
             <RenderedMarkdown controller={controller} cell={cell} assets={assets} />
           )}
         </div>
-        {active && editable && <CellToolbar controller={controller} cell={cell} mode={mode} canPaste={controller.getState().canPaste} focusNotebook={view.focusNotebook} />}
+        {active && editable && <CellToolbar controller={controller} cell={cell} mode={mode} focusNotebook={view.focusNotebook} />}
       </div>
       {cell.type === 'code' && <CellOutputs cell={cell} assets={assets} dark={dark} controller={controller} editable={editable} />}
     </section>
@@ -486,6 +486,12 @@ function writeClipboard(text: string) {
   if (text) void navigator.clipboard?.writeText(text).catch(() => undefined)
 }
 
+/** Whether text is selected on the page inside an element (an output's or rendered Markdown's, say). */
+function textSelectedIn(element: HTMLElement): boolean {
+  const selection = window.getSelection()
+  return Boolean(selection && !selection.isCollapsed && selection.toString() && element.contains(selection.anchorNode))
+}
+
 /**
  * Jupyter notebooks, edited collaboratively: cells in CodeMirror (code highlighted in the kernel's
  * language, Markdown rendered when not editing), outputs as the notebook viewer shows them (HTML
@@ -504,7 +510,11 @@ export function NotebookDocEditor({ session, editable, width, toolbarSlot, asset
   const [find, setFind] = useState<NotebookFindRequest | null>(null)
   const [lineNumbers, setLineNumbers] = useStoredFlag(NOTEBOOK_PREFERENCES.lineNumbers)
   const [wrap, setWrap] = useStoredFlag(NOTEBOOK_PREFERENCES.wrap)
-  const [outline, setOutline] = useStoredFlag(NOTEBOOK_PREFERENCES.outline)
+  const [outlinePinned, setOutlinePinned] = useStoredFlag(NOTEBOOK_PREFERENCES.outline)
+  // In the side panel the outline floats over the cells, so it opens only when asked there.
+  const [outlineFloating, setOutlineFloating] = useState(false)
+  const outline = width === 'fill' ? outlineFloating : outlinePinned
+  const setOutline = width === 'fill' ? setOutlineFloating : setOutlinePinned
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(() => new Set())
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   const [cursor] = useState(() => new CursorStore())
@@ -557,6 +567,27 @@ export function NotebookDocEditor({ session, editable, width, toolbarSlot, asset
     const selected = state ? state.sliceDoc(state.selection.main.from, state.selection.main.to) : ''
     setFind((current) => ({ mode, text: selected.includes('\n') ? '' : selected, nonce: (current?.nonce ?? 0) + 1 }))
   }, [])
+
+  // Cells are memoized, so what they read from the view changes only with what it holds, not on every render.
+  const view = useMemo<NotebookView | null>(() => search && {
+    lineNumbers,
+    wrap,
+    search,
+    cursor,
+    onFind: (key, command) => {
+      if ((command === 'next' || command === 'previous') && findOpen.current) search.step(command === 'next' ? 1 : -1)
+      else openFind(command === 'replace' ? 'replace' : 'find', key)
+    },
+    revealed,
+    reveal: (id) => setRevealed((current) => new Set(current).add(id)),
+    expanded,
+    toggleExpanded: (key) => setExpanded((current) => {
+      const next = new Set(current)
+      if (!next.delete(key)) next.add(key)
+      return next
+    }),
+    focusNotebook,
+  }, [lineNumbers, wrap, search, cursor, openFind, revealed, expanded, focusNotebook])
 
   // Keys that change the view, not the notebook (find, line numbers, help, output scrolling).
   useEffect(() => {
@@ -615,7 +646,7 @@ export function NotebookDocEditor({ session, editable, width, toolbarSlot, asset
     }
   }, [active, mode])
 
-  if (!controller || !state || !search) return null
+  if (!controller || !state || !search || !view) return null
   const selected = new Set(state.selected)
   const canEdit = editable && !state.readOnly
   const run = (action: () => void) => () => {
@@ -624,9 +655,16 @@ export function NotebookDocEditor({ session, editable, width, toolbarSlot, asset
   }
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (state.mode !== 'command' || event.target !== root.current) return
+    // A pending Ctrl+M chord takes the next key, whatever it is.
+    if (controller.handleChordKey(event)) {
+      event.preventDefault()
+      return
+    }
     const key = event.key.length === 1 ? event.key.toLowerCase() : event.key
     const plain = !event.metaKey && !event.ctrlKey && !event.altKey
     const primary = (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey
+    // Ctrl/Cmd+C copies text selected in an output or rendered Markdown, as it does anywhere else.
+    if (primary && (key === 'c' || key === 'x') && textSelectedIn(root.current)) return
     if ((plain || primary) && (key === 'c' || key === 'x')) {
       event.preventDefault()
       writeClipboard(key === 'c' ? controller.copy() : controller.cut())
@@ -649,25 +687,6 @@ export function NotebookDocEditor({ session, editable, width, toolbarSlot, asset
     controller.select(match.key, { mode: 'edit' })
     editor.select(match.from, match.to)
     editor.focus('keep')
-  }
-  const view: NotebookView = {
-    lineNumbers,
-    wrap,
-    search,
-    cursor,
-    onFind: (key, command) => {
-      if ((command === 'next' || command === 'previous') && findOpen.current) search.step(command === 'next' ? 1 : -1)
-      else openFind(command === 'replace' ? 'replace' : 'find', key)
-    },
-    revealed,
-    reveal: (id) => setRevealed((current) => new Set(current).add(id)),
-    expanded,
-    toggleExpanded: (key) => setExpanded((current) => {
-      const next = new Set(current)
-      if (!next.delete(key)) next.add(key)
-      return next
-    }),
-    focusNotebook,
   }
   const activeIndex = state.cells.findIndex((cell) => cell.key === state.active)
   const activeCell = state.cells.find((cell) => cell.key === state.active)

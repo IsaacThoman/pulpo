@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 import type { NotebookCellState, NotebookController, NotebookEditorState } from '@pulpo/client-core/office/notebook/view'
 import { ArrowDown, ArrowUp, BetweenHorizontalEnd, BetweenHorizontalStart, CopyPlus, Ellipsis, Trash2 } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -14,15 +14,16 @@ function writeClipboard(text: string) {
  * The active cell's own toolbar, as JupyterLab 4 and VS Code show one: duplicate, move, insert
  * above and below, delete, and a menu with the rest (hide code or outputs, clipboard, merge).
  */
-export function CellToolbar({ controller, cell, mode, canPaste, focusNotebook }: {
+export function CellToolbar({ controller, cell, mode, focusNotebook }: {
   controller: NotebookController
   cell: NotebookCellState
   mode: NotebookEditorState['mode']
-  canPaste: boolean
   focusNotebook: () => void
 }) {
   // The toolbar shows on hover or focus; it stays while its menu (which takes focus) is open.
   const [menu, setMenu] = useState(false)
+  // Read here: its memoized cell does not re-render when something is copied.
+  const canPaste = useSyncExternalStore(controller.subscribe, () => controller.getState().canPaste)
   const hasOutputs = cell.type === 'code' && Boolean(cell.outputs && cell.outputs.json !== '[]')
   const act = (action: () => void) => () => {
     action()

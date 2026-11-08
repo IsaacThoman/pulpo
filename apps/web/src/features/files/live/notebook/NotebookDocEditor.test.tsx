@@ -92,12 +92,12 @@ it('refreshes a Markdown image when only its attachment asset changes', async ()
   }
 })
 
-async function openNotebook(cells: object[], editable = true) {
+async function openNotebook(cells: object[], editable = true, width: 'narrow' | 'fill' = 'narrow') {
   const doc = new Y.Doc()
   const assets = new MemoryLiveAssetStore()
   const provider = new SocketIOYProvider('notebook', doc)
   await notebookCodec.importFile(doc, new TextEncoder().encode(JSON.stringify({ nbformat: 4, nbformat_minor: 5, metadata: {}, cells })), { name: 'a.ipynb', assets })
-  const view = render(<NotebookDocEditor session={{ doc, provider }} name="a.ipynb" editable={editable} width="narrow" assets={assets} />)
+  const view = render(<NotebookDocEditor session={{ doc, provider }} name="a.ipynb" editable={editable} width={width} assets={assets} />)
   const list = await screen.findByRole('list', { name: 'Notebook cells' })
   return {
     doc,
@@ -152,6 +152,77 @@ describe('notebook editor parity', () => {
       await waitFor(() => expect(notebook.sources()).toEqual(['first', 'first', 'second']))
     } finally {
       notebook.dispose()
+    }
+  })
+
+  it('leaves Ctrl+C to the browser while text is selected in an output', async () => {
+    const notebook = await openNotebook([code('a', 'print(42)', [{ output_type: 'stream', name: 'stdout', text: 'the answer is 42' }])])
+    try {
+      const output = await screen.findByText('the answer is 42')
+      notebook.list.focus()
+      const range = document.createRange()
+      range.selectNodeContents(output)
+      window.getSelection()!.removeAllRanges()
+      window.getSelection()!.addRange(range)
+      // Not prevented: the browser copies the selected output text, and no cells are copied.
+      expect(fireEvent.keyDown(notebook.list, { key: 'c', ctrlKey: true })).toBe(true)
+      expect(fireEvent.keyDown(notebook.list, { key: 'x', ctrlKey: true })).toBe(true)
+      expect(notebook.sources()).toEqual(['print(42)'])
+      expect(screen.getByRole('button', { name: 'Paste cells below' }).hasAttribute('disabled')).toBe(true)
+      // Without a selection, Ctrl+C copies the cells.
+      window.getSelection()!.removeAllRanges()
+      expect(fireEvent.keyDown(notebook.list, { key: 'c', ctrlKey: true })).toBe(false)
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Paste cells below' }).hasAttribute('disabled')).toBe(false))
+    } finally {
+      window.getSelection()?.removeAllRanges()
+      notebook.dispose()
+    }
+  })
+
+  it('ends a Ctrl+M chord on any other key, so Ctrl+M then X cuts nothing', async () => {
+    const notebook = await openNotebook([code('a', 'first'), code('b', 'second')])
+    try {
+      notebook.list.focus()
+      fireEvent.keyDown(notebook.list, { key: 'm', ctrlKey: true })
+      expect(fireEvent.keyDown(notebook.list, { key: 'x' })).toBe(false)
+      expect(notebook.sources()).toEqual(['first', 'second'])
+      // The chord is over: X cuts again.
+      fireEvent.keyDown(notebook.list, { key: 'x' })
+      await waitFor(() => expect(notebook.sources()).toEqual(['second']))
+    } finally {
+      notebook.dispose()
+    }
+  })
+
+  it('offers pasting in the cell\'s own menu as soon as cells are copied', async () => {
+    const notebook = await openNotebook([code('a', 'first')])
+    try {
+      notebook.list.focus()
+      fireEvent.keyDown(notebook.list, { key: 'c' })
+      fireEvent.keyDown(screen.getByRole('button', { name: 'More cell actions' }), { key: 'ArrowDown' })
+      const paste = await screen.findByRole('menuitem', { name: /Paste cells below/ })
+      expect(paste.hasAttribute('data-disabled')).toBe(false)
+    } finally {
+      notebook.dispose()
+    }
+  })
+
+  it('opens the table of contents from the remembered choice, but not over the cells in the side panel', async () => {
+    localStorage.setItem('pulpo:notebook:outline', 'true')
+    try {
+      const wide = await openNotebook([{ id: 'h', cell_type: 'markdown', metadata: {}, source: '# Results' }])
+      expect(wide.view.container.querySelector('[data-notebook-outline]')).toBeTruthy()
+      wide.dispose()
+      const side = await openNotebook([{ id: 'h', cell_type: 'markdown', metadata: {}, source: '# Results' }], true, 'fill')
+      try {
+        expect(side.view.container.querySelector('[data-notebook-outline]')).toBeNull()
+        fireEvent.click(screen.getByRole('button', { name: 'Table of contents' }))
+        expect(side.view.container.querySelector('[data-notebook-outline]')).toBeTruthy()
+      } finally {
+        side.dispose()
+      }
+    } finally {
+      localStorage.removeItem('pulpo:notebook:outline')
     }
   })
 
