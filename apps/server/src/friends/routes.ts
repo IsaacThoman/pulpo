@@ -1,4 +1,5 @@
-import { and, eq, inArray, ne, or, sql } from 'drizzle-orm'
+import { and, asc, countDistinct, desc, eq, inArray, ne, notInArray, or, sql } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import type { FriendRelationship } from '@pulpo/contracts'
@@ -58,6 +59,73 @@ async function requireAvailableTarget(id: string, currentUserId: string) {
   return target
 }
 
+type FriendshipEndpoints = Pick<typeof friendships.$inferSelect, 'userAId' | 'userBId'>
+
+export function mutualFriendIdsForTargets(
+  rows: FriendshipEndpoints[],
+  targetUserIds: string[],
+  currentFriendIds: string[],
+): Map<string, string[]> {
+  const targets = new Set(targetUserIds)
+  const currentFriends = new Set(currentFriendIds)
+  const result = new Map(targetUserIds.map((id) => [id, new Set<string>()]))
+
+  for (const row of rows) {
+    if (targets.has(row.userAId) && currentFriends.has(row.userBId)) result.get(row.userAId)?.add(row.userBId)
+    if (targets.has(row.userBId) && currentFriends.has(row.userAId)) result.get(row.userBId)?.add(row.userAId)
+  }
+
+  return new Map([...result].map(([targetId, ids]) => [targetId, [...ids].sort()]))
+}
+
+async function mutualFriendIdsByTarget(targetUserIds: string[], currentFriendIds: string[]): Promise<Map<string, string[]>> {
+  const targets = [...new Set(targetUserIds)]
+  const currentFriends = [...new Set(currentFriendIds)]
+  if (!targets.length || !currentFriends.length) return new Map(targets.map((id) => [id, []]))
+  const rows = await db.select({ userAId: friendships.userAId, userBId: friendships.userBId })
+    .from(friendships)
+    .where(and(
+      eq(friendships.status, 'accepted'),
+      or(
+        and(inArray(friendships.userAId, targets), inArray(friendships.userBId, currentFriends)),
+        and(inArray(friendships.userBId, targets), inArray(friendships.userAId, currentFriends)),
+      ),
+    ))
+  return mutualFriendIdsForTargets(rows, targets, currentFriends)
+}
+
+async function friendSuggestionCandidates(currentFriendIds: string[], excludedUserIds: string[]) {
+  if (!currentFriendIds.length) return []
+  const suggestionConnections = alias(friendships, 'suggestion_connections')
+  const userAIsFriend = inArray(suggestionConnections.userAId, currentFriendIds)
+  const candidateUserId = sql<string>`case
+    when ${userAIsFriend} then ${suggestionConnections.userBId}
+    else ${suggestionConnections.userAId}
+  end`
+  const mutualFriendId = sql<string>`case
+    when ${userAIsFriend} then ${suggestionConnections.userAId}
+    else ${suggestionConnections.userBId}
+  end`
+  const mutualCount = countDistinct(mutualFriendId)
+
+  return db.select({ target: users, mutualCount })
+    .from(suggestionConnections)
+    .innerJoin(users, eq(users.id, candidateUserId))
+    .where(and(
+      eq(suggestionConnections.status, 'accepted'),
+      or(
+        inArray(suggestionConnections.userAId, currentFriendIds),
+        inArray(suggestionConnections.userBId, currentFriendIds),
+      ),
+      notInArray(users.id, excludedUserIds),
+      eq(users.blocked, false),
+      ne(users.role, 'pending'),
+    ))
+    .groupBy(users.id)
+    .orderBy(desc(mutualCount), asc(sql`lower(${users.username})`))
+    .limit(6)
+}
+
 export async function friendUserIds(userId: string): Promise<string[]> {
   const [rows, blocks] = await Promise.all([
     db.select({ userAId: friendships.userAId, userBId: friendships.userBId })
@@ -91,6 +159,32 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
       ? await db.select().from(users).where(inArray(users.id, profileIds))
       : []
     const byId = new Map(profiles.map((profile) => [profile.id, profile]))
+    const visibleConnections = connectionRows.filter((row) => {
+      const otherId = row.userAId === user.id ? row.userBId : row.userAId
+      const profile = byId.get(otherId)
+      return !blockedIds.has(otherId) && profile?.blocked === false && profile.role !== 'pending'
+    })
+    const currentFriendIds = visibleConnections
+      .filter((row) => row.status === 'accepted')
+      .map((row) => row.userAId === user.id ? row.userBId : row.userAId)
+    const excludedUserIds = [...new Set([
+      user.id,
+      ...connectionRows.map((row) => row.userAId === user.id ? row.userBId : row.userAId),
+      ...blockedIds,
+    ])]
+    const suggestionRows = await friendSuggestionCandidates(currentFriendIds, excludedUserIds)
+    const pendingUserIds = visibleConnections
+      .filter((row) => row.status === 'pending')
+      .map((row) => row.userAId === user.id ? row.userBId : row.userAId)
+    const mutualIds = await mutualFriendIdsByTarget(
+      [...pendingUserIds, ...suggestionRows.map((row) => row.target.id)],
+      currentFriendIds,
+    )
+    const mutualFriends = (targetId: string) => (mutualIds.get(targetId) ?? [])
+      .map((id) => byId.get(id))
+      .filter((profile): profile is typeof users.$inferSelect => Boolean(profile))
+      .map(publicFriendProfile)
+      .sort((left, right) => left.displayName.localeCompare(right.displayName) || left.username.localeCompare(right.username))
     const connection = (row: typeof friendships.$inferSelect) => {
       const otherId = row.userAId === user.id ? row.userBId : row.userAId
       const profile = byId.get(otherId)
@@ -99,18 +193,49 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
         profile: publicFriendProfile(profile),
         requestedAt: row.createdAt.toISOString(),
         acceptedAt: row.acceptedAt?.toISOString() ?? null,
+        ...(row.status === 'pending' ? { mutualFriends: mutualFriends(otherId) } : {}),
       } : null
     }
-    const visibleConnections = connectionRows.filter((row) => {
-      const otherId = row.userAId === user.id ? row.userBId : row.userAId
-      const profile = byId.get(otherId)
-      return !blockedIds.has(otherId) && profile?.blocked === false && profile.role !== 'pending'
-    })
     return {
       friends: visibleConnections.filter((row) => row.status === 'accepted').map(connection).filter(Boolean),
       incoming: visibleConnections.filter((row) => row.status === 'pending' && row.requestedByUserId !== user.id).map(connection).filter(Boolean),
       outgoing: visibleConnections.filter((row) => row.status === 'pending' && row.requestedByUserId === user.id).map(connection).filter(Boolean),
       blocked: blockRows.map((row) => byId.get(row.blockedUserId)).filter(Boolean).map((profile) => publicFriendProfile(profile!)),
+      suggestions: suggestionRows.map((row) => ({
+        profile: publicFriendProfile(row.target),
+        mutualFriends: mutualFriends(row.target.id),
+      })),
+    }
+  })
+
+  app.get('/api/friends/:userId/profile', async (request) => {
+    const user = requireUser(request)
+    const { userId } = z.object({ userId: z.uuid() }).parse(request.params)
+    const target = await requireAvailableTarget(userId, user.id)
+    const [relationship, currentFriendRows] = await Promise.all([
+      db.select().from(friendships).where(and(pairWhere(user.id, userId), eq(friendships.status, 'accepted'))).limit(1),
+      db.select({ userAId: friendships.userAId, userBId: friendships.userBId }).from(friendships).where(and(
+        eq(friendships.status, 'accepted'),
+        or(eq(friendships.userAId, user.id), eq(friendships.userBId, user.id)),
+      )),
+    ])
+    const friendship = relationship[0]
+    if (!friendship) throw notFound('Friend')
+    const currentFriendIds = currentFriendRows.map((row) => row.userAId === user.id ? row.userBId : row.userAId)
+    const mutualIds = (await mutualFriendIdsByTarget([userId], currentFriendIds)).get(userId) ?? []
+    const mutualRows = mutualIds.length
+      ? await db.select().from(users).where(and(
+        inArray(users.id, mutualIds),
+        eq(users.blocked, false),
+        ne(users.role, 'pending'),
+      ))
+      : []
+    return {
+      profile: publicFriendProfile(target),
+      friendsSince: (friendship.acceptedAt ?? friendship.updatedAt).toISOString(),
+      mutualFriends: mutualRows
+        .map(publicFriendProfile)
+        .sort((left, right) => left.displayName.localeCompare(right.displayName) || left.username.localeCompare(right.username)),
     }
   })
 

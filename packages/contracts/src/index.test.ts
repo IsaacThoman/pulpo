@@ -8,6 +8,7 @@ import {
   parseAgentCostLimit,
   findCostLimitItem,
   findCostLimitItems,
+  friendsListSchema,
   adminUsageEventSchema,
   animationSpeedSchema,
   automaticChatExpirationSchema,
@@ -61,6 +62,36 @@ import {
   type ResponseEvent,
   type ResponseSnapshot,
 } from './index.js'
+
+describe('friends discovery contracts', () => {
+  const profile = (id: string) => ({
+    id,
+    displayName: `Person ${id.slice(-1)}`,
+    username: `person_${id.slice(-1)}`,
+    avatarUrl: null,
+    profileColor: null,
+  })
+
+  it('accepts mutual-friend context while limiting suggestions to six', () => {
+    const friend = profile('00000000-0000-4000-8000-000000000001')
+    const base = { friends: [], incoming: [], outgoing: [], blocked: [] }
+    expect(friendsListSchema.parse(base).suggestions).toBeUndefined()
+    expect(friendsListSchema.safeParse({
+      ...base,
+      suggestions: Array.from({ length: 6 }, (_, index) => ({
+        profile: profile(`00000000-0000-4000-8000-00000000001${index}`),
+        mutualFriends: [friend],
+      })),
+    }).success).toBe(true)
+    expect(friendsListSchema.safeParse({
+      ...base,
+      suggestions: Array.from({ length: 7 }, (_, index) => ({
+        profile: profile(`00000000-0000-4000-8000-00000000002${index}`),
+        mutualFriends: [friend],
+      })),
+    }).success).toBe(false)
+  })
+})
 
 describe('model composer warnings', () => {
   it('defaults to no warning with a 30 day dismissal and validates patches', () => {

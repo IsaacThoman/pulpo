@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 import type { FriendConnection, FriendProfile, FriendsList, PoolInvitation, PoolMember, PoolSummary } from '@pulpo/contracts'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { queryClient } from '@/lib/query-client'
 import i18n from '@/i18n'
@@ -37,7 +38,7 @@ beforeEach(() => {
 })
 afterEach(async () => { cleanup(); queryClient.clear(); vi.restoreAllMocks(); await i18n.changeLanguage('en-US') })
 async function mount() {
-  render(<QueryClientProvider client={queryClient}><FriendsPage /></QueryClientProvider>)
+  render(<QueryClientProvider client={queryClient}><MemoryRouter><FriendsPage /></MemoryRouter></QueryClientProvider>)
   await screen.findAllByText('Bob')
   await waitFor(() => expect(queryClient.getQueryState(['pool', 'me'])?.fetchStatus).toBe('idle'))
 }
@@ -66,6 +67,25 @@ describe('combined Friends and Pool page', () => {
     const headings = screen.getAllByRole('heading', { level: 2 }).map((node) => node.textContent)
     expect(headings.indexOf('Friend requests')).toBeLessThan(headings.indexOf('Pool'))
     expect(headings.indexOf('Pool')).toBeLessThan(headings.indexOf('Friends'))
+  })
+
+  it('shows mutual friends on requests and suggestions, sends a suggested request, and links accepted friends', async () => {
+    friends.incoming = [{ ...connection('Request'), acceptedAt: null, mutualFriends: [profile('Alice'), profile('Bob')] }]
+    friends.suggestions = [{ profile: profile('Carol'), mutualFriends: [profile('Alice'), profile('Bob')] }]
+    await mount()
+
+    const requestRegion = screen.getByRole('heading', { name: 'Friend requests' }).closest('section')!
+    expect(within(requestRegion).getByText('Mutual friends:')).toBeTruthy()
+    expect(within(requestRegion).getByRole('link', { name: 'Alice' }).getAttribute('href')).toBe('/friends/Alice')
+    const suggestionRegion = screen.getByRole('heading', { name: 'People you may know' }).closest('section')!
+    expect(within(suggestionRegion).getByText('Carol')).toBeTruthy()
+    expect(within(suggestionRegion).getByRole('link', { name: 'Bob' }).getAttribute('href')).toBe('/friends/Bob')
+    expect(within(friendsRegion()).getByRole('link', { name: 'Bob' }).getAttribute('href')).toBe('/friends/Bob')
+
+    mutation = () => { friends.suggestions = []; return { status: 'pending' } }
+    fireEvent.click(within(suggestionRegion).getByRole('button', { name: 'Add friend' }))
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'People you may know' })).toBeNull())
+    expect(writes()[0]).toEqual(['/api/friends/requests', { method: 'POST', body: { userId: 'Carol' } }])
   })
 
   it('shows the Pool\'s combined shared usage and the viewer\'s own 5-hour shared limit', async () => {
@@ -247,7 +267,7 @@ describe('combined Friends and Pool page', () => {
   it('keeps Pool usable if Friends loading fails', async () => {
     const request = mocks.request.getMockImplementation()!
     mocks.request.mockImplementation((path, options) => path === '/api/friends' ? Promise.reject(new Error('Friends unavailable')) : request(path, options))
-    render(<QueryClientProvider client={queryClient}><FriendsPage /></QueryClientProvider>)
+    render(<QueryClientProvider client={queryClient}><MemoryRouter><FriendsPage /></MemoryRouter></QueryClientProvider>)
     await screen.findByText('Friends unavailable')
     await waitFor(() => expect(within(poolRegion()).getByText('Alice')).toBeTruthy())
     await menu('Alice')
