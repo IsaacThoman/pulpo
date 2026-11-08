@@ -212,8 +212,10 @@ export function editMenuEntries(host: PresentationMenuHost): MenuEntry[] {
   const { controller } = host
   const readOnly = controller.readOnly
   const sorter = host.view === 'sorter'
-  const editor = sorter ? undefined : slideTextEditor(controller)
-  const shapes = !sorter && controller.state.shapes.length > 0
+  // Text being typed (on the slide or in the speaker notes) is what Delete and Select all act on;
+  // the shapes stay selected while the notes have focus, and must not be deleted from there.
+  const editor = sorter ? undefined : slideTextEditor(controller) ?? controller.notesEditor
+  const shapes = !sorter && !controller.notesFocused && controller.state.shapes.length > 0
   const deleteText = () => editor?.run((state, dispatch) => {
     if (state.selection.empty) return false
     dispatch?.(state.tr.deleteSelection())
@@ -230,7 +232,7 @@ export function editMenuEntries(host: PresentationMenuHost): MenuEntry[] {
     },
     {
       type: 'item', id: 'delete', label: ui("Delete"), icon: Trash2,
-      disabled: readOnly || (sorter ? controller.state.slides.length >= controller.slideKeys().length : !shapes),
+      disabled: readOnly || (sorter ? controller.state.slides.length >= controller.slideKeys().length : !(editor || shapes)),
       onSelect: () => {
         if (sorter) controller.deleteSlides()
         else if (editor) deleteText()

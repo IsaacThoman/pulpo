@@ -289,7 +289,8 @@ function PresentationEditorView({ controller, startInShow, toolbarSlot, classNam
     },
   }
 
-  // The view core asks for the find bar (Cmd/Ctrl+F, Ctrl+H or Cmd+Shift+H) and the link dialog (Cmd/Ctrl+K).
+  // The view core asks for the find bar (Cmd/Ctrl+F, Ctrl+H or Cmd+Shift+H) and the link dialog
+  // (Cmd/Ctrl+K); in text on a Mac only the Cmd keys, so Control keeps its text-editing meaning.
   useEffect(() => controller.onRequest((request) => {
     if (request === 'link') hostRef.current.openLink()
     else hostRef.current.openFind(request)
@@ -480,7 +481,6 @@ function PresentationEditorView({ controller, startInShow, toolbarSlot, classNam
         {...(linkDialog.url ? { url: linkDialog.url } : {})}
         showText={linkDialog.showText}
         editing={Boolean(linkDialog.url)}
-        description={ui("A web address or an email address.")}
         onApply={({ text, url }) => { controller.setLink(url, text || undefined) }}
         onRemove={() => { controller.setLink(undefined) }}
         returnFocus={focusDocument}

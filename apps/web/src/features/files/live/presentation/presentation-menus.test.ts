@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import type { LiveAssetStore } from '@pulpo/client-core/office'
 import { blankPresentation, presentationCodec, presentationCommands } from '@pulpo/client-core/office/presentation'
-import { PresentationController } from '@pulpo/client-core/office/presentation/view'
+import { NotesEditor, PresentationController } from '@pulpo/client-core/office/presentation/view'
 import type { MenuEntry, MenuItemEntry } from '../chrome/menu'
 import { firstMatchFrom } from './find'
 import {
@@ -37,6 +37,10 @@ function memoryAssets(): LiveAssetStore {
     },
   }
 }
+
+// ProseMirror scrolls the selection into view; jsdom has no layout, so ranges measure as empty.
+Range.prototype.getClientRects = () => ({ length: 0, item: () => null, [Symbol.iterator]: [][Symbol.iterator] }) as unknown as DOMRectList
+Range.prototype.getBoundingClientRect = () => ({ x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0, toJSON: () => ({}) }) as DOMRect
 
 const controllers: PresentationController[] = []
 afterEach(() => {
@@ -114,6 +118,38 @@ describe('presentation menus', () => {
     expect(controller.state.shapes).toHaveLength(count + 1)
     item(editMenuEntries(host(controller)), 'find').onSelect()
     item(editMenuEntries(host(controller)), 'replace').onSelect()
+  })
+
+  it('Edit ▸ Delete and Select all act on the speaker notes being typed in, not on the slide', async () => {
+    const controller = await deck()
+    const slide = controller.state.slide!
+    const shapes = controller.slide(slide)!.shapes.map((shape) => shape.key)
+    // The title stays selected while the notes take the keyboard, as in PowerPoint.
+    controller.selectShapes([shapes[0]!])
+    const element = document.createElement('div')
+    document.body.append(element)
+    const notes = new NotesEditor(element, controller)
+    try {
+      element.querySelector('.pp-text-editor')!.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+      const editor = controller.notesEditor!
+      expect(controller.notesFocused).toBe(true)
+      editor.view.dispatch(editor.view.state.tr.insertText('hello world'))
+      editor.select(1, 7)
+      const entries = editMenuEntries(host(controller))
+      expect(item(entries, 'cut').disabled).toBe(true)
+      expect(item(entries, 'delete').disabled).toBe(false)
+      item(entries, 'delete').onSelect()
+      expect(controller.slide(slide)!.shapes.map((shape) => shape.key)).toEqual(shapes)
+      expect(editor.view.state.doc.textContent).toBe('world')
+      item(editMenuEntries(host(controller)), 'select-all').onSelect()
+      expect(controller.notesFocused).toBe(true)
+      expect(controller.state.shapes).toEqual([shapes[0]])
+      const { from, to } = editor.view.state.selection
+      expect(editor.view.state.doc.textBetween(from, to)).toBe('world')
+    } finally {
+      notes.destroy()
+      element.remove()
+    }
   })
 
   it('in the sorter, Edit acts on the selected slides', async () => {

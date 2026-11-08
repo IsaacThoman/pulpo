@@ -172,13 +172,14 @@ export interface FormatState {
 }
 
 /**
- * A link as typed into a link box: http(s) and mailto URLs as they are, bare addresses and
- * domains completed (`example.com` → `https://example.com`). Other schemes are refused.
+ * A link as typed into a link box: http(s), mailto, and tel URLs as they are (the schemes the
+ * shared link dialog lets through), bare addresses and domains completed (`example.com` →
+ * `https://example.com`). Other schemes are refused.
  */
 export function normalizeLink(input: string): string | undefined {
   const value = input.trim()
   if (!value || /\s/.test(value)) return undefined
-  if (/^(https?:\/\/|mailto:)/i.test(value)) return value
+  if (/^(https?:\/\/|mailto:|tel:.)/i.test(value)) return value
   if (/^[^@/:]+@[^@/:]+\.[^@/:]+$/.test(value)) return `mailto:${value}`
   if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return undefined
   if (/^([\p{L}\p{N}-]+\.)+\p{L}{2,}(:\d+)?([/?#].*)?$/u.test(value)) return `https://${value}`
@@ -267,8 +268,8 @@ export class PresentationController {
 
   /**
    * Listens for what the views ask the host to show: Mod+F (`find`), Ctrl+H or Cmd+Shift+H
-   * (`replace`), Mod+K on text (`link`, prefill it from `formatState().link`). While nothing
-   * listens, those keys keep their browser meaning.
+   * (`replace`), Mod+K on text (`link`, prefill it from `formatState().link`); in text on a Mac
+   * only the Cmd keys. While nothing listens, those keys keep their browser meaning.
    */
   onRequest(listener: (request: PresentationRequest) => void): () => void {
     this.requestListeners.add(listener)
@@ -1112,6 +1113,11 @@ export class PresentationController {
   /** Whether text formatting currently goes to the speaker notes. */
   get notesFocused(): boolean {
     return this.notesTarget !== undefined && !this.notesTarget.view.isDestroyed
+  }
+
+  /** The speaker notes editor while it is the text target (menus act on its selection then). */
+  get notesEditor(): InlineTextEditor | undefined {
+    return this.notesFocused ? this.notesTarget : undefined
   }
 
   /** The editor formatting applies to, if any. */

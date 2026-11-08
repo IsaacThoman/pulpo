@@ -3850,7 +3850,6 @@ const esUi: Record<string, string> = {
   "Resize shape to fit text": "Ajustar el tamaño de la forma al texto",
   "Wrap text in shape": "Ajustar el texto en la forma",
   "Show filmstrip": "Mostrar tira de diapositivas",
-  "A web address or an email address.": "Una dirección web o de correo electrónico.",
   "Replaced {{count}}": "Reemplazos: {{count}}",
   "Find in presentation": "Buscar en la presentación",
   "Status bar": "Barra de estado",
