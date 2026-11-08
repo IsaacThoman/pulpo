@@ -6863,7 +6863,8 @@ function ChatView({
                           <NativeMenuPicker
                             label={preset.name}
                             selection={presetSelections[preset.id]}
-                            options={preset.choices}
+                            // Choice icons are web icon names, not SF Symbols; the menu shows labels only.
+                            options={preset.choices.map((choice) => ({ id: choice.id, label: choice.label }))}
                             onSelect={(choiceId) => onSelectPreset(preset.id, choiceId)}
                           />
                         </SwiftUISection>
