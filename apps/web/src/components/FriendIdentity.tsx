@@ -1,6 +1,8 @@
+import type { ReactNode } from 'react'
 import type { FriendProfile, FriendSearchResult } from '@pulpo/contracts'
 import { Link } from 'react-router-dom'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { friendSearchHighlight } from '@/lib/friend-search'
 import { cn } from '@/lib/utils'
 import { ui, uit } from '@/i18n/ui'
@@ -9,6 +11,34 @@ function HighlightedText({ value, query }: { value: string; query: string }) {
   return friendSearchHighlight(value, query).map((part, index) => part.match
     ? <mark key={index} className="bg-transparent font-semibold text-foreground">{part.text}</mark>
     : <span key={index}>{part.text}</span>)
+}
+
+function ProfileHoverCard({ profile, children }: { profile: FriendProfile; children: ReactNode }) {
+  return <TooltipProvider delayDuration={250}>
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent
+        side="top"
+        sideOffset={8}
+        className="w-64 rounded-xl border bg-popover p-4 text-popover-foreground shadow-lg [&>svg]:hidden"
+      >
+        <p className="mb-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{ui('Profile')}</p>
+        <div className="flex min-w-0 items-center gap-3">
+          <ProfileAvatar
+            name={profile.displayName}
+            avatarUrl={profile.avatarUrl}
+            shape="circle"
+            className="size-12"
+            fallbackClassName="text-sm"
+          />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium">{profile.displayName}</p>
+            <p className="truncate text-xs text-muted-foreground">@{profile.username}</p>
+          </div>
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  </TooltipProvider>
 }
 
 export function ProfileIdentity({ profile, detail, query, matchedOn, href }: {
@@ -29,7 +59,10 @@ export function ProfileIdentity({ profile, detail, query, matchedOn, href }: {
       </div>
     </>
   const className = 'group/profile flex min-w-0 items-center gap-3 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-  return href ? <Link to={href} className={className} aria-label={profile.displayName}>{content}</Link> : <div className={className}>{content}</div>
+  const identity = href
+    ? <Link to={href} className={className} aria-label={profile.displayName}>{content}</Link>
+    : <div className={className}>{content}</div>
+  return <ProfileHoverCard profile={profile}>{identity}</ProfileHoverCard>
 }
 
 export function MutualFriends({ friends, className }: { friends: FriendProfile[]; className?: string }) {
@@ -37,21 +70,21 @@ export function MutualFriends({ friends, className }: { friends: FriendProfile[]
   const label = `${friends.length === 1 ? ui('Mutual friend:') : ui('Mutual friends:')} ${friends.map((friend) => friend.displayName).join(', ')}`
   return <div className={cn('flex shrink-0 items-center gap-2', className)} role="group" aria-label={label}>
     <div className="flex -space-x-2">
-      {friends.map((friend) => <Link
-        key={friend.id}
-        to={`/${friend.username}`}
-        className="relative rounded-full focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        aria-label={friend.displayName}
-        title={friend.displayName}
-      >
-        <ProfileAvatar
-          name={friend.displayName}
-          avatarUrl={friend.avatarUrl}
-          shape="circle"
-          className="size-6 ring-2 ring-background"
-          fallbackClassName="text-[9px]"
-        />
-      </Link>)}
+      {friends.map((friend) => <ProfileHoverCard key={friend.id} profile={friend}>
+        <Link
+          to={`/${friend.username}`}
+          className="relative rounded-full focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={friend.displayName}
+        >
+          <ProfileAvatar
+            name={friend.displayName}
+            avatarUrl={friend.avatarUrl}
+            shape="circle"
+            className="size-6 ring-2 ring-background"
+            fallbackClassName="text-[9px]"
+          />
+        </Link>
+      </ProfileHoverCard>)}
     </div>
     <span className="text-xs text-muted-foreground" aria-hidden>
       {friends.length === 1 ? ui('1 mutual') : uit`${friends.length} mutuals`}
