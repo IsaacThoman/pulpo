@@ -23,7 +23,11 @@ function ProfileHoverCard({ profile, children }: { profile: FriendProfile; child
         hideArrow
         className="w-64 rounded-xl border bg-popover p-4 text-popover-foreground shadow-lg"
       >
-        <div className="flex min-w-0 items-center gap-3">
+        <Link
+          to={`/${profile.username}`}
+          className="group/hover-profile flex min-w-0 items-center gap-3 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={profile.displayName}
+        >
           <ProfileAvatar
             name={profile.displayName}
             avatarUrl={profile.avatarUrl}
@@ -32,10 +36,10 @@ function ProfileHoverCard({ profile, children }: { profile: FriendProfile; child
             fallbackClassName="text-sm"
           />
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{profile.displayName}</p>
+            <p className="truncate text-sm font-medium group-hover/hover-profile:underline">{profile.displayName}</p>
             <p className="truncate text-xs text-muted-foreground">@{profile.username}</p>
           </div>
-        </div>
+        </Link>
       </TooltipContent>
     </Tooltip>
   </TooltipProvider>

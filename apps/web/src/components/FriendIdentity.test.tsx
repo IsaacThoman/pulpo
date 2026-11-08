@@ -30,6 +30,7 @@ async function expectProfileCard(trigger: HTMLElement, displayName: string, user
   expect(card.querySelector('[data-slot="tooltip-arrow"]')).toBeNull()
   expect(within(card).getByText(displayName)).toBeTruthy()
   expect(within(card).getByText(`@${username}`)).toBeTruthy()
+  expect(within(card).getByRole('link', { name: displayName }).getAttribute('href')).toBe(`/${username}`)
   if (interaction === 'focus') fireEvent.blur(trigger)
 }
 
