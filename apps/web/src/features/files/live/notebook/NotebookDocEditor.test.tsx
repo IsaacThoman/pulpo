@@ -169,7 +169,15 @@ describe('notebook editor parity', () => {
       expect(fireEvent.keyDown(notebook.list, { key: 'x', ctrlKey: true })).toBe(true)
       expect(notebook.sources()).toEqual(['print(42)'])
       expect(screen.getByRole('button', { name: 'Paste cells below' }).hasAttribute('disabled')).toBe(true)
-      // Without a selection, Ctrl+C copies the cells.
+      // A selection left in a cell's editor (after Escape) does not count, nor does none at all.
+      await waitFor(() => expect(notebook.view.container.querySelector('.cm-content')).toBeTruthy())
+      range.selectNodeContents(notebook.view.container.querySelector('.cm-content')!)
+      window.getSelection()!.removeAllRanges()
+      window.getSelection()!.addRange(range)
+      notebook.list.focus()
+      expect(fireEvent.keyDown(notebook.list, { key: 'c', ctrlKey: true })).toBe(false)
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Paste cells below' }).hasAttribute('disabled')).toBe(false))
+      act(() => clearNotebookClipboard())
       window.getSelection()!.removeAllRanges()
       expect(fireEvent.keyDown(notebook.list, { key: 'c', ctrlKey: true })).toBe(false)
       await waitFor(() => expect(screen.getByRole('button', { name: 'Paste cells below' }).hasAttribute('disabled')).toBe(false))

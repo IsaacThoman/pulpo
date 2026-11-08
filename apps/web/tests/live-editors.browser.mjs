@@ -330,6 +330,13 @@ try {
     await page.keyboard.press(`${mod}+c`)
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), selected)
     assert.equal((await cells(page)).length, count + 2)
+    // Text left selected in a cell's editor after Escape does not count: Ctrl+X cuts the cell.
+    await page.locator('[data-replica="a"] [data-cell="code"]').first().locator('.cm-content').click()
+    await page.keyboard.press('Shift+Home')
+    await page.keyboard.press('Escape')
+    assert.ok((await page.evaluate(() => String(window.getSelection()))).trim(), 'the editor\'s text stays selected')
+    await page.keyboard.press(`${mod}+x`)
+    await page.waitForFunction((expected) => window.harness.cells().length === expected, count + 1)
     await page.context().close()
   })
 

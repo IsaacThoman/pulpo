@@ -486,10 +486,15 @@ function writeClipboard(text: string) {
   if (text) void navigator.clipboard?.writeText(text).catch(() => undefined)
 }
 
-/** Whether text is selected on the page inside an element (an output's or rendered Markdown's, say). */
+/**
+ * Whether text is selected in an output or rendered Markdown inside an element. A cell editor's
+ * selection does not count: it stays on the page after Escape, when C copies the cell.
+ */
 function textSelectedIn(element: HTMLElement): boolean {
   const selection = window.getSelection()
-  return Boolean(selection && !selection.isCollapsed && selection.toString() && element.contains(selection.anchorNode))
+  const anchor = selection?.anchorNode
+  const node = anchor instanceof Element ? anchor : anchor?.parentElement
+  return Boolean(selection && !selection.isCollapsed && selection.toString() && node && element.contains(node) && !node.closest('.cm-editor'))
 }
 
 /**
