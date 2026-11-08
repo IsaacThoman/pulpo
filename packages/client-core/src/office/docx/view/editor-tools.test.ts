@@ -626,6 +626,56 @@ describe('format painter', () => {
     expect(isBold(6, 9)).toBe(true)
     expect(editor.state().formatPainter).toBe(false)
   })
+
+  it('stays armed when Shift is pressed and released without selecting', () => {
+    setBody(editor.view, [schema.node('paragraph', null, [schema.text('Bold', [bold]), schema.text(' one two')])], 1)
+    editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, 1, 5)))
+    editor.formatPainter()
+    const shift = (type: 'keydown' | 'keyup') => editor.view.dom.dispatchEvent(new KeyboardEvent(type, { bubbles: true, key: 'Shift' }))
+    shift('keydown')
+    shift('keyup')
+    expect(editor.state().formatPainter).toBe(true)
+    shift('keydown')
+    editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, 6, 9)))
+    shift('keyup')
+    expect(isBold(6, 9)).toBe(true)
+    expect(editor.state().formatPainter).toBe(false)
+  })
+
+  it('turns off when the document becomes read-only', () => {
+    setBody(editor.view, [p('Text')], 2)
+    editor.formatPainter()
+    editor.setMode('viewing')
+    expect(editor.state().formatPainter).toBe(false)
+    expect(document.querySelector('.docx-painting')).toBeNull()
+    expect(editor.formatPainter()).toBe(false)
+    editor.setMode('editing')
+    editor.formatPainter()
+    editor.setReadOnly(true)
+    expect(editor.state().formatPainter).toBe(false)
+  })
+
+  it('copies a paragraph format only with the paragraph mark, as Word does', () => {
+    const heading = () => schema.node('paragraph', { pStyle: 'Heading1' }, [schema.text('Big', [bold]), schema.text(' title')])
+    setBody(editor.view, [heading(), p('Body text here')], 1)
+    const body = () => editor.view.state.doc.child(1)
+    // Part of the heading copies its text format; the body paragraph keeps its style.
+    editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, 1, 4)))
+    editor.formatPainter()
+    const start = editor.view.state.doc.child(0).nodeSize
+    editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, start + 1, start + 5)))
+    editor.view.dom.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    editor.view.dom.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }))
+    expect(isBold(start + 1, start + 5)).toBe(true)
+    expect(body().attrs.pStyle).toBeNull()
+    // The whole heading (or a cursor in it) copies its paragraph format too.
+    editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, 1, start - 1)))
+    editor.formatPainter()
+    editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, start + 6, start + 10)))
+    editor.view.dom.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+    editor.view.dom.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }))
+    expect(body().attrs.pStyle).toBe('Heading1')
+  })
 })
 
 describe('review navigation', () => {

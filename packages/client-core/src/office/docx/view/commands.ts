@@ -1451,7 +1451,12 @@ export interface CopiedFormat {
 }
 
 export function copyFormat(state: EditorState): CopiedFormat {
-  const paragraph = selectedParagraphs(state)[0]?.node
+  // As in Word, the paragraph's format comes along only with its paragraph mark: from a cursor, a
+  // whole paragraph, or a selection past a paragraph's end. Part of a paragraph copies the text format.
+  const { selection } = state
+  const { $from, $to } = selection
+  const withMark = selection.empty || $from.parent !== $to.parent || ($from.parentOffset === 0 && $to.parentOffset === $to.parent.content.size)
+  const paragraph = withMark ? selectedParagraphs(state)[0]?.node : undefined
   const attrs: Record<string, unknown> = {}
   if (paragraph) {
     attrs.pStyle = paragraph.attrs.pStyle
@@ -1474,9 +1479,9 @@ export const pasteFormat = (format: CopiedFormat, range?: { from: number; to: nu
       return next
     })
   }
-  // Whole paragraphs selected (or a cursor) take the paragraph format too, as in Word.
-  let paragraphs = selectedParagraphs(state)
-  if (range) {
+  // The paragraphs painted (or the cursor's) take a copied paragraph format too, as in Word.
+  let paragraphs = Object.keys(format.paragraph).length ? selectedParagraphs(state) : []
+  if (range && paragraphs.length) {
     const $from = state.doc.resolve(range.from)
     paragraphs = $from.parent.type.name === 'paragraph' ? [{ node: $from.parent, pos: $from.before() }] : []
   }

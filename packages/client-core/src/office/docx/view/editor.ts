@@ -4,7 +4,7 @@ import { dropCursor } from '@tiptap/pm/dropcursor'
 import { gapCursor } from '@tiptap/pm/gapcursor'
 import { keymap } from '@tiptap/pm/keymap'
 import { Fragment, Slice, type Node as ProseMirrorNode } from '@tiptap/pm/model'
-import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Transaction, type SelectionBookmark } from '@tiptap/pm/state'
+import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Selection, type Transaction, type SelectionBookmark } from '@tiptap/pm/state'
 import {
   addColumnAfter,
   addColumnBefore,
@@ -234,6 +234,11 @@ function selectionInRevision(state: EditorState): boolean {
   return found
 }
 
+/** Reads a selection the browser just made (keys, pointer) before ProseMirror's own selectionchange handling does. */
+function flushSelection(view: EditorView): void {
+  ;(view as unknown as { domObserver?: { flush?: () => void } }).domObserver?.flush?.()
+}
+
 /** Picture files on a clipboard or a drop, in order. */
 function imageFiles(data: DataTransfer | null | undefined): File[] {
   if (!data?.files?.length) return []
@@ -392,6 +397,8 @@ export class DocxEditor {
   /** Format painter: what it copied, from where, and whether it stays on. */
   private painter: { format: CopiedFormat; sticky: boolean; storyId: string | null; from: number; to: number } | null = null
   private pointerInText = false
+  /** The selection when Shift went down, so releasing it paints only a selection it changed. */
+  private shiftSelection: Selection | null = null
   /** Where the flow column starts on the canvas, from the last print layout. */
   private flowTop = 0
   private layoutMode: DocxLayout
@@ -460,8 +467,17 @@ export class DocxEditor {
       this.pointerInText = false
       if (started && event.button === 0 && this.painter) this.paintSoon()
     })
+    // Only a selection Shift changed: pressing and releasing it alone keeps the painter armed.
+    this.root.addEventListener('keydown', (event) => {
+      if (event.key !== 'Shift' || event.repeat || !this.painter) return
+      flushSelection(this.activeView)
+      this.shiftSelection = this.activeView.state.selection
+    })
     this.root.addEventListener('keyup', (event) => {
-      if (event.key === 'Shift' && this.painter && !this.activeView.state.selection.empty) this.paintSoon()
+      if (event.key !== 'Shift' || !this.painter) return
+      const before = this.shiftSelection
+      this.shiftSelection = null
+      this.paintSoon({ unchanged: before })
     })
 
     const dispatch = (view: EditorView, tr: Transaction) => this.dispatch(view, tr)
@@ -1419,6 +1435,7 @@ export class DocxEditor {
    * Called again before painting, it applies to a selection made otherwise, or turns off.
    */
   formatPainter(options: { sticky?: boolean } = {}): boolean {
+    if (this.readOnly) return false
     const view = this.activeView
     if (!this.painter) {
       const { from, to } = view.state.selection
@@ -1443,12 +1460,17 @@ export class DocxEditor {
   }
 
   /** Paints once the browser has settled the selection a pointer or key just made. */
-  private paintSoon(): void {
+  /**
+   * Paints once the browser has settled the selection a pointer or key just made. A keyboard
+   * selection (`unchanged` given) paints only when it is not empty and differs from that one.
+   */
+  private paintSoon(keyboard?: { unchanged: Selection | null }): void {
     requestAnimationFrame(() => {
       if (!this.painter || this.destroyed) return
       const view = this.activeView
-      // Read the selection the browser made before ProseMirror's own selectionchange handling runs.
-      ;(view as unknown as { domObserver?: { flush?: () => void } }).domObserver?.flush?.()
+      flushSelection(view)
+      const { selection } = view.state
+      if (keyboard && (selection.empty || (keyboard.unchanged && selection.eq(keyboard.unchanged)))) return
       this.paint()
     })
   }
@@ -1951,6 +1973,8 @@ export class DocxEditor {
     this.view.setProps({ editable: () => !this.readOnly })
     this.storyEditor?.view.setProps({ editable: () => !this.readOnly })
     this.root.classList.toggle('docx-suggesting', mode === 'suggesting')
+    // A read-only document has nothing to paint.
+    if (this.readOnly) this.cancelFormatPainter()
     this.emit('update')
   }
 
@@ -2415,6 +2439,7 @@ export class DocxEditor {
     else if (this.modeValue === 'viewing') this.modeValue = 'editing'
     this.view.setProps({ editable: () => !this.readOnly })
     this.storyEditor?.view.setProps({ editable: () => !this.readOnly })
+    if (readOnly) this.cancelFormatPainter()
     this.emit('update')
   }
 
