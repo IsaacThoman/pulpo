@@ -69,7 +69,7 @@ try {
   const openDeck = async (page, id) => {
     await page.goto(`${base}/files/d/${id}`)
     await page.locator('.pp-canvas .pp-slide').first().waitFor({ timeout: 20_000 })
-    await page.getByText('Synced').waitFor({ timeout: 15_000 })
+    await page.locator('[data-sync-state="synced"]').waitFor({ timeout: 15_000 })
   }
   const deckText = (page) => page.evaluate(() => [...document.querySelectorAll('.pp-thumbs .pp-thumb')].length)
   const exportOf = async (id) => Buffer.from(await (await context.request.fetch(`${base}/api/files/${id}/export`)).body())
@@ -85,14 +85,15 @@ try {
   await first.goto(`${base}/files`)
   await first.getByRole('button', { name: 'New', exact: true }).click()
   await first.getByRole('menuitem', { name: 'New presentation' }).click()
-  // The new file is named in place; renaming selects the name without its extension.
-  await first.waitForFunction(() => document.activeElement?.tagName === 'INPUT')
+  // The new file opens in the editor; its title selects the name without the extension.
+  await first.waitForURL(/\/files\/d\//)
+  await first.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Document name')
   await first.keyboard.type(`Pitch ${unique}`)
   await first.keyboard.press('Enter')
-  await first.getByText(`Pitch ${unique}`).first().dblclick()
+  await first.waitForFunction((name) => document.querySelector('input[aria-label="Document name"]')?.value === name, `Pitch ${unique}.pptx`)
   await first.locator('.pp-canvas .pp-slide').first().waitFor({ timeout: 20_000 })
   const id = new URL(first.url()).pathname.split('/').pop()
-  await first.getByText('Synced').waitFor({ timeout: 15_000 })
+  await first.locator('[data-sync-state="synced"]').waitFor({ timeout: 15_000 })
   assert.equal(await deckText(first), 1)
 
   // Type a title in the first tab.
@@ -123,7 +124,7 @@ try {
 
   // Reloading shows what was stored.
   await first.waitForTimeout(500)
-  await first.getByText('Synced').waitFor()
+  await first.locator('[data-sync-state="synced"]').waitFor()
   await first.reload()
   await first.locator('.pp-canvas .pp-slide').first().waitFor({ timeout: 20_000 })
   await first.locator('.pp-canvas').getByText('Quarterly review').waitFor({ timeout: 15_000 })
@@ -207,7 +208,7 @@ try {
   await context.setOffline(false)
   await first.locator('.pp-thumbs .pp-thumb').first().getByText('Agent title').waitFor({ timeout: 30_000 })
   await first.waitForTimeout(500)
-  await first.getByText('Synced').waitFor()
+  await first.locator('[data-sync-state="synced"]').waitFor()
   const merged = await textOf(id)
   assert.match(merged, /Agent title/)
   assert.match(merged, /Agenda/)

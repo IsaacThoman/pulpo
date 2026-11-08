@@ -70,7 +70,7 @@ try {
   const openFile = async (page, id) => {
     await page.goto(`${base}/files/d/${id}`)
     await page.locator('.cm-content').waitFor()
-    await page.getByText('Synced').waitFor({ timeout: 15_000 })
+    await page.locator('[data-sync-state="synced"]').waitFor({ timeout: 15_000 })
   }
 
   // A new code file opens in the editor, with its language and the file's encoding shown.
@@ -113,7 +113,7 @@ try {
 
   // The edit is stored: once synced, a reload shows it.
   await first.waitForTimeout(200)
-  await first.getByText('Synced').waitFor()
+  await first.locator('[data-sync-state="synced"]').waitFor()
   await first.reload()
   await first.locator('.cm-content').waitFor()
   await waitForText(first, 'print("hello")\n# from the second tab')
