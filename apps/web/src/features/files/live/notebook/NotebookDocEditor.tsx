@@ -64,7 +64,7 @@ import { ShortcutsDialog } from '../chrome/ShortcutsDialog'
 import { helpMenu } from '../chrome/standard-menus'
 import { useEditorShortcuts } from '../chrome/use-editor-shortcuts'
 import type { LiveEditorProps } from '../types'
-import { cellContextEntries, notebookMenus, typeLabel, viewOptionEntries, type NotebookMenuContext } from './notebook-menus'
+import { cellContextEntries, hasOutputs, notebookMenus, typeLabel, viewOptionEntries, type NotebookMenuContext } from './notebook-menus'
 import { notebookShortcutGroups } from './notebook-shortcuts'
 import { CellContextMenu, type CellMenuRequest } from './CellContextMenu'
 import { CellToolbar } from './CellToolbar'
@@ -463,6 +463,15 @@ function InsertBar({ onInsert, always }: { onInsert: (type: NotebookCellType) =>
   )
 }
 
+/**
+ * The selected cells that have outputs: what Shift+O and View ▸ Scroll long outputs act on, so a
+ * Markdown cell in the selection neither keeps the check on nor takes a press of its own.
+ */
+function selectedOutputCells(controller: NotebookController): string[] {
+  const { cells, selected } = controller.getState()
+  return cells.filter((cell) => selected.includes(cell.key) && hasOutputs(cell)).map((cell) => cell.key)
+}
+
 function writeClipboard(text: string) {
   if (text) void navigator.clipboard?.writeText(text).catch(() => undefined)
 }
@@ -610,7 +619,8 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
 
   /** Shift+O: the selected cells' long outputs show in full, or scroll again once all of them do. */
   const toggleOutputScroll = useCallback(() => {
-    const keys = controller?.getState().selected ?? []
+    const keys = controller ? selectedOutputCells(controller) : []
+    if (!keys.length) return
     setExpanded((current) => {
       const next = new Set(current)
       const all = keys.every((key) => current.has(key))
@@ -805,7 +815,7 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
     setLineNumbers,
     wrap,
     setWrap,
-    outputsScroll: () => !controller.getState().selected.every((key) => expanded.has(key)),
+    outputsScroll: () => !selectedOutputCells(controller).every((key) => expanded.has(key)),
     toggleOutputScroll,
     revealed: (key, part) => revealed.has(`${key}:${part}`),
     reveal: (keys, part) => setRevealed((current) => {

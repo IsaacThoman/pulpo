@@ -316,6 +316,29 @@ describe('notebook editor parity', () => {
       notebook.dispose()
     }
   })
+
+  it('scrolls outputs again with one Shift+O when the selection also holds a cell without outputs', async () => {
+    const offsetHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get() { return (this as HTMLElement).hasAttribute('data-output-content') ? 2_000 : 0 } })
+    const notebook = await openNotebook([
+      { id: 'm', cell_type: 'markdown', metadata: {}, source: 'Notes' },
+      code('a', 'train()', [{ output_type: 'stream', name: 'stdout', text: 'epoch\n'.repeat(2_000) }]),
+    ])
+    try {
+      await waitFor(() => expect(notebook.view.container.querySelector('[data-output-scroll]')).toBeTruthy())
+      fireEvent.click(screen.getByRole('button', { name: 'Show full output' }))
+      expect(notebook.view.container.querySelector('[data-output-scroll]')).toBeNull()
+      notebook.list.focus()
+      fireEvent.keyDown(notebook.list, { key: 'Home' })
+      fireEvent.keyDown(notebook.list, { key: 'ArrowDown', shiftKey: true })
+      await screen.findByText('2 cells selected')
+      fireEvent.keyDown(notebook.list, { key: 'O', shiftKey: true })
+      await waitFor(() => expect(notebook.view.container.querySelector('[data-output-scroll]')).toBeTruthy())
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'offsetHeight', offsetHeight)
+      notebook.dispose()
+    }
+  })
 })
 
 describe('notebook cell context menu', () => {

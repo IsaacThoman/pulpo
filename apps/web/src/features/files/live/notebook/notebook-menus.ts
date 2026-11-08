@@ -253,7 +253,7 @@ export function notebookMenus(context: NotebookMenuContext): MenuDefinition[] {
           { type: 'item', id: 'outline', label: ui("Table of contents"), checked: context.outline, onSelect: context.toggleOutline },
           separator,
           ...readingEntries(context),
-          { type: 'item', id: 'output-scroll', label: ui("Scroll long outputs"), checked: Boolean(now.state.active) && context.outputsScroll(), shortcut: key('o', { shift: true }), disabled: !now.selected.some(hasOutputs), onSelect: context.toggleOutputScroll },
+          { type: 'item', id: 'output-scroll', label: ui("Scroll long outputs"), checked: context.outputsScroll(), shortcut: key('o', { shift: true }), disabled: !now.selected.some(hasOutputs), onSelect: context.toggleOutputScroll },
           separator,
           { type: 'submenu', id: 'collapse', label: ui("Collapse and expand"), icon: ChevronsDownUp, disabled: !now.can, items: collapseEntries(context, now.can) },
           ...hiddenEntries(context, now),
