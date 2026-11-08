@@ -156,6 +156,32 @@ describe('cell keys', () => {
     expect(cell.view.dom.querySelector('.cm-search')).toBeNull()
   })
 
+  it('formats Markdown cells with Ctrl+B, I, and K, taking the keys only there', async () => {
+    const { doc } = await notebook('word')
+    const cell = editor(doc)
+    cell.view.dispatch({ selection: { anchor: 0, head: 4 } })
+    // A code cell leaves Ctrl+B to the app (its sidebar).
+    expect(press(cell, 'b', { ctrlKey: true })).toBe(false)
+    expect(text(doc).toString()).toBe('word')
+    cell.setType('markdown', 'python')
+    expect(press(cell, 'b', { ctrlKey: true })).toBe(true)
+    expect(text(doc).toString()).toBe('**word**')
+    expect(press(cell, 'i', { ctrlKey: true })).toBe(true)
+    expect(text(doc).toString()).toBe('***word***')
+    expect(press(cell, 'k', { ctrlKey: true })).toBe(true)
+    expect(text(doc).toString()).toBe('***[word](url)***')
+    cell.setType('code', 'python')
+    expect(press(cell, 'b', { ctrlKey: true })).toBe(false)
+  })
+
+  it('leaves Ctrl+B to the app in a read-only Markdown cell', async () => {
+    const { doc } = await notebook('word')
+    const cell = editor(doc, true, { type: 'markdown' })
+    cell.view.dispatch({ selection: { anchor: 0, head: 4 } })
+    expect(press(cell, 'b', { ctrlKey: true })).toBe(false)
+    expect(text(doc).toString()).toBe('word')
+  })
+
   it('opens the cell\'s find and replace with Ctrl+H when the host has no find of its own', async () => {
     const { doc } = await notebook('needle')
     const cell = editor(doc)

@@ -1,6 +1,17 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type KeyboardEvent } from 'react'
 import { MemoryLiveAssetStore, type LiveAssetStore } from '@pulpo/client-core/office'
-import { exportNotebookFile, parseNotebook, renderNotebookHtml, type MimeBundle, type NotebookCellType, type NotebookOutput } from '@pulpo/client-core/office/notebook'
+import {
+  exportNotebookFile,
+  notebookToHtml,
+  notebookToScript,
+  outputPlainText,
+  parseNotebook,
+  renderNotebookHtml,
+  stripAnsi,
+  type MimeBundle,
+  type NotebookCellType,
+  type NotebookOutput,
+} from '@pulpo/client-core/office/notebook'
 import {
   createCellEditor,
   NotebookController,
@@ -41,18 +52,21 @@ import { NotebookMarkdown, OutputBody, Prompt } from '@/components/viewers/Noteb
 import { useDarkTheme } from '@/components/viewers/use-dark-theme'
 import { activeLocale, ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
+import { useFileToasts } from '../../browser/toasts'
 import { sessionColor, sessionLabel } from '../../editor/presence'
 import { ToolbarButton } from '../../editor/ToolbarButton'
 import { EditorMenuBar } from '../chrome/EditorMenuBar'
 import { fileEditorRoot } from '../chrome/editor-root'
 import { fileMenuDefinition } from '../chrome/file-menu'
-import { separator, shortcutGroupsFromMenus, type MenuDefinition } from '../chrome/menu'
-import { printHtmlDocument } from '../chrome/output'
+import { shortcutGroupsFromMenus, type MenuDefinition, type MenuEntry } from '../chrome/menu'
+import { printHtmlDocument, saveFile } from '../chrome/output'
 import { ShortcutsDialog } from '../chrome/ShortcutsDialog'
-import { helpMenu, undoRedoEntries } from '../chrome/standard-menus'
+import { helpMenu } from '../chrome/standard-menus'
 import { useEditorShortcuts } from '../chrome/use-editor-shortcuts'
 import type { LiveEditorProps } from '../types'
+import { cellContextEntries, hasOutputs, notebookMenus, typeLabel, viewOptionEntries, type NotebookMenuContext } from './notebook-menus'
 import { notebookShortcutGroups } from './notebook-shortcuts'
+import { CellContextMenu, type CellMenuRequest } from './CellContextMenu'
 import { CellToolbar } from './CellToolbar'
 import { NotebookFindBar, type NotebookFindRequest } from './NotebookFindBar'
 import { NotebookOutline } from './NotebookOutline'
@@ -85,14 +99,12 @@ function editorLabels(): Record<string, string> {
   }
 }
 
-function typeLabel(type: NotebookCellType): string {
-  return type === 'code' ? ui("Code") : type === 'markdown' ? ui("Markdown") : ui("Raw")
-}
-
 const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const mod = mac ? '⌘' : 'Ctrl+'
 
-/** Outputs (or attachments) with their assets read back, as the viewer's renderers take them. */
+/** How long a cell inserted with text (Insert ▸ Heading) puts the caret after it when its editor mounts. */
+const CARET_HINT_MS = 500
+
 /** Waits this long before reading outputs again after their images failed to load (offline, say). */
 const RETRY_MS = 15_000
 
@@ -244,7 +256,7 @@ function CellSource({ controller, cell, language, editable, dark, registerEditor
 function StaticSource({ controller, cellKey, language, lineNumbers }: { controller: NotebookController; cellKey: string; language: string | null; lineNumbers: boolean }) {
   const text = controller.sourceOf(cellKey)?.toString() ?? ''
   const source = (
-    <pre className="code-highlight min-w-0 flex-1 overflow-hidden px-2.5 py-1.5 font-mono text-[13px] leading-[1.6]">
+    <pre className="code-highlight min-w-0 flex-1 overflow-hidden px-2.5 py-1.5 font-mono text-[13px] leading-[1.6]" data-static-source>
       <HighlightedCode code={text} language={language} />
     </pre>
   )
@@ -370,6 +382,8 @@ const NotebookCell = memo(function NotebookCell(props: CellProps) {
       onMouseDown={(event) => {
         // Clicking a cell selects it (Shift extends); clicks inside its editor enter edit mode on focus.
         if ((event.target as HTMLElement).closest('[data-cell-source], button, a, iframe')) return
+        // A right-click (or a Mac's Control-click) on a selected cell keeps the selection, for its context menu to act on.
+        if ((event.button === 2 || (mac && event.ctrlKey)) && selected) return
         controller.select(cell.key, { extend: event.shiftKey })
       }}
       onDoubleClick={(event) => {
@@ -449,8 +463,41 @@ function InsertBar({ onInsert, always }: { onInsert: (type: NotebookCellType) =>
   )
 }
 
+/**
+ * The selected cells that have outputs: what Shift+O and View ▸ Scroll long outputs act on, so a
+ * Markdown cell in the selection neither keeps the check on nor takes a press of its own.
+ */
+function selectedOutputCells(controller: NotebookController): string[] {
+  const { cells, selected } = controller.getState()
+  return cells.filter((cell) => selected.includes(cell.key) && hasOutputs(cell)).map((cell) => cell.key)
+}
+
 function writeClipboard(text: string) {
   if (text) void navigator.clipboard?.writeText(text).catch(() => undefined)
+}
+
+/** What a cell's outputs print, as plain text (tracebacks without their colors). */
+function outputsText(outputs: readonly NotebookOutput[]): string {
+  return outputs.map((output) => stripAnsi(outputPlainText(output)).replace(/\n+$/, '')).filter(Boolean).join('\n')
+}
+
+/** A name without its notebook extension, for files exported from it ("analysis.ipynb" gives "analysis"). */
+function baseName(name: string): string {
+  return name.replace(/\.ipynb$/i, '') || 'notebook'
+}
+
+/**
+ * The right-clicked cell, or null to leave the browser's own menu: in a cell's text (as in any
+ * editor), on links, pictures, frames, and fields, over selected text, and with Shift held.
+ */
+function contextCell(event: React.MouseEvent, list: HTMLElement): string | null {
+  if (event.shiftKey || !(event.target instanceof Element)) return null
+  const target = event.target
+  const cell = target.closest<HTMLElement>('[data-cell-key]')
+  if (!cell || !list.contains(cell)) return null
+  if (target.closest('.cm-content, .cm-panels, [data-static-source], a[href], img, iframe, input, textarea, select')) return null
+  if (textSelectedIn(cell)) return null
+  return cell.dataset.cellKey ?? null
 }
 
 /**
@@ -495,6 +542,13 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
   findOpen.current = Boolean(find)
   const pasteFallback = useRef<number | undefined>(undefined)
   const [drag, setDrag] = useState<{ keys: string[]; over: { key: string; edge: 'before' | 'after' } | null } | null>(null)
+  const [cellMenu, setCellMenu] = useState<{ request: CellMenuRequest; open: boolean } | null>(null)
+  // The right-clicked cell's output text, read as its menu opens so Copy output text copies at once.
+  const menuOutputs = useRef<{ key: string; text: string | null } | null>(null)
+  // A cell inserted with text to type after (Insert ▸ Heading) puts the caret at its end.
+  const caretAtEnd = useRef<string | null>(null)
+  const caretAtEndTimer = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(caretAtEndTimer.current), [])
   const latestEditable = useRef(editable)
   latestEditable.current = editable
 
@@ -524,6 +578,7 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
   const registerEditor = useCallback((key: string, editor: CellEditor | null) => {
     if (editor) editors.current.set(key, editor)
     else editors.current.delete(key)
+    if (editor && caretAtEnd.current === key) editor.focus('end')
   }, [])
 
   /** Gives the keyboard back to the notebook after a menu or button: the active cell's editor while editing, else the cell list. */
@@ -562,6 +617,21 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
     focusNotebook,
   }, [lineNumbers, wrap, search, cursor, openFind, revealed, expanded, focusNotebook])
 
+  /** Shift+O: the selected cells' long outputs show in full, or scroll again once all of them do. */
+  const toggleOutputScroll = useCallback(() => {
+    const keys = controller ? selectedOutputCells(controller) : []
+    if (!keys.length) return
+    setExpanded((current) => {
+      const next = new Set(current)
+      const all = keys.every((key) => current.has(key))
+      for (const key of keys) {
+        if (all) next.delete(key)
+        else next.add(key)
+      }
+      return next
+    })
+  }, [controller])
+
   // Keys that change the view, not the notebook (find, line numbers, help, output scrolling).
   useEffect(() => {
     if (!controller) return
@@ -569,22 +639,11 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
       if (command === 'find' || command === 'replace') openFind(command, controller.getState().mode === 'edit' ? controller.getState().active : null)
       else if (command === 'lineNumbers') setLineNumbers((on) => !on)
       else if (command === 'shortcuts') setShortcuts(true)
-      else {
-        const keys = controller.getState().selected
-        setExpanded((current) => {
-          const next = new Set(current)
-          const all = keys.every((key) => current.has(key))
-          for (const key of keys) {
-            if (all) next.delete(key)
-            else next.add(key)
-          }
-          return next
-        })
-      }
+      else toggleOutputScroll()
       return true
     })
     return () => controller.setViewCommandHandler(null)
-  }, [controller, openFind, setLineNumbers])
+  }, [controller, openFind, setLineNumbers, toggleOutputScroll])
 
   // Ctrl/Cmd+V in command mode: the system clipboard's text, which may be cells copied here (see onKeyDown).
   useEffect(() => {
@@ -623,13 +682,11 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
    * Prints the notebook as the viewer renders it, from the same export downloads use. An export
    * that fails (its images unavailable offline, say) prints nothing.
    */
+  const htmlLabels = () => ({ empty: ui("This notebook has no cells."), widget: ui("Interactive widgets need a running kernel and are not shown."), unsupported: ui("This output type can’t be shown") })
   const printNotebook = () => {
     void exportNotebookFile(session.doc, { assets }).then((bytes) => {
       const model = parseNotebook(new TextDecoder().decode(bytes))
-      printHtmlDocument(renderNotebookHtml(model, {
-        title: name,
-        labels: { empty: ui("This notebook has no cells."), widget: ui("Interactive widgets need a running kernel and are not shown."), unsupported: ui("This output type can’t be shown") },
-      }))
+      printHtmlDocument(renderNotebookHtml(model, { title: name, labels: htmlLabels() }))
     }).catch(() => undefined)
   }
 
@@ -646,6 +703,26 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
   const run = (action: () => void) => () => {
     action()
     focusNotebook()
+  }
+  /** Opens a cell's context menu, selecting the cell unless it is part of the selection already. */
+  const openCellMenu = (key: string, x: number, y: number) => {
+    if (!controller.getState().selected.includes(key)) controller.select(key)
+    const cell = controller.getState().cells.find((entry) => entry.key === key)
+    menuOutputs.current = { key, text: null }
+    if (cell?.type === 'code' && cell.outputs && cell.outputs.json !== '[]') {
+      void readOutputs(cell.outputs, assets).then((outputs) => {
+        if (menuOutputs.current?.key === key) menuOutputs.current = { key, text: outputsText(outputs) }
+      }).catch(() => undefined)
+    }
+    setCellMenu({ request: { key, x, y }, open: true })
+  }
+  /** The active cell's menu, beside it (the keyboard's menu key, or Shift+F10). */
+  const openActiveCellMenu = (): boolean => {
+    const key = controller.getState().active
+    const box = [...root.current?.querySelectorAll<HTMLElement>('[data-cell-key]') ?? []].find((element) => element.dataset.cellKey === key)?.getBoundingClientRect()
+    if (!key || !box) return false
+    openCellMenu(key, box.left + 56, box.top + 8)
+    return true
   }
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (state.mode !== 'command' || event.target !== root.current) return
@@ -671,6 +748,11 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
       pasteFallback.current = window.setTimeout(() => { if (controller.getState().canPaste) void controller.paste('below') }, 0)
       return
     }
+    // Shift+F10 and the menu key open the active cell's menu, as on any focused item in Windows and Linux.
+    if (((key === 'F10' && event.shiftKey) || (key === 'ContextMenu' && !event.shiftKey)) && plain) {
+      if (openActiveCellMenu()) event.preventDefault()
+      return
+    }
     // F3 and Ctrl/Cmd+G find the next match here too, as in a cell: stepping to another cell leaves the keyboard here.
     const findMod = mac ? event.metaKey : event.ctrlKey
     if (!event.altKey && ((key === 'F3' && !event.metaKey && !event.ctrlKey) || (findMod && key === 'g'))) {
@@ -693,28 +775,95 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
   const activeIndex = state.cells.findIndex((cell) => cell.key === state.active)
   const activeCell = state.cells.find((cell) => cell.key === state.active)
   const locale = activeLocale()
-  const menus: MenuDefinition[] = [
-    fileMenuDefinition(fileMenu, () => ({ print: printNotebook })),
-    {
-      id: 'edit',
-      label: ui("Edit"),
-      items: () => {
-        const current = controller.getState()
-        const can = editable && !current.readOnly
-        return [
-          ...undoRedoEntries({ undo: run(() => controller.undo()), redo: run(() => controller.redo()), canUndo: can && current.canUndo, canRedo: can && current.canRedo }),
-          separator,
-          { type: 'item', id: 'cut-cells', label: ui("Cut cells"), icon: Scissors, disabled: !can || !current.active, onSelect: run(() => writeClipboard(controller.cut())) },
-          { type: 'item', id: 'copy-cells', label: ui("Copy cells"), icon: Copy, disabled: !current.active, onSelect: run(() => writeClipboard(controller.copy())) },
-          { type: 'item', id: 'paste-cells', label: ui("Paste cells below"), icon: ClipboardPaste, disabled: !can || !current.canPaste, onSelect: run(() => void controller.paste('below')) },
-          { type: 'item', id: 'delete-cells', label: ui("Delete cells"), icon: Trash2, disabled: !can || !current.active, onSelect: run(() => controller.deleteSelected()) },
-          separator,
-          { type: 'item', id: 'select-all-cells', label: ui("Select every cell"), disabled: !current.cells.length, onSelect: run(() => controller.selectAll()) },
-        ]
-      },
+
+  // File > Download: the notebook as a script (Colab's .py) or as a static web page (nbconvert's HTML).
+  const downloadScript = () => {
+    const script = notebookToScript(session.doc)
+    saveFile(new TextEncoder().encode(script.text), `${baseName(name)}${script.extension}`, script.mimeType)
+  }
+  const downloadHtml = () => {
+    void (async () => {
+      const { default: katex } = await import('katex')
+      const html = await notebookToHtml(session.doc, { assets }, {
+        title: name,
+        labels: htmlLabels(),
+        // MathML needs no style sheet, so the page shows its formulas anywhere.
+        renderMath: (tex, display) => katex.renderToString(tex, { displayMode: display, output: 'mathml', throwOnError: false }),
+      })
+      saveFile(new TextEncoder().encode(html), `${baseName(name)}.html`, 'text/html')
+    })().catch(() => {
+      useFileToasts.getState().show({ message: ui("Couldn't download the notebook as a web page"), tone: 'error' })
+    })
+  }
+  const downloads = (): MenuEntry[] => {
+    const { extension } = notebookToScript(session.doc)
+    return [
+      { type: 'item', id: 'download-script', label: extension === '.py' ? ui("Python (.py)") : ui("Script ({{extension}})", { extension }), onSelect: downloadScript },
+      { type: 'item', id: 'download-html', label: ui("Web page (.html)"), onSelect: downloadHtml },
+    ]
+  }
+
+  const menuContext: NotebookMenuContext = {
+    controller,
+    editable,
+    copy: () => writeClipboard(controller.copy()),
+    cut: () => writeClipboard(controller.cut()),
+    find: (findMode) => openFind(findMode, controller.getState().mode === 'edit' ? controller.getState().active : null),
+    outline,
+    toggleOutline: () => setOutline((open) => !open),
+    lineNumbers,
+    setLineNumbers,
+    wrap,
+    setWrap,
+    outputsScroll: () => !selectedOutputCells(controller).every((key) => expanded.has(key)),
+    toggleOutputScroll,
+    revealed: (key, part) => revealed.has(`${key}:${part}`),
+    reveal: (keys, part) => setRevealed((current) => {
+      const next = new Set(current)
+      for (const key of keys) next.add(`${key}:${part}`)
+      return next
+    }),
+    insertHeading: (level) => {
+      const key = controller.insert('below', 'markdown', { edit: true, source: `${'#'.repeat(level)} ` })
+      if (!key) return
+      // The cell's editor mounts after this (twice under React's strict mode): each one it mounts
+      // puts the caret after the #s, until the cell has settled.
+      caretAtEnd.current = key
+      editors.current.get(key)?.focus('end')
+      window.clearTimeout(caretAtEndTimer.current)
+      caretAtEndTimer.current = window.setTimeout(() => { caretAtEnd.current = null }, CARET_HINT_MS)
     },
+    copyOutputText: (key) => {
+      const read = menuOutputs.current
+      if (read?.key === key && read.text !== null) return writeClipboard(read.text)
+      const cell = controller.getState().cells.find((entry) => entry.key === key)
+      if (cell?.outputs) void readOutputs(cell.outputs, assets).then((outputs) => writeClipboard(outputsText(outputs))).catch(() => undefined)
+    },
+    runWithAgent: onRunWithAgent,
+  }
+  const menus: MenuDefinition[] = [
+    fileMenuDefinition(fileMenu, () => ({ print: printNotebook, downloads: downloads() })),
+    ...notebookMenus(menuContext),
     helpMenu(() => setShortcuts(true)),
   ]
+
+  const onContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
+    const list = root.current
+    if (!list) return
+    // The keyboard's menu key on the cell list, where the browser sends it: the active cell's menu.
+    // Chrome marks it with an empty pointer type; other browsers send a plain mouse event with the
+    // primary button, which a Mac's Control-click also does (with Control held).
+    const pointer = (event.nativeEvent as Partial<PointerEvent>).pointerType
+    const keyboard = pointer === '' || (pointer === undefined && event.button !== 2 && !event.ctrlKey)
+    if (event.target === list && keyboard) {
+      if (openActiveCellMenu()) event.preventDefault()
+      return
+    }
+    const key = contextCell(event, list)
+    if (!key) return
+    event.preventDefault()
+    openCellMenu(key, event.clientX, event.clientY)
+  }
 
   return (
     <div ref={shell} className="flex h-full min-h-0 flex-col" data-notebook-editor {...fileEditorRoot('notebook')}>
@@ -785,7 +934,7 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
           <span className="mx-1 h-5 w-px bg-border" />
           <ToolbarButton label={ui("Find and replace")} shortcut={{ label: `${mod}F`, aria: `${mac ? 'Meta' : 'Control'}+f` }} onClick={() => openFind('find', state.mode === 'edit' ? state.active : null)}><Search className="size-4" /></ToolbarButton>
           <ToolbarButton label={ui("Table of contents")} active={outline} onClick={() => setOutline((open) => !open)}><ListTree className="size-4" /></ToolbarButton>
-          <NotebookViewMenu controller={controller} canEdit={canEdit} lineNumbers={lineNumbers} onLineNumbers={setLineNumbers} wrap={wrap} onWrap={setWrap} focusNotebook={focusNotebook} />
+          <NotebookViewMenu entries={() => viewOptionEntries(menuContext)} focusNotebook={focusNotebook} />
           <ToolbarButton label={ui("Keyboard shortcuts")} onClick={() => setShortcuts(true)}><Keyboard className="size-4" /></ToolbarButton>
           {onRunWithAgent && (
             <>
@@ -823,6 +972,7 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
           role="list"
           aria-label={ui("Notebook cells")}
           onKeyDown={onKeyDown}
+          onContextMenu={onContextMenu}
           className="min-h-0 min-w-0 flex-1 overflow-y-auto outline-none"
           onDragEnd={() => setDrag(null)}
         >
@@ -885,6 +1035,19 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
         <span>{state.kernel ?? state.language}</span>
         <span>{state.cells.length === 1 ? ui("1 cell") : uit`${state.cells.length.toLocaleString(locale)} cells`}</span>
       </div>
+      <CellContextMenu
+        request={cellMenu?.request ?? null}
+        // It closes if someone else deletes the cell meanwhile.
+        open={Boolean(cellMenu?.open && state.cells.some((cell) => cell.key === cellMenu.request.key))}
+        entries={(key) => cellContextEntries(menuContext, key)}
+        onOpenChange={(open) => setCellMenu((current) => current && { ...current, open })}
+        onClosed={() => {
+          // Back to the cells, unless the click that closed the menu put focus somewhere else (the chat).
+          const focused = document.activeElement
+          if (focused && focused !== document.body && !shell.current?.contains(focused)) return
+          focusNotebook()
+        }}
+      />
       <ShortcutsDialog
         open={shortcuts}
         onOpenChange={setShortcuts}

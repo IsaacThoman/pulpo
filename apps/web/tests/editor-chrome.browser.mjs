@@ -95,7 +95,7 @@ try {
     await bar.getByRole('menuitem', { name: 'Help' }).click()
     await page.getByRole('menuitem', { name: 'Keyboard shortcuts' }).click()
     const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' })
-    await dialog.getByText('Comment or uncomment lines').waitFor()
+    await dialog.getByText('Toggle line comment').waitFor()
     if (screenshots) await page.screenshot({ path: `${screenshots}/editor-chrome-text-shortcuts.png` })
     await page.keyboard.press('Escape')
     await dialog.waitFor({ state: 'detached' })

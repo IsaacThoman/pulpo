@@ -1,28 +1,24 @@
-import type { NotebookController } from '@pulpo/client-core/office/notebook/view'
 import { SlidersHorizontal } from 'lucide-react'
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuShortcut,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { ui } from '@/i18n/ui'
+import { MenuEntries } from '../chrome/EditorMenuBar'
+import type { MenuEntry } from '../chrome/menu'
+
+const noop = () => {}
+
+/** The rows, built when the menu opens (Radix renders its content only then). */
+function Rows({ entries }: { entries: () => MenuEntry[] }) {
+  return <MenuEntries entries={entries()} close={noop} />
+}
 
 /**
- * How the notebook shows (JupyterLab's View menu): line numbers and wrapping, which are this
- * person's preference, and collapsing or expanding every cell's code or outputs, which the
- * notebook records (JupyterLab and VS Code read it), each one undo step.
+ * How the notebook shows (JupyterLab's View menu), on the toolbar: line numbers and wrapping,
+ * which are this person's preference, and collapsing or expanding every cell's code or outputs,
+ * which the notebook records (JupyterLab and VS Code read it), each one undo step. Its rows are
+ * the menu bar's (`viewOptionEntries`), built when it opens.
  */
-export function NotebookViewMenu({ controller, canEdit, lineNumbers, onLineNumbers, wrap, onWrap, focusNotebook }: {
-  controller: NotebookController
-  canEdit: boolean
-  lineNumbers: boolean
-  onLineNumbers: (on: boolean) => void
-  wrap: boolean
-  onWrap: (on: boolean) => void
+export function NotebookViewMenu({ entries, focusNotebook }: {
+  entries: () => MenuEntry[]
   focusNotebook: () => void
 }) {
   return (
@@ -45,16 +41,7 @@ export function NotebookViewMenu({ controller, canEdit, lineNumbers, onLineNumbe
           focusNotebook()
         }}
       >
-        <DropdownMenuCheckboxItem checked={lineNumbers} onCheckedChange={onLineNumbers}>
-          {ui("Line numbers")}
-          <DropdownMenuShortcut>{'Shift+L'}</DropdownMenuShortcut>
-        </DropdownMenuCheckboxItem>
-        <DropdownMenuCheckboxItem checked={wrap} onCheckedChange={onWrap}>{ui("Wrap long lines")}</DropdownMenuCheckboxItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem disabled={!canEdit} onSelect={() => controller.setAllCollapsed('source', true)}>{ui("Collapse all code")}</DropdownMenuItem>
-        <DropdownMenuItem disabled={!canEdit} onSelect={() => controller.setAllCollapsed('source', false)}>{ui("Expand all code")}</DropdownMenuItem>
-        <DropdownMenuItem disabled={!canEdit} onSelect={() => controller.setAllCollapsed('outputs', true)}>{ui("Collapse all outputs")}</DropdownMenuItem>
-        <DropdownMenuItem disabled={!canEdit} onSelect={() => controller.setAllCollapsed('outputs', false)}>{ui("Expand all outputs")}</DropdownMenuItem>
+        <Rows entries={entries} />
       </DropdownMenuContent>
     </DropdownMenu>
   )

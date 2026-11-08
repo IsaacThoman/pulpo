@@ -7,7 +7,7 @@ const mod = mac ? '⌘' : 'Ctrl+'
 export const FAMILIAR_SHORTCUTS: [string, () => string][] = [
   ['Shift+Z', () => ui("Redo")],
   ['1 … 6', () => ui("Make a Markdown heading of that level")],
-  ['Alt+↑ / Alt+↓', () => ui("Move the selected cells up or down")],
+  [`Alt+↑ / Alt+↓ / ${mac ? '⌘⇧↑ / ⌘⇧↓' : 'Ctrl+Shift+↑ / Ctrl+Shift+↓'}`, () => ui("Move the selected cells up or down")],
   ['Shift+Alt+↑ / Shift+Alt+↓', () => ui("Duplicate the selected cells above or below")],
   [`${mod}C / ${mod}X / ${mod}V`, () => ui("Copy, cut, or paste cells; pasted text becomes a new cell")],
   [mac ? '⌘F / ⌘⌥F' : 'Ctrl+F / Ctrl+H', () => ui("Find, or find and replace, in every cell")],
@@ -16,4 +16,5 @@ export const FAMILIAR_SHORTCUTS: [string, () => string][] = [
   ['H', () => ui("Show these shortcuts")],
   ['Ctrl+M, A / B / D', () => ui("Colab: insert a cell above or below, or delete it (also while editing)")],
   ['Ctrl+M, Y / M / L / O / H', () => ui("Colab: make code or Markdown, line numbers, outputs, these shortcuts")],
+  ['Ctrl+M, K / J / N / P / - / Z', () => ui("Colab: move the cell up or down, go to the next or previous cell, split, undo")],
 ]

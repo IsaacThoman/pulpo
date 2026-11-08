@@ -3,18 +3,13 @@ import type { TextCounts, TextEditor, TextEditorState } from '@pulpo/client-core
 import type * as Y from 'yjs'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { activeLocale, ui, uit } from '@/i18n/ui'
+import { isProseFile } from './prose'
 
 /** Counting waits this long after the last change; files can be megabytes long. */
 const COUNT_DELAY_MS = 300
 /** Characters past which counting waits for that delay even the first time. */
 const LARGE_TEXT = 200_000
 
-/** Files people write prose in, which show a word count as the Word editor does. */
-const PROSE = /\.(txt|text|log|rst|adoc|asciidoc|org|tex|srt|vtt)$|^(readme|license|licence|changelog|authors|contributing|notice|copying)(\.[^.]*)?$/i
-
-function isProseFile(name: string): boolean {
-  return PROSE.test(name)
-}
 
 /** The document's counts, recounted a moment after it changes; null until counted, or while not wanted. */
 function useDocumentCounts(editor: TextEditor | null, doc: Y.Doc, wanted: boolean): TextCounts | null {
@@ -105,10 +100,20 @@ function WordCountDialog({ open, onClose, onClosed, document, selection }: { ope
 
 /**
  * The status bar's counts: lines always, words in prose files and for a selection (as "12 of 345
- * words", like Word), the number of cursors when there are several, and the Word count dialog.
+ * words", like Word), the number of cursors when there are several, and the Word count dialog
+ * (also Tools ▸ Word count, through `open`).
  */
-export function TextStatusCounts({ editor, doc, name, state, onDone }: { editor: TextEditor | null; doc: Y.Doc; name: string; state: TextEditorState; onDone: () => void }) {
-  const [open, setOpen] = useState(false)
+export function TextStatusCounts({ editor, doc, name, state, open, onOpenChange, onDone }: {
+  editor: TextEditor | null
+  doc: Y.Doc
+  name: string
+  state: TextEditorState
+  /** Whether the Word count dialog shows. */
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onDone: () => void
+}) {
+  const setOpen = onOpenChange
   const prose = isProseFile(name)
   const documentCounts = useDocumentCounts(editor, doc, prose || open || state.selected > 0)
   const selectionCounts = useSelectionCounts(editor, state)
