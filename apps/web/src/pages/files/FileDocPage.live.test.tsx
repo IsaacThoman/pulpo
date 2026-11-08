@@ -211,6 +211,16 @@ describe('the document title', () => {
     await waitFor(() => expect(api.updateFileNode).toHaveBeenCalledWith('report', { name: 'Q3 plan.docx', expectedRevision: 3 }))
   })
 
+  it('keeps the extension for a name with dots that is not an extension', async () => {
+    mount()
+    await waitFor(() => expect(title().value).toBe('Report.docx'))
+    title().focus()
+    fireEvent.change(title(), { target: { value: 'Report v1.2' } })
+    fireEvent.keyDown(title(), { key: 'Enter' })
+    expect(screen.queryByRole('alert')).toBeNull()
+    await waitFor(() => expect(api.updateFileNode).toHaveBeenCalledWith('report', { name: 'Report v1.2.docx', expectedRevision: 3 }))
+  })
+
   it("refuses another format's extension or an invalid name, and Escape restores it", async () => {
     mount()
     await waitFor(() => expect(title().value).toBe('Report.docx'))

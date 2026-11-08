@@ -174,17 +174,19 @@ function nameStem(node: Pick<FileNode, 'kind' | 'name'>, name = node.name): stri
 }
 
 /**
- * The name a title edit saves, or why it can't. A document keeps its type: typing over the whole
- * name keeps the extension ("Q3 plan" stays "Q3 plan.docx"), and an extension of another format
- * is refused, since that would turn the document into an ordinary file (Files can still do it).
+ * The name a title edit saves, or why it can't. A document keeps its type: a name without an
+ * extension of a live format keeps this one ("Q3 plan" and "Report v1.2" become "….docx"), and an
+ * extension of another format is refused, since the server would turn the document into an
+ * ordinary file (Files can still do it).
  */
 function titleName(node: FileNode, typed: string): { name: string } | { error: string } {
   let name = normalizeFileName(typed)
   if (!name || name === node.name) return { name: node.name }
   if (node.kind === 'doc') {
     const extension = fileExtension(node.name)
-    if (extension && !fileExtension(name)) name = `${name}.${extension}`
-    if (liveFormatOfName(name)?.id !== liveFormatOfName(node.name)?.id) {
+    if (extension && !liveFormatOfName(name)) name = `${name}.${extension}`
+    // Compared with the format the document is stored in, as the server does (none means Markdown).
+    if (liveFormatOfName(name)?.id !== (node.format ?? 'markdown')) {
       return { error: extension ? ui("Keep the .{{extension}} extension: another one would change what kind of file this is.", { extension }) : ui("That name would change what kind of file this is.") }
     }
   }
