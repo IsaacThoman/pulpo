@@ -41,7 +41,8 @@ function MenuEntries({ entries, close }: { entries: readonly MenuEntry[]; close:
               {entry.icon && <entry.icon />}
               {entry.label}
             </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="min-w-48">
+            {/* Never wider than the room beside its menu (a narrow window or the side panel): labels wrap instead. */}
+            <DropdownMenuSubContent className="max-w-(--radix-dropdown-menu-content-available-width) min-w-40">
               <MenuEntries entries={entry.items} close={close} />
             </DropdownMenuSubContent>
           </DropdownMenuSub>
@@ -50,7 +51,7 @@ function MenuEntries({ entries, close }: { entries: readonly MenuEntry[]; close:
         const content = (
           <>
             {entry.icon && <entry.icon />}
-            <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+            <span className="min-w-0 flex-1">{entry.label}</span>
             {entry.shortcut && <DropdownMenuShortcut className="pl-6 tracking-normal">{formatShortcut(entry.shortcut)}</DropdownMenuShortcut>}
           </>
         )
