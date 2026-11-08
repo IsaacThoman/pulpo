@@ -191,6 +191,58 @@ try {
     await page.close()
   })
 
+  await check('puts the caret where you click: double click selects the word, a second click edits at the pointer', async () => {
+    const { page, errors } = await open(context, 'deck=generated/text-formatting.pptx')
+    await page.locator('.pp-thumbs .pp-thumb').nth(1).click()
+    const box = slideShapes(page).nth(1)
+    const key = await box.getAttribute('data-key')
+    const paragraphs = () => page.evaluate((shape) => {
+      const controller = window.harness.controllers.a
+      const flat = (node) => (node?.text ?? '') + (node?.content ?? []).map(flat).join('')
+      return controller.shape(controller.state.slide, shape).text.content.map(flat)
+    }, key)
+    // Client coordinates of a word in the rendered slide.
+    const wordPoint = (word) => page.evaluate(([shape, text]) => {
+      const root = document.querySelector(`.pp-canvas-slide [data-key="${shape}"]`)
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const index = node.data.indexOf(text)
+        if (index < 0) continue
+        const range = document.createRange()
+        range.setStart(node, index)
+        range.setEnd(node, index + 1)
+        const rect = range.getBoundingClientRect()
+        return { x: rect.left + 1, y: rect.top + rect.height / 2 }
+      }
+      return undefined
+    }, [key, word])
+    const before = await paragraphs()
+    const arial = await wordPoint('Arial')
+    await page.mouse.dblclick(arial.x + 2, arial.y)
+    await page.locator('.pp-canvas .pp-text-editor').waitFor()
+    await page.keyboard.type('Helvetica')
+    assert.equal((await paragraphs())[1], before[1].replace('Arial', 'Helvetica'), 'the double-clicked word is replaced')
+    await page.keyboard.press('Escape')
+    assert.deepEqual((await state(page)).shapes, [key])
+    // A click on the selected text box opens its text with the caret at the pointer.
+    const roman = await wordPoint('Roman')
+    await page.mouse.click(roman.x, roman.y)
+    assert.ok((await state(page)).editing, 'editing after a second click')
+    await page.keyboard.type('X')
+    const line = (await paragraphs())[2]
+    const at = before[2].indexOf('Roman')
+    assert.ok(Math.abs(line.indexOf('X') - at) <= 1, `caret at the click: ${line}`)
+    await page.keyboard.press('Escape')
+    // A selected shape without text stays selected on a second click, so it can be dragged.
+    const rect = await page.evaluate(() => window.harness.controllers.a.insertShape('rect'))
+    const shape = page.locator(`.pp-canvas-slide [data-key="${rect}"]`)
+    await shape.click()
+    assert.equal((await state(page)).editing, undefined)
+    assert.deepEqual((await state(page)).shapes, [rect])
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
   await check('inserts text boxes, shapes, tables, and images; edits table cells', async () => {
     const { page, errors } = await open(context, 'blank=1')
     await page.getByRole('button', { name: 'Text box' }).click()

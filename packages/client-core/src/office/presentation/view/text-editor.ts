@@ -1,7 +1,7 @@
 import { baseKeymap, chainCommands, createParagraphNear, liftEmptyBlock, newlineInCode, splitBlockAs } from '@tiptap/pm/commands'
 import { keymap } from '@tiptap/pm/keymap'
 import type { Mark, Node as ProseMirrorNode } from '@tiptap/pm/model'
-import { EditorState, TextSelection, type Command as PmCommand } from '@tiptap/pm/state'
+import { EditorState, Selection, TextSelection, type Command as PmCommand } from '@tiptap/pm/state'
 import { EditorView, type MarkViewConstructor, type NodeViewConstructor } from '@tiptap/pm/view'
 import { yCursorPlugin, ySyncPlugin, ySyncPluginKey } from '@tiptap/y-tiptap'
 import type { Awareness } from 'y-protocols/awareness'
@@ -218,6 +218,39 @@ export class InlineTextEditor {
     if (atEnd) this.view.dispatch(this.view.state.tr.setSelection(TextSelection.atEnd(this.view.state.doc)))
   }
 
+  /**
+   * Puts the caret at a point on screen (client coordinates), or on the word there with `word`.
+   * A point beside the text (in the box's padding, below the last line) takes the nearest
+   * position, as clicking there does in PowerPoint. Returns false when the text is not laid out.
+   */
+  caretAt(point: { x: number; y: number }, word = false): boolean {
+    const view = this.view
+    let hit = view.posAtCoords({ left: point.x, top: point.y })
+    const inside = hit !== null
+    if (!hit) {
+      const box = view.dom.getBoundingClientRect()
+      if (!box.width || !box.height) return false
+      const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), Math.max(min, max))
+      hit = view.posAtCoords({ left: clamp(point.x, box.left + 1, box.right - 1), top: clamp(point.y, box.top + 1, box.bottom - 1) })
+    }
+    if (!hit) return false
+    const { doc } = view.state
+    let selection: Selection = Selection.near(doc.resolve(Math.max(0, Math.min(hit.pos, doc.content.size))))
+    const range = word && inside ? wordAt(doc, selection.head) : undefined
+    if (range) selection = TextSelection.create(doc, range.from, range.to)
+    view.focus()
+    view.dispatch(view.state.tr.setSelection(selection))
+    return true
+  }
+
+  /** Selects a range of the document (ProseMirror positions), scrolling it into view. */
+  select(from: number, to: number, focus = false): void {
+    const { doc } = this.view.state
+    const clamp = (value: number) => Math.max(0, Math.min(value, doc.content.size))
+    if (focus) this.view.focus()
+    this.view.dispatch(this.view.state.tr.setSelection(TextSelection.between(doc.resolve(clamp(from)), doc.resolve(clamp(to)))).scrollIntoView())
+  }
+
   selectAll(): void {
     const { doc } = this.view.state
     this.view.dispatch(this.view.state.tr.setSelection(TextSelection.create(doc, 1, Math.max(1, doc.content.size - 1))))
@@ -326,6 +359,8 @@ export class InlineTextEditor {
         const dom = document.createElement('span')
         const css = markCss(mark, this.style.context)
         if (css) dom.setAttribute('style', css)
+        // Cmd/Ctrl+click opens links while editing too (the canvas checks the URL).
+        if (mark.type.name === 'link' && typeof mark.attrs.target === 'string' && mark.attrs.external !== false) dom.dataset.href = mark.attrs.target
         return { dom }
       }
     }
@@ -350,6 +385,30 @@ const insertLineBreak: PmCommand = (state, dispatch) => {
   const br = slideTextSchema().nodes.br!
   dispatch?.(state.tr.replaceSelectionWith(br.create()).scrollIntoView())
   return true
+}
+
+const WORD = /[\p{L}\p{N}\p{M}_]/u
+
+/** The word around a position: letters, digits, and apostrophes between them (don't, l’été). */
+export function wordAt(doc: ProseMirrorNode, position: number): { from: number; to: number } | undefined {
+  const $position = doc.resolve(position)
+  const parent = $position.parent
+  if (!parent.isTextblock) return undefined
+  // Atoms (line breaks, fields) count as one character that is never part of a word.
+  const text = parent.textBetween(0, parent.content.size, undefined, '￼')
+  const isWord = (index: number): boolean => {
+    const char = text[index]
+    if (char === undefined) return false
+    if (WORD.test(char)) return true
+    return (char === "'" || char === '’') && WORD.test(text[index - 1] ?? '') && WORD.test(text[index + 1] ?? '')
+  }
+  const offset = $position.parentOffset
+  let start = offset
+  let end = offset
+  while (start > 0 && isWord(start - 1)) start--
+  while (end < text.length && isWord(end)) end++
+  if (start === end) return undefined
+  return { from: $position.start() + start, to: $position.start() + end }
 }
 
 /** Tab changes the list level of selected paragraphs (PowerPoint's demote/promote). */
