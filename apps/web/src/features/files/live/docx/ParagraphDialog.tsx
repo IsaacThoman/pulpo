@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { activeLocale, ui } from '@/i18n/ui'
-import { formatNumber, type LengthUnit } from './page-units'
+import { formatNumber, parseLength, pointsTo, type LengthUnit } from './page-units'
 import { FLAGS, paragraphChange, paragraphFields, type FieldError, type Flag, type LineRule, type ParagraphDialogFocus, type ParagraphFields, type SpecialIndent } from './paragraph-format'
 import { useSnapshotKey } from './use-snapshot-key'
 
@@ -151,7 +151,15 @@ function ParagraphForm({ format, unit, focus, onCancel, onApply }: {
               {input('left', withUnit(ui("Left indent"), unitLabel), { autoFocus: focus === 'indents' })}
               {input('right', withUnit(ui("Right indent"), unitLabel))}
               <Field id={`${id}-special`} label={ui("Special")}>
-                <Select value={fields.special} onValueChange={(value) => set('special', value as SpecialIndent)}>
+                <Select value={fields.special} onValueChange={(value) => {
+                  const special = value as SpecialIndent
+                  setFields((current) => {
+                    // As in Word and Docs, a first-line or hanging indent starts at half an inch, not at nothing.
+                    const by = special !== 'none' && !parseLength(current.by, unit) ? formatNumber(pointsTo(36, unit), locale) : current.by
+                    return { ...current, special, by }
+                  })
+                  setError(null)
+                }}>
                   <SelectTrigger id={`${id}-special`} className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">{ui("None")}</SelectItem>

@@ -2088,6 +2088,8 @@ try {
     await dialog.getByLabel('Left indent (in)').fill('0.5')
     await dialog.getByRole('combobox', { name: 'Special' }).click()
     await page.getByRole('option', { name: 'Hanging' }).click()
+    // As in Word, a new hanging indent starts at half an inch.
+    assert.equal(await dialog.getByLabel('By (in)').inputValue(), '0.5')
     await dialog.getByLabel('By (in)').fill('0.25')
     await dialog.getByLabel('Before (pt)').fill('6')
     await dialog.getByRole('combobox', { name: 'Line spacing' }).click()
