@@ -347,6 +347,16 @@ try {
       return [...slides.values()].flatMap((slide) => [...slide.get('shapes').values()].map((shape) => shape.get('line') ?? '')).join('')
     })
     assert.match(reopened, /tailEnd type="triangle"/)
+    // A text box has no line of its own or from a style: choosing a width draws one.
+    const box = await page.evaluate(() => {
+      const controller = window.harness.controllers.a
+      const key = controller.insertTextBox()
+      controller.setState({ editing: undefined })
+      return key
+    })
+    await page.getByRole('combobox', { name: 'Line width' }).selectOption('3')
+    const boxLine = await page.evaluate((shape) => window.harness.controllers.a.shape(window.harness.controllers.a.state.slide, shape).line, box)
+    assert.match(boxLine, /w="38100"><a:solidFill><a:schemeClr val="tx1"\/><\/a:solidFill><\/a:ln>$/)
     // Flip and bottom-anchored text render.
     const title = await slideShapes(page).first().getAttribute('data-key')
     await page.evaluate((shape) => {

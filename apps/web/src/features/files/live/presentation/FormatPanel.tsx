@@ -17,6 +17,7 @@ const EMU_PER_INCH = 914_400
 const EMU_PER_CM = 360_000
 const LINE_WIDTHS = [0.25, 0.5, 0.75, 1, 1.5, 2.25, 3, 4.5, 6]
 const DASHES = ['solid', 'dot', 'dash', 'lgDash', 'dashDot', 'sysDash', 'sysDot']
+const DEFAULT_LINE_FILL = '<a:solidFill><a:schemeClr val="tx1"/></a:solidFill>'
 const SHADOW = '<a:effectLst><a:outerShdw blurRad="50800" dist="38100" dir="2700000" algn="tl" rotWithShape="0"><a:prstClr val="black"><a:alpha val="40000"/></a:prstClr></a:outerShdw></a:effectLst>'
 
 function NumberField({ label, value, unit, onCommit, step = 0.01 }: { label: string; value: number | undefined; unit: string; onCommit(value: number): void; step?: number }) {
@@ -78,11 +79,14 @@ export function FormatPanel({ controller }: { controller: PresentationController
   const line = shape?.line ?? ''
   const lineWidth = Number(/\bw="(\d+)"/.exec(line)?.[1] ?? 9525) / 12_700
   const dash = /prstDash val="(\w+)"/.exec(line)?.[1] ?? 'solid'
+  // A shape with no line of its own or from its style (a text box) draws one once given a width or dash.
+  const drawsNoLine = !/<a:(noFill|solidFill|gradFill|pattFill)\b/.test(line) && !/<a:lnRef\b[^>]*\bidx="[1-9]/.test(shape?.xml ?? '')
   // Only what changed is written: arrowheads, caps, and the theme's line color stay.
   const setLine = (patch: { width?: number; fill?: string; dash?: string }) => {
+    const fill = patch.fill ?? (drawsNoLine && (patch.width !== undefined || patch.dash !== undefined) ? DEFAULT_LINE_FILL : undefined)
     controller.editLine(
       ...(patch.width !== undefined ? [lineEdits.width(patch.width * 12_700)] : []),
-      ...(patch.fill !== undefined ? [lineEdits.fill(patch.fill)] : []),
+      ...(fill !== undefined ? [lineEdits.fill(fill)] : []),
       ...(patch.dash !== undefined ? [lineEdits.dash(patch.dash)] : []),
     )
   }
