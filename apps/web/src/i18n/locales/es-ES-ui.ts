@@ -3431,6 +3431,7 @@ const esUi: Record<string, string> = {
   "Keep the .{{extension}} extension: another one would change what kind of file this is.": "Mantén la extensión .{{extension}}: otra cambiaría el tipo de archivo.",
   "That name would change what kind of file this is.": "Ese nombre cambiaría el tipo de archivo.",
   "Untitled presentation": "Presentación sin título",
+  "JupyterLab, VS Code, and Colab": "JupyterLab, VS Code y Colab",
 }
 
 export default esUi
