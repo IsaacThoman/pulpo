@@ -896,6 +896,9 @@ try {
     assert.equal(await page.locator('.pp-present .pp-present-stage').getAttribute('data-slide'), current)
     await page.keyboard.press('Escape')
     await page.locator('.pp-present').waitFor({ state: 'detached' })
+    // Presenting with a shape selected does not open its text behind the show.
+    assert.equal((await state(page)).editing, undefined)
+    assert.equal(await page.evaluate(() => document.activeElement?.className), 'pp-canvas')
     await page.keyboard.press('Meta+Shift+Enter')
     await page.locator('.pp-present .pp-present-stage').waitFor()
     assert.equal(await page.locator('.pp-present .pp-present-stage').getAttribute('data-slide'), await page.evaluate(() => window.harness.controllers.a.slideKeys()[0]))
@@ -936,6 +939,22 @@ try {
     await page.waitForFunction(() => window.harness.text('b').includes('Character styling'))
     await page.evaluate(() => window.harness.controllers.a.undo())
     await page.waitForFunction(() => window.harness.text('b').includes('Character formatting'))
+    // Focus coming back to the slide (the find bar closed) goes on in the shown match's text:
+    // typing replaces the match, not the whole text of the shape.
+    const shown = matches.find((match) => match.shape && match.root === match.shape && !match.row)
+    await page.evaluate((match) => window.harness.controllers.a.revealMatch(match), shown)
+    await page.locator('.pp-canvas .pp-find-match').first().waitFor()
+    const shapeText = () => page.evaluate((match) => {
+      const controller = window.harness.controllers.a
+      const flat = (node) => (node?.text ?? '') + (node?.content ?? []).map(flat).join('')
+      return controller.shape(match.slide, match.shape).text.content.map(flat)
+    }, shown)
+    const original = await shapeText()
+    await page.locator('.pp-canvas').first().focus()
+    await page.keyboard.type('styling')
+    const typed = await shapeText()
+    assert.equal(typed[shown.paragraph], original[shown.paragraph].slice(0, shown.from) + 'styling' + original[shown.paragraph].slice(shown.to))
+    assert.equal(typed.length, original.length)
     assert.deepEqual(errors, [])
     await page.close()
   })

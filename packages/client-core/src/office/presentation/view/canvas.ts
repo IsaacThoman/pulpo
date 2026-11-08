@@ -139,6 +139,7 @@ export class SlideCanvas {
     this.element.addEventListener('click', this.onClick)
     this.element.addEventListener('dragover', this.onDragOver)
     this.element.addEventListener('drop', this.onDrop)
+    this.element.addEventListener('focusin', this.onFocusIn)
     if (typeof ResizeObserver !== 'undefined') {
       this.resizeObserver = new ResizeObserver(() => this.layout())
       this.resizeObserver.observe(this.element)
@@ -199,7 +200,16 @@ export class SlideCanvas {
     if (next && next !== this.controller.state.slide) this.controller.goToSlide(next)
   }
 
+  /**
+   * Focuses the slide, or the text open for editing on it with its selection kept (a match find
+   * showed while focus stayed in the find bar), so typing goes on in that text.
+   */
   focus(): void {
+    if (this.editor && !this.editor.view.isDestroyed) this.editor.view.focus()
+    else this.focusSlide()
+  }
+
+  private focusSlide(): void {
     this.element.focus({ preventScroll: true })
   }
 
@@ -332,7 +342,7 @@ export class SlideCanvas {
     if (target.closest('.pp-text-editor') || target.closest('.pp-editor-frame') || target.closest('.pp-media')) return
     const slide = this.controller.state.slide
     if (!slide) return
-    this.focus()
+    this.focusSlide()
     const handle = target instanceof HTMLElement ? (target.dataset.handle as Handle | undefined) : undefined
     const point = this.slidePoint(event)
     const key = this.shapeAt(target)
@@ -810,7 +820,7 @@ export class SlideCanvas {
     this.controller.activeEditor = undefined
     this.editorFrame?.remove()
     this.editorFrame = undefined
-    if (focused) this.focus()
+    if (focused) this.focusSlide()
   }
 
   // -------------------------------------------------------------------------------------------
@@ -820,6 +830,13 @@ export class SlideCanvas {
     // Handled by the text editor already (Escape closing it must not also deselect the shape).
     if (event.defaultPrevented) return
     if (this.editor && (event.target as Element).closest?.('.pp-text-editor')) return
+    // Text open without focus (find showed a match from its bar): keys go on in that text, never
+    // to the shape, where typing would replace all of its text and Delete would remove it.
+    if (this.editor && !(event.metaKey || event.ctrlKey) && event.key !== 'Escape') {
+      if (event.key === 'Tab') event.preventDefault()
+      this.editor.view.focus()
+      return
+    }
     const controller = this.controller
     const mod = event.metaKey || event.ctrlKey
     const key = event.key
@@ -893,7 +910,8 @@ export class SlideCanvas {
       controller.selectShapes(controller.slide(controller.state.slide ?? '')?.shapes.map((shape) => shape.key) ?? [])
     } else if (key === 'Escape') {
       controller.selectShapes([])
-    } else if ((key === 'Enter' || key === 'F2') && shapes.length === 1) {
+    } else if ((key === 'Enter' || key === 'F2') && shapes.length === 1 && !mod && !event.altKey) {
+      // Cmd/Ctrl+Enter presents (the host's key), so only Enter alone opens the text.
       event.preventDefault()
       this.beginEditing(shapes[0]!)
     } else if (key === 'Tab' && !mod) {
@@ -986,6 +1004,11 @@ export class SlideCanvas {
     const key = this.controller.insertTextBox()
     if (!key) return
     queueMicrotask(() => { if (!this.controller.readOnly) this.editor?.view.dispatch(this.editor.view.state.tr.insertText(text)) })
+  }
+
+  // The slide (or its text) getting focus takes text formatting back from the speaker notes.
+  private readonly onFocusIn = (): void => {
+    if (this.controller.notesFocused) this.controller.setNotesTarget(undefined)
   }
 
   private readonly onContextMenu = (event: MouseEvent): void => {

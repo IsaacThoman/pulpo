@@ -4,11 +4,16 @@ import * as Y from 'yjs'
 import { blankPresentation } from '../blank.js'
 import { presentationCodec } from '../codec.js'
 import { setShapeText } from '../commands.js'
-import { plainToText } from '../text.js'
+import { plainToText, textToPlain } from '../text.js'
 import { memoryAssets } from '../testing/assets.js'
 import { SlideCanvas, type SlideCanvasOptions } from './canvas.js'
 import { LOCAL_ORIGIN, PresentationController } from './controller.js'
+import { NotesEditor } from './notes.js'
 import { SlideList } from './thumbnails.js'
+
+// ProseMirror scrolls the selection into view; jsdom has no layout, so ranges measure as empty.
+Range.prototype.getClientRects = () => ({ length: 0, item: () => null, [Symbol.iterator]: [][Symbol.iterator] }) as unknown as DOMRectList
+Range.prototype.getBoundingClientRect = () => ({ x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0, toJSON: () => ({}) }) as DOMRect
 
 const cleanup: (() => void)[] = []
 afterEach(() => {
@@ -104,6 +109,59 @@ describe('slide canvas events', () => {
     canvas.setZoom('fit')
     expect(canvas.isFit()).toBe(true)
     expect(onZoomChange.mock.lastCall?.[1]).toBe(true)
+  })
+
+  it('keeps keys in text find opened without focus, and gives it focus back', async () => {
+    const { controller, canvas, host } = await mount()
+    const slide = controller.state.slide!
+    const title = controller.slide(slide)!.shapes[0]!.key
+    setShapeText(controller.doc, slide, title, plainToText('Find this word'), LOCAL_ORIGIN)
+    const field = document.createElement('input')
+    document.body.append(field)
+    field.focus()
+    const [match] = controller.find('word')
+    controller.revealMatch(match!)
+    await Promise.resolve()
+    await Promise.resolve()
+    const text = host.querySelector<HTMLElement>('.pp-text-editor')!
+    expect(document.activeElement).toBe(field)
+    // Focus reaches the slide itself (Tab, or a host focusing the element): typing must not
+    // replace the shape's whole text, and Delete must not remove the shape.
+    canvas.element.focus()
+    for (const init of [{ key: 'x', code: 'KeyX' }, { key: 'Delete', code: 'Delete' }, { key: 'ArrowLeft', code: 'ArrowLeft' }]) {
+      expect(key(canvas.element, init).defaultPrevented).toBe(false)
+      expect(document.activeElement).toBe(text)
+      canvas.element.focus()
+    }
+    await Promise.resolve()
+    expect(textToPlain(controller.shape(slide, title)!.text!)).toBe('Find this word')
+    expect(controller.state.editing).toMatchObject({ shape: title })
+    // The host's canvas.focus() (closing its find bar) returns to the text, the match still selected.
+    field.focus()
+    canvas.focus()
+    expect(document.activeElement).toBe(text)
+    const selection = controller.activeEditor!.view.state.selection
+    expect(controller.activeEditor!.view.state.doc.textBetween(selection.from, selection.to)).toBe('word')
+  })
+
+  it('takes text formatting back from the speaker notes when the slide gets focus', async () => {
+    const { controller, canvas } = await mount()
+    const slide = controller.state.slide!
+    const title = controller.slide(slide)!.shapes[0]!.key
+    setShapeText(controller.doc, slide, title, plainToText('Title'), LOCAL_ORIGIN)
+    controller.selectShapes([title])
+    const notesHost = document.createElement('div')
+    document.body.append(notesHost)
+    const notes = new NotesEditor(notesHost, controller)
+    cleanup.push(() => notes.destroy())
+    notesHost.querySelector<HTMLElement>('.pp-text-editor')!.focus()
+    expect(controller.notesFocused).toBe(true)
+    // Focus moves to the slide without a click (Tab, or a host focusing it): Cmd+B bolds the selected shape.
+    canvas.element.focus()
+    expect(controller.notesFocused).toBe(false)
+    key(canvas.element, { key: 'b', code: 'KeyB', metaKey: true })
+    expect(controller.formatState()).toMatchObject({ bold: true, notes: false })
+    expect(controller.shape(slide, title)!.text!.content![0]!.content![0]!.marks).toContainEqual({ type: 'b', attrs: { value: true } })
   })
 
   it('selects every slide with Cmd+A in the strip and starts a slide with Ctrl+M there', async () => {
