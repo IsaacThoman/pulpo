@@ -27,7 +27,7 @@ export function fileLink(node: Pick<FileNode, 'id'>): string {
  * Rename, Move, Pin, Show in folder, Move to trash, and Details, with their dialogs. New documents
  * and copies open where this one is shown; trashing leaves the view (the toast can undo it).
  */
-export function useFileMenuHost({ node, ancestors, layout, titleRef, download, downloadPdf }: {
+export function useFileMenuHost({ node, ancestors, layout, titleRef, download, downloadPdf, pdfBusy }: {
   node: FileNode | undefined
   ancestors: readonly FileNode[]
   layout: 'page' | 'panel'
@@ -35,6 +35,8 @@ export function useFileMenuHost({ node, ancestors, layout, titleRef, download, d
   titleRef: RefObject<HTMLInputElement | null>
   download?: () => void
   downloadPdf?: () => void
+  /** While the PDF is being exported. */
+  pdfBusy?: boolean
 }): { host: FileMenuHost | undefined; dialogs: ReactNode } {
   const ops = useFileOperations()
   const navigate = useNavigate()
@@ -76,6 +78,7 @@ export function useFileMenuHost({ node, ancestors, layout, titleRef, download, d
     },
     download,
     downloadPdf,
+    pdfBusy,
     copyLink: () => {
       void writeClipboardText(fileLink(node)).then((copied) => ops.notify(copied ? ui("Link copied") : ui("Couldn't copy the link"), copied ? 'default' : 'error'))
     },

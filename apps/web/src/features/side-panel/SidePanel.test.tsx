@@ -19,6 +19,8 @@ function mount() {
     <Routes><Route path="*" element={<>
       <div data-file-editor="document"><div role="textbox" tabIndex={0} aria-label="Document body" /></div>
       <div data-file-editor="text"><div role="textbox" tabIndex={0} aria-label="Code" /></div>
+      <div data-file-editor="sheet"><textarea aria-label="Sheet grid" /></div>
+      <div data-file-editor="presentation"><div role="application" tabIndex={0} aria-label="Slide" /></div>
       <textarea aria-label="Composer" />
       <SidePanel available={1600} />
       <Path />
@@ -63,6 +65,25 @@ describe('side panel shortcuts', () => {
     await vi.waitFor(() => expect(runAgentShortcut).toHaveBeenCalledTimes(1))
     fireEvent.keyDown(screen.getByRole('textbox', { name: 'Code' }), { key: '\\', ctrlKey: true })
     expect(useSidePanel.getState().content).toEqual({ kind: 'file', id: 'plan' })
+  })
+
+  it('asks the agent from spreadsheets and presentations, which bind no Cmd/Ctrl+J, and leaves them Clear formatting', async () => {
+    mount()
+    expect(fireEvent.keyDown(screen.getByRole('textbox', { name: 'Sheet grid' }), { key: 'j', ctrlKey: true })).toBe(false)
+    await vi.waitFor(() => expect(runAgentShortcut).toHaveBeenCalledTimes(1))
+    expect(fireEvent.keyDown(screen.getByRole('application', { name: 'Slide' }), { key: 'j', metaKey: true })).toBe(false)
+    await vi.waitFor(() => expect(runAgentShortcut).toHaveBeenCalledTimes(2))
+    // Cmd/Ctrl+Backslash clears formatting there, so the panel stays as it is.
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Sheet grid' }), { key: '\\', ctrlKey: true })
+    fireEvent.keyDown(screen.getByRole('application', { name: 'Slide' }), { key: '\\', ctrlKey: true })
+    expect(useSidePanel.getState().content).toBeNull()
+  })
+
+  it("claims a document's Cmd/Ctrl+J where the editor left it alone (read-only), so the browser's Downloads never opens", () => {
+    mount()
+    // Ctrl is the primary modifier here (not a Mac).
+    expect(fireEvent.keyDown(screen.getByRole('textbox', { name: 'Document body' }), { key: 'j', ctrlKey: true })).toBe(false)
+    expect(runAgentShortcut).not.toHaveBeenCalled()
   })
 
   it('moves the panel to the main view with Cmd/Ctrl+Shift+Enter unless an editor used the key', () => {

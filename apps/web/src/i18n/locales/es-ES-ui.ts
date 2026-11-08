@@ -3041,6 +3041,7 @@ const esUi: Record<string, string> = {
   "This file can't be converted to that format": "Este archivo no se puede convertir a ese formato",
   "Wait for your other conversions to finish": "Espera a que terminen tus otras conversiones",
   "Converting “{{0}}”…": "Convirtiendo «{{0}}»…",
+  "Exporting “{{0}}” as PDF…": "Exportando «{{0}}» como PDF…",
 
   // File viewers
 

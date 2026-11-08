@@ -65,7 +65,11 @@ describe('composeFileMenu', () => {
       { downloads: [{ type: 'item', id: 'csv', label: 'CSV (current sheet)', onSelect: noop }] },
     )
     expect(outline(entries)).toContain('Download ▸ Microsoft Word (.docx), PDF document (.pdf), CSV (current sheet)')
-    expect(outline(entries)).toContain('Unpin from sidebar')
+    // The sidebar refuses trashed files, their folder hides them, and New may land in a trashed folder.
+    expect(outline(entries)).toContain('Unpin from sidebar (disabled)')
+    expect(outline(entries)).toContain('Show in folder (disabled)')
+    const create = entries.find((entry) => entry.type === 'submenu' && entry.id === 'new')
+    expect(create?.type === 'submenu' && create.disabled).toBe(true)
     expect(outline(entries)).toContain('Make a copy (disabled)')
     expect(outline(entries)).toContain('Rename (disabled)')
     expect(outline(entries)).toContain('Move to… (disabled)')
@@ -74,6 +78,24 @@ describe('composeFileMenu', () => {
     // The converter refuses files in the trash; the native download exports the open document.
     const download = entries.find((entry) => entry.type === 'submenu' && entry.id === 'download')
     expect(download?.type === 'submenu' && download.items.map((entry) => entry.type === 'item' && `${entry.id}:${Boolean(entry.disabled)}`)).toEqual(['download-native:false', 'download-pdf:true', 'csv:false'])
+  })
+
+  it('leaves Pin, Show in folder, and New available for a file that is not in the trash', () => {
+    const entries = composeFileMenu(host({ pin: { pinned: true, toggle: noop } }))
+    expect(outline(entries)).toContain('Unpin from sidebar')
+    expect(outline(entries)).toContain('Show in folder')
+    const create = entries.find((entry) => entry.type === 'submenu' && entry.id === 'new')
+    expect(create?.type === 'submenu' && Boolean(create.disabled)).toBe(false)
+  })
+
+  it("waits for the converter's PDF while it is being exported", () => {
+    const pdfItem = (busy: boolean) => {
+      const download = composeFileMenu(host({ downloadPdf: noop, pdfBusy: busy })).find((entry) => entry.type === 'submenu' && entry.id === 'download')
+      const pdf = download?.type === 'submenu' ? download.items.find((entry) => entry.type === 'item' && entry.id === 'download-pdf') : undefined
+      return pdf?.type === 'item' ? Boolean(pdf.disabled) : undefined
+    }
+    expect(pdfItem(false)).toBe(false)
+    expect(pdfItem(true)).toBe(true)
   })
 
   it("shows only the editor's own parts without a host (test harnesses)", () => {

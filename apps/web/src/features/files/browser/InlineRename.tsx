@@ -62,6 +62,8 @@ export function InlineRename({ node, className, onCommit, onCancel }: {
         onBlur={() => void commit()}
         onKeyDown={(event) => {
           event.stopPropagation()
+          // Enter and Escape while an IME composes confirm or cancel the candidate, not the name.
+          if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
           if (event.key === 'Enter') { event.preventDefault(); void commit() }
           if (event.key === 'Escape') { event.preventDefault(); settled.current = true; onCancel() }
         }}

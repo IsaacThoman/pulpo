@@ -34,11 +34,13 @@ vi.mock('@/features/side-panel/PanelControls', () => ({ PanelWindowButtons: () =
 const resolveFileSuggestion = vi.hoisted(() => vi.fn(async () => null))
 const importFromUrl = vi.hoisted(() => vi.fn())
 const createDoc = vi.hoisted(() => vi.fn())
+const trashFileNodes = vi.hoisted(() => vi.fn(async (ids: string[]) => ids))
 vi.mock('@/features/files/api', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/features/files/api')>(),
   resolveFileSuggestion,
   importFromUrl,
   createDoc,
+  trashFileNodes,
   fetchFolder: async (folderId: string | null) => folderId === 'plan-drafts' ? {
     // A folder inside the suggested folder Plan, holding more of the same suggestion.
     folder: { id: 'plan-drafts', parentId: 'plan', name: 'Drafts', kind: 'folder', updatedAt: '2026-10-06T00:00:00Z', suggestion: { changeId: 'plan-change' } },
@@ -414,5 +416,79 @@ describe('chats in Files', () => {
     expect(await screen.findByRole('menuitem', { name: /^Delete/ })).toBeTruthy()
     expect(screen.queryByRole('menuitem', { name: /^Move to trash/ })).toBeNull()
     useSettings.setState({ trashRetention: '30d' })
+  })
+})
+
+describe('keys pressed in an editor in the side panel', () => {
+  beforeEach(() => useFileClipboard.setState({ clip: null }))
+  afterEach(() => document.querySelectorAll('aside[data-side-panel]').forEach((element) => element.remove()))
+
+  /** A slide in the side panel: a focusable role=application element, as the slide canvas is. */
+  function sidePanelSlide() {
+    const aside = document.createElement('aside')
+    aside.setAttribute('data-side-panel', '')
+    aside.innerHTML = '<div data-file-editor="presentation"><div role="application" tabindex="0"></div></div>'
+    document.body.append(aside)
+    return aside.querySelector<HTMLElement>('[role=application]')!
+  }
+
+  /** A pick in a menu (a body portal that unmounts once chosen), as the editors' menu bars are. */
+  function pickMenuItem(wrapper = true) {
+    const portal = document.createElement('div')
+    if (wrapper) portal.setAttribute('data-radix-popper-content-wrapper', '')
+    portal.innerHTML = '<div role="menuitem"></div>'
+    document.body.append(portal)
+    const item = portal.firstElementChild!
+    fireEvent.pointerDown(item)
+    fireEvent.click(item)
+    portal.remove()
+  }
+
+  async function selectNotes() {
+    const item = await screen.findByRole('option', { name: /Notes\.md/ })
+    fireEvent.pointerDown(item)
+    fireEvent.click(item, { detail: 1 })
+    expect(item.getAttribute('aria-selected')).toBe('true')
+    return item
+  }
+
+  it('stay the editor\'s after a menu pick hands focus back to the slide', async () => {
+    showFiles()
+    await selectNotes()
+    const slide = sidePanelSlide()
+    fireEvent.pointerDown(slide)
+    pickMenuItem(false)
+    slide.focus()
+    fireEvent.keyDown(slide, { key: 'Enter' })
+    fireEvent.keyDown(slide, { key: 'Backspace' })
+    fireEvent.keyDown(slide, { key: 'c', ctrlKey: true, metaKey: true })
+    await act(async () => {})
+    expect(screen.getByTestId('location').textContent).toBe('/files')
+    expect(trashFileNodes).not.toHaveBeenCalled()
+    expect(useFileClipboard.getState().clip).toBeNull()
+  })
+
+  it('stay the side panel\'s after a menu pick leaves focus on the page', async () => {
+    showFiles()
+    await selectNotes()
+    const slide = sidePanelSlide()
+    fireEvent.pointerDown(slide)
+    pickMenuItem()
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    fireEvent.keyDown(document.body, { key: 'Enter' })
+    await act(async () => {})
+    expect(screen.getByTestId('location').textContent).toBe('/files')
+  })
+
+  it('go back to Files once it is clicked again, and to Files after a pick in its own menus', async () => {
+    showFiles()
+    const slide = sidePanelSlide()
+    fireEvent.pointerDown(slide)
+    const notes = await selectNotes()
+    pickMenuItem()
+    notes.focus()
+    fireEvent.keyDown(notes, { key: 'Enter' })
+    await act(async () => {})
+    expect(screen.getByTestId('location').textContent).toBe('/files/d/document')
   })
 })

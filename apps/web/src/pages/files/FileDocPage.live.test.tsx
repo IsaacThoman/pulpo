@@ -249,6 +249,24 @@ describe('the document title', () => {
     await waitFor(() => expect(api.updateFileNode).toHaveBeenCalledWith('report', { name: 'Report final.docx', expectedRevision: 3 }))
   })
 
+  it('leaves Enter and Escape to an IME while it composes, and keeps naming', async () => {
+    mount()
+    await waitFor(() => expect(title().value).toBe('Report.docx'))
+    title().focus()
+    fireEvent.change(title(), { target: { value: '企画書' } })
+    // Chrome confirms a candidate with a composing Enter; Safari sends it after the composition, as key code 229.
+    fireEvent.keyDown(title(), { key: 'Enter', keyCode: 229, isComposing: true })
+    fireEvent.keyDown(title(), { key: 'Enter', keyCode: 229 })
+    fireEvent.change(title(), { target: { value: '企画書 きかく' } })
+    fireEvent.keyDown(title(), { key: 'Escape', keyCode: 229, isComposing: true })
+    await act(async () => {})
+    expect(document.activeElement).toBe(title())
+    expect(title().value).toBe('企画書 きかく')
+    expect(api.updateFileNode).not.toHaveBeenCalled()
+    fireEvent.keyDown(title(), { key: 'Enter', keyCode: 13 })
+    await waitFor(() => expect(api.updateFileNode).toHaveBeenCalledWith('report', { name: '企画書 きかく.docx', expectedRevision: 3 }))
+  })
+
   it('names the browser tab after the document in the main view only', async () => {
     useSidePanel.getState().open({ kind: 'file', id: 'other' })
     const view = mount()

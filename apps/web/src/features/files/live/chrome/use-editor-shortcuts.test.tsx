@@ -1,19 +1,27 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from '@testing-library/react'
-import { useRef } from 'react'
+import { useRef, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { fileEditorRoot } from './editor-root'
 import { focusFileEditorIn, useEditorShortcuts, type EditorShortcutHandlers } from './use-editor-shortcuts'
 
 afterEach(cleanup)
 
-function Editor({ name, handlers }: { name: string; handlers: EditorShortcutHandlers }) {
+function Editor({ name, handlers, children }: { name: string; handlers: EditorShortcutHandlers; children?: ReactNode }) {
   const root = useRef<HTMLDivElement>(null)
   useEditorShortcuts(root, handlers)
   return (
-    <div ref={root} data-file-editor="document">
+    <div ref={root} {...fileEditorRoot('document')}>
       <div role="textbox" tabIndex={0} aria-label={name} />
+      {children}
     </div>
   )
+}
+
+/** A menu in a body portal, as the editors' menu bars, context menus, and dialogs render theirs. */
+function PortalMenu({ name }: { name: string }) {
+  return createPortal(<div role="menu" aria-label={name}><div role="menuitem" tabIndex={-1} aria-label={`${name} item`} /></div>, document.body)
 }
 
 const handlers = () => ({ print: vi.fn(), save: vi.fn(), shortcuts: vi.fn(), find: vi.fn(), replace: vi.fn(), focus: vi.fn() })
@@ -96,6 +104,34 @@ describe('useEditorShortcuts', () => {
     // Two editors in the main view: the page's keys belong to neither.
     view.rerender(<><Editor name="Main" handlers={main} /><Editor name="Second" handlers={handlers()} /></>)
     expect(press(document.body, 'p').defaultPrevented).toBe(false)
+  })
+
+  it("prints and saves from the editor's own menus and dialogs, which are portals outside its root", () => {
+    const main = handlers()
+    const panel = handlers()
+    render(<>
+      <Editor name="Main" handlers={main}><PortalMenu name="File" /></Editor>
+      <aside data-side-panel=""><Editor name="Panel" handlers={panel}><PortalMenu name="Panel file" /></Editor></aside>
+      <PortalMenu name="Chat" />
+    </>)
+    const fileItem = screen.getByRole('menuitem', { name: 'File item' })
+    expect(press(fileItem, 'p').defaultPrevented).toBe(true)
+    expect(main.print).toHaveBeenCalledOnce()
+    expect(press(fileItem, 's', { metaKey: false, ctrlKey: true }).defaultPrevented).toBe(true)
+    expect(main.save).toHaveBeenCalledOnce()
+    // Find, replace, and the shortcuts dialog stay with focus in the document.
+    press(fileItem, 'f')
+    press(fileItem, '/')
+    expect(main.find).not.toHaveBeenCalled()
+    expect(main.shortcuts).not.toHaveBeenCalled()
+    // The side panel's editor prints its own document from its menus.
+    press(screen.getByRole('menuitem', { name: 'Panel file item' }), 'p')
+    expect(panel.print).toHaveBeenCalledOnce()
+    expect(main.print).toHaveBeenCalledOnce()
+    // A menu no editor opened (the chat's) keeps the browser's keys.
+    expect(press(screen.getByRole('menuitem', { name: 'Chat item' }), 'p').defaultPrevented).toBe(false)
+    expect(main.print).toHaveBeenCalledOnce()
+    expect(panel.print).toHaveBeenCalledOnce()
   })
 
   it('lets a host put focus back in the editor shown in a view', () => {

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { canExportOfficePdf, officeConversionTarget, type FileNode, type OfficeEditableFormat } from '@pulpo/contracts'
 import { liveFormatOfName } from '@pulpo/client-core/office'
@@ -27,6 +27,8 @@ export function useOfficeConversion(onOpen: (node: FileNode) => void) {
   // Ids of files being converted or exported; several can run at once.
   const [converting, setConverting] = useState<ReadonlySet<string>>(new Set())
   const [exporting, setExporting] = useState<ReadonlySet<string>>(new Set())
+  // The same, read synchronously: menus built before an export started still see it.
+  const exportingIds = useRef(new Set<string>())
   const toggle = (set: typeof setConverting, id: string, on: boolean) => set((current) => {
     const next = new Set(current)
     if (on) next.add(id)
@@ -53,12 +55,19 @@ export function useOfficeConversion(onOpen: (node: FileNode) => void) {
   }
 
   const downloadPdf = async (node: FileNode) => {
+    // One export per file at a time: picking it again while the server converts does nothing.
+    if (exportingIds.current.has(node.id)) return
+    exportingIds.current.add(node.id)
     toggle(setExporting, node.id, true)
+    // The download starts only once the server has converted the file, which takes a few seconds.
+    const progress = show({ message: uit`Exporting “${node.name}” as PDF…`, persistent: true })
     try {
       await downloadFileAsPdf(node)
     } catch (cause) {
       show({ message: filesErrorMessage(cause, node.name), tone: 'error' })
     } finally {
+      dismiss(progress)
+      exportingIds.current.delete(node.id)
       toggle(setExporting, node.id, false)
     }
   }

@@ -283,6 +283,9 @@ function DocTitle({ node, inputRef }: { node: FileNode; inputRef?: RefObject<HTM
           }}
           onBlur={() => void save()}
           onKeyDown={(event) => {
+            // Enter and Escape while an IME composes confirm or cancel the candidate, not the name
+            // (Safari sends the confirming Enter after the composition ends, as key code 229).
+            if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
             if (event.key === 'Enter') {
               event.preventDefault()
               const result = titleName(node, name)
@@ -515,6 +518,7 @@ function OpenLiveDoc({ userId, docId, view, web }: { userId: string; docId: stri
     titleRef,
     download,
     downloadPdf: node && officeFileActions(node, officeEnabled).pdf ? () => void conversion.downloadPdf(node) : undefined,
+    pdfBusy: Boolean(node && conversion.exporting.has(node.id)),
   })
 
   return (
