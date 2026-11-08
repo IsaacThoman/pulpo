@@ -1963,7 +1963,8 @@ export class SheetInteractions {
     message.textContent = text
     view.root.appendChild(message)
     this.message = message
-    setTimeout(() => this.hideMessage(), 4000)
+    // Only this message: a newer one keeps its own four seconds.
+    setTimeout(() => { if (this.message === message) this.hideMessage() }, 4000)
   }
 
   private hideMessage(): void {

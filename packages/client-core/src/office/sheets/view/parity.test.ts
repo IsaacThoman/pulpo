@@ -1155,6 +1155,22 @@ describe('view options', () => {
 })
 
 describe('refusal feedback', () => {
+  it('keeps a newer message up for its own four seconds', () => {
+    const { view } = setup()
+    vi.useFakeTimers()
+    try {
+      view.clipboard.showMessage('first', 0, 0)
+      vi.advanceTimersByTime(3000)
+      view.clipboard.showMessage('second', 0, 0)
+      vi.advanceTimersByTime(1500)
+      expect(alertText(view)).toBe('second')
+      vi.advanceTimersByTime(3000)
+      expect(alertText(view)).toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('explains a refused multi-range copy and never copies the input placeholder', () => {
     const { view } = setup()
     view.select(cell(0, 0))
