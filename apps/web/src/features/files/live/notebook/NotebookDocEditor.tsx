@@ -682,6 +682,14 @@ export function NotebookDocEditor({ session, editable, width, toolbarSlot, asset
       pasteFallback.current = window.setTimeout(() => { if (controller.getState().canPaste) void controller.paste('below') }, 0)
       return
     }
+    // F3 and Ctrl/Cmd+G find the next match here too, as in a cell: stepping to another cell leaves the keyboard here.
+    const findMod = mac ? event.metaKey : event.ctrlKey
+    if (!event.altKey && ((key === 'F3' && !event.metaKey && !event.ctrlKey) || (findMod && key === 'g'))) {
+      event.preventDefault()
+      if (findOpen.current) search.step(event.shiftKey ? -1 : 1)
+      else openFind('find')
+      return
+    }
     if (controller.handleCommandKey(event)) event.preventDefault()
   }
   const closeFind = (match: NotebookSearchMatch | null) => {

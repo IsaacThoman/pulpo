@@ -262,6 +262,27 @@ describe('notebook editor parity', () => {
     }
   })
 
+  it('steps through find matches with F3 and Ctrl+G from the cell list, where stepping to another cell leaves the keyboard', async () => {
+    const notebook = await openNotebook([code('a', 'needle = 1'), code('b', 'print(needle)'), code('c', 'needle += 1')])
+    try {
+      notebook.list.focus()
+      // With the bar closed, F3 opens it.
+      fireEvent.keyDown(notebook.list, { key: 'F3' })
+      const field = await screen.findByRole('textbox', { name: 'Find in notebook' })
+      fireEvent.change(field, { target: { value: 'needle' } })
+      expect(screen.getByText('1 of 3')).toBeTruthy()
+      notebook.list.focus()
+      expect(fireEvent.keyDown(notebook.list, { key: 'F3' })).toBe(false)
+      expect(screen.getByText('2 of 3')).toBeTruthy()
+      fireEvent.keyDown(notebook.list, { key: 'g', ctrlKey: true })
+      expect(screen.getByText('3 of 3')).toBeTruthy()
+      fireEvent.keyDown(notebook.list, { key: 'F3', shiftKey: true })
+      expect(screen.getByText('2 of 3')).toBeTruthy()
+    } finally {
+      notebook.dispose()
+    }
+  })
+
   it('opens the find bar with Ctrl+F in command mode and gives the keyboard back on Escape', async () => {
     const notebook = await openNotebook([code('a', 'needle = 1'), code('b', 'print(needle)')])
     try {
