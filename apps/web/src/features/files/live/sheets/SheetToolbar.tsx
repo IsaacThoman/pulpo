@@ -118,8 +118,11 @@ const formatKeys = (kind: QuickFormat) => {
   const digit = QUICK_FORMAT_DIGITS[kind]
   return { label: isAppleShortcut() ? `⌃⇧${digit}` : `Ctrl+Shift+${digit}`, aria: `Control+Shift+${digit}` }
 }
-/** AutoSum: Alt+= on Windows and Linux, Cmd+Shift+T on a Mac (Option+= types ≠ there). */
-const autoSumKeys = () => isAppleShortcut() ? { label: '⌘⇧T', aria: 'Meta+Shift+T' } : { label: 'Alt+=', aria: 'Alt+=' }
+/**
+ * AutoSum: Alt+= on Windows and Linux, ⌃= on a Mac (Option+= types ≠ there, and Chrome keeps
+ * Cmd+Shift+T, the grid's other Mac key, for reopening a closed tab).
+ */
+const autoSumKeys = () => isAppleShortcut() ? { label: '⌃=', aria: 'Control+=' } : { label: 'Alt+=', aria: 'Alt+=' }
 
 export function SheetToolbar({ view, state, onFind, onNote, onLink, onInsertImage, onPrint, onCustomNumberFormat, slot }: {
   view: SheetView

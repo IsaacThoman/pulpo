@@ -3834,6 +3834,7 @@ const esUi: Record<string, string> = {
   "Choose a rule.": "Elige una regla.",
   "Add at least one item.": "Añade al menos un elemento.",
   "Items can't contain commas.": "Los elementos no pueden contener comas.",
+  "Items can have up to 255 characters in all. For a longer list, put the items in cells and choose Dropdown (from a range).": "Los elementos pueden tener hasta 255 caracteres en total. Para una lista más larga, pon los elementos en celdas y elige Desplegable (de un intervalo).",
   "Enter a range, like D1:D5 or Sheet2!A1:A10.": "Introduce un intervalo, como D1:D5 o Hoja2!A1:A10.",
   "Enter the text.": "Introduce el texto.",
   "Enter a date, like 12/31/2026.": "Introduce una fecha, como 2026-12-31.",

@@ -963,25 +963,40 @@ export function updateValidation(sheet: SheetModel, id: string, validation: Omit
   })
 }
 
-/** A list validation's literal `"a,b,c"` formula; undefined when an item can't be written in one (commas). */
+/**
+ * Excel refuses a file (and drops its validations) whose literal list runs past 255 characters:
+ * the items joined with commas, without the quotes, a doubled `""` counting as one. Longer lists
+ * belong in cells, with the rule pointing at their range.
+ */
+export const MAX_LIST_VALIDATION_LENGTH = 255
+
+/** Whether items are too long, together, for a literal list (see MAX_LIST_VALIDATION_LENGTH). */
+export function listValidationTooLong(items: string[]): boolean {
+  return items.map((item) => item.trim()).filter(Boolean).join(',').length > MAX_LIST_VALIDATION_LENGTH
+}
+
+/**
+ * A list validation's literal `"a,b,c"` formula; undefined when the items can't be written in
+ * one: an item has a comma, or they run past Excel's 255 characters (listValidationTooLong).
+ */
 export function listValidationFormula(items: string[]): string | undefined {
   const cleaned = items.map((item) => item.trim()).filter(Boolean)
-  if (!cleaned.length || cleaned.some((item) => item.includes(','))) return undefined
+  if (!cleaned.length || cleaned.some((item) => item.includes(',')) || listValidationTooLong(cleaned)) return undefined
   return `"${cleaned.join(',').replace(/"/g, '""')}"`
 }
 
 /**
  * Adds a conditional format rule over ranges with the highest priority, as Excel adds new rules
- * at the top: every other rule on the sheet moves down one, keeping priorities unique.
+ * at the top. Its priority (whatever `rule` says) goes one above the sheet's current top, which
+ * may take it to 0 or below; the xlsx writer shifts a sheet's priorities back to 1 and up. No
+ * other rule is rewritten, so a collaborator's concurrent clear or edit of them is kept (a
+ * rewrite would bring a cleared rule back, or undo the edit). Two rules added at once tie, and
+ * apply in export order on every client.
  */
 export function addConditionalRule(sheet: SheetModel, ranges: CellRange[], rule: ConditionalRule): void {
-  sheet.workbook.transact(() => {
-    for (const [id, raw] of [...sheet.cf]) {
-      const format = raw as ConditionalFormat
-      if (format.rules.some((existing) => existing.priority >= rule.priority)) sheet.cf.set(id, { ...format, rules: format.rules.map((existing) => existing.priority >= rule.priority ? { ...existing, priority: existing.priority + 1 } : existing) })
-    }
-    setConditionalFormat(sheet, ranges, { rules: [rule] }, 'add')
-  })
+  let top = Infinity
+  for (const raw of sheet.cf.values()) for (const existing of (raw as ConditionalFormat).rules) top = Math.min(top, existing.priority)
+  setConditionalFormat(sheet, ranges, { rules: [{ ...rule, priority: Number.isFinite(top) ? top - 1 : 1 }] }, 'add')
 }
 
 /** The contiguous numbers directly above a cell, else left of it, for AutoSum to total. */

@@ -10,7 +10,7 @@ import { MemoryLiveAssetStore } from '../../assets.js'
 import { MAX_COLS, MAX_ROWS, type CellRange } from '../address.js'
 import { SheetCodec } from '../codec/codec.js'
 import { toIdForm } from '../model/formula-ids.js'
-import type { ConditionalFormat, DataValidation } from '../model/schema.js'
+import type { AutoFilter, ConditionalFormat, DataValidation } from '../model/schema.js'
 import { WorkbookModel } from '../model/workbook.js'
 import { CONDITIONAL_STYLES, Stylesheet } from '../styles/stylesheet.js'
 import { toHtml } from './clipboard.js'
@@ -247,9 +247,97 @@ describe('hidden row and column markers', () => {
     sheet.setRowProp([2], 'hidden', true)
     expect(view.hiddenMarks().rows).toEqual([7])
     const edge = view.cellRect(7, 0).y
-    pointer(view, 'pointerdown', view.headerWidth / 2, edge - 7)
+    // On the arrows, at the header's right edge.
+    pointer(view, 'pointerdown', view.headerWidth - 7, edge - 7)
     expect(view.rows.isHidden(6)).toBe(false)
     expect(view.rows.isHidden(2)).toBe(true)
+  })
+
+  /** Presses (or taps) a header point and says what happened: the rows unhid, or which line is selected. */
+  function pressHeader(view: SheetView, x: number, y: number, touch = false): string {
+    const before = view.undoManager.undoStack.length
+    for (const type of ['pointerdown', 'pointerup'] as const) {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 })
+      Object.defineProperty(event, 'pointerType', { value: touch ? 'touch' : 'mouse' })
+      Object.defineProperty(event, 'pointerId', { value: 1 })
+      ;(type === 'pointerdown' ? view.scroller : window).dispatchEvent(event)
+    }
+    if (view.undoManager.undoStack.length > before) {
+      view.undo()
+      return 'unhid'
+    }
+    const range = view.selection.ranges[0]!
+    if (range.left === 0 && range.right === MAX_COLS - 1) return `row ${range.top}`
+    if (range.top === 0 && range.bottom === MAX_ROWS - 1) return `col ${range.left}`
+    return 'none'
+  }
+
+  it('leaves the row numbers next to hidden rows selecting their row at any zoom; only the arrows unhide', () => {
+    const { view } = setup()
+    view.select({ top: 3, left: 0, bottom: 4, right: MAX_COLS - 1 })
+    view.hideLines('row', true)
+    for (const zoom of [1, 0.5, 2]) {
+      view.setZoom(zoom)
+      for (const touch of [false, true]) {
+        const boundary = view.cellRect(5, 0).y
+        const height = view.cellRect(5, 0).height
+        // The middle of each row number (outside the 4px resize bands) selects that row.
+        for (let dy = 5; dy < height - 4; dy++) {
+          view.select(cell(10, 10))
+          expect(pressHeader(view, view.headerWidth / 2, boundary + dy, touch), `zoom ${zoom} dy ${dy}${touch ? ' touch' : ''}`).toBe('row 5')
+          view.select(cell(10, 10))
+          expect(pressHeader(view, view.headerWidth / 2, boundary - dy, touch), `zoom ${zoom} dy -${dy}${touch ? ' touch' : ''}`).toBe('row 2')
+        }
+        // The arrows either side of the boundary still unhide the run.
+        const size = Math.max(3, Math.round(3.5 * zoom))
+        const arrowX = view.headerWidth - 3 - size
+        for (const dy of [5 + size / 2, -(5 + size / 2)]) {
+          view.select(cell(10, 10))
+          expect(pressHeader(view, arrowX, boundary + dy, touch), `zoom ${zoom} arrow ${dy}${touch ? ' touch' : ''}`).toBe('unhid')
+        }
+        expect(view.rows.isHidden(3)).toBe(true)
+      }
+    }
+  })
+
+  it('leaves the column letters next to hidden columns selecting their column when zoomed out', () => {
+    const { view } = setup()
+    view.select({ top: 0, left: 2, bottom: MAX_ROWS - 1, right: 3 })
+    view.hideLines('col', true)
+    view.setZoom(0.25)
+    const after = view.cellRect(0, 4)
+    view.select(cell(10, 10))
+    expect(pressHeader(view, after.x + after.width / 2, view.headerHeight / 2)).toBe('col 4')
+    const before = view.cellRect(0, 1)
+    view.select(cell(10, 10))
+    expect(pressHeader(view, before.x + before.width / 2, view.headerHeight / 2, true)).toBe('col 1')
+    // The arrow still unhides.
+    view.select(cell(10, 10))
+    expect(pressHeader(view, after.x + 5, view.headerHeight / 2)).toBe('unhid')
+  })
+
+  it('builds the set of filter-hidden rows once per filter, not on every frame', () => {
+    const { doc, sheet, view } = setup()
+    // Within the grid's first 1000 rows.
+    const count = 900
+    const hidden = Array.from({ length: count }, (_, index) => index + 1)
+    doc.transact(() => {
+      sheet.ensure(count + 1, 0)
+      sheet.filter.set('value', { range: sheet.rangeIds({ top: 0, left: 0, bottom: count + 1, right: 0 }), columns: [{ col: 0, values: ['keep'] }], hiddenRows: hidden.map((row) => sheet.rows.idAt(row)) })
+      sheet.setRowProp(hidden, 'hidden', true)
+    })
+    commands.setHidden(sheet, 'row', [count + 3], true)
+    const add = vi.spyOn(Set.prototype, 'add')
+    for (let frame = 0; frame < 20; frame++) expect(view.hiddenMarks().rows).toEqual([count + 4])
+    const added = new Set(add.mock.instances.filter((set) => (set as unknown as Set<unknown>).size >= count)).size
+    add.mockRestore()
+    // One set of the filter's rows at most, however many frames draw the headers.
+    expect(added).toBeLessThanOrEqual(1)
+    // A new filter value is honoured: the run's last row is now hidden by hand, so the run gets a marker.
+    const filter = sheet.filter.get('value') as AutoFilter
+    sheet.filter.set('value', { ...filter, hiddenRows: filter.hiddenRows!.filter((id) => id !== sheet.rows.idAt(count)) })
+    sheet.setRowProp([count], 'manualHidden', true)
+    expect(view.hiddenMarks().rows).toEqual([count + 1, count + 4])
   })
 
   it('offers no marker that is scrolled under frozen columns', () => {
@@ -541,6 +629,24 @@ describe('keyboard shortcuts', () => {
     expect(view.rows.isHidden(6)).toBe(true)
   })
 
+  it('hides no rows or columns in a CSV, as its menus offer no Hide, but still unhides them', () => {
+    const { sheet, view } = setup({ fileFormat: 'csv' })
+    view.select(cell(2, 1))
+    // Ctrl+0 stays the browser's zoom reset.
+    expect(key(view, '0', { code: 'Digit0', ctrlKey: true }).defaultPrevented).toBe(false)
+    expect(key(view, '9', { code: 'Digit9', ctrlKey: true }).defaultPrevented).toBe(false)
+    key(view, '0', { code: 'Digit0', ctrlKey: true, altKey: true })
+    key(view, '9', { code: 'Digit9', ctrlKey: true, altKey: true })
+    view.hideLines('col', true)
+    expect([view.rows.isHidden(2), view.cols.isHidden(1)]).toEqual([false, false])
+    expect(view.undoManager.canUndo()).toBe(false)
+    // Lines hidden before (by a collaborator, or an older version) can still be shown.
+    commands.setHidden(sheet, 'col', [1], true)
+    view.select({ top: 0, left: 0, bottom: 0, right: 2 })
+    expect(key(view, ')', { code: 'Digit0', ctrlKey: true, shiftKey: true }).defaultPrevented).toBe(true)
+    expect(view.cols.isHidden(1)).toBe(false)
+  })
+
   it('follows Excel for Mac and Google on a Mac, leaving Cmd+9, Cmd+0 and Cmd+H to the browser', () => {
     vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel')
     const { sheet, view } = setup()
@@ -566,12 +672,19 @@ describe('keyboard shortcuts', () => {
     expect(key(view, 'h', { code: 'KeyH', metaKey: true }).defaultPrevented).toBe(false)
     expect(key(view, 'H', { code: 'KeyH', metaKey: true, shiftKey: true }).defaultPrevented).toBe(true)
     expect(seen).toEqual([{ request: 'replace' }])
-    // AutoSum is Cmd+Shift+T; Option+= types ≠.
+    // AutoSum is Control+= (Chrome keeps Cmd+Shift+T, which other browsers pass on); Option+= types ≠.
     view.select(cell(2, 0))
     expect(key(view, '≠', { code: 'Equal', altKey: true }).defaultPrevented).toBe(false)
     expect(view.editing).toBeUndefined()
+    expect(key(view, '=', { code: 'Equal', ctrlKey: true }).defaultPrevented).toBe(true)
+    expect(view.editing?.text).toBe('=SUM(A1:A2)')
+    view.cancelEdit()
     key(view, 'T', { code: 'KeyT', metaKey: true, shiftKey: true })
     expect(view.editing?.text).toBe('=SUM(A1:A2)')
+    view.cancelEdit()
+    // Cmd+= stays the browser's zoom.
+    expect(key(view, '=', { code: 'Equal', metaKey: true }).defaultPrevented).toBe(false)
+    expect(view.editing).toBeUndefined()
   })
 
   it('keeps AltGr characters typeable', () => {
@@ -813,6 +926,33 @@ describe('data validation', () => {
     void sheet
   })
 
+  it('asks about a value a warning rule flags when a click on another cell commits it', () => {
+    const { view } = setup()
+    view.select(cell(0, 0))
+    view.setValidation({ type: 'whole', operator: 'between', formula1: '1', formula2: '10', errorStyle: 'warning' })
+    const seen = requests(view)
+    view.beginEdit('50', true)
+    click(view, 3, 2)
+    expect(seen).toHaveLength(1)
+    // Nothing is written, nor selected, until the answer.
+    expect([view.editing?.text, view.inputText(0, 0), view.getState().selectionLabel]).toEqual(['50', '', 'A1'])
+    ;(seen[0] as Extract<SheetRequest, { request: 'validation' }>).respond('accept')
+    expect([view.editing, view.inputText(0, 0), view.getState().selectionLabel]).toEqual([undefined, '50', 'C4'])
+    // Touch taps ask too.
+    view.select(cell(0, 0))
+    view.beginEdit('60', true)
+    const at = center(view, 5, 1)
+    for (const type of ['pointerdown', 'pointerup'] as const) {
+      const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: at.x, clientY: at.y, button: 0 })
+      Object.defineProperty(event, 'pointerType', { value: 'touch' })
+      Object.defineProperty(event, 'pointerId', { value: 1 })
+      ;(type === 'pointerdown' ? view.scroller : window).dispatchEvent(event)
+    }
+    expect(seen).toHaveLength(2)
+    ;(seen[1] as Extract<SheetRequest, { request: 'validation' }>).respond('retry')
+    expect([view.editing?.text, view.inputText(0, 0), view.getState().selectionLabel]).toEqual(['60', '50', 'A1'])
+  })
+
   it('settles the edit once when the host answers while the request is dispatched', () => {
     const { view } = setup()
     view.select(cell(0, 0))
@@ -883,6 +1023,12 @@ describe('data validation', () => {
     expect(commands.listValidationFormula([' a ', 'b"c', ''])).toBe('"a,b""c"')
     expect(commands.listValidationFormula(['a,b'])).toBeUndefined()
     expect(commands.listValidationFormula([])).toBeUndefined()
+    // Excel refuses a file whose literal list runs past 255 characters (commas in, quotes out).
+    const fits = ['a'.repeat(127), `"${'b'.repeat(126)}`]
+    expect(commands.listValidationTooLong(fits)).toBe(false)
+    expect(commands.listValidationFormula(fits)).toHaveLength(255 + 3)
+    expect(commands.listValidationTooLong([...fits, 'c'])).toBe(true)
+    expect(commands.listValidationFormula([...fits, 'c'])).toBeUndefined()
   })
 
   it('round-trips rules set from the editor through xlsx', async () => {
@@ -926,17 +1072,75 @@ describe('conditional formatting', () => {
     expect(view.workbook.metaValue('stylesXml')).toBe(stylesXml)
   })
 
-  it('puts new rules on top with unique priorities', () => {
-    const { sheet, view } = setup()
+  it('puts new rules on top with unique priorities, written from 1 in the file', async () => {
+    const { doc, sheet, view } = setup()
     values(sheet)
     view.select({ top: 0, left: 0, bottom: 9, right: 0 })
     view.addConditionalRule(highlightRule('greaterThan', ['5'], 'redText'))
     view.addConditionalRule(highlightRule('greaterThan', ['8'], 'greenFillDarkGreenText'))
-    const priorities = [...sheet.cf.values()].flatMap((format) => (format as ConditionalFormat).rules.map((rule) => rule.priority)).sort()
-    expect(priorities).toEqual([1, 2])
+    const priorities = [...sheet.cf.values()].flatMap((format) => (format as ConditionalFormat).rules.map((rule) => `${rule.formulas}:${rule.priority}`)).sort()
+    expect(priorities).toEqual(['5:1', '8:0'])
     // The newer rule wins its font color; the older one still applies where only it matches.
     expect(view.cellRender(9, 0).overlay?.style?.font?.fontColor).toEqual({ rgb: 'FF006100' })
     expect(view.cellRender(6, 0).overlay?.style?.font?.fontColor).toEqual({ rgb: 'FF9C0006' })
+    const xml = strFromU8(unzipSync(await new SheetCodec().exportFile(doc, { name: 'cf.xlsx', assets: view.options.assets }))['xl/worksheets/sheet1.xml']!)
+    const written = [...xml.matchAll(/<cfRule[^>]*priority="(\d+)"[^>]*>.*?<formula>(\d+)<\/formula>/g)].map((match) => `${match[2]}:${match[1]}`).sort()
+    expect(written).toEqual(['5:2', '8:1'])
+  })
+
+  it("keeps a file's rules when one is added above them and the file comes back with other changes (an agent push)", async () => {
+    const codec = new SheetCodec()
+    const first = setup()
+    values(first.sheet)
+    first.view.select({ top: 0, left: 0, bottom: 9, right: 0 })
+    first.view.addConditionalRule(highlightRule('greaterThan', ['5'], 'redText'))
+    const context = { name: 'push.xlsx', assets: first.view.options.assets }
+    // A file with a rule at priority 1 is opened, and a rule added above it (priority 0, written as 1).
+    const doc = new Y.Doc()
+    await codec.importFile(doc, await codec.exportFile(first.doc, context), context)
+    const sheet = new WorkbookModel(doc).sheets()[0]!
+    const [fileRule] = [...sheet.cf.keys()]
+    const view = mount(doc, { assets: context.assets })
+    view.select({ top: 0, left: 0, bottom: 9, right: 0 })
+    view.addConditionalRule(highlightRule('greaterThan', ['8'], 'greenFillDarkGreenText'))
+    // The agent pulls the file, changes a cell and pushes it back.
+    const pulled = new Y.Doc()
+    await codec.importFile(pulled, await codec.exportFile(doc, context), context)
+    new WorkbookModel(pulled).sheets()[0]!.setCell(20, 3, { v: 'agent' })
+    await codec.applyFile(doc, await codec.exportFile(pulled, context), context, 'agent')
+    expect(sheet.cell(20, 3)?.v).toBe('agent')
+    // The file's rule, written one priority lower, still matches: it isn't deleted and added again.
+    expect(sheet.cf.has(fileRule!)).toBe(true)
+    const order = () => [...sheet.cf.values()].flatMap((format) => (format as ConditionalFormat).rules).sort((a, b) => a.priority - b.priority).map((rule) => rule.formulas?.[0])
+    expect(order()).toEqual(['8', '5'])
+    expect(view.cellRender(9, 0).overlay?.style?.font?.fontColor).toEqual({ rgb: 'FF006100' })
+  })
+
+  it("adds a rule without rewriting the sheet's other rules, so a collaborator's concurrent clear stays cleared", () => {
+    for (const scope of ['sheet', 'selection'] as const) {
+      const { doc, sheet, view } = setup()
+      values(sheet)
+      view.select({ top: 0, left: 0, bottom: 4, right: 0 })
+      view.addConditionalRule(highlightRule('greaterThan', ['2']))
+      const other = new Y.Doc()
+      Y.applyUpdate(other, Y.encodeStateAsUpdate(doc))
+      const theirs = mount(other)
+      // They clear the rule while we add an unrelated one elsewhere, both offline.
+      theirs.select({ top: 0, left: 0, bottom: 4, right: 0 })
+      theirs.clearConditionalFormats(scope)
+      const before = Y.encodeStateVector(doc)
+      view.select({ top: 0, left: 2, bottom: 4, right: 2 })
+      view.addConditionalRule(highlightRule('lessThan', ['1']))
+      const ours = Y.encodeStateAsUpdate(doc, Y.encodeStateVector(other))
+      Y.applyUpdate(doc, Y.encodeStateAsUpdate(other, before), 'remote')
+      Y.applyUpdate(other, ours, 'remote')
+      for (const replica of [sheet, new WorkbookModel(other).sheets()[0]!]) {
+        expect([...replica.cf.values()].flatMap((format) => (format as ConditionalFormat).rules.map((rule) => `${rule.operator}:${rule.formulas}`)), scope).toEqual(['lessThan:1'])
+      }
+      // Undo takes back just the added rule.
+      view.undo()
+      expect(sheet.cf.size).toBe(0)
+    }
   })
 
   it('adds color scales, data bars and icon sets without touching the stylesheet', () => {
@@ -1292,6 +1496,58 @@ describe('dragging the selection border', () => {
     drag(view, 8, 0)
     expect(alertText(view)).toBe(view.labels.moveFiltered)
     expect(view.inputText(0, 0)).toBe('1')
+  })
+
+  it('keeps a pending Ctrl+X through a drag elsewhere, so the paste still moves it', () => {
+    /** Ctrl+X on a cell: what the system clipboard then holds. */
+    const cutAt = (view: SheetView, row: number, col: number) => {
+      view.select(cell(row, col))
+      const data: Record<string, string> = {}
+      const event = new Event('cut', { bubbles: true, cancelable: true })
+      Object.defineProperty(event, 'clipboardData', { value: { setData: (type: string, value: string) => { data[type] = value } } })
+      view.input.dispatchEvent(event)
+      return data
+    }
+    const pasteAt = (view: SheetView, row: number, col: number, data: Record<string, string>) => {
+      view.select(cell(row, col))
+      const event = new Event('paste', { bubbles: true, cancelable: true })
+      Object.defineProperty(event, 'clipboardData', { value: { getData: (type: string) => data[type] ?? '' } })
+      view.input.dispatchEvent(event)
+    }
+    for (const kind of ['move', 'refused', 'copy'] as const) {
+      const { sheet, view } = setup()
+      sheet.setCell(0, 0, { v: 'cutme' })
+      sheet.setCell(4, 1, { v: 'moveme' })
+      if (kind === 'refused') {
+        view.select({ top: 7, left: 3, bottom: 7, right: 4 })
+        view.merge()
+      }
+      const clipboard = cutAt(view, 0, 0)
+      expect(view.copyRange).toEqual(cell(0, 0))
+      view.select(cell(4, 1))
+      drag(view, 7, 3, kind === 'copy' ? { ctrlKey: true } : {})
+      if (kind === 'copy') {
+        // Pasting a copy changes the sheet the cut was checked against, as a Ctrl+V would: the
+        // cut ends, and its marquee no longer claims one is pending.
+        expect(view.copyRange).toBeUndefined()
+        continue
+      }
+      // The marquee still shows the cut a later paste moves.
+      expect(view.copyRange, kind).toEqual(cell(0, 0))
+      pasteAt(view, 0, 5, clipboard)
+      expect([view.inputText(0, 0), view.inputText(0, 5)], kind).toEqual(['', 'cutme'])
+      expect(view.copyRange).toBeUndefined()
+    }
+    // Dragging the cut cells themselves changes them: the cut ends (a later paste copies), and so does its marquee.
+    const { sheet, view } = setup()
+    sheet.setCell(0, 0, { v: 'cutme' })
+    const clipboard = cutAt(view, 0, 0)
+    // Grabbed just below A1 (in A2): dropping on D4 puts it at D3.
+    drag(view, 3, 3)
+    expect([view.inputText(0, 0), view.inputText(2, 3)]).toEqual(['', 'cutme'])
+    expect(view.copyRange).toBeUndefined()
+    pasteAt(view, 0, 5, clipboard)
+    expect([view.inputText(2, 3), view.inputText(0, 5)]).toEqual(['cutme', 'cutme'])
   })
 
   it('treats a press on the border that never drags as a click on the cell under it', () => {

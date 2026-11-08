@@ -132,6 +132,20 @@ export type ConditionalRuleInput = Omit<ConditionalRule, 'priority' | 'dxfId' | 
 /** Transaction origin of preset styles: kept out of every undo history. */
 const PRESET_STYLES_ORIGIN = { sheetPresetStyles: true }
 
+/**
+ * Row ids a filter hides, as a set, built once per filter value: every change to a filter stores
+ * a new value with a new `hiddenRows` array (none is edited in place), so the array's identity
+ * keys the set. hiddenMarks runs on every frame and header pointer move, and a large filtered
+ * sheet hides hundreds of thousands of rows.
+ */
+const filteredRowSets = new WeakMap<readonly string[], ReadonlySet<string>>()
+function filteredRowSet(ids: readonly string[] | undefined): ReadonlySet<string> | undefined {
+  if (!ids) return undefined
+  let set = filteredRowSets.get(ids)
+  if (!set) filteredRowSets.set(ids, (set = new Set(ids)))
+  return set
+}
+
 /** The formula Excel writes for text rules (other readers evaluate it instead of `text`). */
 function textRuleFormula(rule: Pick<ConditionalRule, 'type' | 'text'>, cell: string): string[] | undefined {
   const text = `"${(rule.text ?? '').replace(/"/g, '""')}"`
@@ -853,7 +867,7 @@ export class SheetView {
     const scene = { ...this.sceneGeometry(), width: this.width, height: this.height } as Scene
     const panes = GridRenderer.panes(scene)
     const filter = sheet.filter.get('value') as AutoFilter | undefined
-    const filtered = new Set(filter?.hiddenRows)
+    const filtered = filteredRowSet(filter?.hiddenRows)
     // A boundary scrolled under the frozen panes is neither drawn nor clickable.
     const frozenRight = scene.headerWidth + scene.cols.offset(scene.frozenCols) * scene.zoom - 1
     const frozenBottom = scene.headerHeight + scene.rows.offset(scene.frozenRows) * scene.zoom - 1
@@ -867,7 +881,7 @@ export class SheetView {
       for (let row = Math.max(1, pane.rows[0]); row <= pane.rows[1]; row++) {
         if (this.rowLayout.isHidden(row) || !this.rowLayout.isHidden(row - 1)) continue
         if (row >= scene.frozenRows && Math.round(GridRenderer.y(scene, row)) < frozenBottom) continue
-        if (sheet.rowProp(row - 1, 'manualHidden') || !filtered.has(sheet.rows.idAt(row - 1))) rows.add(row)
+        if (sheet.rowProp(row - 1, 'manualHidden') || !filtered?.has(sheet.rows.idAt(row - 1))) rows.add(row)
       }
     }
     return { rows: [...rows].sort((a, b) => a - b), cols: [...cols].sort((a, b) => a - b) }
@@ -1639,6 +1653,8 @@ export class SheetView {
 
   /** Shifts cells (not whole rows) is not supported; inserting cells inserts whole rows/columns. */
   hideLines(kind: 'row' | 'col', hidden: boolean): void {
+    // A CSV keeps values only (no hidden lines); lines already hidden can still be shown.
+    if (hidden && this.valuesOnly) return
     const positions = this.selectedLines(kind)
     this.run(() => commands.setHidden(this.sheet, kind, positions, hidden))
   }
@@ -1843,10 +1859,10 @@ export class SheetView {
   }
 
   /**
-   * AutoSum (Alt+=, Cmd+Shift+T on Mac). On one cell it starts `=SUM(…)` over the numbers right
-   * above it (else to its left), with the reference pointed so Shift+arrows adjust it and Enter
-   * commits. On a range it writes a total below each column with numbers (or right of a single
-   * row) in one undo step. `fn` is any function name (AVERAGE, COUNT, MAX, MIN, …).
+   * AutoSum (Alt+=; Control+= or Cmd+Shift+T on a Mac). On one cell it starts `=SUM(…)` over the
+   * numbers right above it (else to its left), with the reference pointed so Shift+arrows adjust
+   * it and Enter commits. On a range it writes a total below each column with numbers (or right of
+   * a single row) in one undo step. `fn` is any function name (AVERAGE, COUNT, MAX, MIN, …).
    */
   autoSum(fn = 'SUM'): boolean {
     const name = fn.toUpperCase()

@@ -17,7 +17,7 @@ import * as commands from './commands.js'
 import { fillSeries, fillStructuredFormula, indexFillTables } from './fill.js'
 import { applyCompletion, argumentHint, completions, partialFunctionName, type FunctionDoc } from './formula-assist.js'
 import { POINTS_TO_PIXELS } from './layout.js'
-import { GridRenderer, type Scene } from './renderer.js'
+import { GridRenderer, HIDDEN_MARK_GAP, HIDDEN_MARK_INSET, hiddenMarkSize, type Scene } from './renderer.js'
 import { cssFontFamily, EMU_PER_PIXEL, type QuickFormat, type SheetNotice, type SheetView } from './sheet-view.js'
 
 /** Invisible content kept selected in the input while not editing, so copy and cut always fire. */
@@ -268,7 +268,10 @@ export class SheetInteractions {
         this.drag = { kind: 'point' }
         return
       }
-      if (!view.commitEdit()) return
+      // Clicking away commits as Enter does, asking about a value a warning rule flags; a later
+      // "yes" then makes the click's selection.
+      const then = () => event.shiftKey ? view.extendTo(hit.row, hit.col) : view.select({ top: hit.row, left: hit.col, bottom: hit.row, right: hit.col }, { add: event.ctrlKey || event.metaKey, scroll: false })
+      if (!view.commitEdit({ ask: true, then })) return
     }
     // Ctrl/Cmd+click follows a link.
     if (!this.painter && (event.ctrlKey || event.metaKey) && this.followLink(hit.row, hit.col)) return
@@ -419,8 +422,11 @@ export class SheetInteractions {
   }
 
   /**
-   * The hidden-lines marker under a header point: the visible line after the hidden run. Mouse
-   * presses within 4px of the boundary still resize; touch takes the whole marker area.
+   * The hidden-lines marker under a header point: the visible line after the hidden run. Only the
+   * arrows drawHiddenMarks paints count (with a little slop, a bit more for a finger), and only
+   * inside the line touching the boundary, so a press anywhere else on a header (the row number,
+   * a column letter) still selects, at any zoom, as in Google Sheets. Mouse presses within 4px of
+   * the boundary still resize.
    */
   private hiddenMarkAt(x: number, y: number, touch: boolean): { kind: 'row' | 'col'; index: number } | undefined {
     const view = this.view
@@ -428,13 +434,29 @@ export class SheetInteractions {
     const inRows = x < view.headerWidth && y > view.headerHeight
     if (!inColumns && !inRows) return undefined
     const marks = view.hiddenMarks()
+    if (!(inColumns ? marks.cols : marks.rows).length) return undefined
     const geometry = view.sceneGeometry() as Scene
-    const near = (distance: number, reach: number) => Math.abs(distance) <= reach && (touch || Math.abs(distance) > 4)
+    const size = hiddenMarkSize(view.zoom)
+    const slop = touch ? 4 : 2
+    const reach = HIDDEN_MARK_GAP + size + slop
+    const layout = inColumns ? view.cols : view.rows
+    // The line under the press, which must be one of the two either side of the boundary.
+    const line = inColumns ? view.hitTest(x, view.headerHeight + 1).col : view.hitTest(view.headerWidth + 1, y).row
+    const near = (index: number, distance: number, cap: number) =>
+      (distance >= 0 ? line === index : layout.offset(line + 1) === layout.offset(index)) &&
+      Math.abs(distance) <= Math.min(reach, cap) &&
+      (touch || Math.abs(distance) > 4)
     if (inColumns) {
-      const col = marks.cols.find((index) => near(x - GridRenderer.x(geometry, index), 12))
+      if (Math.abs(y - view.headerHeight / 2) > size + slop) return undefined
+      // Never more than a third of the column, so its letter (centred) still selects it.
+      const cap = (layout.size(line) * view.zoom) / 3
+      const col = marks.cols.find((index) => near(index, x - GridRenderer.x(geometry, index), cap))
       return col === undefined ? undefined : { kind: 'col', index: col }
     }
-    const row = marks.rows.find((index) => near(y - GridRenderer.y(geometry, index), 10))
+    // The arrows sit at the header's right edge. The row number is centred, and keeps its middle
+    // even zoomed out, where the arrows (never under 3px) reach it.
+    if (x < Math.max(view.headerWidth - HIDDEN_MARK_INSET - 2 * size - slop, view.headerWidth * 0.6)) return undefined
+    const row = marks.rows.find((index) => near(index, y - GridRenderer.y(geometry, index), Infinity))
     return row === undefined ? undefined : { kind: 'row', index: row }
   }
 
@@ -460,7 +482,7 @@ export class SheetInteractions {
     if (hit.area !== 'cell') return
     if (!this.painter && this.onButton(x, y, hit.row, hit.col)) return
     if (view.editing && view.pointAt({ top: hit.row, left: hit.col, bottom: hit.row, right: hit.col })) return
-    if (view.editing && !view.commitEdit()) return
+    if (view.editing && !view.commitEdit({ ask: true, then: () => view.select({ top: hit.row, left: hit.col, bottom: hit.row, right: hit.col }, { scroll: false }) })) return
     const now = performance.now()
     const double = this.lastTap && now - this.lastTap.time < 400 && this.lastTap.row === hit.row && this.lastTap.col === hit.col
     this.lastTap = { time: now, row: hit.row, col: hit.col }
@@ -599,7 +621,7 @@ export class SheetInteractions {
       event.preventDefault()
       return
     }
-    // AutoSum is Alt+= on Windows and Linux (Option+= types ≠ on a Mac: Cmd+Shift+T there).
+    // AutoSum is Alt+= on Windows and Linux (Option+= types ≠ on a Mac: Control+= there).
     if (!isMac() && event.altKey && !mod && !altGraph(event) && (event.key === '=' || (event.code === 'Equal' && !event.shiftKey))) {
       event.preventDefault()
       view.autoSum()
@@ -717,6 +739,9 @@ export class SheetInteractions {
     if (event.shiftKey && (isMac() ? event.metaKey && event.code === 'KeyV' : key === 'v' && !event.altKey)) return this.pasteValues(event)
     if (!event.altKey) {
       if (key === 'k' && !event.shiftKey) return ask('link')
+      // AutoSum on a Mac: Control+= (by position). Chrome takes Cmd+Shift+T (reopen closed tab)
+      // before the page sees it, so that one only works in other browsers and the desktop app.
+      if (isMac() && event.ctrlKey && !event.metaKey && !event.shiftKey && event.code === 'Equal') return handled(), void view.autoSum()
       if (isMac() && event.metaKey && event.shiftKey && key === 't') return handled(), void view.autoSum()
       if (event.shiftKey) {
         // Format shortcuts go by key position: Shift turns the digits into symbols.
@@ -729,9 +754,12 @@ export class SheetInteractions {
       if (lines && (key === '+' || event.code === 'NumpadAdd')) return handled(), view.insert(lines, 'before')
       if (lines && !event.shiftKey && (key === '-' || event.code === 'NumpadSubtract')) return handled(), view.deleteLines(lines)
       // Ctrl+9 and Ctrl+0 hide rows and columns, with Shift they unhide (Excel). Excel for Mac
-      // hides with Control too: Cmd+9 and Cmd+0 stay the browser's (last tab, actual size).
+      // hides with Control too: Cmd+9 and Cmd+0 stay the browser's (last tab, actual size). A CSV
+      // keeps no hidden lines, so as in its menus only unhiding works there (Ctrl+0 stays the
+      // browser's zoom reset).
       const browserKey = isMac() && event.metaKey && !event.shiftKey
-      if ((event.code === 'Digit9' || event.code === 'Digit0') && !browserKey) return handled(), this.hideSelected(event.code === 'Digit9' ? 'row' : 'col', !event.shiftKey)
+      const hides = !(view.valuesOnly && !event.shiftKey)
+      if ((event.code === 'Digit9' || event.code === 'Digit0') && !browserKey && hides) return handled(), this.hideSelected(event.code === 'Digit9' ? 'row' : 'col', !event.shiftKey)
       if (key === '\\' && !event.shiftKey) return handled(), view.clearFormats()
     } else if (isMac() ? event.metaKey : event.ctrlKey && !altGraph(event)) {
       // Google's Ctrl+Alt (Cmd+Option) keys. AltGr also reports Ctrl+Alt on Windows, so these
@@ -739,8 +767,9 @@ export class SheetInteractions {
       const typed = (code: string, char: string) => isMac() ? event.code === code : event.key === char
       if (typed('Equal', '=')) return handled(), view.insert(lines ?? 'row', 'before')
       if (typed('Minus', '-')) return lines ? (handled(), view.deleteLines(lines)) : ask('deleteLines')
-      if (typed('Digit9', '9')) return handled(), this.hideSelected('row', !event.shiftKey)
-      if (typed('Digit0', '0')) return handled(), this.hideSelected('col', !event.shiftKey)
+      const hides = !(view.valuesOnly && !event.shiftKey)
+      if (typed('Digit9', '9') && hides) return handled(), this.hideSelected('row', !event.shiftKey)
+      if (typed('Digit0', '0') && hides) return handled(), this.hideSelected('col', !event.shiftKey)
       return
     }
     if (event.altKey) return
@@ -1336,12 +1365,19 @@ export class SheetInteractions {
   private moveSelection(source: CellRange, target: CellRange, copy: boolean): void {
     const view = this.view
     const { active } = view.selection
+    // The drag's own cut never outlives it (a refused move leaves nothing for a later paste). A
+    // cut pending from before (Ctrl+X, then a drag elsewhere) is kept, with its marquee, while
+    // its cells are unchanged, as every other edit keeps it; the system clipboard still holds it.
+    const pending = this.cut, marked = view.copyRange
     const payload = this.copyPayload(!copy)
-    if (!payload) return
-    view.select({ top: target.top, left: target.left, bottom: target.top, right: target.left }, { scroll: false })
-    if (!this.paste({ payload })) view.select(source, { active, scroll: false })
-    // A refused move leaves no pending cut for a later paste.
-    if (!copy) this.cut = undefined
+    if (payload) {
+      view.select({ top: target.top, left: target.left, bottom: target.top, right: target.left }, { scroll: false })
+      if (!this.paste({ payload })) view.select(source, { active, scroll: false })
+    }
+    const kept = pending && pending.signature === this.cutSignature(pending.sheet, pending.range) ? pending : undefined
+    this.cut = kept
+    view.copyRange = pending && !kept ? undefined : marked
+    view.scheduleRender()
   }
 
   /** Over the border of the (single, non-line) selection, where dragging moves it. */

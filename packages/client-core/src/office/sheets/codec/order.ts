@@ -1,4 +1,4 @@
-import type { RangeIds, SheetTable } from '../model/schema.js'
+import type { ConditionalFormat, RangeIds, SheetTable } from '../model/schema.js'
 import type { SheetModel, WorkbookModel } from '../model/workbook.js'
 
 /** Index assignment must use worksheet coordinates, independent of Y.Map insertion history. */
@@ -10,6 +10,18 @@ export function orderedEntries<T>(sheet: SheetModel, entries: Iterable<[string, 
     const col = position && ('left' in position ? position.left : position.col)
     return { key, value, row: row ?? Infinity, col: col ?? Infinity, fileOrder: fileOrder?.(value) ?? Infinity }
   }).sort((a, b) => a.row - b.row || a.col - b.col || a.fileOrder - b.fileOrder || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)).map(({ key, value }) => [key, value])
+}
+
+/**
+ * How much a sheet's conditional-format priorities move up in the file. Rules added in the editor
+ * go above the sheet's top priority without rewriting the others, which can take it to 0 or
+ * below; a file's priorities start at 1, so they are shifted up together (order, ties and gaps
+ * kept). Files where no rule was added need none.
+ */
+export function conditionalPriorityShift(sheet: SheetModel): number {
+  let top = Infinity
+  for (const raw of sheet.cf.values()) for (const rule of (raw as ConditionalFormat).rules) top = Math.min(top, rule.priority)
+  return Number.isFinite(top) ? Math.max(0, 1 - top) : 0
 }
 
 /** Calculation and export must resolve colliding table names in the same canonical order. */

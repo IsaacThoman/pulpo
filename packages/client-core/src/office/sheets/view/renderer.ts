@@ -115,6 +115,18 @@ interface Pane {
 
 const PADDING = 3
 
+/**
+ * Geometry of the hidden-lines arrows: each is `hiddenMarkSize(zoom)` px big and starts
+ * HIDDEN_MARK_GAP px from the boundary, clear of the 4px resize zone. Shared with the hit test
+ * so a press counts as a marker click only where an arrow is drawn.
+ */
+export const HIDDEN_MARK_GAP = 5
+export function hiddenMarkSize(zoom: number): number {
+  return Math.max(3, Math.round(3.5 * zoom))
+}
+/** Row arrows sit this far from the row header's right edge. */
+export const HIDDEN_MARK_INSET = 3
+
 export class GridRenderer {
   constructor(private readonly ctx: CanvasRenderingContext2D) {}
 
@@ -834,7 +846,8 @@ export class GridRenderer {
     const { ctx } = this
     const frozenWidth = scene.cols.offset(scene.frozenCols) * scene.zoom
     const frozenHeight = scene.rows.offset(scene.frozenRows) * scene.zoom
-    const size = Math.max(3, Math.round(3.5 * scene.zoom))
+    const size = hiddenMarkSize(scene.zoom)
+    const gap = HIDDEN_MARK_GAP
     const triangle = (a: [number, number], b: [number, number], c: [number, number]) => {
       ctx.beginPath()
       ctx.moveTo(...a)
@@ -853,8 +866,8 @@ export class GridRenderer {
       const x = Math.round(GridRenderer.x(scene, col))
       // Scrolled under the frozen columns.
       if (col >= scene.frozenCols && x < scene.headerWidth + frozenWidth - 1) continue
-      triangle([x - 5, middle - size], [x - 5, middle + size], [x - 5 - size, middle])
-      triangle([x + 5, middle - size], [x + 5, middle + size], [x + 5 + size, middle])
+      triangle([x - gap, middle - size], [x - gap, middle + size], [x - gap - size, middle])
+      triangle([x + gap, middle - size], [x + gap, middle + size], [x + gap + size, middle])
     }
     ctx.restore()
     ctx.save()
@@ -862,12 +875,12 @@ export class GridRenderer {
     ctx.beginPath()
     ctx.rect(0, scene.headerHeight, scene.headerWidth, scene.height - scene.headerHeight)
     ctx.clip()
-    const right = scene.headerWidth - 3
+    const right = scene.headerWidth - HIDDEN_MARK_INSET
     for (const row of marks.rows) {
       const y = Math.round(GridRenderer.y(scene, row))
       if (row >= scene.frozenRows && y < scene.headerHeight + frozenHeight - 1) continue
-      triangle([right - 2 * size, y - 5], [right, y - 5], [right - size, y - 5 - size])
-      triangle([right - 2 * size, y + 5], [right, y + 5], [right - size, y + 5 + size])
+      triangle([right - 2 * size, y - gap], [right, y - gap], [right - size, y - gap - size])
+      triangle([right - 2 * size, y + gap], [right, y + gap], [right - size, y + gap + size])
     }
     ctx.restore()
   }

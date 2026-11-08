@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, Sele
 import { Textarea } from '@/components/ui/textarea'
 import { ui } from '@/i18n/ui'
 import { focusGridOnClose } from './dialog-focus'
-import { CRITERIA, criterion, draftFromRule, EMPTY_DRAFT, EXISTING_CRITERION, ruleFromDraft, validationTarget, type CriterionId, type ValidationDraft, type ValidationTarget } from './validation-criteria'
+import { CRITERIA, criterion, draftFromRule, EMPTY_DRAFT, EXISTING_CRITERION, MAX_VALIDATION_MESSAGE_LENGTH, ruleFromDraft, validationTarget, type CriterionId, type ValidationDraft, type ValidationTarget } from './validation-criteria'
 
 /** Examples in the inputs: cell references read the same in every language. */
 const RANGE_EXAMPLE = 'D1:D5'
@@ -180,7 +180,7 @@ export function ValidationDialog({ view, open, preset, onOpenChange }: {
           </fieldset>
           <div className="space-y-2">
             <Label htmlFor={`${id}-message`}>{ui("Message for invalid data (optional)")}</Label>
-            <Input id={`${id}-message`} value={draft.message} onChange={(event) => setDraft({ ...draft, message: event.target.value })} />
+            <Input id={`${id}-message`} value={draft.message} maxLength={MAX_VALIDATION_MESSAGE_LENGTH} onChange={(event) => setDraft({ ...draft, message: event.target.value })} />
           </div>
           <DialogFooter className="gap-2 sm:items-center">
             {hasRule && <Button type="button" variant="ghost" className="sm:mr-auto" onClick={remove}>{ui("Remove rule")}</Button>}

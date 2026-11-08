@@ -626,6 +626,30 @@ try {
     assert.equal(await parity.evaluate(() => window.__sheets.views[0].cols.isHidden(2)), false)
   })
 
+  await step('a row number next to hidden rows selects its row; only the arrows unhide', async () => {
+    await parity.evaluate(() => {
+      const view = window.__sheets.views[0]
+      view.goTo('A21')
+      view.hideLines('row', true)
+    })
+    assert.equal(await parity.evaluate(() => window.__sheets.views[0].rows.isHidden(20)), true)
+    const below = await header(parity, 'row', 21)
+    // On the number, just past the resize band at the boundary (where the marker used to reach).
+    for (const dy of [6, 10]) {
+      await parity.mouse.click(below.x, below.edge + dy)
+      assert.equal(await label(), '22:22')
+      assert.equal(await parity.evaluate(() => window.__sheets.views[0].rows.isHidden(20)), true)
+    }
+    const arrow = await parity.evaluate(() => {
+      const view = window.__sheets.views[0]
+      return view.root.getBoundingClientRect().left + view.headerWidth - 7
+    })
+    await parity.mouse.move(arrow, below.edge + 7)
+    assert.equal(await parity.evaluate(() => window.__sheets.views[0].scroller.style.cursor), 'pointer')
+    await parity.mouse.click(arrow, below.edge + 7)
+    assert.equal(await parity.evaluate(() => window.__sheets.views[0].rows.isHidden(20)), false)
+  })
+
   await step('AutoSum from the keyboard', async () => {
     await parity.evaluate(() => {
       const view = window.__sheets.views[0]
@@ -633,7 +657,8 @@ try {
       view.clipboard.paste({ text: '1\n2\n3' })
     })
     await go(parity, 'G5')
-    await parity.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+t' : 'Alt+Equal')
+    // The key the toolbar shows: Control+= on a Mac, where Chrome keeps Cmd+Shift+T for reopening a tab.
+    await parity.keyboard.press(process.platform === 'darwin' ? 'Control+Equal' : 'Alt+Equal')
     assert.equal(await parity.evaluate(() => window.__sheets.views[0].editing?.text), '=SUM(G2:G4)')
     await parity.keyboard.press('Enter')
     assert.equal(await inputText(parity, 4, 6), '=SUM(G2:G4)')

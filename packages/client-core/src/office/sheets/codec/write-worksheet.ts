@@ -1,5 +1,5 @@
 import { resolveXml } from './reference-xml.js'
-import { orderedEntries } from './order.js'
+import { conditionalPriorityShift, orderedEntries } from './order.js'
 import { columnIntervals, columnIntervalProps } from '../model/column-intervals.js'
 import { parseXml, type XmlDocument } from '../../ooxml/package.js'
 import { cellName, columnName, MAX_COLS, MAX_ROWS, rangeName, type CellRange } from '../address.js'
@@ -152,8 +152,9 @@ export function writeWorksheet(sheet: SheetModel, context: WorksheetWriteContext
   if (merges.length) {
     insertInOrder(root, fragment(document, `<mergeCells count="${merges.length}">${merges.map((merge) => `<mergeCell ref="${rangeName(merge.range)}"/>`).join('')}</mergeCells>`))
   }
+  const priorityShift = conditionalPriorityShift(sheet)
   for (const format of orderedEntries(sheet, sheet.cf, (value) => (value as ConditionalFormat).ranges[0], (value) => (value as ConditionalFormat).fileOrder).map(([, value]) => value) as ConditionalFormat[]) {
-    const xml = writeConditionalFormat(sheet, format)
+    const xml = writeConditionalFormat(sheet, format, priorityShift)
     if (xml) insertInOrder(root, fragment(document, xml))
   }
   const validations = writeDataValidations(sheet)
@@ -543,11 +544,12 @@ function cfValueXml(value: CfValue, sheet: SheetModel): string {
   return `<cfvo${xmlAttrs({ type: value.type, val, gte: value.gte === false ? false : undefined })}/>`
 }
 
-function ruleXml(sheet: SheetModel, rule: ConditionalRule): string {
+function ruleXml(sheet: SheetModel, rule: ConditionalRule, priorityShift: number): string {
+  const priority = rule.priority + priorityShift
   if (rule.xml) {
     // Unedited rules go back as read, with formulas and priority brought up to date.
     const element = parseXml(rule.xml).documentElement!
-    element.setAttribute('priority', String(rule.priority))
+    element.setAttribute('priority', String(priority))
     const formulas = children(element, 'formula')
     formulas.forEach((formula, index) => {
       const text = rule.formulas?.[index]
@@ -567,7 +569,7 @@ function ruleXml(sheet: SheetModel, rule: ConditionalRule): string {
   const attrs = xmlAttrs({
     type: rule.type,
     dxfId: rule.dxfId,
-    priority: rule.priority,
+    priority,
     stopIfTrue: rule.stopIfTrue || undefined,
     operator: rule.operator,
     text: rule.text,
@@ -587,13 +589,13 @@ function ruleXml(sheet: SheetModel, rule: ConditionalRule): string {
   return `<cfRule${attrs}>${body}</cfRule>`
 }
 
-function writeConditionalFormat(sheet: SheetModel, format: ConditionalFormat): string | undefined {
+function writeConditionalFormat(sheet: SheetModel, format: ConditionalFormat, priorityShift: number): string | undefined {
   const ref = sqref(sheet, format.ranges)
   if (!ref || !format.rules.length) return undefined
   const attrs = Object.entries(format.keep ?? {})
     .map(([name, value]) => ` ${name}="${escapeXml(value)}"`)
     .join('')
-  return `<conditionalFormatting sqref="${ref}"${attrs}>${format.rules.map((rule) => ruleXml(sheet, rule)).join('')}</conditionalFormatting>`
+  return `<conditionalFormatting sqref="${ref}"${attrs}>${format.rules.map((rule) => ruleXml(sheet, rule, priorityShift)).join('')}</conditionalFormatting>`
 }
 
 function writeDataValidations(sheet: SheetModel): string | undefined {
