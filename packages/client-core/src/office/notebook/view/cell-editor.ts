@@ -21,6 +21,7 @@ import type * as Y from 'yjs'
 import { editorHighlight, editorTheme, gotoLineColumn, openReplacePanel, selectionColor } from '../../text/view/editor.js'
 import { languageOf } from '../../text/view/languages.js'
 import type { NotebookCellType } from '../layout.js'
+import { markdownFormatKeymap } from './markdown-format.js'
 
 /**
  * One notebook cell's source in CodeMirror, bound to the cell's Y.Text with other sessions'
@@ -149,10 +150,13 @@ export function createCellEditor(options: CellEditorOptions): CellEditor {
   const darkMode = new Compartment()
   const wrapping = new Compartment()
   const gutter = new Compartment()
+  const formatting = new Compartment()
   let destroyed = false
   let request = 0
   let current = { readOnly: options.readOnly, type: options.type, wrap: options.wrap ?? null }
   const wraps = () => (current.wrap ?? current.type !== 'code') ? EditorView.lineWrapping : []
+  // Ctrl/Cmd+B, I, and K format Markdown cells (before CodeMirror's own Mod+I, select the syntax node).
+  const formatKeys = () => current.type === 'markdown' ? Prec.highest(keymap.of(markdownFormatKeymap)) : []
 
   const atEdge = (view: EditorView, direction: 'up' | 'down') => {
     const { main } = view.state.selection
@@ -238,6 +242,7 @@ export function createCellEditor(options: CellEditorOptions): CellEditor {
         darkMode.of(EditorView.darkTheme.of(options.dark ?? false)),
         wrapping.of(wraps()),
         gutter.of(options.lineNumbers ? lineNumberGutter() : []),
+        formatting.of(formatKeys()),
         searchMatches,
         EditorState.phrases.of(options.labels ?? {}),
         ...options.placeholder ? [placeholderText(options.placeholder)] : [],
@@ -289,7 +294,7 @@ export function createCellEditor(options: CellEditorOptions): CellEditor {
     },
     setType(type, kernel) {
       current = { ...current, type }
-      view.dispatch({ effects: wrapping.reconfigure(wraps()) })
+      view.dispatch({ effects: [wrapping.reconfigure(wraps()), formatting.reconfigure(formatKeys())] })
       loadLanguage(type, kernel)
     },
     setWrap(wrap) {
