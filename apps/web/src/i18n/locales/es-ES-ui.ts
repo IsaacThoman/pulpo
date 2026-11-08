@@ -3460,6 +3460,14 @@ const esUi: Record<string, string> = {
   "Markdown cells (while editing)": "Celdas Markdown (al editarlas)",
   "Colab: move the cell up or down, go to the next or previous cell, split, undo": "Colab: subir o bajar la celda, ir a la celda siguiente o anterior, dividir, deshacer",
   "Go to line…": "Ir a la línea…",
+  "Word count…": "Recuento de palabras…",
+  "Spell check": "Revisión ortográfica",
+  "Toggle line comment": "Alternar comentario de línea",
+  "Indent": "Aumentar sangría",
+  "Outdent": "Reducir sangría",
+  "Your browser kept the menu from using the clipboard. Press {{keys}} instead.": "El navegador no deja que el menú use el portapapeles. Pulsa {{keys}}.",
+  "Reset zoom to 100%": "Restablecer el zoom al 100 %",
+  "Zoom {{0}}, reset to 100%": "Zoom {{0}}, restablecer al 100 %",
   "Open the cell's menu": "Abrir el menú de la celda",
 }
 

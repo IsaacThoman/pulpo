@@ -70,6 +70,52 @@ describe('text editor find and status bar', () => {
     expect(code.view.container.querySelector('[data-text-counts]')!.textContent).toBe('2 lines')
   })
 
+  it('spell checks prose but not code', async () => {
+    const notes = await open('teh notes\n')
+    expect(notes.view.container.querySelector('.cm-content')!.getAttribute('spellcheck')).toBe('true')
+    cleanup()
+    const code = await open('x = 1\n', { name: 'main.py' })
+    expect(code.view.container.querySelector('.cm-content')!.getAttribute('spellcheck')).toBe('false')
+  })
+
+  it('wraps lines with Alt+Z (Option+Z on a Mac) without typing it', async () => {
+    const opened = await open('alpha\n')
+    const content = opened.view.container.querySelector('.cm-content')!
+    expect(fireEvent.keyDown(content, { key: 'Ω', code: 'KeyZ', altKey: true })).toBe(false)
+    expect(opened.view.container.querySelector('.cm-lineWrapping')).toBeTruthy()
+    fireEvent.keyDown(content, { key: 'z', code: 'KeyZ', altKey: true })
+    expect(opened.view.container.querySelector('.cm-lineWrapping')).toBeNull()
+    expect(opened.text()).toBe('alpha\n')
+  })
+
+  it('remembers line numbers and zoom, and the status bar resets the zoom', async () => {
+    localStorage.setItem('pulpo:text-editor:line-numbers', 'false')
+    localStorage.setItem('pulpo:text-editor:zoom', '1.5')
+    try {
+      const opened = await open('alpha\n')
+      expect(opened.view.container.querySelector('.cm-lineNumbers')).toBeNull()
+      const surface = opened.view.container.querySelector<HTMLElement>('[data-text-editor]')!
+      expect(surface.style.getPropertyValue('--pulpo-code-font-size')).toBe('19.5px')
+      fireEvent.click(screen.getByRole('button', { name: 'Zoom 150%, reset to 100%' }))
+      expect(surface.style.getPropertyValue('--pulpo-code-font-size')).toBe('13px')
+      expect(localStorage.getItem('pulpo:text-editor:zoom')).toBe('1')
+      expect(opened.view.container.querySelector('[data-text-zoom]')).toBeNull()
+    } finally {
+      localStorage.removeItem('pulpo:text-editor:line-numbers')
+      localStorage.removeItem('pulpo:text-editor:zoom')
+    }
+  })
+
+  it('ignores a stored zoom out of bounds', async () => {
+    localStorage.setItem('pulpo:text-editor:zoom', '9')
+    try {
+      const opened = await open('alpha\n')
+      expect(opened.view.container.querySelector<HTMLElement>('[data-text-editor]')!.style.getPropertyValue('--pulpo-code-font-size')).toBe('13px')
+    } finally {
+      localStorage.removeItem('pulpo:text-editor:zoom')
+    }
+  })
+
   it('keeps working when the browser refuses storage', async () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied') })
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('denied') })

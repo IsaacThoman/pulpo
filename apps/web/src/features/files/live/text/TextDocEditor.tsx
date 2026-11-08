@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
 import { textFileFacts, TEXT_FILE_FIELD } from '@pulpo/client-core/office/text'
 import { createTextEditor, type TextEditor, type TextEditorIndent, type TextEditorState } from '@pulpo/client-core/office/text/view'
 import { Check, ChevronDown, Eye, Redo2, Search, Undo2, WrapText } from 'lucide-react'
@@ -7,23 +7,33 @@ import { SandboxFrame } from '@/components/chat/SandboxFrame'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
+import { useFileToasts } from '../../browser/toasts'
 import { sessionColor, sessionLabel } from '../../editor/presence'
 import { ToolbarButton } from '../../editor/ToolbarButton'
 import { EditorMenuBar } from '../chrome/EditorMenuBar'
 import { fileEditorRoot } from '../chrome/editor-root'
 import { fileMenuDefinition } from '../chrome/file-menu'
-import { separator, shortcutGroupsFromMenus, type MenuDefinition } from '../chrome/menu'
+import { shortcutGroupsFromMenus, type MenuDefinition } from '../chrome/menu'
 import { printHtmlDocument, textPrintHtml } from '../chrome/output'
+import { formatShortcut, type ShortcutSpec } from '../chrome/shortcuts'
 import { ShortcutsDialog } from '../chrome/ShortcutsDialog'
-import { helpMenu, undoRedoEntries } from '../chrome/standard-menus'
-import { FIND_SHORTCUT, useEditorShortcuts } from '../chrome/use-editor-shortcuts'
+import { helpMenu } from '../chrome/standard-menus'
+import { useEditorShortcuts } from '../chrome/use-editor-shortcuts'
+import { zoomPercent } from '../chrome/zoom'
+import { useStoredFlag, useStoredNumber } from '../stored-preference'
 import type { LiveEditorProps } from '../types'
+import { isProseFile } from './prose'
+import { COPY_SHORTCUT, CUT_SHORTCUT, MAX_TEXT_ZOOM, MIN_TEXT_ZOOM, PASTE_SHORTCUT, textMenus, WRAP_SHORTCUT } from './text-menus'
 import { textShortcutGroups } from './text-shortcuts'
 import { TextStatusCounts } from './TextCounts'
 
 /** Waits this long after the last keystroke before rendering the HTML preview again. */
 const PREVIEW_DELAY_MS = 400
 const WRAP_KEY = 'pulpo:text-editor:wrap'
+const LINE_NUMBERS_KEY = 'pulpo:text-editor:line-numbers'
+const ZOOM_KEY = 'pulpo:text-editor:zoom'
+/** The editor's font size at 100% (client-core's editor theme). */
+const BASE_FONT_PX = 13
 
 /** The wrap preference; storage can be unavailable (private windows, blocked site data). */
 function storedWrap(): boolean {
@@ -40,6 +50,11 @@ function storeWrap(wrap: boolean): void {
   } catch {
     // The choice still applies to this editor.
   }
+}
+
+/** Alt+Z (VS Code's Toggle Word Wrap); on a Mac, Option+Z types Ω, so the physical key counts. */
+function isWrapKey(event: React.KeyboardEvent): boolean {
+  return event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.code === 'KeyZ' || event.key.toLowerCase() === 'z')
 }
 
 /** Find, replace, and go to line, pressed while focus is on the toolbar or status bar rather than in the text. */
@@ -186,14 +201,20 @@ export function TextDocEditor({ session, name, editable, width, toolbarSlot, fil
   const [state, setState] = useState<TextEditorState | null>(null)
   const [preview, setPreview] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [wordCountOpen, setWordCountOpen] = useState(false)
+  const [lineNumbers, setLineNumbers] = useStoredFlag(LINE_NUMBERS_KEY, true)
+  const [zoom, setZoom] = useStoredNumber(ZOOM_KEY, 1, MIN_TEXT_ZOOM, MAX_TEXT_ZOOM)
+  // Prose (notes, READMEs) is spell checked, as in Docs; code is not, as in VS Code. View ▸ Spell check overrides it.
+  const [spellcheckChoice, setSpellcheck] = useState<boolean | null>(null)
+  const spellcheck = spellcheckChoice ?? isProseFile(name)
   const dark = useDarkTheme()
   const facts = useFileFacts(session.doc)
   const html = /\.html?$/i.test(name)
-  const latest = useRef({ name, editable, dark })
-  latest.current = { name, editable, dark }
+  const latest = useRef({ name, editable, dark, lineNumbers, spellcheck })
+  latest.current = { name, editable, dark, lineNumbers, spellcheck }
 
   useEffect(() => {
-    const { name: initialName, editable: initialEditable, dark: initialDark } = latest.current
+    const { name: initialName, editable: initialEditable, dark: initialDark, lineNumbers: initialLineNumbers, spellcheck: initialSpellcheck } = latest.current
     const created = createTextEditor({
       container: container.current!,
       doc: session.doc,
@@ -204,6 +225,8 @@ export function TextDocEditor({ session, name, editable, width, toolbarSlot, fil
       labels: editorLabels(),
       dark: initialDark,
       wrap: storedWrap(),
+      lineNumbers: initialLineNumbers,
+      spellcheck: initialSpellcheck,
       onChange: setState,
     })
     editor.current = created
@@ -222,6 +245,10 @@ export function TextDocEditor({ session, name, editable, width, toolbarSlot, fil
   }, [editable, width, session])
   useEffect(() => { editor.current?.setDark(dark) }, [dark])
   useEffect(() => { editor.current?.setName(name) }, [name])
+  useEffect(() => { editor.current?.setLineNumbers(lineNumbers) }, [lineNumbers])
+  useEffect(() => { editor.current?.setSpellcheck(spellcheck) }, [spellcheck])
+  // The font size follows the zoom through a CSS variable; CodeMirror then measures its lines again.
+  useEffect(() => { editor.current?.view.requestMeasure() }, [zoom])
 
   const run = (action: (target: TextEditor) => void, options: { focus?: boolean } = {}) => () => {
     if (!editor.current) return
@@ -252,37 +279,71 @@ export function TextDocEditor({ session, name, editable, width, toolbarSlot, fil
     focus: () => editor.current?.focus(),
   })
 
+  /** When the browser keeps the menu from the clipboard (Firefox, or permission denied), its keys still work. */
+  const clipboardBlocked = (keys: ShortcutSpec) => () => {
+    useFileToasts.getState().show({ message: ui("Your browser kept the menu from using the clipboard. Press {{keys}} instead.", { keys: formatShortcut(keys) }), tone: 'error' })
+  }
+  const copy = () => {
+    const text = editor.current?.selectionText()
+    if (!text) return
+    const write = navigator.clipboard?.writeText(text)
+    if (!write) return clipboardBlocked(COPY_SHORTCUT)()
+    void write.catch(clipboardBlocked(COPY_SHORTCUT))
+  }
+  const cut = () => {
+    const target = editor.current
+    const text = target?.selectionText()
+    if (!target || !text) return
+    const write = navigator.clipboard?.writeText(text)
+    if (!write) return clipboardBlocked(CUT_SHORTCUT)()
+    void write.then(() => {
+      // Only once it is on the clipboard, and only what was copied: the selection may have changed since.
+      if (target.selectionText() === text) target.replaceSelection('', 'delete.cut')
+    }, clipboardBlocked(CUT_SHORTCUT))
+  }
+  const paste = () => {
+    const target = editor.current
+    const read = navigator.clipboard?.readText?.()
+    if (!target || !read) return clipboardBlocked(PASTE_SHORTCUT)()
+    void read.then((text) => { if (text) target.replaceSelection(text, 'input.paste') }, clipboardBlocked(PASTE_SHORTCUT))
+  }
+
   const menus: MenuDefinition[] = [
     fileMenuDefinition(fileMenu, () => ({ print })),
-    {
-      id: 'edit',
-      label: ui("Edit"),
-      items: () => {
-        const current = editor.current?.state()
-        return [
-          ...undoRedoEntries({ undo: run((target) => target.undo()), redo: run((target) => target.redo()), canUndo: editable && Boolean(current?.canUndo), canRedo: editable && Boolean(current?.canRedo) }),
-          separator,
-          { type: 'item', id: 'find', label: ui("Find and replace"), icon: Search, shortcut: FIND_SHORTCUT, onSelect: openSearch },
-        ]
-      },
-    },
-    {
-      id: 'view',
-      label: ui("View"),
-      items: () => [
-        { type: 'item', id: 'wrap', label: ui("Wrap lines"), icon: WrapText, checked: editor.current?.state().wrap ?? false, onSelect: run(toggleWrap) },
-        ...(html ? [{ type: 'item', id: 'preview', label: ui("Preview"), icon: Eye, checked: preview, onSelect: () => setPreview(!preview) } as const] : []),
-      ],
-    },
+    ...(editor.current ? textMenus({
+      editor: editor.current,
+      editable,
+      cut,
+      copy,
+      paste,
+      find: openSearch,
+      replace: () => editor.current?.openReplace(),
+      toggleWrap: run(toggleWrap),
+      lineNumbers,
+      setLineNumbers,
+      spellcheck,
+      setSpellcheck,
+      zoom,
+      setZoom,
+      preview: html ? { on: preview, toggle: () => setPreview(!preview) } : undefined,
+      wordCount: () => setWordCountOpen(true),
+    }) : []),
     // Cmd/Ctrl+/ comments lines out here, as in VS Code; it opens the list only in plain text.
     helpMenu(() => setShortcutsOpen(true), { key: false }),
   ]
 
   const onKeyDown = (event: React.KeyboardEvent) => {
-    // Inside the text, CodeMirror's own keymap has these; menus and dialogs (portaled, but their
-    // keys bubble here through React) keep theirs.
-    if (!editor.current || (event.target instanceof Node && editor.current.view.dom.contains(event.target))) return
+    if (!editor.current || event.defaultPrevented) return
+    // Menus and dialogs (portaled, but their keys bubble here through React) keep their keys.
     if (event.target instanceof Element && event.target.closest('[role="dialog"], [role="menu"]')) return
+    // Alt+Z wraps lines, in the text too (CodeMirror binds no Alt+Z); the search and go-to-line fields keep it.
+    if (isWrapKey(event) && !(event.target instanceof Element && event.target.closest('.cm-panels'))) {
+      event.preventDefault()
+      toggleWrap(editor.current)
+      return
+    }
+    // Inside the text, CodeMirror's own keymap has these.
+    if (event.target instanceof Node && editor.current.view.dom.contains(event.target)) return
     const command = findCommand(event, mac)
     if (!command) return
     event.preventDefault()
@@ -300,7 +361,7 @@ export function TextDocEditor({ session, name, editable, width, toolbarSlot, fil
           {button(ui("Redo"), <Redo2 className="size-4" />, run((target) => target.redo()), { disabled: !editable || !state?.canRedo })}
           <span className="mx-1 h-5 w-px bg-border" />
           {button(ui("Find and replace"), <Search className="size-4" />, openSearch, { shortcut: shortcut('f') })}
-          {button(ui("Wrap lines"), <WrapText className="size-4" />, run(toggleWrap), { active: state?.wrap ?? false })}
+          {button(ui("Wrap lines"), <WrapText className="size-4" />, run(toggleWrap), { active: state?.wrap ?? false, shortcut: { label: formatShortcut(WRAP_SHORTCUT), aria: 'Alt+z' } })}
           {state && <IndentMenu indent={state.indent} disabled={!editable} onChange={(indent) => editor.current?.setIndent(indent)} onClosed={() => editor.current?.focus()} />}
           {html && (
             <>
@@ -312,7 +373,12 @@ export function TextDocEditor({ session, name, editable, width, toolbarSlot, fil
         {toolbarSlot}
       </div>
       <div className={cn('flex min-h-0 flex-1', width === 'fill' ? 'flex-col' : 'flex-col md:flex-row')}>
-        <div ref={container} data-text-editor className={cn('min-h-0 min-w-0 flex-1 overflow-hidden', preview && 'basis-1/2')} />
+        <div
+          ref={container}
+          data-text-editor
+          className={cn('min-h-0 min-w-0 flex-1 overflow-hidden', preview && 'basis-1/2')}
+          style={{ '--pulpo-code-font-size': `${Math.round(BASE_FONT_PX * zoom * 10) / 10}px` } as CSSProperties}
+        />
         {preview && (
           <div className={cn('min-h-0 min-w-0 flex-1 basis-1/2 border-t bg-white', width !== 'fill' && 'md:border-t-0 md:border-l')} aria-label={ui("HTML preview")}>
             <HtmlPreview doc={session.doc} name={name} />
@@ -333,8 +399,21 @@ export function TextDocEditor({ session, name, editable, width, toolbarSlot, fil
             {state.selected ? uit`Ln ${state.line}, Col ${state.column} (${state.selected} selected)` : uit`Ln ${state.line}, Col ${state.column}`}
           </button>
         )}
-        {state && <TextStatusCounts editor={editor.current} doc={session.doc} name={name} state={state} onDone={() => editor.current?.focus()} />}
+        {state && <TextStatusCounts editor={editor.current} doc={session.doc} name={name} state={state} open={wordCountOpen} onOpenChange={setWordCountOpen} onDone={() => editor.current?.focus()} />}
         <span className="flex-1" />
+        {zoom !== 1 && (
+          <button
+            type="button"
+            className="cursor-pointer rounded px-1 hover:bg-accent hover:text-foreground"
+            title={ui("Reset zoom to 100%")}
+            aria-label={uit`Zoom ${zoomPercent(zoom)}, reset to 100%`}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setZoom(1)}
+            data-text-zoom
+          >
+            {zoomPercent(zoom)}
+          </button>
+        )}
         {!editable && <span>{ui("Read-only")}</span>}
         <span>{state?.language ?? ui("Plain text")}</span>
         <span>{ENCODING_LABELS[facts.encoding] ?? facts.encoding}</span>
