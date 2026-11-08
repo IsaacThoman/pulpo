@@ -734,8 +734,9 @@ try {
     await other.page.context().close()
   })
 
-  await step('notebook: moving the cell being typed in (Ctrl+M J and K, Cell ▸ Move cell down, its toolbar) keeps the caret', async () => {
-    const { page, errors } = await openNotebook('blank=1')
+  // Moves the cell being typed in four ways, typing after each: the caret stays where it was.
+  const movesKeepingCaret = async (query) => {
+    const { page, errors } = await openNotebook(query)
     await page.locator('[data-replica="a"] .cm-content').first().click()
     await page.keyboard.type('aaa')
     await page.keyboard.press('Control+m')
@@ -746,25 +747,31 @@ try {
     await page.keyboard.press('Control+m')
     await page.keyboard.press('j')
     await page.keyboard.type('1')
-    assert.deepEqual(await sources(), ['aaa', 'hello1 world'])
+    assert.deepEqual(await sources(), ['aaa', 'hello1 world'], query)
     await page.keyboard.press('Control+m')
     await page.keyboard.press('k')
     await page.keyboard.type('2')
-    assert.deepEqual(await sources(), ['hello12 world', 'aaa'])
+    assert.deepEqual(await sources(), ['hello12 world', 'aaa'], query)
     // The menu has the keyboard while the cells move.
     await openMenu(page, 'Cell')
     await page.getByRole('menuitem', { name: /Move cell down/ }).click()
     await menuClosed(page)
     await page.keyboard.type('3')
-    assert.deepEqual(await sources(), ['aaa', 'hello123 world'])
+    assert.deepEqual(await sources(), ['aaa', 'hello123 world'], query)
     await page.keyboard.press('Control+m')
     await page.keyboard.press('k')
     await page.locator('[data-replica="a"] [data-cell-toolbar]').first().getByRole('button', { name: 'Move cell down' }).click()
     await page.keyboard.type('4')
-    assert.deepEqual(await sources(), ['aaa', 'hello1234 world'])
+    assert.deepEqual(await sources(), ['aaa', 'hello1234 world'], query)
     assert.equal(await active(page).getAttribute('data-mode'), 'edit')
     assert.deepEqual(errors, [])
     await page.context().close()
+  }
+
+  await step('notebook: moving the cell being typed in (Ctrl+M J and K, Cell ▸ Move cell down, its toolbar) keeps the caret', async () => {
+    // As a production build runs (the editor stays, and a move made from the menu leaves the
+    // page's selection outside it), and under strict mode, which rebuilds a moved cell's editor.
+    for (const query of ['blank=1&strict=0', 'blank=1']) await movesKeepingCaret(query)
   })
 
   await step('notebook: Ctrl+M M and Y while typing name and spell check the cell by its new type', async () => {
