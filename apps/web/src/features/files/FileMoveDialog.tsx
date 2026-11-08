@@ -83,11 +83,14 @@ export function FileMoveDialog({
   onOpenChange,
   onMove,
   restore = false,
+  returnFocus,
 }: {
   nodes: FileNode[] | null
   onOpenChange: (open: boolean) => void
   onMove: (nodes: FileNode[], parentId: string | null) => Promise<unknown>
   restore?: boolean
+  /** Where focus goes once the dialog closes, when what opened it is gone (a menu item). */
+  returnFocus?: () => void
 }) {
   const [folderId, setFolderId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -117,7 +120,13 @@ export function FileMoveDialog({
 
   return (
     <Dialog open={Boolean(nodes?.length)} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        className="sm:max-w-md"
+        onCloseAutoFocus={returnFocus && ((event) => {
+          event.preventDefault()
+          returnFocus()
+        })}
+      >
         <DialogHeader>
           <DialogTitle>
             {restore

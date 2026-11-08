@@ -12,6 +12,7 @@ import { useFileOperations } from './browser/use-file-operations'
 import { FileDetailsDialog } from './FileDetailsDialog'
 import { FileMoveDialog } from './FileMoveDialog'
 import type { FileMenuHost } from './live/chrome/file-menu'
+import { focusFileEditorIn } from './live/chrome/use-editor-shortcuts'
 import { liveFormatsForNew } from './live/registry'
 import { revealFileInPlace } from './reveal'
 import { requestTitleFocus } from './title-focus'
@@ -96,10 +97,12 @@ export function useFileMenuHost({ node, ancestors, layout, titleRef, download, d
     locked: node.trashedAt !== null,
   }
 
+  // The menu item that opened a dialog is gone once it closes: focus goes back to the document.
+  const returnFocus = () => focusFileEditorIn(titleRef.current?.closest('[data-file-view]') ?? null)
   const dialogs = (
     <>
-      <FileMoveDialog nodes={moving} onOpenChange={(next) => { if (!next) setMoving(null) }} onMove={(nodes, parentId) => ops.move(nodes, parentId)} />
-      <FileDetailsDialog node={node} ancestors={ancestors} open={details} onOpenChange={setDetails} />
+      <FileMoveDialog nodes={moving} onOpenChange={(next) => { if (!next) setMoving(null) }} onMove={(nodes, parentId) => ops.move(nodes, parentId)} returnFocus={returnFocus} />
+      <FileDetailsDialog node={node} ancestors={ancestors} open={details} onOpenChange={setDetails} returnFocus={returnFocus} />
     </>
   )
   return { host, dialogs }

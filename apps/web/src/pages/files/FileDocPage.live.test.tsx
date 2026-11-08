@@ -178,6 +178,10 @@ describe('the File menu Files gives a live document', () => {
     expect(details.textContent).toContain('Word document (.docx)')
     expect(details.textContent).toContain('My files › Plans')
     expect(details.textContent).toContain('2.0 KiB')
+    // The menu item that opened it is gone: closing hands focus back to the document.
+    fireEvent.keyDown(details, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Body of Report.docx' })))
   })
 
   it('renames from the File menu by selecting the name in the title', async () => {

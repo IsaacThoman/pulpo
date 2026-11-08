@@ -11,11 +11,13 @@ function formatDate(value: string): string {
 }
 
 /** File ▸ Details: the file's type, size, folder, and when it was created and last changed. */
-export function FileDetailsDialog({ node, ancestors, open, onOpenChange }: {
+export function FileDetailsDialog({ node, ancestors, open, onOpenChange, returnFocus }: {
   node: FileNode
   ancestors: readonly FileNode[]
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Where focus goes once the dialog closes, e.g. back into the document. */
+  returnFocus?: () => void
 }) {
   const location = [ui("My files"), ...ancestors.map((folder) => folder.name)].join(' › ')
   const rows: [string, string][] = [
@@ -27,7 +29,13 @@ export function FileDetailsDialog({ node, ancestors, open, onOpenChange }: {
   ]
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        className="sm:max-w-md"
+        onCloseAutoFocus={returnFocus && ((event) => {
+          event.preventDefault()
+          returnFocus()
+        })}
+      >
         <DialogHeader>
           <DialogTitle className="break-words">{node.name}</DialogTitle>
           <DialogDescription>{ui("Details")}</DialogDescription>
