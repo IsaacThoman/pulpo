@@ -1,14 +1,20 @@
 import { ui } from '@/i18n/ui'
 import { isAppleShortcut } from '../../browser/shortcuts'
 import { redoShortcut, UNDO_SHORTCUT } from '../chrome/standard-menus'
-import type { ShortcutGroup } from '../chrome/shortcuts'
+import type { ShortcutGroup, ShortcutSpec } from '../chrome/shortcuts'
 import { FIND_SHORTCUT, PRINT_SHORTCUT, replaceShortcut, SAVE_SHORTCUT, SHORTCUTS_SHORTCUT } from '../chrome/use-editor-shortcuts'
 
 const mod = (key: string, more: { shift?: boolean; alt?: boolean } = {}) => ({ key, mod: true, ...more })
 
+/** Tools ▸ Word count, as in Docs. */
+export const WORD_COUNT_SHORTCUT: ShortcutSpec = { key: 'c', mod: true, shift: true }
+/** Edit ▸ Paste without formatting (the editor's paste takes Shift as plain text). */
+export const PLAIN_PASTE_SHORTCUT: ShortcutSpec = { key: 'v', mod: true, shift: true }
+
 /**
- * The Word editor's keys, as its keymap (DocxEditor's `shortcuts()` in client-core) and the shared
- * editor keys bind them. docx-shortcuts.test.ts checks every binding of the keymap is listed.
+ * The Word editor's keys, as its keymap (DocxEditor's `shortcuts()` in client-core), the shared
+ * editor keys, and the view (Word count) bind them. docx-shortcuts.test.ts checks every binding
+ * of the keymap is listed.
  */
 export function docxShortcutGroups(): ShortcutGroup[] {
   const redo = redoShortcut()
@@ -25,6 +31,9 @@ export function docxShortcutGroups(): ShortcutGroup[] {
         { label: ui("Show that changes are saved"), keys: [SAVE_SHORTCUT] },
         { label: ui("Keyboard shortcuts"), keys: [SHORTCUTS_SHORTCUT] },
         { label: ui("Switch between editing and suggesting"), keys: [mod('e', { shift: true })] },
+        { label: ui("Word count"), keys: [WORD_COUNT_SHORTCUT] },
+        { label: ui("Paste without formatting"), keys: [PLAIN_PASTE_SHORTCUT] },
+        { label: ui("Leave the document"), keys: [ui("Esc, then Tab")] },
       ],
     },
     {

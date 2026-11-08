@@ -1,6 +1,6 @@
 // Run with: npm run test:docx-editor -w @pulpo/web (build @pulpo/client-core first)
 // Install the browser once with: npx playwright install chromium
-// Set SCREENSHOT_DIR to also save screenshots (light and dark).
+// Set SCREENSHOT_DIR to also save screenshots (light and dark), and ONLY=<text> to run some steps.
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
 import { createServer } from 'vite'
@@ -16,6 +16,8 @@ let browser
 const results = []
 let current
 const step = async (name, run) => {
+  // ONLY=<text> runs the steps whose name contains it (each opens its own document).
+  if (process.env.ONLY && !name.includes(process.env.ONLY)) return
   const started = Date.now()
   try {
     await run()
@@ -518,8 +520,9 @@ try {
     await bar.getByRole('menuitem', { name: 'View' }).hover()
     await page.getByRole('menuitemradio', { name: 'Print layout' }).waitFor()
     assert.equal(await page.getByRole('menu').count(), 1)
+    // View is followed by Insert, as in Docs.
     await page.keyboard.press('ArrowRight')
-    await page.getByRole('menuitem', { name: 'Keyboard shortcuts' }).waitFor()
+    await page.getByRole('menuitem', { name: 'Horizontal line' }).waitFor()
     await page.keyboard.press('ArrowLeft')
     await page.keyboard.press('ArrowLeft')
     await page.getByRole('menuitem', { name: 'Undo' }).waitFor()
@@ -2018,6 +2021,511 @@ try {
     await page.evaluate((copy) => window.harness.editors[0].pasteData(copy, { plain: true }), copy)
     assert.match(await paragraph('Line spacing double').innerText(), new RegExp(`${copy.text}$`))
     assert.equal(await paragraph('Line spacing double').locator('span[style*="font-weight: 700"]').count(), 0)
+  })
+
+  const menuBar = page.getByRole('menubar', { name: 'Menu bar' })
+  /** Opens a menu of the menu bar and picks an entry, through submenus, by their data-menu-item ids. */
+  const pick = async (menu, ...path) => {
+    await menuBar.getByRole('menuitem', { name: menu, exact: true }).click()
+    for (const [index, id] of path.entries()) {
+      const entry = page.locator(`[role="menu"] [data-menu-item="${id}"]`)
+      if (index < path.length - 1) await entry.hover()
+      else await entry.click()
+    }
+  }
+  const editorState = () => page.evaluate(() => window.harness.editors[0].state())
+
+  await step('inserts a header and page numbers from the Insert menu, with the header bar', async () => {
+    await open('?generate=80')
+    await clickEnd('Section 2')
+    await pick('Insert', 'header')
+    await page.locator('.docx-story-editor').waitFor()
+    const bar = page.getByRole('toolbar', { name: 'Header', exact: true })
+    await bar.waitFor()
+    await page.keyboard.type('Menu header')
+    const firstPage = bar.getByRole('checkbox', { name: 'Different first page' })
+    await firstPage.check()
+    await page.waitForFunction(() => window.harness.editors[0].headerFooter().differentFirstPage)
+    await firstPage.uncheck()
+    await page.waitForFunction(() => !window.harness.editors[0].headerFooter().differentFirstPage)
+    // The checkbox hands typing back to the header.
+    await page.keyboard.type(' again')
+    await bar.getByRole('button', { name: 'Close header' }).click()
+    await page.locator('.docx-story-editor').waitFor({ state: 'detached' })
+    await bar.waitFor({ state: 'detached' })
+    const pages = await page.evaluate(() => window.harness.editors[0].pages)
+    await page.locator('.docx-band .docx-story[data-story^="header:"]', { hasText: 'Menu header again' }).nth(pages - 1).waitFor()
+    await pick('Insert', 'page-numbers', 'page-numbers-total', 'page-number-total-footer-right')
+    await page.getByRole('toolbar', { name: 'Footer', exact: true }).waitFor()
+    await page.keyboard.press('Escape')
+    await page.locator('.docx-story-editor').waitFor({ state: 'detached' })
+    const count = await page.evaluate(() => window.harness.editors[0].pages)
+    const footers = await page.locator('.docx-band .docx-story[data-story^="footer:"]').allInnerTexts()
+    assert.deepEqual(footers.map((footer) => footer.trim()), Array.from({ length: count }, (_, index) => `Page ${index + 1} of ${count}`))
+    // Read in one go: closing the footer lays the pages out again, which rebuilds the bands.
+    await page.waitForFunction(() => {
+      const footer = document.querySelector('.docx-band .docx-story[data-story^="footer:"] p')
+      return footer?.isConnected && getComputedStyle(footer).textAlign === 'right'
+    })
+    // From web layout, Insert ▸ Header brings the pages back first.
+    await page.getByRole('button', { name: 'Web layout' }).click()
+    await page.waitForFunction(() => document.querySelectorAll('.docx-page').length === 0)
+    await pick('Insert', 'footer')
+    await page.getByRole('toolbar', { name: 'Footer', exact: true }).getByRole('button', { name: 'Remove footer' }).click()
+    await page.locator('.docx-story-editor').waitFor({ state: 'detached' })
+    assert.equal(await page.evaluate(() => window.harness.editors[0].headerFooter().footer.default), undefined)
+    assert.equal(await page.evaluate(() => window.harness.editors[0].layout), 'print')
+    assert.match(await exported('header'), /Menu header again/)
+  })
+
+  await step('formats a hanging indent and exact line spacing in Format ▸ Paragraph', async () => {
+    await open('?file=basic-formatting.docx')
+    await clickEnd('Line spacing single')
+    await pick('Format', 'paragraph')
+    const dialog = page.getByRole('dialog', { name: 'Paragraph' })
+    await dialog.waitFor()
+    assert.equal(await page.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null && document.activeElement.tagName), 'INPUT')
+    await dialog.getByLabel('Left indent (in)').fill('0.5')
+    await dialog.getByRole('combobox', { name: 'Special' }).click()
+    await page.getByRole('option', { name: 'Hanging' }).click()
+    // As in Word, a new hanging indent starts at half an inch.
+    assert.equal(await dialog.getByLabel('By (in)').inputValue(), '0.5')
+    await dialog.getByLabel('By (in)').fill('0.25')
+    await dialog.getByLabel('Before (pt)').fill('6')
+    await dialog.getByRole('combobox', { name: 'Line spacing' }).click()
+    await page.getByRole('option', { name: 'Exactly' }).click()
+    await dialog.getByLabel('At (pt)').fill('18')
+    await dialog.getByRole('tab', { name: 'Line and page breaks' }).click()
+    await dialog.getByRole('checkbox', { name: 'Keep with next' }).check()
+    await dialog.getByRole('button', { name: 'Apply' }).click()
+    await dialog.waitFor({ state: 'detached' })
+    await focusInDocument()
+    const format = await page.evaluate(() => window.harness.editors[0].paragraphFormat())
+    assert.deepEqual([format.indent.left, format.indent.hanging, format.indent.firstLine, format.spacing.before, format.spacing.line, format.keepNext], [36, 18, 0, 6, { exact: 18 }, true])
+    assert.equal(await paragraph('Line spacing single').evaluate((element) => getComputedStyle(element).textIndent), '-24px')
+    // The whole dialog is one undo step.
+    await page.keyboard.press(`${mod}+z`)
+    await page.waitForFunction(() => window.harness.editors[0].paragraphFormat().indent.hanging === 0)
+    // A field that is not a length says so, and nothing changes.
+    await pick('Format', 'align-indent', 'indentation-options')
+    await dialog.getByLabel('Left indent (in)').fill('wide')
+    await page.keyboard.press('Enter')
+    await dialog.getByRole('alert').waitFor()
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({ state: 'detached' })
+    await focusInDocument()
+    assert.equal(await page.evaluate(() => window.harness.editors[0].paragraphFormat().indent.left), 0)
+  })
+
+  await step('changes to landscape with narrow margins in File ▸ Page setup and repaginates', async () => {
+    await open('?generate=80')
+    const before = await page.evaluate(() => window.harness.editors[0].pages)
+    await clickEnd('Section 3')
+    await pick('File', 'page-setup')
+    const dialog = page.getByRole('dialog', { name: 'Page setup' })
+    await dialog.waitFor()
+    assert.equal(await dialog.getByRole('radio', { name: 'Portrait' }).isChecked(), true)
+    await dialog.getByRole('radio', { name: 'Landscape' }).check()
+    await dialog.getByRole('combobox', { name: 'Margin presets' }).click()
+    await page.getByRole('option', { name: /^Narrow/ }).click()
+    assert.equal(await dialog.getByLabel('Top margin').inputValue(), '0.5')
+    await dialog.getByRole('button', { name: 'Apply' }).click()
+    await dialog.waitFor({ state: 'detached' })
+    await focusInDocument()
+    await page.waitForFunction(() => { const sheet = document.querySelector('.docx-page').getBoundingClientRect(); return sheet.width > sheet.height })
+    const setup = await page.evaluate(() => window.harness.editors[0].pageSetup())
+    assert.deepEqual([setup.orientation, setup.width, setup.height, setup.margins.top, setup.margins.left], ['landscape', 792, 612, 36, 36])
+    await page.waitForFunction((pages) => window.harness.editors[0].pages !== pages, before)
+    // Section properties cannot be suggested: the dialog says so and applies nothing.
+    await page.evaluate(() => window.harness.editors[0].setMode('suggesting'))
+    await pick('File', 'page-setup')
+    await dialog.getByText("Page setup can't be suggested. Switch to Editing to change it.").waitFor()
+    assert.equal(await dialog.getByRole('button', { name: 'Apply' }).count(), 0)
+    assert.equal(await dialog.getByRole('radio', { name: 'Portrait' }).isDisabled(), true)
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({ state: 'detached' })
+    await focusInDocument()
+  })
+
+  await step('counts words for the document and the selection, in the dialog and the status bar', async () => {
+    await open('?file=basic-formatting.docx')
+    await clickEnd('A normal paragraph with plain text', 0, 12)
+    const counts = await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      return { document: editor.wordCount('document'), selection: editor.wordCount('selection'), pages: editor.pages }
+    })
+    assert.ok(counts.selection.words > 0 && counts.selection.words < counts.document.words)
+    await page.locator('[data-docx-words]', { hasText: `${counts.selection.words} of ${counts.document.words.toLocaleString('en-US')} words` }).waitFor()
+    await page.keyboard.press(`${mod}+Shift+c`)
+    const dialog = page.getByRole('dialog', { name: 'Word count' })
+    await dialog.waitFor()
+    const cell = (row, column) => dialog.locator(`[data-count="${row}"] [data-column="${column}"]`).innerText()
+    assert.equal(await cell('words', 'document'), counts.document.words.toLocaleString('en-US'))
+    assert.equal(await cell('words', 'selection'), counts.selection.words.toLocaleString('en-US'))
+    assert.equal(await cell('characters', 'selection'), counts.selection.charactersWithSpaces.toLocaleString('en-US'))
+    assert.equal(await cell('characters-no-spaces', 'document'), counts.document.characters.toLocaleString('en-US'))
+    assert.equal(await cell('pages', 'document'), String(counts.pages))
+    await dialog.getByRole('checkbox', { name: 'Display word count while typing' }).uncheck()
+    await page.locator('[data-docx-words]').waitFor({ state: 'detached' })
+    await dialog.getByRole('button', { name: 'OK' }).click()
+    await dialog.waitFor({ state: 'detached' })
+    await focusInDocument()
+    // The choice is remembered for this browser; View ▸ Show word count brings it back.
+    await open('?file=basic-formatting.docx')
+    assert.equal(await page.locator('[data-docx-words]').count(), 0)
+    await pick('View', 'show-word-count')
+    await page.locator('[data-docx-words]', { hasText: /^[\d,]+ words$/ }).waitFor()
+    // The page indicator follows the cursor.
+    await open('?generate=80')
+    await clickEnd('Section 4')
+    const current = await page.evaluate(() => window.harness.editors[0].currentPage())
+    await page.locator('[data-docx-pages]', { hasText: `Page ${current.index} of ${current.count}` }).waitFor()
+  })
+
+  await step('opens a right-click menu over table cells, and leaves other right-clicks to the browser', async () => {
+    await open('?file=tables.docx')
+    await page.evaluate(() => {
+      window.contextMenus = []
+      document.addEventListener('contextmenu', (event) => window.contextMenus.push(event.defaultPrevented))
+    })
+    const table = flow.locator('table.docx-table').first()
+    const rows = await table.locator('tr').count()
+    const box = await table.locator('td.docx-cell').first().boundingBox()
+    await page.mouse.click(box.x + 8, box.y + 8, { button: 'right' })
+    const menu = page.locator('[data-docx-context-menu]')
+    await menu.waitFor()
+    for (const id of ['cut', 'copy', 'paste', 'paste-plain', 'table-row-above', 'table-delete', 'table-merge', 'table-cell-align']) await menu.locator(`[data-menu-item="${id}"]`).waitFor()
+    // Nothing is selected, so there is nothing to cut or copy.
+    assert.equal(await menu.locator('[data-menu-item="cut"]').getAttribute('aria-disabled'), 'true')
+    await menu.getByRole('menuitem', { name: 'Insert row below' }).click()
+    await menu.waitFor({ state: 'detached' })
+    assert.equal(await table.locator('tr').count(), rows + 1)
+    await focusInDocument()
+    // Without clipboard access, Paste points at the keyboard.
+    await page.mouse.click(box.x + 8, box.y + 8, { button: 'right' })
+    await menu.locator('[data-menu-item="paste"]').click()
+    await page.getByText(/^Use (⌘V|Ctrl\+V) to paste$/).waitFor()
+    // Plain text keeps the browser's menu (spelling suggestions), and so does Shift+right-click.
+    const text = await paragraph('Tables').boundingBox()
+    await page.mouse.click(text.x + 4, text.y + text.height / 2, { button: 'right' })
+    await page.keyboard.down('Shift')
+    await page.mouse.click(box.x + 8, box.y + 8, { button: 'right' })
+    await page.keyboard.up('Shift')
+    await page.waitForTimeout(100)
+    assert.equal(await menu.count(), 0)
+    assert.deepEqual(await page.evaluate(() => window.contextMenus), [true, true, false, false])
+    // Links get Open, Edit, and Remove.
+    await open('?file=notes-fields.docx')
+    const link = flow.locator('a[href="https://example.com/"]').first()
+    const linkBox = await link.boundingBox()
+    await page.mouse.click(linkBox.x + linkBox.width / 2, linkBox.y + linkBox.height / 2, { button: 'right' })
+    await menu.waitFor()
+    await page.evaluate(() => { window.opened = []; window.open = (url, target, features) => { window.opened.push([url, target, features]); return null } })
+    await menu.getByRole('menuitem', { name: 'Open link' }).click()
+    assert.deepEqual(await page.evaluate(() => window.opened), [['https://example.com/', '_blank', 'noopener,noreferrer']])
+    await page.mouse.click(linkBox.x + linkBox.width / 2, linkBox.y + linkBox.height / 2, { button: 'right' })
+    await menu.getByRole('menuitem', { name: 'Remove link' }).click()
+    await page.waitForFunction(() => !document.querySelector('.docx-flow a[href="https://example.com/"]'))
+  })
+
+  await step('focuses a new comment with Cmd/Ctrl+Alt+M, cancels it with Escape, and edits your own', async () => {
+    await open('?file=basic-formatting.docx')
+    await clickEnd('Hanging indent.', 0, 'indent.'.length)
+    const before = await text()
+    // Typing right after the key goes into the box at once, never over the selected text.
+    await page.keyboard.press(`${mod}+Alt+m`)
+    await page.keyboard.type('Quick')
+    assert.equal(await page.getByRole('textbox', { name: 'New comment' }).inputValue(), 'Quick')
+    assert.equal(await text(), before)
+    await page.keyboard.press('Escape')
+    // The panel opened for the new comment closes with it.
+    await page.getByRole('textbox', { name: 'New comment' }).waitFor({ state: 'detached' })
+    await focusInDocument()
+    await pick('Insert', 'comment')
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'New comment')
+    await page.keyboard.type('Tighten this')
+    await page.keyboard.press(`${mod}+Enter`)
+    const card = page.locator('[data-comment]', { hasText: 'Tighten this' })
+    await card.waitFor()
+    const unresolved = await page.evaluate(() => window.harness.editors[0].comments().filter((thread) => !thread.meta.done).length)
+    await page.locator('button[aria-label="Comment"] [data-badge]', { hasText: String(unresolved) }).waitFor()
+    await card.getByRole('button', { name: 'Edit comment' }).click()
+    await card.getByRole('textbox', { name: 'Edit comment' }).fill('Tighten this paragraph')
+    await page.keyboard.press(`${mod}+Enter`)
+    await card.getByText('Tighten this paragraph', { exact: true }).waitFor()
+    // The comment is on the text selected before the box took focus.
+    assert.match(await exported(), /Ada on "i?ndent\."\]: Tighten this paragraph/)
+    // A click on the card puts the cursor at its text.
+    await clickEnd('Line spacing double')
+    await card.locator('p').first().click()
+    assert.equal(await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      const thread = editor.comments().find((candidate) => candidate.text === 'Tighten this paragraph')
+      return editor.activeComment === thread.id && Math.abs(editor.view.state.selection.from - thread.pos) <= 2
+    }), true)
+    // Opening the panel from View ▸ Comments leaves the cursor in the document.
+    await page.getByRole('complementary', { name: 'Comments' }).getByRole('button', { name: 'Close' }).click()
+    await pick('View', 'comments')
+    await page.getByRole('textbox', { name: 'New comment' }).waitFor()
+    await page.waitForTimeout(100)
+    await focusInDocument()
+  })
+
+  await step('types a font size, steps it, and zooms with presets, Fit, and Ctrl+wheel', async () => {
+    await open('?file=basic-formatting.docx')
+    await clickEnd('A normal paragraph with plain text', 0, 5)
+    const size = page.getByRole('textbox', { name: 'Font size' })
+    await size.click()
+    await size.fill('13')
+    await page.keyboard.press('Enter')
+    await page.waitForFunction(() => window.harness.editors[0].state().fontSize === 13)
+    await focusInDocument()
+    await page.getByRole('button', { name: 'Increase font size' }).click()
+    await page.waitForFunction(() => window.harness.editors[0].state().fontSize === 14)
+    await page.waitForFunction(() => document.querySelector('input[aria-label="Font size"]').value === '14')
+    await page.getByRole('button', { name: 'Zoom', exact: true }).click()
+    await page.getByRole('menuitemradio', { name: '150%' }).click()
+    await page.locator('[data-docx-zoom]', { hasText: '150%' }).waitFor()
+    await focusInDocument()
+    await page.getByRole('button', { name: 'Zoom', exact: true }).click()
+    await page.getByRole('menuitemradio', { name: 'Fit' }).click()
+    await page.locator('[data-docx-zoom]', { hasText: 'Fit' }).waitFor()
+    const fit = await page.evaluate(() => {
+      const scroller = document.querySelector('[data-docx-scroller]')
+      const sheet = document.querySelector('.docx-page').getBoundingClientRect()
+      return { sheet: sheet.width, room: scroller.clientWidth }
+    })
+    assert.ok(fit.sheet <= fit.room && fit.sheet > fit.room * 0.85, JSON.stringify(fit))
+    const zoom = await page.evaluate(() => window.harness.editors[0].zoom)
+    const pages = await page.locator('[data-docx-scroller]').boundingBox()
+    await page.mouse.move(pages.x + pages.width / 2, pages.y + pages.height / 2)
+    await page.keyboard.down('Control')
+    await page.mouse.wheel(0, -300)
+    await page.keyboard.up('Control')
+    await page.waitForFunction((before) => window.harness.editors[0].zoom > before, zoom)
+    assert.notEqual(await page.locator('[data-docx-zoom]').innerText(), 'Fit')
+  })
+
+  await step('shows a link bubble that opens, edits, and removes the link', async () => {
+    await open('?layout=web')
+    await flow.locator('p').first().click()
+    await page.keyboard.type('See ')
+    await page.keyboard.press(`${mod}+k`)
+    const insert = page.getByRole('dialog', { name: 'Insert link' })
+    await insert.getByLabel('Text to display').fill('Pulpo')
+    await insert.getByLabel('Link').fill('pulpo.baby')
+    await page.keyboard.press('Enter')
+    await insert.waitFor({ state: 'detached' })
+    const bubble = page.locator('[data-docx-link-bubble]')
+    // The caret ends at the new link's end, where the bubble may show a frame later; it never takes focus.
+    await focusInDocument()
+    await caretInLink()
+    await bubble.waitFor()
+    const target = bubble.getByRole('link', { name: 'pulpo.baby' })
+    assert.deepEqual([await target.getAttribute('href'), await target.getAttribute('target'), await target.getAttribute('rel')], ['https://pulpo.baby', '_blank', 'noopener noreferrer'])
+    await bubble.getByRole('button', { name: 'Edit link' }).click()
+    const edit = page.getByRole('dialog', { name: 'Edit link' })
+    await edit.waitFor()
+    assert.equal(await bubble.count(), 0)
+    await edit.getByLabel('Link').fill('example.org/docs')
+    await page.keyboard.press('Enter')
+    await flow.locator('a[href="https://example.org/docs"]', { hasText: 'Pulpo' }).waitFor()
+    await focusInDocument()
+    await bubble.getByRole('link', { name: 'example.org/docs' }).waitFor()
+    await bubble.getByRole('button', { name: 'Remove link' }).click()
+    await page.waitForFunction(() => !document.querySelector('.docx-flow a'))
+    await bubble.waitFor({ state: 'detached' })
+    await focusInDocument()
+    assert.equal((await text()).trimEnd(), 'See Pulpo')
+  })
+
+  await step('inserts a table from the Insert menu grid with the keyboard', async () => {
+    await open('?file=basic-formatting.docx')
+    await clickEnd('Line spacing single')
+    const tables = await flow.locator('table.docx-table').count()
+    await menuBar.getByRole('menuitem', { name: 'Insert', exact: true }).click()
+    // The menu moves focus a moment after each key.
+    const focused = (id) => page.waitForFunction((id) => document.activeElement?.getAttribute('data-menu-item') === id, id)
+    await page.keyboard.press('ArrowDown')
+    await focused('image')
+    await page.keyboard.press('ArrowDown')
+    await focused('table')
+    await page.keyboard.press('ArrowRight')
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '1 by 1 table')
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('ArrowDown')
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '2 by 2 table')
+    await page.keyboard.press('Enter')
+    await page.waitForFunction((count) => document.querySelectorAll('.docx-flow table.docx-table').length === count + 1, tables)
+    assert.equal(await flow.locator('table.docx-table').nth(tables).locator('td.docx-cell:not([data-phantom])').count(), 4)
+    await focusInDocument()
+  })
+
+  await step('formats text from the Format and Edit menus, and remembers AutoFormat', async () => {
+    await open('?file=basic-formatting.docx')
+    await clickEnd('A normal paragraph with plain text', 0, 'below.'.length)
+    await pick('Format', 'text', 'small-caps')
+    await page.waitForFunction(() => window.harness.editors[0].state().smallCaps)
+    await focusInDocument()
+    await pick('Format', 'change-case', 'case-upper')
+    await flow.locator('p.docx-p', { hasText: /samples BELOW\.$/ }).waitFor()
+    await pick('Format', 'paragraph-styles', 'style-heading-2')
+    await flow.locator('p.docx-ps-Heading2', { hasText: /samples BELOW\.$/ }).waitFor()
+    await pick('Format', 'align-indent', 'align-center')
+    await pick('Format', 'line-spacing', 'line-spacing-2')
+    assert.deepEqual(await page.evaluate(() => { const state = window.harness.editors[0].state(); return [state.alignment, state.lineSpacing] }), ['center', 2])
+    await pick('Edit', 'select-all')
+    assert.equal(await page.evaluate(() => { const { selection, doc } = window.harness.editors[0].view.state; return selection.from <= 1 && selection.to >= doc.content.size - 1 }), true)
+    await focusInDocument()
+    await pick('Tools', 'autoformat')
+    await page.waitForFunction(() => !window.harness.editors[0].autoformat.quotes)
+    await open('?file=basic-formatting.docx')
+    assert.equal(await page.evaluate(() => window.harness.editors[0].autoformat.quotes), false)
+    await pick('Tools', 'autoformat')
+    await page.waitForFunction(() => window.harness.editors[0].autoformat.quotes)
+  })
+
+  await step('picks pictures from Insert ▸ Image and says which formats it refuses', async () => {
+    await open('?file=basic-formatting.docx')
+    await clickEnd('Hanging indent.')
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), pick('Insert', 'image')])
+    await chooser.setFiles({ name: 'logo.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"/>') })
+    await page.getByRole('alert').filter({ hasText: "Couldn't insert logo.svg. Only PNG, JPEG, GIF, and BMP pictures can be inserted." }).waitFor()
+  })
+
+  await step('steps through tracked changes from the review panel and Tools ▸ Review suggested edits', async () => {
+    await open('?file=review.docx')
+    await page.getByRole('button', { name: 'Review changes', exact: true }).click()
+    const all = await page.evaluate(() => window.harness.editors[0].revisions())
+    assert.ok(all.length > 1)
+    if (all.some((revision) => revision.date)) await page.locator('[data-docx-review] [data-revision-date]').first().waitFor()
+    await page.evaluate(() => {
+      const view = window.harness.editors[0].view
+      view.focus()
+      view.dispatch(view.state.tr.setSelection(view.state.selection.constructor.create(view.state.doc, 1)))
+    })
+    const selection = () => page.evaluate(() => { const editor = window.harness.editors[0]; return `${editor.editingStory ?? 'body'}:${editor.view.state.selection.from}` })
+    await page.getByRole('button', { name: 'Next change' }).click()
+    const first = await selection()
+    await page.getByRole('button', { name: 'Next change' }).click()
+    assert.notEqual(await selection(), first)
+    await page.getByRole('button', { name: 'Previous change' }).click()
+    assert.equal(await selection(), first)
+    assert.equal((await editorState()).inRevision, true)
+    await pick('Tools', 'tools-review', 'review-accept')
+    await page.waitForFunction((count) => window.harness.editors[0].revisions().length < count, all.length)
+  })
+
+  await step('fits the status bar and Format submenus in a side-panel-wide editor', async () => {
+    await page.setViewportSize({ width: 400, height: 800 })
+    try {
+      await open('?file=basic-formatting.docx')
+      const status = await page.locator('[data-docx-status]').evaluate((element) => [element.scrollWidth, element.clientWidth])
+      assert.ok(status[0] <= status[1] + 1, JSON.stringify(status))
+      await pick('Format', 'line-spacing')
+      const submenu = page.getByRole('menu').filter({ has: page.locator('[data-menu-item="custom-spacing"]') }).last()
+      await submenu.waitFor()
+      const box = await submenu.boundingBox()
+      assert.ok(box.x >= 0 && box.x + box.width <= 400, `the submenu spans ${box.x} to ${box.x + box.width}`)
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+      // The header bar's buttons become icons, so Close stays on screen.
+      await clickEnd('Hanging indent.')
+      await pick('Insert', 'header')
+      const bar = page.getByRole('toolbar', { name: 'Header', exact: true })
+      await bar.waitFor()
+      const fit = await bar.evaluate((element) => [element.scrollWidth, element.clientWidth])
+      assert.ok(fit[0] <= fit[1] + 1, JSON.stringify(fit))
+      const close = await bar.getByRole('button', { name: 'Close header' }).boundingBox()
+      assert.ok(close.x + close.width <= 400, JSON.stringify(close))
+      await bar.getByRole('button', { name: 'Remove header' }).waitFor()
+      await page.keyboard.press('Escape')
+      await bar.waitFor({ state: 'detached' })
+    } finally {
+      await page.setViewportSize({ width: 1400, height: 1000 })
+    }
+  })
+
+  await step("edits the header of the cursor's page through Different first page and Insert ▸ Header, and counts the body", async () => {
+    await open('?generate=80')
+    await clickEnd('Section 1')
+    await pick('Insert', 'header')
+    const toolbar = (name) => page.getByRole('toolbar', { name, exact: true })
+    await toolbar('Header').waitFor()
+    await page.keyboard.type('Running head')
+    // The status bar counts the document's words, not the open header's.
+    const words = await page.evaluate(() => window.harness.editors[0].wordCount('body').words)
+    assert.ok(words > 100)
+    await page.locator('[data-docx-words]', { hasText: `${words.toLocaleString('en-US')} words` }).waitFor()
+    // As in Word and Docs, page 1 now shows (and edits) its own first-page header.
+    await page.getByRole('checkbox', { name: 'Different first page' }).check()
+    await toolbar('First page header').waitFor()
+    await page.keyboard.type('Title page')
+    const first = await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      return { story: editor.editingStory, first: editor.headerFooter().header.first, page: editor.currentPage().index }
+    })
+    assert.deepEqual([first.story, first.page], [first.first, 1])
+    await page.locator('.docx-band .docx-story[data-story^="header:"]', { hasText: 'Running head' }).first().waitFor()
+    // Turning it off goes back to the regular header on the same page.
+    await page.getByRole('checkbox', { name: 'Different first page' }).uncheck()
+    await toolbar('Header').waitFor()
+    await page.keyboard.type(' again')
+    assert.equal(await page.evaluate(() => window.harness.editors[0].currentPage().index), 1)
+    await page.keyboard.press('Escape')
+    await page.locator('.docx-story-editor').waitFor({ state: 'detached' })
+    const pages = await page.evaluate(() => window.harness.editors[0].pages)
+    await page.locator('.docx-band .docx-story[data-story^="header:"]', { hasText: 'Running head again' }).nth(pages - 1).waitFor()
+    assert.match(await exported('header'), /Title page/)
+    // Insert ▸ Header edits the header of the cursor's page, as Word's Edit Header does: a title page's own.
+    await page.evaluate(() => window.harness.editors[0].setDifferentFirstPage(true))
+    await page.locator('.docx-band .docx-story[data-story^="header:"]', { hasText: 'Title page' }).waitFor()
+    await clickEnd('Section 1')
+    await pick('Insert', 'header')
+    await toolbar('First page header').waitFor()
+    assert.equal(await page.evaluate(() => window.harness.editors[0].currentPage().index), 1)
+    await page.keyboard.press('Escape')
+    await page.locator('.docx-story-editor').waitFor({ state: 'detached' })
+    await clickEnd('Section 2')
+    await pick('Insert', 'header')
+    await toolbar('Header').waitFor()
+    assert.equal(await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      return editor.editingStory === editor.headerFooter().header.default && editor.currentPage().index > 1
+    }), true)
+  })
+
+  await step('shows a read-only viewer the comments from the Comment button, and selects only the document', async () => {
+    await open('?file=review.docx&readonly=1')
+    const button = page.getByRole('button', { name: 'Comment', exact: true })
+    assert.equal(await button.isDisabled(), false)
+    assert.equal(await button.getAttribute('aria-pressed'), 'false')
+    await button.click()
+    await page.locator('[data-docx-comments] [data-comment]').first().waitFor()
+    assert.equal(await page.getByRole('textbox', { name: 'New comment' }).count(), 0)
+    assert.equal(await button.getAttribute('aria-pressed'), 'true')
+    await button.click()
+    await page.locator('[data-docx-comments]').waitFor({ state: 'detached' })
+    // Edit ▸ Select all selects the document's text, to copy, never the whole page.
+    await pick('Edit', 'select-all')
+    assert.deepEqual(await page.evaluate(() => {
+      const selection = document.getSelection()
+      return [window.harness.editors[0].view.dom.contains(selection.anchorNode), selection.containsNode(document.querySelector('[data-editor-menubar]'), true), window.harness.editors[0].state().empty]
+    }), [true, false, false])
+    await menuBar.getByRole('menuitem', { name: 'Edit', exact: true }).click()
+    assert.equal(await page.locator('[role="menu"] [data-menu-item="copy"]').getAttribute('data-disabled'), null)
+    await page.keyboard.press('Escape')
+    // Nothing in a read-only table can change: the browser's own menu stays there.
+    await open('?file=tables.docx&readonly=1')
+    await page.evaluate(() => {
+      window.contextMenus = []
+      document.addEventListener('contextmenu', (event) => window.contextMenus.push(event.defaultPrevented))
+    })
+    const cell = await flow.locator('table.docx-table td.docx-cell').first().boundingBox()
+    await page.mouse.click(cell.x + 8, cell.y + 8, { button: 'right' })
+    await page.waitForTimeout(100)
+    assert.deepEqual(await page.evaluate(() => window.contextMenus), [false])
+    assert.equal(await page.locator('[data-docx-context-menu]').count(), 0)
   })
 
   await step('lays out a 100-page document within budget', async () => {

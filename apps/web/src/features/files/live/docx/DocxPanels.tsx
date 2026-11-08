@@ -1,36 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CommentThread, DocxEditor, Revision } from '@pulpo/client-core/office/docx/view'
-import { ArrowDown, ArrowUp, CaseSensitive, Check, MessageCircleReply, Replace, Trash2, WholeWord, X } from 'lucide-react'
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
+import type { CommentThread, DocxEditor, DocxFormattingState, HeaderFooterKind, Revision } from '@pulpo/client-core/office/docx/view'
+import { ArrowDown, ArrowUp, CaseSensitive, Check, ChevronDown, ChevronUp, Hash, MessageCircleReply, Pencil, Replace, Trash2, WholeWord, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { ui } from '@/i18n/ui'
+import { activeLocale, ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
+import { ZoomControl } from '../chrome/ZoomControl'
 import { ToolbarButton } from './DocxToolbar'
-
-/** Re-reads a value from the editor whenever it updates (and on layout). */
-function useEditorValue<T>(editor: DocxEditor, read: () => T): T {
-  const [value, setValue] = useState(read)
-  const reader = useRef(read)
-  reader.current = read
-  useEffect(() => {
-    let frame = 0
-    const refresh = () => {
-      if (frame) return
-      frame = requestAnimationFrame(() => {
-        frame = 0
-        setValue(reader.current())
-      })
-    }
-    const stops = [editor.on('update', refresh), editor.on('layout', refresh), editor.on('activeComment', refresh)]
-    refresh()
-    return () => {
-      cancelAnimationFrame(frame)
-      for (const stop of stops) stop()
-    }
-  }, [editor])
-  return value
-}
+import { headerFooterName, wordCountLabel } from './docx-names'
+import { openStoryOnPage, storyOnPage } from './header-footer-pages'
+import { useEditorValue } from './use-editor-value'
 
 export function PanelFrame({ title, onClose, children, className }: { title: string; onClose: () => void; children: React.ReactNode; className?: string }) {
   return (
@@ -72,23 +52,77 @@ export function OutlinePanel({ editor, onClose }: { editor: DocxEditor; onClose:
 function formatDate(value: string | undefined): string {
   if (!value) return ''
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString(activeLocale(), { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-function CommentCard({ editor, thread, active }: { editor: DocxEditor; thread: CommentThread; active: boolean }) {
+/** Ctrl/Cmd+Enter sends and Escape cancels, as in Docs' comment boxes. */
+function commentKeys(event: React.KeyboardEvent<HTMLTextAreaElement>, { submit, cancel }: { submit: () => void; cancel: () => void }): void {
+  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+    event.preventDefault()
+    submit()
+  } else if (event.key === 'Escape') {
+    event.preventDefault()
+    event.stopPropagation()
+    cancel()
+  }
+}
+
+/** A comment's text, or a box editing it in place (the viewer's own comments). */
+function CommentBody({ editor, id, text, editing, onDone }: { editor: DocxEditor; id: string; text: string; editing: boolean; onDone: () => void }) {
+  const [draft, setDraft] = useState(text)
+  if (!editing) return <p className="mt-1 whitespace-pre-wrap break-words">{text}</p>
+  const save = () => {
+    const next = draft.trim()
+    if (next && next !== text) editor.editComment(id, next)
+    onDone()
+  }
+  return (
+    <form className="mt-1 flex flex-col gap-1.5" onSubmit={(event) => { event.preventDefault(); save() }}>
+      <Textarea
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => commentKeys(event, { submit: save, cancel: onDone })}
+        onFocus={(event) => event.currentTarget.select()}
+        aria-label={ui("Edit comment")}
+        rows={2}
+        autoFocus
+      />
+      <div className="flex justify-end gap-1">
+        <Button type="button" size="sm" variant="ghost" onClick={onDone}>{ui("Cancel")}</Button>
+        <Button type="submit" size="sm" disabled={!draft.trim()}>{ui("Save")}</Button>
+      </div>
+    </form>
+  )
+}
+
+/** Whether a comment is the viewer's own. Word files keep author names, not accounts, so names decide. */
+const isOwn = (author: string | undefined, user: string | undefined) => Boolean(user && author === user)
+
+function CommentCard({ editor, thread, active, user }: { editor: DocxEditor; thread: CommentThread; active: boolean; user?: string }) {
   const [reply, setReply] = useState('')
+  const [editing, setEditing] = useState<string | null>(null)
   const readOnly = !editor.canComment
+  const editButton = (id: string, author: string | undefined) => !readOnly && isOwn(author, user) && editing !== id && (
+    <ToolbarButton label={ui("Edit comment")} onClick={() => setEditing(id)}>
+      <Pencil className="size-3.5" />
+    </ToolbarButton>
+  )
   return (
     <article
       data-comment={thread.id}
-      onClick={() => editor.setActiveComment(thread.id)}
-      className={cn('rounded-lg border bg-card p-3 text-sm shadow-xs transition-colors', active && 'border-primary', thread.meta.done && 'opacity-70')}
+      onClick={(event) => {
+        editor.setActiveComment(thread.id)
+        // A click on the card itself (not a button or box) shows its text in the document, as in Docs.
+        if (!(event.target as Element).closest('button, input, textarea, a, form')) editor.goTo(thread.pos)
+      }}
+      className={cn('cursor-pointer rounded-lg border bg-card p-3 text-sm shadow-xs transition-colors', active && 'border-primary ring-1 ring-primary/30', thread.meta.done && 'opacity-70')}
     >
       <header className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <div className="truncate font-medium">{thread.meta.author ?? ui("Unknown author")}</div>
           <div className="text-xs text-muted-foreground">{formatDate(thread.meta.date)}</div>
         </div>
+        {editButton(thread.id, thread.meta.author)}
         {!readOnly && (
           <>
             <ToolbarButton label={thread.meta.done ? ui("Reopen") : ui("Resolve")} active={thread.meta.done} onClick={() => editor.resolveComment(thread.id, !thread.meta.done)}>
@@ -100,14 +134,15 @@ function CommentCard({ editor, thread, active }: { editor: DocxEditor; thread: C
           </>
         )}
       </header>
-      <p className="mt-1 whitespace-pre-wrap break-words">{thread.text}</p>
+      <CommentBody key={editing === thread.id ? 'editing' : 'text'} editor={editor} id={thread.id} text={thread.text} editing={editing === thread.id} onDone={() => setEditing(null)} />
       {thread.replies.map((item) => (
-        <div key={item.id} className="mt-2 border-t pt-2">
-          <div className="flex items-baseline gap-2">
-            <span className="truncate font-medium">{item.meta.author ?? ui("Unknown author")}</span>
-            <span className="text-xs text-muted-foreground">{formatDate(item.meta.date)}</span>
+        <div key={item.id} className="mt-2 border-t pt-2" data-comment-reply={item.id}>
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 truncate font-medium">{item.meta.author ?? ui("Unknown author")}</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{formatDate(item.meta.date)}</span>
+            {editButton(item.id, item.meta.author)}
           </div>
-          <p className="whitespace-pre-wrap break-words">{item.text}</p>
+          <CommentBody key={editing === item.id ? 'editing' : 'text'} editor={editor} id={item.id} text={item.text} editing={editing === item.id} onDone={() => setEditing(null)} />
         </div>
       ))}
       {active && !readOnly && !thread.meta.done && (
@@ -130,27 +165,71 @@ function CommentCard({ editor, thread, active }: { editor: DocxEditor; thread: C
   )
 }
 
-export function CommentsPanel({ editor, onClose }: { editor: DocxEditor; onClose: () => void }) {
+/**
+ * The comments panel: a box for a new comment on the selection (Insert ▸ Comment, the toolbar's
+ * Comment, and Cmd/Ctrl+Alt+M focus it, as in Docs), then the threads in reading order. A click
+ * on a thread shows its text in the document.
+ */
+export function CommentsPanel({ editor, onClose, user, draftRequest = 0, onDraftCancel }: {
+  editor: DocxEditor
+  onClose: () => void
+  /** The viewer's name: their own comments can be edited. */
+  user?: string
+  /** Changes each time a new comment is asked for; the box takes focus. */
+  draftRequest?: number
+  /** Escape in the new comment box; the document should take focus back. */
+  onDraftCancel?: () => void
+}) {
   const threads = useEditorValue(editor, () => editor.comments())
   const active = useEditorValue(editor, () => editor.activeComment)
   const [draft, setDraft] = useState('')
   const [showResolved, setShowResolved] = useState(false)
+  const draftBox = useRef<HTMLTextAreaElement>(null)
+  const list = useRef<HTMLDivElement>(null)
   const visible = threads.filter((thread) => showResolved || !thread.meta.done)
   const canComment = editor.canComment
+  // As the panel commits, so keys typed right after the request land in the box.
+  useLayoutEffect(() => {
+    if (!draftRequest) return
+    draftBox.current?.focus({ preventScroll: true })
+    draftBox.current?.scrollIntoView({ block: 'nearest' })
+  }, [draftRequest])
+  // A thread opened from the document (a click, the context menu) comes into view.
+  useEffect(() => {
+    if (active) list.current?.querySelector(`[data-comment="${CSS.escape(active)}"]`)?.scrollIntoView({ block: 'nearest' })
+  }, [active])
+  const submit = () => {
+    if (!draft.trim()) return
+    editor.addComment(draft.trim())
+    setDraft('')
+  }
   return (
     <PanelFrame title={ui("Comments")} onClose={onClose}>
-      <div className="flex flex-col gap-2 p-3" data-docx-comments>
+      <div ref={list} className="flex flex-col gap-2 p-3" data-docx-comments>
         {canComment && (
           <form
             className="flex flex-col gap-2"
             onSubmit={(event) => {
               event.preventDefault()
-              if (!draft.trim()) return
-              editor.addComment(draft.trim())
-              setDraft('')
+              submit()
             }}
           >
-            <Textarea value={draft} onChange={(event) => setDraft(event.target.value)} placeholder={ui("Comment on the selection")} aria-label={ui("New comment")} rows={2} />
+            <Textarea
+              ref={draftBox}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => commentKeys(event, {
+                submit,
+                cancel: () => {
+                  setDraft('')
+                  onDraftCancel?.()
+                },
+              })}
+              placeholder={ui("Comment on the selection")}
+              aria-label={ui("New comment")}
+              rows={2}
+              data-docx-comment-draft=""
+            />
             <Button type="submit" size="sm" disabled={!draft.trim()} className="self-end">{ui("Comment")}</Button>
           </form>
         )}
@@ -158,7 +237,7 @@ export function CommentsPanel({ editor, onClose }: { editor: DocxEditor; onClose
           <input type="checkbox" checked={showResolved} onChange={(event) => setShowResolved(event.target.checked)} />
           {ui("Show resolved")}
         </label>
-        {visible.map((thread) => <CommentCard key={thread.id} editor={editor} thread={thread} active={active === thread.id} />)}
+        {visible.map((thread) => <CommentCard key={thread.id} editor={editor} thread={thread} active={active === thread.id} user={user} />)}
         {!visible.length && <p className="py-4 text-center text-sm text-muted-foreground">{ui("No comments")}</p>}
       </div>
     </PanelFrame>
@@ -181,22 +260,31 @@ const KIND_LABELS = (): Record<Revision['kind'], string> => ({
   paragraphFormat: ui("Paragraph formatted"),
 })
 
-export function ReviewPanel({ editor, onClose }: { editor: DocxEditor; onClose: () => void }) {
+/** Tracked changes: Accept or Reject all, Previous and Next (Word's Review tab), and a card per change. */
+export function ReviewPanel({ editor, onClose, showMarkup, onShowMarkupChange }: {
+  editor: DocxEditor
+  onClose: () => void
+  showMarkup: boolean
+  onShowMarkupChange: (show: boolean) => void
+}) {
   const revisions = useEditorValue(editor, () => editor.revisions())
   const state = useEditorValue(editor, () => editor.state())
-  const [showMarkup, setShowMarkup] = useState(true)
   const labels = KIND_LABELS()
   const stories: Record<string, string> = { header: ui("Header"), footer: ui("Footer"), footnote: ui("Footnote"), endnote: ui("Endnote") }
   const readOnly = state.readOnly
   return (
     <PanelFrame title={ui("Tracked changes")} onClose={onClose}>
       <div className="flex flex-col gap-2 p-3" data-docx-review>
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap items-center gap-1">
           <Button size="sm" variant="outline" disabled={readOnly || !revisions.length} onClick={() => editor.acceptAll()}>{ui("Accept all")}</Button>
           <Button size="sm" variant="outline" disabled={readOnly || !revisions.length} onClick={() => editor.rejectAll()}>{ui("Reject all")}</Button>
+          <div className="ml-auto flex items-center">
+            <ToolbarButton label={ui("Previous change")} disabled={!revisions.length} onClick={() => editor.nextRevision(-1)}><ChevronUp className="size-4" /></ToolbarButton>
+            <ToolbarButton label={ui("Next change")} disabled={!revisions.length} onClick={() => editor.nextRevision(1)}><ChevronDown className="size-4" /></ToolbarButton>
+          </div>
         </div>
         <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-          <input type="checkbox" checked={showMarkup} onChange={(event) => { setShowMarkup(event.target.checked); editor.setShowMarkup(event.target.checked) }} />
+          <input type="checkbox" checked={showMarkup} onChange={(event) => onShowMarkupChange(event.target.checked)} />
           {ui("Show markup")}
         </label>
         {revisions.map((revision) => (
@@ -207,6 +295,7 @@ export function ReviewPanel({ editor, onClose }: { editor: DocxEditor; onClose: 
                 {revision.storyId && <span className="text-xs text-muted-foreground">{stories[revision.storyId.split(':')[0]!]}</span>}
                 <span className="truncate text-xs text-muted-foreground">{revision.author}</span>
               </div>
+              {revision.date && <div className="text-xs text-muted-foreground" data-revision-date="">{formatDate(revision.date)}</div>}
               {revision.text && <p className={cn('mt-1 line-clamp-3 break-words', revision.kind === 'delete' || revision.kind === 'moveFrom' ? 'text-red-700 line-through dark:text-red-400' : 'text-green-700 dark:text-green-400')}>{revision.text}</p>}
             </button>
             {!readOnly && (
@@ -280,22 +369,121 @@ export function FindBar({ editor, replaceOpen, onClose }: { editor: DocxEditor; 
   )
 }
 
-export function StatusBar({ editor }: { editor: DocxEditor }) {
-  const state = useEditorValue(editor, () => editor.state())
-  const words = useEditorValue(editor, () => editor.wordCount())
+/**
+ * Word's status bar: the cursor's page ("Page 2 of 5", print layout), the word count (with the
+ * selection's) when shown, the layouts, and the zoom.
+ */
+export function StatusBar({ editor, state, showWordCount, onWordCount, zoom }: {
+  editor: DocxEditor
+  /** The view's formatting state, read once a frame. */
+  state: DocxFormattingState
+  showWordCount: boolean
+  /** Opens Tools ▸ Word count. */
+  onWordCount: () => void
+  zoom: { fitted: boolean; onFit?: () => void; onZoom: (zoom: number) => void }
+}) {
+  // Both walk the document or measure the layout, so they refresh a few times a second while typing.
+  const page = useEditorValue(editor, () => editor.currentPage(), 150)
+  // The main text's words (also while a header or note is open); an empty selection counts none.
+  const words = useEditorValue(editor, () => ({ document: editor.wordCount('body').words, selected: editor.wordCount('selection').words || null }), 250)
+  const print = state.layout === 'print'
   return (
-    <footer className="flex h-8 shrink-0 items-center gap-3 border-t bg-background px-3 text-xs text-muted-foreground" data-docx-status>
-      {state.layout === 'print' && <span data-docx-pages>{state.pages === 1 ? ui("1 page") : ui("{{count}} pages", { count: state.pages })}</span>}
-      <span data-docx-words>{ui("{{count}} words", { count: words.words.toLocaleString() })}</span>
-      <span>{ui("{{count}} characters", { count: words.charactersWithSpaces.toLocaleString() })}</span>
-      <div className="ml-auto flex items-center gap-1">
-        <button type="button" className={cn('cursor-pointer rounded px-1.5 py-0.5 hover:bg-accent', state.layout === 'print' && 'text-foreground')} onClick={() => editor.setLayout('print')}>{ui("Print layout")}</button>
-        <button type="button" className={cn('cursor-pointer rounded px-1.5 py-0.5 hover:bg-accent', state.layout === 'web' && 'text-foreground')} onClick={() => editor.setLayout('web')}>{ui("Web layout")}</button>
-        <span className="mx-1 h-4 w-px bg-border" />
-        <button type="button" aria-label={ui("Zoom out")} title={ui("Zoom out")} className="cursor-pointer rounded px-1.5 py-0.5 hover:bg-accent" onClick={() => editor.setZoom(Math.round((state.zoom - 0.1) * 10) / 10)}>−</button>
-        <span className="w-10 text-center tabular-nums" data-docx-zoom>{Math.round(state.zoom * 100)}%</span>
-        <button type="button" aria-label={ui("Zoom in")} title={ui("Zoom in")} className="cursor-pointer rounded px-1.5 py-0.5 hover:bg-accent" onClick={() => editor.setZoom(Math.round((state.zoom + 0.1) * 10) / 10)}>+</button>
+    <footer className="@container flex h-8 shrink-0 items-center gap-3 overflow-hidden border-t bg-background px-3 text-xs whitespace-nowrap text-muted-foreground" data-docx-status>
+      {print && (
+        <span data-docx-pages>
+          {page ? ui("Page {{page}} of {{count}}", { page: page.index.toLocaleString(activeLocale()), count: page.count.toLocaleString(activeLocale()) }) : state.pages === 1 ? ui("1 page") : ui("{{count}} pages", { count: state.pages })}
+        </span>
+      )}
+      {showWordCount && (
+        <button type="button" title={ui("Word count")} onClick={onWordCount} className="min-w-0 cursor-pointer truncate rounded px-1 py-0.5 hover:bg-accent hover:text-foreground" data-docx-words>
+          {wordCountLabel(words.document, words.selected)}
+        </button>
+      )}
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        <div className="hidden items-center gap-1 @md:flex">
+          <button type="button" className={cn('cursor-pointer rounded px-1.5 py-0.5 hover:bg-accent', print && 'text-foreground')} onClick={() => editor.setLayout('print')}>{ui("Print layout")}</button>
+          <button type="button" className={cn('cursor-pointer rounded px-1.5 py-0.5 hover:bg-accent', !print && 'text-foreground')} onClick={() => editor.setLayout('web')}>{ui("Web layout")}</button>
+          <span className="mx-1 h-4 w-px bg-border" />
+        </div>
+        <ZoomControl
+          compact
+          zoom={state.zoom}
+          onZoom={zoom.onZoom}
+          fitted={print && zoom.fitted}
+          onFit={print ? zoom.onFit : undefined}
+          onDone={() => editor.focus()}
+          valueProps={{ 'data-docx-zoom': '' }}
+        />
       </div>
     </footer>
+  )
+}
+
+/**
+ * The slim bar Docs and Word show while a header or footer is open: which one it is, Different
+ * first page, a page number at the cursor, Remove, and Close (Esc). In a narrow window (the side
+ * panel, a phone) its buttons show icons only.
+ */
+export function HeaderFooterBar({ editor, storyId, editable, pages }: {
+  editor: DocxEditor
+  storyId: string
+  editable: boolean
+  /** The element holding the laid-out pages (the scroller), to find the header a page shows. */
+  pages: HTMLElement | null
+}) {
+  // Read afresh on each render (the view re-renders as the editor updates, and this bar after its
+  // own change); a collaborator's change to the setting re-renders it too.
+  useEditorValue(editor, () => editor.headerFooter().differentFirstPage, 120)
+  const [, rerender] = useReducer((count: number) => count + 1, 0)
+  const info = editor.headerFooter()
+  const kind: HeaderFooterKind = storyId.startsWith('header:') ? 'header' : 'footer'
+  const type = (['first', 'even', 'default'] as const).find((candidate) => info[kind][candidate] === storyId) ?? 'default'
+  const name = headerFooterName(kind, type, info.differentOddEven)
+  const keep = (event: React.MouseEvent) => event.preventDefault()
+  const button = 'flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40'
+  const label = 'hidden @2xl:inline'
+  const differentFirstPage = (on: boolean) => {
+    const page = editor.currentPage()?.index
+    if (!editor.setDifferentFirstPage(on)) return
+    // Word and Docs keep you on the same page: on the section's first page that is now its
+    // first-page header (created when there is none), or the regular one again.
+    if (page !== undefined && pages) {
+      editor.relayout()
+      const shown = storyOnPage(pages, kind, page)
+      if (shown) openStoryOnPage(editor, shown)
+      else if (on) editor.addHeaderFooter(kind, 'first')
+      else editor.closeStoryEditor()
+    }
+    rerender()
+    editor.focus()
+  }
+  const pageNumber = ui("Page number")
+  const remove = kind === 'header' ? ui("Remove header") : ui("Remove footer")
+  return (
+    <div role="toolbar" aria-label={name} className="@container flex h-9 shrink-0 items-center gap-1 overflow-x-auto border-b bg-muted/40 px-3 text-sm [scrollbar-width:none]" data-docx-header-footer-bar={kind}>
+      <span className="mr-2 min-w-0 truncate font-medium" title={name}>{name}</span>
+      <label className="mr-1 flex shrink-0 cursor-pointer items-center gap-2 text-sm has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+        <input
+          type="checkbox"
+          checked={info.differentFirstPage}
+          disabled={!editable}
+          onChange={(event) => differentFirstPage(event.target.checked)}
+          className="size-4 cursor-pointer accent-primary disabled:cursor-not-allowed"
+        />
+        {ui("Different first page")}
+      </label>
+      <button type="button" className={button} aria-label={pageNumber} title={pageNumber} disabled={!editable} onMouseDown={keep} onClick={() => editor.insertPageNumber({})}>
+        <Hash className="size-3.5" />
+        <span className={label}>{pageNumber}</span>
+      </button>
+      <button type="button" className={button} aria-label={remove} title={remove} disabled={!editable} onMouseDown={keep} onClick={() => editor.removeHeaderFooter(kind, type)}>
+        <Trash2 className="size-3.5" />
+        <span className={label}>{remove}</span>
+      </button>
+      <button type="button" className={cn(button, 'ml-auto')} aria-label={kind === 'header' ? ui("Close header") : ui("Close footer")} title={ui("Close (Esc)")} onMouseDown={keep} onClick={() => editor.closeStoryEditor()}>
+        <X className="size-3.5" />
+        <span className={label}>{ui("Close")}</span>
+      </button>
+    </div>
   )
 }
