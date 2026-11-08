@@ -126,7 +126,7 @@ import {
   type WordCount,
 } from './commands.js'
 import { autoformatPlugin, autoformatSettings, carryAutoformat, undoAutoformat, type AutoformatOptions, type ListMarker } from './autoformat.js'
-import { createHeaderFooter, headerFooterInfo, headerFooterOf, headerFooterParagraph, removeHeaderFooter, storyByRelationship, type HeaderFooterInfo } from './headers.js'
+import { createHeaderFooter, headerFooterInfo, headerFooterOf, headerFooterParagraph, headerFooterReferenced, removeHeaderFooter, storyByRelationship, type HeaderFooterInfo } from './headers.js'
 import { DocxViewContext } from './context.js'
 import { computeDecorations } from './decorations.js'
 import { DEFAULT_DOCX_LABELS, type DocxLabels } from './labels.js'
@@ -392,7 +392,7 @@ export class DocxEditor {
   private readonly styleElement: HTMLStyleElement
   private readonly scope: string
   private readonly urls: AssetUrls
-  private readonly listeners = { update: new Set<Listener<void>>(), layout: new Set<Listener<LayoutResult | null>>(), request: new Set<Listener<DocxRequest>>(), activeComment: new Set<Listener<string | null>>(), imageRefused: new Set<Listener<DocxRefusedImage>>() }
+  private readonly listeners = { update: new Set<Listener<void>>(), layout: new Set<Listener<LayoutResult | null>>(), request: new Set<Listener<DocxRequest>>(), activeComment: new Set<Listener<string | null>>(), imageRefused: new Set<Listener<DocxRefusedImage>>(), headerFooterRemoved: new Set<Listener<string>>() }
   private autoformatOptions: Required<AutoformatOptions>
   /** Format painter: what it copied, from where, and whether it stays on. */
   private painter: { format: CopiedFormat; sticky: boolean; storyId: string | null; from: number; to: number } | null = null
@@ -423,7 +423,13 @@ export class DocxEditor {
   private layoutTimer: ReturnType<typeof setTimeout> | undefined
   private lastLayoutAt = 0
   private activeCommentId: string | null = null
-  private storyEditor: { view: EditorView; element: HTMLElement; storyId: string; over?: HTMLElement; occurrence: number; stop: () => void } | null = null
+  /**
+   * The open header, footer, or note. `section` is the section of the page a header or footer
+   * was opened on, which its bar and commands act on (not the body cursor's).
+   */
+  private storyEditor: { view: EditorView; element: HTMLElement; storyId: string; over?: HTMLElement; occurrence: number; section?: number; stop: () => void } | null = null
+  /** A check that the open header or footer is still in the document is queued. */
+  private storyCheckQueued = false
   private readonly unsubscribe: (() => void)[] = []
   private destroyed = false
   private noteHeights = new Map<string, number>()
@@ -516,6 +522,8 @@ export class DocxEditor {
     // changes from elsewhere (collaborators editing headers, notes) need new pages.
     const deepObserver = (transaction: Y.Transaction) => {
       if (transaction.changed.size && transaction.origin !== ySyncPluginKey) this.scheduleLayout()
+      // A collaborator's change can take the open header or footer out of the document.
+      if (transaction.changed.size && !transaction.local && this.storyEditor) this.queueStoryCheck()
     }
     storiesMap.observe(storyObserver)
     // Edits to headers, footers, and notes by anyone redraw the pages.
@@ -552,9 +560,11 @@ export class DocxEditor {
             // setup changes only the final section, so the editor marks those steps itself.
             manager.captureTransaction = (tr: Y.Transaction) => capture(tr) && scope instanceof Y.AbstractType && (tr.changedParentTypes.has(scope) || tr.meta.get(SECTION_UNDO) === true || tr.origin === manager)
             manager.addToScope(this.options.doc.getMap('numbering'))
-            // The final section lives outside the body but must share its undo step.
+            // The final section lives outside the body but must share its undo step, and so do
+            // the stories and relationships a removed header or footer takes away with it (no
+            // other undo step writes them: creating a header or footer is not one).
             if (fragment === this.options.doc.getXmlFragment(BODY_FRAGMENT)) {
-              yUndoPluginKey.getState(state).undoManager.addToScope(this.options.doc.getMap('docx'))
+              yUndoPluginKey.getState(state).undoManager.addToScope([this.options.doc.getMap('docx'), this.options.doc.getMap('stories'), this.options.doc.getMap('rels')])
             }
             return null
           },
@@ -1313,6 +1323,12 @@ export class DocxEditor {
   on(event: 'activeComment', listener: Listener<string | null>): () => void
   /** A picture pasted, dropped, or inserted that Word could not show, or that arrived while read-only. */
   on(event: 'imageRefused', listener: Listener<DocxRefusedImage>): () => void
+  /**
+   * The open header or footer (its story id) closed because a collaborator's change took it out
+   * of the document: they removed it, or wrote the section's properties while it was being
+   * created, and their write won.
+   */
+  on(event: 'headerFooterRemoved', listener: Listener<string>): () => void
   on(event: keyof DocxEditor['listeners'], listener: Listener<never>): () => void {
     const set = this.listeners[event] as Set<Listener<never>>
     set.add(listener)
@@ -1324,6 +1340,7 @@ export class DocxEditor {
   private emit(event: 'request', value: DocxRequest): void
   private emit(event: 'activeComment', value: string | null): void
   private emit(event: 'imageRefused', value: DocxRefusedImage): void
+  private emit(event: 'headerFooterRemoved', value: string): void
   private emit(event: keyof DocxEditor['listeners'], value?: unknown): void {
     for (const listener of this.listeners[event] as Set<Listener<unknown>>) listener(value)
   }
@@ -1710,22 +1727,40 @@ export class DocxEditor {
 
   // ── Page setup, headers, and footers ─────────────────────────────────────
 
-  /** The page of the section at the cursor, in points, and which section that is. */
+  /**
+   * The section commands act on: while a header or footer is open, the section of the page it
+   * was opened on (as Word's header tools act on that section), else the body cursor's.
+   */
+  private currentSection(): number {
+    const { state } = this.view
+    const story = this.storyEditor
+    if (story && /^(header|footer):/.test(story.storyId)) {
+      const kind = story.storyId.startsWith('header:') ? 'header' : 'footer'
+      const shows = (section: number) => (['default', 'first', 'even'] as const).some((type) => headerFooterOf(state, this.context, kind, type, section)?.storyId === story.storyId)
+      const sections = sectionHolders(state.doc, this.context.finalSectPr).length
+      // Collaborators adding or removing section breaks can renumber sections while it is open.
+      if (story.section !== undefined && story.section < sections && shows(story.section)) return story.section
+      for (let section = 0; section < sections; section++) if (shows(section)) return section
+    }
+    return sectionIndexAt(state.doc, state.selection.from)
+  }
+
+  /** The page of the section at the cursor (or of the open header or footer), in points, and which section that is. */
   pageSetup(): PageSetupInfo & { section: number; sections: number } {
     const { state } = this.view
     const holders = sectionHolders(state.doc, this.context.finalSectPr)
-    const section = sectionIndexAt(state.doc, state.selection.from)
+    const section = this.currentSection()
     return { ...readPageSetup(holders[section]?.sectPr), section, sections: holders.length }
   }
 
   /**
    * Page size, orientation, and margins (points) for the whole document or the section at the
-   * cursor; false when the change leaves no room for text. One undo step; refused while
-   * suggesting, as section properties have no tracked form.
+   * cursor (or of the open header or footer); false when the change leaves no room for text. One
+   * undo step; refused while suggesting, as section properties have no tracked form.
    */
   setPageSetup(change: PageSetupChange, scope: 'document' | 'section' = 'document'): boolean {
     if (this.readOnly || this.modeValue === 'suggesting') return false
-    return this.applySectionEdit(editSections(this.view.state, this.context, scope === 'document' ? 'all' : [sectionIndexAt(this.view.state.doc, this.view.state.selection.from)], (sectPr) => applyPageSetup(sectPr, change)))
+    return this.applySectionEdit(editSections(this.view.state, this.context, scope === 'document' ? 'all' : [this.currentSection()], (sectPr) => applyPageSetup(sectPr, change)))
   }
 
   /** Section property edits to the body, as one undo step even when only the final section changes. */
@@ -1744,23 +1779,28 @@ export class DocxEditor {
     return true
   }
 
-  /** Headers and footers of the section at the cursor (own or inherited) and its first-page and odd/even options. */
+  /**
+   * Headers and footers of the section at the cursor (own or inherited) and its first-page and
+   * odd/even options; while a header or footer is open, of the section it was opened on.
+   */
   headerFooter(): HeaderFooterInfo {
-    return headerFooterInfo(this.view.state, this.context)
+    return headerFooterInfo(this.view.state, this.context, this.currentSection())
   }
 
   /**
-   * Opens the header or footer of the section at the cursor for editing, creating it when the
-   * section has none (Word's Insert Header). Returns its story id, or null when it cannot: while
-   * suggesting (sections have no tracked form), read-only, or in web layout, which has no pages.
+   * Opens the header or footer of the section at the cursor (or of the open one's section) for
+   * editing, creating it when the section has none (Word's Insert Header). Returns its story id,
+   * or null when it cannot: while suggesting (sections have no tracked form), read-only, or in
+   * web layout, which has no pages.
    */
   addHeaderFooter(kind: HeaderFooterKind, type: HeaderFooterType = 'default'): string | null {
     if (this.readOnly || this.modeValue === 'suggesting' || this.layoutMode !== 'print') return null
     if (type === 'first' && !this.headerFooter().differentFirstPage) this.setDifferentFirstPage(true)
     if (type === 'even' && !this.context.evenAndOddHeaders) this.setDifferentOddEven(true)
-    let storyId = headerFooterOf(this.view.state, this.context, kind, type)?.storyId
+    const section = this.currentSection()
+    let storyId = headerFooterOf(this.view.state, this.context, kind, type, section)?.storyId
     if (!storyId) {
-      const result = createHeaderFooter(this.view.state, this.context, kind, type)
+      const result = createHeaderFooter(this.view.state, this.context, kind, type, section)
       if (!result) return null
       storyId = result.storyId
       // Not an undo step, like comments: it adds a part, and the caret moves into it.
@@ -1795,31 +1835,48 @@ export class DocxEditor {
     return true
   }
 
-  /** Removes the header or footer the section at the cursor shows (from every section that shows it). */
+  /**
+   * Removes the header or footer the section at the cursor (or the open one's section) shows,
+   * from every section that shows it.
+   */
   removeHeaderFooter(kind: HeaderFooterKind, type: HeaderFooterType = 'default'): boolean {
     if (this.readOnly || this.modeValue === 'suggesting') return false
-    const found = headerFooterOf(this.view.state, this.context, kind, type)
-    if (!found) return false
-    const result = removeHeaderFooter(this.view.state, this.context, found.storyId)
+    const found = headerFooterOf(this.view.state, this.context, kind, type, this.currentSection())
+    return found ? this.removeHeaderFooterStory(found.storyId) : false
+  }
+
+  /**
+   * Removes a header or footer (by story id) from every section that shows it, with its part and
+   * relationship. One undo step on the body, which brings back its text and references.
+   */
+  removeHeaderFooterStory(storyId: string): boolean {
+    if (this.readOnly || this.modeValue === 'suggesting' || !/^(header|footer):/.test(storyId)) return false
+    const result = removeHeaderFooter(this.view.state, this.context, storyId)
     if (!result) return false
-    if (this.storyEditor?.storyId === found.storyId) this.closeStoryEditor()
+    if (this.storyEditor?.storyId === storyId) this.closeStoryEditor()
+    const view = this.view
+    const fragment = this.options.doc.getXmlFragment(storyFragmentName(storyId))
+    // In the body's undo scope before it is emptied, so its content is kept for undo rather than
+    // collected. The stories and relationships maps are in that scope from the start.
+    const undoManager = yUndoPluginKey.getState(view.state)?.undoManager as Y.UndoManager | undefined
+    undoManager?.addToScope(fragment)
+    this.separateUndo(view)
     this.options.doc.transact((transaction) => {
-      transaction.meta.set('addToHistory', false)
+      transaction.meta.set(SECTION_UNDO, true)
       this.applyMapEdits(result.maps)
-      this.options.doc.getMap<string>('stories').delete(found.storyId)
-      const fragment = this.options.doc.getXmlFragment(storyFragmentName(found.storyId))
+      this.options.doc.getMap<string>('stories').delete(storyId)
       if (fragment.length) fragment.delete(0, fragment.length)
-      if (result.tr?.docChanged) this.view.dispatch(result.tr.setMeta('addToHistory', false).setMeta('docx-untracked', true))
+      if (result.tr?.docChanged) view.dispatch(result.tr.setMeta('docx-untracked', true))
     }, ySyncPluginKey)
+    this.separateUndo(view)
     this.scheduleLayout(true)
     return true
   }
 
-  /** Word's "Different first page" for the section at the cursor (one undo step). */
+  /** Word's "Different first page" for the section at the cursor, or of the open header or footer (one undo step). */
   setDifferentFirstPage(on: boolean): boolean {
     if (this.readOnly || this.modeValue === 'suggesting') return false
-    const section = sectionIndexAt(this.view.state.doc, this.view.state.selection.from)
-    return this.applySectionEdit(editSections(this.view.state, this.context, [section], (sectPr) => withTitlePage(sectPr, on)))
+    return this.applySectionEdit(editSections(this.view.state, this.context, [this.currentSection()], (sectPr) => withTitlePage(sectPr, on)))
   }
 
   /** Word's "Different odd and even pages", a document setting. */
@@ -1964,11 +2021,24 @@ export class DocxEditor {
     const editable = link.closest('[contenteditable]')?.getAttribute('contenteditable') === 'true'
     if (editable && !event.metaKey && !event.ctrlKey) return
     const href = link.getAttribute('href') ?? ''
-    if (href.startsWith('#')) this.goToBookmark(decodeURIComponent(href.slice(1)))
+    // Bookmark links render their name as written.
+    if (href.startsWith('#')) this.goToBookmark(href.slice(1))
     else if (/^(https?:|mailto:)/i.test(href)) window.open(href, '_blank', 'noopener,noreferrer')
   }
 
-  goToBookmark(name: string): void {
+  /**
+   * Moves to a bookmark by name, as written or, when the document has none by that name, decoded
+   * (a pasted link's "a%20b" may mean "a b"; a stray '%' is part of the name and never throws);
+   * false when it has neither.
+   */
+  goToBookmark(name: string): boolean {
+    if (this.goToBookmarkNamed(name)) return true
+    let decoded = name
+    try { decoded = decodeURIComponent(name) } catch { /* not encoded */ }
+    return decoded !== name && this.goToBookmarkNamed(decoded)
+  }
+
+  private goToBookmarkNamed(name: string): boolean {
     const targets = [{ view: this.activeView, storyId: this.editingStory ?? undefined }]
     if (this.storyEditor) targets.push({ view: this.view, storyId: undefined })
     for (const { view, storyId } of targets) {
@@ -1977,8 +2047,9 @@ export class DocxEditor {
         if (found === undefined && node.type.name === 'bookmark' && node.attrs.name === name && node.attrs.edge === 'start') found = pos
         return found === undefined
       })
-      if (found !== undefined) { this.goTo(found, storyId); return }
+      if (found !== undefined) { this.goTo(found, storyId); return true }
     }
+    return false
   }
 
   // ── Tracked changes ──────────────────────────────────────────────────────
@@ -2710,6 +2781,7 @@ export class DocxEditor {
         const element = renderStory(doc, { urls: this.urls, labels: this.labels, fields, noteNumbers: numbers, context: this.context })
         element.classList.add('docx-story')
         element.dataset.story = storyId
+        element.dataset.section = String(page.section)
         element.title = `${kind === 'header' ? this.labels.header : this.labels.footer} · ${this.labels.editStoryHint}`
         element.style.left = `${setup.left}px`
         element.style.width = `${sectionContentWidth(setup)}px`
@@ -2861,9 +2933,36 @@ export class DocxEditor {
     this.storyEditor = { view, element, storyId, over, occurrence: Math.max(0, occurrence), stop: () => document.removeEventListener('pointerdown', close, true) }
     document.addEventListener('pointerdown', close, true)
     this.placeStoryEditor()
+    // The section of the page it opened on, kept while it is open: turning on a different first
+    // page can move the band it sits over to another page, but the bar still edits this section.
+    const section = Number(this.storyEditor.over?.dataset.section ?? Number.NaN)
+    if (Number.isInteger(section)) this.storyEditor.section = section
     view.focus()
     this.emit('update')
     return true
+  }
+
+  private queueStoryCheck(): void {
+    if (this.storyCheckQueued) return
+    this.storyCheckQueued = true
+    // After the transaction: observers must not destroy views, and the body has caught up by then.
+    queueMicrotask(() => {
+      this.storyCheckQueued = false
+      this.closeRemovedStory()
+    })
+  }
+
+  /**
+   * Closes the open header or footer once no section references it (a collaborator removed it,
+   * or their section properties won over the reference it was created with), so typing cannot go
+   * on into text no page shows.
+   */
+  private closeRemovedStory(): void {
+    const story = this.storyEditor
+    if (this.destroyed || !story || !/^(header|footer):/.test(story.storyId)) return
+    if (headerFooterReferenced(this.view.state, this.context, story.storyId)) return
+    this.closeStoryEditor()
+    this.emit('headerFooterRemoved', story.storyId)
   }
 
   private storyElements(storyId: string): HTMLElement[] {

@@ -811,6 +811,28 @@ describe('counts, links, case, paragraph and table formats', () => {
     expect(editor.linkAt()).toMatchObject({ href: null, anchor: 'Intro', text: 'Introduction' })
   })
 
+  it('keeps bookmark names with % as written, and follows them', () => {
+    setBody(editor.view, [p('Alpha'), schema.node('paragraph', null, [schema.node('bookmark', { edge: 'start', id: '1', name: '50%off' }), schema.text('Sale')])])
+    editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, 1, 6)))
+    expect(editor.setLink('#50%off')).toBe(true)
+    editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, 3)))
+    expect(editor.linkAt()).toMatchObject({ href: null, anchor: '50%off', text: 'Alpha' })
+    // Applying what the link dialog shows changes nothing, also for a name that looks encoded.
+    expect(editor.setLink('#a%20b')).toBe(true)
+    expect(editor.linkAt()).toMatchObject({ anchor: 'a%20b' })
+    expect(editor.setLink('#50%off')).toBe(true)
+    const link = editor.view.dom.querySelector('a[href]')!
+    expect(link.getAttribute('href')).toBe('#50%off')
+    link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true, metaKey: true }))
+    expect(editor.view.state.selection.$from.index(0)).toBe(1)
+    // Hosts pass a link's name as written (the phone's read-only tap too); an encoded one is tried decoded.
+    setBody(editor.view, [p('Alpha'), schema.node('paragraph', null, [schema.node('bookmark', { edge: 'start', id: '2', name: 'a b' }), schema.text('Spaced')])], 1)
+    expect(editor.goToBookmark('a%20b')).toBe(true)
+    expect(editor.view.state.selection.$from.index(0)).toBe(1)
+    expect(editor.goToBookmark('50%off')).toBe(false)
+    expect(editor.goToBookmark('%E0%A4%A')).toBe(false)
+  })
+
   it('changes case across runs, keeping formatting and deletions', () => {
     const bold = schema.mark('b', { v: packJml(['w:b', {}]) })
     const del = schema.mark('del', { v: packJml(['w:del', { 'w:id': '1', 'w:author': 'X' }, '\u0000']) })
@@ -864,6 +886,41 @@ describe('counts, links, case, paragraph and table formats', () => {
     editor.undo()
     editor.undo()
     expect(editor.view.state.doc.childCount).toBe(1)
+  })
+
+  it('draws a horizontal line from an empty paragraph while suggesting, with its border', () => {
+    const numPr = packJml(['w:numPr', {}, ['w:ilvl', { 'w:val': '0' }], ['w:numId', { 'w:val': '1' }]])
+    for (const [attrs, outcome] of [[null, 'reject'], [{ numPr }, 'accept']] as const) {
+      setBody(editor.view, [p('Alpha'), p('', attrs)], 8)
+      editor.setMode('suggesting')
+      expect(editor.insertHorizontalLine()).toBe(true)
+      const body = editor.view.state.doc
+      expect(body.childCount).toBe(3)
+      expect(body.child(1).attrs.pBdr).toContain('w:bottom')
+      expect(body.child(1).attrs.numPr).toBeNull()
+      expect(body.child(2).attrs.pBdr).toBeNull()
+      expect(body.child(2).attrs.numPr).toBe(attrs?.numPr ?? null)
+      // The caret is below the line, and the line is a suggestion.
+      expect(editor.view.state.selection.$from.parent).toBe(body.child(2))
+      expect(editor.revisions().map((revision) => revision.kind)).toContain('paragraphInsert')
+      editor.setMode('editing')
+      if (outcome === 'reject') {
+        expect(editor.rejectAll()).toBe(true)
+        expect(editor.view.state.doc.childCount).toBe(2)
+        expect(editor.view.state.doc.child(1).attrs.pBdr).toBeNull()
+      } else {
+        expect(editor.acceptAll()).toBe(true)
+        expect(editor.view.state.doc.childCount).toBe(3)
+        expect(editor.view.state.doc.child(1).attrs.pBdr).toContain('w:bottom')
+        expect(editor.revisions()).toEqual([])
+      }
+    }
+    // Editing mode makes the same line.
+    setBody(editor.view, [p('Alpha'), p('')], 8)
+    expect(editor.insertHorizontalLine()).toBe(true)
+    expect(editor.view.state.doc.childCount).toBe(3)
+    expect(editor.view.state.doc.child(1).attrs.pBdr).toContain('w:bottom')
+    expect(editor.view.state.selection.$from.parent).toBe(editor.view.state.doc.child(2))
   })
 
   it('sets cell alignment, header rows, and table alignment, which suggestions cannot record', async () => {

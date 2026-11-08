@@ -2495,6 +2495,59 @@ try {
     }), true)
   })
 
+  await step("acts on the open header's section from the header bar, undoes Remove header, and closes a header a collaborator removes", async () => {
+    await open('?file=sections-headers.docx&view=split')
+    const ada = page.locator('[data-docx-editor]').first()
+    const bar = ada.locator('[data-docx-header-footer-bar="header"]')
+    /** Section ends in body order: which of them turn on a different first page. */
+    const titlePages = () => page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      const found = []
+      editor.view.state.doc.forEach((node) => { if (node.attrs.sectPr) found.push(String(node.attrs.sectPr).includes('w:titlePg')) })
+      return found
+    })
+    const before = await titlePages()
+    assert.deepEqual(before.slice(0, 2), [true, false])
+    // The caret stays in the first section; the landscape section's header (inherited) opens from its page.
+    const band = ada.locator('.docx-band .docx-story[data-story^="header:"][data-section="1"]').first()
+    const key = await band.getAttribute('data-story')
+    await band.dblclick()
+    await bar.waitFor()
+    assert.deepEqual(await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      return { section: editor.headerFooter().section, caret: editor.view.state.selection.from < editor.view.state.doc.firstChild.nodeSize, story: editor.editingStory }
+    }), { section: 1, caret: true, story: key })
+    const firstPage = bar.getByRole('checkbox', { name: 'Different first page' })
+    assert.equal(await firstPage.isChecked(), false)
+    await firstPage.check()
+    await page.waitForFunction(() => window.harness.editors[0].headerFooter().differentFirstPage)
+    assert.deepEqual((await titlePages()).slice(0, 2), [true, true])
+    await firstPage.uncheck()
+    await page.waitForFunction(() => !window.harness.editors[0].headerFooter().differentFirstPage)
+    assert.deepEqual((await titlePages()).slice(0, 2), [true, false])
+    if (await page.evaluate(() => window.harness.editors[0].editingStory) !== key) {
+      await page.keyboard.press('Escape')
+      await band.dblclick()
+    }
+    // Remove header takes the open one away, and Cmd/Ctrl+Z brings it back with its text.
+    await bar.waitFor()
+    await bar.getByRole('button', { name: 'Remove header' }).click()
+    await bar.waitFor({ state: 'detached' })
+    assert.equal(await page.evaluate((key) => window.harness.docs[0].getMap('stories').has(key), key), false)
+    await ada.locator(`.docx-band [data-story="${key}"]`).first().waitFor({ state: 'detached' })
+    await page.keyboard.press(`${mod}+z`)
+    await ada.locator(`.docx-band [data-story="${key}"]`, { hasText: 'Default header' }).first().waitFor()
+    assert.equal(await page.evaluate((key) => window.harness.docs[1].getMap('stories').has(key), key), true)
+    // A collaborator removes it while it is open: it closes, and a toast says why.
+    await ada.locator(`.docx-band .docx-story[data-story="${key}"][data-section="1"]`).first().dblclick()
+    await bar.waitFor()
+    assert.equal(await page.evaluate((key) => window.harness.editors[1].removeHeaderFooterStory(key), key), true)
+    await bar.waitFor({ state: 'detached' })
+    await page.getByText("A collaborator's change removed the header you were editing.").waitFor()
+    assert.equal(await page.evaluate(() => window.harness.editors[0].editingStory), null)
+    assert.deepEqual(errors, [])
+  })
+
   await step('shows a read-only viewer the comments from the Comment button, and selects only the document', async () => {
     await open('?file=review.docx&readonly=1')
     const button = page.getByRole('button', { name: 'Comment', exact: true })
