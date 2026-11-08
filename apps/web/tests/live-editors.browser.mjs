@@ -459,6 +459,24 @@ try {
     await runs.page.context().close()
   })
 
+  await step('notebook: Help ▸ Keyboard shortcuts lists the Markdown keys, and cell letters only outside edit mode', async () => {
+    const { page } = await openNotebook()
+    await notebookList(page).focus()
+    await openMenu(page, 'Help')
+    await page.getByRole('menuitem', { name: /Keyboard shortcuts/ }).click()
+    const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' })
+    await dialog.waitFor()
+    const section = (name) => dialog.getByRole('region', { name, exact: true })
+    assert.match(await section('Markdown cells (while editing)').innerText(), /Bold[\s\S]*Italic[\s\S]*Insert link/)
+    // X, C, and V type letters while a cell is edited: the Edit menu's cell clipboard is listed under Edit.
+    assert.doesNotMatch(await section('Edit mode').innerText(), /Cut cells|Copy cells|Paste cells/)
+    assert.match(await section('Edit').innerText(), /Cut cells[\s\S]*Copy cells/)
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({ state: 'detached' })
+    assert.equal((await focused(page)).role, 'list')
+    await page.context().close()
+  })
+
   await step('notebook: find and replace across cells, one undo step each', async () => {
     const { page, errors } = await openNotebook()
     await notebookList(page).focus()
@@ -692,6 +710,16 @@ try {
     await page.getByRole('button', { name: 'Show full output' }).click()
     await scroller.waitFor({ state: 'detached' })
     await page.getByRole('button', { name: 'Scroll output' }).waitFor()
+    // View ▸ Scroll long outputs shows the selected cell's state, and turns scrolling back on.
+    await openMenu(page, 'View')
+    const item = page.getByRole('menuitemcheckbox', { name: /Scroll long outputs/ })
+    assert.equal(await item.getAttribute('aria-checked'), 'false')
+    await item.click()
+    await menuClosed(page)
+    await scroller.waitFor()
+    await openMenu(page, 'View')
+    assert.equal(await item.getAttribute('aria-checked'), 'true')
+    await page.keyboard.press('Escape')
     await page.context().close()
   })
 
