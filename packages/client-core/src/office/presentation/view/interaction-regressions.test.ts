@@ -280,6 +280,42 @@ describe('presentation interaction regressions', () => {
     expect(controller.shape(controller.state.slide!, table)!.table!.columns.length).toBe(1)
   })
 
+  it('acts on the cell a context menu names, not the cell being edited', async () => {
+    const { controller } = await open()
+    const slide = controller.state.slide!
+    const table = controller.insertTable(3, 3)!
+    const model = () => controller.shape(slide, table)!.table!
+    const keysOf = (row: number, column: number) => ({ row: model().rows[row]!.key, column: model().columns[column]!.key })
+    // A right click on a cell of a selected table that is not being edited.
+    controller.selectShapes([table])
+    const below = keysOf(2, 1)
+    expect(controller.tableSelection(below)?.cell).toMatchObject({ rowIndex: 2, columnIndex: 1 })
+    const added = controller.insertTableRow('above', below)!
+    expect(model().rows.map((row) => row.key).indexOf(added)).toBe(2)
+    const column = controller.insertTableColumn('right', below)!
+    expect(model().columns.map((entry) => entry.key).indexOf(column)).toBe(2)
+    controller.deleteTableRows(keysOf(2, 0))
+    expect(model().rows.map((row) => row.key)).not.toContain(added)
+    expect(controller.state).toMatchObject({ shapes: [table], editing: undefined })
+    // While another cell is edited, the menu's cell is the one changed and editing stays put.
+    editCell(controller, table, 0, 0)
+    const edited = controller.state.editing!
+    controller.deleteTableColumns(keysOf(1, 2))
+    expect(model().columns.map((entry) => entry.key)).not.toContain(column)
+    expect(controller.state.editing).toEqual(edited)
+    controller.insertTableRow('below', keysOf(2, 2))
+    expect(model().rows.length).toBe(4)
+    expect(controller.tableSelection()?.cell).toMatchObject({ row: edited.row, column: edited.column, rowIndex: 0 })
+    // A cell a collaborator removed since the menu opened changes nothing.
+    const gone = keysOf(3, 0)
+    controller.undo()
+    expect(model().rows.length).toBe(3)
+    expect(controller.tableSelection(gone)).toBeUndefined()
+    expect(controller.insertTableRow('above', gone)).toBeUndefined()
+    controller.deleteTableRows(gone)
+    expect(model().rows.length).toBe(3)
+  })
+
   it('inserts rows below a merged cell and columns at the edges of a selected table', async () => {
     const { controller, doc } = await open()
     const slide = controller.state.slide!

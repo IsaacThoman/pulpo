@@ -52,8 +52,9 @@ interface CaretPoint {
 export interface SlideCanvasOptions {
   /**
    * Called on right-click or long press, with the shape under the pointer (if any) and, on a
-   * table, the cell (row and column keys). The canvas has selected the shape by then. Inside text
-   * being edited the browser's own menu (spelling, cut, copy, paste) shows instead.
+   * table, the cell (row and column keys; pass them to the controller's table commands so they act
+   * on that cell). The canvas has selected the shape by then. Inside text being edited the
+   * browser's own menu (spelling, cut, copy, paste) shows instead.
    */
   onContextMenu?(event: MouseEvent, shapeKey: string | undefined, cell?: { row: string; column: string }): void
   /** Opens a link the user clicked; the canvas only passes http(s) and mailto URLs. */

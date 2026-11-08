@@ -204,7 +204,7 @@ export interface TableSelection {
   cell?: { row: string; column: string; rowIndex: number; columnIndex: number; rowSpan: number; columnSpan: number }
 }
 
-const emptyChange = (): ChangeSet =>({ slides: new Set(), order: false, parts: false, selection: false, assets: false, presence: false, local: false })
+const emptyChange = (): ChangeSet => ({ slides: new Set(), order: false, parts: false, selection: false, assets: false, presence: false, local: false })
 
 export class PresentationController {
   readonly doc: Y.Doc
@@ -702,62 +702,70 @@ export class PresentationController {
     }
   }
 
-  // Tables: the cell being edited, else the selected table as a whole.
+  // Tables: a cell a context menu names, else the cell being edited, else the selected table as a whole.
 
-  /** The table that table commands act on, and the cell being edited in it (grid indexes and spans). */
-  tableSelection(): TableSelection | undefined {
+  /**
+   * The table that table commands act on, and the cell they act around (grid indexes and spans):
+   * `at` (the cell `onContextMenu` reported) or the cell being edited. Undefined when `at` is no
+   * longer in the table, as after a collaborator deleted its row.
+   */
+  tableSelection(at?: { row: string; column: string }): TableSelection | undefined {
     const slide = this.slideKey
     const editing = this.state.editing
     const key = editing?.row && editing.column ? editing.shape : this.state.shapes.length === 1 ? this.state.shapes[0] : undefined
     const table = slide && key ? this.shape(slide, key)?.table : undefined
     if (!slide || !key || !table) return undefined
     const base = { slide, shape: key, rows: table.rows.length, columns: table.columns.length }
-    if (!editing?.row || !editing.column || editing.shape !== key || editing.slide !== slide) return base
-    const rowIndex = table.rows.findIndex((row) => row.key === editing.row)
-    const columnIndex = table.columns.findIndex((column) => column.key === editing.column)
-    const cell = table.rows[rowIndex]?.cells[editing.column]
-    if (rowIndex < 0 || columnIndex < 0 || !cell) return base
-    return { ...base, cell: { row: editing.row, column: editing.column, rowIndex, columnIndex, rowSpan: Math.max(1, cell.rowSpan ?? 1), columnSpan: Math.max(1, cell.gridSpan ?? 1) } }
+    const edited = editing?.row && editing.column && editing.shape === key && editing.slide === slide ? { row: editing.row, column: editing.column } : undefined
+    const keys = at ?? edited
+    if (!keys) return base
+    const rowIndex = table.rows.findIndex((row) => row.key === keys.row)
+    const columnIndex = table.columns.findIndex((column) => column.key === keys.column)
+    const cell = table.rows[rowIndex]?.cells[keys.column]
+    if (rowIndex < 0 || columnIndex < 0 || !cell) return at ? undefined : base
+    return { ...base, cell: { row: keys.row, column: keys.column, rowIndex, columnIndex, rowSpan: Math.max(1, cell.rowSpan ?? 1), columnSpan: Math.max(1, cell.gridSpan ?? 1) } }
   }
 
-  /** Inserts a row above or below the cell being edited (below a merged cell's last row), or at the table's top or bottom. */
-  insertTableRow(where: 'above' | 'below'): string | undefined {
-    const target = this.tableSelection()
+  /** Inserts a row above or below the cell (below a merged cell's last row), or at the table's top or bottom. */
+  insertTableRow(where: 'above' | 'below', at?: { row: string; column: string }): string | undefined {
+    const target = this.tableSelection(at)
     if (!this.guard() || !target) return undefined
     const index = target.cell ? (where === 'above' ? target.cell.rowIndex : target.cell.rowIndex + target.cell.rowSpan) : where === 'above' ? 0 : target.rows
     return this.step(() => commands.insertTableRow(this.doc, target.slide, target.shape, Math.min(index, target.rows), LOCAL_ORIGIN))
   }
 
-  /** Inserts a column left or right of the cell being edited, or at the table's left or right edge. */
-  insertTableColumn(where: 'left' | 'right'): string | undefined {
-    const target = this.tableSelection()
+  /** Inserts a column left or right of the cell, or at the table's left or right edge. */
+  insertTableColumn(where: 'left' | 'right', at?: { row: string; column: string }): string | undefined {
+    const target = this.tableSelection(at)
     if (!this.guard() || !target) return undefined
     const index = target.cell ? (where === 'left' ? target.cell.columnIndex : target.cell.columnIndex + target.cell.columnSpan) : where === 'left' ? 0 : target.columns
     return this.step(() => commands.insertTableColumn(this.doc, target.slide, target.shape, Math.min(index, target.columns), LOCAL_ORIGIN))
   }
 
-  /** Deletes the rows the edited cell spans; deleting every row deletes the table, as in PowerPoint. */
-  deleteTableRows(): void {
-    const target = this.tableSelection()
+  /** Deletes the rows the cell spans; deleting every row deletes the table, as in PowerPoint. */
+  deleteTableRows(at?: { row: string; column: string }): void {
+    const target = this.tableSelection(at)
     const table = target ? this.shape(target.slide, target.shape)?.table : undefined
     if (!this.guard() || !target?.cell || !table) return
     const { rowIndex, rowSpan, column } = target.cell
     const keys = table.rows.slice(rowIndex, rowIndex + rowSpan).map((row) => row.key)
     if (keys.length >= table.rows.length) return this.deleteTable()
+    const editing = this.state.editing
     this.step(() => commands.deleteTableRows(this.doc, target.slide, target.shape, keys, LOCAL_ORIGIN))
-    this.editNearbyCell(target.slide, target.shape, Math.min(rowIndex, table.rows.length - keys.length - 1), table.columns.findIndex((entry) => entry.key === column))
+    this.afterTableDelete(target, editing, Math.min(rowIndex, table.rows.length - keys.length - 1), table.columns.findIndex((entry) => entry.key === column))
   }
 
-  /** Deletes the columns the edited cell spans; deleting every column deletes the table. */
-  deleteTableColumns(): void {
-    const target = this.tableSelection()
+  /** Deletes the columns the cell spans; deleting every column deletes the table. */
+  deleteTableColumns(at?: { row: string; column: string }): void {
+    const target = this.tableSelection(at)
     const table = target ? this.shape(target.slide, target.shape)?.table : undefined
     if (!this.guard() || !target?.cell || !table) return
     const { columnIndex, columnSpan, rowIndex } = target.cell
     const keys = table.columns.slice(columnIndex, columnIndex + columnSpan).map((column) => column.key)
     if (keys.length >= table.columns.length) return this.deleteTable()
+    const editing = this.state.editing
     this.step(() => commands.deleteTableColumns(this.doc, target.slide, target.shape, keys, LOCAL_ORIGIN))
-    this.editNearbyCell(target.slide, target.shape, rowIndex, Math.min(columnIndex, table.columns.length - keys.length - 1))
+    this.afterTableDelete(target, editing, rowIndex, Math.min(columnIndex, table.columns.length - keys.length - 1))
   }
 
   deleteTable(): void {
@@ -767,14 +775,20 @@ export class PresentationController {
     this.setState({ shapes: [], editing: undefined })
   }
 
-  /** After a delete, keeps editing the cell that took the deleted one's place (or just selects the table). */
-  private editNearbyCell(slide: string, shapeKey: string, rowIndex: number, columnIndex: number): void {
-    const table = this.shape(slide, shapeKey)?.table
+  /**
+   * After a delete, the cell that was being edited stays when it is still there; else editing
+   * moves to the cell that took the deleted one's place. A table not being edited stays selected.
+   */
+  private afterTableDelete(target: TableSelection, editing: EditingTarget | undefined, rowIndex: number, columnIndex: number): void {
+    if (!editing?.row || !editing.column || editing.shape !== target.shape || editing.slide !== target.slide) return
+    const table = this.shape(target.slide, target.shape)?.table
+    const kept = table?.rows.find((row) => row.key === editing.row)?.cells[editing.column]
+    if (kept && !kept.hMerge && !kept.vMerge) return
     const row = table?.rows[Math.max(0, rowIndex)]
     const column = table?.columns[Math.max(0, columnIndex)]
     const cell = row && column ? row.cells[column.key] : undefined
-    if (row && column && cell && !cell.hMerge && !cell.vMerge) this.setState({ shapes: [shapeKey], editing: { slide, shape: shapeKey, row: row.key, column: column.key } })
-    else this.setState({ shapes: [shapeKey], editing: undefined })
+    if (row && column && cell && !cell.hMerge && !cell.vMerge) this.setState({ shapes: [target.shape], editing: { slide: target.slide, shape: target.shape, row: row.key, column: column.key } })
+    else this.setState({ shapes: [target.shape], editing: undefined })
   }
 
   /** Layouts of the deck's masters, for the new-slide and layout pickers. */
