@@ -1,4 +1,5 @@
-import { Fragment, useRef, useState, type KeyboardEvent } from 'react'
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { TextSearch } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -14,7 +15,10 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
-import { normalizeEntries, type MenuDefinition, type MenuEntry } from './menu'
+import { FILE_EDITOR_ATTRIBUTE } from './editor-root'
+import { normalizeEntries, separator, type MenuDefinition, type MenuEntry } from './menu'
+import { isMenuBarKey, isMenuSearchKey, MENU_SEARCH_ID, MENU_SEARCH_SHORTCUT, menuBarAriaKeys } from './menu-keys'
+import { MenuSearchDialog } from './MenuSearchDialog'
 import { ariaKeyShortcuts, formatShortcut } from './shortcuts'
 
 /** An open menu's rows, built as it renders: Radix renders a menu's content only while it shows. */
@@ -84,6 +88,12 @@ function MenuEntries({ entries, close }: { entries: readonly MenuEntry[]; close:
  * ArrowLeft/ArrowRight move between them. Closing a menu without a command that moved focus on
  * (Escape, a command run, a click on nothing) calls `onClose`, which hands focus back to the
  * document. Menus are data (see `MenuDefinition`), built when each opens.
+ *
+ * Every editor's bar also searches its menus, as Docs' Help ▸ Search the menus does: a button at
+ * the bar's end, the first item of the menu with id 'help', and Alt+/ (Option+/ on a Mac) anywhere
+ * in the editor. Alt+Shift+F (Ctrl+Option+F on a Mac) in the editor opens the File menu, for the
+ * keyboard. Both keys belong to the editor around the bar (its `data-file-editor` root) only, and
+ * only when the editor itself left them alone.
  */
 export function EditorMenuBar({ menus, onClose, className }: {
   menus: readonly MenuDefinition[]
@@ -95,21 +105,74 @@ export function EditorMenuBar({ menus, onClose, className }: {
   // Read by handlers that run between renders (a click on one trigger dismisses the other menu).
   const openRef = useRef<string | null>(null)
   const [focusIndex, setFocusIndex] = useState(0)
+  const [searching, setSearching] = useState(false)
+  // Where focus was as the search opened: a field there (the formula bar, a find box) gets it back.
+  const opener = useRef<Element | null>(null)
   const bar = useRef<HTMLDivElement>(null)
   const triggers = useRef<(HTMLButtonElement | null)[]>([])
+  // The search button follows the menus in the bar's arrow-key order.
+  const count = menus.length + 1
 
   const setOpen = (id: string | null) => {
     openRef.current = id
     setOpenId(id)
   }
-  const step = (index: number, delta: number) => (index + delta + menus.length) % menus.length
+  const step = (index: number, delta: number, length = count) => (index + delta + length) % length
   const close = () => setOpen(null)
+
+  const openSearch = () => {
+    // From Help ▸ Search the menus, the menu's item has focus: the document gets it back.
+    opener.current = document.activeElement
+    setOpen(null)
+    setSearching(true)
+  }
+
+  const searchClosed = () => {
+    const field = opener.current
+    opener.current = null
+    const root = bar.current?.closest(`[${FILE_EDITOR_ATTRIBUTE}]`)
+    if (field instanceof HTMLElement && field.isConnected && root?.contains(field) && !bar.current?.contains(field) && field.matches('input, textarea, select')) {
+      field.focus({ preventScroll: true })
+    } else if (onClose) {
+      onClose()
+    } else {
+      triggers.current[Math.min(focusIndex, count - 1)]?.focus()
+    }
+  }
+
+  // Alt+Shift+F (Ctrl+Option+F) opens the File menu, or the first where there is none.
+  const keyboardIndex = Math.max(0, menus.findIndex((menu) => menu.id === 'file'))
+  /** The File menu, opened from the keyboard: its first item takes focus. */
+  const openFromKeyboard = () => {
+    setFocusIndex(keyboardIndex)
+    setOpen(menus[keyboardIndex]!.id)
+  }
+
+  const keys = useRef({ openSearch, openFromKeyboard, hasMenus: menus.length > 0 })
+  keys.current = { openSearch, openFromKeyboard, hasMenus: menus.length > 0 }
+  useEffect(() => {
+    // Scoped to this editor: another editor on the page, the chat, and dialogs (portals) keep
+    // these keys. Heard on the window, after the editor's own handlers (React's too, such as a
+    // notebook's command keys), so a key the editor took stays the editor's.
+    const root = bar.current?.closest(`[${FILE_EDITOR_ATTRIBUTE}]`)
+    if (!root) return
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || !(event.target instanceof Node) || !root.contains(event.target)) return
+      const { openSearch, openFromKeyboard, hasMenus } = keys.current
+      const action = isMenuSearchKey(event) ? openSearch : hasMenus && isMenuBarKey(event) ? openFromKeyboard : null
+      if (!action) return
+      event.preventDefault()
+      if (!event.repeat) action()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   const onTriggerKeyDown = (index: number) => (event: KeyboardEvent<HTMLButtonElement>) => {
     const next = event.key === 'ArrowRight' ? step(index, 1)
       : event.key === 'ArrowLeft' ? step(index, -1)
         : event.key === 'Home' ? 0
-          : event.key === 'End' ? menus.length - 1
+          : event.key === 'End' ? count - 1
             : null
     if (next === null) return
     event.preventDefault()
@@ -121,10 +184,21 @@ export function EditorMenuBar({ menus, onClose, className }: {
     // A submenu's trigger opens it on ArrowRight, and a submenu closes on ArrowLeft; both mark the key handled.
     if (event.defaultPrevented || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return
     event.preventDefault()
-    const next = step(index, event.key === 'ArrowRight' ? 1 : -1)
+    // An open menu moves to the next menu, never to the search button.
+    const next = step(index, event.key === 'ArrowRight' ? 1 : -1, menus.length)
     setFocusIndex(next)
     setOpen(menus[next]!.id)
   }
+
+  // Help ▸ Search the menus comes first, as in Docs.
+  const shown = menus.map((menu): MenuDefinition => menu.id !== 'help' ? menu : {
+    ...menu,
+    items: () => [
+      { type: 'item', id: MENU_SEARCH_ID, label: ui("Search the menus"), icon: TextSearch, shortcut: MENU_SEARCH_SHORTCUT, onSelect: openSearch },
+      separator,
+      ...menu.items(),
+    ],
+  })
 
   const onCloseAutoFocus = (event: Event) => {
     event.preventDefault()
@@ -133,7 +207,7 @@ export function EditorMenuBar({ menus, onClose, className }: {
     const active = document.activeElement
     if (active && active !== document.body && !bar.current?.contains(active)) return
     if (onClose) onClose()
-    else triggers.current[focusIndex]?.focus()
+    else triggers.current[Math.min(focusIndex, count - 1)]?.focus()
   }
 
   return (
@@ -144,7 +218,7 @@ export function EditorMenuBar({ menus, onClose, className }: {
       className={cn('flex h-7 min-w-0 shrink-0 items-center gap-px overflow-x-auto [scrollbar-width:none]', className)}
       data-editor-menubar=""
     >
-      {menus.map((menu, index) => (
+      {shown.map((menu, index) => (
         <DropdownMenu
           key={menu.id}
           modal={false}
@@ -163,7 +237,8 @@ export function EditorMenuBar({ menus, onClose, className }: {
               ref={(element) => { triggers.current[index] = element }}
               type="button"
               role="menuitem"
-              tabIndex={index === Math.min(focusIndex, menus.length - 1) ? 0 : -1}
+              tabIndex={index === Math.min(focusIndex, count - 1) ? 0 : -1}
+              aria-keyshortcuts={index === keyboardIndex ? menuBarAriaKeys() : undefined}
               data-menu={menu.id}
               onKeyDown={onTriggerKeyDown(index)}
               onPointerEnter={(event) => {
@@ -188,6 +263,29 @@ export function EditorMenuBar({ menus, onClose, className }: {
           </DropdownMenuContent>
         </DropdownMenu>
       ))}
+      <button
+        ref={(element) => { triggers.current[menus.length] = element }}
+        type="button"
+        role="menuitem"
+        aria-label={ui("Search the menus")}
+        aria-haspopup="dialog"
+        aria-keyshortcuts={ariaKeyShortcuts(MENU_SEARCH_SHORTCUT)}
+        title={`${ui("Search the menus")} (${formatShortcut(MENU_SEARCH_SHORTCUT)})`}
+        tabIndex={menus.length === Math.min(focusIndex, count - 1) ? 0 : -1}
+        data-menu-search=""
+        onKeyDown={onTriggerKeyDown(menus.length)}
+        // A click leaves focus where it was (a cell's formula, say), for the search to hand back.
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => {
+          setFocusIndex(menus.length)
+          openSearch()
+        }}
+        // Stays in view at the end of a bar that scrolls (the side panel, a phone).
+        className="sticky right-0 grid h-6 w-7 shrink-0 cursor-pointer place-items-center rounded bg-background text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+      >
+        <TextSearch className="size-3.5" />
+      </button>
+      <MenuSearchDialog open={searching} onOpenChange={setSearching} menus={menus} returnFocus={searchClosed} />
     </div>
   )
 }

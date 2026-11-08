@@ -131,6 +131,28 @@ describe('ZoomControl', () => {
     expect(onFit).toHaveBeenCalledOnce()
   })
 
+  it('tells screen readers the zoom without renaming its buttons', () => {
+    function Host() {
+      const [zoom, setZoom] = useState(1)
+      return <ZoomControl zoom={zoom} onZoom={setZoom} />
+    }
+    const view = render(<Host />)
+    const zoom = screen.getByRole('button', { name: 'Zoom' })
+    expect(zoom.getAttribute('aria-describedby')).toBeTruthy()
+    expect(document.getElementById(zoom.getAttribute('aria-describedby')!)?.textContent).toBe('100%')
+    for (const name of ['Zoom out', 'Zoom in']) {
+      expect(screen.getByRole('button', { name }).getAttribute('aria-describedby')).toBe(zoom.getAttribute('aria-describedby'))
+    }
+    const announcement = view.container.querySelector('[aria-live="polite"]')!
+    expect(announcement.textContent).toBe('')
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in' }))
+    expect(announcement.textContent).toBe('110%')
+    expect(document.getElementById(zoom.getAttribute('aria-describedby')!)?.textContent).toBe('110%')
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom out' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom out' }))
+    expect(announcement.textContent).toBe('90%')
+  })
+
   it('stays within its bounds on whole percents', () => {
     expect(steppedZoom(0.75, -1)).toBe(0.65)
     expect(steppedZoom(0.3, -1)).toBe(0.25)

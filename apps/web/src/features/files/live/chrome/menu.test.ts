@@ -49,8 +49,23 @@ describe('shortcut groups from menus', () => {
     expect(groups.map((group) => [group.title, group.items.map((entry) => entry.label)])).toEqual([
       ['Common', ['Redo']],
       ['Edit', ['Undo', 'Zoom in']],
+      // The menu bar's own key, in every editor that has one.
+      ['Menus', ['Search the menus']],
     ])
     // Menus build their items when asked, as when they open.
     expect(items).toHaveBeenCalledOnce()
+  })
+
+  it("lists the menu bar's keys: Search the menus, and the File menu where there is one", () => {
+    const groups = shortcutGroupsFromMenus([{ id: 'file', label: 'File', items: () => [] }])
+    expect(groups).toEqual([{
+      id: 'menu-bar',
+      title: 'Menus',
+      items: [
+        { label: 'Search the menus', keys: [{ key: '/', alt: true }] },
+        { label: 'Open the File menu', keys: [expect.stringMatching(/^(⌃⌥F|Alt\+Shift\+F)$/)] },
+      ],
+    }])
+    expect(shortcutGroupsFromMenus([])).toEqual([])
   })
 })

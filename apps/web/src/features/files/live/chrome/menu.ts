@@ -1,4 +1,6 @@
 import type { ComponentType, ReactNode } from 'react'
+import { ui } from '@/i18n/ui'
+import { MENU_SEARCH_SHORTCUT, menuBarKeyText } from './menu-keys'
 import type { ShortcutGroup, ShortcutItem, ShortcutSpec } from './shortcuts'
 import { formatShortcut } from './shortcuts'
 
@@ -75,8 +77,9 @@ const keyText = (key: ShortcutSpec | string) => typeof key === 'string' ? key : 
 
 /**
  * The shortcuts dialog's groups: an editor's own `groups` first, then menu items with shortcuts
- * they do not already list, under the menu's name (or in a group with the menu's id). A line
- * (same label and keys) is listed once. Calls every menu's `items()`, so call it when the dialog opens.
+ * they do not already list, under the menu's name (or in a group with the menu's id), and last
+ * the menu bar's own keys (Search the menus, the File menu). A line (same label and keys) is
+ * listed once. Calls every menu's `items()`, so call it when the dialog opens.
  */
 export function shortcutGroupsFromMenus(menus: readonly MenuDefinition[], groups: readonly ShortcutGroup[] = []): ShortcutGroup[] {
   const result = new Map<string, ShortcutGroup>()
@@ -96,5 +99,12 @@ export function shortcutGroupsFromMenus(menus: readonly MenuDefinition[], groups
   }
   for (const group of groups) add(group.id, group.title, group.items)
   for (const menu of menus) add(menu.id, menu.label, shortcutItems(menu.items()))
+  // EditorMenuBar takes these keys in every editor it is the menu bar of.
+  if (menus.length) {
+    add('menu-bar', ui("Menus"), [
+      { label: ui("Search the menus"), keys: [MENU_SEARCH_SHORTCUT] },
+      ...(menus.some((menu) => menu.id === 'file') ? [{ label: ui("Open the File menu"), keys: [menuBarKeyText()] }] : []),
+    ])
+  }
   return [...result.values()]
 }

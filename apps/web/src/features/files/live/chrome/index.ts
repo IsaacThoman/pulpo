@@ -5,6 +5,9 @@
  */
 export { EditorMenuBar } from './EditorMenuBar'
 export { normalizeEntries, separator, shortcutGroupsFromMenus, type MenuDefinition, type MenuEntry, type MenuIcon, type MenuItemEntry } from './menu'
+export { MenuSearchDialog } from './MenuSearchDialog'
+export { flattenMenus, searchMenuCommands, type MenuCommand } from './menu-search'
+export { isMenuBarKey, isMenuSearchKey, MENU_SEARCH_ID, MENU_SEARCH_SHORTCUT, menuBarAriaKeys, menuBarKeyText } from './menu-keys'
 export { ariaKeyShortcuts, filterShortcutGroups, formatShortcut, keyName, matchesShortcut, shortcutKeyText, type ShortcutGroup, type ShortcutItem, type ShortcutSpec } from './shortcuts'
 export { editorOwnsKey, FILE_EDITOR_ATTRIBUTE, fileEditorRoot, isInFileEditor } from './editor-root'
 export { composeFileMenu, fileMenuDefinition, nativeDownloadLabel, type EditorFileMenuParts, type FileMenuCommand, type FileMenuHost } from './file-menu'

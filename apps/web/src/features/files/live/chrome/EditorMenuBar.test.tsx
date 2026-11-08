@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EditorMenuBar } from './EditorMenuBar'
 import type { MenuDefinition } from './menu'
+import { formatShortcut } from './shortcuts'
 
 afterEach(cleanup)
 
@@ -62,9 +63,14 @@ describe('EditorMenuBar', () => {
     expect(document.activeElement).toBe(trigger('Edit'))
     expect(trigger('Edit').tabIndex).toBe(0)
     fireEvent.keyDown(trigger('Edit'), { key: 'ArrowLeft' })
+    // The search button ends the bar, so ArrowLeft from the first menu wraps to it.
     fireEvent.keyDown(trigger('File'), { key: 'ArrowLeft' })
+    expect(document.activeElement).toBe(trigger('Search the menus'))
+    fireEvent.keyDown(trigger('Search the menus'), { key: 'ArrowLeft' })
     expect(document.activeElement).toBe(trigger('View'))
-    fireEvent.keyDown(trigger('View'), { key: 'Home' })
+    fireEvent.keyDown(trigger('View'), { key: 'End' })
+    expect(document.activeElement).toBe(trigger('Search the menus'))
+    fireEvent.keyDown(trigger('Search the menus'), { key: 'Home' })
     expect(document.activeElement).toBe(trigger('File'))
   })
 
@@ -155,7 +161,7 @@ describe('EditorMenuBar', () => {
         { type: 'item', id: 'cut', label: 'Cut', icon: Icon, onSelect: noop },
         { type: 'item', id: 'select-all', label: 'Select all', onSelect: noop },
       ],
-    }, { id: 'help', label: 'Help', items: () => [{ type: 'item', id: 'about', label: 'About', onSelect: noop }] }]
+    }, { id: 'tools', label: 'Tools', items: () => [{ type: 'item', id: 'about', label: 'About', onSelect: noop }] }]
     render(<EditorMenuBar menus={menus} />)
     fireEvent.keyDown(trigger('Edit'), { key: 'Enter' })
     expect((await screen.findByRole('menuitem', { name: 'Select all' })).hasAttribute('data-inset')).toBe(true)
@@ -175,5 +181,212 @@ describe('EditorMenuBar', () => {
     await waitFor(() => expect(openMenus()).toHaveLength(0))
     // ArrowRight on the submenu's trigger opened it rather than moving to another menu.
     expect(trigger('View').tabIndex).toBe(0)
+  })
+})
+
+describe('EditorMenuBar: Search the menus and the File menu key', () => {
+  function Searchable({ onBold = noop, onClose = noop, items }: { onBold?: () => void; onClose?: () => void; items?: () => void }) {
+    const [bold, setBold] = useState(false)
+    const menus: MenuDefinition[] = [
+      {
+        id: 'file',
+        label: 'File',
+        items: () => [
+          { type: 'item', id: 'print', label: 'Print', shortcut: { key: 'p', mod: true }, onSelect: noop },
+          { type: 'item', id: 'rename', label: 'Rename', onSelect: () => document.getElementById('title')?.focus() },
+        ],
+      },
+      {
+        id: 'format',
+        label: 'Format',
+        items: () => {
+          items?.()
+          return [
+            {
+              type: 'submenu',
+              id: 'text',
+              label: 'Text',
+              items: [
+                { type: 'item', id: 'bold', label: 'Bold', checked: bold, shortcut: { key: 'b', mod: true }, onSelect: () => { setBold(!bold); onBold() } },
+                { type: 'item', id: 'italic', label: 'Italic', onSelect: noop },
+              ],
+            },
+            { type: 'custom', id: 'grid', render: () => <button type="button">Grid</button> },
+            { type: 'item', id: 'clear', label: 'Clear formatting', disabled: true, onSelect: onBold },
+          ]
+        },
+      },
+      { id: 'help', label: 'Help', items: () => [{ type: 'item', id: 'keyboard-shortcuts', label: 'Keyboard shortcuts', onSelect: noop }] },
+    ]
+    return (
+      <>
+        <input id="title" aria-label="Title" />
+        <div data-file-editor="document">
+          <EditorMenuBar menus={menus} onClose={onClose} />
+          <div role="textbox" aria-label="Document" tabIndex={0} />
+          <input aria-label="Formula" />
+        </div>
+        <input aria-label="Chat" />
+      </>
+    )
+  }
+
+  const searchKey = { key: '/', code: 'Slash', altKey: true }
+  const fileKey = { key: 'F', code: 'KeyF', altKey: true, shiftKey: true }
+  const palette = () => screen.queryByRole('dialog', { name: 'Search the menus' })
+  const field = () => screen.getByRole('combobox', { name: 'Search the menus' })
+  const options = () => screen.queryAllByRole('option')
+  const documentBox = () => screen.getByRole('textbox', { name: 'Document' })
+  const openPalette = async (from: HTMLElement = documentBox()) => {
+    from.focus()
+    fireEvent.keyDown(from, searchKey)
+    await screen.findByRole('dialog', { name: 'Search the menus' })
+  }
+
+  it('ends the bar with a search button and starts Help with Search the menus (Alt+/)', async () => {
+    render(<Searchable />)
+    const button = trigger('Search the menus')
+    expect(button.getAttribute('aria-keyshortcuts')).toBe('Alt+/')
+    expect(button.getAttribute('aria-haspopup')).toBe('dialog')
+    expect(trigger('File').getAttribute('aria-keyshortcuts')).toBe('Alt+Shift+F')
+    fireEvent.keyDown(trigger('Help'), { key: 'Enter' })
+    const items = within(await screen.findByRole('menu')).getAllByRole('menuitem')
+    expect(items.map((item) => item.textContent)).toEqual(['Search the menusAlt+/', 'Keyboard shortcuts'])
+    fireEvent.click(items[0]!)
+    expect(await screen.findByRole('dialog', { name: 'Search the menus' })).toBeTruthy()
+    await waitFor(() => expect(document.activeElement).toBe(field()))
+    // The search never lists itself, nor custom rows such as a grid.
+    expect(options().map((option) => option.getAttribute('data-menu-command'))).toEqual([
+      'file/print', 'file/rename', 'format/text/bold', 'format/text/italic', 'format/clear', 'help/keyboard-shortcuts',
+    ])
+  })
+
+  it('opens with Alt+/ only from inside the editor, reading the menus as it opens', async () => {
+    const items = vi.fn()
+    render(<Searchable items={items} />)
+    expect(fireEvent.keyDown(screen.getByRole('textbox', { name: 'Chat' }), searchKey)).toBe(true)
+    expect(fireEvent.keyDown(screen.getByRole('textbox', { name: 'Title' }), searchKey)).toBe(true)
+    // AltGr (Ctrl+Alt on Windows) types characters, and a key the editor took stays the editor's.
+    fireEvent.keyDown(documentBox(), { ...searchKey, ctrlKey: true })
+    documentBox().addEventListener('keydown', (event) => event.preventDefault(), { once: true })
+    fireEvent.keyDown(documentBox(), searchKey)
+    expect(palette()).toBeNull()
+    expect(items).not.toHaveBeenCalled()
+
+    expect(fireEvent.keyDown(documentBox(), searchKey)).toBe(false)
+    expect(await screen.findByRole('dialog', { name: 'Search the menus' })).toBeTruthy()
+    expect(items).toHaveBeenCalledOnce()
+  })
+
+  it('finds commands by name and menu path, runs one with Enter, and hands focus back', async () => {
+    const onBold = vi.fn()
+    const onClose = vi.fn()
+    render(<Searchable onBold={onBold} onClose={onClose} />)
+    await openPalette()
+    fireEvent.change(field(), { target: { value: 'text bo' } })
+    expect(options().map((option) => option.textContent)).toEqual([`BoldFormat ▸ Text${formatShortcut({ key: 'b', mod: true })}`])
+    const bold = options()[0]!
+    expect(bold.getAttribute('aria-label')).toBe(`Bold, Format, Text, ${formatShortcut({ key: 'b', mod: true })}`)
+    expect(bold.getAttribute('aria-selected')).toBe('true')
+    expect(bold.getAttribute('aria-checked')).toBe('false')
+    expect(field().getAttribute('aria-activedescendant')).toBe(bold.id)
+    fireEvent.keyDown(field(), { key: 'Enter' })
+    expect(onBold).toHaveBeenCalledOnce()
+    await waitFor(() => expect(palette()).toBeNull())
+    expect(onClose).toHaveBeenCalledOnce()
+
+    // Opened again, it shows the new state, and the arrow keys pick another row.
+    await openPalette()
+    fireEvent.change(field(), { target: { value: 'bold' } })
+    expect(options()[0]!.getAttribute('aria-checked')).toBe('true')
+    // One letter finds words that start with it, here the Text submenu's.
+    fireEvent.change(field(), { target: { value: 't' } })
+    expect(options().map((option) => option.getAttribute('data-menu-command'))).toEqual(['format/text/bold', 'format/text/italic'])
+    fireEvent.keyDown(field(), { key: 'ArrowDown' })
+    expect(options()[1]!.getAttribute('aria-selected')).toBe('true')
+    fireEvent.keyDown(field(), { key: 'ArrowDown' })
+    expect(options()[0]!.getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('shows greyed commands that never run, and says when nothing matches', async () => {
+    const onBold = vi.fn()
+    render(<Searchable onBold={onBold} />)
+    fireEvent.click(trigger('Search the menus'))
+    await screen.findByRole('dialog', { name: 'Search the menus' })
+    fireEvent.change(field(), { target: { value: 'clear' } })
+    const clear = options()[0]!
+    expect(clear.getAttribute('aria-disabled')).toBe('true')
+    fireEvent.keyDown(field(), { key: 'Enter' })
+    fireEvent.click(clear)
+    expect(onBold).not.toHaveBeenCalled()
+    expect(palette()).toBeTruthy()
+    fireEvent.change(field(), { target: { value: 'zzzz' } })
+    expect(options()).toHaveLength(0)
+    expect(screen.getByRole('status').textContent).toBe('No commands match “zzzz”')
+  })
+
+  it('closes with Escape, back to the document or to the field it opened from', async () => {
+    const onClose = vi.fn()
+    render(<Searchable onClose={onClose} />)
+    await openPalette()
+    fireEvent.keyDown(field(), { key: 'Escape' })
+    await waitFor(() => expect(palette()).toBeNull())
+    expect(onClose).toHaveBeenCalledOnce()
+
+    const formula = screen.getByRole('textbox', { name: 'Formula' })
+    await openPalette(formula)
+    fireEvent.keyDown(field(), { key: 'Escape' })
+    await waitFor(() => expect(palette()).toBeNull())
+    expect(document.activeElement).toBe(formula)
+    expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('reads the menus again when the editor changes them while it shows, keeping the query', async () => {
+    const onBold = vi.fn()
+    // A collaborator trashed the file meanwhile: the editor went read-only and greyed Bold.
+    const bar = (readOnly: boolean) => (
+      <div data-file-editor="document">
+        <EditorMenuBar menus={[{ id: 'format', label: 'Format', items: () => [{ type: 'item', id: 'bold', label: 'Bold', disabled: readOnly, onSelect: onBold }] }]} />
+      </div>
+    )
+    const view = render(bar(false))
+    fireEvent.click(trigger('Search the menus'))
+    await screen.findByRole('dialog', { name: 'Search the menus' })
+    fireEvent.change(field(), { target: { value: 'bo' } })
+    expect(options()[0]!.getAttribute('aria-disabled')).toBeNull()
+    view.rerender(bar(true))
+    expect((field() as HTMLInputElement).value).toBe('bo')
+    expect(options()[0]!.getAttribute('aria-disabled')).toBe('true')
+    fireEvent.keyDown(field(), { key: 'Enter' })
+    fireEvent.click(options()[0]!)
+    expect(onBold).not.toHaveBeenCalled()
+    expect(palette()).toBeTruthy()
+  })
+
+  it('leaves focus where a command run from the search put it', async () => {
+    const onClose = vi.fn()
+    render(<Searchable onClose={onClose} />)
+    await openPalette()
+    fireEvent.change(field(), { target: { value: 'rename' } })
+    fireEvent.click(options()[0]!)
+    await waitFor(() => expect(palette()).toBeNull())
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)))
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Title' }))
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('opens the File menu with Alt+Shift+F from inside the editor only', async () => {
+    render(<Searchable />)
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Chat' }), fileKey)
+    fireEvent.keyDown(documentBox(), { ...fileKey, shiftKey: false, key: 'f' })
+    expect(openMenus()).toHaveLength(0)
+    documentBox().focus()
+    expect(fireEvent.keyDown(documentBox(), fileKey)).toBe(false)
+    expect(await screen.findByRole('menuitem', { name: /Print/ })).toBeTruthy()
+    expect(trigger('File').getAttribute('aria-expanded')).toBe('true')
+    // From there the arrow keys walk the bar, as from a click.
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: /Print/ }), { key: 'ArrowRight' })
+    expect(await screen.findByRole('menuitem', { name: 'Text' })).toBeTruthy()
+    expect(trigger('Format').getAttribute('aria-expanded')).toBe('true')
   })
 })
