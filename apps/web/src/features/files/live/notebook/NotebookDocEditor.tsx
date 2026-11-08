@@ -382,8 +382,8 @@ const NotebookCell = memo(function NotebookCell(props: CellProps) {
       onMouseDown={(event) => {
         // Clicking a cell selects it (Shift extends); clicks inside its editor enter edit mode on focus.
         if ((event.target as HTMLElement).closest('[data-cell-source], button, a, iframe')) return
-        // A right-click on a selected cell keeps the selection, for its context menu to act on.
-        if (event.button === 2 && selected) return
+        // A right-click (or a Mac's Control-click) on a selected cell keeps the selection, for its context menu to act on.
+        if ((event.button === 2 || (mac && event.ctrlKey)) && selected) return
         controller.select(cell.key, { extend: event.shiftKey })
       }}
       onDoubleClick={(event) => {
@@ -841,7 +841,11 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
     const list = root.current
     if (!list) return
     // The keyboard's menu key on the cell list, where the browser sends it: the active cell's menu.
-    if (event.target === list && (event.button !== 2 || (event.nativeEvent as Partial<PointerEvent>).pointerType === '')) {
+    // Chrome marks it with an empty pointer type; other browsers send a plain mouse event with the
+    // primary button, which a Mac's Control-click also does (with Control held).
+    const pointer = (event.nativeEvent as Partial<PointerEvent>).pointerType
+    const keyboard = pointer === '' || (pointer === undefined && event.button !== 2 && !event.ctrlKey)
+    if (event.target === list && keyboard) {
       if (openActiveCellMenu()) event.preventDefault()
       return
     }

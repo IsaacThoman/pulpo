@@ -391,4 +391,20 @@ describe('notebook cell context menu', () => {
       notebook.dispose()
     }
   })
+
+  it('leaves the browser\'s menu for a Control-click or a touch on the space around the cells', async () => {
+    const notebook = await openNotebook([code('a', 'first')])
+    try {
+      notebook.list.focus()
+      // A Mac's Control-click sends the primary button with Control held; it is a pointer, not the menu key.
+      expect(fireEvent.contextMenu(notebook.list, { button: 0, ctrlKey: true })).toBe(true)
+      const touch = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 0 })
+      Object.defineProperty(touch, 'pointerType', { value: 'touch' })
+      expect(fireEvent(notebook.list, touch)).toBe(true)
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(screen.queryByRole('menu')).toBeNull()
+    } finally {
+      notebook.dispose()
+    }
+  })
 })
