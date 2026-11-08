@@ -110,10 +110,15 @@ All Office engines use the same package checks. The reader walks classic ZIP and
 - **Editor** (`office/text/view`). CodeMirror 6 bound with `y-codemirror.next`:
   - highlighting by extension, each language a lazy import;
   - other sessions' labeled cursors;
-  - line numbers, folding, bracket matching, and find and replace;
+  - line numbers, folding, bracket matching, and find and replace (Ctrl/Cmd+F; Ctrl+H, or Cmd+Option+F and Cmd+Shift+H on a Mac, for replace, which starts in the find field until there is something to find, as in VS Code);
+  - go to line with Ctrl+G (literal Control, so Cmd+G stays Find next on a Mac) or Ctrl/Cmd+Alt+G: `12`, `12:4` (columns counted from 1, as the status bar shows them), `+5`, or `50%`;
+  - word and character counts on request (`counts('document' | 'selection')`, by the Word editor's rules), kept out of the state the mobile page posts on every change;
   - wrapping, indentation (detected from the file, changeable), and undo/redo of this session's own edits;
   - read-only mode, and colors from the host's CSS variables in light and dark.
 - **On the web**, `TextDocEditor` adds a toolbar and a status bar (cursor, language, encoding, line breaks). HTML files get a live preview in the opaque-origin sandbox.
+  - An opened file takes the keyboard (unless something else has it, and never in the side panel), so Ctrl/Cmd+F finds in it at once. The find, replace, and go-to-line keys also work while the toolbar or status bar has focus, and the toolbar's Find leaves the caret in the find field.
+  - The status bar's `Ln, Col` opens go to line. It counts lines, the number of cursors when there are several, and words in prose files (`.txt`, `.log`, `.rst`, `README`, and the like) and for any selection (`12 of 345 words`, as in Word). Clicking the counts opens a Word count dialog (words, characters with and without spaces, lines; document and selection). Document counts wait 300 ms after the last change.
+  - Menus (indentation) and dialogs give the keyboard back to the text when they close.
 - **On mobile**, the same core runs in `editor/text/` (about 1.4 MB with every grammar inlined), with undo, redo, indent, outdent, find, and wrap on the keyboard bar.
 
 ## The notebook format
@@ -173,18 +178,31 @@ Fields the editor doesn't model are kept: unknown keys anywhere, metadata, and w
 ### Editors
 
 - **The core** (`office/notebook/view`). `NotebookController` holds:
-  - the active cell, the selection, and Jupyter's command and edit modes, with their keys (A, B, D D, X/C/V, Y/M/R, Shift+M, O, Z, arrows and J/K, Shift+Enter);
+  - the active cell, the selection, and Jupyter's command and edit modes, with their keys (A, B, D D, X/C/V, Y/M/R, Shift+M, O, Z and Shift+Z (redo), 1 to 6 (Markdown heading of that level), arrows and J/K, Shift+Enter), VS Code's (Alt+↑/↓ move cells, Shift+Alt+↑/↓ duplicate them, Ctrl/Cmd+Shift+↑/↓ move them), and Colab's Ctrl+M chords in both modes (then A/B insert, D delete, Y/M type, O outputs, - split, K/J move, N/P select, Z undo, L line numbers, H help; literal Control, as Cmd+M minimizes on a Mac);
+  - view commands it hands to the view (`setViewCommandHandler`): find and replace (Ctrl/Cmd+F, Ctrl+H, Cmd+Option+F), line numbers (Shift+L), the shortcuts (H), and output scrolling (Shift+O). Without a handler (the mobile page) their keys are left alone;
+  - duplicate, collapse or expand every code cell's source or outputs (one undo step; collapsing outputs skips cells without any, so their metadata is untouched), and pasting the system clipboard's text: text this page copied as cells pastes the cells whole, anything else becomes a new code cell;
   - a page-wide clipboard (cells pasted into another notebook bring their images);
   - one undo manager for this session's structural changes and every cell's typing;
   - which cell each collaborator is on, from awareness.
 
-  `createCellEditor` binds CodeMirror to one cell's Y.Text, with the text editor's theme and the kernel's language. Cells don't run in the browser, so Shift+Enter moves to the next cell.
+  `createCellEditor` binds CodeMirror to one cell's Y.Text, with the text editor's theme and the kernel's language. Cells don't run in the browser, so Shift+Enter moves to the next cell. Options add a line-number gutter, wrapping for code cells, the host's find (`onFind`, in place of the cell's own search panel), keys the host sees first (`onKeyDown`, for chords, so Ctrl+M no longer switches CodeMirror's Tab to moving focus), and find-match marks.
+
+  `NotebookSearch` (`view/search.ts`) finds across every cell's source in notebook order: match case, whole words, and JavaScript regular expressions (replacements may use `$1`, `$<name>`, `$&`). The current match steps from the active cell's cursor and stays put while the query is typed. Replacing one match or all of them is one undo step each, in the controller's undo manager, so it takes back only this session's replacements. Matches are recounted 150 ms after anyone's edit and listed up to 10,000 (replace all replaces every one).
+
+  `notebookOutline` (`outline.ts`) lists Markdown cells' headings by Markdown's rules (marked's lexer): not `#` in fences, setext and `<h2>` headings yes, inline markup reduced to text. `notebookToScript` and `notebookToHtml` (`export.ts`) are for a later "Download as" menu: a Jupytext percent-format script (`# %%` cells, Markdown and raw cells as comments, IPython magics commented out in Python; the extension from `language_info`), and a static page from `renderNotebookHtml`'s `static` option (HTML outputs and Markdown made inert, JavaScript outputs as their plain text, and a content security policy that allows only inline styles and images).
 - **On the web** (`features/files/live/notebook`):
   - Code cells are CodeMirror editors, mounted as they scroll near the screen.
   - Markdown cells render with the app's Markdown component until edited.
   - Outputs use the notebook viewer's renderers; HTML and JavaScript run only in the sandbox.
   - The toolbar has undo and redo, insert, cut, copy, paste, move, delete, cell type, split, merge, hide outputs, clear outputs, and the keyboard shortcuts.
   - Cells can be dragged to move them, and collaborators' cursors and cells show.
+  - The active cell's toolbar has duplicate, move, insert above and below, delete, and a menu (hide code or outputs, clear outputs, cut, copy, paste, split, merge). Its menus and the toolbar's give the keyboard back to the notebook when they close.
+  - Find and replace (Ctrl/Cmd+F, Ctrl+H; also from a cell, seeded with its selected text) opens a bar above the cells with the match count, previous and next (Enter, Shift+Enter), match case, whole words, and regular expressions. Matches are marked in the cells; a match in rendered Markdown shows that cell's source. Escape closes it and leaves the match selected in its cell.
+  - The table of contents lists the Markdown headings, marks the active cell's section, and goes to a heading on click (over the cells in the side panel).
+  - View options: line numbers (Shift+L) and wrapping long lines in code cells, which are this browser's preferences, and collapse or expand all code or outputs, which the notebook records. Viewers who can't edit can still open hidden code or outputs for themselves; the notebook keeps them hidden.
+  - Outputs taller than 28rem scroll inside their cell, with a toggle (or Shift+O) to show them in full.
+  - Ctrl/Cmd+C, X, and V work on selected cells in command mode; pasting text copied elsewhere adds a code cell.
+  - The status bar shows `Ln, Col` while editing and `Cell n of m` otherwise.
   - **Run with agent** opens a new chat with the notebook attached for direct edits and asks the agent to run it.
 - **On mobile** (`editor/notebook`). The same core is drawn for phones:
   - Cells are cards; the active one has a type picker and move and delete buttons.
@@ -202,4 +220,6 @@ Serialization is checked before indentation is allocated: generated JSON is capp
 - Mobile shows LaTeX in Markdown cells as written.
 - Attachments can't be added to Markdown cells from the editor; existing ones are kept and shown.
 - Cell metadata other than collapsed outputs and sources (tags, slideshow) is kept but can't be edited.
+- Hiding code and hiding outputs write the same `jupyter` metadata value, so two people changing one cell's two flags at the same moment keep only the last change.
+- Find searches sources, not outputs. Copied cells paste with their outputs only within the browser tab that copied them; elsewhere they paste as text.
 
