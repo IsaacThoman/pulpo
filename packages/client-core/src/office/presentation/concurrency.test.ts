@@ -15,6 +15,7 @@ import {
   presetShape,
   readXfrm,
   reorderShapes,
+  resetSlide,
   setShapeProperty,
   setShapeText,
   setSlideHidden,
@@ -217,6 +218,58 @@ describe('concurrent editing', () => {
       sync(a, b)
       expect(shapesOn(a).length).toBe(5)
       expect(shapesOn(a).every((shape) => shape.xfrm)).toBe(true)
+    })
+
+    it(`keeps the copies left out of sight when the placeholder shown is deleted, grouped, or reset (clients ${first} and ${second})`, async () => {
+      const context = { name: 'deck.pptx', assets: memoryAssets() }
+      const base = new Y.Doc()
+      await presentationCodec.importFile(base, fixture('generated/layouts-notes-sections.pptx'), context)
+      const blank = readSnapshot(base).slides.find((slide) => slide.shapes.length === 0)!
+      const target = readSnapshot(base).slides.find((slide) => slide.shapes.length === 5)!.layout
+      const replica = (clientID: number) => {
+        const doc = new Y.Doc()
+        doc.clientID = clientID
+        Y.applyUpdate(doc, Y.encodeStateAsUpdate(base))
+        return doc
+      }
+      const [a, b] = [replica(first), replica(second)]
+      const origin = { local: true }
+      const undo = new Y.UndoManager(a.getMap('presentation'), { trackedOrigins: new Set([origin]) })
+      const deckOf = (doc: Y.Doc) => new DeckResources(readSnapshot(doc).parts, 'ppt/presentation.xml')
+      const shapesOn = (doc: Y.Doc) => readSnapshot(doc).slides.find((slide) => slide.key === blank.key)!.shapes
+      const placeholders = (doc: Y.Doc) => shapesOn(doc).flatMap(function flat(shape): string[] { return shape.children ? shape.children.flatMap(flat) : [/<p:ph[^>]*>/.exec(shape.xml)?.[0] ?? ''] }).sort()
+      setSlideLayout(a, deckOf(a), blank.key, target, origin)
+      setSlideLayout(b, deckOf(b), blank.key, target, origin)
+      sync(a, b)
+      undo.clear()
+      const all = placeholders(a)
+      expect(all.length).toBe(5)
+      const [title, body] = shapesOn(a)
+      // Deleting the title shown, untouched or typed in, leaves no other copy of it in its place.
+      deleteShapes(a, blank.key, [title!.key], origin)
+      expect(placeholders(a)).toEqual(all.filter((ph) => ph !== /<p:ph[^>]*>/.exec(title!.xml)?.[0]))
+      undo.undo()
+      expect(placeholders(a)).toEqual(all)
+      setShapeText(a, blank.key, title!.key, plainToText('Typed by A'), origin)
+      deleteShapes(a, blank.key, [title!.key], origin)
+      expect(placeholders(a).length).toBe(4)
+      sync(a, b)
+      expect(placeholders(b).length).toBe(4)
+      undo.undo()
+      undo.undo()
+      // Grouping the copies shown keeps the others out of sight, in the group and after it.
+      const xfrms = new Map([title!, body!].map((shape, index) => [shape.key, { x: 0, y: index * 1_000_000, cx: 1_000_000, cy: 1_000_000 }] as const))
+      const group = groupShapes(a, blank.key, [title!.key, body!.key], xfrms, 'Group', origin)!
+      expect(placeholders(a)).toEqual(all)
+      ungroupShape(a, blank.key, group, origin)
+      expect(placeholders(a)).toEqual(all)
+      undo.undo()
+      undo.undo()
+      // Reset slide leaves the copies out of sight as they were, so they stay out.
+      resetSlide(a, deckOf(a), blank.key, origin)
+      sync(a, b)
+      expect(placeholders(a)).toEqual(all)
+      expect(placeholders(b)).toEqual(all)
     })
   }
 

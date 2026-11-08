@@ -7,7 +7,7 @@ import { readShape } from './read.js'
 import { DeckResources, matchPlaceholder, placeholderOf, placeholderType } from './render/deck.js'
 import { slideSections } from './sections.js'
 import { EMPTY_TEXT, plainToText, textNode, type TextJSON } from './text.js'
-import { addShape, hiddenPlaceholderCopies, insertSlide, markLayoutPlaceholder, orderedKeys, presentationRoot, readSlideMap, readText, readXfrmMap, setCell, setNotes, setRow, setText, syncKeys } from './ydoc.js'
+import { addShape, hiddenCopiesOf, hiddenPlaceholderCopies, insertSlide, markLayoutPlaceholder, orderedKeys, presentationRoot, readSlideMap, readText, readXfrmMap, setCell, setNotes, setRow, setText, syncKeys } from './ydoc.js'
 import { attr, child, childElements, escapeAttribute, NS, parseFragment, path, REL_TYPES, serializeNode, type XmlElement } from './xml.js'
 
 /**
@@ -410,9 +410,11 @@ export function resetSlide(doc: Y.Doc, deck: DeckResources, slideKey: string, or
   const layout = layoutPath ? deck.layout(layoutPath) : undefined
   if (!map || !layoutPath || !layout) return
   doc.transact(() => {
-    for (const shape of (map.get('shapes') as Y.Map<YMap>).values()) {
+    // A copy of a placeholder the slide does not show stays as it was added, and so hidden.
+    const hidden = hiddenPlaceholderCopies(map)
+    for (const [key, shape] of (map.get('shapes') as Y.Map<YMap>).entries()) {
       const ph = phOf(shape)
-      if (!ph || shape.get('kind') === 'graphicFrame' || !matchPlaceholder(layout.placeholders, ph)) continue
+      if (!ph || hidden.has(key) || shape.get('kind') === 'graphicFrame' || !matchPlaceholder(layout.placeholders, ph)) continue
       for (const property of ['xfrm', 'geom', 'fill', 'line', 'effects', 'bodyPr']) if (shape.has(property)) shape.delete(property)
     }
     addMissingPlaceholders(doc, deck, slideKey, layoutPath)
@@ -718,12 +720,20 @@ export function deleteShapes(doc: Y.Doc, slideKey: string, keys: readonly string
     const store = map.get('shapes') as Y.Map<YMap>
     const members = resolvedMembers(map)
     // A group takes only the members it really has: one listed in it but shown elsewhere stays.
-    const remove = (key: string) => {
-      for (const member of members.get(key) ?? []) remove(member)
+    const removed = new Set<string>()
+    const collect = (key: string) => {
+      if (removed.has(key)) return
+      removed.add(key)
+      for (const member of members.get(key) ?? []) collect(member)
+    }
+    for (const key of keys) collect(key)
+    // A layout placeholder's untouched copies, left out behind the one deleted, go with it
+    // instead of showing in its place (see `hiddenPlaceholderCopies`).
+    for (const key of hiddenCopiesOf(map, removed)) removed.add(key)
+    for (const key of removed) {
       unlist(map, key)
       store.delete(key)
     }
-    for (const key of keys) remove(key)
   }, origin)
 }
 

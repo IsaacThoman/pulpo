@@ -391,6 +391,27 @@ export function hiddenPlaceholderCopies(slide: YSlide): Set<string> {
   return shapes ? untouchedCopies(readTopLevelShapes(slide, shapes), shapes) : new Set()
 }
 
+/**
+ * The hidden copies (see `hiddenPlaceholderCopies`) of the layout placeholders that `keys` are
+ * copies of: deleting the copy shown takes them along, or one would show in its place.
+ */
+export function hiddenCopiesOf(slide: YSlide, keys: ReadonlySet<string>): string[] {
+  const shapes = slide.get('shapes') as Y.Map<YShape> | undefined
+  if (!shapes) return []
+  const slots = new Set<string>()
+  for (const key of keys) {
+    const slot = markOf(shapes.get(key))?.slot
+    if (slot !== undefined) slots.add(slot)
+  }
+  if (!slots.size) return []
+  return [...hiddenPlaceholderCopies(slide)].filter((key) => !keys.has(key) && slots.has(markOf(shapes.get(key))?.slot ?? ''))
+}
+
+function markOf(shape: YShape | undefined): LayoutPlaceholderMark | undefined {
+  const mark = shape?.get(LAYOUT_PLACEHOLDER) as Partial<LayoutPlaceholderMark> | undefined
+  return mark && typeof mark.slot === 'string' && typeof mark.pristine === 'string' ? (mark as LayoutPlaceholderMark) : undefined
+}
+
 /** A slide's top-level shapes in drawing order, every copy included. */
 function readTopLevelShapes(slide: YSlide, shapes: Y.Map<YShape>): ShapeSnapshot[] {
   const visited = new Set<string>()
@@ -399,19 +420,25 @@ function readTopLevelShapes(slide: YSlide, shapes: Y.Map<YShape>): ShapeSnapshot
     .filter((shape): shape is ShapeSnapshot => shape !== undefined)
 }
 
+/**
+ * Copies inside a group count as shown (grouping gives them a position of their own), so grouping
+ * the copy shown keeps the others out; only top-level copies are ever left out.
+ */
 function untouchedCopies(list: readonly ShapeSnapshot[], shapes: Y.Map<YShape>): Set<string> {
-  const slots = new Map<string, { shape: ShapeSnapshot; pristine: string }[]>()
-  for (const shape of list) {
-    const mark = shapes.get(shape.key)?.get(LAYOUT_PLACEHOLDER) as Partial<LayoutPlaceholderMark> | undefined
-    if (!mark || typeof mark.slot !== 'string' || typeof mark.pristine !== 'string') continue
+  const slots = new Map<string, { shape: ShapeSnapshot; pristine: string; top: boolean }[]>()
+  const visit = (shape: ShapeSnapshot, top: boolean) => {
+    for (const member of shape.children ?? []) visit(member, false)
+    const mark = markOf(shapes.get(shape.key))
+    if (!mark) return
     const copies = slots.get(mark.slot)
-    if (copies) copies.push({ shape, pristine: mark.pristine })
-    else slots.set(mark.slot, [{ shape, pristine: mark.pristine }])
+    if (copies) copies.push({ shape, pristine: mark.pristine, top })
+    else slots.set(mark.slot, [{ shape, pristine: mark.pristine, top }])
   }
+  for (const shape of list) visit(shape, true)
   const hidden = new Set<string>()
   for (const copies of slots.values()) {
     if (copies.length < 2) continue
-    const untouched = copies.filter((copy) => fingerprint(copy.shape) === copy.pristine).map((copy) => copy.shape.key)
+    const untouched = copies.filter((copy) => copy.top && fingerprint(copy.shape) === copy.pristine).map((copy) => copy.shape.key)
     const shown = untouched.length === copies.length ? untouched.reduce((a, b) => (b < a ? b : a)) : undefined
     for (const key of untouched) if (key !== shown) hidden.add(key)
   }
