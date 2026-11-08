@@ -8,6 +8,8 @@ import { useAppStorePlans } from '../../../features/app-store/useAppStorePlans';
 import { MaterialToggleRow } from '../../../platform/MaterialUI';
 import { showActions } from '../../../platform/materialActions';
 import { useSubpageBack } from '../../../platform/useSubpageBack';
+import { NativeMenuPicker } from '../../../platform/NativeMenuPicker';
+import { useAccessibilityAnnouncement } from '../../../platform/accessibilityAnnouncement';
 import { DeleteAccountForm } from '../../../components/DeleteAccount';
 export { EditProfileScreen } from '../../../features/profile/EditProfileScreen';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
@@ -139,6 +141,7 @@ export function PasskeysScreen({ navigation }: NativeStackScreenProps<RootStackP
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [forceSafari, setForceSafari] = useState(false);
+  useAccessibilityAnnouncement(error);
   const refresh = useCallback(() => mobileApi.passkeys().then(setData).catch((next) => setError(next instanceof Error ? next.message : 'Could not load passkeys.')), []);
   useEffect(() => { void refresh(); }, [refresh]);
   const reset = () => { setAction('list'); setSelected(null); setName(''); setCurrentPassword(''); setVerificationCode(''); setError(''); setForceSafari(false); };
@@ -240,6 +243,7 @@ export function TwoFactorScreen({ navigation }: NativeStackScreenProps<RootStack
   const [confirmationCode, setConfirmationCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  useAccessibilityAnnouncement(error);
   const refresh = useCallback(() => mobileApi.twoFactorStatus().then(setStatus).catch((next) => setError(next instanceof Error ? next.message : 'Could not load two-factor status.')), []);
   useEffect(() => { void refresh(); }, [refresh]);
   const reset = () => { setAction('idle'); setEnrollment(null); setRecoveryCodes([]); setCurrentPassword(''); setVerificationCode(''); setConfirmationCode(''); setError(''); };
@@ -319,7 +323,7 @@ const settingTitles: Record<SettingsSection, string> = { general: 'General', int
 
 function NativeChoiceRow<T extends string>({ title, value, options, onChange, icon }: { title: string; value: T; options: readonly { value: T; label: string }[]; onChange: (value: T) => void; icon?: string }) {
   const selected = options.find((option) => option.value === value)?.label ?? value;
-  return <SwiftUIMenu label={<SwiftUIHStack spacing={12}>{icon ? <SwiftUIImage systemName={icon as never} size={17} modifiers={[frame({ width: 22, height: 22 })]} /> : null}<SwiftUIText>{title}</SwiftUIText><SwiftUISpacer /><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{selected}</SwiftUIText><SwiftUIImage systemName="chevron.up.chevron.down" size={10} modifiers={[foregroundStyle('secondary')]} /></SwiftUIHStack>} modifiers={[buttonStyle('plain'), foregroundStyle('primary')]}>{options.map((option) => <SwiftUIButton key={option.value} label={option.label} systemImage={option.value === value ? 'checkmark' : undefined} onPress={() => onChange(option.value)} />)}</SwiftUIMenu>;
+  return <SwiftUIMenu label={<SwiftUIHStack spacing={12}>{icon ? <SwiftUIImage systemName={icon as never} size={17} modifiers={[frame({ width: 22, height: 22 })]} /> : null}<SwiftUIText>{title}</SwiftUIText><SwiftUISpacer /><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{selected}</SwiftUIText><SwiftUIImage systemName="chevron.up.chevron.down" size={10} modifiers={[foregroundStyle('secondary')]} /></SwiftUIHStack>} modifiers={[buttonStyle('plain'), foregroundStyle('primary')]}><NativeMenuPicker label={title} selection={value} options={options.map((option) => ({ id: option.value, label: option.label }))} onSelect={(id) => onChange(id as T)} /></SwiftUIMenu>;
 }
 
 function NativeToggleRow({ title, detail, value, onChange, icon }: { title: string; detail: string; value: boolean; onChange: (value: boolean) => void; icon?: string }) {

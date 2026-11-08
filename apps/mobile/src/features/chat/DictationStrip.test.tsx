@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   layouts: [] as Array<(event: { nativeEvent: { layout: { width: number } } }) => void>,
   sharedValues: [] as Array<{ value: unknown }>,
   timings: [] as unknown[],
+  announcements: [] as string[],
+  focused: [] as unknown[],
+  actions: {} as Record<string, (event: { nativeEvent: { actionName: string } }) => void>,
   reactions: [] as Array<{ prepare: () => unknown; react: (current: unknown, previous: unknown) => void }>,
 }))
 const flatten = (style: unknown): Style => (Array.isArray(style) ? style : [style])
@@ -17,13 +20,18 @@ const flatten = (style: unknown): Style => (Array.isArray(style) ? style : [styl
 
 vi.mock('react-native', async () => {
   const { createElement: h } = await import('react')
-  const View = ({ children, style, onLayout, accessibilityLabel, accessibilityLiveRegion, accessibilityElementsHidden }: {
-    children?: ReactNode; style?: unknown; onLayout?: (event: never) => void; accessibilityLabel?: string
-    accessibilityLiveRegion?: string; accessibilityElementsHidden?: boolean
+  const View = ({ children, style, onLayout, accessible, accessibilityRole, accessibilityState, accessibilityLabel, accessibilityLiveRegion, accessibilityElementsHidden, onAccessibilityAction, ref }: {
+    children?: ReactNode; style?: unknown; onLayout?: (event: never) => void; accessible?: boolean; accessibilityRole?: string
+    accessibilityState?: { disabled?: boolean }; accessibilityLabel?: string; accessibilityLiveRegion?: string
+    accessibilityElementsHidden?: boolean; onAccessibilityAction?: (event: { nativeEvent: { actionName: string } }) => void; ref?: unknown
   }) => {
     if (onLayout) mocks.layouts.push(onLayout as never)
+    if (onAccessibilityAction && accessibilityLabel) mocks.actions[accessibilityLabel] = onAccessibilityAction
     return h('div', {
+      ref: ref as never,
       'data-style': JSON.stringify(flatten(style)), 'aria-label': accessibilityLabel,
+      'data-accessible': accessible ? 'true' : undefined, 'data-role': accessibilityRole,
+      'aria-disabled': accessibilityState?.disabled ? 'true' : undefined,
       'data-live': accessibilityLiveRegion, 'aria-hidden': accessibilityElementsHidden ? 'true' : undefined,
     }, children)
   }
@@ -37,6 +45,13 @@ vi.mock('react-native', async () => {
     }, children)
   }
   return {
+    AccessibilityInfo: {
+      setAccessibilityFocus: (tag: unknown) => { mocks.focused.push(tag) },
+      announceForAccessibilityWithOptions: (message: string) => { mocks.announcements.push(message) },
+    },
+    // Only accessibility elements can take focus; the tag names the element that got it.
+    findNodeHandle: (instance: Element | null) => instance?.getAttribute('data-accessible') === 'true' ? instance.getAttribute('aria-label') : null,
+    Platform: { OS: 'ios' },
     View,
     Pressable,
     Text: ({ children, style }: { children?: ReactNode; style?: unknown }) => h('span', { 'data-style': JSON.stringify(flatten(style)) }, children),
@@ -106,6 +121,9 @@ beforeEach(() => {
   mocks.sharedValues.length = 0
   mocks.reactions.length = 0
   mocks.timings.length = 0
+  mocks.announcements.length = 0
+  mocks.focused.length = 0
+  for (const key of Object.keys(mocks.actions)) delete mocks.actions[key]
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
@@ -194,7 +212,8 @@ describe('DictationStatus', () => {
     const { source } = levelSource()
     await render(createElement(DictationStatus, { phase: 'recording', seconds: 12, source, colors }))
     const status = container.querySelector('[aria-label="Recording 0:12"]')!
-    expect(status.getAttribute('data-live')).toBe('none')
+    // The ticking timer is never announced; the phase is, once.
+    expect(mocks.announcements).toEqual(['Recording'])
     const [waveformLayer, labelLayer] = [...status.children]
     expect(styleOf(waveformLayer!).opacity).toBe(1)
     expect(styleOf(labelLayer!).opacity).toBe(0)
@@ -219,8 +238,8 @@ describe('DictationStatus', () => {
     const { source } = levelSource()
     await render(createElement(DictationStatus, { phase: 'transcribing', seconds: 4, source, colors }))
     const shown = layers('Transcribing…')
-    expect(shown.status.getAttribute('data-live')).toBe('polite')
     expect(shown).toMatchObject({ waveform: 0, label: 1, text: 'Transcribing…' })
+    expect(mocks.announcements).toEqual(['Transcribing…'])
   })
 
   it.each([
@@ -281,6 +300,7 @@ describe('DictationStrip', () => {
       phase: 'recording', seconds: 3, source, colors,
       leading: createElement('button', { 'aria-label': 'Cancel dictation' }),
       trailing: createElement('button', { 'aria-label': 'Finish dictation' }),
+      finish: { label: 'Finish dictation', disabled: false, onFinish: () => {} },
     }))
     const strip = container.firstElementChild!
     expect(strip.getAttribute('data-entering')).toBe('yes')
@@ -289,7 +309,45 @@ describe('DictationStrip', () => {
     const children = [...strip.children]
     expect(children[0]!.getAttribute('aria-label')).toBe('Cancel dictation')
     expect(children[1]!.getAttribute('aria-label')).toBe('Recording 0:03')
+    expect(children[2]!.firstElementChild!.getAttribute('aria-label')).toBe('Finish dictation')
+    // The wrapper is the one element screen readers see for Finish.
+    expect(children[2]!.getAttribute('data-accessible')).toBe('true')
+    expect(children[2]!.getAttribute('data-role')).toBe('button')
     expect(children[2]!.getAttribute('aria-label')).toBe('Finish dictation')
+  })
+
+  it('announces recording once and moves screen reader focus to Finish', async () => {
+    const { source } = levelSource()
+    const strip = (phase: 'preparing' | 'recording', seconds: number) => render(createElement(DictationStrip, {
+      phase, seconds, source, colors,
+      leading: createElement('button', { 'aria-label': 'Cancel dictation' }),
+      trailing: createElement('button', { 'aria-label': 'Finish dictation' }),
+      finish: { label: 'Finish dictation', disabled: false, onFinish: () => {} },
+    }))
+    await strip('preparing', 0)
+    expect(mocks.focused).toEqual([])
+    await strip('recording', 0)
+    await strip('recording', 1)
+    await strip('recording', 2)
+    expect(mocks.announcements).toEqual(['Preparing microphone…', 'Recording'])
+    expect(mocks.focused).toEqual(['Finish dictation'])
+  })
+
+  it('finishes when a screen reader activates Finish, unless it is disabled', async () => {
+    const { source } = levelSource()
+    const onFinish = vi.fn()
+    const strip = (disabled: boolean) => render(createElement(DictationStrip, {
+      phase: 'recording', seconds: 0, source, colors,
+      leading: createElement('button', { 'aria-label': 'Cancel dictation' }),
+      trailing: createElement('button', { 'aria-label': 'Finish dictation' }),
+      finish: { label: 'Finish dictation', disabled, onFinish },
+    }))
+    await strip(true)
+    mocks.actions['Finish dictation']!({ nativeEvent: { actionName: 'activate' } })
+    expect(onFinish).not.toHaveBeenCalled()
+    await strip(false)
+    mocks.actions['Finish dictation']!({ nativeEvent: { actionName: 'activate' } })
+    expect(onFinish).toHaveBeenCalledOnce()
   })
 
   it('rolls in from below and back out the same way', () => {
@@ -333,6 +391,7 @@ describe('DictationCancelButton', () => {
       phase: 'recording', seconds: 1, source, colors,
       leading: createElement(DictationCancelButton, { onPress: vi.fn(), color: '#111' }),
       trailing: createElement('button', { 'aria-label': 'Finish dictation' }),
+      finish: { label: 'Finish dictation', disabled: false, onFinish: () => {} },
     }))
     const strip = container.firstElementChild!
     expect(styleOf(strip)).toMatchObject({ flexDirection: 'row', alignItems: 'center' })

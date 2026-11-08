@@ -74,7 +74,7 @@ export const FileRow = memo(function FileRow({ node, actions, selecting, selecte
         accessibilityLabel={label}
         accessibilityRole="button"
         accessibilityState={{ selected: selecting ? selected : undefined }}
-        accessibilityHint={selecting ? 'Double tap to select.' : 'Double tap to open. Touch and hold for more actions.'}
+        accessibilityHint={selecting ? 'Selects it' : 'Opens it'}
         actions={actions}
         preview={{ title: node.name, subtitle, systemImage: icon.symbol, tint: icon.tint }}
         onAction={(action) => onAction(node, action)}

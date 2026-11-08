@@ -19,6 +19,12 @@ public final class PulpoFileClipboardModule: Module {
 
     OnCreate {
       PulpoSwiftUIModifiers.register()
+      DispatchQueue.main.async { AccessibilityFrameRefresh.observeKeyboard() }
+    }
+
+    /// After a transform-driven move settles (the drawer), so hosted SwiftUI controls report where they are.
+    Function("refreshAccessibilityFrames") {
+      DispatchQueue.main.async { AccessibilityFrameRefresh.refresh() }
     }
 
     AsyncFunction("copyFile") { (uri: URL) in

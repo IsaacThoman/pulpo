@@ -89,6 +89,48 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
     return true
   }
 
+  /// The long-press menu's actions, for VoiceOver's actions rotor.
+  public override var accessibilityCustomActions: [UIAccessibilityCustomAction]? {
+    get {
+      menuEntries().flatMap { $0 }.map { entry in
+        UIAccessibilityCustomAction(name: entry.title) { [weak self] _ in
+          self?.onAction(["action": entry.action])
+          return true
+        }
+      }
+    }
+    set {}
+  }
+
+  private struct MenuEntry {
+    let title: String
+    let systemImage: String
+    let action: String
+    var imageColor: UIColor? = nil
+    var attributes: UIMenuElement.Attributes = []
+  }
+
+  /// The primary row (share, move, delete) and the standard actions below it.
+  private func menuEntries() -> [[MenuEntry]] {
+    var standard = [
+      MenuEntry(title: pinned ? "Unpin chat" : "Pin chat", systemImage: pinned ? "pin.slash" : "pin", action: "pin"),
+      MenuEntry(title: "Rename chat", systemImage: "pencil", action: "rename"),
+    ]
+    if let expiration = expirationMenuEntry() { standard.append(expiration) }
+    standard.append(MenuEntry(title: "Duplicate chat", systemImage: "plus.square.on.square", action: "duplicate"))
+    if archiveAvailable {
+      standard.append(MenuEntry(title: "Move to archive", systemImage: "archivebox", action: "archive"))
+    }
+    return [
+      [
+        MenuEntry(title: "Share", systemImage: "square.and.arrow.up", action: "share"),
+        MenuEntry(title: "Move", systemImage: "folder", action: "move"),
+        MenuEntry(title: removeChatLabel, systemImage: "trash", action: "delete", attributes: .destructive),
+      ],
+      standard,
+    ]
+  }
+
   public func contextMenuInteraction(
     _ interaction: UIContextMenuInteraction,
     configurationForMenuAtLocation location: CGPoint
@@ -107,51 +149,19 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
       return controller
     }) { [weak self] _ in
       guard let self else { return nil }
+      let groups = menuEntries()
 
       let primaryActions = UIMenu(
         title: "",
         options: .displayInline,
         preferredElementSize: .medium,
-        children: [
-          menuAction(title: "Share", systemImage: "square.and.arrow.up", action: "share"),
-          menuAction(title: "Move", systemImage: "folder", action: "move"),
-          menuAction(
-            title: removeChatLabel,
-            systemImage: "trash",
-            action: "delete",
-            attributes: .destructive
-          )
-        ]
+        children: groups[0].map { self.menuAction($0) }
       )
-
-      var standardActionChildren: [UIMenuElement] = [
-        menuAction(
-          title: pinned ? "Unpin chat" : "Pin chat",
-          systemImage: pinned ? "pin.slash" : "pin",
-          action: "pin"
-        ),
-        menuAction(title: "Rename chat", systemImage: "pencil", action: "rename"),
-      ]
-      if let expirationMenuAction = expirationMenuAction() {
-        standardActionChildren.append(expirationMenuAction)
-      }
-      standardActionChildren.append(
-        menuAction(
-          title: "Duplicate chat",
-          systemImage: "plus.square.on.square",
-          action: "duplicate"
-        )
-      )
-      if archiveAvailable {
-        standardActionChildren.append(
-          menuAction(title: "Move to archive", systemImage: "archivebox", action: "archive")
-        )
-      }
 
       let standardActions = UIMenu(
         title: "",
         options: .displayInline,
-        children: standardActionChildren
+        children: groups[1].map { self.menuAction($0) }
       )
 
       return UIMenu(children: [primaryActions, standardActions])
@@ -190,28 +200,22 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
     else { DispatchQueue.main.async(execute: finish) }
   }
 
-  private func menuAction(
-    title: String,
-    systemImage: String,
-    action: String,
-    imageColor: UIColor? = nil,
-    attributes: UIMenuElement.Attributes = []
-  ) -> UIAction {
-    let image = imageColor.map {
-      UIImage(systemName: systemImage)?.withTintColor($0, renderingMode: .alwaysOriginal)
-    } ?? UIImage(systemName: systemImage)
+  private func menuAction(_ entry: MenuEntry) -> UIAction {
+    let image = entry.imageColor.map {
+      UIImage(systemName: entry.systemImage)?.withTintColor($0, renderingMode: .alwaysOriginal)
+    } ?? UIImage(systemName: entry.systemImage)
     return UIAction(
-      title: title,
+      title: entry.title,
       image: image,
-      attributes: attributes
+      attributes: entry.attributes
     ) { [weak self] _ in
-      self?.pendingAction = action
+      self?.pendingAction = entry.action
     }
   }
 
-  private func expirationMenuAction() -> UIAction? {
+  private func expirationMenuEntry() -> MenuEntry? {
     if expirationAction == "disable" {
-      return menuAction(
+      return MenuEntry(
         title: "Disable expiry in \(formatExpiryRemaining())",
         systemImage: "hourglass",
         action: "disable-expiration",
@@ -219,7 +223,7 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
       )
     }
     if expirationAction == "enable", !expirationPeriodLabel.isEmpty {
-      return menuAction(
+      return MenuEntry(
         title: "Expire in \(expirationPeriodLabel)",
         systemImage: "hourglass",
         action: "enable-expiration"

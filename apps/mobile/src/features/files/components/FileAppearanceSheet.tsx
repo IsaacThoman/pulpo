@@ -125,7 +125,7 @@ export function FileAppearanceSheet({ nodes, onChange, onClose }: Props) {
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <SafeAreaView edges={['bottom']} style={[styles.flex, { backgroundColor: theme.isDark ? theme.elevated : theme.background }]}>
+      <SafeAreaView onAccessibilityEscape={onClose} edges={['bottom']} style={[styles.flex, { backgroundColor: theme.isDark ? theme.elevated : theme.background }]}>
         <View style={[styles.header, { borderBottomColor: theme.separator }]}>
           <View style={styles.headerSide} />
           <Text accessibilityRole="header" numberOfLines={1} style={[styles.headerTitle, { color: theme.text }]}>{title}</Text>

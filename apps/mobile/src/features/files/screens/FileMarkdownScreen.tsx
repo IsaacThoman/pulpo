@@ -37,7 +37,7 @@ function ConversionSheet({ preview, converting, onConfirm, onCancel }: {
   }, [preview])
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onCancel}>
-      <SafeAreaView edges={['bottom']} style={[styles.flex, { backgroundColor: theme.isDark ? theme.elevated : theme.background }]}>
+      <SafeAreaView onAccessibilityEscape={onCancel} edges={['bottom']} style={[styles.flex, { backgroundColor: theme.isDark ? theme.elevated : theme.background }]}>
         <View style={[styles.sheetHeader, { borderBottomColor: theme.separator }]}>
           <Pressable accessibilityRole="button" onPress={onCancel} style={styles.sheetSide}><Text style={[styles.sheetButton, { color: theme.blue }]}>Cancel</Text></Pressable>
           <Text accessibilityRole="header" style={[styles.sheetTitle, { color: theme.text }]}>Make Editable</Text>

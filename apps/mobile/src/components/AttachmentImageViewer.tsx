@@ -132,6 +132,7 @@ function clamp(value: number, minimum: number, maximum: number): number {
 }
 
 function ZoomableImage({
+  chromeVisible,
   height,
   item,
   onChromeToggle,
@@ -142,6 +143,7 @@ function ZoomableImage({
   resolveUri,
   width,
 }: {
+  chromeVisible: boolean
   height: number
   item: AttachmentImagePreviewItem
   onChromeToggle: () => void
@@ -275,7 +277,15 @@ function ZoomableImage({
 
   return (
     <GestureDetector gesture={gestures}>
-      <View accessibilityLabel={`Fullscreen preview of ${item.name}`} style={{ width, height }}>
+      <View
+        accessible
+        accessibilityHint={chromeVisible ? 'Hides the preview controls' : 'Shows the preview controls'}
+        accessibilityLabel={`Fullscreen preview of ${item.name}`}
+        accessibilityRole="image"
+        // A screen reader's activation is the single tap that shows or hides the controls.
+        onAccessibilityTap={onChromeToggle}
+        style={{ width, height }}
+      >
         {uri ? (
           <Reanimated.View style={[styles.imageCanvas, imageStyle]}>
             <Image
@@ -458,6 +468,7 @@ export function AttachmentImageViewer({
   }, [current?.id, nativeFromFrame, nativeToFrame, onClose, origin?.itemId, origin?.uri, presentationProgress, reduceMotion])
   const renderItem = useCallback(({ item }: { item: AttachmentImagePreviewItem }) => (
     <ZoomableImage
+      chromeVisible={chromeVisible}
       height={height}
       item={item}
       onChromeToggle={() => setChromeVisible((value) => !value)}
@@ -468,7 +479,7 @@ export function AttachmentImageViewer({
       resolveUri={resolveUri}
       width={width}
     />
-  ), [height, reduceMotion, requestClose, resolveUri, width])
+  ), [chromeVisible, height, reduceMotion, requestClose, resolveUri, width])
   const chromeStyle = useAnimatedStyle(() => ({
     opacity: chromeProgress.value * interpolate(presentationProgress.value, [0, 0.72, 1], [0, 0, 1]),
     transform: [{ translateY: interpolate(chromeProgress.value, [0, 1], [-8, 0]) }],
@@ -495,7 +506,7 @@ export function AttachmentImageViewer({
       transparent
       visible={visible}
     >
-      <View accessibilityViewIsModal style={styles.root}>
+      <View accessibilityViewIsModal onAccessibilityEscape={requestClose} style={styles.root}>
         <StatusBar hidden style="light" />
         <Reanimated.View pointerEvents="none" style={[styles.backdrop, backdropStyle]} />
         <Reanimated.View pointerEvents={presentationReady ? 'auto' : 'none'} style={[styles.gallery, galleryStyle]}>
@@ -520,6 +531,9 @@ export function AttachmentImageViewer({
           />
         </Reanimated.View>
         <Reanimated.View
+          // Faded-out controls cannot be used, so screen readers skip them too.
+          accessibilityElementsHidden={!chromeVisible}
+          importantForAccessibility={chromeVisible ? 'auto' : 'no-hide-descendants'}
           pointerEvents={presentationReady && chromeVisible ? 'box-none' : 'none'}
           style={[styles.chrome, { paddingTop: chromeTop }, chromeStyle]}
         >

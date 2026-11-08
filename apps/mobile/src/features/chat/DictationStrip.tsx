@@ -1,5 +1,5 @@
-import { memo, useCallback, useEffect, useState, type ReactNode } from 'react'
-import { Pressable, StyleSheet, Text, View, type ColorValue, type LayoutChangeEvent } from 'react-native'
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { AccessibilityInfo, findNodeHandle, Pressable, StyleSheet, Text, View, type ColorValue, type LayoutChangeEvent } from 'react-native'
 import Reanimated, {
   Easing,
   ReduceMotion,
@@ -20,6 +20,7 @@ import {
   formatDictationElapsed,
 } from '@pulpo/client-core'
 import { SymbolView } from '../../platform/SymbolView'
+import { useAccessibilityAnnouncement } from '../../platform/accessibilityAnnouncement'
 import type { DictationLevelSource, DictationState } from './dictation'
 import { DICTATION_WAVEFORM_HEIGHT, dictationStatusLabel, dictationStripEntering, dictationStripExiting, useStalled } from './dictationMotion'
 
@@ -106,11 +107,12 @@ export function DictationStatus({ phase, seconds, source, colors }: {
   const waveformStyle = useAnimatedStyle(() => ({ opacity: visibility.value }))
   const labelStyle = useAnimatedStyle(() => ({ opacity: 1 - visibility.value }))
   const label = dictationStatusLabel(phase, seconds)
+  // Speak each phase once; the recording timer would otherwise talk every second.
+  useAccessibilityAnnouncement(recording ? 'Recording' : label)
   return (
     <View
       accessible
       accessibilityLabel={label}
-      accessibilityLiveRegion={recording ? 'none' : 'polite'}
       style={styles.status}
     >
       <Reanimated.View style={[styles.statusLayer, styles.recordingRow, waveformStyle]}>
@@ -151,19 +153,44 @@ export function DictationCancelButton({ onPress, disabled = false, color }: { on
 }
 
 /** Replaces the composer toolbar while dictating: cancel, live status, and finish. */
-export function DictationStrip({ leading, trailing, ...status }: {
+export function DictationStrip({ leading, trailing, finish: finishAction, ...status }: {
   phase: DictationState['phase']
   seconds: number
   source: DictationLevelSource
   colors: DictationStripColors
   leading: ReactNode
   trailing: ReactNode
+  /** What `trailing` does, so screen readers get it as one element they can focus and activate. */
+  finish: { label: string; disabled: boolean; onFinish: () => void }
 }) {
+  const finish = useRef<View>(null)
+  const recording = status.phase === 'recording'
+  // The toolbar the screen reader was on is gone; land on Finish as soon as it can be used.
+  useEffect(() => {
+    if (!recording) return
+    const tag = findNodeHandle(finish.current)
+    if (tag) AccessibilityInfo.setAccessibilityFocus(tag)
+  }, [recording])
   return (
     <Reanimated.View entering={dictationStripEntering} exiting={dictationStripExiting} style={styles.strip}>
       {leading}
       <DictationStatus {...status} />
-      {trailing}
+      {/* The visible control can sit inside a native host that focus cannot target, so this wrapper
+          is the accessibility element for Finish and the control inside it is hidden from screen readers. */}
+      <View
+        ref={finish}
+        collapsable={false}
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel={finishAction.label}
+        accessibilityState={{ disabled: finishAction.disabled }}
+        accessibilityActions={[{ name: 'activate' }]}
+        onAccessibilityAction={(event) => {
+          if (event.nativeEvent.actionName === 'activate' && !finishAction.disabled) finishAction.onFinish()
+        }}
+      >
+        {trailing}
+      </View>
     </Reanimated.View>
   )
 }

@@ -51,9 +51,8 @@ export const SidebarNodeRow = memo(function SidebarNodeRow({ node, depth, styles
     node.suggestion ? 'suggested by the agent' : null,
     unavailable ? 'in the trash' : null,
   ].filter(Boolean).join(', ')
-  const hint = folder
-    ? `Double tap to ${folder.expanded ? 'close' : 'open'}. Touch and hold for more actions.`
-    : 'Double tap to open. Touch and hold for more actions.'
+  // Hints say what happens, not which gesture: screen readers announce their own gestures and actions.
+  const hint = folder ? `${folder.expanded ? 'Closes' : 'Opens'} the folder` : 'Opens it'
   const content = (
     <>
       {folder ? (
