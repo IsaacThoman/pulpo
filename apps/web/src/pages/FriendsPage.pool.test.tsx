@@ -10,7 +10,7 @@ import { FriendsPage } from './FriendsPage'
 
 const mocks = vi.hoisted(() => ({ request: vi.fn() }))
 vi.mock('@/lib/api', () => ({ apiRequest: mocks.request, ApiError: class extends Error {}, isNetworkError: () => false }))
-vi.mock('@/stores/auth', () => ({ useAuth: (select: (state: unknown) => unknown) => select({ user: { id: 'me', username: 'me' }, inviteCodesEnabled: false }) }))
+vi.mock('@/stores/auth', () => ({ useAuth: (select: (state: unknown) => unknown) => select({ user: { id: 'me', name: 'Viewer', username: 'me' }, inviteCodesEnabled: false }) }))
 vi.mock('@/lib/runtime-resource', () => ({ useRuntimeImageUrl: () => ({ url: null }) }))
 
 const profile = (id: string): FriendProfile => ({ id, username: id.toLowerCase().replaceAll(' ', '_'), displayName: id === 'me' ? 'Myself' : id, avatarUrl: null, profileColor: null })

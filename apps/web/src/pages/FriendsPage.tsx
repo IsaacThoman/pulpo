@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import type { FriendConnection, FriendProfile, FriendSearchResponse, FriendSearchResult, FriendSuggestion, FriendsList, PoolSummary } from '@pulpo/contracts'
 import { Check, ChevronDown, ChevronRight, Copy, LoaderCircle, MoreHorizontal, Search, UserRoundPlus, UsersRound } from 'lucide-react'
 import { ApiError, apiRequest, isNetworkError } from '@/lib/api'
@@ -17,6 +18,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { MutualFriends, ProfileIdentity } from '@/components/FriendIdentity'
+import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { PoolSection } from '@/components/PoolSection'
 import { InviteCodesCard } from '@/components/InviteCodesCard'
 import { ui, uit } from '@/i18n/ui'
@@ -29,20 +31,39 @@ export function FriendsHandle({ username }: { username: string }) {
     window.setTimeout(() => setCopied(false), 1_500)
   }
   return (
-    <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-      <span>{ui("Your handle is")}</span>
+    <p className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+      <span className="shrink-0">{ui("Your handle is")}</span>
       <button
         type="button"
-        className="inline-flex cursor-pointer items-center gap-1"
+        className="inline-flex min-w-0 cursor-pointer items-center gap-1"
         onClick={() => void copyHandle()}
         aria-label={uit`Copy @${username}`}
         title={copied ? ui("Copied") : ui("Copy handle")}
       >
-        <span>@{username}</span>
-        {copied ? <Check className="size-3.5" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}
+        <span className="truncate">@{username}</span>
+        {copied ? <Check className="size-3.5 shrink-0" aria-hidden /> : <Copy className="size-3.5 shrink-0" aria-hidden />}
       </button>
       <span className="sr-only" aria-live="polite">{copied ? ui("Handle copied") : ''}</span>
     </p>
+  )
+}
+
+/** The viewer's own profile, as friends see it, with the handle they share to be found. */
+export function MyProfileCard({ profile, friendCount }: { profile: FriendProfile; friendCount?: number }) {
+  return (
+    <section className="flex items-center gap-4 rounded-xl border px-4 py-4" aria-label={ui("Your profile")}>
+      <Link to={`/${profile.username}`} className="shrink-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" tabIndex={-1} aria-hidden>
+        <ProfileAvatar name={profile.displayName} avatarUrl={profile.avatarUrl} className="size-14" fallbackClassName="text-base" />
+      </Link>
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-medium">{profile.displayName}</p>
+        <FriendsHandle username={profile.username} />
+        {friendCount !== undefined && <p className="text-xs text-muted-foreground">{friendCount === 1 ? ui("1 friend") : uit`${friendCount} friends`}</p>}
+      </div>
+      <Button asChild size="sm" variant="outline" className="shrink-0">
+        <Link to={`/${profile.username}`}>{ui("View profile")}</Link>
+      </Button>
+    </section>
   )
 }
 
@@ -288,10 +309,11 @@ export function FriendsPage() {
   const poolFull = Boolean(pool && pool.members.length + pool.pendingInvitations.length >= 6)
   return (
     <div className="mx-auto w-full max-w-3xl space-y-5 px-5 py-6">
-      <div>
-        <h2 className="text-lg font-medium">{ui("Find your friends")}</h2>
-        {user && <FriendsHandle username={user.username} />}
-      </div>
+      {user && <MyProfileCard
+        profile={{ id: user.id, displayName: user.name, username: user.username, avatarUrl: user.avatarUrl, profileColor: user.profileColor }}
+        friendCount={data?.friends.length}
+      />}
+      <h2 className="text-lg font-medium">{ui("Find your friends")}</h2>
       <InviteCodesCard />
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
