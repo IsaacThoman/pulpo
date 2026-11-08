@@ -286,6 +286,18 @@ export class OoxmlPackage {
     types.documentElement.appendChild(override)
   }
 
+  /** Drops a part's Override, as for a part taken out of the package. */
+  removeContentType(path: string): void {
+    const types = this.xml(CONTENT_TYPES_PATH)
+    if (!types?.documentElement) return
+    const partName = '/' + normalizePartPath(path)
+    const overrides = types.getElementsByTagNameNS(CONTENT_TYPES_NS, 'Override')
+    for (let index = overrides.length - 1; index >= 0; index--) {
+      const override = overrides.item(index)!
+      if (override.getAttribute('PartName')?.toLowerCase() === partName.toLowerCase()) override.parentNode?.removeChild(override)
+    }
+  }
+
   /** Makes sure files with `extension` have a Default content type. */
   ensureDefaultContentType(extension: string, contentType: string): void {
     const types = this.xml(CONTENT_TYPES_PATH)

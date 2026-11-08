@@ -432,7 +432,8 @@ export function HeaderFooterBar({ editor, storyId, editable, pages }: {
   pages: HTMLElement | null
 }) {
   // Read afresh on each render (the view re-renders as the editor updates, and this bar after its
-  // own change); a collaborator's change to the setting re-renders it too.
+  // own change); a collaborator's change to the setting re-renders it too. While a header or
+  // footer is open, the editor describes the section it was opened on, not the body cursor's.
   useEditorValue(editor, () => editor.headerFooter().differentFirstPage, 120)
   const [, rerender] = useReducer((count: number) => count + 1, 0)
   const info = editor.headerFooter()
@@ -476,7 +477,7 @@ export function HeaderFooterBar({ editor, storyId, editable, pages }: {
         <Hash className="size-3.5" />
         <span className={label}>{pageNumber}</span>
       </button>
-      <button type="button" className={button} aria-label={remove} title={remove} disabled={!editable} onMouseDown={keep} onClick={() => editor.removeHeaderFooter(kind, type)}>
+      <button type="button" className={button} aria-label={remove} title={remove} disabled={!editable} onMouseDown={keep} onClick={() => editor.removeHeaderFooterStory(storyId)}>
         <Trash2 className="size-3.5" />
         <span className={label}>{remove}</span>
       </button>

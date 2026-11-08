@@ -1025,6 +1025,44 @@ function removeMacros(pkg: OoxmlPackage, main: string): void {
   void relsPath
 }
 
+/**
+ * Headers and footers no section shows any more, as Word drops them when it saves: one the editor
+ * removed (its relationship is gone from the model), one it created whose reference a
+ * collaborator's section change replaced (last writer wins), or, once the main part changed, any
+ * other (a deleted section break took its last reference). Each loses its relationship, and its
+ * part once nothing else points there, so text someone removed does not ship in the file. A file
+ * saved without edits keeps the parts it came with, byte for byte, and a relationship the main
+ * part still references is always kept.
+ */
+function removeUnusedHeaderFooters(pkg: OoxmlPackage, model: DocxModel, main: string, packaged: ReadonlySet<string>, mainChanged: boolean): void {
+  const unused = pkg.relationships(main).filter((rel) => rel.targetMode !== 'External' && (rel.type === REL.header || rel.type === REL.footer) && (mainChanged || !model.maps.rels.has(rel.id) || !packaged.has(rel.id)))
+  if (!unused.length) return
+  // Every attribute value of the main part as written: its relationship references, and more.
+  const values = new Set<string>()
+  for (const match of (pkg.text(main) ?? '').matchAll(/=\s*(?:"([^"]*)"|'([^']*)')/g)) values.add(match[1] ?? match[2] ?? '')
+  for (const rel of unused) {
+    if (values.has(rel.id)) continue
+    pkg.removeRelationship(main, rel.id)
+    const part = resolveTarget(main, rel.target)
+    if (pkg.relationships(main).some((other) => other.targetMode !== 'External' && resolveTarget(main, other.target) === part)) continue
+    pkg.delete(relationshipsPathFor(part))
+    pkg.delete(part)
+    pkg.removeContentType(part)
+  }
+}
+
+/**
+ * Header and footer references to relationships the main part does not have, which Word refuses
+ * as unreadable content. A collaborator's section properties can win over another's removal of
+ * a header (last writer wins) and keep its reference after its relationship went.
+ */
+function withoutDanglingReferences(xml: string, relIds: ReadonlySet<string>): string {
+  return xml.replace(/<w:(?:header|footer)Reference\b[^>]*?\/>/g, (element) => {
+    const id = /\sr:id\s*=\s*"([^"]*)"/.exec(element)?.[1]
+    return id === undefined || relIds.has(id) ? element : ''
+  })
+}
+
 /** Builds the package the model describes, as file bytes. */
 export interface ExportOptions {
   /** Writes every modeled part from the model even when it is unchanged (for tests). */
@@ -1041,6 +1079,8 @@ export async function exportDocx(model: DocxModel, assets: LiveAssetStore, exten
   if (!parts.has(CONTENT_TYPES_PATH)) throw new LiveFormatError('corrupt', 'This document has lost its package')
   const pkg = new OoxmlPackage(parts)
   const state = new DocxExport(pkg, model)
+  const main = mainPart(model)
+  const packaged = new Set(pkg.relationships(main).map((rel) => rel.id))
   await hydrateCopiedParts(pkg, model, assets)
   generateParts(state)
   for (const [hash, path] of state.newMedia()) {
@@ -1051,12 +1091,16 @@ export async function exportDocx(model: DocxModel, assets: LiveAssetStore, exten
     pkg.ensureDefaultContentType(imageExtension, mimeType)
     renameMediaTarget(pkg, path, finalPath)
   }
+  const relIds = new Set(pkg.relationships(main).map((rel) => rel.id))
+  let mainChanged = false
   for (const [path, xml] of state.generated) {
     const fingerprint = model.maps.docx.get(`fingerprint:${path}`)
-    if (!options.regenerate && fingerprint && parts.has(path) && fingerprint === (await sha256Hex(xml))) continue
-    pkg.set(path, strToU8(xml))
+    const unchanged = Boolean(fingerprint && parts.has(path) && fingerprint === (await sha256Hex(xml)))
+    if (path === main) mainChanged = !unchanged
+    if (!options.regenerate && unchanged) continue
+    pkg.set(path, strToU8(path === main ? withoutDanglingReferences(xml, relIds) : xml))
   }
-  const main = mainPart(model)
+  removeUnusedHeaderFooters(pkg, model, main, packaged, mainChanged)
   const contentType = mainContentType(extension)
   if (pkg.contentType(main) !== contentType) pkg.setContentType(main, contentType)
   if (extension === 'docx' || extension === 'dotx') removeMacros(pkg, main)

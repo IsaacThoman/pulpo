@@ -2,7 +2,7 @@ import type { Node as ProseMirrorNode, Schema } from '@tiptap/pm/model'
 import type { EditorState } from '@tiptap/pm/state'
 import type * as Y from 'yjs'
 import { relativeTarget, resolveTarget, type Relationship } from '../../ooxml/package.js'
-import { packJml } from '../jsonml.js'
+import { packJml, type JmlElement } from '../jsonml.js'
 import { parseJson, readDocxMap, type StoryMeta } from '../model.js'
 import { REL } from '../names.js'
 import {
@@ -51,7 +51,7 @@ export function headerFooterOf(state: EditorState, context: DocxViewContext, kin
   return undefined
 }
 
-/** Headers, footers, and their options for the section at the cursor. */
+/** Headers, footers, and their options for a section (the cursor's, or the open header's). */
 export interface HeaderFooterInfo {
   section: number
   sections: number
@@ -61,8 +61,7 @@ export interface HeaderFooterInfo {
   differentOddEven: boolean
 }
 
-export function headerFooterInfo(state: EditorState, context: DocxViewContext): HeaderFooterInfo {
-  const section = sectionIndexAt(state.doc, state.selection.from)
+export function headerFooterInfo(state: EditorState, context: DocxViewContext, section = sectionIndexAt(state.doc, state.selection.from)): HeaderFooterInfo {
   const holders = sectionHolders(state.doc, context.finalSectPr)
   const info: HeaderFooterInfo = { section, sections: holders.length, header: {}, footer: {}, differentFirstPage: hasTitlePage(holders[section]?.sectPr), differentOddEven: context.evenAndOddHeaders }
   for (const kind of ['header', 'footer'] as const) {
@@ -121,15 +120,14 @@ export function headerFooterParagraph(schema: Schema, context: DocxViewContext, 
 }
 
 /**
- * A new, empty header or footer for the section at the cursor. It is referenced from the first
- * section, so every section inherits it unless it has its own (Word's "Link to Previous"); a
- * first-page one also turns on the cursor's section's different first page, and an even-page
- * one the document's different odd and even pages. Editing only: section properties have no
- * tracked form.
+ * A new, empty header or footer for a section (by default the cursor's). It is referenced from
+ * the first section, so every section inherits it unless it has its own (Word's "Link to
+ * Previous"); a first-page one also turns on that section's different first page, and an
+ * even-page one the document's different odd and even pages. Editing only: section properties
+ * have no tracked form.
  */
-export function createHeaderFooter(state: EditorState, context: DocxViewContext, kind: HeaderFooterKind, type: HeaderFooterType): (StoryResult & { storyId: string }) | null {
+export function createHeaderFooter(state: EditorState, context: DocxViewContext, kind: HeaderFooterKind, type: HeaderFooterType, section = sectionIndexAt(state.doc, state.selection.from)): (StoryResult & { storyId: string }) | null {
   const doc = context.doc
-  const section = sectionIndexAt(state.doc, state.selection.from)
   const part = freshPart(doc, kind)
   const relId = freshRelationship(doc)
   const storyId = `${kind}:${part}`
@@ -146,13 +144,36 @@ export function createHeaderFooter(state: EditorState, context: DocxViewContext,
   return { tr: sections.tr, maps, stories: [{ id: storyId, meta: { kind, part }, doc: story }], storyId }
 }
 
+/** The relationships of the main part that point at a header or footer story. */
+function relationshipsOf(doc: Y.Doc, storyId: string): string[] {
+  return [...doc.getMap('rels').keys()].filter((id) => storyByRelationship(doc, id) === storyId)
+}
+
+/**
+ * Whether a header or footer is still in the document: its story exists and some section
+ * references it (for any page type). A collaborator removing it, or writing the same section's
+ * properties while it was being created (last writer wins), leaves it unreferenced.
+ */
+export function headerFooterReferenced(state: EditorState, context: DocxViewContext, storyId: string): boolean {
+  if (!context.doc.getMap('stories').has(storyId)) return false
+  const relIds = relationshipsOf(context.doc, storyId)
+  if (!relIds.length) return false
+  const kind = storyId.startsWith('header:') ? 'header' : 'footer'
+  const refers = (sectPr: JmlElement | undefined) => (['default', 'first', 'even'] as const).some((type) => {
+    const relId = sectionReference(sectPr, kind, type)
+    return relId !== undefined && relIds.includes(relId)
+  })
+  // The final section first: it holds most documents' references, without a walk of the body.
+  return refers(context.finalSectPr) || sectionHolders(state.doc, context.finalSectPr).some((holder) => refers(holder.sectPr))
+}
+
 /**
  * Takes a header or footer away from the sections that show it (every reference to its
  * relationship), with its story and relationship.
  */
 export function removeHeaderFooter(state: EditorState, context: DocxViewContext, storyId: string): StoryResult | null {
   const doc = context.doc
-  const relIds = [...doc.getMap('rels').keys()].filter((id) => storyByRelationship(doc, id) === storyId)
+  const relIds = relationshipsOf(doc, storyId)
   if (!relIds.length) return null
   const kind = storyId.startsWith('header:') ? 'header' : 'footer'
   const sections = editSections(state, context, 'all', (sectPr) => {

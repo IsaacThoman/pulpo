@@ -164,10 +164,19 @@ export function DocxEditorView({ className, onEditor, toolbarSlot, fileMenu, onS
           : ui("Only PNG, JPEG, GIF, and BMP pictures can be inserted."),
       })
     })
+    // The editor closed the open header or footer: a collaborator's change took it out of the document.
+    const stopRemoved = editor.on('headerFooterRemoved', (storyId) => {
+      useFileToasts.getState().show({
+        message: storyId.startsWith('footer:')
+          ? ui("A collaborator's change removed the footer you were editing.")
+          : ui("A collaborator's change removed the header you were editing."),
+      })
+    })
     return () => {
       stopRequest()
       stopComment()
       stopRefused()
+      stopRemoved()
     }
   }, [editor, requestLink, requestComment, openImagePicker])
 

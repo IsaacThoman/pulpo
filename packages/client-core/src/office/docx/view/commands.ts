@@ -461,12 +461,18 @@ export const insertHorizontalLine: Command = (state) => {
   if (depth === 0) return null
   const paragraph = $from.node(depth)
   const schema = state.schema
-  const line = (lead: unknown) => schema.node('paragraph', { pBdr: paragraphBorder('bottom'), lead })
+  const line = (lead: unknown, xmlAttrs: unknown = null) => schema.node('paragraph', { pBdr: paragraphBorder('bottom'), lead, xmlAttrs })
   const tr = state.tr
   let start: number
   if (paragraph.content.size === 0) {
     start = $from.before(depth)
-    tr.replaceWith(start, $from.after(depth), [line(paragraph.attrs.lead), schema.node('paragraph', { ...paragraph.attrs, lead: null })])
+    // Split like Enter and make the upper half the line: the lower half keeps the paragraph mark,
+    // its section, and its list. Replacing the paragraph instead would lose the border in
+    // Suggesting mode, which tracks that as typing into the empty paragraph.
+    splitParagraph(tr, $from.pos)
+    const upper = tr.docChanged ? tr.doc.nodeAt(start) : null
+    if (upper) tr.setNodeMarkup(start, undefined, line(upper.attrs.lead, upper.attrs.xmlAttrs).attrs)
+    else tr.replaceWith(start, $from.after(depth), [line(paragraph.attrs.lead), schema.node('paragraph', { ...paragraph.attrs, lead: null })])
   } else {
     start = $from.after(depth)
     const [kept, moved] = splitParagraphAttrs(paragraph.attrs)
@@ -1104,7 +1110,9 @@ function linkMark(schema: Schema, href: string, base?: Mark): Mark {
   delete attrs['w:anchor']
   delete attrs['w:docLocation']
   if (href.startsWith('#')) {
-    attrs['w:anchor'] = decodeURIComponent(href.slice(1))
+    // The bookmark name as written, as the link dialog shows it: decoding would throw on a
+    // stray '%' and turn "a%20b" into another name when an existing link is applied again.
+    attrs['w:anchor'] = href.slice(1)
     delete attrs['r:id']
   }
   return schema.marks.link!.create({ v: packJml([shell[0], attrs, ...(shell.slice(2) as JmlElement[])]), href: href.startsWith('#') ? null : href })
