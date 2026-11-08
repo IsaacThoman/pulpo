@@ -53,6 +53,18 @@ try {
       return { x: root.left + rect.x + rect.width / 2, y: root.top + rect.y + rect.height / 2, width: rect.width, height: rect.height, left: root.left + rect.x, top: root.top + rect.y }
     }, [row, col, replica])
 
+  /** Center of a column (or row) header in page coordinates, and the line's leading edge. */
+  const header = (page, kind, index, replica = 0) =>
+    page.evaluate(async ([k, i, r]) => {
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      const sheetView = window.__sheets.views[r]
+      const root = sheetView.root.getBoundingClientRect()
+      const rect = sheetView.cellRect(k === 'col' ? 0 : i, k === 'col' ? i : 0)
+      return k === 'col'
+        ? { x: root.left + rect.x + rect.width / 2, y: root.top + sheetView.headerHeight / 2, edge: root.left + rect.x }
+        : { x: root.left + sheetView.headerWidth / 2, y: root.top + rect.y + rect.height / 2, edge: root.top + rect.y }
+    }, [kind, index, replica])
+
   const { page, errors } = await open('?split=1')
 
   await step('typing, Enter and Tab flows', async () => {
@@ -61,14 +73,14 @@ try {
     await page.keyboard.press('Tab')
     await page.keyboard.type('12.5')
     await page.keyboard.press('Enter')
-    // Enter after Tab returns to the column the row started in, like Excel… we move down one.
+    // Enter after Tab returns to the column the row started in, like Excel and Google.
     assert.equal(await inputText(page, 19, 0), 'alpha')
     assert.equal(await inputText(page, 19, 1), '12.5')
     const state = await page.evaluate(() => window.__sheets.views[0].getState().selectionLabel)
-    assert.equal(state, 'B21')
+    assert.equal(state, 'A21')
     await page.keyboard.type('x')
     await page.keyboard.press('Escape')
-    assert.equal(await inputText(page, 20, 1), '', 'Escape cancels')
+    assert.equal(await inputText(page, 20, 0), '', 'Escape cancels')
   })
 
   await step('Select All Ctrl+Enter refuses expansion and stays responsive', async () => {
@@ -519,6 +531,168 @@ try {
     assert.deepEqual(reviewErrors, [])
     await review.close()
   })
+
+  // Office parity: a fresh shared session, so earlier steps can't move these cells.
+  const { page: parity, errors: parityErrors, context: parityContext } = await open('?split=1')
+  const label = (replica = 0) => parity.evaluate((r) => window.__sheets.views[r].getState().selectionLabel, replica)
+  await parity.evaluate(() => {
+    const view = window.__sheets.views[0]
+    const sheet = view.workbook.addSheet('Parity')
+    view.setActiveSheet(sheet.id)
+    view.goTo('A1')
+    view.clipboard.paste({ text: 'keep\t\t\t\tdrop' })
+  })
+
+  await step('header right-click selects the column the menu acts on', async () => {
+    await go(parity, 'A1')
+    const e = await header(parity, 'col', 4)
+    await parity.mouse.click(e.x, e.y, { button: 'right' })
+    assert.equal(await label(), 'E:E')
+    await parity.getByRole('menuitem', { name: 'Delete column', exact: true }).click()
+    assert.equal(await inputText(parity, 0, 0), 'keep')
+    assert.equal(await inputText(parity, 0, 4), '')
+    // A cell inside selected whole columns offers column commands only.
+    const b = await header(parity, 'col', 1)
+    await parity.mouse.click(b.x, b.y)
+    const inside = await cellPoint(parity, 4, 1)
+    await parity.mouse.click(inside.x, inside.y, { button: 'right' })
+    await parity.getByRole('menuitem', { name: 'Delete column', exact: true }).waitFor()
+    assert.equal(await parity.getByRole('menuitem', { name: 'Delete row' }).count(), 0)
+    assert.equal(await label(), 'B:B')
+    await parity.keyboard.press('Escape')
+  })
+
+  await step('hidden column markers unhide with one click', async () => {
+    const c = await header(parity, 'col', 2)
+    await parity.mouse.click(c.x, c.y, { button: 'right' })
+    await parity.getByRole('menuitem', { name: 'Hide column', exact: true }).click()
+    assert.equal(await parity.evaluate(() => window.__sheets.views[0].cols.isHidden(2)), true)
+    assert.deepEqual(await parity.evaluate(() => window.__sheets.views[0].scene().hiddenMarks.cols), [3])
+    const d = await header(parity, 'col', 3)
+    await parity.mouse.move(d.edge + 8, d.y)
+    assert.equal(await parity.evaluate(() => window.__sheets.views[0].scroller.style.cursor), 'pointer')
+    await parity.mouse.click(d.edge + 8, d.y)
+    assert.equal(await parity.evaluate(() => window.__sheets.views[0].cols.isHidden(2)), false)
+  })
+
+  await step('AutoSum from the keyboard', async () => {
+    await parity.evaluate(() => {
+      const view = window.__sheets.views[0]
+      view.goTo('G2')
+      view.clipboard.paste({ text: '1\n2\n3' })
+    })
+    await go(parity, 'G5')
+    await parity.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+t' : 'Alt+Equal')
+    assert.equal(await parity.evaluate(() => window.__sheets.views[0].editing?.text), '=SUM(G2:G4)')
+    await parity.keyboard.press('Enter')
+    assert.equal(await inputText(parity, 4, 6), '=SUM(G2:G4)')
+    assert.equal(await shown(parity, 4, 6), '6')
+    assert.equal(await label(), 'G6')
+  })
+
+  await step('Ctrl+Shift+4 and Ctrl+Shift+5 format currency and percent', async () => {
+    await go(parity, 'H2')
+    await parity.keyboard.type('1234.5')
+    await parity.keyboard.press('Enter')
+    await go(parity, 'H2')
+    await parity.keyboard.press('Control+Shift+Digit4')
+    assert.equal(await shown(parity, 1, 7), '$1,234.50')
+    await parity.keyboard.press('Control+Shift+Digit5')
+    assert.equal(await shown(parity, 1, 7), '123450.00%')
+    await parity.keyboard.press(`${mod}+z`)
+    assert.equal(await shown(parity, 1, 7), '$1,234.50')
+  })
+
+  await step('Ctrl+9 hides the selected rows and Ctrl+Shift+9 shows them', async () => {
+    await go(parity, 'A10:A11')
+    await parity.keyboard.press('Control+Digit9')
+    assert.deepEqual(await parity.evaluate(() => [9, 10, 11].map((row) => window.__sheets.views[0].rows.isHidden(row))), [true, true, false])
+    await parity.keyboard.press('Control+Shift+Digit9')
+    assert.deepEqual(await parity.evaluate(() => [9, 10].map((row) => window.__sheets.views[0].rows.isHidden(row))), [false, false])
+  })
+
+  await step('data validation lists open and pick from the keyboard', async () => {
+    await parity.evaluate(() => {
+      const view = window.__sheets.views[0]
+      view.goTo('J2:J4')
+      view.setValidation({ type: 'list', formula1: '"Low,Medium,High"', showErrorMessage: true })
+    })
+    await go(parity, 'J3')
+    await parity.keyboard.press('Alt+ArrowDown')
+    const list = parity.locator('[data-replica="0"] .pulpo-sheet-popup[role="listbox"]')
+    await list.waitFor()
+    await parity.keyboard.press('ArrowDown')
+    assert.equal(await list.locator('[aria-selected="true"]').textContent(), 'Medium')
+    await parity.keyboard.press('Enter')
+    assert.equal(await inputText(parity, 2, 9), 'Medium')
+    assert.equal(await list.count(), 0)
+    await parity.keyboard.type('Huge')
+    await parity.keyboard.press('Enter')
+    await parity.locator('[data-replica="0"]').getByRole('alert').waitFor()
+    await parity.keyboard.press('Escape')
+    assert.equal(await inputText(parity, 2, 9), 'Medium')
+  })
+
+  await step('conditional format rules render for collaborators', async () => {
+    await parity.evaluate(() => {
+      const view = window.__sheets.views[0]
+      view.goTo('G2:G4')
+      view.addConditionalRule({ type: 'cellIs', operator: 'greaterThan', formulas: ['1'], style: 'lightRedFillDarkRedText' })
+    })
+    const fills = () => parity.evaluate(() => [1, 2, 3].map((row) => window.__sheets.views[0].cellRender(row, 6).overlay?.style?.fill?.rgb ?? null))
+    assert.deepEqual(await fills(), [null, 'FFFFC7CE', 'FFFFC7CE'])
+    await parity.waitForFunction(() => {
+      const view = window.__sheets.views[1]
+      const sheet = view.workbook.sheets().find((entry) => entry.name === 'Parity')
+      if (sheet && view.sheetId !== sheet.id) view.setActiveSheet(sheet.id)
+      return view.cellRender(3, 6).overlay?.style?.fill?.rgb === 'FFFFC7CE'
+    })
+    assert.equal(await parity.evaluate(() => window.__sheets.views[0].workbook.metaValue('stylesXml') === window.__sheets.views[1].workbook.metaValue('stylesXml')), true)
+  })
+
+  await step('paint format copies formats to the clicked cell', async () => {
+    await parity.evaluate(() => {
+      const view = window.__sheets.views[0]
+      view.goTo('L2')
+      view.setStyle({ bold: true, fill: { rgb: 'FFFF00' } })
+      view.startFormatPainter()
+    })
+    await go(parity, 'D8')
+    const target = await cellPoint(parity, 7, 3)
+    await parity.mouse.move(target.x, target.y)
+    assert.equal(await parity.evaluate(() => window.__sheets.views[0].scroller.style.cursor), 'copy')
+    await parity.mouse.click(target.x, target.y)
+    const painted = await parity.evaluate(() => {
+      const view = window.__sheets.views[0]
+      return { bold: view.styleAt(7, 3).bold, fill: view.styleAt(7, 3).fill, painter: view.getState().formatPainter ?? null }
+    })
+    assert.deepEqual(painted, { bold: true, fill: { rgb: 'FFFF00' }, painter: null })
+  })
+
+  await step('zoom is personal: collaborators keep theirs and undo skips it', async () => {
+    await go(parity, 'K2')
+    await parity.keyboard.type('last edit')
+    await parity.keyboard.press('Enter')
+    const steps = await parity.evaluate(() => window.__sheets.views[0].undoManager.undoStack.length)
+    await parity.locator('[data-replica="0"]').getByRole('button', { name: 'Zoom' }).click()
+    await parity.getByRole('menuitem', { name: '150%' }).click()
+    const point = await cellPoint(parity, 6, 3)
+    await parity.mouse.move(point.x, point.y)
+    await parity.keyboard.down('Control')
+    await parity.mouse.wheel(0, -120)
+    await parity.keyboard.up('Control')
+    const zooms = await parity.evaluate(() => window.__sheets.views.map((view) => view.zoom))
+    assert.ok(zooms[0] > 1.5, `wheel zoom ${zooms[0]}`)
+    assert.equal(zooms[1], 1)
+    assert.equal(await parity.evaluate(() => window.__sheets.views[0].undoManager.undoStack.length), steps)
+    await parity.evaluate(() => window.__sheets.views[0].focus())
+    await parity.keyboard.press(`${mod}+z`)
+    assert.equal(await inputText(parity, 1, 10), '')
+    assert.ok(await parity.evaluate(() => window.__sheets.views[0].zoom > 1.5), 'undo leaves the zoom alone')
+  })
+
+  assert.deepEqual(parityErrors, [])
+  await parityContext.close()
 
   for (const line of results) console.log(line)
   console.log('spreadsheet editor works in the browser')
