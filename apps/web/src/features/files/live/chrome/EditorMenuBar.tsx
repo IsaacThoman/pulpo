@@ -27,7 +27,7 @@ function MenuItems({ items, close }: { items: () => MenuEntry[]; close: () => vo
 }
 
 /** A menu's rows. Rows without an icon line up with those that have an icon or a check. */
-function MenuEntries({ entries, close }: { entries: readonly MenuEntry[]; close: () => void }) {
+export function MenuEntries({ entries, close }: { entries: readonly MenuEntry[]; close: () => void }) {
   const rows = normalizeEntries(entries)
   const aligned = rows.some((entry) => (entry.type === 'item' && entry.checked !== undefined) || ((entry.type === 'item' || entry.type === 'submenu') && entry.icon))
   return rows.map((entry, index) => {

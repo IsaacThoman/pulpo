@@ -87,7 +87,16 @@ export class SlideList {
     for (const key of change.slides) this.drawn.delete(key)
     if (change.assets) this.drawn.clear()
     if (change.selection || change.presence) this.updateSelection()
+    else if (change.slides.size) this.updateHidden(change.slides)
     this.drawThumbnails()
+  }
+
+  /** Hiding or showing a slide is a change to that slide: its thumbnail dims (or not) at once. */
+  private updateHidden(keys: ReadonlySet<string>): void {
+    for (const item of Array.from(this.element.querySelectorAll<HTMLElement>('.pp-thumb'))) {
+      const key = item.dataset.slide!
+      if (keys.has(key)) item.classList.toggle('pp-thumb-hidden', this.controller.slide(key)?.hidden === true)
+    }
   }
 
   private build(): void {
