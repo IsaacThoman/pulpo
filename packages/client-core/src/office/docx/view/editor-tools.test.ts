@@ -331,6 +331,16 @@ describe('autoformat', () => {
     editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, 1, 6)))
     type(editor.view, '"')
     expect(firstText().startsWith('“ ')).toBe(true)
+    // A quote typed over a selection lands after the suggested deletion, and that one is curled.
+    setBody(editor.view, [p('Hello world')], 1)
+    editor.setMode('suggesting')
+    editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, 1, 6)))
+    type(editor.view, '"')
+    expect(firstText()).toBe('Hello“ world')
+    expect(editor.revisions().map((revision) => [revision.kind, revision.text])).toEqual([['delete', 'Hello'], ['insert', '“']])
+    expect(editor.undo()).toBe(true)
+    expect(firstText()).toBe('Hello" world')
+    expect(editor.view.state.selection.from).toBe(7)
   })
 
   it('links an address before Enter splits the paragraph', () => {

@@ -174,6 +174,12 @@ function revert(view: EditorView, undo: () => boolean, undoable: Undoable): bool
   return true
 }
 
+/** Keeps an autoformat's undo record on the transaction that tracks it as a suggestion. */
+export function carryAutoformat(from: Transaction, to: Transaction): void {
+  const made = from.getMeta(key) as Undoable | undefined
+  if (made) to.setMeta(key, made)
+}
+
 /**
  * Undo right after an autoformat (Ctrl+Z, a toolbar's Undo): `undo` takes the change back, and the
  * cursor goes after the literal text. False when the last change was not an autoformat.
@@ -233,9 +239,12 @@ export function autoformatPlugin(host: AutoformatHost): Plugin {
         if (!options.quotes) return false
         const curly = curlyQuote(text as '"' | "'", before.text.at(-1) ?? '')
         view.dispatch(typed())
+        // The quote is just before the cursor: a suggestion keeps the text it replaces in front of it.
         const current = view.state
-        const tr = current.tr.replaceWith(from, from + 1, current.schema.text(curly, current.doc.nodeAt(from)?.marks))
-        host.apply(view, tr.setMeta(key, { caret: from + 1, list: false }))
+        const at = current.selection.from - 1
+        if (!current.selection.empty || at < 0 || current.doc.textBetween(at, at + 1) !== text) return true
+        const tr = current.tr.replaceWith(at, at + 1, current.schema.text(curly, current.doc.nodeAt(at)?.marks))
+        host.apply(view, tr.setMeta(key, { caret: at + 1, list: false }))
         return true
       },
       handleKeyDown(view, event) {

@@ -125,7 +125,7 @@ import {
   type ToggleProperty,
   type WordCount,
 } from './commands.js'
-import { autoformatPlugin, autoformatSettings, undoAutoformat, type AutoformatOptions, type ListMarker } from './autoformat.js'
+import { autoformatPlugin, autoformatSettings, carryAutoformat, undoAutoformat, type AutoformatOptions, type ListMarker } from './autoformat.js'
 import { createHeaderFooter, headerFooterInfo, headerFooterOf, headerFooterParagraph, removeHeaderFooter, storyByRelationship, type HeaderFooterInfo } from './headers.js'
 import { DocxViewContext } from './context.js'
 import { computeDecorations } from './decorations.js'
@@ -753,6 +753,7 @@ export class DocxEditor {
     const fromSync = tr.getMeta(ySyncPluginKey) !== undefined
     if (this.modeValue === 'suggesting' && tr.docChanged && !fromSync && !tr.getMeta('docx-tracked') && !tr.getMeta('docx-untracked')) {
       transaction = trackTransaction(view.state, tr, this.reviewer()) ?? tr
+      if (transaction !== tr) carryAutoformat(tr, transaction)
     }
     const maps = tr.getMeta('docx-paste-maps') as MapEdit[] | undefined
     if (maps?.length) {
