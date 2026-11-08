@@ -1583,6 +1583,8 @@ export class SheetInteractions {
         this.closePopup()
         return true
     }
+    // A modifier on its own keeps it open (Shift before Tab; Ctrl silences a screen reader).
+    if (['Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'CapsLock'].includes(event.key)) return true
     // Anything else (typing, other keys) closes the list and acts as usual.
     this.closePopup()
     return false

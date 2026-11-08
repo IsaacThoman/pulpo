@@ -793,6 +793,9 @@ describe('data validation', () => {
     expect([...popup.querySelectorAll('[role="option"]')].map((option) => option.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false'])
     key(view, 'ArrowDown')
     key(view, 'ArrowDown')
+    // Modifiers on their own (Ctrl silences screen readers) leave it open.
+    key(view, 'Control', { ctrlKey: true })
+    key(view, 'Shift', { shiftKey: true })
     key(view, 'ArrowUp')
     expect(view.input.getAttribute('aria-activedescendant')).toBe(popup.querySelectorAll('[role="option"]')[1]!.id)
     expect(view.input.getAttribute('aria-controls')).toBe(popup.id)
