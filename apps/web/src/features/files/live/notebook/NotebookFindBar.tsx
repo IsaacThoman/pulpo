@@ -40,22 +40,30 @@ export function NotebookFindBar({ search, request, readOnly, onClose }: {
   const state = useSyncExternalStore(search.subscribe, search.getState)
   const findField = useRef<HTMLInputElement>(null)
   const replaceField = useRef<HTMLInputElement>(null)
-  /** Ctrl+H pressed in the bar: the replace field takes the caret once it shows. */
-  const toReplace = useRef(false)
+  /**
+   * The field a request or Ctrl+H gives the caret to, once it shows; only those move it, so
+   * toggling replace with its button leaves the caret where it was.
+   */
+  const focusNext = useRef<'find' | 'replace' | null>(null)
   const locale = activeLocale()
 
   // Each request (the keys pressed again, from a cell or the cell list) takes the selected text and focuses the bar.
   useEffect(() => {
     if (request.text) setQuery(request.text)
     if (request.mode === 'replace') setShowReplace(true)
+    // Replace starts in the find field until there is something to find, as in VS Code.
+    focusNext.current = request.mode === 'replace' && Boolean(request.text || findField.current?.value) ? 'replace' : 'find'
   }, [request])
   useEffect(() => {
-    // Replace starts in the find field until there is something to find, as in VS Code.
-    const replacing = toReplace.current || (request.mode === 'replace' && Boolean(request.text || findField.current?.value))
-    toReplace.current = false
-    const field = replacing && showReplace && !readOnly ? replaceField.current : findField.current
-    field?.focus()
-    field?.select()
+    const wanted = focusNext.current
+    if (!wanted) return
+    const replacing = wanted === 'replace' && !readOnly
+    const field = replacing ? replaceField.current : findField.current
+    // The replace field shows on the next render.
+    if (!field) return
+    focusNext.current = null
+    field.focus()
+    field.select()
   }, [request, showReplace, readOnly])
   useEffect(() => {
     search.setQuery({ text: query, matchCase, wholeWord, regexp })
@@ -87,7 +95,7 @@ export function NotebookFindBar({ search, request, readOnly, onClose }: {
       if (readOnly) return
       if (replaceField.current) replaceField.current.focus()
       else {
-        toReplace.current = true
+        focusNext.current = 'replace'
         setShowReplace(true)
       }
     }

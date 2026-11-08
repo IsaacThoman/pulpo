@@ -100,6 +100,22 @@ describe('notebook find bar', () => {
     expect(search.getState().matches).toEqual([])
   })
 
+  it('leaves the caret where it was when replace is toggled with its button', async () => {
+    const { search } = await setup()
+    bar(search, { mode: 'find', text: 'sales', nonce: 1 })
+    const field = screen.getByRole('textbox', { name: 'Find in notebook' }) as HTMLInputElement
+    const toggle = screen.getByRole('button', { name: 'Toggle replace' })
+    // A keyboard user on the button.
+    toggle.focus()
+    fireEvent.click(toggle)
+    expect(screen.getByRole('textbox', { name: 'Replace with' })).toBeTruthy()
+    expect(document.activeElement).toBe(toggle)
+    // Ctrl+H still takes the caret to the replace field.
+    fireEvent.click(toggle)
+    fireEvent.keyDown(field, { key: 'h', ctrlKey: true })
+    expect(document.activeElement).toBe(screen.getByRole('textbox', { name: 'Replace with' }))
+  })
+
   it('takes a new request while open: the selected text, and the replace field', async () => {
     const { search } = await setup()
     const view = bar(search, { mode: 'find', text: 'Total', nonce: 1 })
