@@ -32,4 +32,14 @@ describe('status and labels', () => {
     expect(wantsContextMenu({ ...base, comments: ['1'] })).toBe(true)
     expect(wantsContextMenu({ ...base, link: { from: 1, to: 4, href: 'https://example.com', anchor: null, text: 'abc' } })).toBe(true)
   })
+
+  it('leaves tables and pictures of a read-only document to the browser menu', () => {
+    const base = { pos: 1, storyId: null, inSelection: false, editable: false, table: true, picture: { pos: 3, description: '' }, link: null, comments: [], revisions: [] }
+    expect(wantsContextMenu(base)).toBe(false)
+    expect(wantsContextMenu({ ...base, editable: true }, false)).toBe(false)
+    expect(wantsContextMenu({ ...base, editable: true }, true)).toBe(true)
+    // Links open and comments show in any mode.
+    expect(wantsContextMenu({ ...base, comments: ['1'] })).toBe(true)
+    expect(wantsContextMenu({ ...base, link: { from: 1, to: 4, href: 'https://example.com', anchor: null, text: 'abc' } })).toBe(true)
+  })
 })

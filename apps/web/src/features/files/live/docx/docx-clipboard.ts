@@ -73,7 +73,14 @@ export function copyFromMenu(editor: DocxEditor, cut: boolean): boolean {
 /** Edit ▸ Select all, in the body or the open header, footer, or note. */
 export function selectAll(editor: DocxEditor): void {
   if (editor.run((state) => state.tr.setSelection(new AllSelection(state.doc)))) return
-  // A read-only document runs no commands; the browser still selects its text.
-  editor.focus()
-  document.execCommand('selectAll')
+  // A read-only document runs no commands, but its text can still be selected, to copy. (The
+  // browser's own Select all would take the whole page: menus, toolbar, and panels.)
+  const { view } = editor
+  view.dispatch(view.state.tr.setSelection(new AllSelection(view.state.doc)))
+  const selection = document.getSelection()
+  if (!selection) return
+  const range = document.createRange()
+  range.selectNodeContents(view.dom)
+  selection.removeAllRanges()
+  selection.addRange(range)
 }

@@ -271,14 +271,15 @@ export function DocxToolbar({ editor, state, onRequestLink, onRequestComment, on
       )}
       <Separator />
       {button(ui("Link"), <Link2 className="size-4" />, onRequestLink, { active: Boolean(state.link), disabled: !state.untrackedFormattingEditable, shortcut: `${mod}K` })}
+      {/* Docs' Add comment for those who can comment; for a read-only viewer it shows or hides the threads. */}
       <ToolbarButton
         label={ui("Comment")}
-        shortcut={formatShortcut({ key: 'm', mod: true, alt: true })}
+        shortcut={state.canComment ? formatShortcut({ key: 'm', mod: true, alt: true }) : undefined}
         description={openComments ? (openComments === 1 ? ui("1 open comment") : ui("{{count}} open comments", { count: openComments })) : undefined}
-        active={panels.comments}
-        disabled={!state.canComment}
+        active={state.canComment ? undefined : panels.comments}
+        disabled={Boolean(state.editingStory)}
         badge={openComments}
-        onClick={onRequestComment}
+        onClick={state.canComment ? onRequestComment : () => onTogglePanel('comments')}
       >
         <MessageSquarePlus className="size-4" />
       </ToolbarButton>

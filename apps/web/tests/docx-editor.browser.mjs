@@ -2476,6 +2476,39 @@ try {
     assert.match(await exported('header'), /Title page/)
   })
 
+  await step('shows a read-only viewer the comments from the Comment button, and selects only the document', async () => {
+    await open('?file=review.docx&readonly=1')
+    const button = page.getByRole('button', { name: 'Comment', exact: true })
+    assert.equal(await button.isDisabled(), false)
+    assert.equal(await button.getAttribute('aria-pressed'), 'false')
+    await button.click()
+    await page.locator('[data-docx-comments] [data-comment]').first().waitFor()
+    assert.equal(await page.getByRole('textbox', { name: 'New comment' }).count(), 0)
+    assert.equal(await button.getAttribute('aria-pressed'), 'true')
+    await button.click()
+    await page.locator('[data-docx-comments]').waitFor({ state: 'detached' })
+    // Edit ▸ Select all selects the document's text, to copy, never the whole page.
+    await pick('Edit', 'select-all')
+    assert.deepEqual(await page.evaluate(() => {
+      const selection = document.getSelection()
+      return [window.harness.editors[0].view.dom.contains(selection.anchorNode), selection.containsNode(document.querySelector('[data-editor-menubar]'), true), window.harness.editors[0].state().empty]
+    }), [true, false, false])
+    await menuBar.getByRole('menuitem', { name: 'Edit', exact: true }).click()
+    assert.equal(await page.locator('[role="menu"] [data-menu-item="copy"]').getAttribute('data-disabled'), null)
+    await page.keyboard.press('Escape')
+    // Nothing in a read-only table can change: the browser's own menu stays there.
+    await open('?file=tables.docx&readonly=1')
+    await page.evaluate(() => {
+      window.contextMenus = []
+      document.addEventListener('contextmenu', (event) => window.contextMenus.push(event.defaultPrevented))
+    })
+    const cell = await flow.locator('table.docx-table td.docx-cell').first().boundingBox()
+    await page.mouse.click(cell.x + 8, cell.y + 8, { button: 'right' })
+    await page.waitForTimeout(100)
+    assert.deepEqual(await page.evaluate(() => window.contextMenus), [false])
+    assert.equal(await page.locator('[data-docx-context-menu]').count(), 0)
+  })
+
   await step('lays out a 100-page document within budget', async () => {
     const started = Date.now()
     await open('?generate=1600')

@@ -177,7 +177,7 @@ export function DocxEditorView({ className, onEditor, toolbarSlot, fileMenu, onS
     const onContextMenu = (event: MouseEvent) => {
       if (event.shiftKey) return
       const info = editor.contextAt(event.clientX, event.clientY)
-      if (!wantsContextMenu(info)) return
+      if (!wantsContextMenu(info, !editor.readOnly)) return
       event.preventDefault()
       const selected = editor.contextAt(event.clientX, event.clientY, { select: true }) ?? info
       caretIntoLink(editor, selected)
