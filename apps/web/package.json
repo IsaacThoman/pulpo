@@ -22,6 +22,7 @@
     "test:docx-files": "node tests/docx-files.e2e.mjs",
     "capture:landing": "node scripts/capture-landing-screenshots.mjs",
     "test:live-text": "node tests/live-text.browser.mjs",
+    "test:live-editors": "node tests/live-editors.browser.mjs",
     "test:office-conversion": "node tests/office-conversion.browser.mjs",
     "test:live-notebook": "node tests/live-notebook.browser.mjs",
     "test:presentation-editor": "node tests/presentation-editor.browser.mjs",
