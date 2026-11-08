@@ -15,6 +15,19 @@ export function profileDetail(profile: FriendProfile, detail?: string): string {
   return [`@${profile.username}`, detail].filter(Boolean).join(' · ')
 }
 
+/** How many friends the viewer shares with someone, as the web words it; nothing when none. */
+export function mutualFriendsLabel(count: number): string | undefined {
+  if (count <= 0) return undefined
+  return count === 1 ? '1 mutual' : `${count} mutuals`
+}
+
+/** "Friends since Sep 1, 2026" on a friend's profile. */
+export function friendsSinceLabel(iso: string, locale?: string): string | undefined {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return undefined
+  return `Friends since ${new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(date)}`
+}
+
 export function poolMembersLabel(pool: Pool): string {
   const members = `${pool.members.length} of ${POOL_MAX_MEMBERS} members`
   return pool.pendingInvitations.length ? `${members} · ${pool.pendingInvitations.length} pending` : members

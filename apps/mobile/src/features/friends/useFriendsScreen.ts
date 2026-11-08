@@ -3,9 +3,9 @@ import { Alert } from 'react-native'
 import * as Clipboard from 'expo-clipboard'
 import { useQuery } from '@tanstack/react-query'
 import { canInviteToPool, friendRequestAge, friendsOverview } from '@pulpo/client-core'
-import type { FriendConnection, FriendProfile, FriendSearchResult, PoolInvitation, PoolMember } from '@pulpo/contracts'
+import type { FriendConnection, FriendProfile, FriendSearchResult, FriendSuggestion, PoolInvitation, PoolMember } from '@pulpo/contracts'
 import { friendsApi, friendsListQuery, inviteCodesQuery, poolQuery } from './api'
-import { poolDisclosure } from './format'
+import { mutualFriendsLabel, poolDisclosure } from './format'
 import { useFriendActions, useFriendSearch, useFriendsContext } from './hooks'
 
 /** One entry in a person's actions menu: a SwiftUI menu on iOS, a Material menu on Android. */
@@ -22,7 +22,7 @@ export interface FriendMenuAction {
 const COPIED_MS = 1_500
 
 /** Everything the Friends screen shows and does, shared by its iOS and Android layouts. */
-export function useFriendsScreen() {
+export function useFriendsScreen({ openProfile }: { openProfile: (profile: FriendProfile) => void }) {
   const { namespace, user, poolsEnabled, inviteCodesEnabled } = useFriendsContext()
   const viewerId = user?.id ?? ''
   const list = useQuery({ ...friendsListQuery(namespace), enabled: Boolean(namespace) })
@@ -53,6 +53,8 @@ export function useFriendsScreen() {
     sendRequest: (result: FriendSearchResult) => void run(`request:${result.profile.id}`, () => friendsApi.sendRequest(result.profile.id), (response) => {
       search.update(result.profile.id, { relationship: response.status === 'accepted' ? 'friends' : 'outgoing', requestId: response.requestId })
     }),
+    // The list refresh after sending drops them from suggestions; they show under Sent requests.
+    sendSuggestion: (suggestion: FriendSuggestion) => void run(`request:${suggestion.profile.id}`, () => friendsApi.sendRequest(suggestion.profile.id)),
     acceptSearchResult: (result: FriendSearchResult) => {
       const requestId = result.requestId
       if (!requestId) return
@@ -152,7 +154,13 @@ export function useFriendsScreen() {
     memberMenu,
     requestMenu,
     poolInvitationMenu,
-    requestAge: (connection: FriendConnection) => friendRequestAge(connection.requestedAt),
+    suggestions: list.data?.suggestions ?? [],
+    openProfile,
+    /** "Requested today · 2 mutuals": when a request was made, then the friends shared. */
+    requestDetail: (verb: 'Requested' | 'Sent', connection: FriendConnection) => [
+      `${verb} ${friendRequestAge(connection.requestedAt)}`,
+      mutualFriendsLabel(connection.mutualFriends?.length ?? 0),
+    ].filter(Boolean).join(' · '),
   }
 }
 

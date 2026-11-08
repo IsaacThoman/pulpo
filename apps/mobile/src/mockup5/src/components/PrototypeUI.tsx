@@ -78,8 +78,10 @@ export function SectionTitle({ children, trailing }: { children: ReactNode; trai
   return <View style={styles.sectionTitleRow}><Text style={[styles.sectionTitle, { color: theme.secondary }]}>{children}</Text>{trailing}</View>;
 }
 
-export function ListRow({ icon, iconColor, leading, title, detail, value, onPress, destructive = false, last = false, children }: {
-  icon?: string; iconColor?: string; leading?: ReactNode; title: string; detail?: string; value?: string; onPress?: () => void; destructive?: boolean; last?: boolean; children?: ReactNode;
+export function ListRow({ icon, iconColor, leading, title, detail, value, onPress, destructive = false, last = false, chevron = true, children }: {
+  icon?: string; iconColor?: string; leading?: ReactNode; title: string; detail?: string; value?: string; onPress?: () => void; destructive?: boolean; last?: boolean;
+  /** Rows with their own trailing actions can open on press without the disclosure chevron. */
+  chevron?: boolean; children?: ReactNode;
 }) {
   const theme = useAppTheme();
   if (Platform.OS === 'ios' && onPress && !leading && !children) {
@@ -93,7 +95,7 @@ export function ListRow({ icon, iconColor, leading, title, detail, value, onPres
     <View style={styles.rowText}><Text style={[styles.rowTitle, { color: destructive ? theme.red : theme.text }]}>{title}</Text>{detail ? <Text style={[styles.rowDetail, { color: theme.secondary }]}>{detail}</Text> : null}</View>
     {value ? <Text style={[styles.rowValue, { color: theme.secondary }]}>{value}</Text> : null}
     {children}
-    {onPress ? <SymbolView name="chevron.right" size={13} tintColor={theme.tertiary} weight="semibold" /> : null}
+    {onPress && chevron ? <SymbolView name="chevron.right" size={13} tintColor={theme.tertiary} weight="semibold" /> : null}
   </>;
   const baseStyle = [styles.row, !last && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.separator }];
   if (!onPress) return <View style={baseStyle}>{body}</View>;
