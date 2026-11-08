@@ -27,6 +27,7 @@ import { isDesktopRuntime } from '@/lib/runtime'
 import { SidePanelLayout } from '@/features/side-panel/SidePanelLayout'
 import { splitFits, useSidePanel } from '@/features/side-panel/store'
 import { FileToasts } from '@/features/files/browser/FileToasts'
+import { editorOwnsKey } from '@/features/files/live/chrome/editor-root'
 import { useSidePanelUrl } from '@/features/side-panel/use-side-panel-url'
 
 const SearchModal = lazy(() => import('./SearchModal').then((module) => ({ default: module.SearchModal })))
@@ -166,16 +167,18 @@ export function AppLayout() {
         setSearchOpen(true)
         return
       }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      // Editors keep keys they handle (Cmd/Ctrl+K inserts a link in Word) and their formatting
+      // combos; Cmd/Ctrl+K still searches from editors that leave it alone.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k' && !e.defaultPrevented) {
         e.preventDefault()
         setSearchOpen((v) => !v)
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'b' && !editorOwnsKey(e)) {
         e.preventDefault()
         if (window.matchMedia('(width < 750px)').matches) setMobileOpen((v) => !v)
         else toggleDesktopSidebarRef.current()
       }
-      if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+      if ((e.metaKey || e.ctrlKey) && e.key === ',' && !editorOwnsKey(e)) {
         e.preventDefault()
         openSettings('general')
       }
