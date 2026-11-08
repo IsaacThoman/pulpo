@@ -202,7 +202,8 @@ export function ConditionalFormatDialog({ view, open, tab: initialTab = 'single'
             <DialogDescription>{ui("Apply to range: {{range}}", { range })}</DialogDescription>
           </DialogHeader>
           <Tabs value={tab} onValueChange={(value) => { setTab(value as ConditionalTab); setError(undefined) }}>
-            <TabsList className="w-full overflow-x-auto">
+            {/* Tabs wrap onto a second row rather than overflow: a centered row that overflows cuts off its first tab. */}
+            <TabsList className="h-auto w-full flex-wrap">
               <TabsTrigger value="single">{ui("Single color")}</TabsTrigger>
               <TabsTrigger value="scale">{ui("Color scale")}</TabsTrigger>
               <TabsTrigger value="bars">{ui("Data bars")}</TabsTrigger>

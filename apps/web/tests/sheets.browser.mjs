@@ -1079,6 +1079,35 @@ try {
   assert.deepEqual(uiErrors, [])
   await uiContext.close()
 
+  await step('conditional formatting tabs and sort columns stay usable on a phone', async () => {
+    const { page: phone, errors: phoneErrors, context } = await open('?lang=es', { viewport: { width: 360, height: 740 } })
+    await phone.evaluate(() => window.__sheets.views[0].goTo('B4:D12'))
+    const phoneBar = phone.getByRole('menubar')
+    await phoneBar.getByRole('menuitem', { name: 'Formato', exact: true }).click()
+    await phone.getByRole('menuitem', { name: /^Formato condicional/ }).click()
+    const tabs = await phone.locator('[data-sheet-conditional-dialog] [role="tablist"]').evaluate((list) => {
+      const bounds = list.getBoundingClientRect()
+      return [...list.querySelectorAll('[role="tab"]')].map((tab) => {
+        const box = tab.getBoundingClientRect()
+        return { name: tab.textContent, inside: box.left >= bounds.left - 0.5 && box.right <= bounds.right + 0.5 }
+      })
+    })
+    assert.deepEqual(tabs.filter((tab) => !tab.inside), [], 'every tab shows in full: none is cut off or scrolled away')
+    await phone.keyboard.press('Escape')
+    await phone.getByRole('dialog').waitFor({ state: 'detached' })
+    await phoneBar.getByRole('menuitem', { name: 'Datos', exact: true }).click()
+    await phone.getByRole('menuitem', { name: /^Ordenar intervalo/ }).hover()
+    await phone.keyboard.press('ArrowRight')
+    await phone.locator('[data-menu-item="sort-range-advanced"]').press('Enter')
+    const dialog = phone.locator('[data-sheet-sort-dialog]')
+    await dialog.getByRole('button', { name: 'Añadir otra columna de ordenación' }).click()
+    const widths = await dialog.getByRole('combobox').evaluateAll((list) => list.map((select) => select.getBoundingClientRect().width))
+    assert.equal(widths.length, 2)
+    for (const width of widths) assert.ok(width >= 150, `a sort column's name has room (${width}px)`)
+    assert.deepEqual(phoneErrors, [])
+    await context.close()
+  })
+
   for (const line of results) console.log(line)
   console.log('spreadsheet editor works in the browser')
 } finally {

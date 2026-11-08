@@ -61,7 +61,8 @@ export function SortRangeDialog({ view, open, onOpenChange }: { view: SheetView;
           <div className="space-y-3">
             {keys.map((key, index) => (
               <div key={index} className="flex flex-wrap items-end gap-x-3 gap-y-2" data-sort-key={index}>
-                <div className="min-w-0 flex-1 space-y-1">
+                {/* Wide enough to read a column's name: on a phone the order goes to the next line. */}
+                <div className="min-w-40 flex-1 space-y-1">
                   <Label htmlFor={`${id}-column-${index}`} className="text-xs text-muted-foreground">{index === 0 ? ui("Sort by") : ui("Then by")}</Label>
                   <Select value={String(key.col)} onValueChange={(value) => update(index, { col: Number(value) })}>
                     <SelectTrigger id={`${id}-column-${index}`} className="w-full min-w-0" size="sm">
