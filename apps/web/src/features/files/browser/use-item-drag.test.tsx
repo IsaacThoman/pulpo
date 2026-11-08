@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FileNode } from '@pulpo/contracts'
 import { useItemDrag } from './use-item-drag'
 
@@ -30,10 +30,18 @@ function pressAndMove(target: Element) {
   pointer(window, 'pointermove', 60, 60)
 }
 
+beforeEach(() => {
+  // jsdom lacks the geometry the drag reads: CSS.escape (in some versions) and elementFromPoint.
+  if (typeof CSS === 'undefined' || !CSS.escape) vi.stubGlobal('CSS', { escape: (value: string) => value })
+  Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => null })
+})
+
 afterEach(() => {
   pointer(window, 'pointerup', 60, 60)
   cleanup()
   vi.useRealTimers()
+  vi.unstubAllGlobals()
+  Reflect.deleteProperty(document, 'elementFromPoint')
   document.body.style.userSelect = ''
 })
 
