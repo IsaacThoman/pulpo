@@ -399,6 +399,8 @@ export class DocxEditor {
   private pointerInText = false
   /** The selection when Shift went down, so releasing it paints only a selection it changed. */
   private shiftSelection: Selection | null = null
+  /** Escape was pressed: the next Tab moves focus out of the document instead of indenting. */
+  private tabLeaves = false
   /** Where the flow column starts on the canvas, from the last print layout. */
   private flowTop = 0
   private layoutMode: DocxLayout
@@ -461,7 +463,10 @@ export class DocxEditor {
     this.root.addEventListener('click', (event) => this.followLink(event))
     // The format painter applies when a selection made with the mouse or Shift and the arrows is done.
     // Only selections started in the text being edited: not clicks on page margins or static headers.
-    this.root.addEventListener('mousedown', (event) => { this.pointerInText = this.activeView.dom.contains(event.target as Node) })
+    this.root.addEventListener('mousedown', (event) => {
+      this.pointerInText = this.activeView.dom.contains(event.target as Node)
+      this.tabLeaves = false
+    })
     this.root.addEventListener('mouseup', (event) => {
       const started = this.pointerInText
       this.pointerInText = false
@@ -469,6 +474,8 @@ export class DocxEditor {
     })
     // Only a selection Shift changed: pressing and releasing it alone keeps the painter armed.
     this.root.addEventListener('keydown', (event) => {
+      // Escape lets only the next Tab (or Shift+Tab) out; any other key keeps Tab in the page.
+      if (event.key !== 'Escape' && event.key !== 'Shift') this.tabLeaves = false
       if (event.key !== 'Shift' || event.repeat || !this.painter) return
       flushSelection(this.activeView)
       this.shiftSelection = this.activeView.state.selection
@@ -711,6 +718,8 @@ export class DocxEditor {
       'Mod-Enter': run(insertPageBreak),
       'Shift-Enter': run(insertLineBreak),
       'Mod-Alt-0': () => this.setStyle(this.context.styles.defaultStyle('paragraph')?.id ?? null),
+      // Word's Normal key; browsers keep it for a new private window, the desktop app passes it on.
+      'Mod-Shift-n': () => this.setStyle(this.context.styles.defaultStyle('paragraph')?.id ?? null),
       'Mod-=': run(setVerticalAlign('subscript')),
       'Mod-Shift-=': run(setVerticalAlign('superscript')),
       'Mod-.': run(setVerticalAlign('superscript')),
@@ -736,7 +745,12 @@ export class DocxEditor {
       'Shift-Tab': () => this.tabKey(-1),
       Enter: () => this.enter(),
       Backspace: () => this.backspaceInList(),
-      Escape: () => this.cancelFormatPainter() || this.closeStoryEditor(),
+      Escape: () => {
+        if (this.cancelFormatPainter() || this.closeStoryEditor()) return true
+        // The keyboard way out of a page that keeps Tab: Escape, then Tab or Shift+Tab moves focus on.
+        this.tabLeaves = true
+        return false
+      },
     }
     for (let level = 1; level <= 6; level++) bind[`Mod-Alt-${level}`] = () => this.applyHeading(level)
     if (isMac) bind['Ctrl-Space'] = run(clearCharacterFormatting)
@@ -1117,7 +1131,9 @@ export class DocxEditor {
    * key, so focus never jumps out of the page; a read-only one lets it move focus.
    */
   private tabKey(direction: 1 | -1): boolean {
-    if (this.readOnly) return false
+    const leave = this.tabLeaves
+    this.tabLeaves = false
+    if (this.readOnly || leave) return false
     const view = this.activeView
     const state = view.state
     if (isInTable(state)) {

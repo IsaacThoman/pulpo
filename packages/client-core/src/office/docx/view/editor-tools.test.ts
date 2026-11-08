@@ -147,6 +147,20 @@ describe('keys', () => {
     expect(editor.paragraphFormat()!.indent.left).toBe(36)
     expect(press(editor.view, { key: 'Tab', shiftKey: true })).toBe(true)
     expect(editor.paragraphFormat()!.indent.left).toBe(0)
+    // Escape, then Tab or Shift+Tab, is the keyboard way out of the page; once only, and not after other keys.
+    const tabs = () => {
+      let count = 0
+      editor.view.state.doc.firstChild!.forEach((node) => { if (node.type.name === 'tab') count++ })
+      return count
+    }
+    expect(press(editor.view, { key: 'Escape' })).toBe(false)
+    expect(press(editor.view, { key: 'Tab', shiftKey: true })).toBe(false)
+    expect(press(editor.view, { key: 'Tab' })).toBe(true)
+    expect(tabs()).toBe(1)
+    press(editor.view, { key: 'Escape' })
+    press(editor.view, { key: 'ArrowRight' })
+    expect(press(editor.view, { key: 'Tab' })).toBe(true)
+    expect(tabs()).toBe(2)
     editor.setReadOnly(true)
     expect(press(editor.view, { key: 'Tab' })).toBe(false)
   })
@@ -198,6 +212,10 @@ describe('keys', () => {
     expect(doc.getMap('styles').has('style:Heading5')).toBe(true)
     expect(editor.outline().map((entry) => entry.text)).toEqual(['Title', 'Fifth'])
     expect(press(editor.view, { key: '0', ctrlKey: true, altKey: true })).toBe(true)
+    expect(editor.view.state.doc.child(1).attrs.pStyle).toBe('Normal')
+    // Word's other Normal key, which the desktop app passes on.
+    expect(press(editor.view, { key: '5', ctrlKey: true, altKey: true })).toBe(true)
+    expect(press(editor.view, { key: 'n', ctrlKey: true, shiftKey: true })).toBe(true)
     expect(editor.view.state.doc.child(1).attrs.pStyle).toBe('Normal')
     const { xml } = await exportedXml('word/styles.xml')
     expect(xml).toContain('w:styleId="Heading5"')
