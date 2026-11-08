@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { SocketIOYProvider } from '@pulpo/client-core/doc-sync'
 import { MemoryLiveAssetStore } from '@pulpo/client-core/office'
 import { cellMetadata, cellsMap, cellSourceText, notebookCodec, orderedCells } from '@pulpo/client-core/office/notebook'
@@ -313,6 +313,81 @@ describe('notebook editor parity', () => {
       expect(notebook.view.container.querySelector('[data-output-scroll]')).toBeTruthy()
     } finally {
       Object.defineProperty(HTMLElement.prototype, 'offsetHeight', offsetHeight)
+      notebook.dispose()
+    }
+  })
+})
+
+describe('notebook cell context menu', () => {
+  const cellSection = (container: HTMLElement, index: number) => container.querySelectorAll<HTMLElement>('[data-cell-key]')[index]!
+  /** A right-click as a mouse makes it: the press selects the cell, then the menu event comes. */
+  const rightClick = (target: HTMLElement) => {
+    fireEvent.mouseDown(target, { button: 2 })
+    return fireEvent.contextMenu(target, { button: 2 })
+  }
+
+  it('opens on a cell\'s chrome, acts on that cell, and gives the keyboard back to the cells', async () => {
+    const notebook = await openNotebook([code('a', 'first'), code('b', 'second')])
+    try {
+      expect(rightClick(cellSection(notebook.view.container, 1))).toBe(false)
+      const menu = await screen.findByRole('menu', { name: 'Cell actions' })
+      expect(cellSection(notebook.view.container, 1).hasAttribute('data-active')).toBe(true)
+      fireEvent.click(within(menu).getByRole('menuitem', { name: /Duplicate cell/ }))
+      await waitFor(() => expect(notebook.sources()).toEqual(['first', 'second', 'second']))
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+      await waitFor(() => expect(document.activeElement).toBe(notebook.list))
+    } finally {
+      notebook.dispose()
+    }
+  })
+
+  it('keeps a selection the right-clicked cell is part of', async () => {
+    const notebook = await openNotebook([code('a', 'one'), code('b', 'two'), code('c', 'three')])
+    try {
+      notebook.list.focus()
+      fireEvent.keyDown(notebook.list, { key: 'ArrowDown', shiftKey: true })
+      await screen.findByText('2 cells selected')
+      rightClick(cellSection(notebook.view.container, 0))
+      const menu = await screen.findByRole('menu', { name: 'Cell actions' })
+      expect(screen.getByText('2 cells selected')).toBeTruthy()
+      fireEvent.click(within(menu).getByRole('menuitem', { name: 'Delete cells' }))
+      await waitFor(() => expect(notebook.sources()).toEqual(['three']))
+    } finally {
+      notebook.dispose()
+    }
+  })
+
+  it('leaves the browser\'s menu in a cell\'s code, and offers output commands only with outputs', async () => {
+    const notebook = await openNotebook([code('a', 'print(1)', [{ output_type: 'stream', name: 'stdout', text: '1' }]), { id: 'm', cell_type: 'markdown', metadata: {}, source: 'Notes' }])
+    try {
+      await waitFor(() => expect(notebook.view.container.querySelector('.cm-content')).toBeTruthy())
+      expect(fireEvent.contextMenu(notebook.view.container.querySelector('.cm-content')!)).toBe(true)
+      expect(screen.queryByRole('menu')).toBeNull()
+      rightClick(cellSection(notebook.view.container, 0))
+      expect(within(await screen.findByRole('menu', { name: 'Cell actions' })).getByRole('menuitem', { name: /Copy output text/ })).toBeTruthy()
+      fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+      rightClick(cellSection(notebook.view.container, 1))
+      const markdownMenu = await screen.findByRole('menu', { name: 'Cell actions' })
+      expect(within(markdownMenu).queryByRole('menuitem', { name: /Copy output text/ })).toBeNull()
+    } finally {
+      notebook.dispose()
+    }
+  })
+
+  it('opens beside the active cell from the keyboard\'s menu key', async () => {
+    const notebook = await openNotebook([code('a', 'first')])
+    try {
+      notebook.list.focus()
+      expect(fireEvent.contextMenu(notebook.list, { button: 0 })).toBe(false)
+      await screen.findByRole('menu', { name: 'Cell actions' })
+      fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+      await waitFor(() => expect(document.activeElement).toBe(notebook.list))
+      // Shift+F10 too, where the browser sends no menu event for it.
+      expect(fireEvent.keyDown(notebook.list, { key: 'F10', shiftKey: true })).toBe(false)
+      await screen.findByRole('menu', { name: 'Cell actions' })
+    } finally {
       notebook.dispose()
     }
   })

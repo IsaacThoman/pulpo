@@ -33,6 +33,7 @@ export function notebookShortcutGroups(): ShortcutGroup[] {
         { label: ui("Make code, Markdown, or raw"), keys: ['Y', 'M', 'R'] },
         { label: ui("Merge the selected cells, or with the cell below"), keys: [{ key: 'm', shift: true }] },
         { label: ui("Hide or show outputs"), keys: ['O'] },
+        { label: ui("Open the cell's menu"), keys: [{ key: 'F10', shift: true }] },
       ],
     },
     {
@@ -45,6 +46,17 @@ export function notebookShortcutGroups(): ShortcutGroup[] {
         { label: ui("Split the cell at the cursor"), keys: [mod('-', { shift: true })] },
         { label: ui("Go to the cell above or below"), keys: [ui("↑ on the first line"), ui("↓ on the last line")] },
         { label: ui("Comment or uncomment lines"), keys: [mod('/')] },
+        { label: ui("Next or previous match"), keys: [{ key: 'F3' }, { key: 'F3', shift: true }, mod('g'), mod('g', { shift: true })] },
+        { label: ui("Go to line…"), keys: [mod('g', { alt: true })] },
+      ],
+    },
+    {
+      id: 'markdown',
+      title: ui("Markdown cells (while editing)"),
+      items: [
+        { label: ui("Bold"), keys: [mod('b')] },
+        { label: ui("Italic"), keys: [mod('i')] },
+        { label: ui("Insert link"), keys: [mod('k')] },
       ],
     },
     {
