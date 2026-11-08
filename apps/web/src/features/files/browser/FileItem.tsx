@@ -20,6 +20,8 @@ export interface FileDropHandlers {
 
 export interface FileItemProps {
   node: FileNode
+  /** The option's element id, for the listbox's `aria-activedescendant`. */
+  optionId?: string
   view: 'list' | 'grid'
   /** Where a grid tile sits on a freely arranged canvas. */
   position?: { x: number; y: number }
@@ -38,7 +40,7 @@ export interface FileItemProps {
   onClick: (event: MouseEvent) => void
   onDoubleClick: (event: MouseEvent) => void
   onContextMenu: (event: MouseEvent) => void
-  onMenuButton: (event: MouseEvent<HTMLButtonElement>) => void
+  onMenuButton: (event: MouseEvent<HTMLElement>) => void
   /** Accepts files dropped in from the operating system (folders only). */
   dropHandlers?: FileDropHandlers
   onRenameCommit: (name: string) => Promise<boolean>
@@ -51,21 +53,23 @@ export function FileItem(props: FileItemProps) {
   const name = renaming
     ? <InlineRename node={node} onCommit={props.onRenameCommit} onCancel={props.onRenameCancel} className={view === 'grid' ? 'w-full' : undefined} />
     : <span className={cn('min-w-0 text-sm', view === 'grid' ? 'line-clamp-2 w-full break-words' : 'truncate')} title={node.name}>{node.name}</span>
+  // A pointer shortcut to the item's menu. Options cannot hold controls of their own, so from the
+  // keyboard the same menu opens with Shift+F10 or the Menu key, or from the selection bar.
   const menuButton = (
-    <button
-      type="button"
-      tabIndex={-1}
+    <span
+      aria-hidden="true"
       className={cn(
         'grid size-8 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-background/70 hover:text-foreground',
         view === 'grid' && 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100',
         view === 'grid' && selected && 'sm:opacity-100',
       )}
-      aria-label={uit`Actions for ${node.name}`}
+      title={uit`Actions for ${node.name}`}
+      data-file-menu-button
       onClick={(event) => { event.stopPropagation(); props.onMenuButton(event) }}
       onDoubleClick={(event) => event.stopPropagation()}
     >
       <MoreHorizontal className="size-4" />
-    </button>
+    </span>
   )
   // Pinned items are also listed under Pinned at the top of the sidebar.
   const pin = node.pinned && (
@@ -82,6 +86,7 @@ export function FileItem(props: FileItemProps) {
   const deletesTitle = trash?.purgeAt ? formatDateTime(Date.parse(trash.purgeAt)) : undefined
   const shared = {
     'data-file-id': node.id,
+    id: props.optionId,
     role: 'option' as const,
     'aria-selected': selected,
     // Folders are drop targets for items dragged within Files (see useItemDrag).

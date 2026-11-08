@@ -155,7 +155,14 @@ export function ContributionGraph({ data, metric }: { data: DailyModelUsage[]; m
 
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
-          <div className="overflow-x-auto pb-1" onScroll={clear}>
+          {/* Focusable so the graph scrolls from the keyboard on narrow screens. */}
+          <div
+            role="group"
+            aria-label={ui("Activity")}
+            tabIndex={0}
+            className="overflow-x-auto rounded-sm pb-1 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onScroll={clear}
+          >
             <div className="relative" style={{ width: graphWidth, height: HEADER + 7 * STEP + 2 }}>
               {/* month labels */}
               {monthLabels.map((m, i) => (

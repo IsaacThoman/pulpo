@@ -97,9 +97,9 @@ export function PendingPage() {
   }
 
   return (
-    <div className="flex min-h-full flex-col items-center justify-center bg-background px-4 py-10">
+    <main className="flex min-h-full flex-col items-center justify-center bg-background px-4 py-10">
       <div className="mb-8 flex items-center gap-2.5">
-        <img src="/pulpo-smiley.png" alt="Pulpo" className="size-10" />
+        <img src="/pulpo-smiley.png" alt="" className="size-10" />
         <span className="text-xl font-semibold tracking-tight">Pulpo</span>
       </div>
 
@@ -192,6 +192,6 @@ export function PendingPage() {
         </div>
         <DeleteAccountSettings />
       </div>
-    </div>
+    </main>
   )
 }
