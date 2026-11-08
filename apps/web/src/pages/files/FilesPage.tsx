@@ -54,7 +54,6 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
-import { pageTitle, useDocumentTitle } from '@/lib/document-title'
 import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
 import { createDoc, createFolder, fetchFolder, fetchFolderLayout, folderLayoutQueryKey, folderQueryKey, updateFolderLayout, uploadFile } from '@/features/files/api'
@@ -221,9 +220,6 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const agentItem = useMemo(() => ({ id: folderId ?? FILE_SCOPE_ROOT }), [folderId])
   // Trashed items are not files the agent can work on.
   usePublishFilesView(place, filesEnabled && !inTrash && !listing.isError ? agentItem : null)
-  // The page names the tab after the open folder; the route's title covers My files and the trash.
-  const shownFolderName = listing.data?.folder?.name
-  useDocumentTitle(!panel && shownFolderName ? pageTitle(shownFolderName, inTrash ? ui("Trash") : ui("Files")) : null)
   const ops = useFileOperations()
   const trashOps = useTrashOperations()
   const resolveFileSuggestion = useResolveFileSuggestion()
