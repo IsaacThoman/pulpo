@@ -51,7 +51,6 @@ import type { Chat } from '@/lib/types'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -1897,7 +1896,9 @@ export function Sidebar({
     badge?: number,
   ) => {
     const pinned = sidebarPins[key]
-    const action = pinned ? 'Unpin' : 'Pin'
+    const pinLabel = pinned
+      ? ui('Unpin {{item}} from sidebar', { item: label })
+      : ui('Pin {{item}} to sidebar', { item: label })
     return (
       <div key={key} className="group/account-nav relative">
         <DropdownMenuItem className="w-full pr-9" onClick={() => typeof target === 'string' ? go(target) : target()}>
@@ -1909,33 +1910,24 @@ export function Sidebar({
             </span>}
           </span>
         </DropdownMenuItem>
-        {/* A pointer shortcut only (menus take no Tab stops): "Show in sidebar" below is the menu's own way to pin. */}
-        <button
-          type="button"
-          aria-hidden="true"
-          tabIndex={-1}
-          title={uit`${action} ${label} ${pinned ? 'from' : 'to'} sidebar`}
-          className="invisible absolute right-1 top-1/2 z-10 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground outline-hidden hover:bg-background/60 hover:text-foreground group-hover/account-nav:visible"
-          onClick={(event) => {
+        {/* A sibling menu item lets arrow keys reach the pin without nesting controls. */}
+        <DropdownMenuItem
+          asChild
+          textValue={pinLabel}
+          className="pointer-events-none absolute right-1 top-1/2 z-10 size-6 -translate-y-1/2 justify-center rounded p-0 text-muted-foreground opacity-0 hover:bg-background/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring group-hover/account-nav:pointer-events-auto group-hover/account-nav:opacity-100 group-focus-within/account-nav:pointer-events-auto group-focus-within/account-nav:opacity-100"
+          onSelect={(event) => {
+            // Keep the menu open and focus on this control after pinning or unpinning.
             event.preventDefault()
-            event.stopPropagation()
             setSetting('sidebarPins', toggleSidebarPin(sidebarPins, key))
           }}
         >
-          {pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
-        </button>
+          <button type="button" aria-label={pinLabel} title={pinLabel}>
+            {pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+          </button>
+        </DropdownMenuItem>
       </div>
     )
   }
-
-  const sidebarPinItems: { key: SidebarPinKey; label: string }[] = [
-    { key: 'searchChats', label: t('sidebar.searchChats') },
-    ...filesEnabled ? [{ key: 'files' as const, label: t('sidebar.files') }] : [],
-    { key: 'usage', label: t('sidebar.usage') },
-    { key: 'friends', label: t('sidebar.friends') },
-    ...apiKeysEnabled ? [{ key: 'apiKeys' as const, label: t('sidebar.apiKeys') }] : [],
-    ...billingEnabled ? [{ key: 'billing' as const, label: t('sidebar.billing') }] : [],
-  ]
 
   return (
     <aside
@@ -2195,25 +2187,6 @@ export function Sidebar({
             {billingEnabled && billingQuery.data?.onHold && (
               <div className="px-3 pb-2 pl-8 text-[11px] text-destructive">{t('sidebar.billingOnHold')}</div>
             )}
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
-                <Pin />
-                {ui("Show in sidebar")}
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="w-48">
-                {sidebarPinItems.map(({ key, label }) => (
-                  <DropdownMenuCheckboxItem
-                    key={key}
-                    checked={sidebarPins[key]}
-                    // Stays open so several items can be shown or hidden in a row.
-                    onSelect={(event) => event.preventDefault()}
-                    onCheckedChange={() => setSetting('sidebarPins', toggleSidebarPin(sidebarPins, key))}
-                  >
-                    {label}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onOpenSettings}>
               <Settings />
