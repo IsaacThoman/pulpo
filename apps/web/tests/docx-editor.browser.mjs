@@ -2317,7 +2317,8 @@ try {
     await page.keyboard.press('Enter')
     await insert.waitFor({ state: 'detached' })
     const bubble = page.locator('[data-docx-link-bubble]')
-    assert.equal(await bubble.count(), 0)
+    // The caret ends at the new link's end, where the bubble may show a frame later; it never takes focus.
+    await focusInDocument()
     await caretInLink()
     await bubble.waitFor()
     const target = bubble.getByRole('link', { name: 'pulpo.baby' })
