@@ -19,6 +19,7 @@ import {
   readAttachments,
   readOutputs,
   type CellEditor,
+  type CellTypeText,
   type NotebookCellState,
   type NotebookEditorState,
   type NotebookPeer,
@@ -68,6 +69,7 @@ import { cellContextEntries, hasOutputs, notebookMenus, typeLabel, viewOptionEnt
 import { notebookShortcutGroups } from './notebook-shortcuts'
 import { CellContextMenu, type CellMenuRequest } from './CellContextMenu'
 import { CellToolbar } from './CellToolbar'
+import { cellsOffClipboard, clipboardChanged, copyCells, writeClipboard } from './clipboard'
 import { NotebookFindBar, type NotebookFindRequest } from './NotebookFindBar'
 import { NotebookOutline } from './NotebookOutline'
 import { NotebookPosition, OutputScroll } from './NotebookStatus'
@@ -163,11 +165,19 @@ interface CellProps {
   onDragOverCell: (key: string, edge: 'before' | 'after' | null) => void
 }
 
+/** A cell editor's accessible name and empty-cell hint, which follow the cell's type. */
+function cellTypeText(type: NotebookCellType): CellTypeText {
+  return { label: uit`${typeLabel(type)} cell`, placeholder: type === 'markdown' ? ui("Write Markdown") : type === 'code' ? ui("Write code") : undefined }
+}
+
 /** A cell's source in CodeMirror, bound to its Y.Text. */
 function CellSource({ controller, cell, language, editable, dark, registerEditor, autoFocus }: Pick<CellProps, 'controller' | 'cell' | 'language' | 'editable' | 'dark' | 'registerEditor'> & { autoFocus: boolean }) {
   const view = useNotebookView()
   const container = useRef<HTMLDivElement>(null)
   const editor = useRef<CellEditor | null>(null)
+  // The caret when the editor was last taken down, for one built again on the same text: React
+  // runs a moved cell's effects again in development, which would send the caret to the start.
+  const kept = useRef<{ text: object; anchor: number; head: number } | null>(null)
   const latest = useRef({ cell, language, editable, dark, autoFocus, view })
   latest.current = { cell, language, editable, dark, autoFocus, view }
   const { key } = cell
@@ -194,8 +204,8 @@ function CellSource({ controller, cell, language, editable, dark, registerEditor
       readOnly: !initial.editable,
       dark: initial.dark,
       labels: editorLabels(),
-      label: uit`${typeLabel(initial.cell.type)} cell`,
-      placeholder: initial.cell.type === 'markdown' ? ui("Write Markdown") : initial.cell.type === 'code' ? ui("Write code") : undefined,
+      ...cellTypeText(initial.cell.type),
+      selection: kept.current?.text === text ? kept.current : undefined,
       lineNumbers: initial.view.lineNumbers,
       wrap: initial.view.wrap || null,
       onFind: (command) => latest.current.view.onFind(key, command),
@@ -217,6 +227,8 @@ function CellSource({ controller, cell, language, editable, dark, registerEditor
     registerEditor(key, created)
     if (initial.autoFocus) created.focus('keep')
     return () => {
+      const { anchor, head } = created.view.state.selection.main
+      kept.current = { text, anchor, head }
       registerEditor(key, null)
       created.destroy()
       editor.current = null
@@ -225,7 +237,7 @@ function CellSource({ controller, cell, language, editable, dark, registerEditor
 
   useEffect(() => { editor.current?.setReadOnly(!editable) }, [editable])
   useEffect(() => { editor.current?.setDark(dark) }, [dark])
-  useEffect(() => { editor.current?.setType(cell.type, language) }, [cell.type, language])
+  useEffect(() => { editor.current?.setType(cell.type, language, cellTypeText(cell.type)) }, [cell.type, language])
   useEffect(() => { editor.current?.setLineNumbers(view.lineNumbers) }, [view.lineNumbers])
   useEffect(() => { editor.current?.setWrap(view.wrap || null) }, [view.wrap])
   // The find bar's matches in this cell; moving to one selects it here.
@@ -472,10 +484,6 @@ function selectedOutputCells(controller: NotebookController): string[] {
   return cells.filter((cell) => selected.includes(cell.key) && hasOutputs(cell)).map((cell) => cell.key)
 }
 
-function writeClipboard(text: string) {
-  if (text) void navigator.clipboard?.writeText(text).catch(() => undefined)
-}
-
 /** What a cell's outputs print, as plain text (tracebacks without their colors). */
 function outputsText(outputs: readonly NotebookOutput[]): string {
   return outputs.map((output) => stripAnsi(outputPlainText(output)).replace(/\n+$/, '')).filter(Boolean).join('\n')
@@ -645,7 +653,9 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
     return () => controller.setViewCommandHandler(null)
   }, [controller, openFind, setLineNumbers, toggleOutputScroll])
 
-  // Ctrl/Cmd+V in command mode: the system clipboard's text, which may be cells copied here (see onKeyDown).
+  // Ctrl/Cmd+V in command mode: the system clipboard's text, which may be cells copied here (see
+  // onKeyDown). It is taken before a cell's editor sees it, which would paste over text left
+  // selected in it.
   useEffect(() => {
     if (!controller) return
     const onPaste = (event: ClipboardEvent) => {
@@ -653,12 +663,23 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
       if (document.activeElement !== root.current || state.mode !== 'command' || state.readOnly) return
       event.preventDefault()
       window.clearTimeout(pasteFallback.current)
-      void controller.pasteText(event.clipboardData?.getData('text/plain') ?? '')
+      // Cells copied here whose text never reached the clipboard (or not yet): it still has older text.
+      if (cellsOffClipboard() && state.canPaste) void controller.paste('below')
+      else void controller.pasteText(event.clipboardData?.getData('text/plain') ?? '')
     }
-    document.addEventListener('paste', onPaste)
+    document.addEventListener('paste', onPaste, true)
+    // Text copied anywhere on the page (cells copy their own way), or perhaps in another app: Ctrl+V pastes that.
+    document.addEventListener('copy', clipboardChanged, true)
+    document.addEventListener('cut', clipboardChanged, true)
+    window.addEventListener('blur', clipboardChanged)
     return () => {
-      document.removeEventListener('paste', onPaste)
+      document.removeEventListener('paste', onPaste, true)
+      document.removeEventListener('copy', clipboardChanged, true)
+      document.removeEventListener('cut', clipboardChanged, true)
+      window.removeEventListener('blur', clipboardChanged)
       window.clearTimeout(pasteFallback.current)
+      // What is copied while no notebook is open is what the next one should paste.
+      clipboardChanged()
     }
   }, [controller])
 
@@ -738,7 +759,9 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
     if (primary && (key === 'c' || key === 'x') && textSelectedIn(root.current)) return
     if ((plain || primary) && (key === 'c' || key === 'x')) {
       event.preventDefault()
-      writeClipboard(key === 'c' ? controller.copy() : controller.cut())
+      // Nothing to copy, or a viewer's cut: the clipboard keeps what it has.
+      if ((!state.active && !state.selected.length) || (key === 'x' && !canEdit)) return
+      copyCells(key === 'c' ? () => controller.copy() : () => controller.cut())
       return
     }
     if (primary && key === 'v') {
@@ -806,8 +829,8 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
   const menuContext: NotebookMenuContext = {
     controller,
     editable,
-    copy: () => writeClipboard(controller.copy()),
-    cut: () => writeClipboard(controller.cut()),
+    copy: () => copyCells(() => controller.copy()),
+    cut: () => copyCells(() => controller.cut()),
     find: (findMode) => openFind(findMode, controller.getState().mode === 'edit' ? controller.getState().active : null),
     outline,
     toggleOutline: () => setOutline((open) => !open),
@@ -874,8 +897,8 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
           <ToolbarButton label={ui("Redo")} disabled={!canEdit || !state.canRedo} onClick={run(() => controller.redo())}><Redo2 className="size-4" /></ToolbarButton>
           <span className="mx-1 h-5 w-px bg-border" />
           <ToolbarButton label={ui("Insert cell below")} shortcut={{ label: 'B', aria: 'b' }} disabled={!canEdit} onClick={() => controller.insert('below', 'code', { edit: true })}><Plus className="size-4" /></ToolbarButton>
-          <ToolbarButton label={ui("Cut cells")} shortcut={{ label: 'X', aria: 'x' }} disabled={!canEdit || !state.active} onClick={run(() => writeClipboard(controller.cut()))}><Scissors className="size-4" /></ToolbarButton>
-          <ToolbarButton label={ui("Copy cells")} shortcut={{ label: 'C', aria: 'c' }} disabled={!state.active} onClick={run(() => writeClipboard(controller.copy()))}><Copy className="size-4" /></ToolbarButton>
+          <ToolbarButton label={ui("Cut cells")} shortcut={{ label: 'X', aria: 'x' }} disabled={!canEdit || !state.active} onClick={run(() => copyCells(() => controller.cut()))}><Scissors className="size-4" /></ToolbarButton>
+          <ToolbarButton label={ui("Copy cells")} shortcut={{ label: 'C', aria: 'c' }} disabled={!state.active} onClick={run(() => copyCells(() => controller.copy()))}><Copy className="size-4" /></ToolbarButton>
           <ToolbarButton label={ui("Paste cells below")} shortcut={{ label: 'V', aria: 'v' }} disabled={!canEdit || !state.canPaste} onClick={run(() => void controller.paste('below'))}><ClipboardPaste className="size-4" /></ToolbarButton>
           <span className="mx-1 h-5 w-px bg-border" />
           <ToolbarButton label={ui("Move cell up")} disabled={!canEdit || !state.active} onClick={run(() => controller.move('up'))}><ArrowUp className="size-4" /></ToolbarButton>

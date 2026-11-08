@@ -5,10 +5,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { ToolbarButton } from '../../editor/ToolbarButton'
-
-function writeClipboard(text: string) {
-  if (text) void navigator.clipboard?.writeText(text).catch(() => undefined)
-}
+import { copyCells } from './clipboard'
 
 /**
  * The active cell's own toolbar, as JupyterLab 4 and VS Code show one: duplicate, move, insert
@@ -69,8 +66,8 @@ export function CellToolbar({ controller, cell, mode, focusNotebook }: {
           )}
           {hasOutputs && <DropdownMenuItem onSelect={() => controller.clearOutputs('selected')}>{ui("Clear outputs")}</DropdownMenuItem>}
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => writeClipboard(controller.cut())}>{ui("Cut cells")}<DropdownMenuShortcut>{'X'}</DropdownMenuShortcut></DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => writeClipboard(controller.copy())}>{ui("Copy cells")}<DropdownMenuShortcut>{'C'}</DropdownMenuShortcut></DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => copyCells(() => controller.cut())}>{ui("Cut cells")}<DropdownMenuShortcut>{'X'}</DropdownMenuShortcut></DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => copyCells(() => controller.copy())}>{ui("Copy cells")}<DropdownMenuShortcut>{'C'}</DropdownMenuShortcut></DropdownMenuItem>
           <DropdownMenuItem disabled={!canPaste} onSelect={() => void controller.paste('below')}>{ui("Paste cells below")}<DropdownMenuShortcut>{'V'}</DropdownMenuShortcut></DropdownMenuItem>
           <DropdownMenuSeparator />
           {mode === 'edit' && <DropdownMenuItem onSelect={() => controller.split()}>{ui("Split cell at the cursor")}</DropdownMenuItem>}

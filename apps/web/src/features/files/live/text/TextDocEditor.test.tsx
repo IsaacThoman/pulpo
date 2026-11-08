@@ -88,6 +88,38 @@ describe('text editor find and status bar', () => {
     expect(opened.text()).toBe('alpha\n')
   })
 
+  it('leaves Option+Z to type its letter on a Mac layout that has one, and AltGr+Z elsewhere', async () => {
+    Object.defineProperty(navigator, 'platform', { value: 'MacIntel', configurable: true })
+    try {
+      const opened = await open('alpha\n')
+      const content = opened.view.container.querySelector('.cm-content')!
+      const wrapped = () => Boolean(opened.view.container.querySelector('.cm-lineWrapping'))
+      // Polish Pro types ż, Latvian ž, and German ¥ (on its Y key, where US has Z): not a shortcut.
+      expect(fireEvent.keyDown(content, { key: 'ż', code: 'KeyZ', altKey: true })).toBe(true)
+      expect(fireEvent.keyDown(content, { key: 'ž', code: 'KeyZ', altKey: true })).toBe(true)
+      expect(fireEvent.keyDown(content, { key: '¥', code: 'KeyZ', altKey: true })).toBe(true)
+      expect(wrapped()).toBe(false)
+      // US and ABC type Ω, as German does with its Z key: VS Code's Option+Z.
+      expect(fireEvent.keyDown(content, { key: 'Ω', code: 'KeyZ', altKey: true })).toBe(false)
+      expect(wrapped()).toBe(true)
+      expect(fireEvent.keyDown(content, { key: 'Ω', code: 'KeyY', altKey: true })).toBe(false)
+      expect(wrapped()).toBe(false)
+    } finally {
+      delete (navigator as { platform?: string }).platform
+    }
+    cleanup()
+    const windows = await open('alpha\n')
+    const content = windows.view.container.querySelector('.cm-content')!
+    // AltGr (Ctrl+Alt on Windows, AltGraph on Linux) types ż on Polish keyboards; Alt+Y on a German one is not Alt+Z.
+    expect(fireEvent.keyDown(content, { key: 'ż', code: 'KeyZ', altKey: true, ctrlKey: true })).toBe(true)
+    expect(fireEvent.keyDown(content, { key: 'ż', code: 'KeyZ', altKey: true, modifierAltGraph: true } as KeyboardEventInit)).toBe(true)
+    expect(fireEvent.keyDown(content, { key: 'y', code: 'KeyZ', altKey: true })).toBe(true)
+    expect(windows.view.container.querySelector('.cm-lineWrapping')).toBeNull()
+    // Alt+Я (Russian) is the Z key, and types nothing.
+    expect(fireEvent.keyDown(content, { key: 'я', code: 'KeyZ', altKey: true })).toBe(false)
+    expect(windows.view.container.querySelector('.cm-lineWrapping')).toBeTruthy()
+  })
+
   it('remembers line numbers and zoom, and the status bar resets the zoom', async () => {
     localStorage.setItem('pulpo:text-editor:line-numbers', 'false')
     localStorage.setItem('pulpo:text-editor:zoom', '1.5')

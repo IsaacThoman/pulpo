@@ -5,8 +5,9 @@
 // Query parameters: format=notebook (default) or text, name=<file name> (text), fixture=<notebook
 // under packages/client-core/src/office/notebook/fixtures> or blank=1, split=1 (both collaborators
 // side by side), width=narrow|wide|fill, readonly=1, theme=dark, lang=es, agent=1 (offer to run
-// the notebook with an agent; runs are counted in `window.agentRuns`).
-import { StrictMode } from 'react'
+// the notebook with an agent; runs are counted in `window.agentRuns`), strict=0 (without React's
+// strict mode, as a production build runs: it rebuilds a moved cell's editor, say).
+import { Fragment, StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import * as Y from 'yjs'
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from 'y-protocols/awareness'
@@ -90,12 +91,13 @@ const width = (['narrow', 'wide', 'fill'] as const).find((value) => value === pa
 const editable = params.get('readonly') !== '1'
 const onRunWithAgent = params.get('agent') === '1' ? () => { Object.assign(window, { agentRuns: ((window as { agentRuns?: number }).agentRuns ?? 0) + 1 }) } : undefined
 const Editor = format === 'text' ? TextDocEditor : NotebookDocEditor
+const Strict = params.get('strict') === '0' ? Fragment : StrictMode
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
+  <Strict>
     <div className={split ? 'grid h-full grid-cols-2 divide-x bg-background text-foreground' : 'h-full bg-background text-foreground'}>
       <div className="h-full min-h-0 min-w-0" data-replica="a"><Editor session={sessionA} name={name} editable={editable} width={width} assets={assets} onRunWithAgent={onRunWithAgent} /></div>
       {split && <div className="h-full min-h-0 min-w-0" data-replica="b"><Editor session={sessionB} name={name} editable={editable} width={width} assets={assets} /></div>}
     </div>
-  </StrictMode>,
+  </Strict>,
 )

@@ -117,6 +117,31 @@ describe('cell view options', () => {
     cell.setType('markdown', 'python')
     expect(wrapped()).toBe(true)
   })
+
+  it('names, hints, and spell checks by the type it changes to while it is open', async () => {
+    const { doc } = await notebook('')
+    const cell = editor(doc, false, { label: 'Code cell', placeholder: 'Write code' })
+    const content = cell.view.contentDOM
+    const shown = () => ({ label: content.getAttribute('aria-label'), spellcheck: content.getAttribute('spellcheck'), hint: cell.view.dom.querySelector('.cm-placeholder')?.textContent ?? null })
+    expect(shown()).toEqual({ label: 'Code cell', spellcheck: 'false', hint: 'Write code' })
+    // Colab's Ctrl+M M while typing: the same editor becomes a Markdown cell's.
+    cell.setType('markdown', 'python', { label: 'Markdown cell', placeholder: 'Write Markdown' })
+    expect(shown()).toEqual({ label: 'Markdown cell', spellcheck: 'true', hint: 'Write Markdown' })
+    expect(content.getAttribute('autocorrect')).toBe('off')
+    cell.setType('code', 'python', { label: 'Code cell', placeholder: 'Write code' })
+    expect(shown()).toEqual({ label: 'Code cell', spellcheck: 'false', hint: 'Write code' })
+    // A host that names no type gets a generic name, not the old type's.
+    cell.setType('raw', 'python')
+    expect(shown()).toEqual({ label: 'Cell', spellcheck: 'true', hint: null })
+  })
+
+  it('starts with the selection an editor built before for the cell had, within its text', async () => {
+    const { doc } = await notebook('hello world')
+    const { main } = editor(doc, false, { selection: { anchor: 2, head: 5 } }).view.state.selection
+    expect([main.anchor, main.head]).toEqual([2, 5])
+    const past = editor(doc, false, { selection: { anchor: 40, head: 40 } }).view.state.selection.main
+    expect(past.head).toBe(11)
+  })
 })
 
 describe('cell keys', () => {

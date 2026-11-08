@@ -39,6 +39,52 @@ describe('notebook as a script', () => {
     expect(notebookToScript(doc).text).toBe('# %%\n# %matplotlib inline\n# !pip install x\nx = 1 % 2\n\n# %%\n# %%bash\n# echo hi\n')
   })
 
+  it('comments out only the magics IPython would run, where a statement starts', async () => {
+    const magics = [
+      '! ls -la',
+      '!{sys.executable} -m pip install x',
+      '!!ls',
+      'files = !ls',
+      'for name in files:',
+      '    !echo {name}',
+      '!echo one \\',
+      '  two',
+      "x = '\"\"\"'",
+      "# it's ''' in a comment",
+      '%time f()',
+    ].join('\n')
+    const python = [
+      'kept = [row for row in rows',
+      '        if row["status"]',
+      '        != "deleted"]',
+      'ok = (1',
+      '      !=2)',
+      'sql = """',
+      '%s rows',
+      '!important',
+      '"""',
+      'doc = """a \\""" b',
+      '%d"""',
+      "s = 'it''s'",
+      'y = a \\',
+      '    %b',
+    ].join('\n')
+    const { doc } = await notebook([code(magics), code(python)])
+    expect(notebookToScript(doc).text).toBe(`# %%\n${[
+      '# ! ls -la',
+      '# !{sys.executable} -m pip install x',
+      '# !!ls',
+      '# files = !ls',
+      'for name in files:',
+      '    # !echo {name}',
+      '# !echo one \\',
+      '#   two',
+      "x = '\"\"\"'",
+      "# it's ''' in a comment",
+      '# %time f()',
+    ].join('\n')}\n\n# %%\n${python}\n`)
+  })
+
   it('takes the extension and comment style from the kernel language', async () => {
     const r = await notebook([code('x <- 1'), markdown('Notes')], { kernelspec: { language: 'R', name: 'ir', display_name: 'R' } })
     expect(notebookToScript(r.doc)).toMatchObject({ extension: '.r', text: '# %%\nx <- 1\n\n# %% [markdown]\n# Notes\n' })
