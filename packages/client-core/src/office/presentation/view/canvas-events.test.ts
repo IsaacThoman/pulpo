@@ -176,4 +176,21 @@ describe('slide canvas events', () => {
     key(strip.element, { key: 'Home', code: 'Home' })
     expect(controller.state.slides).toEqual([controller.slideKeys()[0]])
   })
+
+  it('dims a thumbnail as soon as its slide is hidden, and undims it when shown', async () => {
+    const { controller, host } = await mount()
+    const strip = new SlideList(host, controller, { layout: 'strip' })
+    cleanup.push(() => strip.destroy())
+    const second = controller.addSlide()!
+    await Promise.resolve()
+    const thumb = () => strip.element.querySelector<HTMLElement>(`.pp-thumb[data-slide="${second}"]`)!
+    expect(thumb().classList.contains('pp-thumb-hidden')).toBe(false)
+    // Hiding changes only the slide (no selection change): the strip still shows it at once.
+    controller.setSlidesHidden(true, [second])
+    await Promise.resolve()
+    expect(thumb().classList.contains('pp-thumb-hidden')).toBe(true)
+    controller.setSlidesHidden(false, [second])
+    await Promise.resolve()
+    expect(thumb().classList.contains('pp-thumb-hidden')).toBe(false)
+  })
 })
