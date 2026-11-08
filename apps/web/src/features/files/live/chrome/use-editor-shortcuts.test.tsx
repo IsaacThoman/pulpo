@@ -55,6 +55,13 @@ describe('useEditorShortcuts', () => {
     expect(press(body, 'p', { shiftKey: true }).defaultPrevented).toBe(false)
     expect(press(body, 'p', { metaKey: false }).defaultPrevented).toBe(false)
     expect(own.print).not.toHaveBeenCalled()
+    // Keys in the US slash and P places that type other characters elsewhere: Spanish and German
+    // Zoom out ("-"), Dvorak's Undo (Z) and Cmd/Ctrl+L.
+    expect(press(body, '-', { ctrlKey: true, metaKey: false, code: 'Slash' }).defaultPrevented).toBe(false)
+    expect(press(body, 'z', { code: 'Slash' }).defaultPrevented).toBe(false)
+    expect(press(body, 'l', { code: 'KeyP' }).defaultPrevented).toBe(false)
+    expect(own.shortcuts).not.toHaveBeenCalled()
+    expect(own.print).not.toHaveBeenCalled()
   })
 
   it('still saves without a host, so the browser never offers to save the page', () => {

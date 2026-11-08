@@ -1,6 +1,6 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import { isAppleShortcut } from '../../browser/shortcuts'
-import { matchesShortcut, type ShortcutSpec } from './shortcuts'
+import { matchesShortcut, typesAscii, type ShortcutSpec } from './shortcuts'
 
 /** What an editor does for the shortcuts every Office and Google editor shares. */
 export interface EditorShortcutHandlers {
@@ -52,9 +52,13 @@ function onPage(target: EventTarget | null): boolean {
   return target === null || target === window || target === document.body || target === document.documentElement
 }
 
-/** Cmd/Ctrl+/ whether the layout types "/" with Shift (German) or not (US, where Shift gives "?"). */
+/**
+ * Cmd/Ctrl+/ whether the layout types "/" with Shift (German, Spanish) or not (US). The US slash
+ * key counts only where it types no ASCII character: on German and Spanish keyboards it is "-",
+ * the browser's Zoom out.
+ */
 function isShortcutsKey(event: KeyboardEvent): boolean {
-  return (event.metaKey || event.ctrlKey) && !event.altKey && (event.key === '/' || event.code === 'Slash')
+  return (event.metaKey || event.ctrlKey) && !event.altKey && (event.key === '/' || (event.code === 'Slash' && !typesAscii(event.key)))
 }
 
 /**

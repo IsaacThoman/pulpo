@@ -30,6 +30,9 @@ describe('menu entries', () => {
     expect(matchesShortcut(event('p', { metaKey: true, shiftKey: true }), { key: 'p', mod: true })).toBe(false)
     expect(matchesShortcut(event('p'), { key: 'p', mod: true })).toBe(false)
     expect(matchesShortcut(event('ƒ', { metaKey: true, altKey: true, code: 'KeyF' }), { key: 'f', mod: true, alt: true })).toBe(true)
+    // A Cyrillic layout types з on the P key; Dvorak types L there, which is another shortcut.
+    expect(matchesShortcut(event('з', { ctrlKey: true, code: 'KeyP' }), { key: 'p', mod: true })).toBe(true)
+    expect(matchesShortcut(event('l', { ctrlKey: true, code: 'KeyP' }), { key: 'p', mod: true })).toBe(false)
   })
 })
 

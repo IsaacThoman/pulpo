@@ -60,6 +60,15 @@ function codeFor(key: string): string | null {
 }
 
 /**
+ * Whether a key typed a plain ASCII character. Only keys that did not (Cyrillic letters, Option on
+ * a Mac) are matched by their physical key: Dvorak's L sits where QWERTY has P, and Spanish and
+ * German keyboards type "-" (Zoom out) where US ones type "/".
+ */
+export function typesAscii(key: string): boolean {
+  return /^[\x20-\x7e]$/.test(key)
+}
+
+/**
  * Whether a key event is the shortcut. Cmd and Ctrl both count as `mod`, as the editors' own
  * keymaps take them; other modifiers must match exactly.
  */
@@ -67,6 +76,7 @@ export function matchesShortcut(event: Pick<KeyboardEvent, 'key' | 'code' | 'met
   if (Boolean(spec.mod) !== (event.metaKey || event.ctrlKey)) return false
   if (Boolean(spec.alt) !== event.altKey || Boolean(spec.shift) !== event.shiftKey) return false
   if (event.key.toLowerCase() === spec.key.toLowerCase()) return true
+  if (typesAscii(event.key)) return false
   const code = codeFor(spec.key)
   return code !== null && event.code === code
 }
