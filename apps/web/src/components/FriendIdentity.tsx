@@ -14,7 +14,7 @@ function HighlightedText({ value, query }: { value: string; query: string }) {
 }
 
 function ProfileHoverCard({ profile, children }: { profile: FriendProfile; children: ReactNode }) {
-  return <TooltipProvider delayDuration={250}>
+  return <TooltipProvider delayDuration={1_000}>
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent

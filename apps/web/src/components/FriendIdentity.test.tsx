@@ -25,7 +25,7 @@ afterEach(cleanup)
 async function expectProfileCard(trigger: HTMLElement, displayName: string, username: string, interaction: 'focus' | 'hover') {
   if (interaction === 'focus') fireEvent.focus(trigger)
   else fireEvent.pointerMove(trigger, { pointerType: 'mouse' })
-  const card = await screen.findByRole('tooltip')
+  const card = await screen.findByRole('tooltip', {}, { timeout: 1_500 })
   expect(within(card).queryByText('Profile')).toBeNull()
   expect(card.querySelector('[data-slot="tooltip-arrow"]')).toBeNull()
   expect(within(card).getByText(displayName)).toBeTruthy()
