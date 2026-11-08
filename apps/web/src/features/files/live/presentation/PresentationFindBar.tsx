@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ToolbarButton } from '@/features/files/editor/ToolbarButton'
 import { ui } from '@/i18n/ui'
-import { firstMatchFrom } from './find'
+import { firstMatchFrom, nextAfterReplace } from './find'
 
 /**
  * Find and replace across the deck, as the Word editor's bar has it: matches on the slides and in
@@ -35,6 +35,8 @@ export function PresentationFindBar({ controller, replace, focusRequest, onRevea
   const [contentVersion, setContentVersion] = useState(0)
   const input = useRef<HTMLInputElement>(null)
   const revealNext = useRef(false)
+  /** The match Replace just replaced, and where its replacement ends. */
+  const replacedAt = useRef<{ match: FindMatch; end: number } | undefined>(undefined)
   const shown = useRef<FindMatch | undefined>(undefined)
   useEffect(() => controller.subscribe((change) => {
     if (change.slides.size || change.order || change.parts) setContentVersion((version) => version + 1)
@@ -71,11 +73,17 @@ export function PresentationFindBar({ controller, replace, focusRequest, onRevea
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, matchCase, wholeWord])
 
-  // After Replace, the next match takes the replaced one's place in the list: show it.
+  // After Replace, the next match takes the replaced one's place in the list (past any match in
+  // the replacement itself): show it.
   useEffect(() => {
     if (!revealNext.current) return
     revealNext.current = false
-    if (current >= 0) reveal(matches, current)
+    const replaced = replacedAt.current
+    replacedAt.current = undefined
+    if (!matches.length) return
+    const next = replaced ? nextAfterReplace(matches, index, replaced.match, replaced.end) : current
+    if (next !== index) setIndex(next)
+    reveal(matches, next)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matches])
 
@@ -90,8 +98,10 @@ export function PresentationFindBar({ controller, replace, focusRequest, onRevea
     const match = matches[current]
     if (!match) return
     revealNext.current = true
+    replacedAt.current = { match, end: match.from + replacement.length }
     if (!controller.replaceMatch(match, replacement)) {
       // The text changed since the search: search again and show the match now there.
+      replacedAt.current = undefined
       setContentVersion((version) => version + 1)
     }
   }

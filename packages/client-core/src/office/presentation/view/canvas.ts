@@ -57,7 +57,7 @@ export interface SlideCanvasOptions {
    * browser's own menu (spelling, cut, copy, paste) shows instead.
    */
   onContextMenu?(event: MouseEvent, shapeKey: string | undefined, cell?: { row: string; column: string }): void
-  /** Opens a link the user clicked; the canvas only passes http(s) and mailto URLs. */
+  /** Opens a link the user clicked; the canvas only passes http(s), mailto, and tel URLs. */
   onOpenLink?(url: string): void
   /** The zoom changed (wheel, pinch, keys, `setZoom`, or fitting a resized window); 1 is 100%. */
   onZoomChange?(zoom: number, fit: boolean): void
@@ -70,7 +70,7 @@ const SNAP_PX = 6
 const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
 
 function isSafeUrl(url: string): boolean {
-  return /^(https?:|mailto:)/i.test(url)
+  return /^(https?:|mailto:|tel:)/i.test(url)
 }
 
 export class SlideCanvas {
@@ -88,6 +88,11 @@ export class SlideCanvas {
   /** What the open editor edits (slide, shape, row, column), to notice a switch to another cell. */
   private editorTarget?: string
   private editorFrame?: HTMLElement
+  /**
+   * Text find opened to show a match, not edited in yet: autofit leaves the file's font scale and
+   * the shape's height alone, so searching never changes (or adds undo steps to) the deck.
+   */
+  private autofitHeld = false
   private readonly unsubscribe: () => void
   private readonly resizeObserver?: ResizeObserver
   private readonly pointers = new Map<number, { x: number; y: number }>()
@@ -656,6 +661,10 @@ export class SlideCanvas {
       return
     }
     const mount = frame.querySelector<HTMLElement>('.pp-editor-inner') ?? frame
+    // Taken before the editor exists: it dispatches (and so autofits) while it is being built.
+    const editing = this.controller.state.editing
+    const reveal = editing ? this.controller.takeReveal(editing) : undefined
+    this.autofitHeld = reveal !== undefined
     // A press in the text box beside the text (padding, below the last line) moves the caret
     // there instead of leaving the editor; the default would also move focus to the canvas.
     frame.addEventListener('mousedown', (event) => {
@@ -675,14 +684,13 @@ export class SlideCanvas {
       ...(rowKey && columnKey ? { onTab: (backward: boolean) => this.moveToCell(shapeKey, rowKey, columnKey, backward) } : {}),
       onToggleMark: (mark) => this.controller.toggleMark(mark),
       onKey: (event) => editorShortcut(this.controller, event),
-      onSelectionChange: () => {
+      onSelectionChange: (_state, edited) => {
+        if (edited) this.autofitHeld = false
         this.autofit()
         this.controller.setState({})
       },
     })
     this.controller.activeEditor = this.editor
-    const editing = this.controller.state.editing
-    const reveal = editing ? this.controller.takeReveal(editing) : undefined
     // A match find shows keeps focus in the find bar unless it asks for the text.
     if (reveal) this.editor.selectText(reveal.paragraph, reveal.from, reveal.to, reveal.focus)
     else if (!caret || !this.editor.caretAt(caret, caret.word)) this.editor.focus()
@@ -789,7 +797,7 @@ export class SlideCanvas {
     const editing = this.controller.state.editing
     const text = this.editorFrame?.querySelector<HTMLElement>('.pp-editor-text')
     const inner = this.editorFrame?.querySelector<HTMLElement>('.pp-editor-inner')
-    if (!editing || editing.row || !text || !inner) return
+    if (!editing || editing.row || !text || !inner || this.autofitHeld) return
     const shape = this.controller.shape(editing.slide, editing.shape)
     const layout = this.controller.textLayout(editing.slide, editing.shape)
     if (!shape || !layout) return

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import { blankPresentation } from '../blank.js'
 import { presentationCodec } from '../codec.js'
-import { setShapeText } from '../commands.js'
+import { setShapeProperty, setShapeText } from '../commands.js'
 import { plainToText, textToPlain } from '../text.js'
 import { memoryAssets } from '../testing/assets.js'
 import { SlideCanvas, type SlideCanvasOptions } from './canvas.js'
@@ -142,6 +142,45 @@ describe('slide canvas events', () => {
     expect(document.activeElement).toBe(text)
     const selection = controller.activeEditor!.view.state.selection
     expect(controller.activeEditor!.view.state.doc.textBetween(selection.from, selection.to)).toBe('word')
+  })
+
+  it('leaves autofit alone in text find opened until someone edits it', async () => {
+    const { controller } = await mount()
+    const slide = controller.state.slide!
+    const title = controller.slide(slide)!.shapes[0]!.key
+    // As PowerPoint saves shrunk text: a font scale autofit's 10% steps never land on.
+    const bodyPr = '<a:bodyPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:normAutofit fontScale="92500" lnSpcReduction="10000"/></a:bodyPr>'
+    controller.doc.transact(() => {
+      setShapeText(controller.doc, slide, title, plainToText('Quarterly results overview'), 'import')
+      setShapeProperty(controller.doc, slide, [title], 'bodyPr', bodyPr, 'import')
+    }, 'import')
+    controller.undoManager.clear()
+    const field = document.createElement('input')
+    document.body.append(field)
+    field.focus()
+    const updates: unknown[] = []
+    const onUpdate = (_update: Uint8Array, origin: unknown) => updates.push(origin)
+    controller.doc.on('update', onUpdate)
+    cleanup.push(() => controller.doc.off('update', onUpdate))
+    controller.revealMatch(controller.find('results')[0]!)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(controller.activeEditor).toBeDefined()
+    // Moving to the next match in the same text changes nothing either.
+    controller.revealMatch(controller.find('overview')[0]!)
+    await Promise.resolve()
+    controller.setState({ editing: undefined })
+    await Promise.resolve()
+    expect(updates).toEqual([])
+    expect(controller.canUndo()).toBe(false)
+    expect(controller.shape(slide, title)!.bodyPr).toBe(bodyPr)
+    // Typing in text find opened does autofit, as typing in any text does.
+    controller.revealMatch(controller.find('results')[0]!)
+    await Promise.resolve()
+    await Promise.resolve()
+    const editor = controller.activeEditor!
+    editor.view.dispatch(editor.view.state.tr.insertText('!'))
+    expect(controller.shape(slide, title)!.bodyPr).not.toBe(bodyPr)
   })
 
   it('takes text formatting back from the speaker notes when the slide gets focus', async () => {

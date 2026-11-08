@@ -1,3 +1,4 @@
+import { updateYFragment } from '@tiptap/y-tiptap'
 import { unzipSync } from 'fflate'
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
@@ -14,6 +15,7 @@ import {
   presetShape,
   readXfrm,
   reorderShapes,
+  resetSlide,
   setShapeProperty,
   setShapeText,
   setSlideHidden,
@@ -25,7 +27,7 @@ import {
   ungroupShape,
 } from './commands.js'
 import { DeckResources } from './render/deck.js'
-import { plainToText } from './text.js'
+import { plainToText, textNode } from './text.js'
 import { memoryAssets } from './testing/assets.js'
 import { fixture } from './testing/fixtures.js'
 import { readSnapshot } from './ydoc.js'
@@ -153,6 +155,123 @@ describe('concurrent editing', () => {
     expect(exported?.shapes.map((shape) => /<p:ph[^>]*>/.exec(shape.xml)?.[0])).toEqual(shapes.map((shape) => /<p:ph[^>]*>/.exec(shape.xml)?.[0]))
     expect(new Set(exported!.shapes.map((shape) => shape.nvId)).size).toBe(5)
   })
+
+  // Whichever client Yjs orders first, typing into a placeholder one side added must survive the
+  // other side adding its own copy at the same time.
+  for (const [first, second] of [[1, 2], [2, 1]] as const) {
+    it(`keeps text typed into a new placeholder before two layout changes meet (clients ${first} and ${second})`, async () => {
+      const context = { name: 'deck.pptx', assets: memoryAssets() }
+      const base = new Y.Doc()
+      await presentationCodec.importFile(base, fixture('generated/layouts-notes-sections.pptx'), context)
+      const blank = readSnapshot(base).slides.find((slide) => slide.shapes.length === 0)!
+      const target = readSnapshot(base).slides.find((slide) => slide.shapes.length === 5)!.layout
+      const replica = (clientID: number) => {
+        const doc = new Y.Doc()
+        doc.clientID = clientID
+        Y.applyUpdate(doc, Y.encodeStateAsUpdate(base))
+        return doc
+      }
+      const [a, b] = [replica(first), replica(second)]
+      const deckOf = (doc: Y.Doc) => new DeckResources(readSnapshot(doc).parts, 'ppt/presentation.xml')
+      const shapesOn = (doc: Y.Doc) => readSnapshot(doc).slides.find((slide) => slide.key === blank.key)!.shapes
+      setSlideLayout(a, deckOf(a), blank.key, target, { local: true })
+      const [title, body] = shapesOn(a)
+      setShapeText(a, blank.key, title!.key, plainToText('Typed by A'), { local: true })
+      setSlideLayout(b, deckOf(b), blank.key, target, { local: true })
+      // B has its own editor open on its own copy of the body, bound before A's edits arrive.
+      const bBody = shapesOn(b)[1]!
+      const bound = shapeFragment(b, blank.key, bBody.key, { local: true })!
+      sync(a, b)
+      expect(stableStringify(readSnapshot(a))).toBe(stableStringify(readSnapshot(b)))
+      // One copy of each placeholder shows; the typed title is A's.
+      const placeholders = (shapes: { xml: string }[]) => shapes.map((shape) => /<p:ph[^>]*>/.exec(shape.xml)?.[0]).sort()
+      const solo = replica(3)
+      setSlideLayout(solo, deckOf(solo), blank.key, target, { local: true })
+      const shown = shapesOn(a)
+      expect(shown.length).toBe(5)
+      expect(placeholders(shown)).toEqual(placeholders(shapesOn(solo)))
+      expect(shown.filter((shape) => JSON.stringify(shape.text ?? '').includes('Typed by A')).map((shape) => shape.key)).toEqual([title!.key])
+      // Typing into B's bound (possibly hidden) copy lands and shows on both sides.
+      b.transact(() => updateYFragment(b, bound, textNode(plainToText('Typed by B')), { mapping: new Map(), isOMark: new Map() }), { local: true })
+      sync(a, b)
+      for (const doc of [a, b]) {
+        const text = presentationCodec.toText(doc)
+        expect(text).toContain('Typed by A')
+        expect(text).toContain('Typed by B')
+      }
+      expect(stableStringify(readSnapshot(a))).toBe(stableStringify(readSnapshot(b)))
+      expect(shapesOn(a).some((shape) => shape.key === bBody.key)).toBe(true)
+      // The body A added and nobody touched no longer shows beside B's typed one.
+      expect(shapesOn(a).some((shape) => shape.key === body!.key)).toBe(false)
+      expect(shapesOn(a).length).toBe(5)
+      // Both texts reach the file, with one shape per placeholder and unique ids.
+      const reread = new Y.Doc()
+      await presentationCodec.importFile(reread, await presentationCodec.exportFile(a, context), context)
+      expect(presentationCodec.toText(reread)).toContain('Typed by A')
+      expect(presentationCodec.toText(reread)).toContain('Typed by B')
+      const exported = readSnapshot(reread).slides.find((slide) => slide.shapes.some((shape) => JSON.stringify(shape.text ?? '').includes('Typed by A')))!
+      expect(exported.shapes.length).toBe(5)
+      expect(new Set(exported.shapes.map((shape) => shape.nvId)).size).toBe(5)
+      // Switching back to a layout without them moves only the shapes shown; the copies left
+      // out stay as they were added, and so out.
+      setSlideLayout(b, deckOf(b), blank.key, blank.layout, { local: true })
+      sync(a, b)
+      expect(shapesOn(a).length).toBe(5)
+      expect(shapesOn(a).every((shape) => shape.xfrm)).toBe(true)
+    })
+
+    it(`keeps the copies left out of sight when the placeholder shown is deleted, grouped, or reset (clients ${first} and ${second})`, async () => {
+      const context = { name: 'deck.pptx', assets: memoryAssets() }
+      const base = new Y.Doc()
+      await presentationCodec.importFile(base, fixture('generated/layouts-notes-sections.pptx'), context)
+      const blank = readSnapshot(base).slides.find((slide) => slide.shapes.length === 0)!
+      const target = readSnapshot(base).slides.find((slide) => slide.shapes.length === 5)!.layout
+      const replica = (clientID: number) => {
+        const doc = new Y.Doc()
+        doc.clientID = clientID
+        Y.applyUpdate(doc, Y.encodeStateAsUpdate(base))
+        return doc
+      }
+      const [a, b] = [replica(first), replica(second)]
+      const origin = { local: true }
+      const undo = new Y.UndoManager(a.getMap('presentation'), { trackedOrigins: new Set([origin]) })
+      const deckOf = (doc: Y.Doc) => new DeckResources(readSnapshot(doc).parts, 'ppt/presentation.xml')
+      const shapesOn = (doc: Y.Doc) => readSnapshot(doc).slides.find((slide) => slide.key === blank.key)!.shapes
+      const placeholders = (doc: Y.Doc) => shapesOn(doc).flatMap(function flat(shape): string[] { return shape.children ? shape.children.flatMap(flat) : [/<p:ph[^>]*>/.exec(shape.xml)?.[0] ?? ''] }).sort()
+      setSlideLayout(a, deckOf(a), blank.key, target, origin)
+      setSlideLayout(b, deckOf(b), blank.key, target, origin)
+      sync(a, b)
+      undo.clear()
+      const all = placeholders(a)
+      expect(all.length).toBe(5)
+      const [title, body] = shapesOn(a)
+      // Deleting the title shown, untouched or typed in, leaves no other copy of it in its place.
+      deleteShapes(a, blank.key, [title!.key], origin)
+      expect(placeholders(a)).toEqual(all.filter((ph) => ph !== /<p:ph[^>]*>/.exec(title!.xml)?.[0]))
+      undo.undo()
+      expect(placeholders(a)).toEqual(all)
+      setShapeText(a, blank.key, title!.key, plainToText('Typed by A'), origin)
+      deleteShapes(a, blank.key, [title!.key], origin)
+      expect(placeholders(a).length).toBe(4)
+      sync(a, b)
+      expect(placeholders(b).length).toBe(4)
+      undo.undo()
+      undo.undo()
+      // Grouping the copies shown keeps the others out of sight, in the group and after it.
+      const xfrms = new Map([title!, body!].map((shape, index) => [shape.key, { x: 0, y: index * 1_000_000, cx: 1_000_000, cy: 1_000_000 }] as const))
+      const group = groupShapes(a, blank.key, [title!.key, body!.key], xfrms, 'Group', origin)!
+      expect(placeholders(a)).toEqual(all)
+      ungroupShape(a, blank.key, group, origin)
+      expect(placeholders(a)).toEqual(all)
+      undo.undo()
+      undo.undo()
+      // Reset slide leaves the copies out of sight as they were, so they stay out.
+      resetSlide(a, deckOf(a), blank.key, origin)
+      sync(a, b)
+      expect(placeholders(a)).toEqual(all)
+      expect(placeholders(b)).toEqual(all)
+    })
+  }
 
 
   for (const seed of [1, 2, 3, 4, 5, 6]) {

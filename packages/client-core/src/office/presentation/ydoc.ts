@@ -305,10 +305,7 @@ export function readSlideMap(key: string, map: YSlide): SlideSnapshot {
   slide.xml = (map.get('xml') as string | undefined) ?? ''
   slide.rels = (map.get('rels') as Record<string, unknown> | undefined) ?? {}
   const shapes = map.get('shapes') as Y.Map<YShape> | undefined
-  const visited = new Set<string>()
-  slide.shapes = orderedKeys(map.get('shapeOrder') as Y.Array<string>, shapes)
-    .map((shapeKey) => readShapeMap(shapeKey, shapes!, visited, 0))
-    .filter((shape): shape is ShapeSnapshot => shape !== undefined)
+  slide.shapes = shapes ? withoutUntouchedCopies(readTopLevelShapes(map, shapes), shapes) : []
   const notes = map.get('notes') as Y.Map<unknown> | undefined
   const noNotes = notes && notes.get('part') === undefined && !notes.get('xml') && (isBlank(notes.get('text')) || textToPlainSafe(notes.get('text')) === '')
   if (notes && !noNotes) {
@@ -345,6 +342,107 @@ function readShapeMap(key: string, shapes: Y.Map<YShape>, visited: Set<string>, 
       .filter((member): member is ShapeSnapshot => member !== undefined)
   }
   return shape as unknown as ShapeSnapshot
+}
+
+/**
+ * Under this key of a shape map: the layout placeholder `addMissingPlaceholders` added the shape
+ * for (`slot`, its type and idx), and how the shape read when it was new (`pristine`). It never
+ * reaches the file.
+ */
+const LAYOUT_PLACEHOLDER = 'layoutPlaceholder'
+
+interface LayoutPlaceholderMark {
+  slot: string
+  pristine: string
+}
+
+/** How a shape reads, but for its key: two copies of one untouched placeholder read the same. */
+function fingerprint(shape: ShapeSnapshot): string {
+  const { key: _key, ...rest } = shape
+  return stableStringify(rest)
+}
+
+/** Marks a shape just added for a layout's placeholder `slot` (see `withoutUntouchedCopies`). */
+export function markLayoutPlaceholder(shapes: Y.Map<YShape>, key: string, slot: string): void {
+  const map = shapes.get(key)
+  const shape = map ? readShapeMap(key, shapes, new Set(), 0) : undefined
+  if (map && shape) map.set(LAYOUT_PLACEHOLDER, { slot, pristine: fingerprint(shape) } satisfies LayoutPlaceholderMark)
+}
+
+/**
+ * Two people applying a layout to one slide at once each add its empty placeholders, under keys
+ * of their own: under one shared key Yjs would keep only one person's shape, and with it drop
+ * whatever they typed into theirs. The reader shows one copy of each such placeholder, leaving
+ * out the copies nobody has touched since they were added (still reading exactly as they did
+ * then); a copy someone typed in, moved, or formatted always shows. When every copy is
+ * untouched, the one with the smallest key shows, so moving copies in z-order never swaps them.
+ */
+function withoutUntouchedCopies(list: ShapeSnapshot[], shapes: Y.Map<YShape>): ShapeSnapshot[] {
+  const hidden = untouchedCopies(list, shapes)
+  return hidden.size ? list.filter((shape) => !hidden.has(shape.key)) : list
+}
+
+/**
+ * The shapes of a slide the reader leaves out (see `withoutUntouchedCopies`). Edits that go
+ * through every shape of a slide skip them, so that they are not touched and shown.
+ */
+export function hiddenPlaceholderCopies(slide: YSlide): Set<string> {
+  const shapes = slide.get('shapes') as Y.Map<YShape> | undefined
+  return shapes ? untouchedCopies(readTopLevelShapes(slide, shapes), shapes) : new Set()
+}
+
+/**
+ * The hidden copies (see `hiddenPlaceholderCopies`) of the layout placeholders that `keys` are
+ * copies of: deleting the copy shown takes them along, or one would show in its place.
+ */
+export function hiddenCopiesOf(slide: YSlide, keys: ReadonlySet<string>): string[] {
+  const shapes = slide.get('shapes') as Y.Map<YShape> | undefined
+  if (!shapes) return []
+  const slots = new Set<string>()
+  for (const key of keys) {
+    const slot = markOf(shapes.get(key))?.slot
+    if (slot !== undefined) slots.add(slot)
+  }
+  if (!slots.size) return []
+  return [...hiddenPlaceholderCopies(slide)].filter((key) => !keys.has(key) && slots.has(markOf(shapes.get(key))?.slot ?? ''))
+}
+
+function markOf(shape: YShape | undefined): LayoutPlaceholderMark | undefined {
+  const mark = shape?.get(LAYOUT_PLACEHOLDER) as Partial<LayoutPlaceholderMark> | undefined
+  return mark && typeof mark.slot === 'string' && typeof mark.pristine === 'string' ? (mark as LayoutPlaceholderMark) : undefined
+}
+
+/** A slide's top-level shapes in drawing order, every copy included. */
+function readTopLevelShapes(slide: YSlide, shapes: Y.Map<YShape>): ShapeSnapshot[] {
+  const visited = new Set<string>()
+  return orderedKeys(slide.get('shapeOrder') as Y.Array<string>, shapes)
+    .map((shapeKey) => readShapeMap(shapeKey, shapes, visited, 0))
+    .filter((shape): shape is ShapeSnapshot => shape !== undefined)
+}
+
+/**
+ * Copies inside a group count as shown (grouping gives them a position of their own), so grouping
+ * the copy shown keeps the others out; only top-level copies are ever left out.
+ */
+function untouchedCopies(list: readonly ShapeSnapshot[], shapes: Y.Map<YShape>): Set<string> {
+  const slots = new Map<string, { shape: ShapeSnapshot; pristine: string; top: boolean }[]>()
+  const visit = (shape: ShapeSnapshot, top: boolean) => {
+    for (const member of shape.children ?? []) visit(member, false)
+    const mark = markOf(shapes.get(shape.key))
+    if (!mark) return
+    const copies = slots.get(mark.slot)
+    if (copies) copies.push({ shape, pristine: mark.pristine, top })
+    else slots.set(mark.slot, [{ shape, pristine: mark.pristine, top }])
+  }
+  for (const shape of list) visit(shape, true)
+  const hidden = new Set<string>()
+  for (const copies of slots.values()) {
+    if (copies.length < 2) continue
+    const untouched = copies.filter((copy) => copy.top && fingerprint(copy.shape) === copy.pristine).map((copy) => copy.shape.key)
+    const shown = untouched.length === copies.length ? untouched.reduce((a, b) => (b < a ? b : a)) : undefined
+    for (const key of untouched) if (key !== shown) hidden.add(key)
+  }
+  return hidden
 }
 
 export function readXfrmMap(map: Y.Map<unknown>): Xfrm {

@@ -917,6 +917,17 @@ try {
     await page.keyboard.press('Escape')
     await page.locator('[data-link-dialog]').waitFor({ state: 'detached' })
     await page.waitForFunction(() => document.activeElement?.closest('.pp-text-editor'))
+    // On a Mac, Control keys in text keep their macOS meaning: Ctrl+H deletes back instead of
+    // opening replace, and Ctrl+K deletes to the end of the line instead of opening the link dialog.
+    if (await page.evaluate(() => /Mac/.test(navigator.platform))) {
+      const typed = () => page.evaluate(() => window.harness.controllers.a.activeEditor.view.state.doc.textContent)
+      const before = await typed()
+      await page.keyboard.press('Control+h')
+      assert.ok((await typed()).length < before.length, 'Ctrl+H deletes back')
+      await page.keyboard.press('Control+k')
+      assert.equal(await page.locator('[data-presentation-find], [data-link-dialog]').count(), 0)
+      assert.ok(await page.evaluate(() => document.activeElement?.closest('.pp-text-editor')), 'focus stays in the text')
+    }
     await page.keyboard.press('Meta+Shift+l')
     assert.deepEqual(await page.evaluate(() => window.requests), ['find', 'replace', 'link'])
     assert.equal(await page.evaluate(() => window.harness.controllers.a.formatState().align), 'l', 'Mod+Shift+L aligns left while editing')

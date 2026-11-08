@@ -143,6 +143,38 @@ describe('PresentationFindBar', () => {
     expect(onClose.mock.calls[0]![0]).toMatchObject({ text: expect.stringMatching(/beta/i) })
   })
 
+  it('moves past a replacement that still matches, as Word and Slides do', async () => {
+    const flush = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+    const status = () => document.querySelector('[data-find-status]')!.textContent
+    const run = async (texts: string[], query: string, replacement: string) => {
+      const controller = await deck(texts)
+      const view = render(<PresentationFindBar controller={controller} replace onClose={() => {}} />)
+      fireEvent.change(screen.getByRole('textbox', { name: 'Find in presentation' }), { target: { value: query } })
+      fireEvent.change(screen.getByRole('textbox', { name: 'Replace with' }), { target: { value: replacement } })
+      const replace = async () => {
+        fireEvent.click(screen.getAllByRole('button', { name: 'Replace' }).find((button) => !button.hasAttribute('aria-pressed'))!)
+        await flush()
+      }
+      return { controller, replace, unmount: view.unmount }
+    }
+    // The replacement contains the query.
+    const cats = await run(['cat cat'], 'cat', 'cats')
+    expect(status()).toBe('1 of 2')
+    await cats.replace()
+    expect(status()).toBe('2 of 2')
+    await cats.replace()
+    expect(cats.controller.find('cats', { wholeWord: true })).toHaveLength(2)
+    expect(cats.controller.find('catss')).toHaveLength(0)
+    cats.unmount()
+    // A case fix with Match case off, across slides.
+    const pulpo = await run(['pulpo one', 'pulpo two'], 'pulpo', 'Pulpo')
+    await pulpo.replace()
+    expect(status()).toBe('2 of 2')
+    expect(pulpo.controller.state.slide).toBe(pulpo.controller.slideKeys()[1])
+    await pulpo.replace()
+    expect(pulpo.controller.find('Pulpo', { matchCase: true })).toHaveLength(2)
+  })
+
   it('offers no replacing to viewers', async () => {
     const controller = await deck(['Alpha'])
     controller.setReadOnly(true)

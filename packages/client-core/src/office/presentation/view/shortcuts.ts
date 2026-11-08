@@ -42,7 +42,10 @@ export function applyTextShortcut(controller: PresentationController, shortcut: 
   else controller.clearFormatting()
 }
 
-/** Mod+F finds, Ctrl+H (Cmd+Shift+H on a Mac, where Cmd+H hides the app) replaces, Mod+K links. */
+/**
+ * Mod+F finds, Ctrl+H (Cmd+Shift+H on a Mac, where Cmd+H hides the app) replaces, Mod+K links.
+ * In text on a Mac only the Cmd keys count (see `editorShortcut`).
+ */
 export function requestShortcut(event: KeyboardEvent): PresentationRequest | undefined {
   if (!(event.metaKey || event.ctrlKey) || event.altKey) return undefined
   const key = event.key.toLowerCase()
@@ -64,11 +67,22 @@ export function sendRequest(controller: PresentationController, request: Present
   return controller.request(request)
 }
 
+/** Apple platforms, read at each key press (tests stub the platform). */
+function isApple(): boolean {
+  return typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+}
+
 /**
  * Shortcuts inside a text editor, on the slide or in the notes. Bold, italic, and underline
  * stay with the editor's own keymap. Returns true when the key was handled.
+ *
+ * In text on Apple platforms only Cmd makes a shortcut, as ProseMirror's `Mod` has it: Control
+ * keys keep their macOS text meaning (Ctrl+H deletes back, Ctrl+K to the end of the line, Ctrl+F
+ * moves forward, Ctrl+Shift+E selects to the end of the paragraph). Ctrl+M, which has none, still
+ * adds a slide.
  */
 export function editorShortcut(controller: PresentationController, event: KeyboardEvent): boolean {
+  if (event.ctrlKey && !event.metaKey && isApple() && !isNewSlideShortcut(event)) return false
   const request = requestShortcut(event)
   if (request) return sendRequest(controller, request)
   if (controller.readOnly) return false

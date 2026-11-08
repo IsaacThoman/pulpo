@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { strFromU8, unzipSync } from 'fflate'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import { blankPresentation } from '../blank.js'
 import { presentationCodec } from '../codec.js'
@@ -10,7 +10,7 @@ import { plainToText, type TextJSON } from '../text.js'
 import { memoryAssets } from '../testing/assets.js'
 import { LOCAL_ORIGIN, normalizeLink, PresentationController } from './controller.js'
 import { NotesEditor } from './notes.js'
-import { requestShortcut, textShortcut } from './shortcuts.js'
+import { editorShortcut, requestShortcut, textShortcut } from './shortcuts.js'
 import { InlineTextEditor } from './text-editor.js'
 
 // ProseMirror scrolls the selection into view; jsdom has no layout, so ranges measure as empty.
@@ -135,5 +135,49 @@ describe('presentation text commands', () => {
     expect(requestShortcut(key({ key: 'h', code: 'KeyH', ctrlKey: true }))).toBe('replace')
     expect(requestShortcut(key({ key: 'k', code: 'KeyK', ctrlKey: true }))).toBe('link')
     expect([normalizeLink('example.com/a?b'), normalizeLink(' ada@example.com '), normalizeLink('HTTP://x.org'), normalizeLink('file:///etc/passwd'), normalizeLink('not a url')]).toEqual(['https://example.com/a?b', 'mailto:ada@example.com', 'HTTP://x.org', undefined, undefined])
+  })
+
+  it('leaves Control keys in text to macOS, where only Cmd makes a shortcut', async () => {
+    const { controller, slide, title } = await open()
+    setShapeText(controller.doc, slide, title, plainToText('hello world'), LOCAL_ORIGIN)
+    const editor = edit(controller, slide, title)
+    editor.select(1, 6)
+    const requests: string[] = []
+    cleanup.push(controller.onRequest((request) => requests.push(request)))
+    const platform = vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel')
+    cleanup.push(() => platform.mockRestore())
+    const key = (init: KeyboardEventInit) => editorShortcut(controller, new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }))
+    const align = controller.formatState().align
+    expect(align).not.toBe('r')
+    // Ctrl+H deletes back, Ctrl+K to the end of the line, Ctrl+F moves on, Ctrl+Shift+E selects to the end.
+    expect([key({ key: 'h', code: 'KeyH', ctrlKey: true }), key({ key: 'k', code: 'KeyK', ctrlKey: true }), key({ key: 'f', code: 'KeyF', ctrlKey: true }), key({ key: 'E', code: 'KeyE', ctrlKey: true, shiftKey: true }), key({ key: 'R', code: 'KeyR', ctrlKey: true, shiftKey: true })]).toEqual([false, false, false, false, false])
+    expect(requests).toEqual([])
+    expect(controller.formatState().align).toBe(align)
+    // The Cmd keys do what the shortcuts list says, and Ctrl+M still adds a slide.
+    expect([key({ key: 'f', code: 'KeyF', metaKey: true }), key({ key: 'H', code: 'KeyH', metaKey: true, shiftKey: true }), key({ key: 'k', code: 'KeyK', metaKey: true }), key({ key: 'R', code: 'KeyR', metaKey: true, shiftKey: true })]).toEqual([true, true, true, true])
+    expect(requests).toEqual(['find', 'replace', 'link'])
+    expect(controller.formatState().align).toBe('r')
+    const slides = controller.slideKeys().length
+    expect(key({ key: 'm', code: 'KeyM', ctrlKey: true })).toBe(true)
+    expect(controller.slideKeys().length).toBe(slides + 1)
+    // Elsewhere Control is the shortcut key.
+    platform.mockReturnValue('Win32')
+    expect(key({ key: 'h', code: 'KeyH', ctrlKey: true })).toBe(true)
+    expect(requests.at(-1)).toBe('replace')
+  })
+
+  it('takes tel: links, as the link dialog does', async () => {
+    const { controller, assets, slide, title } = await open()
+    setShapeText(controller.doc, slide, title, plainToText('Call us'), LOCAL_ORIGIN)
+    expect(normalizeLink(' tel:+15551234567 ')).toBe('tel:+15551234567')
+    expect(normalizeLink('tel:')).toBeUndefined()
+    expect(normalizeLink('tel:+1 555')).toBeUndefined()
+    const editor = edit(controller, slide, title)
+    editor.select(1, 8)
+    expect(controller.setLink('tel:+15551234567')).toBe(true)
+    expect(controller.formatState().link).toBe('tel:+15551234567')
+    const { xml, rels } = await exportedSlide(controller, assets)
+    const id = /<a:hlinkClick[^>]*r:id="(rId\d+)"/.exec(xml)?.[1]
+    expect(rels).toMatch(new RegExp(`Id="${id}"[^>]*Target="tel:\\+15551234567"[^>]*TargetMode="External"|Target="tel:\\+15551234567"[^>]*Id="${id}"`))
   })
 })

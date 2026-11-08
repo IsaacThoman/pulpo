@@ -36,8 +36,11 @@ export interface InlineTextEditorOptions {
   onUndo(): void
   onRedo(): void
   onEscape?(): void
-  /** Called after every local change, with the editor state, for toolbar updates. */
-  onSelectionChange?(state: EditorState): void
+  /**
+   * Called after every transaction, with the editor state, for toolbar updates; `edited` when it
+   * changed the text here (typing, pasting, formatting), not a remote edit or a selection move.
+   */
+  onSelectionChange?(state: EditorState, edited: boolean): void
   /** Ctrl/Cmd shortcuts the editor does not handle itself (copy shapes, save, …). */
   onKey?(event: KeyboardEvent): boolean
   /** Tab and Shift+Tab; return true when handled (a table cell moves to the next cell). Else they change the list level. */
@@ -200,8 +203,9 @@ export class InlineTextEditor {
           if (options.readOnly && transaction.docChanged && transaction.getMeta(ySyncPluginKey) === undefined) return
           const next = this.state.apply(transaction)
           this.updateState(next)
-          if (transaction.docChanged && transaction.getMeta(ySyncPluginKey) === undefined) refreshNumbers()
-          options.onSelectionChange?.(next)
+          const edited = transaction.docChanged && transaction.getMeta(ySyncPluginKey) === undefined
+          if (edited) refreshNumbers()
+          options.onSelectionChange?.(next, edited)
         },
       },
     )
