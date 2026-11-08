@@ -78,6 +78,8 @@ describe('combined Friends and Pool page', () => {
     expect(within(requestRegion).queryByText('Mutual friends:')).toBeNull()
     expect(within(requestRegion).getByText('2 mutuals')).toBeTruthy()
     expect(within(requestRegion).getByRole('group', { name: 'Mutual friends: Alice, Bob' })).toBeTruthy()
+    expect(within(within(requestRegion).getByRole('link', { name: 'Request' })).queryByText(/^Requested /)).toBeNull()
+    expect(within(requestRegion).getByText(/^Requested /)).toBeTruthy()
     expect(within(requestRegion).getByRole('link', { name: 'Alice' }).getAttribute('href')).toBe('/alice')
     const suggestionRegion = screen.getByRole('heading', { name: 'People you may know' }).closest('section')!
     expect(within(suggestionRegion).getByText('Carol')).toBeTruthy()
