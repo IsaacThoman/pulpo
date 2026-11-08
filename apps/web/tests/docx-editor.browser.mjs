@@ -565,6 +565,24 @@ try {
     assert.deepEqual(await page.evaluate(() => window.printed), [true])
   })
 
+  await step('keeps menu bar submenus inside a phone-width window', async () => {
+    await page.setViewportSize({ width: 380, height: 800 })
+    try {
+      await open('?file=basic-formatting.docx')
+      await page.getByRole('menubar', { name: 'Menu bar' }).getByRole('menuitem', { name: 'View' }).click()
+      await page.getByRole('menuitem', { name: 'Zoom' }).hover()
+      // The submenu sits inside its menu's element; it is the innermost menu holding the presets.
+      const submenu = page.getByRole('menu').filter({ has: page.getByRole('menuitemradio', { name: '50%' }) }).last()
+      await submenu.waitFor()
+      const box = await submenu.boundingBox()
+      assert.ok(box.x >= 0 && box.x + box.width <= 380, `the submenu spans ${box.x} to ${box.x + box.width}`)
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('Escape')
+    } finally {
+      await page.setViewportSize({ width: 1400, height: 1000 })
+    }
+  })
+
   await step('rejects inserted tables and accepts or rejects deleted tables in Suggesting mode', async () => {
     await open('?file=basic-formatting.docx')
     const inserted = await page.evaluate(() => {

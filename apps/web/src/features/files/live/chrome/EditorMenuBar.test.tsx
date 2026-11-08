@@ -146,6 +146,24 @@ describe('EditorMenuBar', () => {
     expect(screen.getByRole('menuitemradio', { name: 'Print layout' }).getAttribute('aria-checked')).toBe('false')
   })
 
+  it('lines rows without an icon up with the labels of rows that have one', async () => {
+    const Icon = ({ className }: { className?: string }) => <svg className={className} />
+    const menus: MenuDefinition[] = [{
+      id: 'edit',
+      label: 'Edit',
+      items: () => [
+        { type: 'item', id: 'cut', label: 'Cut', icon: Icon, onSelect: noop },
+        { type: 'item', id: 'select-all', label: 'Select all', onSelect: noop },
+      ],
+    }, { id: 'help', label: 'Help', items: () => [{ type: 'item', id: 'about', label: 'About', onSelect: noop }] }]
+    render(<EditorMenuBar menus={menus} />)
+    fireEvent.keyDown(trigger('Edit'), { key: 'Enter' })
+    expect((await screen.findByRole('menuitem', { name: 'Select all' })).hasAttribute('data-inset')).toBe(true)
+    expect(screen.getByRole('menuitem', { name: 'Cut' }).hasAttribute('data-inset')).toBe(false)
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: 'Cut' }), { key: 'ArrowRight' })
+    expect((await screen.findByRole('menuitem', { name: 'About' })).hasAttribute('data-inset')).toBe(false)
+  })
+
   it('opens submenus with custom content that can close the menu bar', async () => {
     const onPick = vi.fn()
     render(<Editor onPick={onPick} />)

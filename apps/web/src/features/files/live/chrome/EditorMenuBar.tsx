@@ -22,27 +22,27 @@ function MenuItems({ items, close }: { items: () => MenuEntry[]; close: () => vo
   return <MenuEntries entries={items()} close={close} />
 }
 
-/** A menu's rows. Plain items line up with checkable ones when a menu has both. */
+/** A menu's rows. Rows without an icon line up with those that have an icon or a check. */
 function MenuEntries({ entries, close }: { entries: readonly MenuEntry[]; close: () => void }) {
   const rows = normalizeEntries(entries)
-  const checkable = rows.some((entry) => entry.type === 'item' && entry.checked !== undefined)
+  const aligned = rows.some((entry) => (entry.type === 'item' && entry.checked !== undefined) || ((entry.type === 'item' || entry.type === 'submenu') && entry.icon))
   return rows.map((entry, index) => {
     switch (entry.type) {
       case 'separator':
         return <DropdownMenuSeparator key={`separator-${index}`} />
       case 'label':
-        return <DropdownMenuLabel key={`label-${index}`} className="text-xs font-normal text-muted-foreground">{entry.label}</DropdownMenuLabel>
+        return <DropdownMenuLabel key={`label-${index}`} inset={aligned || undefined} className="text-xs font-normal text-muted-foreground">{entry.label}</DropdownMenuLabel>
       case 'custom':
         return <Fragment key={entry.id}>{entry.render(close)}</Fragment>
       case 'submenu':
         return (
           <DropdownMenuSub key={entry.id}>
-            <DropdownMenuSubTrigger disabled={entry.disabled} inset={(checkable && !entry.icon) || undefined} data-menu-item={entry.id}>
+            <DropdownMenuSubTrigger disabled={entry.disabled} inset={(aligned && !entry.icon) || undefined} data-menu-item={entry.id}>
               {entry.icon && <entry.icon />}
               {entry.label}
             </DropdownMenuSubTrigger>
             {/* Never wider than the room beside its menu (a narrow window or the side panel): labels wrap instead. */}
-            <DropdownMenuSubContent className="max-w-(--radix-dropdown-menu-content-available-width) min-w-40">
+            <DropdownMenuSubContent className="max-w-(--radix-dropdown-menu-content-available-width) min-w-[min(10rem,var(--radix-dropdown-menu-content-available-width))]">
               <MenuEntries entries={entry.items} close={close} />
             </DropdownMenuSubContent>
           </DropdownMenuSub>
@@ -69,7 +69,7 @@ function MenuEntries({ entries, close }: { entries: readonly MenuEntry[]; close:
           )
         }
         return (
-          <DropdownMenuItem key={entry.id} variant={entry.destructive ? 'destructive' : 'default'} inset={(checkable && !entry.icon) || undefined} {...props}>
+          <DropdownMenuItem key={entry.id} variant={entry.destructive ? 'destructive' : 'default'} inset={(aligned && !entry.icon) || undefined} {...props}>
             {content}
           </DropdownMenuItem>
         )
