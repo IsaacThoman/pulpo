@@ -71,7 +71,7 @@ try {
   const openFile = async (page, id) => {
     await page.goto(`${base}/files/d/${id}`)
     await page.locator('.pulpo-sheet canvas').first().waitFor()
-    await page.getByText('Synced').waitFor({ timeout: 15_000 })
+    await page.locator('[data-sync-state="synced"]').waitFor({ timeout: 15_000 })
   }
   /** Selects a cell through the name box. */
   const go = async (page, ref) => {
@@ -110,6 +110,8 @@ try {
   await first.goto(`${base}/files`)
   await first.getByRole('button', { name: 'New', exact: true }).click()
   await first.getByRole('menuitem', { name: 'New spreadsheet' }).click()
+  // It opens in the editor with its name selected in the title; Enter keeps the name.
+  await first.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Document name')
   await first.keyboard.press('Enter')
   let created
   for (let attempt = 0; attempt < 50 && !created; attempt++) {
@@ -152,10 +154,10 @@ try {
   await expectCell(first, 'C1', 'Note')
 
   // Stored: a reload shows it all.
-  await first.getByText('Synced').waitFor()
+  await first.locator('[data-sync-state="synced"]').waitFor()
   await first.reload()
   await first.locator('.pulpo-sheet canvas').first().waitFor()
-  await first.getByText('Synced').waitFor({ timeout: 15_000 })
+  await first.locator('[data-sync-state="synced"]').waitFor({ timeout: 15_000 })
   await expectCell(first, 'B4', '=SUM(B2:B3)')
   await expectCell(first, 'C1', 'Note')
 
@@ -229,7 +231,7 @@ try {
   await typeRow(first, 'A3', ['Groceries'])
   seed(await agentChat(`Insert a title in ${name}`, 'I added a title row.'), agentFile, 'write')
   await context.setOffline(false)
-  await first.getByText('Synced').waitFor({ timeout: 30_000 })
+  await first.locator('[data-sync-state="synced"]').waitFor({ timeout: 30_000 })
   await expectCell(first, 'A1', 'Budget')
   await expectCell(first, 'A2', 'Item')
   await expectCell(first, 'A4', 'Groceries')
@@ -269,7 +271,7 @@ try {
   await first.goto(`${base}/files/d/${reservation.node.id}`)
   await first.getByRole('button', { name: 'Edit' }).click()
   await first.locator('.pulpo-sheet canvas').first().waitFor()
-  await first.getByText('Synced').waitFor({ timeout: 15_000 })
+  await first.locator('[data-sync-state="synced"]').waitFor({ timeout: 15_000 })
   await expectCell(first, 'A1', 'Quarterly budget')
   await first.getByRole('tab', { name: 'Trend' }).waitFor()
   const demoPath = join(scratch, 'demo-original.xlsx')

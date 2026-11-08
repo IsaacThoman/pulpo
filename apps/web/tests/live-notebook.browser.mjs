@@ -104,7 +104,7 @@ try {
       if (screenshots) await page.screenshot({ path: join(screenshots, 'failed-open.png') })
       throw new Error(`The notebook did not open; the page says: ${(await page.locator('main').innerText().catch(() => '')).slice(0, 300)}`, { cause: error })
     }
-    await page.getByText('Synced').waitFor({ timeout: 15_000 })
+    await page.locator('[data-sync-state="synced"]').waitFor({ timeout: 15_000 })
   }
   const notebookKeys = (page) => page.getByRole('list', { name: 'Notebook cells' })
   const waitForCount = (page, count) => page.waitForFunction((expected) => document.querySelectorAll('[data-cell-key]').length === expected, count, { timeout: 10_000 })
@@ -176,7 +176,7 @@ try {
   await first.bringToFront()
 
   // Edits are stored: once synced, a reload shows them.
-  await first.getByText('Synced').waitFor()
+  await first.locator('[data-sync-state="synced"]').waitFor()
   await first.reload()
   await first.locator('[data-notebook-editor]').waitFor()
   const reloaded = await waitForSources(first, (current) => current.length === 4 && current[2] === 'print(math.pi)  # from the second tab', 'the cells after reloading')

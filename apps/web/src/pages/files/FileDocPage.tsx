@@ -1,9 +1,9 @@
-import { Suspense, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode, type RefObject } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { ydocToMarkdown } from '@pulpo/client-core/doc-schema'
 import { liveFormat, liveFormatOfName } from '@pulpo/client-core/office'
-import { isMarkdownName, type FileConversionPreview, type FileNode } from '@pulpo/contracts'
+import { fileExtension, fileNameError, isMarkdownName, normalizeFileName, type FileConversionPreview, type FileNode } from '@pulpo/contracts'
 import { ChevronRight, CloudCheck, CloudOff, Download, FolderOpen, HardDrive, Loader2, Pencil, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -25,9 +25,13 @@ import {
   filesQueryKey,
   updateFileNode,
 } from '@/features/files/api'
-import { filePreviewKind, filesErrorMessage, MAX_INLINE_PREVIEW_BYTES, previewFillsView } from '@/features/files/file-display'
+import { fileNameErrorMessage, filePreviewKind, filesErrorMessage, MAX_INLINE_PREVIEW_BYTES, previewFillsView } from '@/features/files/file-display'
 import { OfficeConversionBanner, OfficeFileHeaderActions, OfficePdfPreview } from '@/features/files/OfficeFile'
 import { officeFileActions, useOfficeConversion } from '@/features/files/office-file'
+import { focusFileEditorIn } from '@/features/files/live/chrome/use-editor-shortcuts'
+import { takeTitleFocus } from '@/features/files/title-focus'
+import { useFileMenuHost } from '@/features/files/use-file-menu'
+import { useDocumentTitle } from '@/lib/document-title'
 import { DocEditor } from '@/features/files/editor/DocEditor'
 import type { DocSyncStatus } from '@pulpo/client-core/doc-sync'
 import { useDocSession, type PresencePeer } from '@/features/files/editor/use-doc-session'
@@ -60,22 +64,91 @@ function statusProblem(status: DocSyncStatus): string | null {
   }
 }
 
-function SyncIndicator({ status }: { status: DocSyncStatus }) {
-  if (status.state === 'synced') return <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><CloudCheck className="size-3.5" />{ui("Synced")}</span>
-  if (status.state === 'offline') {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400"><CloudOff className="size-3.5" />{ui("Offline")}</span>
-        </TooltipTrigger>
-        <TooltipContent>{ui("Edits are kept on this device and sync when you reconnect.")}</TooltipContent>
-      </Tooltip>
-    )
-  }
-  if (status.state === 'connecting' || status.state === 'syncing' || (status.state === 'error' && status.error === 'rate_limited')) {
-    return <span className="flex items-center gap-1.5 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />{ui("Syncing")}</span>
-  }
+type SaveState = 'saving' | 'saved' | 'offline'
+
+/** "Saving…" shows only once a save takes this long, so typing (a quick save per keystroke) does not strobe it… */
+const SAVING_DELAY_MS = 500
+/** …and then stays at least this long. */
+const SAVING_MIN_MS = 400
+/** How long Cmd/Ctrl+S's "All changes saved" shows. */
+const SAVE_CONFIRM_MS = 2_000
+
+function saveStateOf(status: DocSyncStatus): SaveState | null {
+  if (status.state === 'synced') return 'saved'
+  if (status.state === 'offline') return 'offline'
+  if (status.state === 'connecting' || status.state === 'syncing' || (status.state === 'error' && status.error === 'rate_limited')) return 'saving'
+  // Errors and closed documents have their own banner.
   return null
+}
+
+/**
+ * The save state to show: the session's, with "Saving…" debounced as above. Before the document
+ * first loads, connecting is not saving anything: nothing shows, as in Docs.
+ */
+function useShownSaveState(status: DocSyncStatus): SaveState | null {
+  const state = saveStateOf(status)
+  const loaded = useRef(false)
+  if (state === 'saved') loaded.current = true
+  const actual = state === 'saving' && !loaded.current ? null : state
+  const [shown, setShown] = useState<SaveState | null>(actual === 'saving' ? null : actual)
+  const savingSince = useRef(0)
+  useEffect(() => {
+    if (actual === shown) return
+    if (actual === 'saving') {
+      const timer = window.setTimeout(() => {
+        savingSince.current = Date.now()
+        setShown('saving')
+      }, SAVING_DELAY_MS)
+      return () => window.clearTimeout(timer)
+    }
+    const wait = shown === 'saving' ? Math.max(0, savingSince.current + SAVING_MIN_MS - Date.now()) : 0
+    const timer = window.setTimeout(() => setShown(actual), wait)
+    return () => window.clearTimeout(timer)
+  }, [actual, shown])
+  return shown
+}
+
+/**
+ * Saved, Saving…, or Offline, as Word and Docs say it (Pulpo saves as people type). `confirm`
+ * changes on Cmd/Ctrl+S, which briefly reads "All changes saved" and announces it.
+ * `data-sync-state` is the session's own state, for tests.
+ */
+function SaveStatus({ status, confirm = 0 }: { status: DocSyncStatus; confirm?: number }) {
+  const shown = useShownSaveState(status)
+  const [confirming, setConfirming] = useState(false)
+  useEffect(() => {
+    if (!confirm) return
+    setConfirming(true)
+    const timer = window.setTimeout(() => setConfirming(false), SAVE_CONFIRM_MS)
+    return () => window.clearTimeout(timer)
+  }, [confirm])
+  const announcement = !confirming ? '' : shown === 'saved' ? ui("All changes saved") : shown === 'offline' ? ui("Offline: edits are kept on this device") : ui("Saving…")
+  const label = 'flex items-center gap-1.5 text-xs whitespace-nowrap transition-colors'
+  return (
+    <>
+      {shown === 'saved' && (
+        <span className={cn(label, confirming ? 'text-foreground' : 'text-muted-foreground')} data-sync-state={status.state} data-save-state="saved">
+          <CloudCheck className="size-3.5" />{confirming ? ui("All changes saved") : ui("Saved")}
+        </span>
+      )}
+      {shown === 'saving' && (
+        <span className={cn(label, 'text-muted-foreground')} data-sync-state={status.state} data-save-state="saving">
+          <Loader2 className="size-3.5 animate-spin" />{ui("Saving…")}
+        </span>
+      )}
+      {shown === 'offline' && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className={cn(label, 'text-amber-600 dark:text-amber-400')} data-sync-state={status.state} data-save-state="offline">
+              <CloudOff className="size-3.5" />{ui("Offline")}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{ui("Edits are kept on this device and save when you reconnect.")}</TooltipContent>
+        </Tooltip>
+      )}
+      <span className="sr-only" role="status">{announcement}</span>
+    </>
+  )
 }
 
 function Presence({ peers }: { peers: PresencePeer[] }) {
@@ -100,32 +173,85 @@ function Presence({ peers }: { peers: PresencePeer[] }) {
   )
 }
 
-function DocTitle({ node }: { node: FileNode }) {
+/** A name without its extension: what the browser tab shows for a document, and what renaming selects. */
+function nameStem(node: Pick<FileNode, 'kind' | 'name'>, name = node.name): string {
+  const dot = node.kind === 'folder' ? -1 : name.lastIndexOf('.')
+  return dot > 0 ? name.slice(0, dot) : name
+}
+
+/**
+ * The name a title edit saves, or why it can't. A document keeps its type: a name without an
+ * extension of a live format keeps this one ("Q3 plan" and "Report v1.2" become "….docx"), and an
+ * extension of another format is refused, since the server would turn the document into an
+ * ordinary file (Files can still do it).
+ */
+function titleName(node: FileNode, typed: string): { name: string } | { error: string } {
+  let name = normalizeFileName(typed)
+  if (!name || name === node.name) return { name: node.name }
+  if (node.kind === 'doc') {
+    const extension = fileExtension(node.name)
+    if (extension && !liveFormatOfName(name)) name = `${name}.${extension}`
+    // Compared with the format the document is stored in, as the server does (none means Markdown).
+    if (liveFormatOfName(name)?.id !== (node.format ?? 'markdown')) {
+      return { error: extension ? ui("Keep the .{{extension}} extension: another one would change what kind of file this is.", { extension }) : ui("That name would change what kind of file this is.") }
+    }
+  }
+  const invalid = fileNameError(name)
+  return invalid ? { error: fileNameErrorMessage(invalid) } : { name }
+}
+
+/** Puts focus back in the document of the view holding `element` (after Enter in the title). */
+function focusDocumentOf(element: Element): void {
+  const view = element.closest('[data-file-view]')
+  if (!view || focusFileEditorIn(view)) return
+  view.querySelector<HTMLElement>('[contenteditable="true"]')?.focus()
+}
+
+function DocTitle({ node, inputRef }: { node: FileNode; inputRef?: RefObject<HTMLInputElement | null> }) {
   const queryClient = useQueryClient()
   const userId = useAuth((state) => state.user?.id)
   const [name, setName] = useState(node.name)
   const [error, setError] = useState<string | null>(null)
+  const ownInput = useRef<HTMLInputElement>(null)
+  const input = inputRef ?? ownInput
   // Escape blurs the field too; the blur must not save the name being abandoned.
   const cancelled = useRef(false)
+  // Enter returns to the document once the name is saved.
+  const returning = useRef(false)
+  // A click that focuses the field keeps the selection the focus made.
+  const clickFocus = useRef(false)
   useEffect(() => setName(node.name), [node.name])
+  // A document Files just created opens with its name selected, ready to type over.
+  useEffect(() => {
+    if (takeTitleFocus(node.id)) input.current?.focus()
+  }, [node.id, input])
 
   const save = async () => {
+    const element = input.current
+    const back = returning.current
+    returning.current = false
     if (cancelled.current) {
       cancelled.current = false
       setName(node.name)
+      setError(null)
+      if (back && element) focusDocumentOf(element)
       return
     }
-    const trimmed = name.trim()
-    if (!trimmed || trimmed === node.name) {
+    const result = titleName(node, name)
+    if ('error' in result) {
+      setError(result.error)
       setName(node.name)
       return
     }
+    setError(null)
+    setName(result.name)
+    if (back && element) focusDocumentOf(element)
+    if (result.name === node.name) return
     try {
-      await updateFileNode(node.id, { name: trimmed, expectedRevision: node.revision })
-      setError(null)
+      await updateFileNode(node.id, { name: result.name, expectedRevision: node.revision })
       await queryClient.invalidateQueries({ queryKey: filesQueryKey(userId) })
     } catch (cause) {
-      setError(filesErrorMessage(cause, trimmed))
+      setError(filesErrorMessage(cause, result.name))
       setName(node.name)
     }
   }
@@ -138,22 +264,46 @@ function DocTitle({ node }: { node: FileNode }) {
       <div className="inline-grid max-w-full grid-cols-[minmax(0,auto)] align-top">
         <span aria-hidden className={cn('invisible col-start-1 row-start-1 truncate whitespace-pre pr-2.5', text)}>{name || ' '}</span>
         <input
+          ref={input}
           value={name}
           // Without a size the field asks for about 20 characters and sets the width itself.
           size={1}
           aria-label={ui("Document name")}
-          onChange={(event) => setName(event.target.value)}
+          aria-invalid={Boolean(error)}
+          onChange={(event) => { setName(event.target.value); setError(null) }}
+          // Selects the name without its extension, so typing renames and keeps the type.
+          onFocus={(event) => event.currentTarget.setSelectionRange(0, nameStem(node, event.currentTarget.value).length)}
+          onMouseDown={(event) => { clickFocus.current = document.activeElement !== event.currentTarget }}
+          onMouseUp={(event) => {
+            if (!clickFocus.current) return
+            clickFocus.current = false
+            // The click placed the caret after the focus selected; select again, as Docs' title does.
+            event.preventDefault()
+            event.currentTarget.setSelectionRange(0, nameStem(node, event.currentTarget.value).length)
+          }}
           onBlur={() => void save()}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') event.currentTarget.blur()
-            if (event.key === 'Escape') { cancelled.current = true; setName(node.name); event.currentTarget.blur() }
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              const result = titleName(node, name)
+              // A name that can't be saved stays for fixing.
+              if ('error' in result) setError(result.error)
+              else { returning.current = true; event.currentTarget.blur() }
+            }
+            if (event.key === 'Escape') { cancelled.current = true; returning.current = true; setName(node.name); event.currentTarget.blur() }
           }}
           className={cn('col-start-1 row-start-1 w-full min-w-0 truncate rounded-md bg-transparent outline-none hover:bg-accent/60 focus:bg-accent/60', text)}
         />
       </div>
-      {error && <p className="px-1.5 text-xs text-destructive">{error}</p>}
+      {error && <p role="alert" className="px-1.5 text-xs text-destructive">{error}</p>}
     </div>
   )
+}
+
+/** The browser tab (and desktop window) shows the open file's name: a document's without its extension. */
+function PageTitle({ node }: { node: FileNode | undefined }) {
+  useDocumentTitle(node ? (node.kind === 'doc' ? nameStem(node) : node.name) : null)
+  return null
 }
 
 /**
@@ -220,11 +370,13 @@ function SuggestionBanner({ node, ancestors, view }: { node: FileNode | undefine
 }
 
 /** Title bar shared by every file view; in the side panel it adds full-page and close buttons. */
-function FileHeader({ node, ancestors, view, onDownload, children }: {
+function FileHeader({ node, ancestors, view, onDownload, titleRef, children }: {
   node: FileNode | undefined
   ancestors: FileNode[]
   view: FileViewContext
   onDownload: () => void
+  /** The title field, for File ▸ Rename. */
+  titleRef?: RefObject<HTMLInputElement | null>
   children?: ReactNode
 }) {
   const place = useMemo<FilesViewPlace | null>(() => node ? { layout: view.layout, view: { kind: 'file', id: node.id } } : null, [node, view.layout])
@@ -235,7 +387,7 @@ function FileHeader({ node, ancestors, view, onDownload, children }: {
     <header className={cn('flex items-center gap-1.5 border-b px-4 py-1.5', view.layout === 'panel' ? 'side-panel-header' : 'mobile-page-content')}>
       <div className="min-w-0 flex-1">
         <FilePath ancestors={ancestors} inPanel={view.layout === 'panel'} />
-        {node ? <DocTitle node={node} /> : <div className="h-8" />}
+        {node ? <DocTitle node={node} inputRef={titleRef} /> : <div className="h-8" />}
       </div>
       {children}
       <Tooltip>
@@ -276,7 +428,7 @@ function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view:
   const editable = !problem && Boolean(node && !node.trashedAt) && (everSynced || hasContent)
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col" data-file-view="">
       <FileHeader
         node={node}
         ancestors={ancestors}
@@ -288,7 +440,7 @@ function OpenDoc({ userId, docId, view }: { userId: string; docId: string; view:
         }}
       >
         <Presence peers={peers} />
-        <SyncIndicator status={status} />
+        <SaveStatus status={status} />
       </FileHeader>
       <SuggestionBanner node={node} ancestors={ancestors} view={view} />
 
@@ -333,6 +485,10 @@ function OpenLiveDoc({ userId, docId, view, web }: { userId: string; docId: stri
   const assets = useMemo(() => new ApiLiveAssetStore(docId), [docId])
   const go = useMainNavigate()
   const conversion = useOfficeConversion(() => {})
+  const officeEnabled = useAuth((state) => state.officeConversionEnabled)
+  const titleRef = useRef<HTMLInputElement>(null)
+  // Counts Cmd/Ctrl+S presses; the save status confirms each.
+  const [saveConfirm, setSaveConfirm] = useState(0)
   const { Editor } = web
 
   useEffect(() => setEverSynced(false), [docId])
@@ -346,22 +502,26 @@ function OpenLiveDoc({ userId, docId, view, web }: { userId: string; docId: stri
   const loaded = everSynced || hasContent
   const editable = !problem && Boolean(node && !node.trashedAt) && loaded
   const loading = <div className="grid h-64 place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
+  const download = () => {
+    if (!node) return
+    void (async () => downloadLiveDoc(node, session && loaded ? await web.exportFile(session.doc, node.name, assets) : undefined))()
+      .catch((cause: unknown) => setNotice(filesErrorMessage(cause)))
+  }
+  // The server's PDF (with the office converter) is File ▸ Download ▸ PDF; without it, Print saves PDFs.
+  const fileMenu = useFileMenuHost({
+    node,
+    ancestors,
+    layout: view.layout,
+    titleRef,
+    download,
+    downloadPdf: node && officeFileActions(node, officeEnabled).pdf ? () => void conversion.downloadPdf(node) : undefined,
+  })
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <FileHeader
-        node={node}
-        ancestors={ancestors}
-        view={view}
-        onDownload={() => {
-          if (!node) return
-          void (async () => downloadLiveDoc(node, session && loaded ? await web.exportFile(session.doc, node.name, assets) : undefined))()
-            .catch((cause: unknown) => setNotice(filesErrorMessage(cause)))
-        }}
-      >
-        {node && <OfficeFileHeaderActions node={node} conversion={conversion} compact={view.layout === 'panel'} />}
+    <div className="flex h-full min-h-0 flex-col" data-file-view="">
+      <FileHeader node={node} ancestors={ancestors} view={view} onDownload={download} titleRef={titleRef}>
         <Presence peers={peers} />
-        <SyncIndicator status={status} />
+        <SaveStatus status={status} confirm={saveConfirm} />
       </FileHeader>
       <SuggestionBanner node={node} ancestors={ancestors} view={view} />
 
@@ -386,10 +546,13 @@ function OpenLiveDoc({ userId, docId, view, web }: { userId: string; docId: stri
               width={view.layout === 'panel' ? 'fill' : chatWidth === 'full' ? 'wide' : 'narrow'}
               assets={assets}
               onRunWithAgent={web.runsWithAgent && editable ? () => runWithAgent(docId, { layout: view.layout, view: view.panel ?? { kind: 'file', id: docId } }, go) : undefined}
+              fileMenu={fileMenu.host}
+              onSaveShortcut={() => setSaveConfirm((count) => count + 1)}
             />
           </Suspense>
         ) : loading}
       </div>
+      {fileMenu.dialogs}
       <span className="sr-only" aria-live="polite">{peers.length ? uit`${peers.length} other sessions are editing` : ''}</span>
     </div>
   )
@@ -446,7 +609,7 @@ function MarkdownFileView({ node, ancestors, view }: { node: FileNode; ancestors
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col" data-file-view="">
       <FileHeader
         node={node}
         ancestors={ancestors}
@@ -517,7 +680,7 @@ function BlobFileView({ node, ancestors, view }: { node: FileNode; ancestors: Fi
   })
   const office = officeFileActions(node, officeEnabled)
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col" data-file-view="">
       <FileHeader
         node={node}
         ancestors={ancestors}
@@ -563,6 +726,16 @@ function FileViewMessage({ message, view, back }: { message: string; view: FileV
  */
 function FileRoute({ userId, fileId, view }: { userId: string; fileId: string; view: FileViewContext }) {
   const nodeQuery = useQuery({ queryKey: fileNodeQueryKey(userId, fileId), queryFn: () => fetchFileNode(fileId) })
+  // The side panel leaves the tab's title to the main view (a chat's title, say).
+  return (
+    <>
+      {view.layout === 'page' && <PageTitle node={nodeQuery.data?.node} />}
+      {fileRouteView(nodeQuery, userId, fileId, view)}
+    </>
+  )
+}
+
+function fileRouteView(nodeQuery: UseQueryResult<{ node: FileNode; ancestors: FileNode[] }>, userId: string, fileId: string, view: FileViewContext): ReactNode {
   if (nodeQuery.isPending) return <div className="grid h-full place-items-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
   const node = nodeQuery.data?.node
   const back = node?.parentId ? `/files/f/${node.parentId}` : '/files'

@@ -3,7 +3,7 @@ import { sessionColor, sessionLabel } from '../../editor/presence'
 import { DocxEditorView } from './DocxEditorView'
 
 /** A Word document in Files: the docx editor on the document's session and assets. */
-export function LiveDocxEditor({ session, editable, assets, toolbarSlot }: LiveEditorProps) {
+export function LiveDocxEditor({ session, editable, assets, toolbarSlot, fileMenu, onSaveShortcut }: LiveEditorProps) {
   return (
     <DocxEditorView
       doc={session.doc}
@@ -12,6 +12,8 @@ export function LiveDocxEditor({ session, editable, assets, toolbarSlot }: LiveE
       user={{ name: sessionLabel(), color: sessionColor(session.doc.clientID) }}
       readOnly={!editable}
       toolbarSlot={toolbarSlot}
+      fileMenu={fileMenu}
+      onSaveShortcut={onSaveShortcut}
     />
   )
 }

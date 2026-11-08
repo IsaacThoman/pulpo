@@ -128,6 +128,7 @@ export function Harness() {
             readOnly={params.get('readonly') === '1'}
             assets={assets}
             user={USERS[index]!}
+            name={fileName}
             onView={(view) => {
               views[index] = view
             }}

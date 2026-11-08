@@ -14,6 +14,7 @@ vi.mock('@/stores/settings', () => ({
 vi.mock('@/features/chat/ChatDataBridge', () => ({ ChatDataBridge: () => null }))
 vi.mock('@/features/settings/SettingsBridge', () => ({ SettingsBridge: () => null }))
 vi.mock('./BannerBar', () => ({ BannerBar: () => null }))
+vi.mock('./SearchModal', () => ({ SearchModal: () => <div>Search dialog</div> }))
 vi.mock('./Sidebar', () => ({
   Sidebar: ({ mobile, mobileOpen, collapsed, transitions, onToggle, onNavigate }: {
     mobile: boolean; mobileOpen: boolean; collapsed: boolean; transitions: boolean; onToggle: () => void; onNavigate: () => void
@@ -214,5 +215,55 @@ describe('desktop sidebar edge', () => {
     narrow = true
     mount()
     expect(screen.queryByRole('separator', { name: 'Resize sidebar' })).toBeNull()
+  })
+})
+
+describe('app shortcuts around editors', () => {
+  function mountWith(element: React.ReactNode) {
+    return render(<MemoryRouter><Routes><Route element={<AppLayout />}>
+      <Route index element={element} />
+    </Route></Routes></MemoryRouter>)
+  }
+  const page = <>
+    <div data-file-editor="document"><div role="textbox" tabIndex={0} aria-label="Document body" /></div>
+    <div data-file-editor="notebook"><div role="textbox" tabIndex={0} aria-label="Notebook cell" /></div>
+    <textarea aria-label="Composer" />
+  </>
+  const handled = (event: Event) => event.preventDefault()
+
+  it('leaves the formatting combos to an editor but keeps them for the composer', () => {
+    const view = mountWith(page)
+    const sidebar = view.container.querySelector('aside')!
+    expect(sidebar.getAttribute('data-collapsed')).toBe('false')
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Document body' }), { key: 'b', metaKey: true })
+    expect(sidebar.getAttribute('data-collapsed')).toBe('false')
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Composer' }), { key: 'b', metaKey: true })
+    expect(sidebar.getAttribute('data-collapsed')).toBe('true')
+    fireEvent.keyDown(window, { key: 'b', ctrlKey: true })
+    expect(sidebar.getAttribute('data-collapsed')).toBe('false')
+    // Notebooks and code bind no Bold: Cmd/Ctrl+B toggles the sidebar there, as in JupyterLab and VS Code.
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Notebook cell' }), { key: 'b', metaKey: true })
+    expect(sidebar.getAttribute('data-collapsed')).toBe('true')
+  })
+
+  it('ignores keys a field already handled', () => {
+    const view = mountWith(page)
+    const sidebar = view.container.querySelector('aside')!
+    const composer = screen.getByRole('textbox', { name: 'Composer' })
+    composer.addEventListener('keydown', handled)
+    fireEvent.keyDown(composer, { key: 'b', metaKey: true })
+    composer.removeEventListener('keydown', handled)
+    expect(sidebar.getAttribute('data-collapsed')).toBe('false')
+  })
+
+  it('opens search from an editor that leaves Cmd/Ctrl+K alone, but not after one used it', async () => {
+    mountWith(page)
+    const body = screen.getByRole('textbox', { name: 'Document body' })
+    body.addEventListener('keydown', handled)
+    // Had this toggled search open, the next press would close it again.
+    fireEvent.keyDown(body, { key: 'k', metaKey: true })
+    body.removeEventListener('keydown', handled)
+    fireEvent.keyDown(body, { key: 'k', metaKey: true })
+    expect(await screen.findByText('Search dialog')).toBeTruthy()
   })
 })

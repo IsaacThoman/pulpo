@@ -17,6 +17,8 @@ export interface LiveFormatWeb {
   format: LiveFormatInfo
   /** The creation menu item, e.g. "New text file". */
   newLabel: () => string
+  /** What the format is called in File ▸ New and Details, e.g. "Spreadsheet". */
+  typeLabel: () => string
   /** The name a new file gets, before the folder makes it unique. */
   newName: () => string
   icon: LucideIcon
@@ -34,6 +36,7 @@ export const LIVE_WEB_FORMATS: readonly LiveFormatWeb[] = [
   {
     format: TEXT_FORMAT,
     newLabel: () => ui("New text file"),
+    typeLabel: () => ui("Text file"),
     newName: () => `${ui("Untitled")}.txt`,
     icon: FileCode,
     Editor: lazy(() => import('./text/TextDocEditor')),
@@ -43,6 +46,7 @@ export const LIVE_WEB_FORMATS: readonly LiveFormatWeb[] = [
   {
     format: NOTEBOOK_FORMAT,
     newLabel: () => ui("New notebook"),
+    typeLabel: () => ui("Notebook"),
     newName: () => `${ui("Untitled")}.ipynb`,
     icon: NotebookPen,
     Editor: lazy(() => import('./notebook/NotebookDocEditor')),
@@ -53,7 +57,8 @@ export const LIVE_WEB_FORMATS: readonly LiveFormatWeb[] = [
   {
     format: PRESENTATION_FORMAT,
     newLabel: () => ui("New presentation"),
-    newName: () => `${ui("Untitled")}.pptx`,
+    typeLabel: () => ui("Presentation"),
+    newName: () => `${ui("Untitled presentation")}.pptx`,
     icon: Presentation,
     Editor: lazy(() => import('./presentation/PresentationDocEditor')),
     Diff: lazy(() => import('./presentation/PresentationFileDiff')),
@@ -62,6 +67,7 @@ export const LIVE_WEB_FORMATS: readonly LiveFormatWeb[] = [
   {
     format: DOCUMENT_FORMAT,
     newLabel: () => ui("New Word document"),
+    typeLabel: () => ui("Word document"),
     newName: () => `${ui("Untitled document")}.docx`,
     icon: FileText,
     Editor: lazy(() => import('./docx/LiveDocxEditor')),
@@ -71,6 +77,7 @@ export const LIVE_WEB_FORMATS: readonly LiveFormatWeb[] = [
   {
     format: SHEET_FORMAT,
     newLabel: () => ui("New spreadsheet"),
+    typeLabel: () => ui("Spreadsheet"),
     newName: () => `${ui("Untitled spreadsheet")}.xlsx`,
     icon: FileSpreadsheet,
     Editor: lazy(() => import('./sheets/SheetDocEditor')),
@@ -78,6 +85,14 @@ export const LIVE_WEB_FORMATS: readonly LiveFormatWeb[] = [
     exportFile: async (doc, name, assets) => (await import('./sheets/calculation')).exportSheetFile(doc, name, assets),
   },
 ]
+
+/** File ▸ New's order: the Office formats first, as Drive and OneDrive list them. */
+const NEW_ORDER = ['document', 'sheet', 'presentation', 'notebook', 'text']
+
+/** Live formats in creation menus' order (Word, spreadsheet, presentation, notebook, text). */
+export function liveFormatsForNew(): readonly LiveFormatWeb[] {
+  return [...LIVE_WEB_FORMATS].sort((a, b) => NEW_ORDER.indexOf(a.format.id) - NEW_ORDER.indexOf(b.format.id))
+}
 
 /** The web side of a document's format, or null for Markdown and formats this build lacks. */
 export function liveWebFormat(node: Pick<FileNode, 'kind' | 'format'>): LiveFormatWeb | null {

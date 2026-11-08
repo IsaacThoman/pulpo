@@ -9,6 +9,7 @@ import { useSidePanel } from '@/features/side-panel/store'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useFileClipboard } from '@/features/files/browser/clipboard'
 import { ApiError } from '@/lib/api'
+import { takeTitleFocus } from '@/features/files/title-focus'
 
 vi.hoisted(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -32,10 +33,12 @@ vi.mock('@/features/side-panel/AgentActions', async (importOriginal) => ({
 vi.mock('@/features/side-panel/PanelControls', () => ({ PanelWindowButtons: () => null }))
 const resolveFileSuggestion = vi.hoisted(() => vi.fn(async () => null))
 const importFromUrl = vi.hoisted(() => vi.fn())
+const createDoc = vi.hoisted(() => vi.fn())
 vi.mock('@/features/files/api', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/features/files/api')>(),
   resolveFileSuggestion,
   importFromUrl,
+  createDoc,
   fetchFolder: async (folderId: string | null) => folderId === 'plan-drafts' ? {
     // A folder inside the suggested folder Plan, holding more of the same suggestion.
     folder: { id: 'plan-drafts', parentId: 'plan', name: 'Drafts', kind: 'folder', updatedAt: '2026-10-06T00:00:00Z', suggestion: { changeId: 'plan-change' } },
@@ -183,6 +186,55 @@ describe('menus of built-in folders', () => {
     fireEvent.contextMenu(await screen.findByRole('option', { name: /Projects/ }))
     await screen.findByRole('menuitem', { name: /^Copy/ })
     for (const name of [...unavailable, 'Color and icon…']) expect(menuItem(name).getAttribute('aria-disabled')).toBeNull()
+  })
+})
+
+describe('creating files from the New menu', () => {
+  const openNewMenu = async () => {
+    await screen.findByRole('option', { name: /Notes.md/ })
+    fireEvent.keyDown(screen.getByRole('button', { name: 'New' }), { key: 'Enter' })
+    await screen.findByRole('menuitem', { name: 'Upload files' })
+  }
+  const created = (id: string, name: string, format: string) => ({ id, parentId: null, name, kind: 'doc', format, sizeBytes: 0, updatedAt: '2026-10-06T00:00:00Z' })
+
+  it('lists the Office formats first', async () => {
+    showFiles()
+    await openNewMenu()
+    const names = screen.getAllByRole('menuitem').map((item) => item.textContent?.trim()).filter((name) => name?.startsWith('New '))
+    expect(names.slice(0, 6)).toEqual(['New file', 'New Word document', 'New spreadsheet', 'New presentation', 'New notebook', 'New text file'])
+  })
+
+  it.each([
+    ['New Word document', 'Untitled document.docx', 'document'],
+    ['New spreadsheet', 'Untitled spreadsheet.xlsx', 'sheet'],
+    ['New notebook', 'Untitled.ipynb', 'notebook'],
+  ])('%s opens the new file in its editor with its name ready to type over', async (label, name, format) => {
+    createDoc.mockResolvedValue(created('fresh', name, format))
+    showFiles()
+    await openNewMenu()
+    await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: label })) })
+    expect(createDoc).toHaveBeenCalledWith(null, name)
+    expect(screen.getByTestId('location').textContent).toBe('/files/d/fresh')
+    expect(takeTitleFocus('fresh')).toBe(true)
+  })
+
+  it('opens a new file in the panel when created there', async () => {
+    createDoc.mockResolvedValue(created('fresh', 'Untitled presentation.pptx', 'presentation'))
+    showFiles(true)
+    await openNewMenu()
+    await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: 'New presentation' })) })
+    expect(useSidePanel.getState().content).toEqual({ kind: 'file', id: 'fresh' })
+    expect(takeTitleFocus('fresh')).toBe(true)
+  })
+
+  it('names a new text file in place', async () => {
+    createDoc.mockResolvedValue(created('fresh', 'Untitled.txt', 'text'))
+    showFiles()
+    await openNewMenu()
+    await act(async () => { fireEvent.click(screen.getByRole('menuitem', { name: 'New text file' })) })
+    expect(screen.getByTestId('location').textContent).toBe('/files')
+    expect((await screen.findByRole('textbox', { name: 'Name' }) as HTMLInputElement).value).toBe('Untitled.txt')
+    expect(takeTitleFocus('fresh')).toBe(false)
   })
 })
 

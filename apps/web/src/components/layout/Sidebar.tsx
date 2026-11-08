@@ -91,7 +91,7 @@ import { OpenChatToLeftItem } from '@/features/side-panel/AgentActions'
 import { copyChatShareLink, duplicateChats } from '@/features/chat/chat-actions'
 import { ChatExpiryMenuItem } from '@/features/chat/ChatExpiryMenuItem'
 import { sidebarChatGroups } from '@/features/sidebar/chat-groups'
-import { LIVE_WEB_FORMATS } from '@/features/files/live/registry'
+import { liveFormatsForNew } from '@/features/files/live/registry'
 import {
   archiveSidebarSelection,
   createShortcutInteractively,
@@ -1093,7 +1093,7 @@ function SpaceMenuContent({ folderId, onNewChat, onNewFolder, onUpload, onImport
             <FilePlus2 />
             {ui("New file")}
           </DropdownMenuItem>
-          {LIVE_WEB_FORMATS.map((entry) => (
+          {liveFormatsForNew().map((entry) => (
             <DropdownMenuItem key={entry.format.id} onClick={() => void newSidebarFile(folderId, entry.newName()).then((node) => { if (node) go(`/files/d/${node.id}`) })}>
               <entry.icon />
               {entry.newLabel()}

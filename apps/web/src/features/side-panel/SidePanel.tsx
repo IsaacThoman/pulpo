@@ -2,6 +2,7 @@ import { lazy, memo, Suspense, useEffect, useRef, useState, type PointerEvent } 
 import { Loader2 } from 'lucide-react'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
+import { editorOwnsKey } from '@/features/files/live/chrome/editor-root'
 import { clampPanelWidth, DEFAULT_PANEL_WIDTH, readPanelWidth, splitFits, useSidePanel, writePanelWidth, type PanelContent } from './store'
 import { panelContentPath, useMainNavigate } from './use-panel-actions'
 
@@ -40,11 +41,12 @@ export function SidePanel({ available, full = false }: { available: number; full
   goRef.current = go
 
   // Cmd/Ctrl+\\ shows or hides the panel, Cmd/Ctrl+J asks the agent about the files in view, and
-  // Cmd/Ctrl+Shift+Enter opens the panel's content in the main view.
+  // Cmd/Ctrl+Shift+Enter opens the panel's content in the main view. Keys an editor handled, and
+  // its formatting combos (Justify, Clear formatting), stay the editor's.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey
-      if (!mod || event.altKey) return
+      if (!mod || event.altKey || editorOwnsKey(event)) return
       const state = useSidePanel.getState()
       if (event.key === '\\' && !event.shiftKey) {
         event.preventDefault()

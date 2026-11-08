@@ -4,7 +4,7 @@ import type { LiveEditorProps } from '../types'
 import { SheetEditor } from './SheetEditor'
 
 /** A spreadsheet in Files: the shared editor bound to the document's session. */
-export function SheetDocEditor({ session, editable, toolbarSlot, assets, name }: LiveEditorProps) {
+export function SheetDocEditor({ session, editable, toolbarSlot, assets, name, fileMenu, onSaveShortcut }: LiveEditorProps) {
   return (
     <SheetEditor
       doc={session.doc}
@@ -14,6 +14,9 @@ export function SheetDocEditor({ session, editable, toolbarSlot, assets, name }:
       assets={assets}
       user={{ name: sessionLabel(), color: sessionColor(session.doc.clientID) }}
       toolbarSlot={toolbarSlot}
+      name={name}
+      fileMenu={fileMenu}
+      onSaveShortcut={onSaveShortcut}
     />
   )
 }

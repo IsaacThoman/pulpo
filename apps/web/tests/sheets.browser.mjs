@@ -384,6 +384,57 @@ try {
     assert.match(text, /## Forecast/)
   })
 
+  await step('menu bar: freeze, undo, the shortcuts list, and the current sheet as CSV', async () => {
+    const { page: menus, errors: menuErrors, context } = await open()
+    const bar = menus.getByRole('menubar', { name: 'Menu bar' })
+    const view = () => menus.evaluate(() => window.__sheets.views[0].getState())
+    await go(menus, 'C3')
+    const frozen = (await view()).frozen
+    await bar.getByRole('menuitem', { name: 'View' }).click()
+    await menus.getByRole('menuitem', { name: 'Freeze' }).hover()
+    await menus.getByRole('menuitem', { name: 'Freeze first row' }).click()
+    assert.deepEqual((await view()).frozen, { rows: 1, cols: frozen.cols })
+    // Typing goes back to the grid once the menu closes.
+    await menus.waitForFunction(() => document.activeElement === window.__sheets.views[0].input)
+    await bar.getByRole('menuitem', { name: 'Edit' }).click()
+    await menus.getByRole('menuitem', { name: 'Undo' }).click()
+    assert.deepEqual((await view()).frozen, frozen)
+
+    // Cmd/Ctrl+/ opens the searchable shortcuts list from the grid.
+    await menus.waitForFunction(() => document.activeElement === window.__sheets.views[0].input)
+    await menus.keyboard.press(`${mod}+/`)
+    const dialog = menus.getByRole('dialog', { name: 'Keyboard shortcuts' })
+    await dialog.getByRole('searchbox', { name: 'Search shortcuts' }).fill('fill down')
+    await dialog.getByText('Fill down', { exact: true }).waitFor()
+    await menus.keyboard.press('Escape')
+    await dialog.waitFor({ state: 'detached' })
+
+    // File ▸ Download ▸ CSV writes the sheet in view, which the workbook does not record.
+    const sheets = (await view()).sheets
+    const second = sheets.find((sheet) => sheet.id !== sheets[0].id && sheet.state === 'visible')
+    if (second) await menus.locator('[data-replica="0"]').getByRole('tab', { name: new RegExp(second.name) }).click()
+    const { sheetId } = await view()
+    const sheetName = (await view()).sheets.find((sheet) => sheet.id === sheetId).name
+    const expected = await menus.evaluate(() => window.__sheets.views[0].displayText(0, 0))
+    const recorded = () => menus.evaluate(() => window.__sheets.views[0].workbook.metaValue('activeSheet') ?? null)
+    const before = await recorded()
+    const download = menus.waitForEvent('download')
+    await bar.getByRole('menuitem', { name: 'File' }).click()
+    await menus.getByRole('menuitem', { name: 'Download' }).hover()
+    await menus.getByRole('menuitem', { name: 'Comma-separated values (.csv, current sheet)' }).click()
+    const file = await download
+    assert.equal(file.suggestedFilename(), `Budget - ${sheetName}.csv`)
+    const chunks = []
+    for await (const chunk of await file.createReadStream()) chunks.push(chunk)
+    const csv = Buffer.concat(chunks).toString('utf8')
+    assert.ok(csv.length > 0)
+    if (expected) assert.ok(csv.includes(expected.replaceAll('"', '""')), `the CSV has ${expected}: ${csv.slice(0, 80)}`)
+    // The download leaves the shared workbook as it was.
+    assert.equal(await recorded(), before)
+    assert.deepEqual(menuErrors, [])
+    await context.close()
+  })
+
   await step('filter-menu sorts preserve active filter visibility and undo once', async () => {
     const { page: filtered, errors: filterErrors } = await open('?split=1')
     await filtered.evaluate(() => {

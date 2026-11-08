@@ -89,10 +89,11 @@ export function useFileOperations() {
     return created
   }
 
-  const trash = async (nodes: readonly FileNode[]) => {
-    if (!nodes.length) return
+  /** Resolves true once the items are in the trash (false after an error toast), so a view can leave. */
+  const trash = async (nodes: readonly FileNode[]): Promise<boolean> => {
+    if (!nodes.length) return false
     const roots = await run(() => trashFileNodes(nodes.map((node) => node.id)))
-    if (!roots) return
+    if (!roots) return false
     // With instant retention, chats are deleted for good rather than trashed, so they cannot come
     // back; the sidebar says the same.
     const chatIds = new Set(nodes.filter((node) => node.kind === 'chat').map((node) => node.id))
@@ -103,6 +104,7 @@ export function useFileOperations() {
       : count(nodes, (name) => uit`Moved "${name}" to the trash`, (total) => uit`Moved ${total} items to the trash`)
     if (restorable.length) undoable(message, () => restoreFileNodes(restorable))
     else show({ message })
+    return true
   }
 
   const restore = async (nodes: readonly FileNode[]) => {

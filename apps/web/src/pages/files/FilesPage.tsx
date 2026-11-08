@@ -57,7 +57,8 @@ import { ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
-import { LIVE_WEB_FORMATS } from '@/features/files/live/registry'
+import { liveFormatsForNew } from '@/features/files/live/registry'
+import { requestTitleFocus } from '@/features/files/title-focus'
 import { createDoc, createFolder, fetchFolder, fetchFolderLayout, folderLayoutQueryKey, folderQueryKey, updateFolderLayout, uploadFile } from '@/features/files/api'
 import { arrangeGrid, GRID_CELL, moveInGrid, readingOrder } from '@/features/files/browser/grid-layout'
 import { dropFolderOf, filesErrorMessage } from '@/features/files/file-display'
@@ -110,6 +111,8 @@ const VIEW_STORAGE_KEY = 'pulpo.files.view'
 const UPLOAD_CONCURRENCY = 3
 const TYPEAHEAD_RESET_MS = 800
 const NAVIGATION_KEYS = new Set<string>(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'])
+/** Live formats whose new files open in their editor rather than for renaming in place. */
+const OPENED_WHEN_CREATED = new Set(['document', 'sheet', 'presentation', 'notebook'])
 
 type FilesView = 'list' | 'grid'
 interface UploadEntry { id: string; name: string; error?: string }
@@ -435,15 +438,21 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   }
 
   /**
-   * Creates a file (Markdown unless `name` gives another live format) and starts renaming it in
-   * place, like a desktop file manager.
+   * Creates a file (Markdown unless `name` gives another live format). Word, Excel, PowerPoint, and
+   * notebook files open in their editor with the name selected in its title, as in Drive and
+   * OneDrive; Markdown and text files are renamed in place, like a desktop file manager.
    */
   const newFile = async (name = `${ui("Untitled")}.md`) => {
     try {
       const node = await createDoc(folderId, uniqueChildName(name, nodes))
       insertIntoListing(node)
       setSelection(selectOnly(node.id))
-      setRenamingId(node.id)
+      if (OPENED_WHEN_CREATED.has(node.format ?? '')) {
+        requestTitleFocus(node.id)
+        open(node)
+      } else {
+        setRenamingId(node.id)
+      }
     } catch (cause) {
       ops.fail(cause)
     }
@@ -944,7 +953,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const backgroundMenu = (
     <>
       <DropdownMenuItem onSelect={() => void newFile()}><FilePlus2 /> {ui("New file")}</DropdownMenuItem>
-      {LIVE_WEB_FORMATS.map((entry) => (
+      {liveFormatsForNew().map((entry) => (
         <DropdownMenuItem key={entry.format.id} onSelect={() => void newFile(entry.newName())}><entry.icon /> {entry.newLabel()}</DropdownMenuItem>
       ))}
       <DropdownMenuItem onSelect={() => void newFolder()}><FolderPlus /> {ui("New folder")}<DropdownMenuShortcut>{shortcutLabel('N', { mod: true, shift: true })}</DropdownMenuShortcut></DropdownMenuItem>

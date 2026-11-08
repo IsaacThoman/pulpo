@@ -12,11 +12,23 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { fileExtension } from '@pulpo/contracts'
+import { ClipboardPaste, Copy, Scissors, Search, Snowflake } from 'lucide-react'
 import { ui } from '@/i18n/ui'
-import { registerSheetEditor } from './calculation'
+import { EditorMenuBar } from '../chrome/EditorMenuBar'
+import { fileEditorRoot } from '../chrome/editor-root'
+import { fileMenuDefinition, type FileMenuHost } from '../chrome/file-menu'
+import { separator, shortcutGroupsFromMenus, type MenuDefinition, type MenuEntry } from '../chrome/menu'
+import { saveFile } from '../chrome/output'
+import { ShortcutsDialog } from '../chrome/ShortcutsDialog'
+import { helpMenu, undoRedoEntries } from '../chrome/standard-menus'
+import { FIND_SHORTCUT, useEditorShortcuts } from '../chrome/use-editor-shortcuts'
+import { zoomMenu } from '../chrome/zoom'
+import { exportSheetAsText, registerSheetEditor } from './calculation'
 import { FormulaBar } from './FormulaBar'
 import { sheetViewLabels } from './labels'
 import { FindDialog, NoteDialog } from './SheetDialogs'
+import { sheetShortcutGroups } from './sheet-shortcuts'
 import { SheetTabs } from './SheetTabs'
 import { SheetToolbar } from './SheetToolbar'
 import { useSheetState } from './use-sheet-view'
@@ -35,6 +47,11 @@ export interface SheetEditorProps {
   onView?: (view: SheetView | undefined) => void
   /** Rendered at the end of the toolbar. */
   toolbarSlot?: React.ReactNode
+  /** The file's name, for File ▸ Download of the current sheet as CSV or TSV. */
+  name?: string
+  /** The Files page's File menu entries (see LiveEditorProps). */
+  fileMenu?: FileMenuHost
+  onSaveShortcut?: () => void
 }
 
 function useAppearance(): 'light' | 'dark' {
@@ -109,13 +126,16 @@ function printSheet(view: SheetView): void {
   }, 50)
 }
 
-/** A spreadsheet editor: toolbar, formula bar, the canvas grid, and sheet tabs. */
-export function SheetEditor({ doc, awareness, readOnly, fileFormat, assets, user, values, functions, renderChart, onView, toolbarSlot }: SheetEditorProps) {
+/** A spreadsheet editor: menu bar, toolbar, formula bar, the canvas grid, and sheet tabs. */
+export function SheetEditor({ doc, awareness, readOnly, fileFormat, assets, user, values, functions, renderChart, onView, toolbarSlot, name, fileMenu, onSaveShortcut }: SheetEditorProps) {
+  const root = useRef<HTMLDivElement>(null)
   const container = useRef<HTMLDivElement>(null)
   const imageInput = useRef<HTMLInputElement>(null)
   const [view, setView] = useState<SheetView>()
   const [findOpen, setFindOpen] = useState(false)
   const [noteOpen, setNoteOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [exportFailed, setExportFailed] = useState(false)
   const [menu, setMenu] = useState<{ x: number; y: number; area: string }>()
   const appearance = useAppearance()
   const state = useSheetState(view)
@@ -171,16 +191,14 @@ export function SheetEditor({ doc, awareness, readOnly, fileFormat, assets, user
     return () => element.removeEventListener('sheetcontextmenu', onMenu)
   }, [])
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f' && container.current?.contains(document.activeElement)) {
-        event.preventDefault()
-        setFindOpen(true)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  // Cmd/Ctrl+F anywhere in the editor (grid, formula bar, toolbar) opens find and replace.
+  useEditorShortcuts(root, {
+    print: () => { if (view) printSheet(view) },
+    save: onSaveShortcut,
+    shortcuts: () => setShortcutsOpen(true),
+    find: () => setFindOpen(true),
+    focus: () => view?.focus(),
+  })
 
   const insertImage = async (file: File) => {
     if (!view) return
@@ -189,13 +207,79 @@ export function SheetEditor({ doc, awareness, readOnly, fileFormat, assets, user
     bitmap.close()
   }
 
+  /** File ▸ Download ▸ the sheet in view as CSV or TSV, named "Book - Sheet1.csv" as Sheets does. */
+  const sheetDownloads = (current: SheetView): MenuEntry[] => {
+    if (!name || fileFormat === 'csv' || fileFormat === 'tsv') return []
+    const sheet = current.getState().sheets.find((entry) => entry.id === current.sheetId)
+    const extension = fileExtension(name)
+    const stem = (extension ? name.slice(0, -extension.length - 1) : name) || name
+    const download = (extension: 'csv' | 'tsv') => () => {
+      setExportFailed(false)
+      const fileName = `${stem} - ${sheet?.name ?? ''}.${extension}`
+      void exportSheetAsText(doc, current.sheetId, fileName, assets)
+        .then((bytes) => saveFile(bytes, fileName, extension === 'csv' ? 'text/csv' : 'text/tab-separated-values'))
+        .catch(() => setExportFailed(true))
+    }
+    return [
+      { type: 'item', id: 'download-csv', label: ui("Comma-separated values (.csv, current sheet)"), onSelect: download('csv') },
+      { type: 'item', id: 'download-tsv', label: ui("Tab-separated values (.tsv, current sheet)"), onSelect: download('tsv') },
+    ]
+  }
+
   const editable = !!state && !state.readOnly
+  const menus: MenuDefinition[] = view ? [
+    fileMenuDefinition(fileMenu, () => ({ print: () => printSheet(view), downloads: sheetDownloads(view) })),
+    {
+      id: 'edit',
+      label: ui("Edit"),
+      items: () => {
+        const current = view.getState()
+        const canEdit = !current.readOnly
+        return [
+          ...undoRedoEntries({ undo: () => view.undo(), redo: () => view.redo(), canUndo: canEdit && current.canUndo, canRedo: canEdit && current.canRedo }),
+          separator,
+          { type: 'item', id: 'cut', label: ui("Cut"), icon: Scissors, shortcut: { key: 'x', mod: true }, disabled: !canEdit, onSelect: () => void writeClipboard(view, true) },
+          { type: 'item', id: 'copy', label: ui("Copy"), icon: Copy, shortcut: { key: 'c', mod: true }, onSelect: () => void writeClipboard(view, false) },
+          { type: 'item', id: 'paste', label: ui("Paste"), icon: ClipboardPaste, shortcut: { key: 'v', mod: true }, disabled: !canEdit, onSelect: () => void readClipboard().then((data) => view.clipboard.paste(data)) },
+          separator,
+          { type: 'item', id: 'find', label: ui("Find and replace"), icon: Search, shortcut: FIND_SHORTCUT, onSelect: () => setFindOpen(true) },
+        ]
+      },
+    },
+    {
+      id: 'view',
+      label: ui("View"),
+      items: () => {
+        const current = view.getState()
+        const frozen = current.frozen
+        return [
+          {
+            type: 'submenu',
+            id: 'freeze',
+            label: ui("Freeze"),
+            icon: Snowflake,
+            disabled: current.readOnly,
+            items: [
+              { type: 'item', id: 'freeze-none', label: ui("No frozen rows or columns"), onSelect: () => view.freeze(0, 0) },
+              { type: 'item', id: 'freeze-row', label: ui("Freeze first row"), onSelect: () => view.freeze(1, frozen.cols) },
+              { type: 'item', id: 'freeze-column', label: ui("Freeze first column"), onSelect: () => view.freeze(frozen.rows, 1) },
+              { type: 'item', id: 'freeze-cell', label: ui("Freeze up to the current cell"), onSelect: () => view.freeze() },
+            ],
+          },
+          zoomMenu({ zoom: current.zoom, onZoom: (zoom) => view.setZoom(zoom) }),
+        ]
+      },
+    },
+    helpMenu(() => setShortcutsOpen(true)),
+  ] : []
   const area = menu?.area
   return (
-    <div className="pulpo-sheet-editor flex h-full min-h-0 w-full flex-col bg-background text-foreground" data-testid="sheet-editor">
+    <div ref={root} className="pulpo-sheet-editor flex h-full min-h-0 w-full flex-col bg-background text-foreground" data-testid="sheet-editor" {...fileEditorRoot('sheet')}>
       {view && state && (
         <>
+          <EditorMenuBar menus={menus} onClose={() => view.focus()} className="px-1.5 pt-0.5" />
           <SheetToolbar view={view} state={state} onFind={() => setFindOpen(true)} onNote={() => setNoteOpen(true)} onInsertImage={() => imageInput.current?.click()} onPrint={() => printSheet(view)} slot={toolbarSlot} />
+          {exportFailed && <p role="alert" className="border-b px-3 py-1 text-sm text-destructive">{ui("Couldn't export this sheet. Try again, or download the whole file.")}</p>}
           <FormulaBar view={view} state={state} />
         </>
       )}
@@ -216,6 +300,12 @@ export function SheetEditor({ doc, awareness, readOnly, fileFormat, assets, user
         <>
           <FindDialog view={view} open={findOpen} onOpenChange={(open) => { setFindOpen(open); if (!open) view.focus() }} />
           <NoteDialog view={view} open={noteOpen} onOpenChange={setNoteOpen} />
+          <ShortcutsDialog
+            open={shortcutsOpen}
+            onOpenChange={setShortcutsOpen}
+            groups={() => shortcutGroupsFromMenus(menus, sheetShortcutGroups())}
+            returnFocus={() => view.focus()}
+          />
           <DropdownMenu
             open={!!menu}
             modal={false}

@@ -1,6 +1,6 @@
 import type { LiveAssetStore } from '@pulpo/client-core/office'
-import { sheetCodec } from '@pulpo/client-core/office/sheets'
-import type * as Y from 'yjs'
+import { sheetCodec, WorkbookModel } from '@pulpo/client-core/office/sheets'
+import * as Y from 'yjs'
 
 const editors = new WeakMap<Y.Doc, { settleEdit(): boolean }>()
 
@@ -16,4 +16,21 @@ export function registerSheetEditor(doc: Y.Doc, editor: { settleEdit(): boolean 
 export async function exportSheetFile(doc: Y.Doc, name: string, assets: LiveAssetStore): Promise<Uint8Array> {
   editors.get(doc)?.settleEdit()
   return sheetCodec.exportFile(doc, { name, assets })
+}
+
+/**
+ * One sheet of the open workbook as CSV or TSV (by `name`'s extension), as Sheets' "current sheet"
+ * downloads. The codec writes the workbook's recorded active sheet, which the view never updates,
+ * so a private copy records `sheetId` instead: the shared document is left as it is.
+ */
+export async function exportSheetAsText(doc: Y.Doc, sheetId: string, name: string, assets: LiveAssetStore): Promise<Uint8Array> {
+  editors.get(doc)?.settleEdit()
+  const copy = new Y.Doc()
+  try {
+    Y.applyUpdate(copy, Y.encodeStateAsUpdate(doc))
+    new WorkbookModel(copy).setMeta('activeSheet', sheetId)
+    return await sheetCodec.exportFile(copy, { name, assets })
+  } finally {
+    copy.destroy()
+  }
 }

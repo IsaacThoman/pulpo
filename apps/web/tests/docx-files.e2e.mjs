@@ -47,12 +47,12 @@ try {
   await page.goto(`${base}/files/f/${folderId}`)
   await page.getByRole('button', { name: 'New', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New Word document' }).click()
-  // New items open for renaming, with the name before the extension selected.
-  await page.getByRole('textbox').first().waitFor()
+  // A new document opens in the editor, its name selected in the title (without the extension).
+  await page.waitForURL(/\/files\/d\//)
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Document name')
   await page.keyboard.type('Launch plan')
   await page.keyboard.press('Enter')
-  await page.getByText('Launch plan.docx', { exact: true }).dblclick()
-  await page.waitForURL(/\/files\/d\//)
+  await page.waitForFunction(() => document.querySelector('input[aria-label="Document name"]')?.value === 'Launch plan.docx')
   const url = page.url()
   await flow(page).waitFor()
   await page.locator('[data-docx-page], .docx-page').first().waitFor()
