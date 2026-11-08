@@ -32,11 +32,12 @@ function adminUsageSection(section: string | undefined): string | null {
 
 /**
  * The tab title for a route ("Files – Pulpo"), shown until the view sets a more specific one
- * (a chat's or a document's title). Null where there is nothing better than "Pulpo".
+ * (a chat's or a document's title). Null where there is nothing better than "Pulpo", including
+ * the new chat page, which keeps the plain product name.
  */
-export function routeTitle(pathname: string, newChatLabel: string): string | null {
+export function routeTitle(pathname: string): string | null {
   const match = (pattern: string) => matchPath({ path: pattern, end: true }, pathname)
-  if (pathname === '/') return pageTitle(newChatLabel)
+  if (pathname === '/') return null
   if (match('/c/:chatId')) return pageTitle(ui("Chat"))
   if (pathname.startsWith('/files/trash')) return pageTitle(ui("Trash"), ui("Files"))
   if (pathname === '/files' || pathname.startsWith('/files/')) return pageTitle(ui("Files"))

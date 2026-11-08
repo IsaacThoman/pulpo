@@ -3,7 +3,6 @@ import { routeTitle } from './route-title'
 
 describe('routeTitle', () => {
   it.each([
-    ['/', 'New chat – Pulpo'],
     ['/c/123', 'Chat – Pulpo'],
     ['/files', 'Files – Pulpo'],
     ['/files/f/abc', 'Files – Pulpo'],
@@ -21,10 +20,11 @@ describe('routeTitle', () => {
     ['/forgot-password', 'Forgot password – Pulpo'],
     ['/share/token', 'Shared chat – Pulpo'],
   ])('names %s "%s"', (path, title) => {
-    expect(routeTitle(path, 'New chat')).toBe(title)
+    expect(routeTitle(path)).toBe(title)
   })
 
-  it('leaves unknown routes to the default title', () => {
-    expect(routeTitle('/nowhere', 'New chat')).toBeNull()
+  it('leaves the new chat page and unknown routes to the default title', () => {
+    expect(routeTitle('/')).toBeNull()
+    expect(routeTitle('/nowhere')).toBeNull()
   })
 })

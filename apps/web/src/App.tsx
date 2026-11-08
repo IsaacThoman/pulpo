@@ -15,7 +15,6 @@ import { ExternalRedirect } from '@/components/ExternalRedirect'
 import { DOCS_URL } from '@/lib/links'
 import { useRouteDocumentTitle } from '@/lib/document-title'
 import { routeTitle } from '@/lib/route-title'
-import { useTranslation } from '@/i18n/useAppTranslation'
 
 const AppLayout = lazy(() => import('@/components/layout/AppLayout').then((module) => ({ default: module.AppLayout })))
 
@@ -74,11 +73,8 @@ function RequireBilling({ children }: { children: ReactNode }) {
 
 /** Names the tab after the current route until a view (a chat, a document) names it itself. */
 function RouteTitle() {
-  const { t } = useTranslation()
   const { pathname } = useLocation()
-  const signedIn = useAuth((state) => Boolean(state.user))
-  // Signed out, the root is the landing page, which keeps the plain product name.
-  useRouteDocumentTitle(pathname === '/' && !signedIn ? null : routeTitle(pathname, t('chat.newChat')))
+  useRouteDocumentTitle(routeTitle(pathname))
   return null
 }
 
