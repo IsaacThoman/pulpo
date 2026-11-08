@@ -159,6 +159,9 @@ function linkAddress(view: EditorView, host: AutoformatHost, pos: number): boole
   if (!linkable(state, from, to)) return false
   const tr = state.tr
   for (const mark of host.linkMarks(state, address.href)) tr.addMark(from, to, mark)
+  // Text typed after the address (the paragraph Enter makes next) keeps the formatting it had,
+  // without the Hyperlink style, as in Word: the style mark is inclusive, the link mark is not.
+  if (state.selection.empty && state.selection.from === to) tr.setStoredMarks(state.storedMarks ?? state.selection.$from.marks())
   host.apply(view, tr.setMeta(key, { caret: state.selection.from, list: false }))
   return true
 }

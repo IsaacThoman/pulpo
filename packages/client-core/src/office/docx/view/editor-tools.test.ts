@@ -339,6 +339,20 @@ describe('autoformat', () => {
     expect(firstText()).toBe('a”')
   })
 
+  it('links an address on Enter without carrying the Hyperlink style into the next paragraph', () => {
+    setBody(editor.view, [p()], 1)
+    type(editor.view, 'see www.example.com')
+    press(editor.view, { key: 'Enter' })
+    type(editor.view, 'Next')
+    const runs: [string, string[]][] = []
+    editor.view.state.doc.descendants((node) => {
+      if (node.isText) runs.push([node.text!, node.marks.map((mark) => mark.type.name)])
+      return true
+    })
+    expect(runs.find(([text]) => text === 'www.example.com')?.[1]).toContain('link')
+    expect(runs.find(([text]) => text === 'Next')?.[1]).toEqual([])
+  })
+
   it('tracks curled quotes and dashes as plain insertions while suggesting', () => {
     setBody(editor.view, [p('Start')], 6)
     editor.setMode('suggesting')
