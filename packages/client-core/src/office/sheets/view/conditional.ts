@@ -1,5 +1,6 @@
 import { RangeLookup } from '../range-lookup.js'
 import { type CellRange } from '../address.js'
+import { orderedEntries } from '../codec/order.js'
 import { serialToParts } from '../dates.js'
 import type { CfValue, ConditionalFormat, ConditionalRule, SheetColor } from '../model/schema.js'
 import type { SheetModel } from '../model/workbook.js'
@@ -96,7 +97,9 @@ export class ConditionalFormatter {
   private getBlocks(): Block[] {
     if (this.blocks) return this.blocks
     const blocks: Block[] = []
-    for (const raw of this.sheet.cf.values()) {
+    // Export order, not Y.Map history: rules with equal priorities (two users adding rules at
+    // once) then apply in the same order on every client and in the saved file.
+    for (const [, raw] of orderedEntries(this.sheet, this.sheet.cf, (value) => (value as ConditionalFormat).ranges[0], (value) => (value as ConditionalFormat).fileOrder)) {
       const format = raw as ConditionalFormat
       const ranges = format.ranges.map((ids) => this.sheet.resolveRange(ids)).filter((range): range is CellRange => !!range)
       if (!ranges.length) continue

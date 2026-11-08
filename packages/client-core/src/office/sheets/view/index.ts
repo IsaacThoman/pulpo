@@ -1,5 +1,7 @@
 export * from './sheet-view.js'
 export * from './commands.js'
+export * from './conditional-presets.js'
+export { CONDITIONAL_STYLES, type ConditionalStyle } from '../styles/stylesheet.js'
 export * from './formula-assist.js'
 export { cssColor, readThemeColors, DEFAULT_THEME_COLORS, type ThemeColors } from './colors.js'
 export { LIGHT_PALETTE, DARK_PALETTE, type GridPalette } from './renderer.js'

@@ -272,7 +272,8 @@ export function SheetEditor({ doc, awareness, readOnly, fileFormat, assets, user
     },
     helpMenu(() => setShortcutsOpen(true)),
   ] : []
-  const area = menu?.area
+  // Whole columns or rows selected get only their own commands, wherever the menu opened.
+  const area = state?.selectionShape === 'columns' ? 'colHeader' : state?.selectionShape === 'rows' ? 'rowHeader' : menu?.area
   return (
     <div ref={root} className="pulpo-sheet-editor flex h-full min-h-0 w-full flex-col bg-background text-foreground" data-testid="sheet-editor" {...fileEditorRoot('sheet')}>
       {view && state && (
