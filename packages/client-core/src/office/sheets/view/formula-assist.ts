@@ -6,6 +6,8 @@ export interface FunctionDoc {
   name: string
   description?: string
   args: { name: string; optional?: boolean; repeating?: boolean }[]
+  /** The function library's group ('math', 'statistical', 'text', …), for Insert ▸ Function menus. */
+  category?: string
 }
 
 /** Colors Excel cycles through for references in a formula being edited. */

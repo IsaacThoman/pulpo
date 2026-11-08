@@ -11,7 +11,7 @@ import { SheetEditor } from './SheetEditor'
 vi.mock('@/i18n/ui', () => ({ ui: (text: string) => text }))
 vi.mock('./SheetToolbar', () => ({ SheetToolbar: () => null }))
 vi.mock('./SheetTabs', () => ({ SheetTabs: () => null }))
-vi.mock('./SheetDialogs', () => ({ FindDialog: () => null, NoteDialog: () => null }))
+vi.mock('./SheetDialogs', () => ({ FindDialog: () => null, NoteDialog: () => null, DeleteLinesDialog: () => null, ResizeLinesDialog: () => null, ValidationPrompt: () => null }))
 
 beforeEach(() => {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })

@@ -788,3 +788,10 @@ it('reports the chart range budget instead of silently falling back to cached va
   expect(result).toBeUndefined()
   expect(limited).toHaveBeenCalledOnce()
 })
+
+it('documents every built-in function with its library group, for Insert ▸ Function menus', () => {
+  const { view } = setup()
+  expect(view.functions.find((doc) => doc.name === 'SUM')?.category).toBe('math')
+  expect(view.functions.find((doc) => doc.name === 'VLOOKUP')?.category).toBe('lookup')
+  expect(view.functions.every((doc) => typeof doc.category === 'string' && doc.category.length > 0)).toBe(true)
+})

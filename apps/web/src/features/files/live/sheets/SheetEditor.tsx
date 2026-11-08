@@ -3,35 +3,34 @@ import type * as Y from 'yjs'
 import type { Awareness } from 'y-protocols/awareness'
 import type { LiveAssetStore } from '@pulpo/client-core/office'
 import type { SheetValues } from '@pulpo/client-core/office/sheets'
-import { SheetView, toHtml, toTsv, type FunctionDoc, type SheetViewOptions, type SheetViewState } from '@pulpo/client-core/office/sheets/view'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuShortcut,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { SheetView, toHtml, toTsv, type FunctionDoc, type SheetRequest, type SheetViewOptions } from '@pulpo/client-core/office/sheets/view'
 import { fileExtension } from '@pulpo/contracts'
-import { ClipboardPaste, Copy, Scissors, Search, Snowflake } from 'lucide-react'
 import { ui } from '@/i18n/ui'
 import { EditorMenuBar } from '../chrome/EditorMenuBar'
 import { fileEditorRoot } from '../chrome/editor-root'
 import { fileMenuDefinition, type FileMenuHost } from '../chrome/file-menu'
-import { separator, shortcutGroupsFromMenus, type MenuDefinition, type MenuEntry } from '../chrome/menu'
-import { saveFile } from '../chrome/output'
+import { LinkDialog } from '../chrome/LinkDialog'
+import { shortcutGroupsFromMenus, type MenuEntry } from '../chrome/menu'
+import { printHtmlDocument, saveFile } from '../chrome/output'
 import { ShortcutsDialog } from '../chrome/ShortcutsDialog'
-import { helpMenu, undoRedoEntries } from '../chrome/standard-menus'
-import { FIND_SHORTCUT, useEditorShortcuts } from '../chrome/use-editor-shortcuts'
-import { zoomMenu } from '../chrome/zoom'
+import { useEditorShortcuts } from '../chrome/use-editor-shortcuts'
 import { exportSheetAsText, registerSheetEditor } from './calculation'
+import { ConditionalFormatDialog, type ConditionalTab } from './ConditionalFormatDialog'
 import { FormulaBar } from './FormulaBar'
 import { sheetViewLabels } from './labels'
-import { FindDialog, NoteDialog } from './SheetDialogs'
-import { sheetShortcutGroups } from './sheet-shortcuts'
+import { NumberFormatDialog } from './NumberFormatDialog'
+import { cellMenuEntries } from './cell-menu'
+import { SheetContextMenu, type SheetMenuPoint } from './SheetContextMenu'
+import { DeleteLinesDialog, FindDialog, NoteDialog, ResizeLinesDialog, ValidationPrompt, type ValidationRequest } from './SheetDialogs'
+import { acceptWorkbookLocation, linkDialogUrl, linkFromDialog } from './sheet-links'
+import { sheetMenus, type SheetMenuActions } from './sheet-menus'
+import { menusForShortcuts, sheetShortcutGroups } from './sheet-shortcuts'
+import { SheetStatus } from './SheetStatus'
 import { SheetTabs } from './SheetTabs'
 import { SheetToolbar } from './SheetToolbar'
+import { SortRangeDialog } from './SortRangeDialog'
 import { useSheetState } from './use-sheet-view'
+import { ValidationDialog } from './ValidationDialog'
 
 export interface SheetEditorProps {
   doc: Y.Doc
@@ -64,23 +63,6 @@ function useAppearance(): 'light' | 'dark' {
   return dark ? 'dark' : 'light'
 }
 
-/** The platform's shortcut modifier as menus show it. */
-const MOD_KEY = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'
-
-const formatNumber = (value: number) => Number(value.toPrecision(10)).toLocaleString(undefined, { maximumFractionDigits: 10 })
-
-function Summary({ state }: { state: SheetViewState }) {
-  const { summary } = state
-  if (summary.count < 2) return null
-  return (
-    <div className="flex shrink-0 items-center gap-4 px-3 text-xs text-muted-foreground tabular-nums" aria-live="polite">
-      {summary.numbers > 0 && <span>{ui("Sum: {{value}}", { value: formatNumber(summary.sum) })}</span>}
-      {summary.average !== undefined && <span>{ui("Average: {{value}}", { value: formatNumber(summary.average) })}</span>}
-      <span>{ui("Count: {{value}}", { value: summary.count })}</span>
-    </div>
-  )
-}
-
 /** Copies the selection to the system clipboard as text and HTML (menu Copy/Cut). */
 async function writeClipboard(view: SheetView, cut: boolean): Promise<void> {
   const payload = view.clipboard.copyPayload(cut)
@@ -111,19 +93,7 @@ async function readClipboard(): Promise<{ html?: string; text?: string }> {
 
 /** Prints the active sheet from a hidden frame (the browser's print dialog also saves PDFs). */
 function printSheet(view: SheetView): void {
-  const frame = document.createElement('iframe')
-  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;'
-  // Our own HTML, with every text escaped; scripts can't run in it.
-  frame.setAttribute('sandbox', 'allow-modals allow-same-origin')
-  document.body.appendChild(frame)
-  const document_ = frame.contentDocument!
-  document_.open()
-  document_.write(view.printHtml())
-  document_.close()
-  setTimeout(() => {
-    frame.contentWindow?.print()
-    setTimeout(() => frame.remove(), 1000)
-  }, 50)
+  printHtmlDocument(view.printHtml())
 }
 
 /** A spreadsheet editor: menu bar, toolbar, formula bar, the canvas grid, and sheet tabs. */
@@ -131,12 +101,21 @@ export function SheetEditor({ doc, awareness, readOnly, fileFormat, assets, user
   const root = useRef<HTMLDivElement>(null)
   const container = useRef<HTMLDivElement>(null)
   const imageInput = useRef<HTMLInputElement>(null)
+  const nameBox = useRef<HTMLInputElement>(null)
   const [view, setView] = useState<SheetView>()
   const [findOpen, setFindOpen] = useState(false)
   const [noteOpen, setNoteOpen] = useState(false)
+  const [linkOpen, setLinkOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [numberFormatOpen, setNumberFormatOpen] = useState(false)
+  const [validationDialog, setValidationDialog] = useState<{ preset?: 'dropdown' }>()
+  const [conditionalTab, setConditionalTab] = useState<ConditionalTab>()
+  const [sortOpen, setSortOpen] = useState(false)
+  const [deleteLinesOpen, setDeleteLinesOpen] = useState(false)
+  const [resizeKind, setResizeKind] = useState<'row' | 'col'>()
+  const [validationRequest, setValidationRequest] = useState<ValidationRequest>()
   const [exportFailed, setExportFailed] = useState(false)
-  const [menu, setMenu] = useState<{ x: number; y: number; area: string }>()
+  const [menu, setMenu] = useState<SheetMenuPoint>()
   const appearance = useAppearance()
   const state = useSheetState(view)
 
@@ -179,17 +158,115 @@ export function SheetEditor({ doc, awareness, readOnly, fileFormat, assets, user
     view?.setFileFormat(fileFormat)
   }, [view, fileFormat])
 
+  // Formats, notes and links don't survive in CSV: those commands stay off there.
+  const canFormat = () => !!view && !view.readOnly && !view.valuesOnly
+
+  const actions: SheetMenuActions | undefined = view && {
+    cut: () => void writeClipboard(view, true),
+    copy: () => void writeClipboard(view, false),
+    paste: (mode) => void readClipboard().then((data) => view.clipboard.paste(data, mode === 'values' ? { values: true } : mode === 'formats' ? { formats: true } : undefined)),
+    find: () => setFindOpen(true),
+    link: () => { if (canFormat()) setLinkOpen(true) },
+    note: () => { if (canFormat()) setNoteOpen(true) },
+    image: () => imageInput.current?.click(),
+    shortcuts: () => setShortcutsOpen(true),
+    customNumberFormat: () => setNumberFormatOpen(true),
+    validation: (preset) => setValidationDialog(preset ? { preset } : {}),
+    conditional: (tab) => setConditionalTab(tab ?? 'single'),
+    sortRange: () => setSortOpen(true),
+    resize: (kind) => setResizeKind(kind),
+  }
+
+  /** What the grid's own keys ask for (Ctrl+K, Shift+F2, Ctrl+P, …): claiming one keeps the browser's shortcut away. */
+  const onRequest = (detail: SheetRequest): boolean => {
+    if (!view || !actions) return false
+    switch (detail.request) {
+      case 'link':
+        if (!canFormat()) return false
+        actions.link()
+        return true
+      case 'note':
+        if (!canFormat()) return false
+        actions.note()
+        return true
+      case 'print':
+        printSheet(view)
+        return true
+      case 'save':
+        onSaveShortcut?.()
+        return true
+      case 'replace':
+        setFindOpen(true)
+        return true
+      case 'goto':
+        nameBox.current?.focus()
+        return true
+      case 'shortcuts':
+        setShortcutsOpen(true)
+        return true
+      case 'deleteLines':
+        if (view.readOnly) return false
+        setDeleteLinesOpen(true)
+        return true
+      case 'validation':
+        setValidationRequest(detail)
+        return true
+    }
+  }
+  const latestRequest = useRef(onRequest)
+  latestRequest.current = onRequest
+
   useEffect(() => {
     const element = container.current
     if (!element) return
     const onMenu = (event: Event) => {
-      const detail = (event as CustomEvent<{ x: number; y: number; area: string }>).detail
+      const detail = (event as CustomEvent<SheetMenuPoint>).detail
       // Open once the click that asked for it is over, so its release can't dismiss the menu.
-      setTimeout(() => setMenu(detail), 0)
+      setTimeout(() => setMenu({ x: detail.x, y: detail.y, area: detail.area }), 0)
+    }
+    const onSheetRequest = (event: Event) => {
+      if (latestRequest.current((event as CustomEvent<SheetRequest>).detail)) event.preventDefault()
     }
     element.addEventListener('sheetcontextmenu', onMenu)
-    return () => element.removeEventListener('sheetcontextmenu', onMenu)
+    element.addEventListener('sheetrequest', onSheetRequest)
+    return () => {
+      element.removeEventListener('sheetcontextmenu', onMenu)
+      element.removeEventListener('sheetrequest', onSheetRequest)
+    }
   }, [])
+
+  // The keyboard's menu key and Shift+F10 open the cell menu at the active cell (while editing, the
+  // text field's own menu stays).
+  useEffect(() => {
+    const element = container.current
+    if (!element || !view) return
+    const fromGrid = (event: Event) => event.target === view.input && !view.editing
+    const openAtActiveCell = () => {
+      const { row, col } = view.selection.active
+      const rect = view.cellRect(row, col)
+      const bounds = view.root.getBoundingClientRect()
+      const x = Math.min(Math.max(bounds.left + rect.x + Math.min(rect.width, 40), bounds.left), bounds.right - 8)
+      const y = Math.min(Math.max(bounds.top + rect.y + rect.height, bounds.top), bounds.bottom - 8)
+      setMenu({ x, y, area: 'cell' })
+    }
+    const onKeyboardMenu = (event: MouseEvent) => {
+      if (!fromGrid(event)) return
+      event.preventDefault()
+      openAtActiveCell()
+    }
+    // Shift+F10 too where the browser has no menu event for it (a Mac).
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'F10' || !event.shiftKey || event.altKey || event.ctrlKey || event.metaKey || event.defaultPrevented || !fromGrid(event)) return
+      event.preventDefault()
+      openAtActiveCell()
+    }
+    element.addEventListener('contextmenu', onKeyboardMenu)
+    element.addEventListener('keydown', onKeyDown)
+    return () => {
+      element.removeEventListener('contextmenu', onKeyboardMenu)
+      element.removeEventListener('keydown', onKeyDown)
+    }
+  }, [view])
 
   // Cmd/Ctrl+F anywhere in the editor (grid, formula bar, toolbar) opens find and replace.
   useEditorShortcuts(root, {
@@ -197,6 +274,7 @@ export function SheetEditor({ doc, awareness, readOnly, fileFormat, assets, user
     save: onSaveShortcut,
     shortcuts: () => setShortcutsOpen(true),
     find: () => setFindOpen(true),
+    replace: () => setFindOpen(true),
     focus: () => view?.focus(),
   })
 
@@ -226,66 +304,31 @@ export function SheetEditor({ doc, awareness, readOnly, fileFormat, assets, user
     ]
   }
 
-  const editable = !!state && !state.readOnly
-  const menus: MenuDefinition[] = view ? [
-    fileMenuDefinition(fileMenu, () => ({ print: () => printSheet(view), downloads: sheetDownloads(view) })),
-    {
-      id: 'edit',
-      label: ui("Edit"),
-      items: () => {
-        const current = view.getState()
-        const canEdit = !current.readOnly
-        return [
-          ...undoRedoEntries({ undo: () => view.undo(), redo: () => view.redo(), canUndo: canEdit && current.canUndo, canRedo: canEdit && current.canRedo }),
-          separator,
-          { type: 'item', id: 'cut', label: ui("Cut"), icon: Scissors, shortcut: { key: 'x', mod: true }, disabled: !canEdit, onSelect: () => void writeClipboard(view, true) },
-          { type: 'item', id: 'copy', label: ui("Copy"), icon: Copy, shortcut: { key: 'c', mod: true }, onSelect: () => void writeClipboard(view, false) },
-          { type: 'item', id: 'paste', label: ui("Paste"), icon: ClipboardPaste, shortcut: { key: 'v', mod: true }, disabled: !canEdit, onSelect: () => void readClipboard().then((data) => view.clipboard.paste(data)) },
-          separator,
-          { type: 'item', id: 'find', label: ui("Find and replace"), icon: Search, shortcut: FIND_SHORTCUT, onSelect: () => setFindOpen(true) },
-        ]
-      },
-    },
-    {
-      id: 'view',
-      label: ui("View"),
-      items: () => {
-        const current = view.getState()
-        const frozen = current.frozen
-        return [
-          {
-            type: 'submenu',
-            id: 'freeze',
-            label: ui("Freeze"),
-            icon: Snowflake,
-            disabled: current.readOnly,
-            items: [
-              { type: 'item', id: 'freeze-none', label: ui("No frozen rows or columns"), onSelect: () => view.freeze(0, 0) },
-              { type: 'item', id: 'freeze-row', label: ui("Freeze first row"), onSelect: () => view.freeze(1, frozen.cols) },
-              { type: 'item', id: 'freeze-column', label: ui("Freeze first column"), onSelect: () => view.freeze(frozen.rows, 1) },
-              { type: 'item', id: 'freeze-cell', label: ui("Freeze up to the current cell"), onSelect: () => view.freeze() },
-            ],
-          },
-          zoomMenu({ zoom: current.zoom, onZoom: (zoom) => view.setZoom(zoom) }),
-        ]
-      },
-    },
-    helpMenu(() => setShortcutsOpen(true)),
-  ] : []
-  // Whole columns or rows selected get only their own commands, wherever the menu opened.
-  const area = state?.selectionShape === 'columns' ? 'colHeader' : state?.selectionShape === 'rows' ? 'rowHeader' : menu?.area
+  const menus = view && actions ? sheetMenus(view, fileMenuDefinition(fileMenu, () => ({ print: () => printSheet(view), downloads: sheetDownloads(view) })), actions) : []
+  const link = state?.activeLink
+  const focusGrid = () => view?.focus()
   return (
     <div ref={root} className="pulpo-sheet-editor flex h-full min-h-0 w-full flex-col bg-background text-foreground" data-testid="sheet-editor" {...fileEditorRoot('sheet')}>
-      {view && state && (
+      {view && state && actions && (
         <>
-          <EditorMenuBar menus={menus} onClose={() => view.focus()} className="px-1.5 pt-0.5" />
-          <SheetToolbar view={view} state={state} onFind={() => setFindOpen(true)} onNote={() => setNoteOpen(true)} onInsertImage={() => imageInput.current?.click()} onPrint={() => printSheet(view)} slot={toolbarSlot} />
+          <EditorMenuBar menus={menus} onClose={focusGrid} className="px-1.5 pt-0.5" />
+          <SheetToolbar
+            view={view}
+            state={state}
+            onFind={actions.find}
+            onNote={actions.note}
+            onLink={actions.link}
+            onInsertImage={actions.image}
+            onPrint={() => printSheet(view)}
+            onCustomNumberFormat={actions.customNumberFormat}
+            slot={toolbarSlot}
+          />
           {exportFailed && <p role="alert" className="border-b px-3 py-1 text-sm text-destructive">{ui("Couldn't export this sheet. Try again, or download the whole file.")}</p>}
-          <FormulaBar view={view} state={state} />
+          <FormulaBar view={view} state={state} nameBoxRef={nameBox} />
         </>
       )}
       <div ref={container} className="relative min-h-0 flex-1" />
-      {view && state && <SheetTabs view={view} state={state} summary={<Summary state={state} />} />}
+      {view && state && <SheetTabs view={view} state={state} summary={<SheetStatus view={view} state={state} />} />}
       <input
         ref={imageInput}
         type="file"
@@ -297,70 +340,40 @@ export function SheetEditor({ doc, awareness, readOnly, fileFormat, assets, user
           event.target.value = ''
         }}
       />
-      {view && (
+      {view && actions && (
         <>
           <FindDialog view={view} open={findOpen} onOpenChange={(open) => { setFindOpen(open); if (!open) view.focus() }} />
           <NoteDialog view={view} open={noteOpen} onOpenChange={setNoteOpen} />
+          <LinkDialog
+            open={linkOpen}
+            onOpenChange={setLinkOpen}
+            url={linkDialogUrl(link)}
+            // A link's text goes into an empty cell; a filled cell keeps its own.
+            showText={!link && !state?.activeInput}
+            editing={!!link}
+            accept={acceptWorkbookLocation(view.workbook)}
+            description={ui("A web address, an email address, or a cell in this spreadsheet, like Sheet1!A1.")}
+            onApply={({ text, url }) => view.setLink(linkFromDialog(url, text))}
+            onRemove={() => view.setLink(undefined)}
+            returnFocus={focusGrid}
+          />
+          <NumberFormatDialog view={view} open={numberFormatOpen} onOpenChange={setNumberFormatOpen} />
+          <ValidationDialog view={view} open={!!validationDialog} preset={validationDialog?.preset} onOpenChange={(open) => { if (!open) setValidationDialog(undefined) }} />
+          <ConditionalFormatDialog view={view} open={!!conditionalTab} tab={conditionalTab} onOpenChange={(open) => { if (!open) setConditionalTab(undefined) }} />
+          <SortRangeDialog view={view} open={sortOpen} onOpenChange={setSortOpen} />
+          <DeleteLinesDialog view={view} open={deleteLinesOpen} onOpenChange={setDeleteLinesOpen} />
+          <ResizeLinesDialog view={view} kind={resizeKind} onOpenChange={(open) => { if (!open) setResizeKind(undefined) }} />
+          <ValidationPrompt request={validationRequest} onDone={() => setValidationRequest(undefined)} />
           <ShortcutsDialog
             open={shortcutsOpen}
             onOpenChange={setShortcutsOpen}
-            groups={() => shortcutGroupsFromMenus(menus, sheetShortcutGroups())}
-            returnFocus={() => view.focus()}
-          />
-          <DropdownMenu
-            open={!!menu}
-            modal={false}
-            onOpenChange={(open) => {
-              if (open) return
-              setMenu(undefined)
-              // Keys go back to the grid once the menu is gone (Cmd+Z right after Insert row).
-              setTimeout(() => view.focus(), 0)
+            groups={() => {
+              const groups = sheetShortcutGroups()
+              return shortcutGroupsFromMenus(menusForShortcuts(menus, groups), groups)
             }}
-          >
-            <DropdownMenuTrigger asChild>
-              <span aria-hidden style={{ position: 'fixed', left: menu?.x ?? 0, top: menu?.y ?? 0, width: 1, height: 1 }} />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" onCloseAutoFocus={(event) => { event.preventDefault(); view.focus() }}>
-              <DropdownMenuItem disabled={!editable} onSelect={() => void writeClipboard(view, true)}>{ui("Cut")}<DropdownMenuShortcut>{`${MOD_KEY}X`}</DropdownMenuShortcut></DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => void writeClipboard(view, false)}>{ui("Copy")}<DropdownMenuShortcut>{`${MOD_KEY}C`}</DropdownMenuShortcut></DropdownMenuItem>
-              <DropdownMenuItem disabled={!editable} onSelect={() => void readClipboard().then((data) => view.clipboard.paste(data))}>{ui("Paste")}<DropdownMenuShortcut>{`${MOD_KEY}V`}</DropdownMenuShortcut></DropdownMenuItem>
-              <DropdownMenuItem disabled={!editable} onSelect={() => void readClipboard().then((data) => view.clipboard.paste(data, { values: true }))}>{ui("Paste values only")}</DropdownMenuItem>
-              <DropdownMenuItem disabled={!editable} onSelect={() => void readClipboard().then((data) => view.clipboard.paste(data, { formats: true }))}>{ui("Paste formatting only")}</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              {area !== 'colHeader' && (
-                <>
-                  <DropdownMenuItem disabled={!editable} onSelect={() => view.insert('row', 'before')}>{ui("Insert row above")}</DropdownMenuItem>
-                  <DropdownMenuItem disabled={!editable} onSelect={() => view.insert('row', 'after')}>{ui("Insert row below")}</DropdownMenuItem>
-                </>
-              )}
-              {area !== 'rowHeader' && (
-                <>
-                  <DropdownMenuItem disabled={!editable} onSelect={() => view.insert('col', 'before')}>{ui("Insert column left")}</DropdownMenuItem>
-                  <DropdownMenuItem disabled={!editable} onSelect={() => view.insert('col', 'after')}>{ui("Insert column right")}</DropdownMenuItem>
-                </>
-              )}
-              {area !== 'colHeader' && <DropdownMenuItem disabled={!editable} onSelect={() => view.deleteLines('row')}>{ui("Delete row")}</DropdownMenuItem>}
-              {area !== 'rowHeader' && <DropdownMenuItem disabled={!editable} onSelect={() => view.deleteLines('col')}>{ui("Delete column")}</DropdownMenuItem>}
-              {area === 'rowHeader' && (
-                <>
-                  <DropdownMenuItem disabled={!editable} onSelect={() => view.hideLines('row', true)}>{ui("Hide row")}</DropdownMenuItem>
-                  <DropdownMenuItem disabled={!editable} onSelect={() => view.hideLines('row', false)}>{ui("Unhide rows")}</DropdownMenuItem>
-                  <DropdownMenuItem disabled={!editable} onSelect={() => view.autoFit('row')}>{ui("Fit to data")}</DropdownMenuItem>
-                </>
-              )}
-              {area === 'colHeader' && (
-                <>
-                  <DropdownMenuItem disabled={!editable} onSelect={() => view.hideLines('col', true)}>{ui("Hide column")}</DropdownMenuItem>
-                  <DropdownMenuItem disabled={!editable} onSelect={() => view.hideLines('col', false)}>{ui("Unhide columns")}</DropdownMenuItem>
-                  <DropdownMenuItem disabled={!editable} onSelect={() => view.autoFit('col')}>{ui("Fit to data")}</DropdownMenuItem>
-                </>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem disabled={!editable} onSelect={() => view.clearContents()}>{ui("Clear contents")}</DropdownMenuItem>
-              <DropdownMenuItem disabled={!editable} onSelect={() => setNoteOpen(true)}>{state?.activeNote ? ui("Edit note") : ui("Insert note")}</DropdownMenuItem>
-              {state?.activeNote && <DropdownMenuItem disabled={!editable} onSelect={() => view.setNote(undefined)}>{ui("Delete note")}</DropdownMenuItem>}
-            </DropdownMenuContent>
-          </DropdownMenu>
+            returnFocus={focusGrid}
+          />
+          <SheetContextMenu point={menu} entries={() => cellMenuEntries(view, actions)} onClose={() => setMenu(undefined)} returnFocus={focusGrid} />
         </>
       )}
     </div>
