@@ -4,6 +4,7 @@ import { normalizeMathDelimiters } from '../../markdown.js'
 import { parseAnsi, type AnsiColor } from './ansi.js'
 import {
   imageDataUrl,
+  OUTPUT_MIME_PREFERENCE,
   outputText,
   pickOutputMime,
   resolveAttachmentUrl,
@@ -28,6 +29,13 @@ export interface NotebookHtmlOptions {
   /** Renders TeX (without delimiters) as HTML; math stays as escaped TeX without it. */
   renderMath?: (tex: string, display: boolean) => string
   labels?: Partial<NotebookHtmlLabels>
+  /**
+   * A static page, safe to open anywhere (downloads): no script runs and nothing but images loads
+   * from elsewhere. HTML outputs and Markdown keep only inert markup (where `DOMParser` exists;
+   * elsewhere HTML outputs show their plain text), JavaScript outputs show their plain text, and a
+   * content security policy blocks whatever remains. Math needs no style sheet only as MathML.
+   */
+  static?: boolean
 }
 
 export interface NotebookHtmlLabels {
@@ -56,6 +64,36 @@ const ANSI_HEX: Record<string, [string, string]> = {
   magenta: ['#8250df', '#d2a8ff'],
   cyan: ['#1b7c83', '#76e3ea'],
   white: ['#c5c8ce', '#e6edf3'],
+}
+
+/** Elements a static page drops with their content: they run, load, embed, or submit. */
+const ACTIVE_ELEMENTS = 'script,style,iframe,frame,frameset,object,embed,applet,link,meta,base,form,input,button,textarea,select,option,noscript,template,portal,video,audio,source,track,canvas,dialog,svg,math'
+/** Where a static page's links and images may point. */
+const SAFE_URL = /^(https?:|mailto:|#)/i
+const SAFE_IMAGE = /^data:image\/(png|jpeg|gif|webp);base64,[a-z0-9+/=\s]*$/i
+
+/** The policy a static page carries: inline styles and images only. */
+const STATIC_POLICY = "default-src 'none'; img-src data: https: http:; style-src 'unsafe-inline'"
+
+/**
+ * Markup made inert for a static page: active elements removed, event handlers and script URLs
+ * stripped. Null where there is no `DOMParser` to do it with.
+ */
+export function inertHtml(html: string): string | null {
+  if (typeof DOMParser === 'undefined') return null
+  // An inert document: nothing in it loads or runs while it is cleaned.
+  const parsed = new DOMParser().parseFromString(`<!doctype html><body>${html}`, 'text/html')
+  for (const node of parsed.body.querySelectorAll(ACTIVE_ELEMENTS)) node.remove()
+  for (const node of parsed.body.querySelectorAll('*')) {
+    for (const attribute of [...node.attributes]) {
+      const name = attribute.name.toLowerCase()
+      const value = attribute.value.trim()
+      if (name.startsWith('on') || name === 'srcdoc' || name === 'formaction' || name === 'srcset' || name === 'ping') node.removeAttribute(attribute.name)
+      else if ((name === 'href' || name === 'xlink:href' || name === 'action' || name === 'background' || name === 'poster') && !SAFE_URL.test(value)) node.removeAttribute(attribute.name)
+      else if (name === 'src' && !SAFE_URL.test(value) && !SAFE_IMAGE.test(value)) node.removeAttribute(attribute.name)
+    }
+  }
+  return parsed.body.innerHTML
 }
 
 function ansiClass(color: AnsiColor | undefined, prefix: 'fg' | 'bg'): string | null {
@@ -229,13 +267,19 @@ function markdownRenderer(options: NotebookHtmlOptions) {
     // marked slows down sharply on some huge, hostile cells; real prose is far shorter.
     if (source.length > MAX_MARKDOWN_CHARACTERS) return `<pre>${escapeHtml(source)}</pre>`
     const { text, formulas, token } = extractMath(normalizeMathDelimiters(source))
-    const html = restoreMath(marked.parse(text) as string, formulas, token, render)
     // Cell attachments (`![](attachment:plot.png)`) are carried inside the notebook.
-    return html.replace(/(src|href)="(attachment:[^"]*)"/g, (match, attribute: string, url: string) => {
+    const html = (marked.parse(text) as string).replace(/(src|href)="(attachment:[^"]*)"/g, (match, attribute: string, url: string) => {
       const resolved = resolveAttachmentUrl(url.replace(/&amp;/g, '&'), cellAttachments)
       return resolved ? `${attribute}="${escapeHtml(resolved)}"` : match
     })
+    // A static page keeps only inert markup; the math rendered after it is the renderer's own.
+    return restoreMath(options.static ? inertHtml(html) ?? html : html, formulas, token, render)
   }
+}
+
+/** Output types a static page shows: no scripts, and HTML only where it can be made inert. */
+function staticMimes(): string[] {
+  return OUTPUT_MIME_PREFERENCE.filter((mime) => mime !== 'application/javascript' && (mime !== 'text/html' || typeof DOMParser !== 'undefined'))
 }
 
 function prompt(label: string, count: number | null): string {
@@ -248,7 +292,7 @@ function outputHtml(output: NotebookOutput, labels: NotebookHtmlLabels, options:
     const text = output.traceback.length ? output.traceback.join('\n') : `${output.ename}: ${output.evalue}`
     return `<pre class="output error">${ansiHtml(text)}</pre>`
   }
-  const mime = pickOutputMime(output.data)
+  const mime = pickOutputMime(output.data, options.static ? staticMimes() : OUTPUT_MIME_PREFERENCE)
   const data = mime ? output.data[mime] : undefined
   switch (mime) {
     case 'application/vnd.jupyter.widget-view+json': {
@@ -257,7 +301,7 @@ function outputHtml(output: NotebookOutput, labels: NotebookHtmlLabels, options:
         ? `<pre class="output text">${ansiHtml(plain)}</pre>`
         : `<p class="output note">${escapeHtml(labels.widget)}</p>`
     }
-    case 'text/html': return `<div class="output html">${String(data)}</div>`
+    case 'text/html': return `<div class="output html">${options.static ? inertHtml(String(data)) ?? '' : String(data)}</div>`
     case 'application/javascript': return `<div class="output html"><script>${String(data).replace(/<\/script/gi, '<\\/script')}</script></div>`
     case 'image/svg+xml': {
       const url = svgDataUrl(data)
@@ -354,5 +398,6 @@ export function renderNotebookHtml(model: NotebookModel, options: NotebookHtmlOp
     `@media (prefers-color-scheme: dark){${highlightCss('.code-highlight', 'dark')}}`,
     ansiCss(),
   ].join('\n')
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>${escapeHtml(options.title)}</title><style>${css}</style></head><body><main>${cells}</main></body></html>`
+  const policy = options.static ? `<meta http-equiv="Content-Security-Policy" content="${STATIC_POLICY}">` : ''
+  return `<!doctype html><html><head><meta charset="utf-8">${policy}<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>${escapeHtml(options.title)}</title><style>${css}</style></head><body><main>${cells}</main></body></html>`
 }

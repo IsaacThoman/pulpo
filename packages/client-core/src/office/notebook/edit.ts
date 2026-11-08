@@ -235,6 +235,36 @@ export function setSourceCollapsed(doc: Y.Doc, keys: readonly string[], collapse
   }, origin)
 }
 
+/** The first line's ATX heading marker (`## `), or its leading blanks; `#tag` is text, not a heading. */
+const HEADING_PREFIX = /^[ \t]*(?:#{1,6}(?=[ \t]|$|\n))?[ \t]*/
+
+/**
+ * Makes the cells Markdown headings of a level (Jupyter's 1 to 6 keys): other types become
+ * Markdown, and the first line's heading marker is replaced, so `### Title` at level 1 is
+ * `# Title`. Only the marker's characters change, so concurrent typing in the line is kept.
+ */
+export function setHeadingLevel(doc: Y.Doc, keys: readonly string[], level: number, origin?: unknown): void {
+  const depth = Math.max(1, Math.min(6, Math.round(level)))
+  const marker = `${'#'.repeat(depth)} `
+  doc.transact(() => {
+    setCellType(doc, keys, 'markdown', origin)
+    for (const key of keys) {
+      const cell = cellsMap(doc).get(key)
+      if (!cell) continue
+      let source = cell.get('source')
+      if (!(source instanceof Y.Text)) {
+        source = new Y.Text()
+        cell.set('source', source)
+      }
+      const text = source as Y.Text
+      const current = HEADING_PREFIX.exec(text.toString())![0]
+      if (current === marker) continue
+      if (current) text.delete(0, current.length)
+      text.insert(0, marker)
+    }
+  }, origin)
+}
+
 /**
  * Splits a cell at character offsets: the cell keeps the text before the first, and each piece
  * after becomes a new cell of the same type below it. Returns the keys of every piece.

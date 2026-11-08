@@ -11,12 +11,13 @@ import {
   insertCells,
   mergeCells,
   moveCells,
+  setHeadingLevel,
   setOutputsCollapsed,
   setSourceCollapsed,
   shiftCells,
   splitCell,
 } from './edit.js'
-import { cellAttachments, cellSourceText, metadataValue, cellMetadata, orderedCells, outputsCollapsed, sourceCollapsed } from './layout.js'
+import { cellAttachments, cellSourceText, cellType, metadataValue, cellMetadata, orderedCells, outputsCollapsed, sourceCollapsed } from './layout.js'
 import { initialOrderKeys, isOrderKey, orderKeyBetween, orderKeysBetween } from './order.js'
 
 describe('order keys', () => {
@@ -156,6 +157,57 @@ describe('cell edits', () => {
     setOutputsCollapsed(doc, [key], false)
     setSourceCollapsed(doc, [key], false)
     expect(cellMetadata(cell)!.size).toBe(0)
+  })
+
+  it('writes hidden code and outputs to the file as JupyterLab does, and reads them back', async () => {
+    const { doc, assets } = await notebookDoc([{ type: 'code', source: 'x' }, { type: 'markdown', source: '# Title' }])
+    const [code, markdown] = orderedCells(doc).map((entry) => entry.key)
+    setSourceCollapsed(doc, [code!, markdown!], true)
+    setOutputsCollapsed(doc, [code!], true)
+    const bytes = await notebookCodec.exportFile(doc, { name: 'a.ipynb', assets })
+    const written = JSON.parse(new TextDecoder().decode(bytes))
+    expect(written.cells[0].metadata).toEqual({ jupyter: { source_hidden: true, outputs_hidden: true }, collapsed: true })
+    expect(written.cells[1].metadata).toEqual({ jupyter: { source_hidden: true } })
+    const reopened = new Y.Doc()
+    await notebookCodec.importFile(reopened, bytes, { name: 'a.ipynb', assets })
+    const cells = orderedCells(reopened).map((entry) => entry.cell)
+    expect(cells.map(sourceCollapsed)).toEqual([true, true])
+    expect(cells.map(outputsCollapsed)).toEqual([true, false])
+    expect(await notebookCodec.exportFile(reopened, { name: 'a.ipynb', assets })).toEqual(bytes)
+  })
+
+  it('makes cells Markdown headings of a level, changing only the marker', async () => {
+    const { doc } = await notebookDoc([
+      { type: 'code', source: 'Title' },
+      { type: 'markdown', source: '### Section\nbody' },
+      { type: 'markdown', source: '#tag line' },
+      { type: 'raw', source: '  ## indented' },
+      { type: 'markdown', source: '' },
+    ])
+    const keys = orderedCells(doc).map((entry) => entry.key)
+    setHeadingLevel(doc, keys, 2)
+    expect(sources(doc)).toEqual(['## Title', '## Section\nbody', '## #tag line', '## indented', '## '])
+    expect(orderedCells(doc).map(({ cell }) => cellType(cell))).toEqual(['markdown', 'markdown', 'markdown', 'markdown', 'markdown'])
+    // A code cell becoming Markdown loses its outputs, as setCellType does.
+    expect(orderedCells(doc)[0]!.cell.has('outputs')).toBe(false)
+    setHeadingLevel(doc, [keys[1]!], 1)
+    expect(sources(doc)[1]).toBe('# Section\nbody')
+    // Out-of-range levels are clamped.
+    setHeadingLevel(doc, [keys[1]!], 9)
+    expect(sources(doc)[1]).toBe('###### Section\nbody')
+  })
+
+  it('keeps concurrent typing in a heading line', async () => {
+    const { doc } = await notebookDoc([{ type: 'markdown', source: '### Results' }])
+    const other = new Y.Doc()
+    Y.applyUpdate(other, Y.encodeStateAsUpdate(doc))
+    const key = orderedCells(doc)[0]!.key
+    setHeadingLevel(doc, [key], 1)
+    ;(orderedCells(other)[0]!.cell.get('source') as Y.Text).insert(11, ' so far')
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(other, Y.encodeStateVector(doc)))
+    Y.applyUpdate(other, Y.encodeStateAsUpdate(doc, Y.encodeStateVector(other)))
+    expect(sources(doc)).toEqual(['# Results so far'])
+    expect(sources(other)).toEqual(['# Results so far'])
   })
 
   it('copies cells with their outputs but not their ids', async () => {
