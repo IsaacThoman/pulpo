@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
-import { defaultKeymap, indentLess, indentMore, indentWithTab } from '@codemirror/commands'
+import { defaultKeymap, indentLess, indentMore, indentWithTab, toggleComment as toggleLineComment } from '@codemirror/commands'
 import { bracketMatching, foldGutter, foldKeymap, HighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language'
 import { highlightSelectionMatches, openSearchPanel, search, searchKeymap } from '@codemirror/search'
 import { Compartment, EditorSelection, EditorState, type Extension } from '@codemirror/state'
@@ -74,6 +74,10 @@ export interface TextEditorOptions {
   /** Follows the host's color scheme. */
   dark?: boolean
   wrap?: boolean
+  /** The line-number gutter; on unless turned off. */
+  lineNumbers?: boolean
+  /** The browser's spell checking of the text; off unless turned on (prose, not code). */
+  spellcheck?: boolean
   /** Defaults to what the file already uses. */
   indent?: TextEditorIndent
   /** Called after anything `state()` reports may have changed. */
@@ -85,6 +89,8 @@ export interface TextEditor {
   state(): TextEditorState
   setReadOnly(readOnly: boolean): void
   setWrap(wrap: boolean): void
+  setLineNumbers(on: boolean): void
+  setSpellcheck(on: boolean): void
   setIndent(indent: TextEditorIndent): void
   setDark(dark: boolean): void
   /** Follows a rename: the extension decides the highlighting. */
@@ -93,6 +99,10 @@ export interface TextEditor {
   redo(): void
   /** Indents or outdents the selected lines, for keyboards without a Tab key. */
   indent(direction: 'more' | 'less'): void
+  /** Whether the language at the caret has comments (plain text has none). */
+  canToggleComment(): boolean
+  /** Comments the selected lines out, or back in (Cmd/Ctrl+/); false where nothing changed. */
+  toggleComment(): boolean
   openSearch(): void
   /** Opens find and replace with the caret in the replace field. */
   openReplace(): void
@@ -335,6 +345,10 @@ function readOnlyExtensions(readOnly: boolean): Extension {
   return [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]
 }
 
+function contentAttributes(label: string, spellcheck: boolean): Extension {
+  return EditorView.contentAttributes.of({ 'aria-label': label, spellcheck: spellcheck ? 'true' : 'false', autocapitalize: 'off', autocorrect: 'off' })
+}
+
 /** A lighter tint of a caret color, for other sessions' selections. */
 export function selectionColor(color: string): string {
   return /^#[0-9a-f]{6}$/i.test(color) ? `${color}33` : color
@@ -349,6 +363,9 @@ export function createTextEditor(options: TextEditorOptions): TextEditor {
   const indent = new Compartment()
   const darkMode = new Compartment()
   const phrases = new Compartment()
+  const gutter = new Compartment()
+  const attributes = new Compartment()
+  const label = options.labels?.Editor ?? 'Editor'
   let current = {
     name: options.name,
     language: null as string | null,
@@ -371,8 +388,7 @@ export function createTextEditor(options: TextEditorOptions): TextEditor {
     state: EditorState.create({
       doc: ytext.toString(),
       extensions: [
-        lineNumbers(),
-        highlightActiveLineGutter(),
+        gutter.of(options.lineNumbers === false ? [] : [lineNumbers(), highlightActiveLineGutter()]),
         foldGutter(),
         highlightSpecialChars(),
         drawSelection(),
@@ -396,7 +412,7 @@ export function createTextEditor(options: TextEditorOptions): TextEditor {
         indent.of(indentExtensions(current.indent)),
         darkMode.of(EditorView.darkTheme.of(options.dark ?? false)),
         phrases.of(EditorState.phrases.of(options.labels ?? {})),
-        EditorView.contentAttributes.of({ 'aria-label': options.labels?.Editor ?? 'Editor', spellcheck: 'false', autocapitalize: 'off', autocorrect: 'off' }),
+        attributes.of(contentAttributes(label, options.spellcheck ?? false)),
         EditorView.updateListener.of((update) => {
           const focused = update.view.hasFocus
           if (update.docChanged || update.selectionSet || focused !== current.focused) {
@@ -466,6 +482,12 @@ export function createTextEditor(options: TextEditorOptions): TextEditor {
       view.dispatch({ effects: wrap.reconfigure(next ? EditorView.lineWrapping : []) })
       notify()
     },
+    setLineNumbers(on) {
+      view.dispatch({ effects: gutter.reconfigure(on ? [lineNumbers(), highlightActiveLineGutter()] : []) })
+    },
+    setSpellcheck(on) {
+      view.dispatch({ effects: attributes.reconfigure(contentAttributes(label, on)) })
+    },
     setIndent(next) {
       current = { ...current, indent: next }
       view.dispatch({ effects: indent.reconfigure(indentExtensions(next)) })
@@ -485,6 +507,14 @@ export function createTextEditor(options: TextEditorOptions): TextEditor {
     },
     indent(direction) {
       if (!current.readOnly) (direction === 'more' ? indentMore : indentLess)(view)
+    },
+    canToggleComment() {
+      const { state } = view
+      const tokens = state.languageDataAt<{ line?: string; block?: unknown }>('commentTokens', state.selection.main.head)
+      return tokens.some((token) => Boolean(token.line || token.block))
+    },
+    toggleComment() {
+      return !current.readOnly && toggleLineComment(view)
     },
     openSearch() {
       focusSearchField(view, 'search')

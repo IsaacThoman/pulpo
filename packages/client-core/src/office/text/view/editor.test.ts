@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { EditorSelection } from '@codemirror/state'
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import { textOf } from '../codec.js'
-import { createTextEditor, textCounts, type TextEditor } from './editor.js'
+import { createTextEditor, textCounts, type TextEditor, type TextEditorOptions } from './editor.js'
 
 beforeAll(() => {
   Element.prototype.scrollIntoView = () => {}
@@ -14,13 +14,13 @@ beforeAll(() => {
 const cleanup: Array<() => void> = []
 afterEach(() => { for (const dispose of cleanup.splice(0).reverse()) dispose() })
 
-function open(text: string, readOnly = false): { editor: TextEditor; doc: Y.Doc } {
+function open(text: string, readOnly = false, options: Partial<TextEditorOptions> = {}): { editor: TextEditor; doc: Y.Doc } {
   const doc = new Y.Doc()
   textOf(doc).insert(0, text)
   const awareness = new Awareness(doc)
   const container = document.createElement('div')
   document.body.append(container)
-  const editor = createTextEditor({ container, doc, awareness, readOnly, user: { name: 'Ana', color: '#3366ff' }, name: 'notes.txt' })
+  const editor = createTextEditor({ container, doc, awareness, readOnly, user: { name: 'Ana', color: '#3366ff' }, name: 'notes.txt', ...options })
   cleanup.push(() => { editor.destroy(); awareness.destroy(); doc.destroy(); container.remove() })
   return { editor, doc }
 }
@@ -95,5 +95,41 @@ describe('text editor counts', () => {
     editor.view.dispatch({ selection: EditorSelection.create([EditorSelection.range(0, 7), EditorSelection.range(15, 19)]) })
     expect(editor.state()).toMatchObject({ selections: 2, selected: 11 })
     expect(editor.counts('selection')).toEqual({ words: 3, characters: 10, charactersWithSpaces: 11, lines: 2 })
+  })
+})
+
+describe('text editor view options and commands', () => {
+  it('shows line numbers unless asked not to, and turns them on and off', () => {
+    const { editor } = open('a\nb')
+    expect(editor.view.dom.querySelector('.cm-lineNumbers')).toBeTruthy()
+    editor.setLineNumbers(false)
+    expect(editor.view.dom.querySelector('.cm-lineNumbers')).toBeNull()
+    editor.setLineNumbers(true)
+    expect(editor.view.dom.querySelector('.cm-lineNumbers')).toBeTruthy()
+    const hidden = open('a', false, { lineNumbers: false })
+    expect(hidden.editor.view.dom.querySelector('.cm-lineNumbers')).toBeNull()
+  })
+
+  it('spell checks only when asked, keeping its other attributes', () => {
+    const { editor } = open('teh text', false, { labels: { Editor: 'Notes' } })
+    expect(editor.view.contentDOM.getAttribute('spellcheck')).toBe('false')
+    editor.setSpellcheck(true)
+    expect(editor.view.contentDOM.getAttribute('spellcheck')).toBe('true')
+    expect(editor.view.contentDOM.getAttribute('aria-label')).toBe('Notes')
+    expect(open('x', false, { spellcheck: true }).editor.view.contentDOM.getAttribute('spellcheck')).toBe('true')
+  })
+
+  it('comments lines out in a language with comments, and not in plain text', async () => {
+    const plain = open('words')
+    expect(plain.editor.canToggleComment()).toBe(false)
+    expect(plain.editor.toggleComment()).toBe(false)
+    const { editor, doc } = open('x = 1\n', false, { name: 'main.py' })
+    await vi.waitFor(() => expect(editor.canToggleComment()).toBe(true))
+    expect(editor.toggleComment()).toBe(true)
+    expect(textOf(doc).toString()).toBe('# x = 1\n')
+    const viewer = open('x = 1\n', true, { name: 'main.py' })
+    await vi.waitFor(() => expect(viewer.editor.canToggleComment()).toBe(true))
+    expect(viewer.editor.toggleComment()).toBe(false)
+    expect(textOf(viewer.doc).toString()).toBe('x = 1\n')
   })
 })
