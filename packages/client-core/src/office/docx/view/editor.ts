@@ -2058,15 +2058,19 @@ export class DocxEditor {
     const after = (revision: Revision) => rank(revision) > story || (rank(revision) === story && revision.from > from)
     const before = (revision: Revision) => rank(revision) < story || (rank(revision) === story && revision.from < from)
     const sorted = [...all].sort((a, b) => rank(a) - rank(b) || a.from - b.from)
-    const target = direction > 0 ? sorted.find(after) ?? sorted[0]! : [...sorted].reverse().find(before) ?? sorted.at(-1)!
-    this.goTo(Math.max(0, target.from - 1), target.storyId)
-    // A story that cannot open (read-only) is still reported, without moving the selection into the body.
-    if ((this.editingStory ?? undefined) !== target.storyId) return target
-    const view = this.activeView
-    const size = view.state.doc.content.size
-    const selection = TextSelection.between(view.state.doc.resolve(Math.min(target.from, size)), view.state.doc.resolve(Math.min(target.to, size)))
-    view.dispatch(view.state.tr.setSelection(selection).scrollIntoView())
-    return target
+    const ordered = direction > 0 ? sorted : sorted.reverse()
+    const ahead = direction > 0 ? after : before
+    // From the selection on, then around from the start; stories that cannot open (read-only) are passed over.
+    for (const target of [...ordered.filter(ahead), ...ordered.filter((revision) => !ahead(revision))]) {
+      this.goTo(Math.max(0, target.from - 1), target.storyId)
+      if ((this.editingStory ?? undefined) !== target.storyId) continue
+      const view = this.activeView
+      const size = view.state.doc.content.size
+      const selection = TextSelection.between(view.state.doc.resolve(Math.min(target.from, size)), view.state.doc.resolve(Math.min(target.to, size)))
+      view.dispatch(view.state.tr.setSelection(selection).scrollIntoView())
+      return target
+    }
+    return null
   }
 
   /** Accepts the tracked changes the selection touches. */

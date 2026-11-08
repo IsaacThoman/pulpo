@@ -731,6 +731,27 @@ describe('review navigation', () => {
     expect(editor.text()).toBe('First paragraph\nSecond paragraph two')
     expect(editor.nextRevision(1)).toBeNull()
   })
+
+  it('passes over suggestions in stories it cannot open while viewing', () => {
+    editor.setLayout('print')
+    editor.relayout()
+    setBody(editor.view, [p('First'), p('Second')], 1)
+    editor.addHeaderFooter('header')
+    editor.setMode('suggesting')
+    type(storyView()!, 'Head')
+    editor.closeStoryEditor()
+    type(editor.view, 'A ')
+    editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, editor.view.state.doc.content.size - 1)))
+    type(editor.view, ' B')
+    expect(editor.revisions().map((revision) => revision.text)).toEqual(['A ', ' B', 'Head'])
+    editor.setMode('viewing')
+    editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, 1)))
+    expect(editor.nextRevision(1)?.text).toBe(' B')
+    // The header cannot open in Viewing mode, so Next goes around to the body's first suggestion.
+    expect(editor.nextRevision(1)?.text).toBe('A ')
+    expect(editor.view.state.selection.from).toBe(1)
+    expect(editor.nextRevision(-1)?.text).toBe(' B')
+  })
 })
 
 describe('counts, links, case, paragraph and table formats', () => {
