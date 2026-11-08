@@ -660,12 +660,13 @@ export class NotebookController {
    */
   handleChordKey(event: NotebookKey): boolean {
     const now = Date.now()
-    if (event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && (event.key.toLowerCase() === 'm' || event.code === 'KeyM')) {
+    const pending = this.chordUntil > 0 && now <= this.chordUntil
+    // With Ctrl still held, the second M of Ctrl+M M is Ctrl+M again; it makes Markdown, as Ctrl+M Ctrl+B inserts.
+    if (!pending && event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && (event.key.toLowerCase() === 'm' || event.code === 'KeyM')) {
       this.chordUntil = now + CHORD_MS
       return true
     }
-    if (!this.chordUntil) return false
-    if (now > this.chordUntil) {
+    if (!pending) {
       this.chordUntil = 0
       return false
     }

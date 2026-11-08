@@ -348,6 +348,23 @@ describe('familiar notebook keys and commands', () => {
     expect(controller.handleChordKey({ key: 'b' })).toBe(false)
   })
 
+  it('reads a chord pressed with Ctrl still held, Ctrl+M Ctrl+M making Markdown', async () => {
+    const { controller } = await open()
+    press(controller, 'm', { ctrlKey: true })
+    expect(press(controller, 'b', { ctrlKey: true })).toBe(true)
+    await flush()
+    expect(types(controller)).toEqual(['code', 'code'])
+    press(controller, 'm', { ctrlKey: true })
+    expect(press(controller, 'm', { ctrlKey: true })).toBe(true)
+    await flush()
+    expect(types(controller)).toEqual(['code', 'markdown'])
+    // The chord is over: the next Ctrl+M starts another.
+    expect(press(controller, 'm', { ctrlKey: true })).toBe(true)
+    press(controller, 'y')
+    await flush()
+    expect(types(controller)).toEqual(['code', 'code'])
+  })
+
   it('lets a Ctrl+M chord expire', async () => {
     const { controller } = await open()
     const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
