@@ -91,8 +91,10 @@ function PageSetupForm({ setup, unit, suggesting, onApply, onClose }: {
   const locale = activeLocale()
   const shown = (points: number) => formatNumber(pointsTo(points, unit), locale)
   const [orientation, setOrientation] = useState(setup.orientation)
-  const [paper, setPaper] = useState(() => paperSizeOf(setup.width, setup.height)?.id ?? 'custom')
-  const [margins, setMargins] = useState(() => Object.fromEntries(SIDES.map((side) => [side, shown(setup.margins[side])])) as Record<MarginSide, string>)
+  const [initialPaper] = useState(() => paperSizeOf(setup.width, setup.height)?.id ?? 'custom')
+  const [paper, setPaper] = useState(initialPaper)
+  const [initialMargins] = useState(() => Object.fromEntries(SIDES.map((side) => [side, shown(setup.margins[side])])) as Record<MarginSide, string>)
+  const [margins, setMargins] = useState(initialMargins)
   const [scope, setScope] = useState<PageSetupScope>('document')
   const [error, setError] = useState<{ side?: MarginSide; message: string } | null>(null)
 
@@ -111,12 +113,20 @@ function PageSetupForm({ setup, unit, suggesting, onApply, onClose }: {
       document.getElementById(`${id}-${parsed.side}`)?.focus()
       return
     }
+    // Only what the person changed: every section of the document keeps its own paper size and
+    // margins when only the orientation changes, and a collaborator's change to the rest stays.
+    const change: PageSetupChange = {}
+    if (orientation !== setup.orientation) change.orientation = orientation
     const chosen = PAPER_SIZES.find((candidate) => candidate.id === paper)
-    const change: PageSetupChange = {
-      orientation,
-      width: chosen?.width ?? portrait[0],
-      height: chosen?.height ?? portrait[1],
-      margins: parsed.margins,
+    if (paper !== initialPaper && chosen) {
+      change.width = chosen.width
+      change.height = chosen.height
+    }
+    // The four margins are one setting, as a preset sets them.
+    if (SIDES.some((side) => margins[side] !== initialMargins[side])) change.margins = parsed.margins
+    if (!Object.keys(change).length) {
+      onClose()
+      return
     }
     if (!onApply(change, scope)) {
       setError({ message: ui("These margins leave no room for text on this paper size.") })

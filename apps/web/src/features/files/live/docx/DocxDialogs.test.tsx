@@ -38,9 +38,23 @@ describe('PageSetupDialog', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Landscape' }))
     fireEvent.change(screen.getByLabelText('Left margin'), { target: { value: '1.27 cm' } })
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
-    expect(onApply).toHaveBeenCalledWith({ orientation: 'landscape', width: 612, height: 792, margins: { top: 72, bottom: 72, left: 36, right: 72 } }, 'document')
+    expect(onApply).toHaveBeenCalledWith({ orientation: 'landscape', margins: { top: 72, bottom: 72, left: 36, right: 72 } }, 'document')
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     await waitFor(() => expect(returnFocus).toHaveBeenCalled())
+  })
+
+  it('applies only what changed, so other sections keep their own paper and margins', () => {
+    const onApply = vi.fn(() => true)
+    const onOpenChange = vi.fn()
+    const { rerender } = render(<PageSetupDialog open onOpenChange={onOpenChange} setup={{ ...LETTER, sections: 3 }} unit="in" suggesting={false} onApply={onApply} />)
+    // Nothing changed: the dialog closes without an undo step.
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onApply).not.toHaveBeenCalled()
+    expect(onOpenChange).toHaveBeenLastCalledWith(false)
+    rerender(<PageSetupDialog open onOpenChange={onOpenChange} setup={{ ...LETTER, sections: 3 }} unit="in" suggesting={false} onApply={onApply} />)
+    fireEvent.click(screen.getByRole('radio', { name: 'Landscape' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(onApply).toHaveBeenLastCalledWith({ orientation: 'landscape' }, 'document')
   })
 
   it('says why margins are refused and stays open', () => {
