@@ -2943,6 +2943,7 @@ const esUi: Record<string, string> = {
   "Footnotes": "Notas al pie",
   "Endnotes": "Notas al final",
   "Double-click to edit": "Haz doble clic para editar",
+  "Page {page} of {pages}": "Página {page} de {pages}",
   "New Word document": "Nuevo documento de Word",
   "1 page": "1 página",
   "Untitled document": "Documento sin título",

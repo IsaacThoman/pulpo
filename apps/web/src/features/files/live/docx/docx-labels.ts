@@ -23,5 +23,6 @@ export function docxLabels(): DocxLabels {
     endnotes: ui("Endnotes"),
     editStoryHint: ui("Double-click to edit"),
     unknownAuthor: ui("Unknown author"),
+    pageOfPages: ui("Page {page} of {pages}"),
   }
 }

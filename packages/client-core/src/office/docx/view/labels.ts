@@ -27,6 +27,8 @@ export interface DocxLabels {
   editStoryHint: string
   /** Tracked change author when the user has no name. */
   unknownAuthor: string
+  /** Page numbers with the total, written into headers and footers: `{page}` and `{pages}` become fields. */
+  pageOfPages: string
 }
 
 export const DEFAULT_DOCX_LABELS: DocxLabels = {
@@ -49,6 +51,7 @@ export const DEFAULT_DOCX_LABELS: DocxLabels = {
   endnotes: 'Endnotes',
   editStoryHint: 'Double-click to edit',
   unknownAuthor: 'Unknown',
+  pageOfPages: 'Page {page} of {pages}',
 }
 
 export function fillLabel(label: string, values: Record<string, string | number>): string {

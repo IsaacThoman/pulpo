@@ -3,7 +3,7 @@ import { baseKeymap } from '@tiptap/pm/commands'
 import { dropCursor } from '@tiptap/pm/dropcursor'
 import { gapCursor } from '@tiptap/pm/gapcursor'
 import { keymap } from '@tiptap/pm/keymap'
-import type { Node as ProseMirrorNode, Slice } from '@tiptap/pm/model'
+import { Fragment, Slice, type Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { EditorState, NodeSelection, Plugin, PluginKey, TextSelection, type Transaction, type SelectionBookmark } from '@tiptap/pm/state'
 import {
   addColumnAfter,
@@ -24,70 +24,109 @@ import { redo, undo, yCursorPlugin, ySyncPlugin, ySyncPluginKey, yUndoPlugin, yU
 import type { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import type { LiveAssetStore } from '../../live-format.js'
-import { resolveTarget, type Relationship } from '../../ooxml/package.js'
+import { builtInHeadingStyles } from '../blank.js'
 import { copyRelatedParts, needsRelatedParts, receiveCopiedParts } from '../copy-relationships.js'
 import { fontStack, isThemeFontVar, latinFont } from '../css.js'
 import { DOCX_MAX_TABLE_DEPTH } from '../format.js'
-import { newInlinePicture } from '../drawing.js'
+import { drawingInfo, newInlinePicture } from '../drawing.js'
 import { jmlAttr, jmlChild, jmlNumber, jmlOn, packJml, unpackJml, type JmlElement } from '../jsonml.js'
 import { BODY_FRAGMENT, fragmentToNode, parseJson, readDocxMap, storyFragmentName, writeFragment, type StoryMeta } from '../model.js'
 import { effectiveNumPr } from '../numbering.js'
 import { noteInventory, resolveNoteLabels } from '../notes.js'
-import { docxSchema, packMarks, textAreaWidth } from '../schema.js'
+import { docxSchema, inlineMarks, packMarks, textAreaWidth } from '../schema.js'
 import { inlineText } from '../text.js'
 import { AssetUrls } from './assets.js'
 import { clipboardParser, clipboardSerializer, importCopiedNumbering, limitPastedTables, recallCopy, rememberCopy, sanitizePastedHtml, withoutForeignParts, withoutStoryReferences } from './clipboard.js'
 import {
+  applyPageSetup,
+  changeCase,
   changeIndent,
+  clearCharacterFormatting,
   clearFormatting,
   copyFormat,
   documentOutline,
+  editSections,
   effectiveParagraphProperties,
   effectiveRunProperties,
   findMatches,
   validFindMatches,
   freshId,
+  headingStyleId,
+  hyperlinkMarks,
+  insertHorizontalLine,
   insertInline,
+  insertLineBreak,
   insertPageBreak,
   insertParagraphBreak,
   insertSectionBreak,
   insertSymbol,
   insertTable,
+  linkAround,
   listDefinition,
   listKind,
   paragraphStyleOptions,
   pasteFormat,
+  readPageSetup,
+  readParagraphFormat,
   replaceMatches,
+  sectionHolders,
+  sectionIndexAt,
+  sectionOf,
   selectedParagraphs,
+  selectionWordCount,
+  selectTablePart,
   setAlignment,
   setCellBorders,
   setCellShading,
+  setCellVerticalAlign,
   setFontFamily,
   setFontSize,
+  setHeaderRows,
   setHighlight,
   setLineSpacing,
   setLink,
+  setParagraphBorder,
+  setParagraphFormat,
   setParagraphSpacing,
   setParagraphStyle,
+  setTableAlignment,
   setTextColor,
   setUnderline,
   setVerticalAlign,
   splitParagraphAttrs,
+  startNumberedList,
+  tableFormat,
   toggleList,
   toggleRunProperty,
+  withTitlePage,
+  wordAt,
   wordCount,
   type Alignment,
   type BorderPreset,
+  type CaseChange,
+  type CellVerticalAlign,
   type Command,
   type CopiedFormat,
   type EditResult,
   type FindOptions,
   type FindMatch,
+  type HeaderFooterKind,
+  type HeaderFooterType,
+  type LineSpacing,
+  type LinkRange,
   type ListKind,
   type MapEdit,
   type OutlineEntry,
+  type PageSetupChange,
+  type PageSetupInfo,
+  type ParagraphBorder,
+  type ParagraphFormat,
+  type ParagraphFormatChange,
   type ToggleProperty,
+  type WordCount,
 } from './commands.js'
+import { autoformatPlugin, autoformatSettings, type AutoformatOptions, type ListMarker } from './autoformat.js'
+import { createHeaderFooter, headerFooterInfo, headerFooterOf, headerFooterParagraph, removeHeaderFooter, storyByRelationship, type HeaderFooterInfo } from './headers.js'
 import { DocxViewContext } from './context.js'
 import { computeDecorations } from './decorations.js'
 import { DEFAULT_DOCX_LABELS, type DocxLabels } from './labels.js'
@@ -172,6 +211,42 @@ function documentPictures(doc: Y.Doc): Set<string> {
   return found
 }
 
+const REVISION_MARKS = new Set(['ins', 'del', 'moveFrom', 'moveTo', 'rPrChange'])
+
+/** Whether the selection touches a tracked change, looking only around it (state is read every frame). */
+function selectionInRevision(state: EditorState): boolean {
+  const { from, to, $from } = state.selection
+  let found = false
+  const changed = (value: unknown, ...names: string[]) => names.some((name) => jmlChild(jml(value), name) !== undefined)
+  const visit = (node: ProseMirrorNode | null | undefined): boolean => {
+    if (!node || found) return false
+    if (node.type.name === 'paragraph') found = Boolean(node.attrs.pPrChange) || changed(node.attrs.markRPr, 'w:ins', 'w:del')
+    else if (node.type.name === 'tableRow') found = changed(node.attrs.trPr, 'w:ins', 'w:del')
+    else if (node.type.name === 'tableCell') found = changed(node.attrs.tcPr, 'w:cellIns', 'w:cellDel', 'w:cellMerge')
+    else if (node.isInline) found = inlineMarks(node).some((mark) => REVISION_MARKS.has(mark.type.name))
+    return !found
+  }
+  for (let depth = $from.depth; depth > 0 && !found; depth--) visit($from.node(depth))
+  if (from === to) {
+    visit($from.nodeBefore)
+    visit($from.nodeAfter)
+  } else if (!found) state.doc.nodesBetween(from, to, (node) => visit(node))
+  return found
+}
+
+/** Picture files on a clipboard or a drop, in order. */
+function imageFiles(data: DataTransfer | null | undefined): File[] {
+  if (!data?.files?.length) return []
+  return [...data.files].filter((file) => IMAGE_FILE.test(file.type))
+}
+
+/** Clipboard HTML that is only the wrapper browsers put around a copied picture. */
+function onlyPictures(html: string): boolean {
+  if (typeof DOMParser === 'undefined') return false
+  const body = new DOMParser().parseFromString(html, 'text/html').body
+  return Boolean(body.querySelector('img')) && !body.textContent?.trim() && !body.querySelector('table')
+}
+
 /** Content that came in from outside: pasted, or dropped from another app. */
 function pasted(tr: Transaction): boolean {
   const event = tr.getMeta('uiEvent')
@@ -189,6 +264,35 @@ export interface DocxEditorOptions {
   layout?: DocxLayout
   zoom?: number
   mode?: DocxMode
+  /** AutoFormat As You Type (lists, smart quotes, dashes, links); on unless turned off. */
+  autoformat?: boolean | AutoformatOptions
+}
+
+/** What is under a point in the editor, for context menus (`contextAt`). */
+export interface DocxContextInfo {
+  /** The position under the point, in the story it is in. */
+  pos: number
+  /** The open header, footer, or note editor the point is in; null for the body. */
+  storyId: string | null
+  /** Whether the point is inside the current (non-empty) selection. */
+  inSelection: boolean
+  editable: boolean
+  /** In a table cell. */
+  table: boolean
+  /** A picture under the point, by position, with its description. */
+  picture: { pos: number; description: string } | null
+  link: Omit<LinkRange, 'mark'> | null
+  /** Comment threads whose range the point is in. */
+  comments: string[]
+  /** Tracked changes the point is in. */
+  revisions: Revision[]
+}
+
+/** A picture `insertImage` (or a paste or drop) could not insert, for hosts to tell the user. */
+export interface DocxRefusedImage {
+  name: string
+  type: string
+  reason: 'unsupported' | 'readOnly'
 }
 
 export interface DocxFormattingState {
@@ -222,6 +326,24 @@ export interface DocxFormattingState {
   zoom: number
   pages: number
   formatPainter: boolean
+  /** The format painter stays on after applying (double-clicked in Word) until Escape. */
+  formatPainterSticky: boolean
+  doubleStrike: boolean
+  caps: boolean
+  smallCaps: boolean
+  hidden: boolean
+  /** Word's underline style (`single`, `double`, `dotted`, `wave`, …); null without underline. */
+  underlineStyle: string | null
+  /** Space before and after the paragraph, in points. */
+  spaceBefore: number
+  spaceAfter: number
+  /** The selection touches a tracked change. */
+  inRevision: boolean
+  /** The open header, footer, or note editor. */
+  editingStory: string | null
+  cellVerticalAlign: CellVerticalAlign | null
+  /** The row at the selection repeats as a header row on each page. */
+  headerRow: boolean
 }
 
 export type DocxRequest = 'link' | 'find' | 'replace' | 'comment' | 'image'
@@ -233,6 +355,10 @@ const paginationKey = new PluginKey<DecorationSet>('docx-pagination')
 interface FindState { query: string; options: FindOptions; matches: FindMatch[]; current: number }
 const findKey = new PluginKey<FindState>('docx-find')
 const pendingPasteKey = new PluginKey<Map<object, SelectionBookmark>>('docx-pending-paste')
+/** Y transaction meta: an editor step that changes only section properties, still on the body's undo stack. */
+const SECTION_UNDO = 'docx-section-undo'
+/** Files a paste or drop treats as pictures; `insertImage` then takes or refuses each by its bytes. */
+const IMAGE_FILE = /^image\//
 
 let scopeCounter = 0
 
@@ -261,7 +387,13 @@ export class DocxEditor {
   private readonly styleElement: HTMLStyleElement
   private readonly scope: string
   private readonly urls: AssetUrls
-  private readonly listeners = { update: new Set<Listener<void>>(), layout: new Set<Listener<LayoutResult | null>>(), request: new Set<Listener<DocxRequest>>(), activeComment: new Set<Listener<string | null>>() }
+  private readonly listeners = { update: new Set<Listener<void>>(), layout: new Set<Listener<LayoutResult | null>>(), request: new Set<Listener<DocxRequest>>(), activeComment: new Set<Listener<string | null>>(), imageRefused: new Set<Listener<DocxRefusedImage>>() }
+  private autoformatOptions: Required<AutoformatOptions>
+  /** Format painter: what it copied, from where, and whether it stays on. */
+  private painter: { format: CopiedFormat; sticky: boolean; storyId: string | null; from: number; to: number } | null = null
+  private pointerInText = false
+  /** Where the flow column starts on the canvas, from the last print layout. */
+  private flowTop = 0
   private layoutMode: DocxLayout
   private zoomLevel: number
   private modeValue: DocxMode
@@ -282,7 +414,6 @@ export class DocxEditor {
   private layoutTimer: ReturnType<typeof setTimeout> | undefined
   private lastLayoutAt = 0
   private activeCommentId: string | null = null
-  private copied: CopiedFormat | null = null
   private storyEditor: { view: EditorView; element: HTMLElement; storyId: string; over?: HTMLElement; occurrence: number; stop: () => void } | null = null
   private readonly unsubscribe: (() => void)[] = []
   private destroyed = false
@@ -292,6 +423,7 @@ export class DocxEditor {
 
   constructor(private readonly options: DocxEditorOptions) {
     this.labels = { ...DEFAULT_DOCX_LABELS, ...options.labels }
+    this.autoformatOptions = autoformatSettings(options.autoformat)
     this.layoutMode = options.layout ?? 'print'
     this.zoomLevel = options.zoom ?? 1
     this.readOnlyValue = options.readOnly ?? false
@@ -320,6 +452,17 @@ export class DocxEditor {
     options.container.appendChild(this.root)
     this.renderStylesheet()
     this.root.addEventListener('click', (event) => this.followLink(event))
+    // The format painter applies when a selection made with the mouse or Shift and the arrows is done.
+    // Only selections started in the text being edited: not clicks on page margins or static headers.
+    this.root.addEventListener('mousedown', (event) => { this.pointerInText = this.activeView.dom.contains(event.target as Node) })
+    this.root.addEventListener('mouseup', (event) => {
+      const started = this.pointerInText
+      this.pointerInText = false
+      if (started && event.button === 0 && this.painter) this.paintSoon()
+    })
+    this.root.addEventListener('keyup', (event) => {
+      if (event.key === 'Shift' && this.painter && !this.activeView.state.selection.empty) this.paintSoon()
+    })
 
     const dispatch = (view: EditorView, tr: Transaction) => this.dispatch(view, tr)
     const clipboard = this.clipboardProps('body')
@@ -338,6 +481,7 @@ export class DocxEditor {
     })
     this.unsubscribe.push(this.context.onChange(() => {
       this.renderStylesheet()
+      if (this.layoutMode !== 'print') this.applyWebWidth()
       // Map observers can run before body observers; refreshing must not write the old body back.
       for (const view of [this.view, this.storyEditor?.view]) if (view) this.refreshDecorations(view)
       this.scheduleLayout()
@@ -381,8 +525,9 @@ export class DocxEditor {
             const manager = yUndoPluginKey.getState(state).undoManager as Y.UndoManager
             const scope = manager.scope[0]!
             const capture = manager.captureTransaction
-            // Numbering is shared, but its undo belongs to the fragment edited with it.
-            manager.captureTransaction = (tr: Y.Transaction) => capture(tr) && scope instanceof Y.AbstractType && tr.changedParentTypes.has(scope)
+            // Numbering is shared, but its undo belongs to the fragment edited with it. Page
+            // setup changes only the final section, so the editor marks those steps itself.
+            manager.captureTransaction = (tr: Y.Transaction) => capture(tr) && scope instanceof Y.AbstractType && (tr.changedParentTypes.has(scope) || tr.meta.get(SECTION_UNDO) === true || tr.origin === manager)
             manager.addToScope(this.options.doc.getMap('numbering'))
             // The final section lives outside the body but must share its undo step.
             if (fragment === this.options.doc.getXmlFragment(BODY_FRAGMENT)) {
@@ -407,8 +552,15 @@ export class DocxEditor {
         },
       }),
       sectionEndsPlugin(),
+      autoformatPlugin({
+        options: () => this.autoformatOptions,
+        suggesting: () => this.modeValue === 'suggesting',
+        list: (state, marker, from, to) => this.autoformatList(state, marker, from, to),
+        linkMarks: (state, href) => hyperlinkMarks(state.schema, href),
+        apply: (view, tr, maps) => this.applyAutoformat(view, tr, maps),
+        undo: () => this.undo(),
+      }),
       keymap(this.shortcuts()),
-      keymap({ Tab: goToNextCell(1), 'Shift-Tab': goToNextCell(-1) }),
       keymap(baseKeymap),
       tableEditing(),
       gapCursor(),
@@ -529,10 +681,10 @@ export class DocxEditor {
       'Mod-u': () => this.toggleUnderline(),
       'Alt-Shift-5': run(toggleRunProperty('strike')),
       'Mod-Shift-x': run(toggleRunProperty('strike')),
-      'Mod-e': run(setAlignment('center')),
-      'Mod-l': run(setAlignment('left')),
-      'Mod-r': run(setAlignment('right')),
-      'Mod-j': run(setAlignment('both')),
+      'Mod-e': () => this.alignmentKey('center'),
+      'Mod-l': () => this.alignmentKey('left'),
+      'Mod-r': () => this.alignmentKey('right'),
+      'Mod-j': () => this.alignmentKey('both'),
       'Mod-Shift-7': () => this.toggleList('decimal'),
       'Mod-Shift-8': () => this.toggleList('bullet'),
       'Mod-Shift-l': () => this.toggleList('bullet'),
@@ -541,29 +693,31 @@ export class DocxEditor {
       'Mod-Shift-.': () => this.stepFontSize(1),
       'Mod-Shift-,': () => this.stepFontSize(-1),
       'Mod-Enter': run(insertPageBreak),
-      'Mod-Alt-1': run(setParagraphStyle('Heading1')),
-      'Mod-Alt-2': run(setParagraphStyle('Heading2')),
-      'Mod-Alt-3': run(setParagraphStyle('Heading3')),
+      'Shift-Enter': run(insertLineBreak),
       'Mod-Alt-0': () => this.setStyle(this.context.styles.defaultStyle('paragraph')?.id ?? null),
-      'Mod-Shift-n': () => this.setStyle(this.context.styles.defaultStyle('paragraph')?.id ?? null),
       'Mod-=': run(setVerticalAlign('subscript')),
       'Mod-Shift-=': run(setVerticalAlign('superscript')),
       'Mod-.': run(setVerticalAlign('superscript')),
       'Mod-,': run(setVerticalAlign('subscript')),
       'Mod-\\': run(clearFormatting),
-      'Mod-Space': run(clearFormatting),
-      'Mod-k': () => this.request('link'),
+      // Word's Ctrl+Space keeps the paragraph's style; Clear formatting (Mod-\) resets it too.
+      'Mod-Space': run(clearCharacterFormatting),
+      'Shift-F3': run(changeCase('cycle')),
+      // The app's search shares Mod-K: keep the key in an editable document even while links are unavailable.
+      'Mod-k': () => this.request('link') || (!this.readOnly && this.listeners.request.size > 0),
       'Mod-f': () => this.request('find'),
       'Mod-h': () => this.request('replace'),
       'Mod-Alt-m': () => this.request('comment'),
       'Mod-Alt-f': () => this.insertNote('footnote') !== null,
       'Mod-Alt-d': () => this.insertNote('endnote') !== null,
-      Tab: () => this.listIndent(1),
-      'Shift-Tab': () => this.listIndent(-1),
+      Tab: () => this.tabKey(1),
+      'Shift-Tab': () => this.tabKey(-1),
       Enter: () => this.enter(),
       Backspace: () => this.backspaceInList(),
-      Escape: () => this.closeStoryEditor(),
+      Escape: () => this.cancelFormatPainter() || this.closeStoryEditor(),
     }
+    for (let level = 1; level <= 6; level++) bind[`Mod-Alt-${level}`] = () => this.applyHeading(level)
+    if (isMac) bind['Ctrl-Space'] = run(clearCharacterFormatting)
     if (!isMac) bind['Ctrl-Shift-z'] = () => this.redo()
     return bind as Record<string, () => boolean>
   }
@@ -625,7 +779,15 @@ export class DocxEditor {
           // DOM handlers run before ProseMirror parses HTML; Shift must keep its plain-text path.
           const plain = (view as unknown as { input?: { shiftKey?: boolean } }).input?.shiftKey
           if (!view.editable || plain) return false
-          const copy = recallCopy(event.clipboardData?.getData('text/html'), view.state.schema)
+          const html = event.clipboardData?.getData('text/html')
+          // Screenshots and copied pictures come as files, sometimes with an <img> wrapper beside them.
+          const pictures = imageFiles(event.clipboardData)
+          if (pictures.length && (!html || onlyPictures(html))) {
+            event.preventDefault()
+            void this.insertImages(pictures, view)
+            return true
+          }
+          const copy = recallCopy(html, view.state.schema)
           if (!copy) return false
           const foreign = copy.origin.split(':', 1)[0] !== this.options.doc.guid
           const prepare = (slice: Slice) => {
@@ -665,6 +827,22 @@ export class DocxEditor {
           }
           recalled = prepare(foreign ? copy.numberedSlice ?? copy.slice : copy.slice)
           return false
+        },
+        drop: (view, event) => {
+          const pictures = imageFiles(event.dataTransfer)
+          if (!pictures.length) return false
+          event.preventDefault()
+          if (!view.editable) return true
+          // Pictures land where they are dropped, as in Word.
+          let found: { pos: number } | null = null
+          try {
+            found = view.posAtCoords({ left: event.clientX, top: event.clientY })
+          } catch {
+            // Without layout (or off the text) the picture goes to the cursor.
+          }
+          if (found) view.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(found.pos))))
+          void this.insertImages(pictures, view)
+          return true
         },
       },
       clipboardSerializer: clipboardSerializer(schema),
@@ -906,14 +1084,84 @@ export class DocxEditor {
     return this.runResult(toggleList(kind, state, this.context))
   }
 
-  private listIndent(direction: 1 | -1): boolean {
-    const state = (this.activeView).state
-    if (isInTable(state)) return false
+  /**
+   * Tab and Shift+Tab, as in Word: between table cells (Tab in the last cell adds a row), list
+   * levels in lists, a tab character or an outdent elsewhere. An editable document keeps the
+   * key, so focus never jumps out of the page; a read-only one lets it move focus.
+   */
+  private tabKey(direction: 1 | -1): boolean {
+    if (this.readOnly) return false
+    const view = this.activeView
+    const state = view.state
+    if (isInTable(state)) {
+      if (goToNextCell(direction)(state, (tr) => view.dispatch(tr.scrollIntoView()))) return true
+      if (direction > 0) this.addRowAndEnter(view)
+      return true
+    }
     const paragraph = selectedParagraphs(state)[0]
-    if (!paragraph) return false
+    if (!paragraph) return true
     const inList = effectiveNumPr(jml(paragraph.node.attrs.numPr), paragraph.node.attrs.pStyle as string | null, this.context.styles)
-    if (!inList) return direction > 0 && this.run((current) => insertInline(current, current.schema.node('tab', { v: packJml(['w:tab', {}]) })))
-    return this.run(changeIndent(direction))
+    if (inList) return this.run(changeIndent(direction)) || true
+    if (direction > 0) return this.run((current) => insertInline(current, current.schema.node('tab', { v: packJml(['w:tab', {}]) }))) || true
+    const indent = readParagraphFormat(paragraph.node, this.context).indent.left
+    if (indent > 0) this.run(changeIndent(-1))
+    return true
+  }
+
+  /** Tab in a table's last cell: a new row below, with the cursor in its first cell. */
+  private addRowAndEnter(view: EditorView): void {
+    this.separateUndo(view)
+    if (!addRowAfter(view.state, (tr) => view.dispatch(tr))) return
+    goToNextCell(1)(view.state, (tr) => view.dispatch(tr.scrollIntoView()))
+    this.separateUndo(view)
+  }
+
+  /** Word's alignment keys: pressed again on an aligned paragraph, they go back to left. */
+  private alignmentKey(alignment: Alignment): boolean {
+    if (this.readOnly) return false
+    const current = this.state().alignment
+    this.run(setAlignment(current === alignment && alignment !== 'left' ? 'left' : alignment))
+    return true
+  }
+
+  /** Mod-Alt-1…6: the document's heading style for the level, adding Word's built-in one when it has none. */
+  applyHeading(level: number): boolean {
+    if (this.readOnly) return false
+    const id = headingStyleId(this.context, level)
+    if (id) return this.setStyle(id) || true
+    const definitions = builtInHeadingStyles(level, this.context.styles.defaultStyle('paragraph')?.id)
+    if (!definitions || this.context.styles.get(`Heading${level}`) || this.context.styles.get(`Heading${level}Char`)) return false
+    const tr = setParagraphStyle(`Heading${level}`)(this.activeView.state, this.context)
+    if (!tr) return false
+    return this.runResult({ tr, maps: definitions.map((element): MapEdit => ['styles', `style:${element[1]['w:styleId']}`, packJml(element)]) })
+  }
+
+  /** The list typing a marker asks for, without the marker (the AutoFormat host). */
+  private autoformatList(state: EditorState, marker: ListMarker, from: number, to: number): EditResult | null {
+    const paragraph = selectedParagraphs(state)[0]
+    if (!paragraph || selectedParagraphs(state).length !== 1) return null
+    const { node } = paragraph
+    if (effectiveNumPr(jml(node.attrs.numPr), node.attrs.pStyle as string | null, this.context.styles)) return null
+    // Headings (anything with an outline level) stay as they are.
+    if (jml(node.attrs.outlineLvl) || this.context.styles.outlineLevel(node.attrs.pStyle as string | null) !== undefined) return null
+    const result = marker.kind === 'bullet'
+      ? toggleList('bullet', state, this.context)
+      : startNumberedList(state, this.context, marker.format, marker.start, marker.suffix)
+    if (!result) return null
+    result.tr.delete(result.tr.mapping.map(from), result.tr.mapping.map(to))
+    return result
+  }
+
+  /** An AutoFormat change, as an undo step of its own after the typing that caused it. */
+  private applyAutoformat(view: EditorView, tr: Transaction, maps?: MapEdit[]): void {
+    this.separateUndo(view)
+    if (maps?.length) {
+      this.options.doc.transact(() => {
+        this.applyMapEdits(maps)
+        view.dispatch(tr)
+      }, ySyncPluginKey)
+    } else view.dispatch(tr)
+    this.separateUndo(view)
   }
 
   // ── Public state ─────────────────────────────────────────────────────────
@@ -961,6 +1209,7 @@ export class DocxEditor {
     const list = paragraph ? effectiveNumPr(jml(paragraph.attrs.numPr), paragraph.attrs.pStyle as string | null, this.context.styles) : undefined
     const link = selectionMarks(state).find((mark) => mark.type.name === 'link')
     const undoState = yUndoPluginKey.getState(state) as { undoManager?: { undoStack: unknown[]; redoStack: unknown[] } } | undefined
+    const table = tableFormat(state)
     return {
       styleId: (paragraph?.attrs.pStyle as string | null) ?? this.context.styles.defaultStyle('paragraph')?.id ?? null,
       fontFamily: font && !isThemeFontVar(font) ? font : (this.context.theme?.fonts.minor ?? null),
@@ -990,7 +1239,19 @@ export class DocxEditor {
       layout: this.layoutMode,
       zoom: this.zoomLevel,
       pages: this.pages,
-      formatPainter: this.copied !== null,
+      formatPainter: this.painter !== null,
+      formatPainterSticky: this.painter?.sticky ?? false,
+      doubleStrike: jmlOn(run.get('w:dstrike')) === true,
+      caps: jmlOn(run.get('w:caps')) === true,
+      smallCaps: jmlOn(run.get('w:smallCaps')) === true,
+      hidden: jmlOn(run.get('w:vanish')) === true,
+      underlineStyle: underline !== undefined && underline !== 'none' ? underline : null,
+      spaceBefore: (jmlNumber(spacing, 'w:before') ?? 0) / 20,
+      spaceAfter: (jmlNumber(spacing, 'w:after') ?? 0) / 20,
+      inRevision: selectionInRevision(state),
+      editingStory: this.editingStory,
+      cellVerticalAlign: table?.verticalAlign ?? null,
+      headerRow: table?.headerRow ?? false,
     }
   }
 
@@ -1006,6 +1267,8 @@ export class DocxEditor {
   on(event: 'layout', listener: Listener<LayoutResult | null>): () => void
   on(event: 'request', listener: Listener<DocxRequest>): () => void
   on(event: 'activeComment', listener: Listener<string | null>): () => void
+  /** A picture pasted, dropped, or inserted that Word could not show, or that arrived while read-only. */
+  on(event: 'imageRefused', listener: Listener<DocxRefusedImage>): () => void
   on(event: keyof DocxEditor['listeners'], listener: Listener<never>): () => void {
     const set = this.listeners[event] as Set<Listener<never>>
     set.add(listener)
@@ -1016,6 +1279,7 @@ export class DocxEditor {
   private emit(event: 'layout', value: LayoutResult | null): void
   private emit(event: 'request', value: DocxRequest): void
   private emit(event: 'activeComment', value: string | null): void
+  private emit(event: 'imageRefused', value: DocxRefusedImage): void
   private emit(event: keyof DocxEditor['listeners'], value?: unknown): void {
     for (const listener of this.listeners[event] as Set<Listener<unknown>>) listener(value)
   }
@@ -1106,8 +1370,9 @@ export class DocxEditor {
     return this.run(setAlignment(alignment))
   }
 
-  setLineSpacing(multiple: number): boolean {
-    return this.run(setLineSpacing({ multiple }))
+  /** Line spacing as a multiple (1, 1.15, 2), or `{ exact }` / `{ atLeast }` in points. */
+  setLineSpacing(spacing: number | LineSpacing): boolean {
+    return this.run(setLineSpacing(typeof spacing === 'number' ? { multiple: spacing } : spacing))
   }
 
   setParagraphSpacing(before: number | undefined, after: number | undefined): boolean {
@@ -1135,24 +1400,62 @@ export class DocxEditor {
     return this.run(clearFormatting)
   }
 
-  /** Format painter: the first call copies the selection's format, the next applies it. */
-  formatPainter(): boolean {
+  /**
+   * Format painter, as in Word: the first call copies the selection's format, which the next
+   * selection made with the mouse (a click paints the word under it) or with Shift and the arrow
+   * keys takes. `sticky` (Word's double-click) keeps painting until Escape or another call.
+   * Called again before painting, it applies to a selection made otherwise, or turns off.
+   */
+  formatPainter(options: { sticky?: boolean } = {}): boolean {
     const view = this.activeView
-    if (!this.copied) {
-      this.copied = copyFormat(view.state)
+    if (!this.painter) {
+      const { from, to } = view.state.selection
+      this.painter = { format: copyFormat(view.state), sticky: options.sticky ?? false, storyId: this.editingStory, from, to }
+      this.root.classList.add('docx-painting')
       this.emit('update')
       return true
     }
-    const format = this.copied
-    this.copied = null
-    const applied = this.run(pasteFormat(format))
-    this.emit('update')
-    return applied
+    const { from, to, empty } = view.state.selection
+    const moved = this.painter.storyId !== this.editingStory || from !== this.painter.from || to !== this.painter.to
+    if (this.painter.sticky || !moved || empty) return this.cancelFormatPainter()
+    return this.paint()
   }
 
-  cancelFormatPainter(): void {
-    this.copied = null
+  /** Turns the format painter off; false when it was not on. */
+  cancelFormatPainter(): boolean {
+    if (!this.painter) return false
+    this.painter = null
+    this.root.classList.remove('docx-painting')
     this.emit('update')
+    return true
+  }
+
+  /** Paints once the browser has settled the selection a pointer or key just made. */
+  private paintSoon(): void {
+    requestAnimationFrame(() => {
+      if (!this.painter || this.destroyed) return
+      const view = this.activeView
+      // Read the selection the browser made before ProseMirror's own selectionchange handling runs.
+      ;(view as unknown as { domObserver?: { flush?: () => void } }).domObserver?.flush?.()
+      this.paint()
+    })
+  }
+
+  private paint(): boolean {
+    const painter = this.painter
+    if (!painter || this.readOnly) return false
+    const view = this.activeView
+    const { selection } = view.state
+    // A click paints the word under it.
+    const word = selection.empty ? wordAt(view.state.doc, selection.from) : null
+    const tr = pasteFormat(painter.format, word ?? undefined)(view.state, this.context)
+    if (!painter.sticky) this.cancelFormatPainter()
+    if (!tr?.docChanged) return false
+    this.separateUndo(view)
+    view.dispatch(tr)
+    this.separateUndo(view)
+    view.focus()
+    return true
   }
 
   insertTable(rows: number, cols: number): boolean {
@@ -1206,36 +1509,67 @@ export class DocxEditor {
     return this.run(insertSymbol(text))
   }
 
-  /** Inserts a picture from a file at the cursor, sized to fit the text width. */
-  async insertImage(file: Blob, description = ''): Promise<boolean> {
-    if (this.readOnly) return false
-    const target = this.activeView
-    const bytes = new Uint8Array(await file.arrayBuffer())
-    // Formats Word shows as plain pictures (SVG would need a PNG fallback beside it).
-    const mimeType = insertablePicture(bytes)
-    if (!mimeType) return false
-    const ref = await this.options.assets.put(bytes, mimeType)
-    let width = 300
-    let height = 200
+  /**
+   * Inserts a picture from a file at the cursor (where the cursor was when called, however long
+   * the upload takes), sized to fit the text width of its section. Formats Word cannot show are
+   * refused, with an `imageRefused` event.
+   */
+  async insertImage(file: Blob, description = '', target = this.activeView): Promise<boolean> {
+    const name = typeof File !== 'undefined' && file instanceof File ? file.name : ''
+    if (this.readOnly || target.isDestroyed) {
+      this.emit('imageRefused', { name, type: file.type, reason: 'readOnly' })
+      return false
+    }
+    // Keep the place: the selection may move (or collaborators edit) while the picture uploads.
+    const id = {}
+    target.dispatch(target.state.tr.setMeta(pendingPasteKey, { id, bookmark: target.state.selection.getBookmark() }))
+    const release = () => {
+      if (!target.isDestroyed && pendingPasteKey.getState(target.state)?.has(id)) target.dispatch(target.state.tr.setMeta(pendingPasteKey, { id }))
+    }
     try {
-      const bitmap = await createImageBitmap(file)
-      width = bitmap.width * 0.75
-      height = bitmap.height * 0.75
-      bitmap.close()
-    } catch {
-      // Keep the default size for formats the browser cannot decode.
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      // Formats Word shows as plain pictures (SVG would need a PNG fallback beside it).
+      const mimeType = insertablePicture(bytes)
+      if (!mimeType) {
+        this.emit('imageRefused', { name, type: file.type, reason: 'unsupported' })
+        return false
+      }
+      const ref = await this.options.assets.put(bytes, mimeType)
+      let width = 300
+      let height = 200
+      try {
+        const bitmap = await createImageBitmap(file)
+        width = bitmap.width * 0.75
+        height = bitmap.height * 0.75
+        bitmap.close()
+      } catch {
+        // Keep the default size for formats the browser cannot decode.
+      }
+      if (this.destroyed || this.readOnly || target.isDestroyed) return false
+      const bookmark = pendingPasteKey.getState(target.state)?.get(id)
+      if (!bookmark) return false
+      const selection = bookmark.resolve(target.state.doc)
+      const section = target === this.view ? sectionOf(target.state.doc, selection.from, this.context.finalSectPr).sectPr : this.context.finalSectPr
+      const maxWidth = textAreaWidth(section)
+      if (width > maxWidth) {
+        height = (height * maxWidth) / width
+        width = maxWidth
+      }
+      const node = target.state.schema.node('drawing', { v: packJml(newInlinePicture(width, height, description || 'Picture', description)), src: ref.hash })
+      target.dispatch(target.state.tr.setSelection(selection).replaceSelectionWith(node, false).setMeta(pendingPasteKey, { id }).scrollIntoView())
+      target.focus()
+      return true
+    } finally {
+      release()
     }
-    const maxWidth = textAreaWidth(this.context.finalSectPr)
-    if (width > maxWidth) {
-      height = (height * maxWidth) / width
-      width = maxWidth
+  }
+
+  /** Inserts pictures one after another, as a paste or drop of several files does. */
+  private async insertImages(files: Blob[], view: EditorView): Promise<void> {
+    for (const file of files) {
+      if (this.destroyed || view.isDestroyed) return
+      await this.insertImage(file, '', view)
     }
-    if (this.destroyed || this.readOnly || target.isDestroyed) return false
-    const view = target
-    const node = view.state.schema.node('drawing', { v: packJml(newInlinePicture(width, height, description || 'Picture', description)), src: ref.hash })
-    view.dispatch(view.state.tr.replaceSelectionWith(node, false).scrollIntoView())
-    view.focus()
-    return true
   }
 
   insertNote(kind: 'footnote' | 'endnote', text = ''): string | null {
@@ -1247,6 +1581,242 @@ export class DocxEditor {
       view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)).scrollIntoView())
     }
     return result.id
+  }
+
+  /** A line break within the paragraph (Shift+Enter). */
+  insertLineBreak(): boolean {
+    return this.run(insertLineBreak)
+  }
+
+  /** A horizontal line (a bottom-bordered paragraph), with the cursor below it. */
+  insertHorizontalLine(): boolean {
+    return this.run(insertHorizontalLine)
+  }
+
+  /** Removes direct character formatting only (Word's Ctrl+Space). */
+  clearCharacterFormatting(): boolean {
+    return this.run(clearCharacterFormatting)
+  }
+
+  /** Word's Change Case on the selection, or on the word at the cursor. */
+  changeCase(change: CaseChange): boolean {
+    return this.run(changeCase(change))
+  }
+
+  /** The link at the cursor (inside it or at either end): its target, text, and range. */
+  linkAt(): Omit<LinkRange, 'mark'> | null {
+    const { state } = this.activeView
+    if (!state.selection.empty) return null
+    const found = linkAround(state.doc, state.selection.from)
+    if (!found) return null
+    const { mark: _mark, ...link } = found
+    return link
+  }
+
+  /** The format of the first selected paragraph, in points. */
+  paragraphFormat(): ParagraphFormat | null {
+    const paragraph = selectedParagraphs(this.activeView.state)[0]
+    return paragraph ? readParagraphFormat(paragraph.node, this.context) : null
+  }
+
+  /** Changes the selected paragraphs' indents, spacing, line spacing, alignment, and break options in one step. */
+  setParagraphFormat(change: ParagraphFormatChange): boolean {
+    return this.run(setParagraphFormat(change))
+  }
+
+  setParagraphBorder(preset: ParagraphBorder): boolean {
+    return this.run(setParagraphBorder(preset))
+  }
+
+  // Cell and table properties have no tracked form, like shading.
+  setCellVerticalAlign(value: CellVerticalAlign): boolean {
+    return this.modeValue !== 'suggesting' && this.run(setCellVerticalAlign(value))
+  }
+
+  /** Word's "Repeat as header row at the top of each page" for the rows down to the selection. */
+  setHeaderRow(on: boolean): boolean {
+    return this.modeValue !== 'suggesting' && this.run(setHeaderRows(on))
+  }
+
+  setTableAlignment(alignment: 'left' | 'center' | 'right'): boolean {
+    return this.modeValue !== 'suggesting' && this.run(setTableAlignment(alignment))
+  }
+
+  /** Selects the row, column, or table around the selection. */
+  selectTable(part: 'row' | 'column' | 'table'): boolean {
+    const view = this.activeView
+    const tr = selectTablePart(part)(view.state, this.context)
+    if (!tr) return false
+    view.dispatch(tr)
+    view.focus()
+    return true
+  }
+
+  /** Vertical alignment, header row, and table alignment at the selection; null outside tables. */
+  tableFormat(): ReturnType<typeof tableFormat> {
+    return tableFormat(this.activeView.state)
+  }
+
+  // ── Page setup, headers, and footers ─────────────────────────────────────
+
+  /** The page of the section at the cursor, in points, and which section that is. */
+  pageSetup(): PageSetupInfo & { section: number; sections: number } {
+    const { state } = this.view
+    const holders = sectionHolders(state.doc, this.context.finalSectPr)
+    const section = sectionIndexAt(state.doc, state.selection.from)
+    return { ...readPageSetup(holders[section]?.sectPr), section, sections: holders.length }
+  }
+
+  /**
+   * Page size, orientation, and margins (points) for the whole document or the section at the
+   * cursor; false when the change leaves no room for text. One undo step; refused while
+   * suggesting, as section properties have no tracked form.
+   */
+  setPageSetup(change: PageSetupChange, scope: 'document' | 'section' = 'document'): boolean {
+    if (this.readOnly || this.modeValue === 'suggesting') return false
+    return this.applySectionEdit(editSections(this.view.state, this.context, scope === 'document' ? 'all' : [sectionIndexAt(this.view.state.doc, this.view.state.selection.from)], (sectPr) => applyPageSetup(sectPr, change)))
+  }
+
+  /** Section property edits to the body, as one undo step even when only the final section changes. */
+  private applySectionEdit(result: EditResult | null): boolean {
+    if (!result) return false
+    const view = this.view
+    this.separateUndo(view)
+    this.options.doc.transact((transaction) => {
+      transaction.meta.set(SECTION_UNDO, true)
+      this.applyMapEdits(result.maps)
+      if (result.tr.docChanged) view.dispatch(result.tr.setMeta('docx-untracked', true))
+    }, ySyncPluginKey)
+    this.separateUndo(view)
+    if (this.layoutMode !== 'print') this.applyWebWidth()
+    this.scheduleLayout(true)
+    return true
+  }
+
+  /** Headers and footers of the section at the cursor (own or inherited) and its first-page and odd/even options. */
+  headerFooter(): HeaderFooterInfo {
+    return headerFooterInfo(this.view.state, this.context)
+  }
+
+  /**
+   * Opens the header or footer of the section at the cursor for editing, creating it when the
+   * section has none (Word's Insert Header). Returns its story id, or null when it cannot: while
+   * suggesting (sections have no tracked form), read-only, or in web layout, which has no pages.
+   */
+  addHeaderFooter(kind: HeaderFooterKind, type: HeaderFooterType = 'default'): string | null {
+    if (this.readOnly || this.modeValue === 'suggesting' || this.layoutMode !== 'print') return null
+    if (type === 'first' && !this.headerFooter().differentFirstPage) this.setDifferentFirstPage(true)
+    if (type === 'even' && !this.context.evenAndOddHeaders) this.setDifferentOddEven(true)
+    let storyId = headerFooterOf(this.view.state, this.context, kind, type)?.storyId
+    if (!storyId) {
+      const result = createHeaderFooter(this.view.state, this.context, kind, type)
+      if (!result) return null
+      storyId = result.storyId
+      // Not an undo step, like comments: it adds a part, and the caret moves into it.
+      this.options.doc.transact((transaction) => {
+        transaction.meta.set('addToHistory', false)
+        for (const story of result.stories) {
+          this.options.doc.getMap<string>('stories').set(story.id, JSON.stringify(story.meta))
+          if (story.doc) writeFragment(this.options.doc, this.options.doc.getXmlFragment(storyFragmentName(story.id)), story.doc)
+        }
+        this.applyMapEdits(result.maps)
+        if (result.tr?.docChanged) this.view.dispatch(result.tr.setMeta('addToHistory', false).setMeta('docx-untracked', true))
+      }, ySyncPluginKey)
+    }
+    this.relayout()
+    return this.openHeaderFooter(storyId) ? storyId : null
+  }
+
+  /** Opens a header or footer at the occurrence nearest the cursor's page, with the cursor at its end. */
+  private openHeaderFooter(storyId: string): boolean {
+    if (this.storyEditor?.storyId === storyId) return true
+    const page = this.currentPage()?.index ?? 1
+    const pages = [...this.pagesLayer.querySelectorAll<HTMLElement>('.docx-page')]
+    const sheet = pages[page - 1]?.getBoundingClientRect()
+    const candidates = this.storyElements(storyId)
+    const over = sheet ? candidates.find((element) => {
+      const rect = element.getBoundingClientRect()
+      return rect.top >= sheet.top - 1 && rect.top <= sheet.bottom + 1
+    }) ?? candidates[0] : candidates[0]
+    if (!this.openStoryEditor(storyId, over)) return false
+    const view = this.activeView
+    view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)))
+    return true
+  }
+
+  /** Removes the header or footer the section at the cursor shows (from every section that shows it). */
+  removeHeaderFooter(kind: HeaderFooterKind, type: HeaderFooterType = 'default'): boolean {
+    if (this.readOnly || this.modeValue === 'suggesting') return false
+    const found = headerFooterOf(this.view.state, this.context, kind, type)
+    if (!found) return false
+    const result = removeHeaderFooter(this.view.state, this.context, found.storyId)
+    if (!result) return false
+    if (this.storyEditor?.storyId === found.storyId) this.closeStoryEditor()
+    this.options.doc.transact((transaction) => {
+      transaction.meta.set('addToHistory', false)
+      this.applyMapEdits(result.maps)
+      this.options.doc.getMap<string>('stories').delete(found.storyId)
+      const fragment = this.options.doc.getXmlFragment(storyFragmentName(found.storyId))
+      if (fragment.length) fragment.delete(0, fragment.length)
+      if (result.tr?.docChanged) this.view.dispatch(result.tr.setMeta('addToHistory', false).setMeta('docx-untracked', true))
+    }, ySyncPluginKey)
+    this.scheduleLayout(true)
+    return true
+  }
+
+  /** Word's "Different first page" for the section at the cursor (one undo step). */
+  setDifferentFirstPage(on: boolean): boolean {
+    if (this.readOnly || this.modeValue === 'suggesting') return false
+    const section = sectionIndexAt(this.view.state.doc, this.view.state.selection.from)
+    return this.applySectionEdit(editSections(this.view.state, this.context, [section], (sectPr) => withTitlePage(sectPr, on)))
+  }
+
+  /** Word's "Different odd and even pages", a document setting. */
+  setDifferentOddEven(on: boolean): boolean {
+    if (this.readOnly || this.modeValue === 'suggesting' || this.context.evenAndOddHeaders === on) return false
+    this.applyMapEdits([['settings', 'w:evenAndOddHeaders', on ? packJml(['w:evenAndOddHeaders', {}]) : '']])
+    this.scheduleLayout(true)
+    return true
+  }
+
+  /**
+   * Page numbers as Word's Insert Page Number does: with `kind`, a paragraph of its own at the top
+   * of the header or bottom of the footer (created when needed), aligned; without, a PAGE field at
+   * the cursor of the open header or footer. `withTotal` writes "Page X of Y" (the `pageOfPages` label).
+   */
+  insertPageNumber(options: { kind?: HeaderFooterKind; align?: 'left' | 'center' | 'right'; withTotal?: boolean } = {}): boolean {
+    if (this.readOnly || this.modeValue === 'suggesting') return false
+    if (options.kind && !this.addHeaderFooter(options.kind)) return false
+    const story = this.storyEditor
+    if (!story || !/^(header|footer):/.test(story.storyId)) return false
+    const { view } = story
+    const { schema } = view.state
+    const field = (instr: string) => schema.text('1', [schema.marks.fldSimple!.create({ v: packJml(['w:fldSimple', { 'w:instr': ` ${instr} ` }, '\u0000']) })])
+    const content: ProseMirrorNode[] = []
+    if (options.withTotal) {
+      for (const part of this.labels.pageOfPages.split(/(\{page\}|\{pages\})/)) {
+        if (part === '{page}') content.push(field('PAGE'))
+        else if (part === '{pages}') content.push(field('NUMPAGES'))
+        else if (part) content.push(schema.text(part))
+      }
+    } else content.push(field('PAGE'))
+    const tr = view.state.tr
+    if (!options.kind) {
+      tr.replaceSelection(new Slice(Fragment.fromArray(content), 0, 0))
+    } else {
+      const kind = story.storyId.startsWith('header:') ? 'header' : 'footer'
+      const jc = packJml(['w:jc', { 'w:val': options.align ?? 'center' }])
+      const doc = view.state.doc
+      const only = doc.childCount === 1 && doc.firstChild!.type.name === 'paragraph' && !doc.firstChild!.content.size ? doc.firstChild! : null
+      if (only) tr.replaceWith(0, only.nodeSize, only.type.create({ ...only.attrs, jc }, content))
+      else tr.insert(kind === 'header' ? 0 : doc.content.size, headerFooterParagraph(schema, this.context, kind, { jc }, content))
+    }
+    this.separateUndo(view)
+    view.dispatch(tr.scrollIntoView())
+    this.separateUndo(view)
+    view.focus()
+    this.scheduleLayout(true)
+    return true
   }
 
   // ── Comments ─────────────────────────────────────────────────────────────
@@ -1415,6 +1985,50 @@ export class DocxEditor {
     return changed
   }
 
+  /** Tracked changes in the active story that the selection touches. */
+  revisionsAt(): Revision[] {
+    const { state } = this.activeView
+    const { from, to } = state.selection
+    return listRevisions(state.doc, this.editingStory ?? undefined).filter((revision) => revision.from <= to && revision.to >= from)
+  }
+
+  /**
+   * Selects the next (or previous) tracked change after the selection, through the body and then
+   * the headers, footers, and notes, wrapping around as Word's Next does.
+   */
+  nextRevision(direction: 1 | -1 = 1): Revision | null {
+    const all = this.revisions()
+    if (!all.length) return null
+    const order = [undefined, ...new Set(all.map((revision) => revision.storyId).filter((id): id is string => id !== undefined))]
+    const story = order.indexOf(this.editingStory ?? undefined)
+    const { from } = this.activeView.state.selection
+    const rank = (revision: Revision) => order.indexOf(revision.storyId)
+    const after = (revision: Revision) => rank(revision) > story || (rank(revision) === story && revision.from > from)
+    const before = (revision: Revision) => rank(revision) < story || (rank(revision) === story && revision.from < from)
+    const sorted = [...all].sort((a, b) => rank(a) - rank(b) || a.from - b.from)
+    const target = direction > 0 ? sorted.find(after) ?? sorted[0]! : [...sorted].reverse().find(before) ?? sorted.at(-1)!
+    this.goTo(Math.max(0, target.from - 1), target.storyId)
+    // A story that cannot open (read-only) is still reported, without moving the selection into the body.
+    if ((this.editingStory ?? undefined) !== target.storyId) return target
+    const view = this.activeView
+    const size = view.state.doc.content.size
+    const selection = TextSelection.between(view.state.doc.resolve(Math.min(target.from, size)), view.state.doc.resolve(Math.min(target.to, size)))
+    view.dispatch(view.state.tr.setSelection(selection).scrollIntoView())
+    return target
+  }
+
+  /** Accepts the tracked changes the selection touches. */
+  acceptRevisionAtCaret(): boolean {
+    const revisions = this.revisionsAt()
+    return revisions.length > 0 && this.resolveRevisions(revisions, 'accept')
+  }
+
+  /** Rejects the tracked changes the selection touches. */
+  rejectRevisionAtCaret(): boolean {
+    const revisions = this.revisionsAt()
+    return revisions.length > 0 && this.resolveRevisions(revisions, 'reject')
+  }
+
   acceptAll(): boolean {
     return this.resolveStories(this.revisions(), 'accept', true)
   }
@@ -1492,8 +2106,137 @@ export class DocxEditor {
     this.activeView.dispatch(this.activeView.state.tr.setMeta(findKey, { query: '', options: {}, matches: [], current: -1 }))
   }
 
-  wordCount() {
-    return wordCount(this.activeView.state.doc)
+  /** Words, characters, and paragraphs of the active story, or of the selection in it (zero when nothing is selected). */
+  wordCount(scope: 'document' | 'selection' = 'document'): WordCount {
+    const { state } = this.activeView
+    return scope === 'selection' ? selectionWordCount(state) : wordCount(state.doc)
+  }
+
+  /**
+   * The page the cursor is on, counting physical pages from 1 (`number` is what the page shows,
+   * which can restart or be roman), and how many there are; undefined outside print layout.
+   */
+  currentPage(): { index: number; count: number; number: number } | undefined {
+    const layout = this.lastLayout
+    if (this.layoutMode !== 'print' || !layout?.pages.length) return undefined
+    try {
+      const canvas = this.canvas.getBoundingClientRect()
+      const scale = this.zoomLevel || 1
+      let top: number
+      if (this.storyEditor) top = (this.storyEditor.element.getBoundingClientRect().top - canvas.top) / scale
+      else {
+        const flow = this.view.dom as HTMLElement
+        const rect = flow.getBoundingClientRect()
+        const flowScale = flow.offsetWidth ? rect.width / flow.offsetWidth : 1
+        top = this.flowTop + (this.view.coordsAtPos(this.view.state.selection.head).top - rect.top) / flowScale
+      }
+      let index = 0
+      for (const [at, page] of layout.pages.entries()) if (this.flowTop + page.contentTop - page.setup.top <= top + 1) index = at
+      return { index: index + 1, count: layout.pages.length, number: layout.pages[index]!.number }
+    } catch {
+      return undefined
+    }
+  }
+
+  // ── Context menus and clipboard ──────────────────────────────────────────
+
+  /**
+   * What is under a point (client coordinates), for a host's context menu: the position, table
+   * cell, picture, link, comments, and tracked changes there. With `select`, a point outside the
+   * selection moves the cursor there first (a picture is selected), as right-clicking does.
+   * Null outside the editable text.
+   */
+  contextAt(clientX: number, clientY: number, options: { select?: boolean } = {}): DocxContextInfo | null {
+    const target = typeof document.elementFromPoint === 'function' ? document.elementFromPoint(clientX, clientY) : null
+    const story = this.storyEditor && target && this.storyEditor.view.dom.contains(target) ? this.storyEditor : null
+    const view = story?.view ?? this.view
+    if (target && !view.dom.contains(target)) return null
+    let found: { pos: number } | null = null
+    try {
+      found = view.posAtCoords({ left: clientX, top: clientY })
+    } catch {
+      return null
+    }
+    if (!found) return null
+    let pos = found.pos
+    const pictureElement = target?.closest?.('.docx-drawing')
+    let picture: DocxContextInfo['picture'] = null
+    if (pictureElement && view.dom.contains(pictureElement)) {
+      try {
+        const at = view.posAtDOM(pictureElement, 0)
+        const node = view.state.doc.nodeAt(at)
+        const element = node?.type.name === 'drawing' ? jml(node.attrs.v) : undefined
+        if (element) {
+          pos = at
+          picture = { pos: at, description: drawingInfo(element).description ?? '' }
+        }
+      } catch {
+        // A picture leaving the document meanwhile.
+      }
+    }
+    const { selection } = view.state
+    const inSelection = !selection.empty && pos >= selection.from && pos <= selection.to
+    if (options.select && !inSelection && view.editable) {
+      const $pos = view.state.doc.resolve(pos)
+      view.dispatch(view.state.tr.setSelection(picture ? NodeSelection.create(view.state.doc, picture.pos) : TextSelection.near($pos)))
+    }
+    const $pos = view.state.doc.resolve(Math.min(pos, view.state.doc.content.size))
+    let table = false
+    for (let depth = $pos.depth; depth > 0; depth--) if ($pos.node(depth).type.name === 'tableCell') table = true
+    const link = linkAround(view.state.doc, pos)
+    const comments = target?.closest?.('.docx-comment-range')?.getAttribute('data-comments')?.split(' ').filter(Boolean) ?? []
+    const storyId = story?.storyId ?? null
+    const revisions = listRevisions(view.state.doc, storyId ?? undefined).filter((revision) => revision.from <= pos && revision.to >= pos)
+    const linkInfo = link ? { from: link.from, to: link.to, href: link.href, anchor: link.anchor, text: link.text } : null
+    return { pos, storyId, inSelection, editable: view.editable, table, picture, link: linkInfo, comments, revisions }
+  }
+
+  /**
+   * Pastes clipboard contents a host read itself (a context menu's Paste, through the async
+   * clipboard) through the same path as Ctrl+V: Pulpo's own copies come back exactly, other HTML
+   * is cleaned, pictures are inserted. `plain` pastes the text only, as Ctrl+Shift+V does.
+   */
+  pasteData(data: { html?: string; text?: string; files?: Blob[] }, options: { plain?: boolean } = {}): boolean {
+    if (this.readOnly) return false
+    const view = this.activeView
+    view.focus()
+    if (!options.plain && data.files?.length && !data.html) {
+      void this.insertImages(data.files.filter((file) => IMAGE_FILE.test(file.type)), view)
+      return true
+    }
+    // ProseMirror makes a ClipboardEvent when given none, which not every environment has.
+    const bare = typeof ClipboardEvent === 'undefined' ? (new Event('paste') as ClipboardEvent) : undefined
+    if (options.plain || !data.html) {
+      if (!data.text) return false
+      view.pasteText(data.text, bare)
+      return true
+    }
+    if (typeof DataTransfer !== 'undefined' && typeof ClipboardEvent !== 'undefined') {
+      try {
+        const transfer = new DataTransfer()
+        transfer.setData('text/html', data.html)
+        if (data.text) transfer.setData('text/plain', data.text)
+        const event = new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true })
+        // Browsers that drop clipboardData from constructed events fall back to parsing the HTML directly.
+        if (event.clipboardData) {
+          view.dom.dispatchEvent(event)
+          return true
+        }
+      } catch {
+        // Fall through to the direct path.
+      }
+    }
+    view.pasteHTML(data.html, bare)
+    return true
+  }
+
+  /** Turns AutoFormat As You Type, or parts of it, on or off. */
+  setAutoformat(options: boolean | AutoformatOptions): void {
+    this.autoformatOptions = autoformatSettings(options)
+  }
+
+  get autoformat(): Required<AutoformatOptions> {
+    return { ...this.autoformatOptions }
   }
 
   outline(maxLevel = 9): OutlineEntry[] {
@@ -1669,12 +2412,17 @@ export class DocxEditor {
       this.bandsLayer.replaceChildren()
       this.canvas.style.width = ''
       this.canvas.style.height = ''
-      const width = textAreaWidth(this.context.finalSectPr) * PX_PER_PT
-      this.flowHost.style.cssText = `width:${width}px;max-width:100%;box-sizing:content-box`
+      this.applyWebWidth()
       this.canvas.appendChild(this.notesHost)
     } else {
       this.notesHost.remove()
     }
+  }
+
+  /** Web layout's column is as wide as the final section's text, which page setup can change. */
+  private applyWebWidth(): void {
+    const width = textAreaWidth(this.context.finalSectPr) * PX_PER_PT
+    this.flowHost.style.cssText = `width:${width}px;max-width:100%;box-sizing:content-box`
   }
 
   private renderStylesheet(): void {
@@ -1727,6 +2475,7 @@ export class DocxEditor {
     const maxLeft = maxOf(sections.map((section) => section.setup.left))
     const padding = 24
     const flowTop = padding + (sections[0]?.setup.top ?? 96)
+    this.flowTop = flowTop
     const flowLeft = padding + maxLeft
     this.flowHost.style.cssText = `left:${flowLeft}px;top:${flowTop}px;width:${widest}px`
     this.measureNotes(sections)
@@ -1831,12 +2580,7 @@ export class DocxEditor {
 
   /** Header and footer stories by the main part's relationship id. */
   private storyByRel(relId: string): string | undefined {
-    const rel = parseJson<Omit<Relationship, 'id'>>(readDocxMap(this.options.doc, 'rels').get(relId))
-    if (!rel || rel.targetMode === 'External') return undefined
-    const main = this.options.doc.getMap<string>('docx').get('mainPart') ?? 'word/document.xml'
-    const part = resolveTarget(main, rel.target)
-    const kind = rel.type.endsWith('/header') ? 'header' : 'footer'
-    return `${kind}:${part}`
+    return storyByRelationship(this.options.doc, relId)
   }
 
   private noteLabels(body = this.view.state.doc): Map<string, string> {
