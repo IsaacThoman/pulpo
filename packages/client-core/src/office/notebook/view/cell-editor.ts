@@ -86,9 +86,17 @@ export interface CellEditorOptions extends CellEditorKeys {
   wrap?: boolean | null
   /** A line-number gutter. */
   lineNumbers?: boolean
+  /** Where the selection starts (offsets in the source), such as where an editor built before for the cell had it. */
+  selection?: { anchor: number; head: number }
   onFocus?: () => void
   onBlur?: () => void
   onSelection?: () => void
+}
+
+/** What a cell's editor says about its type: its accessible name, and the hint an empty cell shows. */
+export interface CellTypeText {
+  label?: string
+  placeholder?: string
 }
 
 export interface CellEditor {
@@ -98,7 +106,11 @@ export interface CellEditor {
   cursor(): number
   setReadOnly(readOnly: boolean): void
   setDark(dark: boolean): void
-  setType(type: NotebookCellType, language: string): void
+  /**
+   * The cell's new type (and the kernel's language): its highlighting, wrapping, Markdown keys,
+   * and spell checking, and the name and hint in `text` (without it, "Cell" and none).
+   */
+  setType(type: NotebookCellType, language: string, text?: CellTypeText): void
   /** Wraps lines, or not; null goes back to wrapping by cell type. */
   setWrap(wrap: boolean | null): void
   setLineNumbers(on: boolean): void
@@ -144,6 +156,14 @@ function readOnlyExtensions(readOnly: boolean): Extension {
   return [EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]
 }
 
+/** What follows the cell's type: the accessible name, the empty cell's hint, and spell checking (prose only). */
+function typeExtensions(type: NotebookCellType, text: CellTypeText): Extension {
+  return [
+    ...text.placeholder ? [placeholderText(text.placeholder)] : [],
+    EditorView.contentAttributes.of({ 'aria-label': text.label ?? 'Cell', spellcheck: type === 'code' ? 'false' : 'true' }),
+  ]
+}
+
 export function createCellEditor(options: CellEditorOptions): CellEditor {
   const language = new Compartment()
   const readOnly = new Compartment()
@@ -151,6 +171,7 @@ export function createCellEditor(options: CellEditorOptions): CellEditor {
   const wrapping = new Compartment()
   const gutter = new Compartment()
   const formatting = new Compartment()
+  const typed = new Compartment()
   let destroyed = false
   let request = 0
   let current = { readOnly: options.readOnly, type: options.type, wrap: options.wrap ?? null }
@@ -195,10 +216,13 @@ export function createCellEditor(options: CellEditorOptions): CellEditor {
       { mac: 'Mod-Shift-h', run: openReplacePanel, preventDefault: true },
     ]
 
+  const source = options.text.toString()
+  const clamp = (offset: number) => Math.max(0, Math.min(offset, source.length))
   const view = new EditorView({
     parent: options.container,
     state: EditorState.create({
-      doc: options.text.toString(),
+      doc: source,
+      selection: options.selection && EditorSelection.single(clamp(options.selection.anchor), clamp(options.selection.head)),
       extensions: [
         // yCollab uses LF-based offsets and serialization. Split only on LF so a stored
         // CR stays a literal character instead of being silently dropped or rewritten.
@@ -245,8 +269,8 @@ export function createCellEditor(options: CellEditorOptions): CellEditor {
         formatting.of(formatKeys()),
         searchMatches,
         EditorState.phrases.of(options.labels ?? {}),
-        ...options.placeholder ? [placeholderText(options.placeholder)] : [],
-        EditorView.contentAttributes.of({ 'aria-label': options.label ?? 'Cell', spellcheck: options.type === 'code' ? 'false' : 'true', autocapitalize: 'off', autocorrect: 'off' }),
+        typed.of(typeExtensions(options.type, options)),
+        EditorView.contentAttributes.of({ autocapitalize: 'off', autocorrect: 'off' }),
         EditorView.domEventHandlers({
           focus: () => { options.onFocus?.() },
           blur: () => { options.onBlur?.() },
@@ -281,7 +305,21 @@ export function createCellEditor(options: CellEditorOptions): CellEditor {
         const position = at === 'start' ? 0 : view.state.doc.length
         view.dispatch({ selection: { anchor: position }, scrollIntoView: true })
       }
+      const focused = view.hasFocus
       view.focus()
+      if (at !== 'keep' || focused) return
+      // Cells reordered while a menu had the keyboard (Cell ▸ Move cell down) move this editor's
+      // DOM, which leaves the page's selection outside it, and focusing puts the caret at the
+      // start (as WebKit does for an editor just built). CodeMirror, still remembering the old
+      // caret as written, leaves it there and reads it back. So the caret goes back into the DOM.
+      const { anchor, head } = view.state.selection.main
+      const from = view.domAtPos(anchor)
+      const to = view.domAtPos(head)
+      try {
+        view.contentDOM.ownerDocument.getSelection()?.setBaseAndExtent(from.node, from.offset, to.node, to.offset)
+      } catch {
+        // A position CodeMirror has not drawn: it puts the caret back itself.
+      }
     },
     cursor: () => view.state.selection.main.head,
     setReadOnly(next) {
@@ -292,9 +330,10 @@ export function createCellEditor(options: CellEditorOptions): CellEditor {
     setDark(next) {
       view.dispatch({ effects: darkMode.reconfigure(EditorView.darkTheme.of(next)) })
     },
-    setType(type, kernel) {
+    setType(type, kernel, text = {}) {
       current = { ...current, type }
-      view.dispatch({ effects: [wrapping.reconfigure(wraps()), formatting.reconfigure(formatKeys())] })
+      // A type changed while typing (Colab's Ctrl+M M) keeps this editor, so its name and spell checking change with it.
+      view.dispatch({ effects: [wrapping.reconfigure(wraps()), formatting.reconfigure(formatKeys()), typed.reconfigure(typeExtensions(type, text))] })
       loadLanguage(type, kernel)
     },
     setWrap(wrap) {

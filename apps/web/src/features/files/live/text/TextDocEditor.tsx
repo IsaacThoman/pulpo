@@ -15,7 +15,7 @@ import { fileEditorRoot } from '../chrome/editor-root'
 import { fileMenuDefinition } from '../chrome/file-menu'
 import { shortcutGroupsFromMenus, type MenuDefinition } from '../chrome/menu'
 import { printHtmlDocument, textPrintHtml } from '../chrome/output'
-import { formatShortcut, type ShortcutSpec } from '../chrome/shortcuts'
+import { formatShortcut, matchesShortcut, type ShortcutSpec } from '../chrome/shortcuts'
 import { ShortcutsDialog } from '../chrome/ShortcutsDialog'
 import { helpMenu } from '../chrome/standard-menus'
 import { useEditorShortcuts } from '../chrome/use-editor-shortcuts'
@@ -52,9 +52,17 @@ function storeWrap(wrap: boolean): void {
   }
 }
 
-/** Alt+Z (VS Code's Toggle Word Wrap); on a Mac, Option+Z types Ω, so the physical key counts. */
-function isWrapKey(event: React.KeyboardEvent): boolean {
-  return event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.code === 'KeyZ' || event.key.toLowerCase() === 'z')
+/**
+ * Alt+Z (VS Code's Toggle Word Wrap). Off a Mac, Alt with a letter types nothing, so the physical
+ * key counts where the layout's letter is not Latin (Alt+Я in Russian); AltGr, which types, comes
+ * with Ctrl or as AltGraph. On a Mac, Option types letters (ż on Polish Pro, ž on Latvian, ¥ on
+ * German), so only the Ω that Option+Z types on US, ABC, and German layouts counts (as Greek
+ * omega or the ohm sign); other layouts wrap lines from the toolbar or the View menu.
+ */
+function isWrapKey(event: React.KeyboardEvent, mac: boolean): boolean {
+  if (event.getModifierState('AltGraph')) return false
+  if (!mac) return matchesShortcut(event, WRAP_SHORTCUT)
+  return event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && (event.key.toLowerCase() === 'z' || event.key === '\u03A9' || event.key === '\u2126')
 }
 
 /** Find, replace, and go to line, pressed while focus is on the toolbar or status bar rather than in the text. */
@@ -337,7 +345,7 @@ export function TextDocEditor({ session, name, editable, width, toolbarSlot, fil
     // Menus and dialogs (portaled, but their keys bubble here through React) keep their keys.
     if (event.target instanceof Element && event.target.closest('[role="dialog"], [role="menu"]')) return
     // Alt+Z wraps lines, in the text too (CodeMirror binds no Alt+Z); the search and go-to-line fields keep it.
-    if (isWrapKey(event) && !(event.target instanceof Element && event.target.closest('.cm-panels'))) {
+    if (isWrapKey(event, mac) && !(event.target instanceof Element && event.target.closest('.cm-panels'))) {
       event.preventDefault()
       toggleWrap(editor.current)
       return

@@ -30,6 +30,7 @@ import {
   readAttachments,
   readOutputs,
   type CellEditor,
+  type CellTypeText,
   type NotebookCellState,
   type NotebookEditorState,
 } from '@pulpo/client-core/office/notebook/view'
@@ -308,6 +309,14 @@ function toolbarState(state: NotebookEditorState): NotebookToolbarState {
   }
 }
 
+/** A cell editor's accessible name and empty-cell hint, which follow the cell's type. */
+function cellTypeText(type: NotebookCellType): CellTypeText {
+  return {
+    label: `${type === 'code' ? 'Code' : type === 'markdown' ? 'Markdown' : 'Raw'} cell`,
+    placeholder: type === 'markdown' ? 'Write Markdown' : type === 'code' ? 'Write code' : undefined,
+  }
+}
+
 function mountEditor(open: Open, view: CellView, cell: NotebookCellState, focus: boolean): void {
   if (view.editor) return
   const text = open.controller.sourceOf(cell.key)
@@ -325,8 +334,7 @@ function mountEditor(open: Open, view: CellView, cell: NotebookCellState, focus:
     language: controller.getState().language,
     readOnly: !open.editable || controller.getState().readOnly,
     dark: open.theme.dark,
-    label: `${cell.type === 'code' ? 'Code' : cell.type === 'markdown' ? 'Markdown' : 'Raw'} cell`,
-    placeholder: cell.type === 'markdown' ? 'Write Markdown' : cell.type === 'code' ? 'Write code' : undefined,
+    ...cellTypeText(cell.type),
     onFocus: () => controller.select(key, { mode: 'edit' }),
     onShiftEnter: () => controller.advance(),
     onModEnter: () => controller.setMode('command'),
@@ -421,7 +429,7 @@ function updateBody(open: Open, view: CellView, cell: NotebookCellState, editing
       view.body.replaceChildren(pre)
       view.rendered = 'static'
     }
-    view.editor?.setType(cell.type, open.controller.getState().language)
+    view.editor?.setType(cell.type, open.controller.getState().language, cellTypeText(cell.type))
     return
   }
   if (view.editor) unmountEditor(view)

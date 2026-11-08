@@ -35,8 +35,10 @@ try {
   const base = `${server.resolvedUrls.local[0]}tests/live-editors/index.html`
   browser = await chromium.launch()
 
-  const open = async (query = '', options = {}) => {
+  // `init` runs in the page before its scripts (to stand in for another platform, say).
+  const open = async (query = '', { init, ...options } = {}) => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ['clipboard-read', 'clipboard-write'], ...options })
+    if (init) await context.addInitScript(init)
     const page = await context.newPage()
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
@@ -203,6 +205,27 @@ try {
     assert.equal(await editorFontSize(page), '13px')
     assert.deepEqual(errors, [])
     await page.context().close()
+  })
+
+  await step('text: Option+Z on a Mac types the letter a layout puts there (Polish ż), and only Ω wraps', async () => {
+    // A Mac, wherever the suite runs. The key events are real input: one the editor does not take types.
+    const { page, context } = await open('format=text', { init: () => Object.defineProperty(Navigator.prototype, 'platform', { get: () => 'MacIntel' }) })
+    await page.locator('[data-replica="a"] .cm-content').waitFor()
+    assert.equal((await focused(page)).editor, true)
+    const cdp = await context.newCDPSession(page)
+    const option = async (key) => {
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', modifiers: 1, key, code: 'KeyZ', text: key, unmodifiedText: key, windowsVirtualKeyCode: 90 })
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', modifiers: 1, key, code: 'KeyZ', windowsVirtualKeyCode: 90 })
+    }
+    const wrapping = page.locator('[data-replica="a"] .cm-lineWrapping')
+    const text = () => page.evaluate(() => window.harness.text())
+    await option('ż')
+    await page.waitForFunction(() => window.harness.text().startsWith('ż'))
+    assert.equal(await wrapping.count(), 0, 'Option+Z typed ż and left wrapping alone')
+    await option('Ω')
+    await wrapping.waitFor()
+    assert.ok((await text()).startsWith('żThe quick'), 'Option+Z on US and ABC wraps and types nothing')
+    await context.close()
   })
 
   await step('text: Edit ▸ Go to line, Tools ▸ Word count, and indentation from the menu', async () => {
@@ -673,6 +696,95 @@ try {
     assert.ok((await page.evaluate(() => String(window.getSelection()))).trim(), 'the editor\'s text stays selected')
     await page.keyboard.press(`${mod}+x`)
     await page.waitForFunction((expected) => window.harness.cells().length === expected, count + 1)
+    await page.context().close()
+  })
+
+  await step('notebook: Ctrl+C copies an empty cell, cells the clipboard refused still paste, and a cell\'s leftover selection is not pasted over', async () => {
+    const { page } = await openNotebook('blank=1')
+    await page.evaluate(() => navigator.clipboard.writeText('OLD TEXT FROM ANOTHER APP'))
+    await notebookList(page).focus()
+    await page.keyboard.press(`${mod}+c`)
+    await page.keyboard.press(`${mod}+v`)
+    await page.waitForFunction(() => window.harness.cells().length === 2)
+    assert.deepEqual((await cells(page)).map((cell) => cell.source), ['', ''], 'the empty cell pasted, not the older text')
+    // A clipboard that refuses the page (no permission, or no secure context) keeps its older text.
+    const first = page.locator('[data-replica="a"] .cm-content').first()
+    await first.click()
+    await page.keyboard.type('print(1)')
+    await page.keyboard.press('Escape')
+    await page.evaluate(() => navigator.clipboard.writeText('OLD TEXT FROM ANOTHER APP'))
+    await page.evaluate(() => { navigator.clipboard.writeText = () => Promise.reject(new DOMException('Denied', 'NotAllowedError')) })
+    await page.keyboard.press('c')
+    await page.keyboard.press(`${mod}+v`)
+    await page.waitForFunction(() => window.harness.cells().length === 3)
+    assert.deepEqual((await cells(page)).map((cell) => cell.source), ['print(1)', 'print(1)', ''])
+    await page.context().close()
+    // Text left selected in a cell after Escape is not pasted over: the paste is a cell of its own.
+    const other = await openNotebook('blank=1')
+    await other.page.locator('[data-replica="a"] .cm-content').first().click()
+    await other.page.keyboard.type('keep this')
+    await other.page.keyboard.press('Shift+Home')
+    await other.page.keyboard.press('Escape')
+    await other.page.evaluate(() => navigator.clipboard.writeText('XYZ'))
+    await other.page.keyboard.press(`${mod}+v`)
+    await other.page.waitForFunction(() => window.harness.cells().length === 2)
+    assert.deepEqual((await cells(other.page)).map((cell) => cell.source), ['keep this', 'XYZ'])
+    // The browser's clipboard outlives the page: leave it empty for the steps after.
+    await other.page.evaluate(() => navigator.clipboard.writeText(''))
+    await other.page.context().close()
+  })
+
+  await step('notebook: moving the cell being typed in (Ctrl+M J and K, Cell ▸ Move cell down, its toolbar) keeps the caret', async () => {
+    const { page, errors } = await openNotebook('blank=1')
+    await page.locator('[data-replica="a"] .cm-content').first().click()
+    await page.keyboard.type('aaa')
+    await page.keyboard.press('Control+m')
+    await page.keyboard.press('a')
+    await page.keyboard.type('hello world')
+    for (let index = 0; index < 6; index += 1) await page.keyboard.press('ArrowLeft')
+    const sources = async () => (await cells(page)).map((cell) => cell.source)
+    await page.keyboard.press('Control+m')
+    await page.keyboard.press('j')
+    await page.keyboard.type('1')
+    assert.deepEqual(await sources(), ['aaa', 'hello1 world'])
+    await page.keyboard.press('Control+m')
+    await page.keyboard.press('k')
+    await page.keyboard.type('2')
+    assert.deepEqual(await sources(), ['hello12 world', 'aaa'])
+    // The menu has the keyboard while the cells move.
+    await openMenu(page, 'Cell')
+    await page.getByRole('menuitem', { name: /Move cell down/ }).click()
+    await menuClosed(page)
+    await page.keyboard.type('3')
+    assert.deepEqual(await sources(), ['aaa', 'hello123 world'])
+    await page.keyboard.press('Control+m')
+    await page.keyboard.press('k')
+    await page.locator('[data-replica="a"] [data-cell-toolbar]').first().getByRole('button', { name: 'Move cell down' }).click()
+    await page.keyboard.type('4')
+    assert.deepEqual(await sources(), ['aaa', 'hello1234 world'])
+    assert.equal(await active(page).getAttribute('data-mode'), 'edit')
+    assert.deepEqual(errors, [])
+    await page.context().close()
+  })
+
+  await step('notebook: Ctrl+M M and Y while typing name and spell check the cell by its new type', async () => {
+    const { page } = await openNotebook('blank=1')
+    const content = page.locator('[data-replica="a"] .cm-content').first()
+    await content.click()
+    await page.keyboard.type('print(1)')
+    const shown = async () => [await content.getAttribute('aria-label'), await content.getAttribute('spellcheck')]
+    assert.deepEqual(await shown(), ['Code cell', 'false'])
+    await page.keyboard.press('Control+m')
+    await page.keyboard.press('m')
+    assert.equal((await cells(page))[0].type, 'markdown')
+    assert.equal(await active(page).getAttribute('data-mode'), 'edit')
+    assert.deepEqual(await shown(), ['Markdown cell', 'true'])
+    await page.keyboard.press('Control+m')
+    await page.keyboard.press('y')
+    assert.deepEqual(await shown(), ['Code cell', 'false'])
+    // Still typing in the same editor.
+    await page.keyboard.type('!')
+    assert.equal((await cells(page))[0].source, 'print(1)!')
     await page.context().close()
   })
 

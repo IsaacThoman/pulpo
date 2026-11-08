@@ -4,7 +4,7 @@ import { SocketIOYProvider } from '@pulpo/client-core/doc-sync'
 import { MemoryLiveAssetStore } from '@pulpo/client-core/office'
 import { cellMetadata, cellsMap, cellSourceText, notebookCodec, orderedCells } from '@pulpo/client-core/office/notebook'
 import { clearNotebookClipboard } from '@pulpo/client-core/office/notebook/view'
-import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 import { NotebookDocEditor } from './NotebookDocEditor'
 
@@ -155,6 +155,63 @@ describe('notebook editor parity', () => {
     }
   })
 
+  it('puts even an empty cell on the clipboard as the browser copies, so Ctrl+V pastes it and not older text', async () => {
+    const notebook = await openNotebook([code('a', '')])
+    const setData = vi.fn()
+    // The browser's copy event, as Chrome and Safari send it to the focused cell list.
+    const execCommand = vi.fn(() => fireEvent.copy(document.body, { clipboardData: { setData, getData: () => '', types: [] } }))
+    Object.defineProperty(document, 'execCommand', { value: execCommand, configurable: true })
+    try {
+      notebook.list.focus()
+      expect(fireEvent.keyDown(notebook.list, { key: 'c', ctrlKey: true })).toBe(false)
+      expect(execCommand).toHaveBeenCalledWith('copy')
+      expect(setData).toHaveBeenCalledWith('text/plain', '')
+      // The clipboard now holds the empty cell's text, nothing.
+      fireEvent.paste(document, { clipboardData: { getData: () => '', types: ['text/plain'] } })
+      await waitFor(() => expect(notebook.sources()).toEqual(['', '']))
+    } finally {
+      delete (document as { execCommand?: unknown }).execCommand
+      notebook.dispose()
+    }
+  })
+
+  it('pastes the cells copied here when the clipboard refused them, not the older text it kept', async () => {
+    const notebook = await openNotebook([code('a', 'print(1)')])
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.reject(new Error('denied')) }, configurable: true })
+    const older = { clipboardData: { getData: (type: string) => (type === 'text/plain' ? 'OLD TEXT FROM ANOTHER APP' : ''), types: ['text/plain'] } }
+    try {
+      notebook.list.focus()
+      fireEvent.keyDown(notebook.list, { key: 'c', ctrlKey: true })
+      fireEvent.paste(document, older)
+      await waitFor(() => expect(notebook.sources()).toEqual(['print(1)', 'print(1)']))
+      // Something copied since (here, text on the page) is what pastes next.
+      fireEvent.copy(document.body)
+      notebook.list.focus()
+      fireEvent.paste(document, older)
+      await waitFor(() => expect(notebook.sources()).toEqual(['print(1)', 'print(1)', 'OLD TEXT FROM ANOTHER APP']))
+    } finally {
+      delete (navigator as { clipboard?: unknown }).clipboard
+      notebook.dispose()
+    }
+  })
+
+  it('pastes in command mode without pasting into the text of a cell the page selection was left in', async () => {
+    const notebook = await openNotebook([code('a', 'keep this')])
+    try {
+      const content = await waitFor(() => {
+        const found = notebook.view.container.querySelector<HTMLElement>('.cm-content')
+        expect(found).toBeTruthy()
+        return found!
+      })
+      notebook.list.focus()
+      // After Escape the page's selection stays in the cell's text, and the browser sends the paste there.
+      fireEvent.paste(content, { clipboardData: { getData: (type: string) => (type === 'text/plain' ? 'XYZ' : ''), types: ['text/plain'] } })
+      await waitFor(() => expect(notebook.sources()).toEqual(['keep this', 'XYZ']))
+    } finally {
+      notebook.dispose()
+    }
+  })
+
   it('leaves Ctrl+C to the browser while text is selected in an output', async () => {
     const notebook = await openNotebook([code('a', 'print(42)', [{ output_type: 'stream', name: 'stdout', text: 'the answer is 42' }])])
     try {
@@ -183,6 +240,31 @@ describe('notebook editor parity', () => {
       await waitFor(() => expect(screen.getByRole('button', { name: 'Paste cells below' }).hasAttribute('disabled')).toBe(false))
     } finally {
       window.getSelection()?.removeAllRanges()
+      notebook.dispose()
+    }
+  })
+
+  it('names and spell checks a cell by the type Ctrl+M M and Y change it to while typing', async () => {
+    const notebook = await openNotebook([code('a', '')])
+    try {
+      notebook.list.focus()
+      fireEvent.keyDown(notebook.list, { key: 'Enter' })
+      const content = await waitFor(() => {
+        const found = notebook.view.container.querySelector<HTMLElement>('[data-mode="edit"] .cm-content')
+        expect(found).toBeTruthy()
+        return found!
+      })
+      const shown = () => ({ label: content.getAttribute('aria-label'), spellcheck: content.getAttribute('spellcheck'), hint: content.parentElement!.querySelector('.cm-placeholder')?.textContent })
+      expect(shown()).toEqual({ label: 'Code cell', spellcheck: 'false', hint: 'Write code' })
+      fireEvent.keyDown(content, { key: 'm', ctrlKey: true })
+      fireEvent.keyDown(content, { key: 'm' })
+      // Still editing, in the same editor, which now reads as the Markdown cell it is.
+      await waitFor(() => expect(shown()).toEqual({ label: 'Markdown cell', spellcheck: 'true', hint: 'Write Markdown' }))
+      expect(notebook.view.container.querySelector('[data-mode="edit"] .cm-content')).toBe(content)
+      fireEvent.keyDown(content, { key: 'm', ctrlKey: true })
+      fireEvent.keyDown(content, { key: 'y' })
+      await waitFor(() => expect(shown()).toEqual({ label: 'Code cell', spellcheck: 'false', hint: 'Write code' }))
+    } finally {
       notebook.dispose()
     }
   })
