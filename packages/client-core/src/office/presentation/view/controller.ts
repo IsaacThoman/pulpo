@@ -720,9 +720,20 @@ export class PresentationController {
     if (!this.readOnly) commands.setSlideHidden(this.doc, keys, hidden, LOCAL_ORIGIN)
   }
 
+  /** Applies a layout to the slides, adding the placeholders it has and they lack (one undo step). */
   setLayout(layoutPath: string, keys = this.state.slides): void {
     if (this.readOnly) return
-    for (const key of keys) commands.setSlideLayout(this.doc, this.deck(), key, layoutPath, LOCAL_ORIGIN)
+    this.step(() => this.doc.transact(() => {
+      for (const key of keys) commands.setSlideLayout(this.doc, this.deck(), key, layoutPath, LOCAL_ORIGIN)
+    }, LOCAL_ORIGIN))
+  }
+
+  /** PowerPoint's Reset: placeholders back to the layout's position and look, missing ones restored; text stays. */
+  resetSlides(keys = this.state.slides): void {
+    if (this.readOnly) return
+    this.step(() => this.doc.transact(() => {
+      for (const key of keys) commands.resetSlide(this.doc, this.deck(), key, LOCAL_ORIGIN)
+    }, LOCAL_ORIGIN))
   }
 
   /** Sets the selected slides' background to a DrawingML fill, or back to the layout's with undefined. */

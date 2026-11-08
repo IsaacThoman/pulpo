@@ -75,6 +75,7 @@ describe('presentation interaction regressions', () => {
     controller.moveSlides(controller.state.slides, 0)
     controller.setSlidesHidden(true)
     controller.setLayout(layout)
+    controller.resetSlides()
     controller.setBackground('<a:noFill/>')
     controller.deleteSelection()
     controller.duplicateSelection()

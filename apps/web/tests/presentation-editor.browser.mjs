@@ -360,6 +360,35 @@ try {
     await page.close()
   })
 
+  await check('applying a layout adds its placeholders, reset brings back their place, and undo takes each back', async () => {
+    const { page, errors } = await open(context, 'deck=generated/layouts-notes-sections.pptx')
+    await page.locator('.pp-thumbs .pp-thumb').nth(6).click()
+    assert.equal(await slideShapes(page).count(), 0, 'a blank slide')
+    await page.getByRole('button', { name: 'Slide', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Title and Content', exact: true }).click()
+    await page.locator('.pp-canvas-slide .pp-prompt').first().waitFor()
+    assert.equal(await slideShapes(page).count(), 2)
+    assert.deepEqual(await page.locator('.pp-canvas-slide .pp-prompt').allInnerTexts(), ['Click to add title', 'Click to add text'])
+    // Move the title away, then reset the slide: it returns to the layout's place.
+    const title = await slideShapes(page).first().getAttribute('data-key')
+    const inherited = await xfrmOf(page, title)
+    await page.evaluate((key) => {
+      const controller = window.harness.controllers.a
+      controller.selectShapes([key])
+      controller.nudge(95250 * 5, 95250 * 3)
+      controller.resetSlides()
+    }, title)
+    assert.deepEqual(await xfrmOf(page, title), inherited)
+    await page.locator('.pp-canvas').focus()
+    await page.keyboard.press('Meta+z')
+    assert.notDeepEqual(await xfrmOf(page, title), inherited, 'undo takes back the reset')
+    await page.keyboard.press('Meta+z')
+    await page.keyboard.press('Meta+z')
+    assert.equal(await slideShapes(page).count(), 0, 'undo takes back the layout and its placeholders')
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
   await check('copies and pastes shapes and slides', async () => {
     const { page, errors } = await open(context, 'deck=generated/pictures.pptx')
     const count = await slideShapes(page).count()

@@ -17,6 +17,7 @@ import {
   setShapeProperty,
   setShapeText,
   setSlideHidden,
+  setSlideLayout,
   setXfrm,
   shapeFragment,
   slideKeys,
@@ -53,7 +54,7 @@ function randomEdit(doc: Y.Doc, rng: ReturnType<typeof random>, layouts: string[
   const shapes = slide ? topShapes(doc, slide) : []
   const shape = rng.pick(shapes)
   const origin = { local: true }
-  switch (rng.int(14)) {
+  switch (rng.int(15)) {
     case 0:
       if (slide && shape) setShapeText(doc, slide, shape, plainToText(`Text ${rng.int(1000)}\nline ${rng.int(10)}`), origin)
       break
@@ -111,6 +112,9 @@ function randomEdit(doc: Y.Doc, rng: ReturnType<typeof random>, layouts: string[
       else if (slide) insertShapes(doc, slide, [tableShape(2, 2, { x: 0, y: 0, cx: 2_000_000, cy: 600_000 }, 'Table')], origin)
       break
     }
+    case 14:
+      if (slide) setSlideLayout(doc, new DeckResources(readSnapshot(doc).parts, 'ppt/presentation.xml'), slide, rng.pick(layouts)!, origin)
+      break
   }
 }
 
@@ -120,6 +124,37 @@ function sync(a: Y.Doc, b: Y.Doc): void {
 }
 
 describe('concurrent editing', () => {
+  it('adds one copy of each placeholder when two people apply the same layout at once', async () => {
+    const assets = memoryAssets()
+    const context = { name: 'deck.pptx', assets }
+    const base = new Y.Doc()
+    await presentationCodec.importFile(base, fixture('generated/layouts-notes-sections.pptx'), context)
+    const blank = readSnapshot(base).slides.find((slide) => slide.shapes.length === 0)!
+    const target = readSnapshot(base).slides.find((slide) => slide.shapes.length === 5)!.layout
+    const [a, b] = [0, 1].map(() => {
+      const doc = new Y.Doc()
+      Y.applyUpdate(doc, Y.encodeStateAsUpdate(base))
+      return doc
+    })
+    for (const doc of [a!, b!]) setSlideLayout(doc, new DeckResources(readSnapshot(doc).parts, 'ppt/presentation.xml'), blank.key, target, { local: true })
+    sync(a!, b!)
+    expect(stableStringify(readSnapshot(a!))).toBe(stableStringify(readSnapshot(b!)))
+    // Both name the title the same, so text typed into it reaches the other side.
+    const title = readSnapshot(a!).slides.find((slide) => slide.key === blank.key)!.shapes[0]!
+    setShapeText(b!, blank.key, title.key, plainToText('Typed after sync'), { local: true })
+    sync(a!, b!)
+    expect(presentationCodec.toText(a!)).toContain('Typed after sync')
+    const shapes = readSnapshot(a!).slides.find((slide) => slide.key === blank.key)!.shapes
+    expect(shapes.length).toBe(5)
+    expect(new Set(shapes.map((shape) => shape.key)).size).toBe(5)
+    const reread = new Y.Doc()
+    await presentationCodec.importFile(reread, await presentationCodec.exportFile(a!, context), context)
+    const exported = readSnapshot(reread).slides.find((slide) => presentationCodec.toText(reread).includes('Typed after sync') && slide.shapes.some((shape) => JSON.stringify(shape.text ?? '').includes('Typed after sync')))
+    expect(exported?.shapes.map((shape) => /<p:ph[^>]*>/.exec(shape.xml)?.[0])).toEqual(shapes.map((shape) => /<p:ph[^>]*>/.exec(shape.xml)?.[0]))
+    expect(new Set(exported!.shapes.map((shape) => shape.nvId)).size).toBe(5)
+  })
+
+
   for (const seed of [1, 2, 3, 4, 5, 6]) {
     it(`converges and exports a valid deck (seed ${seed})`, async () => {
       const rng = random(seed)

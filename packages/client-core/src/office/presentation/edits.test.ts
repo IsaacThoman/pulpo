@@ -22,6 +22,7 @@ import {
   presetShape,
   readXfrm,
   reorderShapes,
+  resetSlide,
   setShapeProperty,
   setShapeText,
   setSlideHidden,
@@ -224,6 +225,44 @@ print(json.dumps(out))`,
     expect(slide.shapes[2]!.xfrm).toMatchObject({ x: 6172200, y: 1825625 })
     const snapshot = readSnapshot((await open(await presentationCodec.exportFile(doc, context))).doc)
     expect(snapshot.slides[1]!.layout).toBe(layoutNamed(doc, 'Title Only'))
+  })
+
+  it('adds the placeholders a newly applied layout has, once, and resets placeholders to the layout', async () => {
+    const { doc, context } = await open(blankPresentation())
+    const key = addSlide(doc, deck(doc), layoutNamed(doc, 'Blank'), 1, LOCAL)
+    expect(readSnapshot(doc).slides[1]!.shapes).toEqual([])
+    setSlideLayout(doc, deck(doc), key, layoutNamed(doc, 'Title and Content'), LOCAL)
+    const shapes = readSnapshot(doc).slides[1]!.shapes
+    expect(shapes.map((shape) => /<p:ph[^>]*>/.exec(shape.xml)?.[0])).toEqual(['<p:ph type="title"/>', '<p:ph idx="1"/>'])
+    expect(shapes.every((shape) => !shape.xfrm && shape.text)).toBe(true)
+    // Applying it again (or to a slide that has them) adds nothing.
+    setSlideLayout(doc, deck(doc), key, layoutNamed(doc, 'Title and Content'), LOCAL)
+    expect(readSnapshot(doc).slides[1]!.shapes.length).toBe(2)
+    // Two Content keeps the title and the first content placeholder and adds the second.
+    setSlideLayout(doc, deck(doc), key, layoutNamed(doc, 'Two Content'), LOCAL)
+    expect(readSnapshot(doc).slides[1]!.shapes.map((shape) => /<p:ph[^>]*>/.exec(shape.xml)?.[0])).toEqual(['<p:ph type="title"/>', '<p:ph idx="1"/>', '<p:ph idx="2" sz="half"/>'])
+    // Reset puts a moved, recolored placeholder back and keeps its text.
+    const title = shapes[0]!.key
+    setShapeText(doc, key, title, plainToText('Moved title'), LOCAL)
+    setXfrm(doc, key, title, { x: 10, y: 20, cx: 300, cy: 400 }, LOCAL)
+    setShapeProperty(doc, key, [title], 'fill', '<a:solidFill xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:srgbClr val="FF0000"/></a:solidFill>', LOCAL)
+    deleteShapes(doc, key, [readSnapshot(doc).slides[1]!.shapes[2]!.key], LOCAL)
+    resetSlide(doc, deck(doc), key, LOCAL)
+    const reset = readSnapshot(doc).slides[1]!.shapes
+    expect(reset.length).toBe(3)
+    expect(reset[0]!.xfrm).toBeUndefined()
+    expect(reset[0]!.fill).toBeUndefined()
+    expect(textToPlain(reset[0]!.text!)).toBe('Moved title')
+    const out = await presentationCodec.exportFile(doc, context)
+    const snapshot = readSnapshot((await open(out)).doc)
+    expect(snapshot.slides[1]!.shapes.map((shape) => /<p:ph[^>]*>/.exec(shape.xml)?.[0])).toEqual(['<p:ph type="title"/>', '<p:ph idx="1"/>', '<p:ph idx="2" sz="half"/>'])
+    const ids = snapshot.slides[1]!.shapes.map((shape) => shape.nvId)
+    expect(new Set(ids).size).toBe(3)
+    if (fidelityAvailable()) {
+      const file = writeScratch(scratchDir(), 'layout-placeholders.pptx', out)
+      const placeholders = runPython('import sys, json\nfrom pptx import Presentation\ns=Presentation(sys.argv[1]).slides[1]\nprint(json.dumps([[p.placeholder_format.idx, p.text_frame.text] for p in s.placeholders]))', file)
+      expect(JSON.parse(placeholders)).toEqual([[0, 'Moved title'], [1, ''], [2, '']])
+    }
   })
 
   it('deletes table columns and shapes', async () => {
