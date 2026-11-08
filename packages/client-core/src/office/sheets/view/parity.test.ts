@@ -613,6 +613,57 @@ describe('keyboard shortcuts', () => {
     expect(view.inputText(5, 3)).toBe('=C6*2')
   })
 
+  it('reads the clipboard for Ctrl+Shift+V when no paste event follows, as Chrome on a Mac sends none', async () => {
+    const { sheet, view } = setup()
+    sheet.setCell(0, 0, { v: 2 })
+    sheet.setCell(0, 1, { f: 'A1*2' })
+    view.select(cell(0, 1))
+    view.setStyle({ bold: true })
+    const html = toHtml(view.clipboard.copyPayload()!)
+    let reads = 0
+    let release = () => {}
+    let held = false
+    const item = { types: ['text/html', 'text/plain'], getType: async (type: string) => ({ text: async () => (type === 'text/html' ? html : '4') }) }
+    const read = () => {
+      reads++
+      return held ? new Promise<unknown[]>((resolve) => { release = () => resolve([item]) }) : Promise.resolve([item])
+    }
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { read } })
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 10))
+    try {
+      // Windows and Linux: the browser's paste event pastes; the clipboard isn't read as well.
+      view.select(cell(3, 3))
+      expect(key(view, 'V', { code: 'KeyV', ctrlKey: true, shiftKey: true }).defaultPrevented).toBe(false)
+      const event = new Event('paste', { bubbles: true, cancelable: true })
+      Object.defineProperty(event, 'clipboardData', { value: { getData: (type: string) => type === 'text/html' ? html : '4' } })
+      view.input.dispatchEvent(event)
+      await settle()
+      expect([view.inputText(3, 3), reads]).toEqual(['4', 0])
+      // Without a paste event the clipboard is read, values only.
+      view.select(cell(4, 3))
+      key(view, 'V', { code: 'KeyV', ctrlKey: true, shiftKey: true })
+      await vi.waitFor(() => expect(view.inputText(4, 3)).toBe('4'))
+      expect([view.styleAt(4, 3).bold, reads]).toEqual([false, 1])
+      // A Mac takes Cmd+Shift+V and Chrome's Cmd+Option+Shift+V and reads the clipboard.
+      vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel')
+      view.select(cell(5, 3))
+      expect(key(view, 'V', { code: 'KeyV', metaKey: true, shiftKey: true }).defaultPrevented).toBe(true)
+      await vi.waitFor(() => expect(view.inputText(5, 3)).toBe('4'))
+      held = true
+      view.select(cell(6, 3))
+      expect(key(view, '◊', { code: 'KeyV', metaKey: true, altKey: true, shiftKey: true }).defaultPrevented).toBe(true)
+      await settle()
+      expect(reads).toBe(3)
+      // A key pressed while the read waits (say on a permission prompt) drops it.
+      key(view, 'ArrowDown')
+      release()
+      await settle()
+      expect([view.inputText(6, 3), view.inputText(7, 3)]).toEqual(['', ''])
+    } finally {
+      delete (navigator as { clipboard?: unknown }).clipboard
+    }
+  })
+
   it('extends with Shift+Home and Ctrl+Shift+Home/End, and toggles formulas with Ctrl+`', () => {
     const { sheet, view } = setup()
     sheet.setCell(9, 5, { v: 1 })

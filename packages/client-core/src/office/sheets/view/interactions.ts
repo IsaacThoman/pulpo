@@ -28,6 +28,25 @@ function isMac(): boolean {
   return typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 }
 
+/** The system clipboard through the async Clipboard API (the browser may ask for permission). */
+async function readClipboard(): Promise<{ html?: string; text?: string } | undefined> {
+  const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
+  try {
+    if (clipboard?.read) {
+      for (const item of await clipboard.read()) {
+        const html = item.types.includes('text/html') ? await (await item.getType('text/html')).text() : undefined
+        const text = item.types.includes('text/plain') ? await (await item.getType('text/plain')).text() : undefined
+        if (html || text) return { ...(html ? { html } : {}), ...(text ? { text } : {}) }
+      }
+      return undefined
+    }
+    return clipboard?.readText ? { text: await clipboard.readText() } : undefined
+  } catch {
+    // Refused: nothing is pasted, as with an empty clipboard.
+    return undefined
+  }
+}
+
 /** Windows reports AltGr as Ctrl+Alt; European layouts type @ # € [ ] { } with it. */
 function altGraph(event: KeyboardEvent): boolean {
   return !!event.getModifierState?.('AltGraph')
@@ -89,6 +108,8 @@ export class SheetInteractions {
   private painter: { payload: ClipboardPayload; sticky: boolean } | undefined
   /** Ctrl+Shift+V: the paste that follows pastes values only. */
   private pasteValuesNext = false
+  /** A clipboard read standing in for the paste event Ctrl+Shift+V didn't fire. */
+  private clipboardRead: object | undefined
   /** The open list validation dropdown, for keyboard navigation. */
   private list: { row: number; col: number; items: string[]; options: HTMLElement[]; index: number } | undefined
 
@@ -543,8 +564,10 @@ export class SheetInteractions {
     if (this.composing || event.isComposing || event.keyCode === 229) return
     const view = this.view
     const mod = event.ctrlKey || event.metaKey
-    // Only the paste event of the Ctrl+Shift+V press itself pastes values.
+    // Only the paste event of the Ctrl+Shift+V press itself pastes values; the next key also
+    // drops a clipboard read still waiting (say on a permission prompt).
     this.pasteValuesNext = false
+    this.clipboardRead = undefined
     if (view.editing) {
       this.onEditKey(event)
       return
@@ -684,6 +707,8 @@ export class SheetInteractions {
     if (view.readOnly) return
     const last = view.selection.ranges[view.selection.ranges.length - 1]!
     const lines = commands.isWholeColumns(last) && commands.isWholeRows(last) ? undefined : commands.isWholeColumns(last) ? 'col' as const : commands.isWholeRows(last) ? 'row' as const : undefined
+    // Ctrl+Shift+V pastes values only: Cmd+Shift+V on a Mac, or Chrome's Cmd+Option+Shift+V.
+    if (event.shiftKey && (isMac() ? event.metaKey && event.code === 'KeyV' : key === 'v' && !event.altKey)) return this.pasteValues(event)
     if (!event.altKey) {
       if (key === 'k' && !event.shiftKey) return ask('link')
       if (isMac() && event.metaKey && event.shiftKey && key === 't') return handled(), void view.autoSum()
@@ -691,8 +716,6 @@ export class SheetInteractions {
         // Format shortcuts go by key position: Shift turns the digits into symbols.
         const format = QUICK_FORMAT_KEYS[event.code]
         if (format) return handled(), view.applyQuickFormat(format)
-        // The browser's paste-as-plain-text fires the paste event next; it pastes values only.
-        if (key === 'v') return void (this.pasteValuesNext = true)
         if (key === 'l') return handled(), view.toggleFilter()
       }
       // Ctrl++ and Ctrl+- insert and delete selected rows or columns (Excel). With cells selected
@@ -1143,9 +1166,32 @@ export class SheetInteractions {
     const view = this.view
     const values = this.pasteValuesNext
     this.pasteValuesNext = false
+    this.clipboardRead = undefined
     if (view.editing || view.readOnly || !event.clipboardData) return
     event.preventDefault()
     this.paste({ html: event.clipboardData.getData('text/html'), text: event.clipboardData.getData('text/plain') }, values ? { values: true } : {})
+  }
+
+  /**
+   * Ctrl+Shift+V. On Windows and Linux the browser's paste-as-plain-text fires a paste event right
+   * after the key, which then pastes values only. Chrome on a Mac fires none for Cmd+Shift+V (and
+   * Cmd+Option+Shift+V comes back later as a menu command), so there the key is taken and the
+   * clipboard read instead, as it is wherever no paste event followed.
+   */
+  private pasteValues(event: KeyboardEvent): void {
+    if (isMac()) event.preventDefault()
+    this.pasteValuesNext = true
+    setTimeout(() => {
+      if (!this.pasteValuesNext || this.disposed) return
+      this.pasteValuesNext = false
+      const read = {}
+      this.clipboardRead = read
+      void readClipboard().then((data) => {
+        if (this.clipboardRead !== read || this.disposed || this.view.editing || !data) return
+        this.clipboardRead = undefined
+        this.paste(data, { values: true })
+      })
+    }, 0)
   }
 
   /**

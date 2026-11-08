@@ -590,6 +590,17 @@ try {
     assert.equal(await label(), 'G6')
   })
 
+  await step('Ctrl+Shift+V pastes values only', async () => {
+    await go(parity, 'G5')
+    await parity.keyboard.press(`${mod}+c`)
+    await go(parity, 'N2')
+    // Chrome on a Mac fires no paste event for Cmd+Shift+V, so the clipboard is read.
+    await parity.keyboard.press(`${mod}+Shift+v`)
+    await parity.waitForFunction(() => window.__sheets.views[0].inputText(1, 13) !== '')
+    assert.equal(await inputText(parity, 1, 13), '6')
+    await parity.keyboard.press('Escape')
+  })
+
   await step('Ctrl+Shift+4 and Ctrl+Shift+5 format currency and percent', async () => {
     await go(parity, 'H2')
     await parity.keyboard.type('1234.5')
