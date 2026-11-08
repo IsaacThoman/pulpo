@@ -666,7 +666,8 @@ export class SheetInteractions {
       if (key === 'p' && !event.shiftKey) return ask('print')
       if (key === 's' && !event.shiftKey) return ask('save')
       if (key === 'g' && !event.shiftKey) return ask('goto')
-      if (event.code === 'Slash' && !event.shiftKey) return ask('shortcuts')
+      // By character: the slash key's position types `-` on German keyboards (Ctrl+- below).
+      if (key === '/') return ask('shortcuts')
       // Cmd+H hides the app on a Mac, so Google uses Cmd+Shift+H there.
       if (key === 'h' && (IS_MAC ? event.metaKey && event.shiftKey : !event.shiftKey)) return ask('replace')
       // Ctrl+` shows formulas (Ctrl+Shift+` is the General format, below).
