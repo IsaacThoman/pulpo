@@ -76,10 +76,10 @@ function CollapsibleSection({ title, count, open, onToggle, children }: {
   )
 }
 
-function ConnectionRow({ connection, detail, centeredDetail, actions, profileHref, showMutualFriends = false }: {
+function ConnectionRow({ connection, detail, trailingDetail, actions, profileHref, showMutualFriends = false }: {
   connection: FriendConnection
   detail?: string
-  centeredDetail?: string
+  trailingDetail?: string
   actions: React.ReactNode
   profileHref?: string
   showMutualFriends?: boolean
@@ -87,8 +87,8 @@ function ConnectionRow({ connection, detail, centeredDetail, actions, profileHre
   return <div className="flex items-center justify-between gap-3 px-4 py-3">
     <div className="flex min-w-0 flex-1 items-center gap-3">
       <ProfileIdentity profile={connection.profile} detail={detail} href={profileHref} />
-      {centeredDetail && <span className="shrink-0 self-center whitespace-nowrap text-xs text-muted-foreground">{centeredDetail}</span>}
       {showMutualFriends && <MutualFriends friends={connection.mutualFriends ?? []} />}
+      {trailingDetail && <span className="ml-auto shrink-0 self-center whitespace-nowrap text-right text-xs text-muted-foreground">{trailingDetail}</span>}
     </div>
     <div className="flex shrink-0 items-center gap-2">{actions}</div>
   </div>
@@ -341,7 +341,7 @@ export function FriendsPage() {
         : listQuery.error ? <div className="rounded-xl border py-12 text-center"><p className="text-sm text-muted-foreground">{listQuery.error.message}</p><Button className="mt-3" size="sm" variant="outline" onClick={() => void listQuery.refetch()}>{ui("Try again")}</Button></div>
           : null}
       {data && data.incoming.length > 0 && <Section title={ui("Friend requests")} count={data.incoming.length}>
-        {data.incoming.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} profileHref={`/${connection.profile.username}`} centeredDetail={`Requested ${friendRequestAge(connection.requestedAt)}`} showMutualFriends actions={<>
+        {data.incoming.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} profileHref={`/${connection.profile.username}`} trailingDetail={`Requested ${friendRequestAge(connection.requestedAt)}`} showMutualFriends actions={<>
           <Button size="sm" disabled={actionIds.has(`accept:${connection.requestId}`)} onClick={() => void act(`accept:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}/accept`, { method: 'POST' }), `${connection.profile.displayName} is now your friend.`)}>{actionIds.has(`accept:${connection.requestId}`) ? ui("Accepting…") : ui("Accept")}</Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label={uit`More options for ${connection.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
@@ -397,7 +397,7 @@ export function FriendsPage() {
         </div>}
 
         {data.outgoing.length > 0 && <CollapsibleSection title={ui("Sent requests")} count={data.outgoing.length} open={outgoingOpen} onToggle={() => setOutgoingOpen((value) => !value)}>
-          {data.outgoing.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} profileHref={`/${connection.profile.username}`} centeredDetail={`Sent ${friendRequestAge(connection.requestedAt)}`} showMutualFriends actions={<Button size="sm" variant="ghost" disabled={actionIds.has(`cancel:${connection.requestId}`)} onClick={() => void act(`cancel:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request to ${connection.profile.displayName} canceled.`)}>{actionIds.has(`cancel:${connection.requestId}`) ? ui("Canceling…") : ui("Cancel")}</Button>} />)}
+          {data.outgoing.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} profileHref={`/${connection.profile.username}`} trailingDetail={`Sent ${friendRequestAge(connection.requestedAt)}`} showMutualFriends actions={<Button size="sm" variant="ghost" disabled={actionIds.has(`cancel:${connection.requestId}`)} onClick={() => void act(`cancel:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request to ${connection.profile.displayName} canceled.`)}>{actionIds.has(`cancel:${connection.requestId}`) ? ui("Canceling…") : ui("Cancel")}</Button>} />)}
         </CollapsibleSection>}
 
         {data.blocked.length > 0 && <CollapsibleSection title={ui("Blocked users")} count={data.blocked.length} open={blockedOpen} onToggle={() => setBlockedOpen((value) => !value)}>
