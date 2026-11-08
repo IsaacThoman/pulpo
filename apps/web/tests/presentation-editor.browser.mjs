@@ -666,6 +666,71 @@ try {
     await page.close()
   })
 
+  await check('menu bar: view toggles, undo, presenting, printing, and the shortcuts list', async () => {
+    const { page, errors } = await open(context, 'deck=generated/layouts-notes-sections.pptx')
+    const bar = page.getByRole('menubar', { name: 'Menu bar' })
+    const view = async (name) => {
+      await bar.getByRole('menuitem', { name: 'View' }).click()
+      await page.getByRole('menuitemcheckbox', { name }).click()
+    }
+    await view('Slide sorter')
+    await page.getByTestId('presentation-sorter').waitFor()
+    await view('Slide sorter')
+    await page.getByTestId('presentation-sorter').waitFor({ state: 'detached' })
+    await view('Speaker notes')
+    await page.waitForFunction(() => document.querySelector('[data-testid="presentation-notes"]').classList.contains('hidden'))
+    await view('Format panel')
+    await page.getByRole('complementary', { name: 'Format panel' }).waitFor()
+
+    // Edit ▸ Undo takes back a slide added from the strip.
+    const slides = await page.evaluate(() => window.harness.controllers.a.slideKeys().length)
+    await page.evaluate(() => window.harness.controllers.a.duplicateSlides())
+    await page.waitForFunction((count) => window.harness.controllers.a.slideKeys().length === count + 1, slides)
+    await bar.getByRole('menuitem', { name: 'Edit' }).click()
+    await page.getByRole('menuitem', { name: 'Undo' }).click()
+    await page.waitForFunction((count) => window.harness.controllers.a.slideKeys().length === count, slides)
+
+    // View ▸ Present from the beginning starts the show; its keys stay the show's.
+    await bar.getByRole('menuitem', { name: 'View' }).click()
+    await page.getByRole('menuitem', { name: 'Present from the beginning' }).click()
+    await page.locator('.pp-present .pp-slide').waitFor()
+    await page.keyboard.press('Escape')
+    await page.locator('.pp-present').waitFor({ state: 'detached' })
+
+    // File ▸ Print and Cmd/Ctrl+P print the slides, not the page.
+    await page.evaluate(() => {
+      window.printed = 0
+      window.print = () => { window.pagePrinted = true }
+      new MutationObserver(() => {
+        for (const frame of document.querySelectorAll('iframe')) {
+          if (frame.dataset.stubbed) continue
+          frame.dataset.stubbed = '1'
+          frame.contentWindow.focus = () => {}
+          frame.contentWindow.print = () => {
+            if (frame.contentDocument.querySelector('.pp-print-page')) window.printed++
+            frame.contentWindow.dispatchEvent(new Event('afterprint'))
+          }
+        }
+      }).observe(document.body, { childList: true })
+    })
+    await bar.getByRole('menuitem', { name: 'File' }).click()
+    await page.getByRole('menuitem', { name: 'Print' }).click()
+    await page.waitForFunction(() => window.printed === 1, null, { timeout: 15_000 })
+    await page.locator('[data-testid="presentation-canvas"]').click({ position: { x: 5, y: 5 } })
+    await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+p`)
+    await page.waitForFunction(() => window.printed === 2, null, { timeout: 15_000 })
+    assert.equal(await page.evaluate(() => window.pagePrinted ?? false), false)
+
+    await page.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+/`)
+    const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' })
+    await dialog.getByRole('searchbox', { name: 'Search shortcuts' }).fill('present')
+    await dialog.getByText('Present from the current slide').waitFor()
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({ state: 'detached' })
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
   await check('the slide strip copies and pastes slides through the clipboard', async () => {
     const { page, errors } = await open(context, 'deck=generated/layouts-notes-sections.pptx')
     const count = () => page.evaluate(() => window.harness.controllers.a.slideKeys().length)

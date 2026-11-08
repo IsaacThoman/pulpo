@@ -452,6 +452,119 @@ try {
     await page.locator('[data-docx-zoom]', { hasText: '110%' }).waitFor()
   })
 
+  /** A collapsed caret inside the first link's text. */
+  const caretInLink = () => page.evaluate(() => {
+    const view = window.harness.editors[0].view
+    let at
+    view.state.doc.descendants((node, pos) => { if (at === undefined && node.isText && node.marks.some((mark) => mark.type.name === 'link')) at = pos + 2 })
+    const Selection = view.state.selection.constructor
+    view.focus()
+    view.dispatch(view.state.tr.setSelection(Selection.create(view.state.doc, at)))
+  })
+  const focusInDocument = () => page.waitForFunction(() => document.activeElement?.closest('.docx-flow') !== null)
+
+  await step('inserts, edits, and removes links in a dialog', async () => {
+    await open('?layout=web')
+    await flow.locator('p').first().click()
+    await page.keyboard.type('See ')
+    await page.keyboard.press(`${mod}+k`)
+    const insert = page.getByRole('dialog', { name: 'Insert link' })
+    await insert.getByLabel('Text to display').fill('Pulpo')
+    await insert.getByLabel('Link').fill('javascript:alert(1)')
+    await page.keyboard.press('Enter')
+    await insert.getByRole('alert').waitFor()
+    // An address without a scheme gets https://.
+    await insert.getByLabel('Link').fill('pulpo.baby')
+    await page.keyboard.press('Enter')
+    await insert.waitFor({ state: 'detached' })
+    await flow.locator('a[href="https://pulpo.baby"]', { hasText: 'Pulpo' }).waitFor()
+    await focusInDocument()
+    assert.equal((await text()).trimEnd(), 'See Pulpo')
+
+    // Editing the link under the caret changes it in place, rather than inserting its address.
+    await caretInLink()
+    await page.keyboard.press(`${mod}+k`)
+    const edit = page.getByRole('dialog', { name: 'Edit link' })
+    assert.equal(await edit.getByLabel('Link').inputValue(), 'https://pulpo.baby')
+    assert.equal(await edit.getByLabel('Text to display').count(), 0)
+    await edit.getByLabel('Link').fill('example.org/docs')
+    await page.keyboard.press('Enter')
+    await flow.locator('a[href="https://example.org/docs"]', { hasText: 'Pulpo' }).waitFor()
+    assert.equal(await flow.locator('a').count(), 1)
+    assert.equal((await text()).trimEnd(), 'See Pulpo')
+
+    await caretInLink()
+    await page.getByRole('button', { name: 'Link', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Edit link' }).getByRole('button', { name: 'Remove link' }).click()
+    await page.waitForFunction(() => !document.querySelector('.docx-flow a'))
+    assert.equal((await text()).trimEnd(), 'See Pulpo')
+    assert.deepEqual(await page.evaluate(() => window.harness.editors[0].state().link), null)
+  })
+
+  await step('runs menu bar commands with the pointer and the keyboard', async () => {
+    await open('?file=basic-formatting.docx')
+    await clickEnd('A normal paragraph with plain text')
+    const bar = page.getByRole('menubar', { name: 'Menu bar' })
+    await bar.getByRole('menuitem', { name: 'View' }).click()
+    await page.getByRole('menuitemradio', { name: 'Web layout' }).click()
+    await page.waitForFunction(() => document.querySelectorAll('.docx-page').length === 0)
+    // The command hands typing back to the document.
+    await focusInDocument()
+
+    // While a menu is open, pointing at another opens it instead; the arrow keys move along.
+    await bar.getByRole('menuitem', { name: 'File' }).click()
+    await page.getByRole('menuitem', { name: 'Print' }).waitFor()
+    await bar.getByRole('menuitem', { name: 'View' }).hover()
+    await page.getByRole('menuitemradio', { name: 'Print layout' }).waitFor()
+    assert.equal(await page.getByRole('menu').count(), 1)
+    await page.keyboard.press('ArrowRight')
+    await page.getByRole('menuitem', { name: 'Keyboard shortcuts' }).waitFor()
+    await page.keyboard.press('ArrowLeft')
+    await page.keyboard.press('ArrowLeft')
+    await page.getByRole('menuitem', { name: 'Undo' }).waitFor()
+    await page.keyboard.press('Escape')
+    await page.getByRole('menu').waitFor({ state: 'detached' })
+    await focusInDocument()
+
+    // Help ▸ Keyboard shortcuts, and Cmd/Ctrl+/ from the document, open the searchable list.
+    await bar.getByRole('menuitem', { name: 'Help' }).click()
+    await page.getByRole('menuitem', { name: 'Keyboard shortcuts' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' })
+    await dialog.getByText('Paragraph formatting').waitFor()
+    await page.keyboard.type('justify')
+    await dialog.getByText('Justify', { exact: true }).waitFor()
+    assert.equal(await dialog.getByText('Bold', { exact: true }).count(), 0)
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({ state: 'detached' })
+    await focusInDocument()
+    await page.keyboard.press(`${mod}+/`)
+    await dialog.getByRole('searchbox', { name: 'Search shortcuts' }).waitFor()
+    await page.keyboard.press('Escape')
+    await focusInDocument()
+  })
+
+  await step('prints the document with Cmd/Ctrl+P and keeps Cmd/Ctrl+S from the browser', async () => {
+    const stubPrint = () => page.evaluate(() => {
+      // The editor's print adds its page style first; the app page alone would print without it.
+      window.printed = []
+      window.print = () => window.printed.push([...document.head.querySelectorAll('style')].some((style) => style.textContent.includes('@page')))
+      window.saveKeys = []
+      window.addEventListener('keydown', (event) => { if (event.key === 's') window.saveKeys.push(event.defaultPrevented) })
+    })
+    await open('?file=basic-formatting.docx')
+    await stubPrint()
+    await clickEnd('A normal paragraph with plain text')
+    await page.keyboard.press(`${mod}+p`)
+    await page.keyboard.press(`${mod}+s`)
+    assert.deepEqual(await page.evaluate(() => [window.printed, window.saveKeys]), [[true], [true]])
+    // With nothing focused, the page's only editor still takes them.
+    await open('?file=basic-formatting.docx')
+    await stubPrint()
+    await page.evaluate(() => document.activeElement?.blur())
+    await page.keyboard.press(`${mod}+p`)
+    assert.deepEqual(await page.evaluate(() => window.printed), [true])
+  })
+
   await step('rejects inserted tables and accepts or rejects deleted tables in Suggesting mode', async () => {
     await open('?file=basic-formatting.docx')
     const inserted = await page.evaluate(() => {
@@ -881,6 +994,7 @@ try {
     })
     assert.deepEqual(link, { changed: false, removed: false, unchanged: true, href: link.original, original: link.original })
     assert.equal(await page.getByRole('button', { name: 'Link', exact: true }).isDisabled(), true)
+    // Neither a native prompt nor the link dialog opens.
     let dialogs = 0
     const dismiss = async (dialog) => { dialogs++; await dialog.dismiss() }
     page.on('dialog', dismiss)
@@ -888,6 +1002,7 @@ try {
     await page.waitForTimeout(100)
     page.off('dialog', dismiss)
     assert.equal(dialogs, 0)
+    assert.equal(await page.getByRole('dialog').count(), 0)
 
     await open('?file=tables.docx')
     const cells = await page.evaluate(() => {
