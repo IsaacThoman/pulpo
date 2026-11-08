@@ -71,6 +71,9 @@ describe('composeFileMenu', () => {
     expect(outline(entries)).toContain('Move to… (disabled)')
     expect(outline(entries)).toContain('Move to trash (disabled) (destructive)')
     expect(outline(entries)).not.toContain('Print')
+    // The converter refuses files in the trash; the native download exports the open document.
+    const download = entries.find((entry) => entry.type === 'submenu' && entry.id === 'download')
+    expect(download?.type === 'submenu' && download.items.map((entry) => entry.type === 'item' && `${entry.id}:${Boolean(entry.disabled)}`)).toEqual(['download-native:false', 'download-pdf:true', 'csv:false'])
   })
 
   it("shows only the editor's own parts without a host (test harnesses)", () => {

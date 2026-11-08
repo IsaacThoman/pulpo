@@ -211,7 +211,8 @@ export function SheetEditor({ doc, awareness, readOnly, fileFormat, assets, user
   const sheetDownloads = (current: SheetView): MenuEntry[] => {
     if (!name || fileFormat === 'csv' || fileFormat === 'tsv') return []
     const sheet = current.getState().sheets.find((entry) => entry.id === current.sheetId)
-    const stem = name.slice(0, name.length - fileExtension(name).length - 1) || name
+    const extension = fileExtension(name)
+    const stem = (extension ? name.slice(0, -extension.length - 1) : name) || name
     const download = (extension: 'csv' | 'tsv') => () => {
       setExportFailed(false)
       const fileName = `${stem} - ${sheet?.name ?? ''}.${extension}`

@@ -78,7 +78,8 @@ export function composeFileMenu(host: FileMenuHost | undefined, parts: EditorFil
   const downloads: MenuEntry[] = host ? [
     ...item('download-native', nativeDownloadLabel(host.name), host.download),
     ...(host.downloadPdf
-      ? item('download-pdf', ui("PDF document (.pdf)"), host.downloadPdf)
+      // The converter exports the stored file, which it refuses while in the trash.
+      ? item('download-pdf', ui("PDF document (.pdf)"), host.downloadPdf, { disabled: locked })
       : item('download-pdf-print', ui("PDF (print, then save as PDF)"), parts.print)),
     ...(parts.downloads ?? []),
   ] : [...(parts.downloads ?? [])]
