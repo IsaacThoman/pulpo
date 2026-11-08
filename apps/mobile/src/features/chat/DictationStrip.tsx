@@ -153,13 +153,15 @@ export function DictationCancelButton({ onPress, disabled = false, color }: { on
 }
 
 /** Replaces the composer toolbar while dictating: cancel, live status, and finish. */
-export function DictationStrip({ leading, trailing, ...status }: {
+export function DictationStrip({ leading, trailing, finish: finishAction, ...status }: {
   phase: DictationState['phase']
   seconds: number
   source: DictationLevelSource
   colors: DictationStripColors
   leading: ReactNode
   trailing: ReactNode
+  /** What `trailing` does, so screen readers get it as one element they can focus and activate. */
+  finish: { label: string; disabled: boolean; onFinish: () => void }
 }) {
   const finish = useRef<View>(null)
   const recording = status.phase === 'recording'
@@ -173,7 +175,22 @@ export function DictationStrip({ leading, trailing, ...status }: {
     <Reanimated.View entering={dictationStripEntering} exiting={dictationStripExiting} style={styles.strip}>
       {leading}
       <DictationStatus {...status} />
-      <View ref={finish} collapsable={false}>{trailing}</View>
+      {/* The visible control can sit inside a native host that focus cannot target, so this wrapper
+          is the accessibility element for Finish and the control inside it is hidden from screen readers. */}
+      <View
+        ref={finish}
+        collapsable={false}
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel={finishAction.label}
+        accessibilityState={{ disabled: finishAction.disabled }}
+        accessibilityActions={[{ name: 'activate' }]}
+        onAccessibilityAction={(event) => {
+          if (event.nativeEvent.actionName === 'activate' && !finishAction.disabled) finishAction.onFinish()
+        }}
+      >
+        {trailing}
+      </View>
     </Reanimated.View>
   )
 }

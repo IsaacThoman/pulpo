@@ -6908,6 +6908,7 @@ function ChatView({
                     trailing={Platform.OS === 'ios'
                       ? <NativeComposerIconButton label="Finish dictation" systemImage="checkmark" prominent disabled={dictation.phase !== 'recording'} onPress={dictation.stop} />
                       : <MaterialIconButton label="Finish dictation" icon="checkmark" prominent disabled={dictation.phase !== 'recording'} onPress={dictation.stop} />}
+                    finish={{ label: 'Finish dictation', disabled: dictation.phase !== 'recording', onFinish: dictation.stop }}
                   />
                 )}
               </View>
