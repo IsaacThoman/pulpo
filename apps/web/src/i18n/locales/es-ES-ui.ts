@@ -3242,6 +3242,7 @@ const esUi: Record<string, string> = {
   "This action won't work on multiple selections.": "Esta acción no funciona con selecciones múltiples.",
   "The copy area and paste area aren't the same size.": "El área de copia y el área de pegado no tienen el mismo tamaño.",
   "Can't move part of a merged cell or a table.": "No se puede mover parte de una celda combinada o de una tabla.",
+  "Clear the filter before moving these cells.": "Quita el filtro antes de mover estas celdas.",
   "You can't change part of an array.": "No se puede cambiar parte de una matriz.",
   "Cannot sort a range containing spilled or legacy array formulas.": "No se puede ordenar un rango con fórmulas matriciales heredadas o desbordadas.",
   "Cannot sort merged cells. Unmerge the cells first.": "No se pueden ordenar celdas combinadas. Sepáralas primero.",

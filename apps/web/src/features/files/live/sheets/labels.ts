@@ -31,5 +31,6 @@ export function sheetViewLabels(): SheetViewLabels {
     multipleSelections: ui("This action won't work on multiple selections."),
     pasteShape: ui("The copy area and paste area aren't the same size."),
     partialMove: ui("Can't move part of a merged cell or a table."),
+    moveFiltered: ui("Clear the filter before moving these cells."),
   }
 }

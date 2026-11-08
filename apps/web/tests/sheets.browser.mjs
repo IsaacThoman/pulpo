@@ -669,6 +669,27 @@ try {
     assert.deepEqual(painted, { bold: true, fill: { rgb: 'FFFF00' }, painter: null })
   })
 
+  await step('dragging the selection border moves the cells', async () => {
+    await parity.evaluate(() => {
+      const view = window.__sheets.views[0]
+      view.goTo('B12')
+      view.clipboard.paste({ text: 'move me\t=B12' })
+    })
+    await go(parity, 'B12:C12')
+    const start = await cellPoint(parity, 11, 1)
+    const target = await cellPoint(parity, 14, 2)
+    // Just below the selection's bottom border, which shows the move cursor.
+    await parity.mouse.move(start.x, start.top + start.height + 2)
+    assert.equal(await parity.evaluate(() => window.__sheets.views[0].scroller.style.cursor), 'move')
+    await parity.mouse.down()
+    await parity.mouse.move(target.x, target.y, { steps: 4 })
+    await parity.mouse.up()
+    assert.deepEqual([await inputText(parity, 13, 2), await inputText(parity, 13, 3), await inputText(parity, 11, 1)], ['move me', '=C14', ''])
+    assert.equal(await label(), 'C14:D14')
+    await parity.keyboard.press(`${mod}+z`)
+    assert.deepEqual([await inputText(parity, 11, 1), await inputText(parity, 11, 2), await inputText(parity, 13, 2)], ['move me', '=B12', ''])
+  })
+
   await step('zoom is personal: collaborators keep theirs and undo skips it', async () => {
     await go(parity, 'K2')
     await parity.keyboard.type('last edit')

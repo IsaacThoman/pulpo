@@ -53,6 +53,8 @@ export interface SheetViewLabels {
   pasteShape: string
   /** A cut-and-paste move that would split a merged cell or a table. */
   partialMove: string
+  /** A cut-and-paste move into, out of, or across the rows of an active filter. */
+  moveFiltered: string
 }
 
 export const DEFAULT_LABELS: SheetViewLabels = {
@@ -73,6 +75,7 @@ export const DEFAULT_LABELS: SheetViewLabels = {
   multipleSelections: "This action won't work on multiple selections.",
   pasteShape: "The copy area and paste area aren't the same size.",
   partialMove: "Can't move part of a merged cell or a table.",
+  moveFiltered: 'Clear the filter before moving these cells.',
 }
 
 /** Number formats of the format shortcuts (Ctrl+Shift+1…6 and Ctrl+Shift+`), as Google Sheets applies them. */

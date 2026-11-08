@@ -9,6 +9,7 @@ import * as Y from 'yjs'
 import { MemoryLiveAssetStore } from '../../assets.js'
 import { MAX_COLS, MAX_ROWS, type CellRange } from '../address.js'
 import { SheetCodec } from '../codec/codec.js'
+import { toIdForm } from '../model/formula-ids.js'
 import type { ConditionalFormat, DataValidation } from '../model/schema.js'
 import { WorkbookModel } from '../model/workbook.js'
 import { CONDITIONAL_STYLES, Stylesheet } from '../styles/stylesheet.js'
@@ -1033,6 +1034,87 @@ describe('refusal feedback', () => {
     view.merge()
     view.clipboard.fill(cell(0, 0), { top: 0, left: 0, bottom: 4, right: 0 })
     expect(alertText(view)).toBe(view.labels.dataErrors.merges)
+  })
+})
+
+describe('dragging the selection border', () => {
+  /** Just below the selection's bottom border, over its first column. */
+  const grab = (view: SheetView) => {
+    const range = view.selection.ranges[0]!
+    const cell = view.cellRect(range.bottom, range.left)
+    return { x: cell.x + cell.width / 2, y: cell.y + cell.height + 2 }
+  }
+  const drag = (view: SheetView, row: number, col: number, init: MouseEventInit = {}) => {
+    const from = grab(view)
+    const to = center(view, row, col)
+    pointer(view, 'pointerdown', from.x, from.y, init)
+    pointer(view, 'pointermove', to.x, to.y, init)
+    pointer(view, 'pointerup', to.x, to.y, init)
+  }
+  const block = (sheet: ReturnType<typeof setup>['sheet']) => {
+    sheet.setCell(0, 0, { v: 1 })
+    sheet.setCell(1, 1, { v: 2 })
+    sheet.setCell(7, 7, { f: toIdForm('A1+B2', sheet) })
+  }
+
+  it('moves cells as cut and paste does, references following, in one undo step', () => {
+    const { sheet, view } = setup()
+    block(sheet)
+    view.select({ top: 0, left: 0, bottom: 1, right: 1 })
+    const from = grab(view)
+    pointer(view, 'pointermove', from.x, from.y)
+    expect(view.scroller.style.cursor).toBe('move')
+    const steps = view.undoManager.undoStack.length
+    // Grabbed below row 2 (in row 3): dropping on D6 puts the block at D4:E5.
+    drag(view, 5, 3)
+    expect([view.inputText(3, 3), view.inputText(4, 4), view.inputText(0, 0), view.inputText(1, 1)]).toEqual(['1', '2', '', ''])
+    expect(view.inputText(7, 7)).toBe('=D4+E5')
+    expect(view.getState().selectionLabel).toBe('D4:E5')
+    expect(view.undoManager.undoStack.length).toBe(steps + 1)
+    view.undo()
+    expect([view.inputText(0, 0), view.inputText(1, 1), view.inputText(7, 7)]).toEqual(['1', '2', '=A1+B2'])
+  })
+
+  it('copies with Ctrl held, moving relative references like a paste', () => {
+    const { sheet, view } = setup()
+    block(sheet)
+    sheet.setCell(1, 0, { f: toIdForm('A1*2', sheet) })
+    view.select({ top: 0, left: 0, bottom: 1, right: 1 })
+    drag(view, 5, 3, { ctrlKey: true })
+    expect([view.inputText(0, 0), view.inputText(3, 3), view.inputText(4, 3)]).toEqual(['1', '1', '=D4*2'])
+    expect(view.inputText(7, 7)).toBe('=A1+B2')
+  })
+
+  it('refuses moves that would split a merge or cross a filter, keeping the selection', () => {
+    const { doc, sheet, view } = setup()
+    block(sheet)
+    view.select({ top: 4, left: 4, bottom: 4, right: 5 })
+    view.merge()
+    view.select({ top: 0, left: 0, bottom: 1, right: 1 })
+    const before = Y.encodeStateAsUpdate(doc)
+    drag(view, 5, 3)
+    expect(alertText(view)).toBe(view.labels.partialMove)
+    expect(Y.encodeStateAsUpdate(doc)).toEqual(before)
+    expect(view.getState().selectionLabel).toBe('A1:B2')
+    // A later paste is a copy, not a leftover move.
+    view.select(cell(9, 9))
+    view.clipboard.paste({ payload: view.clipboard.copyPayload()! })
+    sheet.filter.set('value', { range: sheet.rangeIds({ top: 0, left: 0, bottom: 9, right: 1 }), columns: [{ col: 0, values: ['1', '2'] }] })
+    view.select({ top: 0, left: 0, bottom: 1, right: 1 })
+    drag(view, 8, 0)
+    expect(alertText(view)).toBe(view.labels.moveFiltered)
+    expect(view.inputText(0, 0)).toBe('1')
+  })
+
+  it('still drag-selects from inside the active cell', () => {
+    const { view } = setup()
+    view.select(cell(0, 0))
+    const from = center(view, 0, 0)
+    const to = center(view, 2, 1)
+    pointer(view, 'pointerdown', from.x, from.y)
+    pointer(view, 'pointermove', to.x, to.y)
+    pointer(view, 'pointerup', to.x, to.y)
+    expect(view.getState().selectionLabel).toBe('A1:B3')
   })
 })
 

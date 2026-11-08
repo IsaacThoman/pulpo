@@ -46,6 +46,7 @@ type Drag =
   | { kind: 'rows' | 'cols'; from: number; add: boolean }
   | { kind: 'resize'; axis: 'row' | 'col'; index: number; start: number; size: number; guide: HTMLDivElement }
   | { kind: 'fill'; source: CellRange; target: CellRange }
+  | { kind: 'move'; source: CellRange; grab: { row: number; col: number }; target: CellRange }
   | { kind: 'point' }
   | { kind: 'drawing'; id: string; startX: number; startY: number; element: HTMLElement; left: number; top: number; resize: boolean; width: number; height: number }
   | { kind: 'handle'; corner: 'start' | 'end' }
@@ -208,6 +209,11 @@ export class SheetInteractions {
       this.drag = { kind: 'fill', source, target: source }
       return
     }
+    if (hit.area === 'cell' && this.overSelectionEdge(x, y)) {
+      const source = view.selection.ranges[0]!
+      this.drag = { kind: 'move', source, grab: { row: hit.row, col: hit.col }, target: source }
+      return
+    }
     const add = event.ctrlKey || event.metaKey
     if (hit.area === 'corner') {
       view.select({ top: 0, left: 0, bottom: MAX_ROWS - 1, right: MAX_COLS - 1 }, { active: { row: 0, col: 0 }, scroll: false })
@@ -291,6 +297,15 @@ export class SheetInteractions {
         this.showFillOutline(target)
         break
       }
+      case 'move': {
+        const { source, grab } = drag
+        const height = source.bottom - source.top, width = source.right - source.left
+        const top = Math.max(0, Math.min(MAX_ROWS - 1 - height, source.top + hit.row - grab.row))
+        const left = Math.max(0, Math.min(MAX_COLS - 1 - width, source.left + hit.col - grab.col))
+        drag.target = { top, left, bottom: top + height, right: left + width }
+        this.showFillOutline(drag.target)
+        break
+      }
       case 'point': {
         const anchor = view.pointing?.anchor ?? { row: hit.row, col: hit.col }
         view.pointAt({ top: Math.min(anchor.row, hit.row), left: Math.min(anchor.col, hit.col), bottom: Math.max(anchor.row, hit.row), right: Math.max(anchor.col, hit.col) })
@@ -344,6 +359,11 @@ export class SheetInteractions {
         this.fillOutline = undefined
         if (drag.target !== drag.source) this.fill(drag.source, drag.target)
         break
+      case 'move':
+        this.fillOutline?.remove()
+        this.fillOutline = undefined
+        if (event.type === 'pointerup' && (drag.target.top !== drag.source.top || drag.target.left !== drag.source.left)) this.moveSelection(drag.source, drag.target, event.altKey || (!IS_MAC && event.ctrlKey))
+        break
       case 'drawing':
         this.finishDrawingDrag(drag, event)
         break
@@ -360,7 +380,7 @@ export class SheetInteractions {
     if (!this.view.readOnly && this.hiddenMarkAt(x, y, false)) return 'pointer'
     if (this.painter) return 'copy'
     const border = this.headerBorderAt(x, y)
-    return border?.axis === 'col' ? 'col-resize' : border ? 'row-resize' : this.overFillHandle(x, y) ? 'crosshair' : 'cell'
+    return border?.axis === 'col' ? 'col-resize' : border ? 'row-resize' : this.overFillHandle(x, y) ? 'crosshair' : this.overSelectionEdge(x, y) ? 'move' : 'cell'
   }
 
   /**
@@ -1121,19 +1141,22 @@ export class SheetInteractions {
    * Pastes clipboard content at the selection (paste special: values or formats only); refusals
    * are shown. `payload` pastes a snapshot from `copyPayload` directly.
    */
-  paste(data: { html?: string; text?: string; payload?: ClipboardPayload }, mode: PasteMode = {}): void {
+  paste(data: { html?: string; text?: string; payload?: ClipboardPayload }, mode: PasteMode = {}): boolean {
     const view = this.view
-    if (view.readOnly) return
+    if (view.readOnly) return false
     const sheet = view.sheet
     const target = view.selection.ranges[view.selection.ranges.length - 1]!
     const origin = { row: target.top, col: target.left }
-    const refuse = (message: string) => this.showMessage(message, view.selection.active.row, view.selection.active.col)
+    const refuse = (message: string) => {
+      this.showMessage(message, view.selection.active.row, view.selection.active.col)
+      return false
+    }
     const parsed = data.payload?.internal ? { cells: [], merges: data.payload.internal.merges, internal: data.payload.internal } : data.html ? parseHtml(data.html) : undefined
     const internal = parsed?.internal
     const cells = parsed?.cells ?? parseTsv(data.text ?? '').map((row) => row.map((text) => ({ text })))
     const height = internal?.cells.length ?? cells.length
     const width = internal?.cells[0]?.length ?? maxOf(cells.map((row) => row.length))
-    if (!height || !width) return
+    if (!height || !width) return false
     const placeOptions: commands.PlaceOptions = { values: !mode.formats || !!mode.values, formats: !mode.values || !!mode.formats }
     const all = !mode.values && !mode.formats || !!mode.values && !!mode.formats
     const cut = internal?.cut && this.cut?.token === internal.cut && internal.sheet === this.cut.sheet && JSON.stringify(internal.source) === JSON.stringify(this.cut.range) ? this.cut : undefined
@@ -1147,15 +1170,21 @@ export class SheetInteractions {
     const destination = { top: origin.row, left: origin.col, bottom: origin.row + rows - 1, right: origin.col + cols - 1 }
     // Preflight is outside the transaction: failures must not leave a partial paste behind.
     if (!commands.canExpandRanges([destination])) return refuse(view.labels.dataErrors.size)
-    if (placeOptions.values && !view.canWriteArrays(sheet, relocate && cut.sheet === sheet.id ? [destination, cut.range] : [destination])) return
+    if (placeOptions.values && !view.canWriteArrays(sheet, relocate && cut.sheet === sheet.id ? [destination, cut.range] : [destination])) return false
     if (relocate) {
       const source = view.workbook.sheet(cut.sheet)!
-      if (!view.canWriteArrays(source, [cut.range])) return
+      if (!view.canWriteArrays(source, [cut.range])) return false
       for (const owner of new Set([source, sheet])) for (const collection of [owner.tables, owner.merges]) for (const raw of collection.values()) {
         const rect = owner.resolveRange((raw as { range: import('../model/schema.js').RangeIds }).range)
         if (!rect) continue
         if (owner === source && intersects(rect, cut.range) && !contains(cut.range, rect)) return refuse(view.labels.partialMove)
         if (owner === sheet && intersects(rect, destination) && !(owner === source && contains(cut.range, rect))) return refuse(view.labels.partialMove)
+      }
+      // Filter visibility belongs to whole rows: moving filtered cells is refused, as moveCells does.
+      for (const [owner, area] of [[source, cut.range], [sheet, destination]] as const) {
+        const filter = owner.filter.get('value') as AutoFilter | undefined
+        const rect = filter && owner.resolveRange(filter.range)
+        if (filter?.columns.length && rect && intersects(rect, area) && (source !== sheet || destination.top !== cut.range.top || !contains(cut.range, rect))) return refuse(view.labels.moveFiltered)
       }
     } else {
       for (const merge of sheet.mergedRanges()) if (intersects(merge.range, destination) && !contains(destination, merge.range)) return refuse(view.labels.dataErrors.merges)
@@ -1237,6 +1266,35 @@ export class SheetInteractions {
       if (cut && all) { this.cut = undefined; view.copyRange = undefined }
     })
     view.select(destination, { active: origin, scroll: false })
+    return true
+  }
+
+  /** Drags the selection by its border: a cut-and-paste move, or a copy with Ctrl (Option on a Mac). */
+  private moveSelection(source: CellRange, target: CellRange, copy: boolean): void {
+    const view = this.view
+    const { active } = view.selection
+    const payload = this.copyPayload(!copy)
+    if (!payload) return
+    view.select({ top: target.top, left: target.left, bottom: target.top, right: target.left }, { scroll: false })
+    if (!this.paste({ payload })) view.select(source, { active, scroll: false })
+    // A refused move leaves no pending cut for a later paste.
+    if (!copy) this.cut = undefined
+  }
+
+  /** Over the border of the (single, non-line) selection, where dragging moves it. */
+  private overSelectionEdge(x: number, y: number): boolean {
+    const view = this.view
+    if (this.painter || view.selection.ranges.length !== 1 || view.editing || view.readOnly || x <= view.headerWidth || y <= view.headerHeight) return false
+    const range = view.selection.ranges[0]!
+    if (commands.isWholeColumns(range) || commands.isWholeRows(range)) return false
+    const start = view.cellRect(range.top, range.left)
+    const end = view.cellRect(range.bottom, range.right)
+    const left = start.x, top = start.y, right = end.x + end.width, bottom = end.y + end.height
+    // Mostly outside the border, so a drag starting inside the active cell still selects.
+    const near = (value: number, edge: number, outward: 1 | -1) => (value - edge) * outward >= -1 && (value - edge) * outward <= 3
+    const alongX = x >= left - 3 && x <= right + 3
+    const alongY = y >= top - 3 && y <= bottom + 3
+    return (alongY && (near(x, left, -1) || near(x, right, 1))) || (alongX && (near(y, top, -1) || near(y, bottom, 1)))
   }
 
   // ── Editor ───────────────────────────────────────────────────────────────
