@@ -3387,6 +3387,7 @@ const esUi: Record<string, string> = {
   "Edits are kept on this device and save when you reconnect.": "Los cambios se guardan en este dispositivo y se sincronizan cuando vuelvas a conectarte.",
   "Keep the .{{extension}} extension: another one would change what kind of file this is.": "Mantén la extensión .{{extension}}: otra cambiaría el tipo de archivo.",
   "That name would change what kind of file this is.": "Ese nombre cambiaría el tipo de archivo.",
+  "Untitled presentation": "Presentación sin título",
 }
 
 export default esUi

@@ -58,7 +58,7 @@ export const LIVE_WEB_FORMATS: readonly LiveFormatWeb[] = [
     format: PRESENTATION_FORMAT,
     newLabel: () => ui("New presentation"),
     typeLabel: () => ui("Presentation"),
-    newName: () => `${ui("Untitled")}.pptx`,
+    newName: () => `${ui("Untitled presentation")}.pptx`,
     icon: Presentation,
     Editor: lazy(() => import('./presentation/PresentationDocEditor')),
     Diff: lazy(() => import('./presentation/PresentationFileDiff')),
