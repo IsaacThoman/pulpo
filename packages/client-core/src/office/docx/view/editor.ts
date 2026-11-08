@@ -703,6 +703,12 @@ export class DocxEditor {
       // Word's Ctrl+Space keeps the paragraph's style; Clear formatting (Mod-\) resets it too.
       'Mod-Space': run(clearCharacterFormatting),
       'Shift-F3': run(changeCase('cycle')),
+      // Word's Track Changes key: between Editing and Suggesting.
+      'Mod-Shift-e': () => {
+        if (this.readOnly) return false
+        this.setMode(this.modeValue === 'suggesting' ? 'editing' : 'suggesting')
+        return true
+      },
       // The app's search shares Mod-K: keep the key in an editable document even while links are unavailable.
       'Mod-k': () => this.request('link') || (!this.readOnly && this.listeners.request.size > 0),
       'Mod-f': () => this.request('find'),

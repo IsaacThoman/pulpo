@@ -599,6 +599,17 @@ describe('format painter', () => {
 })
 
 describe('review navigation', () => {
+  it('toggles Suggesting with Ctrl+Shift+E, but not out of Viewing', () => {
+    setBody(editor.view, [p('Text')], 2)
+    expect(press(editor.view, { key: 'e', ctrlKey: true, shiftKey: true })).toBe(true)
+    expect(editor.mode).toBe('suggesting')
+    expect(press(editor.view, { key: 'e', ctrlKey: true, shiftKey: true })).toBe(true)
+    expect(editor.mode).toBe('editing')
+    editor.setMode('viewing')
+    expect(press(editor.view, { key: 'e', ctrlKey: true, shiftKey: true })).toBe(false)
+    expect(editor.mode).toBe('viewing')
+  })
+
   it('moves between suggestions and accepts the one at the cursor', () => {
     setBody(editor.view, [p('First paragraph'), p('Second paragraph')], 1)
     editor.setMode('suggesting')
