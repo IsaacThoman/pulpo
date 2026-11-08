@@ -278,6 +278,27 @@ describe('the save status', () => {
     expect(screen.getAllByRole('status').some((element) => element.textContent === 'All changes saved')).toBe(true)
   })
 
+  it('says nothing while the document first loads, then Saved', async () => {
+    state.status = { state: 'connecting' }
+    const view = mount()
+    await screen.findByRole('textbox', { name: 'Body of Report.docx' })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      act(() => setStatus('syncing'))
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+      expect(view.container.querySelector('[data-save-state]')).toBeNull()
+      act(() => setStatus('synced'))
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      expect(view.container.querySelector('[data-save-state]')?.textContent).toBe('Saved')
+      // Later saves (and reconnecting) do show.
+      act(() => setStatus('connecting'))
+      await act(async () => { await vi.advanceTimersByTimeAsync(600) })
+      expect(view.container.querySelector('[data-save-state]')?.textContent).toBe('Saving…')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('shows Saving… only when a save takes a while, and Offline at once', async () => {
     const view = mount()
     const saveState = () => view.container.querySelector('[data-save-state]')?.getAttribute('data-save-state')

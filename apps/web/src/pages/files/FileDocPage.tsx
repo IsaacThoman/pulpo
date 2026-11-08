@@ -81,9 +81,15 @@ function saveStateOf(status: DocSyncStatus): SaveState | null {
   return null
 }
 
-/** The save state to show: the session's, with "Saving…" debounced as above. */
+/**
+ * The save state to show: the session's, with "Saving…" debounced as above. Before the document
+ * first loads, connecting is not saving anything: nothing shows, as in Docs.
+ */
 function useShownSaveState(status: DocSyncStatus): SaveState | null {
-  const actual = saveStateOf(status)
+  const state = saveStateOf(status)
+  const loaded = useRef(false)
+  if (state === 'saved') loaded.current = true
+  const actual = state === 'saving' && !loaded.current ? null : state
   const [shown, setShown] = useState<SaveState | null>(actual === 'saving' ? null : actual)
   const savingSince = useRef(0)
   useEffect(() => {
