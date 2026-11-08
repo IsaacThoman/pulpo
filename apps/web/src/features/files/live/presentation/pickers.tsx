@@ -53,6 +53,19 @@ function swatchName(slot: string, variant: { mod?: number; off?: number }): stri
   return `${name}, ${shade}`
 }
 
+/**
+ * A toolbar picker's close: focus goes back to the document (`onDone`: the slide or its text) when
+ * it would otherwise land on the page, and stays where a click outside the picker put it.
+ */
+function closeAutoFocus(onDone: (() => void) | undefined) {
+  if (!onDone) return undefined
+  return (event: Event) => {
+    event.preventDefault()
+    const active = document.activeElement
+    if (!active || active === document.body) onDone()
+  }
+}
+
 const solid = (hex: string): ColorChoice => ({ kind: 'fill', xml: `<a:solidFill><a:srgbClr val="${hex}"/></a:solidFill>`, css: `#${hex}` })
 
 /**
@@ -120,7 +133,7 @@ export function ColorPalette({ theme, onPick, noneLabel }: {
   )
 }
 
-export function ColorPicker({ label, icon, theme, allowNone, noneLabel, onPick, disabled, current }: {
+export function ColorPicker({ label, icon, theme, allowNone, noneLabel, onPick, disabled, current, onDone }: {
   label: string
   icon: ReactNode
   /** Theme colors after the color map: bg1, tx1, … as hex. */
@@ -132,6 +145,8 @@ export function ColorPicker({ label, icon, theme, allowNone, noneLabel, onPick, 
   disabled?: boolean
   /** The color in use, drawn as a bar under the icon (CSS). */
   current?: string
+  /** Hands focus back to the document once the picker closes (toolbar pickers). */
+  onDone?: () => void
 }) {
   const [open, setOpen] = useState(false)
   const pick = (choice: ColorChoice) => {
@@ -153,7 +168,7 @@ export function ColorPicker({ label, icon, theme, allowNone, noneLabel, onPick, 
           {current && <span aria-hidden className="absolute inset-x-2 bottom-1 h-0.5 rounded-full" style={{ background: current }} />}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-3" onOpenAutoFocus={(event) => event.preventDefault()}>
+      <PopoverContent className="w-auto p-3" onOpenAutoFocus={(event) => event.preventDefault()} onCloseAutoFocus={closeAutoFocus(onDone)}>
         <ColorPalette theme={theme} onPick={pick} {...(allowNone || noneLabel ? { noneLabel: noneLabel ?? ui("No color") } : {})} />
       </PopoverContent>
     </Popover>
@@ -169,12 +184,12 @@ export function ShapeIcon({ preset, className }: { preset: string; className?: s
   )
 }
 
-export function ShapeGallery({ trigger, onPick }: { trigger: ReactNode; onPick(preset: string): void }) {
+export function ShapeGallery({ trigger, onPick, onDone }: { trigger: ReactNode; onPick(preset: string): void; onDone?: () => void }) {
   const [open, setOpen] = useState(false)
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent className="max-h-[70vh] w-[22rem] max-w-[calc(100vw-1rem)] overflow-y-auto p-3">
+      <PopoverContent className="max-h-[70vh] w-[22rem] max-w-[calc(100vw-1rem)] overflow-y-auto p-3" onCloseAutoFocus={closeAutoFocus(onDone)}>
         {PRESET_SHAPE_GALLERY.map((group) => (
           <section key={group.id} className="mb-2" aria-label={galleryLabel(group.id, group.label)}>
             <p className="mb-1 text-xs font-medium text-muted-foreground">{galleryLabel(group.id, group.label)}</p>
@@ -231,12 +246,12 @@ export function TableGrid({ onPick }: { onPick(rows: number, columns: number): v
   )
 }
 
-export function TablePicker({ trigger, onPick }: { trigger: ReactNode; onPick(rows: number, columns: number): void }) {
+export function TablePicker({ trigger, onPick, onDone }: { trigger: ReactNode; onPick(rows: number, columns: number): void; onDone?: () => void }) {
   const [open, setOpen] = useState(false)
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent className="w-auto p-3">
+      <PopoverContent className="w-auto p-3" onCloseAutoFocus={closeAutoFocus(onDone)}>
         <TableGrid
           onPick={(rows, columns) => {
             onPick(rows, columns)

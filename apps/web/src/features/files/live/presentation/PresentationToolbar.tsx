@@ -80,9 +80,11 @@ function Divider() {
   return <span className="mx-1 h-5 w-px shrink-0 bg-border" />
 }
 
+const pickerTriggerClass = 'grid size-8 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40'
 const triggerClass = 'flex h-8 shrink-0 cursor-pointer items-center gap-0.5 rounded-md px-1.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40'
 
-function MenuButton({ label, children, icon, disabled }: { label: string; children: ReactNode; icon: ReactNode; disabled?: boolean }) {
+/** A toolbar menu; closing it hands focus back to the slide or its text (`onDone`), not the button. */
+function MenuButton({ label, children, icon, disabled, onDone }: { label: string; children: ReactNode; icon: ReactNode; disabled?: boolean; onDone?: () => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild disabled={disabled}>
@@ -91,7 +93,7 @@ function MenuButton({ label, children, icon, disabled }: { label: string; childr
           <ChevronDown className="size-3" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" onCloseAutoFocus={(event) => event.preventDefault()}>
+      <DropdownMenuContent align="start" onCloseAutoFocus={(event) => { event.preventDefault(); onDone?.() }}>
         {children}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -128,6 +130,8 @@ export function PresentationToolbar({ controller, view, onViewChange, formatPane
   const theme = themeColors(controller)
   const layouts = controller.layouts()
   const textDisabled = readOnly || !format.canFormatText
+  // Text boxes, shapes, lines, pictures, and tables go on the slide: not from the sorter.
+  const onSlide = view === 'editor'
   const themeFonts = controller.themeFonts()
   const fontLabel = format.resolvedFontFamily ?? format.fontFamily ?? ui("Font")
   const fonts = [...new Set([...(format.fontFamily && !format.fontFamily.startsWith('+') ? [format.fontFamily] : []), ...FONTS])]
@@ -153,7 +157,7 @@ export function PresentationToolbar({ controller, view, onViewChange, formatPane
                   <ChevronDown className="size-3" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" onCloseAutoFocus={(event) => event.preventDefault()}>
+              <DropdownMenuContent align="start" onCloseAutoFocus={(event) => { event.preventDefault(); onDone?.() }}>
                 <DropdownMenuLabel>{ui("New slide")}</DropdownMenuLabel>
                 {layouts.map((layout) => (
                   <DropdownMenuItem key={layout.path} onSelect={() => controller.addSlide(layout.path)}>
@@ -163,27 +167,29 @@ export function PresentationToolbar({ controller, view, onViewChange, formatPane
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-          <ToolbarButton label={ui("Text box")} onClick={() => controller.insertTextBox()}>
+          <ToolbarButton label={ui("Text box")} disabled={!onSlide} onClick={() => controller.insertTextBox()}>
             <Type className="size-4" />
           </ToolbarButton>
           <ShapeGallery
             onPick={(preset) => controller.insertShape(preset)}
+            onDone={onDone}
             trigger={
-              <button type="button" aria-label={ui("Shapes")} title={ui("Shapes")} className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
+              <button type="button" aria-label={ui("Shapes")} title={ui("Shapes")} disabled={!onSlide} onMouseDown={(event) => event.preventDefault()} className={pickerTriggerClass}>
                 <Shapes className="size-4" />
               </button>
             }
           />
-          <MenuButton label={ui("Line")} icon={<Minus className="size-4 -rotate-45" />}>
+          <MenuButton label={ui("Line")} icon={<Minus className="size-4 -rotate-45" />} disabled={!onSlide} onDone={onDone}>
             <MenuEntries entries={asUndoSteps(controller, lineEntries(controller))} close={() => {}} />
           </MenuButton>
-          <ToolbarButton label={ui("Image")} onClick={onInsertImage}>
+          <ToolbarButton label={ui("Image")} disabled={!onSlide} onClick={onInsertImage}>
             <ImagePlus className="size-4" />
           </ToolbarButton>
           <TablePicker
             onPick={(rows, columns) => controller.insertTable(rows, columns)}
+            onDone={onDone}
             trigger={
-              <button type="button" aria-label={ui("Table")} title={ui("Table")} className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
+              <button type="button" aria-label={ui("Table")} title={ui("Table")} disabled={!onSlide} onMouseDown={(event) => event.preventDefault()} className={pickerTriggerClass}>
                 <Table className="size-4" />
               </button>
             }
@@ -238,6 +244,7 @@ export function PresentationToolbar({ controller, view, onViewChange, formatPane
             label={ui("Text color")}
             icon={<Baseline className="size-4" />}
             theme={theme}
+            onDone={onDone}
             noneLabel={ui("Automatic")}
             disabled={textDisabled}
             onPick={(choice) => controller.setMark('fill', choice.kind === 'fill' ? choice.xml : undefined)}
@@ -246,6 +253,7 @@ export function PresentationToolbar({ controller, view, onViewChange, formatPane
             label={ui("Highlight color")}
             icon={<Highlighter className="size-4" />}
             theme={theme}
+            onDone={onDone}
             noneLabel={ui("No highlight")}
             disabled={textDisabled}
             current={highlightCss(format.highlight)}
@@ -279,7 +287,7 @@ export function PresentationToolbar({ controller, view, onViewChange, formatPane
           <ToolbarButton label={ui("Increase list level")} shortcut={hint({ key: 'Tab' })} disabled={textDisabled} onClick={() => controller.changeLevel(1)}>
             <IndentIncrease className="size-4" />
           </ToolbarButton>
-          <MenuButton label={ui("Line spacing")} icon={<AlignHorizontalJustifyCenter className="size-4 rotate-90" />}>
+          <MenuButton label={ui("Line spacing")} icon={<AlignHorizontalJustifyCenter className="size-4 rotate-90" />} onDone={onDone}>
             {LINE_SPACING.map((value) => (
               <DropdownMenuItem key={value} disabled={textDisabled} onSelect={() => controller.setLineSpacing(value)}>
                 {lineSpacingLabel(value)}
@@ -294,11 +302,12 @@ export function PresentationToolbar({ controller, view, onViewChange, formatPane
             label={ui("Shape fill")}
             icon={<PaintBucket className="size-4" />}
             theme={theme}
+            onDone={onDone}
             allowNone
             disabled={!shapes.length}
             onPick={(choice) => controller.setShapeProperty('fill', choice.kind === 'fill' ? choice.xml : '<a:noFill/>')}
           />
-          <MenuButton label={ui("Arrange")} icon={<Group className="size-4" />}>
+          <MenuButton label={ui("Arrange")} icon={<Group className="size-4" />} onDone={onDone}>
             <DropdownMenuItem disabled={!shapes.length} onSelect={() => controller.reorder('front')}>
               <ArrowUpToLine className="size-4" /> {ui("Bring to front")}
             </DropdownMenuItem>
@@ -335,7 +344,7 @@ export function PresentationToolbar({ controller, view, onViewChange, formatPane
               <Trash2 className="size-4" /> {ui("Delete")}
             </DropdownMenuItem>
           </MenuButton>
-          <MenuButton label={ui("Slide")} icon={<LayoutTemplate className="size-4" />}>
+          <MenuButton label={ui("Slide")} icon={<LayoutTemplate className="size-4" />} onDone={onDone}>
             <DropdownMenuLabel>{ui("Layout")}</DropdownMenuLabel>
             {layouts.map((layout) => (
               <DropdownMenuItem key={layout.path} onSelect={() => controller.setLayout(layout.path)}>

@@ -1399,6 +1399,55 @@ try {
     await page.close()
   })
 
+  await check('the sorter offers no slide inserts and clears the shapes; find closes back to it; toolbar menus hand the keys back to the slide', async () => {
+    const { page, errors } = await open(context, 'deck=generated/autoshapes.pptx')
+    const bar = page.getByRole('menubar', { name: 'Menu bar' })
+    const shape = slideShapes(page).nth(1)
+    const key = await shape.getAttribute('data-key')
+    await shape.click()
+    // The sorter shows no shapes: the selection goes, so Format and Arrange cannot change unseen shapes.
+    await page.getByRole('button', { name: 'Slide sorter' }).click()
+    await page.getByTestId('presentation-sorter').waitFor()
+    assert.deepEqual((await state(page)).shapes, [])
+    await bar.getByRole('menuitem', { name: 'Insert', exact: true }).click()
+    for (const id of ['text-box', 'image', 'insert-shape', 'insert-line', 'insert-table']) {
+      assert.notEqual(await page.locator(`[role="menu"] [data-menu-item="${id}"]`).getAttribute('data-disabled'), null, `Insert ▸ ${id} is off in the sorter`)
+    }
+    await page.keyboard.press('Escape')
+    for (const name of ['Text box', 'Shapes', 'Line', 'Image', 'Table']) assert.equal(await page.getByRole('button', { name, exact: true }).isDisabled(), true, `${name} is off in the sorter`)
+    // Find with nothing found closes back to the sorter, not the hidden slide.
+    await page.locator('.pp-sorter .pp-thumb').nth(0).click()
+    await page.keyboard.press('Meta+f')
+    await page.getByRole('textbox', { name: 'Find in presentation' }).fill('no such words anywhere')
+    await page.keyboard.press('Escape')
+    await page.locator('[data-presentation-find]').waitFor({ state: 'detached' })
+    await focusIn(page, '.pp-sorter')
+    await page.getByRole('button', { name: 'Slide sorter' }).click()
+    await page.getByTestId('presentation-sorter').waitFor({ state: 'detached' })
+    // Toolbar menus and pickers give the keys back to the slide: an arrow then nudges the new line.
+    await page.getByRole('button', { name: 'Line', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Arrow', exact: true }).click()
+    await focusIn(page, '.pp-canvas')
+    const arrow = (await state(page)).shapes[0]
+    const x = (await xfrmOf(page, arrow)).x
+    await page.keyboard.press('ArrowRight')
+    assert.equal((await xfrmOf(page, arrow)).x, x + 2 * 9525, 'the arrow key nudges the inserted line')
+    await page.getByRole('button', { name: 'Shapes', exact: true }).click()
+    await page.getByRole('button', { name: 'Oval', exact: true }).click()
+    await focusIn(page, '.pp-canvas')
+    await page.keyboard.press('Delete')
+    assert.equal(await page.evaluate(() => window.harness.controllers.a.state.shapes.length), 0, 'Delete removes the inserted oval')
+    await page.evaluate((key) => window.harness.controllers.a.selectShapes([key]), key)
+    await page.getByRole('button', { name: 'Shape fill', exact: true }).click()
+    await page.getByRole('button', { name: 'Red', exact: true }).click()
+    await focusIn(page, '.pp-canvas')
+    await page.getByRole('button', { name: 'New slide with layout' }).click()
+    await page.getByRole('menuitem').nth(1).click()
+    await focusIn(page, '.pp-canvas')
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
   await check('performance: a 300-slide deck opens, switches slides, and scrolls thumbnails within budget', async () => {
     const page = await context.newPage()
     const errors = []
