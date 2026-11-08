@@ -58,10 +58,14 @@ export function FormulaBar({ view, state, nameBoxRef }: {
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
+    // Enter and Tab ask about a value a warning or information rule flags, as the grid's do; an
+    // answer given later moves on (and focuses the grid) itself.
     if (event.key === 'Enter' && !event.altKey) {
       event.preventDefault()
-      if (view.commitEdit({ fill: event.ctrlKey || event.metaKey })) {
-        if (!(event.ctrlKey || event.metaKey)) view.clipboard.moveWithin(event.shiftKey ? -1 : 1, 0)
+      const fill = event.ctrlKey || event.metaKey
+      const then = () => { if (!fill) view.clipboard.moveWithin(event.shiftKey ? -1 : 1, 0) }
+      if (view.commitEdit({ fill, ask: true, then })) {
+        then()
         view.focus()
       }
     } else if (event.key === 'Escape') {
@@ -71,8 +75,9 @@ export function FormulaBar({ view, state, nameBoxRef }: {
       view.focus()
     } else if (event.key === 'Tab') {
       event.preventDefault()
-      if (view.commitEdit()) {
-        view.clipboard.moveWithin(0, event.shiftKey ? -1 : 1)
+      const then = () => view.clipboard.moveWithin(0, event.shiftKey ? -1 : 1)
+      if (view.commitEdit({ ask: true, then })) {
+        then()
         view.focus()
       }
     }

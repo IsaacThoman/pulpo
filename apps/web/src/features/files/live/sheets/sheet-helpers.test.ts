@@ -154,6 +154,20 @@ describe('data validation criteria', () => {
     expect(build({ values: ['Yes\nNo', ''], showDropdown: false, reject: true })).toMatchObject({ ok: true, rule: { showDropDown: true, errorStyle: 'stop' } })
   })
 
+  it("refuses literal lists past Excel's 255 characters, pointing to a range dropdown, and caps the message", () => {
+    const states = ['Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware', 'Florida', 'Georgia', 'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa', 'Kansas', 'Kentucky', 'Louisiana', 'Maine', 'Maryland', 'Massachusetts', 'Michigan', 'Minnesota', 'Mississippi', 'Missouri', 'Montana', 'Nebraska', 'Nevada', 'New Hampshire', 'New Jersey', 'New Mexico', 'New York']
+    const long = build({ values: [states.join('\n'), ''] })
+    expect(long).toMatchObject({ ok: false, field: 0 })
+    expect(long.ok ? '' : long.error).toContain('Dropdown (from a range)')
+    // Exactly 255 characters, commas included, is still a literal list; a doubled quote counts once.
+    const fits = [`"${'a'.repeat(126)}`, 'b'.repeat(127)]
+    expect(fits.join(',').length).toBe(255)
+    expect(build({ values: [fits.join('\n'), ''] })).toMatchObject({ ok: true, rule: { type: 'list', formula1: `"""${'a'.repeat(126)},${'b'.repeat(127)}"` } })
+    expect(build({ values: [[...fits, 'c'].join('\n'), ''] })).toMatchObject({ ok: false, field: 0 })
+    const message = build({ values: ['Yes\nNo', ''], message: 'x'.repeat(300) })
+    expect(message.ok ? message.rule.error : '').toHaveLength(255)
+  })
+
   it('makes a range dropdown absolute, keeps whole columns, and refuses unknown sheets', () => {
     expect(build({ criterion: 'listRange', values: ['d1:d5', ''] })).toMatchObject({ ok: true, rule: { type: 'list', formula1: '$D$1:$D$5' } })
     expect(absoluteRange("'q1 plan'!A2:A9", workbook())).toBe("'Q1 plan'!$A$2:$A$9")

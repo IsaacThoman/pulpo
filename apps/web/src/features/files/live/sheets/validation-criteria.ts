@@ -1,5 +1,5 @@
 import { cellName, columnIndex, formatValue, parseInput, parseRangeName, quoteSheetName, rangeContains, type CellRange, type WorkbookModel } from '@pulpo/client-core/office/sheets'
-import { listValidationFormula, literalListItems, type SheetView, type ValidationRule } from '@pulpo/client-core/office/sheets/view'
+import { listValidationFormula, listValidationTooLong, literalListItems, type SheetView, type ValidationRule } from '@pulpo/client-core/office/sheets/view'
 import { ui } from '@/i18n/ui'
 
 /** The rule being edited in place (the selection is inside one rule), or the selection a new rule covers. */
@@ -94,6 +94,9 @@ export interface ValidationDraft {
 }
 
 export const EMPTY_DRAFT: ValidationDraft = { criterion: 'list', values: ['', ''], showDropdown: true, reject: false, message: '' }
+
+/** Excel's limit on a validation's error message: a longer one makes it refuse the file. */
+export const MAX_VALIDATION_MESSAGE_LENGTH = 255
 
 /** A text value as a formula string literal. */
 const quoted = (text: string) => `"${text.replace(/"/g, '""')}"`
@@ -213,7 +216,8 @@ export function ruleFromDraft(draft: ValidationDraft, anchor: { row: number; col
     showErrorMessage: true,
     // An imported information rule (OK/Cancel) stays one; Google's warning is Excel's Yes/No/Cancel.
     errorStyle: draft.reject ? 'stop' : options.existing?.errorStyle === 'information' ? 'information' : 'warning',
-    ...(draft.message.trim() ? { error: draft.message.trim() } : {}),
+    // Excel refuses a file with a longer message.
+    ...(draft.message.trim() ? { error: draft.message.trim().slice(0, MAX_VALIDATION_MESSAGE_LENGTH) } : {}),
     ...(options.existing?.errorTitle ? { errorTitle: options.existing.errorTitle } : {}),
     ...(options.existing?.prompt ? { prompt: options.existing.prompt } : {}),
     ...(options.existing?.promptTitle ? { promptTitle: options.existing.promptTitle } : {}),
@@ -233,8 +237,11 @@ export function ruleFromDraft(draft: ValidationDraft, anchor: { row: number; col
   if (id === 'list') {
     const items = values[0].split('\n').map((item) => item.trim()).filter(Boolean)
     if (!items.length) return needed(0, ui("Add at least one item."))
+    if (items.some((item) => item.includes(','))) return needed(0, ui("Items can't contain commas."))
+    // Excel won't open a file whose list of items runs past 255 characters, as its own dialog says.
+    if (listValidationTooLong(items)) return needed(0, ui("Items can have up to 255 characters in all. For a longer list, put the items in cells and choose Dropdown (from a range)."))
     const formula1 = listValidationFormula(items)
-    if (!formula1) return needed(0, ui("Items can't contain commas."))
+    if (!formula1) return needed(0, ui("Add at least one item."))
     return done({ type: 'list', formula1, ...dropdown })
   }
   if (id === 'listRange') {

@@ -21,6 +21,7 @@ import type {
 import { deleteAxis, insertAxis, type AxisKind } from '../model/structure.js'
 import { definedNameKey, WorkbookModel, type SheetModel } from '../model/workbook.js'
 import { randomId } from '../model/axis.js'
+import { conditionalPriorityShift } from './order.js'
 import { Stylesheet } from '../styles/stylesheet.js'
 
 /**
@@ -542,7 +543,12 @@ function syncCollections(own: SheetModel, other: SheetModel, styles: StyleMap, r
     value.ranges.some((range) => sheet.resolveRange(range)) ? positioned(sheet, value, dxf, restore) : undefined
   const ruleValues = (values: CfValue[]) => values.map((value) =>
     value.type === 'formula' && value.value !== undefined ? { ...value, value: translateFormula(own, other, value.value) } : value)
-  syncCollection<ConditionalFormat>(own.cf, other.cf, (value) => ruleForm(own, value), (value) => ruleForm(other, value, styles.dxf), (value) => {
+  // Priorities compare as the file writes them: rules added in the editor can sit at 0 or below,
+  // shifted up on export, and a rule unchanged in the file must keep its entry. Added rules
+  // come back to this sheet's scale.
+  const shift = conditionalPriorityShift(own)
+  const shifted = (value: ConditionalFormat, by: number) => by ? { ...value, rules: value.rules.map((rule) => ({ ...rule, priority: rule.priority + by })) } : value
+  syncCollection<ConditionalFormat>(own.cf, other.cf, (value) => ruleForm(own, shifted(value, shift)), (value) => ruleForm(other, value, styles.dxf), (value) => {
     const translated = ranges(value)
     if (!translated) return undefined
     return {
@@ -550,6 +556,7 @@ function syncCollections(own: SheetModel, other: SheetModel, styles: StyleMap, r
       ranges: translated,
       rules: value.rules.map((rule) => ({
         ...rule,
+        priority: rule.priority - shift,
         ...(rule.dxfId !== undefined ? { dxfId: styles.dxf(rule.dxfId)! } : {}),
         ...(rule.formulas ? { formulas: rule.formulas.map((formula) => translateFormula(own, other, formula)) } : {}),
         ...(rule.colorScale ? { colorScale: { ...rule.colorScale, values: ruleValues(rule.colorScale.values) } } : {}),

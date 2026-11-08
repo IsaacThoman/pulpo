@@ -16,8 +16,11 @@ const control = (key: string, more: { shift?: boolean; alt?: boolean } = {}): Sh
   isAppleShortcut() ? `⌃${more.alt ? '⌥' : ''}${more.shift ? '⇧' : ''}${keyName(key)}` : mod(key, more)
 )
 
-/** AutoSum: Alt+= on Windows and Linux; Option+= types ≠ on a Mac, so Cmd+Shift+T there. */
-const autoSum = (): ShortcutSpec => (isAppleShortcut() ? mod('t', { shift: true }) : { key: '=', alt: true })
+/**
+ * AutoSum: Alt+= on Windows and Linux. Option+= types ≠ on a Mac, so ⌃= there, and Cmd+Shift+T
+ * where the browser lets it through (Chrome reopens a closed tab with it).
+ */
+const autoSum = (): (ShortcutSpec | string)[] => (isAppleShortcut() ? [control('='), mod('t', { shift: true })] : [{ key: '=', alt: true }])
 
 /**
  * Hiding rows (9) or columns (0): Ctrl+9 and Google's Ctrl+Alt+9; Shift shows them again. A Mac
@@ -117,7 +120,7 @@ export function sheetShortcutGroups(): ShortcutGroup[] {
         { label: ui("Cancel editing"), keys: [{ key: 'Escape' }] },
         { label: ui("Switch between editing and pointing at cells"), keys: [{ key: 'F2' }] },
         { label: ui("Cycle absolute and relative references"), keys: [{ key: 'F4' }] },
-        { label: ui("AutoSum"), keys: [autoSum()] },
+        { label: ui("AutoSum"), keys: autoSum() },
         { label: ui("Fill down"), keys: [mod('d')] },
         { label: ui("Fill right"), keys: [mod('r')] },
         { label: ui("Insert today's date"), keys: [mod(';')] },
