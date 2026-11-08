@@ -252,6 +252,21 @@ describe('hidden row and column markers', () => {
     expect(view.rows.isHidden(2)).toBe(true)
   })
 
+  it('offers no marker that is scrolled under frozen columns', () => {
+    const { sheet, view } = setup()
+    commands.setFrozen(sheet, 0, 2)
+    commands.setHidden(sheet, 'col', [5], true)
+    expect(view.hiddenMarks().cols).toEqual([6])
+    // Column G's left edge slides 10px under the frozen A:B.
+    const cols = view.scene().cols
+    view.scroller.scrollLeft = (cols.offset(6) - cols.offset(2)) * view.zoom + 10
+    expect(view.hiddenMarks().cols).toEqual([])
+    const frozenEdge = view.cellRect(0, 2).x
+    pointer(view, 'pointerdown', frozenEdge - 4, view.headerHeight / 2)
+    pointer(view, 'pointerup', frozenEdge - 4, view.headerHeight / 2)
+    expect(view.cols.isHidden(5)).toBe(true)
+  })
+
   it('brings back lines dragged to zero size', () => {
     const { view } = setup()
     view.resizeLines('row', 0, [2])

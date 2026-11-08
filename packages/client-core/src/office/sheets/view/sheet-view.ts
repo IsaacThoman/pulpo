@@ -850,17 +850,23 @@ export class SheetView {
   hiddenMarks(): { rows: number[]; cols: number[] } {
     const sheet = this.sheet
     if (sheet.viewProp('showHeadings') === false) return { rows: [], cols: [] }
-    const panes = GridRenderer.panes({ ...this.sceneGeometry(), width: this.width, height: this.height } as Scene)
+    const scene = { ...this.sceneGeometry(), width: this.width, height: this.height } as Scene
+    const panes = GridRenderer.panes(scene)
     const filter = sheet.filter.get('value') as AutoFilter | undefined
     const filtered = new Set(filter?.hiddenRows)
+    // A boundary scrolled under the frozen panes is neither drawn nor clickable.
+    const frozenRight = scene.headerWidth + scene.cols.offset(scene.frozenCols) * scene.zoom - 1
+    const frozenBottom = scene.headerHeight + scene.rows.offset(scene.frozenRows) * scene.zoom - 1
     const rows = new Set<number>()
     const cols = new Set<number>()
     for (const pane of panes) {
       for (let col = Math.max(1, pane.cols[0]); col <= pane.cols[1]; col++) {
+        if (col >= scene.frozenCols && Math.round(GridRenderer.x(scene, col)) < frozenRight) continue
         if (!this.colLayout.isHidden(col) && this.colLayout.isHidden(col - 1)) cols.add(col)
       }
       for (let row = Math.max(1, pane.rows[0]); row <= pane.rows[1]; row++) {
         if (this.rowLayout.isHidden(row) || !this.rowLayout.isHidden(row - 1)) continue
+        if (row >= scene.frozenRows && Math.round(GridRenderer.y(scene, row)) < frozenBottom) continue
         if (sheet.rowProp(row - 1, 'manualHidden') || !filtered.has(sheet.rows.idAt(row - 1))) rows.add(row)
       }
     }
