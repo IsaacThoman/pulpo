@@ -40,9 +40,9 @@ vi.mock('@expo/ui/swift-ui', () => ({
   TextField: ({ onTextChange, modifiers }: { onTextChange: (value: string) => void; modifiers?: Modifier[] }) => createElement('input', { 'aria-label': modifier(modifiers, 'accessibilityLabel') as string, onChange: (event: { target: { value: string } }) => onTextChange(event.target.value) }),
   useNativeState: (value: string) => ({ get: () => value, set: vi.fn() }),
 }))
-vi.mock('@expo/ui/swift-ui/modifiers', () => Object.fromEntries([
-  'accessibilityLabel', 'autocorrectionDisabled', 'buttonStyle', 'controlSize', 'disabled', 'font', 'foregroundStyle', 'frame', 'labelStyle', 'lineLimit', 'padding', 'scrollDismissesKeyboard', 'textFieldStyle', 'textInputAutocapitalization', 'tint',
-].map((type) => [type, (value: unknown) => ({ type, value })])))
+vi.mock('@expo/ui/swift-ui/modifiers', () => ({ shapes: { rectangle: () => ({}) }, ...Object.fromEntries([
+  'accessibilityLabel', 'autocorrectionDisabled', 'buttonStyle', 'contentShape', 'controlSize', 'disabled', 'font', 'foregroundStyle', 'frame', 'labelStyle', 'lineLimit', 'padding', 'scrollDismissesKeyboard', 'textFieldStyle', 'textInputAutocapitalization', 'tint',
+].map((type) => [type, (value: unknown) => ({ type, value })])) }))
 vi.mock('../../platform/MaterialUI', () => ({
   MaterialButton: ({ label, onPress, disabled, loading }: { label: string; onPress: () => void; disabled?: boolean; loading?: boolean }) => createElement('button', { onClick: onPress, disabled: disabled || loading }, label),
   MaterialIconButton: ({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) => createElement('button', { onClick: onPress, disabled, 'aria-label': label }),

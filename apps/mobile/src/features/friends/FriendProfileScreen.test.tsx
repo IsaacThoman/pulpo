@@ -26,9 +26,9 @@ vi.mock('@expo/ui/swift-ui', () => ({
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
   Button: ({ label, onPress, children, modifiers }: { label?: string; onPress?: () => void; children?: ReactNode; modifiers?: Modifier[] }) => createElement('button', { onClick: onPress, disabled: Boolean(modifier(modifiers, 'disabled')) }, label ?? children),
 }))
-vi.mock('@expo/ui/swift-ui/modifiers', () => Object.fromEntries([
-  'accessibilityLabel', 'buttonStyle', 'controlSize', 'disabled', 'font', 'foregroundStyle', 'frame', 'lineLimit', 'padding', 'tint',
-].map((type) => [type, (value: unknown) => ({ type, value })])))
+vi.mock('@expo/ui/swift-ui/modifiers', () => ({ shapes: { rectangle: () => ({}) }, ...Object.fromEntries([
+  'accessibilityLabel', 'buttonStyle', 'contentShape', 'controlSize', 'disabled', 'font', 'foregroundStyle', 'frame', 'lineLimit', 'padding', 'tint',
+].map((type) => [type, (value: unknown) => ({ type, value })])) }))
 vi.mock('../../platform/MaterialUI', () => ({
   MaterialButton: ({ label, onPress, disabled, loading }: { label: string; onPress: () => void; disabled?: boolean; loading?: boolean }) => createElement('button', { onClick: onPress, disabled: disabled || loading }, label),
 }))

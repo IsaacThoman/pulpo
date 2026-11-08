@@ -43,7 +43,6 @@ function NativeProfileAction({ action }: { action: FriendProfileAction }) {
   if (action.kind === 'self') return <SwiftUIText modifiers={[font({ textStyle: 'subheadline' }), foregroundStyle('secondary')]}>{action.label}</SwiftUIText>
   return <SwiftUIButton
     label={action.pending ? action.pendingLabel : action.label}
-    systemImage={action.kind === 'add' ? 'person.badge.plus' : action.kind === 'accept' ? 'checkmark' : 'xmark'}
     onPress={action.onPress}
     modifiers={[buttonStyle(action.kind === 'cancel' ? 'bordered' : 'borderedProminent'), controlSize('regular'), disabled(action.pending)]}
   />

@@ -10,7 +10,7 @@ import {
   Text as SwiftUIText,
   VStack as SwiftUIVStack,
 } from '@expo/ui/swift-ui'
-import { accessibilityLabel, buttonStyle, controlSize, disabled, font, foregroundStyle, lineLimit } from '@expo/ui/swift-ui/modifiers'
+import { accessibilityLabel, buttonStyle, contentShape, controlSize, disabled, font, foregroundStyle, lineLimit, shapes } from '@expo/ui/swift-ui/modifiers'
 import { SymbolView } from '../../platform/SymbolView'
 import { ListRow } from '../../mockup5/src/components/PrototypeUI'
 import { ProfileAvatar } from '../../mockup5/src/components/ProfileAvatar'
@@ -41,21 +41,24 @@ export function NativePersonRow({ profile, detail, owner = false, trailing, onOp
   onOpen?: () => void
 }) {
   const theme = useAppTheme()
-  const identity = <SwiftUIHStack spacing={12}>
+  // The spacer sits inside the identity so, when it opens a profile, the whole row up to the
+  // trailing actions is the tap target.
+  const identity = <SwiftUIHStack spacing={12} modifiers={onOpen ? [contentShape(shapes.rectangle())] : []}>
     <SwiftUIRNHostView matchContents><FriendAvatar profile={profile} size={36} /></SwiftUIRNHostView>
     <SwiftUIVStack alignment="leading" spacing={2}>
       <SwiftUIHStack spacing={5}>
         <SwiftUIText modifiers={[lineLimit(1)]}>{profile.displayName}</SwiftUIText>
         {owner ? <SwiftUIImage systemName="crown.fill" size={12} color={theme.orange} modifiers={[accessibilityLabel('Pool owner')]} /> : null}
       </SwiftUIHStack>
-      <SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary'), lineLimit(1)]}>{profileDetail(profile, detail)}</SwiftUIText>
+      {/* Two lines, so request ages and mutual counts survive the row's trailing buttons. */}
+      <SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary'), lineLimit(2)]}>{profileDetail(profile, detail)}</SwiftUIText>
     </SwiftUIVStack>
+    <SwiftUISpacer />
   </SwiftUIHStack>
   return <SwiftUIHStack spacing={12}>
     {onOpen
       ? <SwiftUIButton onPress={onOpen} modifiers={[buttonStyle('plain'), accessibilityLabel(`${profile.displayName}, @${profile.username}${detail ? `, ${detail}` : ''}`)]}>{identity}</SwiftUIButton>
       : identity}
-    <SwiftUISpacer />
     {trailing}
   </SwiftUIHStack>
 }
