@@ -3,9 +3,18 @@ import type { LiveAssetStore } from '@pulpo/client-core/office'
 import { NotesEditor, Presenter, printSlides, SlideCanvas, SlideList, type PresentationController, type PresentationUser } from '@pulpo/client-core/office/presentation/view'
 import type { Awareness } from 'y-protocols/awareness'
 import type * as Y from 'yjs'
+import { LayoutGrid, PanelRight, Play, StickyNote } from 'lucide-react'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
+import { EditorMenuBar } from '../chrome/EditorMenuBar'
+import { fileEditorRoot } from '../chrome/editor-root'
+import { fileMenuDefinition, type FileMenuHost } from '../chrome/file-menu'
+import { separator, shortcutGroupsFromMenus, type MenuDefinition } from '../chrome/menu'
+import { ShortcutsDialog } from '../chrome/ShortcutsDialog'
+import { helpMenu, undoRedoEntries } from '../chrome/standard-menus'
+import { useEditorShortcuts } from '../chrome/use-editor-shortcuts'
 import { FormatPanel } from './FormatPanel'
+import { presentationShortcutGroups } from './presentation-shortcuts'
 import { PresentationToolbar } from './PresentationToolbar'
 import { useControllerRevision, usePresentationController } from './use-presentation'
 
@@ -26,6 +35,9 @@ export interface PresentationEditorProps {
   className?: string
   /** Hands the controller to the host (integration code and tests drive it directly). */
   onReady?(controller: PresentationController): void
+  /** The Files page's File menu entries (see LiveEditorProps). */
+  fileMenu?: FileMenuHost
+  onSaveShortcut?: () => void
 }
 
 function openLink(url: string): void {
@@ -56,7 +68,7 @@ export function PresentationEditor({ doc, awareness, readOnly, assets, user, ...
   return <PresentationEditorView controller={controller} {...props} />
 }
 
-function PresentationEditorView({ controller, startInShow, toolbarSlot, className, onReady }: Pick<PresentationEditorProps, 'startInShow' | 'toolbarSlot' | 'className' | 'onReady'> & { controller: PresentationController }) {
+function PresentationEditorView({ controller, startInShow, toolbarSlot, className, onReady, fileMenu, onSaveShortcut }: Pick<PresentationEditorProps, 'startInShow' | 'toolbarSlot' | 'className' | 'onReady' | 'fileMenu' | 'onSaveShortcut'> & { controller: PresentationController }) {
   useControllerRevision(controller)
   useEffect(() => {
     onReady?.(controller)
@@ -66,6 +78,7 @@ function PresentationEditorView({ controller, startInShow, toolbarSlot, classNam
   const [notesOpen, setNotesOpen] = useState(true)
   const [printing, setPrinting] = useState(false)
   const [printError, setPrintError] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const presenter = useRef<Presenter | null>(null)
   const root = useRef<HTMLDivElement>(null)
   const [stripHost] = useMounted(controller, (element) => new SlideList(element, controller, { layout: 'strip' }))
@@ -122,30 +135,66 @@ function PresentationEditorView({ controller, startInShow, toolbarSlot, classNam
       const target = event.target instanceof Element ? event.target : null
       const inEditor = !target || target === document.body || root.current?.contains(target) === true
       const editable = target?.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')
-      if (!inEditor || editable) return
+      // A running show takes its own keys (focus may still be on the menu that started it).
+      if (!inEditor || editable || presenter.current) return
       if (event.key === 'F5' || ((event.metaKey || event.ctrlKey) && event.key === 'Enter')) {
         event.preventDefault()
         present(event.shiftKey ? 'current' : 'start')
       }
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    // Capturing, so the app's own Cmd/Ctrl+Shift+Enter (the side panel's) sees the key handled.
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
   })
 
+  useEditorShortcuts(root, {
+    print: () => { void print() },
+    save: onSaveShortcut,
+    shortcuts: () => setShortcutsOpen(true),
+    focus: () => canvas.current?.focus(),
+  })
+
+  const readOnly = controller.readOnly
+  const menus: MenuDefinition[] = [
+    fileMenuDefinition(fileMenu, () => ({ print: () => { void print() } })),
+    {
+      id: 'edit',
+      label: ui("Edit"),
+      items: () => undoRedoEntries({ undo: () => controller.undo(), redo: () => controller.redo(), canUndo: !controller.readOnly && controller.canUndo(), canRedo: !controller.readOnly && controller.canRedo() }),
+    },
+    {
+      id: 'view',
+      label: ui("View"),
+      items: () => [
+        { type: 'item', id: 'present', label: ui("Present from the beginning"), icon: Play, shortcut: { key: 'F5' }, onSelect: () => present('start') },
+        { type: 'item', id: 'present-current', label: ui("Present from the current slide"), shortcut: { key: 'F5', shift: true }, onSelect: () => present('current') },
+        { type: 'item', id: 'presenter-view', label: ui("Presenter view"), onSelect: () => present('presenter') },
+        separator,
+        { type: 'item', id: 'sorter', label: ui("Slide sorter"), icon: LayoutGrid, checked: view === 'sorter', onSelect: () => setView(view === 'sorter' ? 'editor' : 'sorter') },
+        { type: 'item', id: 'notes', label: ui("Speaker notes"), icon: StickyNote, checked: notesOpen, disabled: view === 'sorter', onSelect: () => setNotesOpen(!notesOpen) },
+        ...(readOnly ? [] : [{ type: 'item', id: 'format-panel', label: ui("Format panel"), icon: PanelRight, checked: formatPanel, disabled: view === 'sorter', onSelect: () => setFormatPanel(!formatPanel) } as const]),
+      ],
+    },
+    helpMenu(() => setShortcutsOpen(true)),
+  ]
+
   return (
-    <div ref={root} className={cn('flex h-full min-h-0 flex-col bg-background [--pp-canvas-bg:var(--muted)] [--pp-muted:var(--muted-foreground)]', className)} data-presentation-editor="">
-      <div className="flex items-center gap-2 border-b px-2 py-1">
-        <PresentationToolbar
-          controller={controller}
-          view={view}
-          onViewChange={setView}
-          formatPanel={formatPanel}
-          onFormatPanelChange={setFormatPanel}
-          onPresent={present}
-          printing={printing}
-          onPrint={() => { void print() }}
-        />
-        {toolbarSlot}
+    <div ref={root} className={cn('flex h-full min-h-0 flex-col bg-background [--pp-canvas-bg:var(--muted)] [--pp-muted:var(--muted-foreground)]', className)} data-presentation-editor="" {...fileEditorRoot('presentation')}>
+      <div className="border-b px-2 pt-0.5 pb-1">
+        <EditorMenuBar menus={menus} onClose={() => canvas.current?.focus()} className="-mx-0.5" />
+        <div className="flex items-center gap-2">
+          <PresentationToolbar
+            controller={controller}
+            view={view}
+            onViewChange={setView}
+            formatPanel={formatPanel}
+            onFormatPanelChange={setFormatPanel}
+            onPresent={present}
+            printing={printing}
+            onPrint={() => { void print() }}
+          />
+          {toolbarSlot}
+        </div>
       </div>
       {printError && <p role="alert" className="px-3 py-1 text-sm text-destructive">{ui("Unable to prepare the presentation for printing. Check that its images are available and try again.")}</p>}
       <div className={cn('grid min-h-0 flex-1', formatPanel && view === 'editor' ? 'grid-cols-[minmax(7rem,12rem)_1fr_16rem]' : 'grid-cols-[minmax(7rem,12rem)_1fr]', view === 'sorter' && 'hidden')}>
@@ -166,6 +215,12 @@ function PresentationEditorView({ controller, startInShow, toolbarSlot, classNam
         )}
       </div>
       {view === 'sorter' && <div className="min-h-0 flex-1" ref={sorterHost} data-testid="presentation-sorter" />}
+      <ShortcutsDialog
+        open={shortcutsOpen}
+        onOpenChange={setShortcutsOpen}
+        groups={() => shortcutGroupsFromMenus(menus, presentationShortcutGroups())}
+        returnFocus={() => canvas.current?.focus()}
+      />
     </div>
   )
 }

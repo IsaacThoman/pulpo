@@ -6,7 +6,7 @@ import { PresentationEditor } from './PresentationEditor'
  * A presentation opened from Files: the editor on the document's shared session, with its
  * collaborators' presence, and `.ppsx` slideshows starting in the show.
  */
-export function PresentationDocEditor({ session, name, editable, toolbarSlot, assets }: LiveEditorProps) {
+export function PresentationDocEditor({ session, name, editable, toolbarSlot, assets, fileMenu, onSaveShortcut }: LiveEditorProps) {
   return (
     <PresentationEditor
       doc={session.doc}
@@ -16,6 +16,8 @@ export function PresentationDocEditor({ session, name, editable, toolbarSlot, as
       user={{ name: sessionLabel(), color: sessionColor(session.doc.clientID) }}
       startInShow={/\.pps[xm]$/i.test(name)}
       toolbarSlot={toolbarSlot}
+      fileMenu={fileMenu}
+      onSaveShortcut={onSaveShortcut}
     />
   )
 }

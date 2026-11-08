@@ -9,7 +9,16 @@ import { ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { sessionColor, sessionLabel } from '../../editor/presence'
 import { ToolbarButton } from '../../editor/ToolbarButton'
+import { EditorMenuBar } from '../chrome/EditorMenuBar'
+import { fileEditorRoot } from '../chrome/editor-root'
+import { fileMenuDefinition } from '../chrome/file-menu'
+import { separator, shortcutGroupsFromMenus, type MenuDefinition } from '../chrome/menu'
+import { printHtmlDocument, textPrintHtml } from '../chrome/output'
+import { ShortcutsDialog } from '../chrome/ShortcutsDialog'
+import { helpMenu, undoRedoEntries } from '../chrome/standard-menus'
+import { FIND_SHORTCUT, useEditorShortcuts } from '../chrome/use-editor-shortcuts'
 import type { LiveEditorProps } from '../types'
+import { textShortcutGroups } from './text-shortcuts'
 
 /** Waits this long after the last keystroke before rendering the HTML preview again. */
 const PREVIEW_DELAY_MS = 400
@@ -135,11 +144,13 @@ function IndentMenu({ indent, disabled, onChange }: { indent: TextEditorIndent; 
  * Text and code files, edited collaboratively in CodeMirror (the shared view core in
  * `@pulpo/client-core/office/text/view`), with an HTML preview for web pages.
  */
-export function TextDocEditor({ session, name, editable, width, toolbarSlot }: LiveEditorProps) {
+export function TextDocEditor({ session, name, editable, width, toolbarSlot, fileMenu, onSaveShortcut }: LiveEditorProps) {
+  const shell = useRef<HTMLDivElement>(null)
   const container = useRef<HTMLDivElement>(null)
   const editor = useRef<TextEditor | null>(null)
   const [state, setState] = useState<TextEditorState | null>(null)
   const [preview, setPreview] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const dark = useDarkTheme()
   const facts = useFileFacts(session.doc)
   const html = /\.html?$/i.test(name)
@@ -182,20 +193,58 @@ export function TextDocEditor({ session, name, editable, width, toolbarSlot }: L
   )
   const mac = /Mac|iPhone|iPad/.test(navigator.platform)
   const shortcut = (key: string) => ({ label: mac ? `⌘${key.toUpperCase()}` : `Ctrl+${key.toUpperCase()}`, aria: `${mac ? 'Meta' : 'Control'}+${key}` })
+  const toggleWrap = (target: TextEditor) => {
+    const next = !target.state().wrap
+    localStorage.setItem(WRAP_KEY, String(next))
+    target.setWrap(next)
+  }
+  const print = () => printHtmlDocument(textPrintHtml(name, session.doc.getText('text').toString()))
+
+  useEditorShortcuts(shell, {
+    print,
+    save: onSaveShortcut,
+    shortcuts: () => setShortcutsOpen(true),
+    find: run((target) => target.openSearch()),
+    replace: run((target) => target.openSearch()),
+    focus: () => editor.current?.focus(),
+  })
+
+  const menus: MenuDefinition[] = [
+    fileMenuDefinition(fileMenu, () => ({ print })),
+    {
+      id: 'edit',
+      label: ui("Edit"),
+      items: () => {
+        const current = editor.current?.state()
+        return [
+          ...undoRedoEntries({ undo: run((target) => target.undo()), redo: run((target) => target.redo()), canUndo: editable && Boolean(current?.canUndo), canRedo: editable && Boolean(current?.canRedo) }),
+          separator,
+          { type: 'item', id: 'find', label: ui("Find and replace"), icon: Search, shortcut: FIND_SHORTCUT, onSelect: run((target) => target.openSearch()) },
+        ]
+      },
+    },
+    {
+      id: 'view',
+      label: ui("View"),
+      items: () => [
+        { type: 'item', id: 'wrap', label: ui("Wrap lines"), icon: WrapText, checked: editor.current?.state().wrap ?? false, onSelect: run(toggleWrap) },
+        ...(html ? [{ type: 'item', id: 'preview', label: ui("Preview"), icon: Eye, checked: preview, onSelect: () => setPreview(!preview) } as const] : []),
+      ],
+    },
+    // Cmd/Ctrl+/ comments lines out here, as in VS Code; it opens the list only in plain text.
+    helpMenu(() => setShortcutsOpen(true), { key: false }),
+  ]
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div ref={shell} className="flex h-full min-h-0 flex-col" {...fileEditorRoot('text')}>
+      <EditorMenuBar menus={menus} onClose={() => editor.current?.focus()} className="px-3 pt-0.5 sm:px-5" />
       <div className="flex flex-wrap items-center gap-2 border-b bg-background/95 px-4 py-1.5 sm:px-6">
         <div role="toolbar" aria-label={ui("Editing")} className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">
           {button(ui("Undo"), <Undo2 className="size-4" />, run((target) => target.undo()), { disabled: !editable || !state?.canUndo, shortcut: shortcut('z') })}
           {button(ui("Redo"), <Redo2 className="size-4" />, run((target) => target.redo()), { disabled: !editable || !state?.canRedo })}
           <span className="mx-1 h-5 w-px bg-border" />
           {button(ui("Find and replace"), <Search className="size-4" />, run((target) => target.openSearch()), { shortcut: shortcut('f') })}
-          {button(ui("Wrap lines"), <WrapText className="size-4" />, run((target) => {
-            const next = !target.state().wrap
-            localStorage.setItem(WRAP_KEY, String(next))
-            target.setWrap(next)
-          }), { active: state?.wrap ?? false })}
+          {button(ui("Wrap lines"), <WrapText className="size-4" />, run(toggleWrap), { active: state?.wrap ?? false })}
           {state && <IndentMenu indent={state.indent} disabled={!editable} onChange={(indent) => run((target) => target.setIndent(indent))()} />}
           {html && (
             <>
@@ -222,6 +271,12 @@ export function TextDocEditor({ session, name, editable, width, toolbarSlot }: L
         <span>{ENCODING_LABELS[facts.encoding] ?? facts.encoding}</span>
         <span>{facts.lineEnding.toUpperCase()}</span>
       </div>
+      <ShortcutsDialog
+        open={shortcutsOpen}
+        onOpenChange={setShortcutsOpen}
+        groups={() => shortcutGroupsFromMenus(menus, textShortcutGroups())}
+        returnFocus={() => editor.current?.focus()}
+      />
     </div>
   )
 }

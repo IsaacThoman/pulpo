@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent, type KeyboardEvent } from 'react'
 import { MemoryLiveAssetStore, type LiveAssetStore } from '@pulpo/client-core/office'
-import type { MimeBundle, NotebookCellType, NotebookOutput } from '@pulpo/client-core/office/notebook'
+import { exportNotebookFile, parseNotebook, renderNotebookHtml, type MimeBundle, type NotebookCellType, type NotebookOutput } from '@pulpo/client-core/office/notebook'
 import {
   createCellEditor,
   NotebookController,
@@ -32,7 +32,6 @@ import {
 } from 'lucide-react'
 import { HighlightedCode } from '@/components/chat/HighlightedCode'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { NotebookMarkdown, OutputBody, Prompt } from '@/components/viewers/NotebookViewer'
 import { useDarkTheme } from '@/components/viewers/use-dark-theme'
@@ -40,7 +39,16 @@ import { activeLocale, ui, uit } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { sessionColor, sessionLabel } from '../../editor/presence'
 import { ToolbarButton } from '../../editor/ToolbarButton'
+import { EditorMenuBar } from '../chrome/EditorMenuBar'
+import { fileEditorRoot } from '../chrome/editor-root'
+import { fileMenuDefinition } from '../chrome/file-menu'
+import { separator, shortcutGroupsFromMenus, type MenuDefinition } from '../chrome/menu'
+import { printHtmlDocument } from '../chrome/output'
+import { ShortcutsDialog } from '../chrome/ShortcutsDialog'
+import { helpMenu, undoRedoEntries } from '../chrome/standard-menus'
+import { useEditorShortcuts } from '../chrome/use-editor-shortcuts'
 import type { LiveEditorProps } from '../types'
+import { notebookShortcutGroups } from './notebook-shortcuts'
 
 /** The phrases CodeMirror shows in cells, in the app's language. */
 function editorLabels(): Record<string, string> {
@@ -358,45 +366,6 @@ function InsertBar({ onInsert, always }: { onInsert: (type: NotebookCellType) =>
   )
 }
 
-const SHORTCUTS: [string, () => string][] = [
-  ['Enter', () => ui("Edit the cell")],
-  ['Esc', () => ui("Stop editing (command mode)")],
-  ['Shift+Enter', () => ui("Go to the next cell")],
-  ['↑ / ↓  K / J', () => ui("Select the cell above or below")],
-  ['Shift+↑ / Shift+↓', () => ui("Extend the selection")],
-  ['A / B', () => ui("Insert a cell above or below")],
-  ['D, D', () => ui("Delete the selected cells")],
-  ['X / C / V', () => ui("Cut, copy, or paste cells")],
-  ['Shift+V', () => ui("Paste cells above")],
-  ['Z', () => ui("Undo")],
-  ['Y / M / R', () => ui("Make code, Markdown, or raw")],
-  ['Shift+M', () => ui("Merge the selected cells, or with the cell below")],
-  [`${mod}Shift+-`, () => ui("Split the cell at the cursor")],
-  ['O', () => ui("Hide or show outputs")],
-  [`${mod}A`, () => ui("Select every cell")],
-]
-
-function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{ui("Notebook shortcuts")}</DialogTitle>
-          <DialogDescription>{ui("Press Esc to leave a cell; these keys then work on the selected cells, as in Jupyter.")}</DialogDescription>
-        </DialogHeader>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-          {SHORTCUTS.map(([keys, label]) => (
-            <div key={keys} className="contents">
-              <dt><kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs">{keys}</kbd></dt>
-              <dd className="text-muted-foreground">{label()}</dd>
-            </div>
-          ))}
-        </dl>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 function writeClipboard(text: string) {
   if (text) void navigator.clipboard?.writeText(text).catch(() => undefined)
 }
@@ -407,11 +376,12 @@ function writeClipboard(text: string) {
  * and scripts only in the sandbox), Jupyter's command and edit modes and keys, and other sessions'
  * cursors and cells. Cells don't run in the browser; agents run notebooks in their sandbox.
  */
-export function NotebookDocEditor({ session, editable, width, toolbarSlot, assets: givenAssets, onRunWithAgent }: LiveEditorProps) {
+export function NotebookDocEditor({ session, name, editable, width, toolbarSlot, assets: givenAssets, onRunWithAgent, fileMenu, onSaveShortcut }: LiveEditorProps) {
   const [fallbackAssets] = useState(() => new MemoryLiveAssetStore())
   const assets = givenAssets ?? fallbackAssets
   const [controller, setController] = useState<NotebookController | null>(null)
   const editors = useRef(new Map<string, CellEditor>())
+  const shell = useRef<HTMLDivElement>(null)
   const root = useRef<HTMLDivElement>(null)
   const dark = useDarkTheme()
   const [shortcuts, setShortcuts] = useState(false)
@@ -457,6 +427,29 @@ export function NotebookDocEditor({ session, editable, width, toolbarSlot, asset
     }
   }, [active, mode])
 
+  /** Back to the active cell while editing it, else to the cell list (command mode keys). */
+  const focusNotebook = () => {
+    const current = controller?.getState()
+    const editor = current?.mode === 'edit' && current.active ? editors.current.get(current.active) : undefined
+    if (editor) editor.focus('keep')
+    else root.current?.focus({ preventScroll: true })
+  }
+  const printNotebook = async () => {
+    const bytes = await exportNotebookFile(session.doc, { assets })
+    const model = parseNotebook(new TextDecoder().decode(bytes))
+    printHtmlDocument(renderNotebookHtml(model, {
+      title: name,
+      labels: { empty: ui("This notebook has no cells."), widget: ui("Interactive widgets need a running kernel and are not shown."), unsupported: ui("This output type can’t be shown") },
+    }))
+  }
+
+  useEditorShortcuts(shell, {
+    print: () => { void printNotebook() },
+    save: onSaveShortcut,
+    shortcuts: () => setShortcuts(true),
+    focus: focusNotebook,
+  })
+
   if (!controller || !state) return null
   const selected = new Set(state.selected)
   const canEdit = editable && !state.readOnly
@@ -476,9 +469,32 @@ export function NotebookDocEditor({ session, editable, width, toolbarSlot, asset
   }
   const activeCell = state.cells.find((cell) => cell.key === state.active)
   const locale = activeLocale()
+  const menus: MenuDefinition[] = [
+    fileMenuDefinition(fileMenu, () => ({ print: () => { void printNotebook() } })),
+    {
+      id: 'edit',
+      label: ui("Edit"),
+      items: () => {
+        const current = controller.getState()
+        const can = editable && !current.readOnly
+        return [
+          ...undoRedoEntries({ undo: run(() => controller.undo()), redo: run(() => controller.redo()), canUndo: can && current.canUndo, canRedo: can && current.canRedo }),
+          separator,
+          { type: 'item', id: 'cut-cells', label: ui("Cut cells"), icon: Scissors, disabled: !can || !current.active, onSelect: run(() => writeClipboard(controller.cut())) },
+          { type: 'item', id: 'copy-cells', label: ui("Copy cells"), icon: Copy, disabled: !current.active, onSelect: run(() => writeClipboard(controller.copy())) },
+          { type: 'item', id: 'paste-cells', label: ui("Paste cells below"), icon: ClipboardPaste, disabled: !can || !current.canPaste, onSelect: run(() => void controller.paste('below')) },
+          { type: 'item', id: 'delete-cells', label: ui("Delete cells"), icon: Trash2, disabled: !can || !current.active, onSelect: run(() => controller.deleteSelected()) },
+          separator,
+          { type: 'item', id: 'select-all-cells', label: ui("Select every cell"), disabled: !current.cells.length, onSelect: run(() => controller.selectAll()) },
+        ]
+      },
+    },
+    helpMenu(() => setShortcuts(true)),
+  ]
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-notebook-editor>
+    <div ref={shell} className="flex h-full min-h-0 flex-col" data-notebook-editor {...fileEditorRoot('notebook')}>
+      <EditorMenuBar menus={menus} onClose={focusNotebook} className="px-3 pt-0.5 sm:px-5" />
       <div className="flex flex-wrap items-center gap-2 border-b bg-background/95 px-4 py-1.5 sm:px-6">
         <div role="toolbar" aria-label={ui("Notebook")} className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">
           <ToolbarButton label={ui("Undo")} shortcut={{ label: `${mod}Z`, aria: `${mac ? 'Meta' : 'Control'}+z` }} disabled={!canEdit || !state.canUndo} onClick={run(() => controller.undo())}><Undo2 className="size-4" /></ToolbarButton>
@@ -605,7 +621,13 @@ export function NotebookDocEditor({ session, editable, width, toolbarSlot, asset
         <span>{state.kernel ?? state.language}</span>
         <span>{state.cells.length === 1 ? ui("1 cell") : uit`${state.cells.length.toLocaleString(locale)} cells`}</span>
       </div>
-      <ShortcutsDialog open={shortcuts} onClose={() => setShortcuts(false)} />
+      <ShortcutsDialog
+        open={shortcuts}
+        onOpenChange={setShortcuts}
+        groups={() => shortcutGroupsFromMenus(menus, notebookShortcutGroups())}
+        description={ui("Press Esc to leave a cell; these keys then work on the selected cells, as in Jupyter.")}
+        returnFocus={focusNotebook}
+      />
     </div>
   )
 }

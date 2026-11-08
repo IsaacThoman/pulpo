@@ -1,5 +1,6 @@
 import type { DocSession } from '@pulpo/client-core/doc-sync'
 import type { LiveAssetStore } from '@pulpo/client-core/office'
+import type { FileMenuHost } from './chrome/file-menu'
 
 /** What Files hands a live format's editor. */
 export interface LiveEditorProps {
@@ -15,6 +16,13 @@ export interface LiveEditorProps {
   assets: LiveAssetStore
   /** Opens a chat with this file attached (with edit access) and a request to run it, for formats that run. */
   onRunWithAgent?: () => void
+  /**
+   * The Files page's part of the editor's File menu (New, Make a copy, Download, Move, Trash,
+   * Details…), composed with the editor's own through `composeFileMenu`. Harness pages omit it.
+   */
+  fileMenu?: FileMenuHost
+  /** Cmd/Ctrl+S: Pulpo saves as people type, so the host only confirms it (its save indicator). */
+  onSaveShortcut?: () => void
 }
 
 /** Two versions of a file for a review diff: before and after an agent's change. */
