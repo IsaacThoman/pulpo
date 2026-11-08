@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
-import { TextSelection } from '@tiptap/pm/state'
 import type { CommentThread, DocxEditor, DocxFormattingState, HeaderFooterKind, Revision } from '@pulpo/client-core/office/docx/view'
 import { ArrowDown, ArrowUp, CaseSensitive, Check, ChevronDown, ChevronUp, Hash, MessageCircleReply, Pencil, Replace, Trash2, WholeWord, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -10,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { ZoomControl } from '../chrome/ZoomControl'
 import { ToolbarButton } from './DocxToolbar'
 import { headerFooterName, wordCountLabel } from './docx-names'
+import { openStoryOnPage, storyOnPage } from './header-footer-pages'
 import { useEditorValue } from './use-editor-value'
 
 export function PanelFrame({ title, onClose, children, className }: { title: string; onClose: () => void; children: React.ReactNode; className?: string }) {
@@ -419,17 +419,6 @@ export function StatusBar({ editor, state, showWordCount, onWordCount, zoom }: {
   )
 }
 
-/** The header or footer (by story id) a laid-out page shows, read from the page bands in `pages`. */
-function storyOnPage(pages: HTMLElement, kind: HeaderFooterKind, page: number): HTMLElement | undefined {
-  const sheet = pages.querySelectorAll('.docx-page')[page - 1]?.getBoundingClientRect()
-  if (!sheet) return undefined
-  return [...pages.querySelectorAll<HTMLElement>(`[data-story^="${kind}:"]`)].find((element) => {
-    if (element.closest('.docx-story-editor')) return false
-    const top = element.getBoundingClientRect().top
-    return top >= sheet.top - 1 && top <= sheet.bottom + 1
-  })
-}
-
 /**
  * The slim bar Docs and Word show while a header or footer is open: which one it is, Different
  * first page, a page number at the cursor, Remove, and Close (Esc). In a narrow window (the side
@@ -461,11 +450,9 @@ export function HeaderFooterBar({ editor, storyId, editable, pages }: {
     if (page !== undefined && pages) {
       editor.relayout()
       const shown = storyOnPage(pages, kind, page)
-      const shownId = shown?.dataset.story
-      if (shown && shownId && shownId !== storyId) {
-        if (editor.openStoryEditor(shownId, shown)) editor.run((state) => state.tr.setSelection(TextSelection.atEnd(state.doc)))
-      } else if (!shown && on) editor.addHeaderFooter(kind, 'first')
-      else if (!shown) editor.closeStoryEditor()
+      if (shown) openStoryOnPage(editor, shown)
+      else if (on) editor.addHeaderFooter(kind, 'first')
+      else editor.closeStoryEditor()
     }
     rerender()
     editor.focus()

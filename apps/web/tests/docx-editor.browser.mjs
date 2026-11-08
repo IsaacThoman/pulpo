@@ -2446,7 +2446,7 @@ try {
     }
   })
 
-  await step('keeps an open header on its page when Different first page changes, and counts the body', async () => {
+  await step("edits the header of the cursor's page through Different first page and Insert ▸ Header, and counts the body", async () => {
     await open('?generate=80')
     await clickEnd('Section 1')
     await pick('Insert', 'header')
@@ -2477,6 +2477,22 @@ try {
     const pages = await page.evaluate(() => window.harness.editors[0].pages)
     await page.locator('.docx-band .docx-story[data-story^="header:"]', { hasText: 'Running head again' }).nth(pages - 1).waitFor()
     assert.match(await exported('header'), /Title page/)
+    // Insert ▸ Header edits the header of the cursor's page, as Word's Edit Header does: a title page's own.
+    await page.evaluate(() => window.harness.editors[0].setDifferentFirstPage(true))
+    await page.locator('.docx-band .docx-story[data-story^="header:"]', { hasText: 'Title page' }).waitFor()
+    await clickEnd('Section 1')
+    await pick('Insert', 'header')
+    await toolbar('First page header').waitFor()
+    assert.equal(await page.evaluate(() => window.harness.editors[0].currentPage().index), 1)
+    await page.keyboard.press('Escape')
+    await page.locator('.docx-story-editor').waitFor({ state: 'detached' })
+    await clickEnd('Section 2')
+    await pick('Insert', 'header')
+    await toolbar('Header').waitFor()
+    assert.equal(await page.evaluate(() => {
+      const editor = window.harness.editors[0]
+      return editor.editingStory === editor.headerFooter().header.default && editor.currentPage().index > 1
+    }), true)
   })
 
   await step('shows a read-only viewer the comments from the Comment button, and selects only the document', async () => {

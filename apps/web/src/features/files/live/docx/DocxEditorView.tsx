@@ -23,6 +23,7 @@ import { useDocxPreferences } from './docx-preferences'
 import { docxShortcutGroups, WORD_COUNT_SHORTCUT } from './docx-shortcuts'
 import { docxPlainText, plainTextName } from './docx-text'
 import { DocxToolbar, type ToolbarPanels } from './DocxToolbar'
+import { openStoryOnPage, storyOnPage } from './header-footer-pages'
 import { LinkBubble } from './LinkBubble'
 import { measurementUnit } from './page-units'
 import { PageSetupDialog, type PageSetupState } from './PageSetupDialog'
@@ -281,7 +282,13 @@ export function DocxEditorView({ className, onEditor, toolbarSlot, fileMenu, onS
     insertImage: openImagePicker,
     insertHeaderFooter: (kind: HeaderFooterKind) => {
       printLayout(editor)
-      editor.addHeaderFooter(kind)
+      // Word's Edit Header: the one the cursor's page shows, so a title page opens its own.
+      const page = editor.currentPage()?.index
+      const band = page !== undefined && scroller ? storyOnPage(scroller, kind, page) : undefined
+      if (band && openStoryOnPage(editor, band)) return
+      // A page showing none although its section has a regular one is a first page without its own.
+      const info = editor.headerFooter()
+      editor.addHeaderFooter(kind, info.differentFirstPage && info[kind].default ? 'first' : 'default')
     },
     insertPageNumber: (options) => {
       if (options.kind) printLayout(editor)
