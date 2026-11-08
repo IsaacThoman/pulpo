@@ -48,22 +48,36 @@ function tabbables(root: HTMLElement): HTMLElement[] {
   ))
 }
 
-/** "Skip to message" on chats, else "Skip to main content": past the sidebar's long chat list. */
-function SkipLink({ chatView, inert }: { chatView: boolean; inert: boolean }) {
+/**
+ * "Skip to message" on chats, else "Skip to main content": past the sidebar's long chat list.
+ * A full-screen side panel hides the main view, so the link goes to the panel instead.
+ */
+function SkipLink({ chatView, panelFull, inert }: { chatView: boolean; panelFull: boolean; inert: boolean }) {
   return (
     <a
-      href="#main-content"
+      href={panelFull ? '#side-panel' : '#main-content'}
       inert={inert}
       className="sr-only rounded-lg border bg-popover text-sm font-medium text-popover-foreground shadow-lg outline-none focus:not-sr-only focus:fixed focus:left-2 focus:top-2 focus:z-[60] focus:px-3 focus:py-2 focus-visible:ring-2 focus-visible:ring-ring"
       onClick={(event) => {
         event.preventDefault()
+        if (panelFull) {
+          const panel = document.querySelector<HTMLElement>('aside[data-side-panel]')
+          if (!panel) return
+          const first = tabbables(panel)[0]
+          if (first) first.focus()
+          else {
+            panel.tabIndex = -1
+            panel.focus()
+          }
+          return
+        }
         const main = document.getElementById('main-content')
         const composer = chatView ? main?.querySelector<HTMLTextAreaElement>('textarea:not([disabled])') : null
         if (composer) composer.focus()
         else main?.focus()
       }}
     >
-      {chatView ? ui("Skip to message") : ui("Skip to main content")}
+      {panelFull ? ui("Skip to side panel") : chatView ? ui("Skip to message") : ui("Skip to main content")}
     </a>
   )
 }
@@ -308,7 +322,7 @@ export function AppLayout() {
   return (
     <SettingsDialogProvider controller={settingsController}>
       <TooltipProvider delayDuration={1000}>
-        <SkipLink chatView={chatView} inert={drawerOpen} />
+        <SkipLink chatView={chatView} panelFull={panelFull} inert={drawerOpen} />
         <ChatDataBridge />
         <SettingsBridge />
         <DesktopSidebarTitleBar

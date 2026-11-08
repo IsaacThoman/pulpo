@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { AppLayout } from './AppLayout'
 import { DesktopActionsTitleBarSlot, DesktopModelTitleBarSlot } from '@/components/desktop/DesktopSidebarTitleBar'
 import { useDesktopChrome } from '@/stores/desktopChrome'
+import { useSidePanel } from '@/features/side-panel/store'
 
 vi.mock('@/stores/chat', () => ({ useChat: { getState: () => ({ abandonTemporaryChat: vi.fn() }) } }))
 vi.mock('@/stores/settings', () => ({
@@ -14,6 +15,12 @@ vi.mock('@/stores/settings', () => ({
 vi.mock('@/features/chat/ChatDataBridge', () => ({ ChatDataBridge: () => null }))
 vi.mock('@/features/settings/SettingsBridge', () => ({ SettingsBridge: () => null }))
 vi.mock('./BannerBar', () => ({ BannerBar: () => null }))
+vi.mock('@/features/side-panel/SidePanelLayout', () => ({
+  SidePanelLayout: ({ full, children }: { full: boolean; children: React.ReactNode }) => <>
+    {children}
+    {full && <aside data-side-panel aria-label="Side panel"><p>Panel text</p><button>Panel action</button></aside>}
+  </>,
+}))
 vi.mock('./Sidebar', () => ({
   Sidebar: ({ mobile, mobileOpen, collapsed, transitions, onToggle, onNavigate }: {
     mobile: boolean; mobileOpen: boolean; collapsed: boolean; transitions: boolean; onToggle: () => void; onNavigate: () => void
@@ -163,6 +170,18 @@ describe('skip link and shortcuts', () => {
     const main = view.container.querySelector('main')!
     fireEvent.click(links[0]!)
     expect(document.activeElement).toBe(main)
+  })
+
+  it('skips to the side panel when it fills the screen and hides the main view', () => {
+    narrow = true
+    Reflect.deleteProperty(window, 'pulpoDesktop')
+    act(() => { useSidePanel.setState({ content: { kind: 'folder', id: null } }) })
+    const view = mount()
+    const link = screen.getByText('Skip to side panel').closest('a')!
+    expect(view.container.querySelector('main')!.className).toContain('hidden')
+    fireEvent.click(link)
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Panel action' }))
+    act(() => { useSidePanel.setState({ content: null }) })
   })
 
   it('leaves Cmd/Ctrl+B to editors that handle it, and to rich text', () => {

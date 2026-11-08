@@ -2697,6 +2697,7 @@ const esUi: Record<string, string> = {
   "Shared chat": "Chat compartido",
   "Skip to message": "Saltar al mensaje",
   "Skip to main content": "Saltar al contenido principal",
+  "Skip to side panel": "Saltar al panel lateral",
   "Primary": "Principal",
   "Show in sidebar": "Mostrar en la barra lateral",
   "Set to expire": "Configurado para caducar",
