@@ -1,5 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native'
+import { useQuery } from '@tanstack/react-query'
+import { friendProfileQuery, friendsApi } from './api'
+import { useFriendActions, useFriendsContext } from './hooks'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { FriendProfile, FriendSearchResult } from '@pulpo/contracts'
 import {
@@ -47,6 +50,8 @@ import { NativeUsageLimit, UsageLimitCard } from '../usage-limits/UsageLimitsSet
 import { invitationMembersLabel, poolMembersLabel, poolUsageRows, profileDetail } from './format'
 import { useFriendsScreen, type FriendMenuAction, type FriendsScreenModel } from './useFriendsScreen'
 
+const OpenProfile = createContext<((profile: FriendProfile) => void) | undefined>(undefined)
+
 const EMPTY_TITLE = 'Add friends'
 const EMPTY_DETAIL = 'Find someone by their name or Pulpo username.'
 const ALL_IN_POOL = 'All your friends are in your Pool.'
@@ -70,8 +75,47 @@ function searchStatus(model: FriendsScreenModel): string | null {
 /** Friends, friend requests, and the viewer's Pool, as on the web's Friends page. */
 export function FriendsScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Friends'>) {
   const model = useFriendsScreen()
-  if (Platform.OS === 'ios') return <NativeFriends model={model} />
-  return <MaterialFriends model={model} onBack={() => navigation.goBack()} />
+  return <OpenProfile.Provider value={(profile) => { if (profile.id !== model.user?.id) navigation.push('FriendProfile', { userId: profile.id }) }}>
+    {Platform.OS === 'ios' ? <NativeFriends model={model} /> : <MaterialFriends model={model} onBack={() => navigation.goBack()} />}
+  </OpenProfile.Provider>
+}
+
+export function FriendProfileScreen({ navigation, route }: NativeStackScreenProps<RootStackParamList, 'FriendProfile'>) {
+  const { namespace, user } = useFriendsContext()
+  const query = useQuery({ ...friendProfileQuery(namespace, route.params.userId), enabled: Boolean(namespace) })
+  const { run, busy } = useFriendActions(namespace)
+  const theme = useAppTheme()
+  const data = query.data
+  const label = data?.relationship === 'none' ? 'Add friend' : data?.relationship === 'incoming' ? 'Accept request' : null
+  const act = () => {
+    if (data?.relationship === 'none') void run(`request:${data.profile.id}`, () => friendsApi.sendRequest(data.profile.id))
+    else if (data?.relationship === 'incoming' && data.requestId) void run(`accept:${data.requestId}`, () => friendsApi.acceptRequest(data.requestId!))
+  }
+  const status = data?.relationship === 'friends' ? 'Friends' : data?.relationship === 'outgoing' ? 'Request sent' : ''
+  return <OpenProfile.Provider value={(profile) => { if (profile.id !== user?.id) navigation.push('FriendProfile', { userId: profile.id }) }}>
+    {Platform.OS === 'ios' ? <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm>
+      {query.isPending ? <SwiftUISection><SwiftUIProgressView /><SwiftUIText>Loading profile…</SwiftUIText></SwiftUISection>
+        : query.isError ? <SwiftUISection footer={<SwiftUIText>{query.error.message}</SwiftUIText>}><SwiftUIButton label="Try again" onPress={() => void query.refetch()} /></SwiftUISection>
+          : data ? <>
+            <SwiftUISection><NativePersonRow profile={data.profile} interactive={false} />{status ? <SwiftUIText>{status}</SwiftUIText> : null}
+              {label ? <NativeRowButton prominent label={label} onPress={act} isDisabled={busy} /> : null}
+            </SwiftUISection>
+            <SwiftUISection title={`Mutual friends (${data.mutualFriends.length})`}>
+              {data.mutualFriends.length ? data.mutualFriends.map((profile) => <NativePersonRow key={profile.id} profile={profile} />) : <SwiftUIText>No mutual friends</SwiftUIText>}
+            </SwiftUISection>
+          </> : null}
+    </SwiftUIForm></SwiftUIHost> : <Screen>
+      <PageHeader title="Profile" onBack={() => navigation.goBack()} />
+      {query.isPending ? <Text style={[styles.status, { color: theme.secondary }]}>Loading profile…</Text>
+        : query.isError ? <Card><ListRow title="Profile could not be loaded" detail={`${query.error.message} Tap to retry.`} onPress={() => void query.refetch()} last /></Card>
+          : data ? <>
+            <Card><MaterialPersonRow profile={data.profile} interactive={false} detail={status || undefined} last /></Card>
+            {label ? <MaterialButton label={label} onPress={act} loading={busy} /> : null}
+            <SectionTitle>{`Mutual friends (${data.mutualFriends.length})`}</SectionTitle>
+            <Card>{data.mutualFriends.length ? data.mutualFriends.map((profile, index) => <MaterialPersonRow key={profile.id} profile={profile} last={index === data.mutualFriends.length - 1} />) : <Text style={[styles.status, { color: theme.secondary }]}>No mutual friends</Text>}</Card>
+          </> : null}
+    </Screen>}
+  </OpenProfile.Provider>
 }
 
 // iOS: a SwiftUI form, like Settings.
@@ -90,9 +134,10 @@ function NativeRowButton({ label, onPress, prominent = false, isDisabled = false
   return <SwiftUIButton label={label} onPress={onPress} modifiers={[buttonStyle(prominent ? 'borderedProminent' : 'bordered'), controlSize('small'), disabled(isDisabled)]} />
 }
 
-function NativePersonRow({ profile, detail, owner = false, trailing }: { profile: FriendProfile; detail?: string; owner?: boolean; trailing?: ReactNode }) {
+function NativePersonRow({ profile, detail, mutualFriends, interactive = true, owner = false, trailing }: { profile: FriendProfile; detail?: string; mutualFriends?: FriendProfile[]; interactive?: boolean; owner?: boolean; trailing?: ReactNode }) {
   const theme = useAppTheme()
-  return <SwiftUIHStack spacing={12}>
+  const openProfile = useContext(OpenProfile)
+  const identity = <SwiftUIHStack spacing={12}>
     <SwiftUIRNHostView matchContents><FriendAvatar profile={profile} size={36} /></SwiftUIRNHostView>
     <SwiftUIVStack alignment="leading" spacing={2}>
       <SwiftUIHStack spacing={5}>
@@ -101,9 +146,22 @@ function NativePersonRow({ profile, detail, owner = false, trailing }: { profile
       </SwiftUIHStack>
       <SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary'), lineLimit(1)]}>{profileDetail(profile, detail)}</SwiftUIText>
     </SwiftUIVStack>
-    <SwiftUISpacer />
-    {trailing}
   </SwiftUIHStack>
+  return <SwiftUIVStack alignment="leading" spacing={8}>
+    <SwiftUIHStack spacing={12}>
+      {openProfile && interactive ? <SwiftUIButton onPress={() => openProfile(profile)} modifiers={[buttonStyle('plain'), accessibilityLabel(`View ${profile.displayName}'s profile`)]}>{identity}</SwiftUIButton> : identity}
+      <SwiftUISpacer />{trailing}
+    </SwiftUIHStack>
+    {mutualFriends ? <NativeMutualFriends profiles={mutualFriends} /> : null}
+  </SwiftUIVStack>
+}
+
+function NativeMutualFriends({ profiles }: { profiles: FriendProfile[] }) {
+  const [open, setOpen] = useState(false)
+  if (!profiles.length) return <SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary')]}>No mutual friends</SwiftUIText>
+  return <SwiftUIDisclosureGroup label={`${profiles.length} mutual ${profiles.length === 1 ? 'friend' : 'friends'}`} isExpanded={open} onIsExpandedChange={setOpen}>
+    {profiles.map((profile) => <NativePersonRow key={profile.id} profile={profile} />)}
+  </SwiftUIDisclosureGroup>
 }
 
 function NativeCountHeader({ title, count }: { title: string; count: number }) {
@@ -131,7 +189,7 @@ function NativeSearchResult({ model, result }: { model: FriendsScreenModel; resu
       : result.relationship === 'friends'
         ? <SwiftUIHStack spacing={4}><SwiftUIImage systemName="checkmark" size={12} color={theme.green} /><SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle(theme.green)]}>Friends</SwiftUIText></SwiftUIHStack>
         : <SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary')]}>{result.relationship === 'outgoing' ? 'Request sent' : 'You'}</SwiftUIText>
-  return <NativePersonRow profile={result.profile} trailing={trailing} />
+  return <NativePersonRow profile={result.profile} interactive={result.relationship !== 'self'} trailing={trailing} />
 }
 
 function NativeFriends({ model }: { model: FriendsScreenModel }) {
@@ -172,10 +230,14 @@ function NativeFriends({ model }: { model: FriendsScreenModel }) {
     {list.error ? <SwiftUISection footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>{list.error.message}</SwiftUIText>}><SwiftUIButton label="Try Again" systemImage="arrow.clockwise" onPress={() => void list.refetch()} /></SwiftUISection> : null}
 
     {data && data.incoming.length > 0 ? <SwiftUISection header={<NativeCountHeader title="Friend requests" count={data.incoming.length} />}>
-      {data.incoming.map((connection) => <NativePersonRow key={connection.requestId} profile={connection.profile} detail={`Requested ${model.requestAge(connection)}`} trailing={<SwiftUIHStack spacing={8}>
+      {data.incoming.map((connection) => <NativePersonRow key={connection.requestId} profile={connection.profile} mutualFriends={connection.mutualFriends} detail={`Requested ${model.requestAge(connection)}`} trailing={<SwiftUIHStack spacing={8}>
         <NativeRowButton prominent label={pending.has(`accept:${connection.requestId}`) ? 'Accepting…' : 'Accept'} isDisabled={pending.has(`accept:${connection.requestId}`)} onPress={() => actions.accept(connection)} />
         <NativeMenu name={connection.profile.displayName} actions={model.requestMenu(connection)} />
       </SwiftUIHStack>} />)}
+    </SwiftUISection> : null}
+
+    {data?.suggestions?.length ? <SwiftUISection title="People you may know">
+      {data.suggestions.map((suggestion) => <NativePersonRow key={suggestion.profile.id} profile={suggestion.profile} mutualFriends={suggestion.mutualFriends} trailing={<NativeRowButton prominent label={pending.has(`request:${suggestion.profile.id}`) ? 'Sending…' : 'Add'} isDisabled={pending.has(`request:${suggestion.profile.id}`)} onPress={() => actions.sendRequest({ profile: suggestion.profile, relationship: 'none', requestId: null, matchedOn: 'username' })} />} />)}
     </SwiftUISection> : null}
 
     {poolInvitations.length > 0 ? <SwiftUISection title="Pool invitations" footer={currentPool ? <SwiftUIText modifiers={[foregroundStyle('secondary')]}>{LEAVE_CURRENT_FIRST}</SwiftUIText> : undefined}>
@@ -192,7 +254,7 @@ function NativeFriends({ model }: { model: FriendsScreenModel }) {
         {currentPool.members.map((member) => {
           const self = member.profile.id === viewerId
           const menu = self ? [] : model.memberMenu(member)
-          return <NativePersonRow key={member.profile.id} profile={member.profile} owner={member.owner} detail={self ? 'You' : undefined} trailing={menu.length ? <NativeMenu name={member.profile.displayName} actions={menu} /> : undefined} />
+          return <NativePersonRow key={member.profile.id} profile={member.profile} interactive={!self} owner={member.owner} detail={self ? 'You' : undefined} trailing={menu.length ? <NativeMenu name={member.profile.displayName} actions={menu} /> : undefined} />
         })}
       </SwiftUISection>
       {overview.isOwner && currentPool.pendingInvitations.length > 0 ? <SwiftUISection title="Pending invitations" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>{POOL_SEATS_FOOTER}</SwiftUIText>}>
@@ -218,13 +280,13 @@ function NativeFriends({ model }: { model: FriendsScreenModel }) {
 
     {data && data.outgoing.length > 0 ? <SwiftUISection>
       <SwiftUIDisclosureGroup label={`Sent requests (${data.outgoing.length})`} isExpanded={sentOpen} onIsExpandedChange={setSentOpen}>
-        {data.outgoing.map((connection) => <NativePersonRow key={connection.requestId} profile={connection.profile} detail={`Sent ${model.requestAge(connection)}`} trailing={<NativeRowButton label={pending.has(`cancel:${connection.requestId}`) ? 'Canceling…' : 'Cancel'} isDisabled={pending.has(`cancel:${connection.requestId}`)} onPress={() => actions.cancelRequest(connection)} />} />)}
+        {data.outgoing.map((connection) => <NativePersonRow key={connection.requestId} profile={connection.profile} mutualFriends={connection.mutualFriends} detail={`Sent ${model.requestAge(connection)}`} trailing={<NativeRowButton label={pending.has(`cancel:${connection.requestId}`) ? 'Canceling…' : 'Cancel'} isDisabled={pending.has(`cancel:${connection.requestId}`)} onPress={() => actions.cancelRequest(connection)} />} />)}
       </SwiftUIDisclosureGroup>
     </SwiftUISection> : null}
 
     {data && data.blocked.length > 0 ? <SwiftUISection>
       <SwiftUIDisclosureGroup label={`Blocked users (${data.blocked.length})`} isExpanded={blockedOpen} onIsExpandedChange={setBlockedOpen}>
-        {data.blocked.map((profile) => <NativePersonRow key={profile.id} profile={profile} trailing={<NativeRowButton label={pending.has(`unblock:${profile.id}`) ? 'Unblocking…' : 'Unblock'} isDisabled={pending.has(`unblock:${profile.id}`)} onPress={() => actions.unblock(profile)} />} />)}
+        {data.blocked.map((profile) => <NativePersonRow key={profile.id} profile={profile} interactive={false} trailing={<NativeRowButton label={pending.has(`unblock:${profile.id}`) ? 'Unblocking…' : 'Unblock'} isDisabled={pending.has(`unblock:${profile.id}`)} onPress={() => actions.unblock(profile)} />} />)}
       </SwiftUIDisclosureGroup>
     </SwiftUISection> : null}
   </SwiftUIForm></SwiftUIHost>
@@ -237,14 +299,27 @@ function MaterialMenuButton({ name, actions }: { name: string; actions: FriendMe
   return <MaterialIconButton icon="ellipsis" label={`More options for ${name}`} onPress={() => showActions(name, actions)} />
 }
 
-function MaterialPersonRow({ profile, detail, owner = false, last, children }: { profile: FriendProfile; detail?: string; owner?: boolean; last: boolean; children?: ReactNode }) {
+function MaterialPersonRow({ profile, detail, mutualFriends, interactive = true, owner = false, last, children }: { profile: FriendProfile; detail?: string; mutualFriends?: FriendProfile[]; interactive?: boolean; owner?: boolean; last: boolean; children?: ReactNode }) {
   const theme = useAppTheme()
-  return <ListRow
+  const openProfile = useContext(OpenProfile)
+  return <View><ListRow
+    onIdentityPress={openProfile && interactive ? () => openProfile(profile) : undefined}
     leading={<FriendAvatar profile={profile} size={40} />}
     title={profile.displayName}
     detail={profileDetail(profile, detail)}
     last={last}
-  >{owner ? <SymbolView name="crown.fill" size={14} tintColor={theme.orange} accessibilityLabel="Pool owner" /> : null}<View style={styles.rowActions}>{children}</View></ListRow>
+  >{owner ? <SymbolView name="crown.fill" size={14} tintColor={theme.orange} accessibilityLabel="Pool owner" /> : null}<View style={styles.rowActions}>{children}</View></ListRow>{mutualFriends ? <MaterialMutualFriends profiles={mutualFriends} /> : null}</View>
+}
+
+function MaterialMutualFriends({ profiles }: { profiles: FriendProfile[] }) {
+  const theme = useAppTheme()
+  const [open, setOpen] = useState(false)
+  return <View style={styles.mutuals}>
+    <Pressable accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen(!open)} disabled={!profiles.length}>
+      <View style={styles.rowActions}><Text style={[styles.helper, { color: theme.secondary }]}>{profiles.length ? `${profiles.length} mutual ${profiles.length === 1 ? 'friend' : 'friends'}` : 'No mutual friends'}</Text>{profiles.length ? <SymbolView name={open ? 'chevron.up' : 'chevron.down'} size={10} tintColor={theme.secondary} /> : null}</View>
+    </Pressable>
+    {open ? profiles.map((profile, index) => <MaterialPersonRow key={profile.id} profile={profile} last={index === profiles.length - 1} />) : null}
+  </View>
 }
 
 function MaterialCollapsible({ title, count, open, onToggle, children }: { title: string; count: number; open: boolean; onToggle: () => void; children: ReactNode }) {
@@ -273,7 +348,7 @@ function MaterialFriends({ model, onBack }: { model: FriendsScreenModel; onBack:
     <Field label="Search friends" placeholder={SEARCH_PLACEHOLDER} value={model.searchInput} onChangeText={model.setSearchInput} autoCapitalize="none" autoCorrect={false} maxLength={120} />
     {search.ready ? <Card>
       {status ? <Text style={[styles.status, { color: theme.secondary }]}>{status}</Text> : null}
-      {search.results.map((result, index) => <MaterialPersonRow key={result.profile.id} profile={result.profile} last={index === search.results.length - 1}>
+      {search.results.map((result, index) => <MaterialPersonRow key={result.profile.id} profile={result.profile} interactive={result.relationship !== 'self'} last={index === search.results.length - 1}>
         {result.relationship === 'none' ? <MaterialButton compact label="Add" icon="person.badge.plus" loading={pending.has(`request:${result.profile.id}`)} onPress={() => actions.sendRequest(result)} />
           : result.relationship === 'incoming' ? <MaterialButton compact label="Accept" loading={pending.has(`accept:${result.requestId}`)} onPress={() => actions.acceptSearchResult(result)} />
             : <Text style={[styles.helper, { color: result.relationship === 'friends' ? theme.green : theme.secondary }]}>{result.relationship === 'friends' ? 'Friends' : result.relationship === 'outgoing' ? 'Request sent' : 'You'}</Text>}
@@ -296,9 +371,16 @@ function MaterialFriends({ model, onBack }: { model: FriendsScreenModel; onBack:
 
     {data && data.incoming.length > 0 ? <>
       <SectionTitle trailing={<Text style={[styles.helper, { color: theme.secondary }]}>{data.incoming.length}</Text>}>Friend requests</SectionTitle>
-      <Card>{data.incoming.map((connection, index) => <MaterialPersonRow key={connection.requestId} profile={connection.profile} detail={`Requested ${model.requestAge(connection)}`} last={index === data.incoming.length - 1}>
+      <Card>{data.incoming.map((connection, index) => <MaterialPersonRow key={connection.requestId} profile={connection.profile} mutualFriends={connection.mutualFriends} detail={`Requested ${model.requestAge(connection)}`} last={index === data.incoming.length - 1}>
         <MaterialButton compact label="Accept" loading={pending.has(`accept:${connection.requestId}`)} onPress={() => actions.accept(connection)} />
         <MaterialMenuButton name={connection.profile.displayName} actions={model.requestMenu(connection)} />
+      </MaterialPersonRow>)}</Card>
+    </> : null}
+
+    {data?.suggestions?.length ? <>
+      <SectionTitle>People you may know</SectionTitle>
+      <Card>{data.suggestions.map((suggestion, index) => <MaterialPersonRow key={suggestion.profile.id} profile={suggestion.profile} mutualFriends={suggestion.mutualFriends} last={index === data.suggestions!.length - 1}>
+        <MaterialButton compact label="Add" icon="person.badge.plus" loading={pending.has(`request:${suggestion.profile.id}`)} onPress={() => actions.sendRequest({ profile: suggestion.profile, relationship: 'none', requestId: null, matchedOn: 'username' })} />
       </MaterialPersonRow>)}</Card>
     </> : null}
 
@@ -317,7 +399,7 @@ function MaterialFriends({ model, onBack }: { model: FriendsScreenModel; onBack:
       {usageRows.length ? <Card style={styles.usage}>{usageRows.map((row, index) => <UsageLimitCard key={row.key} row={row} last={index === usageRows.length - 1} />)}</Card> : null}
       <Card>{currentPool.members.map((member, index) => {
         const self = member.profile.id === viewerId
-        return <MaterialPersonRow key={member.profile.id} profile={member.profile} owner={member.owner} detail={self ? 'You' : undefined} last={index === currentPool.members.length - 1}>
+        return <MaterialPersonRow key={member.profile.id} profile={member.profile} interactive={!self} owner={member.owner} detail={self ? 'You' : undefined} last={index === currentPool.members.length - 1}>
           {self ? null : <MaterialMenuButton name={member.profile.displayName} actions={model.memberMenu(member)} />}
         </MaterialPersonRow>
       })}</Card>
@@ -339,12 +421,12 @@ function MaterialFriends({ model, onBack }: { model: FriendsScreenModel; onBack:
         : data.friends.length ? <Card><Text style={[styles.status, { color: theme.secondary }]}>{ALL_IN_POOL}</Text></Card>
           : <EmptyState icon="person.2" title={EMPTY_TITLE} detail={EMPTY_DETAIL} />}
       {data.outgoing.length > 0 ? <MaterialCollapsible title="Sent requests" count={data.outgoing.length} open={sentOpen} onToggle={() => setSentOpen((open) => !open)}>
-        {data.outgoing.map((connection, index) => <MaterialPersonRow key={connection.requestId} profile={connection.profile} detail={`Sent ${model.requestAge(connection)}`} last={index === data.outgoing.length - 1}>
+        {data.outgoing.map((connection, index) => <MaterialPersonRow key={connection.requestId} profile={connection.profile} mutualFriends={connection.mutualFriends} detail={`Sent ${model.requestAge(connection)}`} last={index === data.outgoing.length - 1}>
           <MaterialButton compact variant="plain" label="Cancel" loading={pending.has(`cancel:${connection.requestId}`)} onPress={() => actions.cancelRequest(connection)} />
         </MaterialPersonRow>)}
       </MaterialCollapsible> : null}
       {data.blocked.length > 0 ? <MaterialCollapsible title="Blocked users" count={data.blocked.length} open={blockedOpen} onToggle={() => setBlockedOpen((open) => !open)}>
-        {data.blocked.map((profile, index) => <MaterialPersonRow key={profile.id} profile={profile} last={index === data.blocked.length - 1}>
+        {data.blocked.map((profile, index) => <MaterialPersonRow key={profile.id} profile={profile} interactive={false} last={index === data.blocked.length - 1}>
           <MaterialButton compact variant="secondary" label="Unblock" loading={pending.has(`unblock:${profile.id}`)} onPress={() => actions.unblock(profile)} />
         </MaterialPersonRow>)}
       </MaterialCollapsible> : null}
@@ -354,6 +436,7 @@ function MaterialFriends({ model, onBack }: { model: FriendsScreenModel; onBack:
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  mutuals: { paddingHorizontal: 15, paddingBottom: 12 },
   handle: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 14, paddingHorizontal: 4 },
   helper: { fontSize: 12, lineHeight: 18 },
   footer: { marginTop: 8, paddingHorizontal: 4 },

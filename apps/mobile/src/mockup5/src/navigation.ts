@@ -14,6 +14,7 @@ export type RootStackParamList = {
   SettingsDetail: { section: SettingsSection };
   /** Friends, friend requests, and the Pool (features/friends). */
   Friends: undefined;
+  FriendProfile: { userId: string };
   /** A Files folder; null is the top of My files, and trash references (features/trash/folder.ts) the trash. */
   FilesFolder: { folderId: string | null; name?: string };
   /** A collaborative document; `created` opens a new one ready to type in. */

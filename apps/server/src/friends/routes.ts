@@ -8,6 +8,7 @@ import { friendships, userBlocks, users } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { publicFriendProfile } from '../profile/service.js'
+import { friendSuggestions, loadMutualFriends } from './discovery.js'
 import { bumpAccountRevisions, publishScopedStateChanges } from './sync.js'
 import { publishPoolChanges, separatePoolOnBlock } from '../pools/service.js'
 
@@ -90,6 +91,10 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
     const profiles = profileIds.length
       ? await db.select().from(users).where(inArray(users.id, profileIds))
       : []
+    const [mutuals, suggestions] = await Promise.all([
+      loadMutualFriends(user.id, profileIds.filter((id) => !blockedIds.has(id))),
+      friendSuggestions(user.id),
+    ])
     const byId = new Map(profiles.map((profile) => [profile.id, profile]))
     const connection = (row: typeof friendships.$inferSelect) => {
       const otherId = row.userAId === user.id ? row.userBId : row.userAId
@@ -99,6 +104,7 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
         profile: publicFriendProfile(profile),
         requestedAt: row.createdAt.toISOString(),
         acceptedAt: row.acceptedAt?.toISOString() ?? null,
+        mutualFriends: mutuals.get(otherId) ?? [],
       } : null
     }
     const visibleConnections = connectionRows.filter((row) => {
@@ -110,7 +116,25 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
       friends: visibleConnections.filter((row) => row.status === 'accepted').map(connection).filter(Boolean),
       incoming: visibleConnections.filter((row) => row.status === 'pending' && row.requestedByUserId !== user.id).map(connection).filter(Boolean),
       outgoing: visibleConnections.filter((row) => row.status === 'pending' && row.requestedByUserId === user.id).map(connection).filter(Boolean),
+      suggestions,
       blocked: blockRows.map((row) => byId.get(row.blockedUserId)).filter(Boolean).map((profile) => publicFriendProfile(profile!)),
+    }
+  })
+
+  app.get('/api/friends/profiles/:userId', async (request) => {
+    const user = requireUser(request)
+    const { userId } = z.object({ userId: z.uuid() }).parse(request.params)
+    const target = await requireAvailableTarget(userId, user.id)
+    const [connections, mutuals] = await Promise.all([
+      db.select().from(friendships).where(pairWhere(user.id, userId)).limit(1),
+      loadMutualFriends(user.id, [userId]),
+    ])
+    const connection = connections[0]
+    return {
+      profile: publicFriendProfile(target),
+      relationship: friendSearchRelationship(userId, user.id, connection ?? null),
+      requestId: connection?.id ?? null,
+      mutualFriends: mutuals.get(userId) ?? [],
     }
   })
 

@@ -16,6 +16,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
+import { FriendProfileDialog, MutualFriends } from '@/components/FriendProfileDialog'
+import { FriendProfileContext } from '@/lib/friend-profile-context'
 import { ProfileIdentity } from '@/components/FriendIdentity'
 import { PoolSection } from '@/components/PoolSection'
 import { InviteCodesCard } from '@/components/InviteCodesCard'
@@ -76,13 +78,20 @@ function CollapsibleSection({ title, count, open, onToggle, children }: {
   )
 }
 
-function ConnectionRow({ connection, detail, actions }: { connection: FriendConnection; detail?: string; actions: React.ReactNode }) {
-  return <div className="flex items-center justify-between gap-3 px-4 py-3"><ProfileIdentity profile={connection.profile} detail={detail} /><div className="flex shrink-0 items-center gap-2">{actions}</div></div>
+function ConnectionRow({ connection, detail, showMutualFriends = false, actions }: { connection: FriendConnection; detail?: string; showMutualFriends?: boolean; actions: React.ReactNode }) {
+  return <div className="px-4 py-3">
+    <div className="flex items-center justify-between gap-3">
+      <ProfileIdentity profile={connection.profile} detail={detail} />
+      <div className="flex shrink-0 items-center gap-2">{actions}</div>
+    </div>
+    {showMutualFriends && connection.mutualFriends && <MutualFriends profiles={connection.mutualFriends} />}
+  </div>
 }
 
 export function FriendsPage() {
   const user = useAuth((state) => state.user)
   const userId = user?.id
+  const [profileTarget, setProfileTarget] = useState<FriendProfile | null>(null)
   const usernameInputRef = useRef<HTMLInputElement>(null)
   const [searchInput, setSearchInput] = useState('')
   const [searchResults, setSearchResults] = useState<FriendSearchResult[]>([])
@@ -264,6 +273,7 @@ export function FriendsPage() {
   const canInvite = poolQuery.isSuccess && (!pool || pool.ownerUserId === userId)
   const poolFull = Boolean(pool && pool.members.length + pool.pendingInvitations.length >= 6)
   return (
+    <FriendProfileContext.Provider value={(profile) => { if (profile.id !== userId) setProfileTarget(profile) }}>
     <div className="mx-auto w-full max-w-3xl space-y-5 px-5 py-6">
       <div>
         <h2 className="text-lg font-medium">{ui("Find your friends")}</h2>
@@ -302,7 +312,7 @@ export function FriendsPage() {
               className={`flex items-center justify-between gap-3 border-b px-4 py-3 last:border-b-0 ${activeSearchIndex === index ? 'bg-accent/50' : ''}`}
               onMouseEnter={() => setActiveSearchIndex(index)}
             >
-              <ProfileIdentity profile={result.profile} query={searchQuery} matchedOn={result.matchedOn} />
+              <ProfileIdentity profile={result.profile} interactive={result.relationship !== 'self'} query={searchQuery} matchedOn={result.matchedOn} />
               <div className="flex shrink-0 items-center gap-2">
                 {result.relationship === 'none' && <Button size="sm" disabled={actionIds.has(`request:${result.profile.id}`)} onClick={() => sendSearchRequest(result)}><UserRoundPlus />{actionIds.has(`request:${result.profile.id}`) ? ui("Sending…") : ui("Add friend")}</Button>}
                 {result.relationship === 'incoming' && <Button size="sm" disabled={actionIds.has(`accept:${result.requestId}`)} onClick={() => acceptSearchRequest(result)}>{actionIds.has(`accept:${result.requestId}`) ? ui("Accepting…") : ui("Accept")}</Button>}
@@ -318,7 +328,7 @@ export function FriendsPage() {
         : listQuery.error ? <div className="rounded-xl border py-12 text-center"><p className="text-sm text-muted-foreground">{listQuery.error.message}</p><Button className="mt-3" size="sm" variant="outline" onClick={() => void listQuery.refetch()}>{ui("Try again")}</Button></div>
           : null}
       {data && data.incoming.length > 0 && <Section title={ui("Friend requests")} count={data.incoming.length}>
-        {data.incoming.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={`Requested ${friendRequestAge(connection.requestedAt)}`} actions={<>
+        {data.incoming.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} showMutualFriends detail={`Requested ${friendRequestAge(connection.requestedAt)}`} actions={<>
           <Button size="sm" disabled={actionIds.has(`accept:${connection.requestId}`)} onClick={() => void act(`accept:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}/accept`, { method: 'POST' }), `${connection.profile.displayName} is now your friend.`)}>{actionIds.has(`accept:${connection.requestId}`) ? ui("Accepting…") : ui("Accept")}</Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label={uit`More options for ${connection.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
@@ -329,6 +339,13 @@ export function FriendsPage() {
             </DropdownMenuContent>
           </DropdownMenu>
         </>} />)}
+      </Section>}
+
+      {data?.suggestions && data.suggestions.length > 0 && <Section title={ui('People you may know')} count={data.suggestions.length}>
+        {data.suggestions.map((suggestion) => <div key={suggestion.profile.id} className="flex items-start justify-between gap-3 px-4 py-3">
+          <div className="min-w-0"><ProfileIdentity profile={suggestion.profile} /><MutualFriends profiles={suggestion.mutualFriends} /></div>
+          <Button size="sm" disabled={actionIds.has(`request:${suggestion.profile.id}`)} onClick={() => sendSearchRequest({ profile: suggestion.profile, relationship: 'none', requestId: null, matchedOn: 'username' })}><UserRoundPlus />{actionIds.has(`request:${suggestion.profile.id}`) ? ui('Sending…') : ui('Add friend')}</Button>
+        </div>)}
       </Section>}
 
       {userId && <PoolSection
@@ -362,13 +379,17 @@ export function FriendsPage() {
         </div>}
 
         {data.outgoing.length > 0 && <CollapsibleSection title={ui("Sent requests")} count={data.outgoing.length} open={outgoingOpen} onToggle={() => setOutgoingOpen((value) => !value)}>
-          {data.outgoing.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={`Sent ${friendRequestAge(connection.requestedAt)}`} actions={<Button size="sm" variant="ghost" disabled={actionIds.has(`cancel:${connection.requestId}`)} onClick={() => void act(`cancel:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request to ${connection.profile.displayName} canceled.`)}>{actionIds.has(`cancel:${connection.requestId}`) ? ui("Canceling…") : ui("Cancel")}</Button>} />)}
+          {data.outgoing.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} showMutualFriends detail={`Sent ${friendRequestAge(connection.requestedAt)}`} actions={<Button size="sm" variant="ghost" disabled={actionIds.has(`cancel:${connection.requestId}`)} onClick={() => void act(`cancel:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request to ${connection.profile.displayName} canceled.`)}>{actionIds.has(`cancel:${connection.requestId}`) ? ui("Canceling…") : ui("Cancel")}</Button>} />)}
         </CollapsibleSection>}
 
         {data.blocked.length > 0 && <CollapsibleSection title={ui("Blocked users")} count={data.blocked.length} open={blockedOpen} onToggle={() => setBlockedOpen((value) => !value)}>
-          {data.blocked.map((profile) => <div key={profile.id} className="flex items-center justify-between gap-3 px-4 py-3"><ProfileIdentity profile={profile} /><Button size="sm" variant="outline" disabled={actionIds.has(`unblock:${profile.id}`)} onClick={() => void act(`unblock:${profile.id}`, () => apiRequest(`/api/friends/blocks/${profile.id}`, { method: 'DELETE' }), `${profile.displayName} was unblocked.`)}>{actionIds.has(`unblock:${profile.id}`) ? ui("Unblocking…") : ui("Unblock")}</Button></div>)}
+          {data.blocked.map((profile) => <div key={profile.id} className="flex items-center justify-between gap-3 px-4 py-3"><ProfileIdentity profile={profile} interactive={false} /><Button size="sm" variant="outline" disabled={actionIds.has(`unblock:${profile.id}`)} onClick={() => void act(`unblock:${profile.id}`, () => apiRequest(`/api/friends/blocks/${profile.id}`, { method: 'DELETE' }), `${profile.displayName} was unblocked.`)}>{actionIds.has(`unblock:${profile.id}`) ? ui("Unblocking…") : ui("Unblock")}</Button></div>)}
         </CollapsibleSection>}
       </>}
     </div>
+    {userId && <FriendProfileDialog userId={userId} target={profileTarget} onClose={() => setProfileTarget(null)} busy={actionIds.size > 0}
+      onRequest={(profile) => sendSearchRequest({ profile, relationship: 'none', requestId: null, matchedOn: 'username' })}
+      onAccept={(profile, requestId) => acceptSearchRequest({ profile, requestId, relationship: 'incoming', matchedOn: 'username' })} />}
+    </FriendProfileContext.Provider>
   )
 }

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
-import type { FriendConnection, FriendProfile, FriendsList, PoolInvitation, PoolMember, PoolSummary } from '@pulpo/contracts'
+import type { FriendConnection, FriendProfile, FriendProfileView, FriendsList, PoolInvitation, PoolMember, PoolSummary } from '@pulpo/contracts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { queryClient } from '@/lib/query-client'
 import i18n from '@/i18n'
@@ -16,11 +16,13 @@ const profile = (id: string): FriendProfile => ({ id, username: id, displayName:
 const connection = (id: string): FriendConnection => ({ profile: profile(id), requestId: `friend-${id}`, requestedAt: '2026-09-01T00:00:00.000Z', acceptedAt: '2026-09-01T00:00:00.000Z' })
 const member = (id: string): PoolMember => ({ profile: profile(id), owner: id === 'me', contributionBalanceMicros: 5_000_000, reservedMicros: id === 'Alice' ? 100_000 : 0, joinedAt: '2026-09-01T00:00:00.000Z' })
 const invitation = (id: string): PoolInvitation => ({ id: `invite-${id}`, poolId: 'pool', inviter: profile('me'), invitee: profile(id), memberCount: 2, createdAt: '2026-09-01T00:00:00.000Z' })
+let profileView: FriendProfileView | null
 let friends: FriendsList
 let summary: PoolSummary
 let mutation: (path: string, options: { method: string; body?: unknown }) => unknown
 
 beforeEach(() => {
+  profileView = null
   friends = { friends: [connection('Alice'), connection('Bob')], incoming: [], outgoing: [], blocked: [] }
   summary = { accountBalanceMicros: 5_000_000, pool: { id: 'pool', ownerUserId: 'me', pooledBalanceMicros: 15_000_000, members: [member('me'), member('Alice'), member('Stranger')], pendingInvitations: [], sharedUsage: null }, incomingInvitations: [] }
   mutation = () => ({})
@@ -28,6 +30,10 @@ beforeEach(() => {
   queryClient.setDefaultOptions({ queries: { retry: false, gcTime: Infinity } })
   mocks.request.mockReset().mockImplementation(async (path: string, options?: { method: string; body?: unknown }) => {
     if (options?.method) return mutation(path, options)
+    if (path.startsWith('/api/friends/profiles/')) {
+      if (!profileView) throw new Error('Profile unavailable')
+      return structuredClone(profileView)
+    }
     if (path === '/api/friends') return structuredClone(friends)
     if (path === '/api/pools/me') return structuredClone(summary)
     return { count: 0 }
@@ -275,4 +281,63 @@ describe('combined Friends and Pool page', () => {
     expect(within(dialog).getByText(/Al invitar a Bob/)).toBeTruthy()
     expect(within(dialog).getByRole('button', { name: 'Invitar y compartir' })).toBeTruthy()
   })
+})
+
+
+describe('friend discovery and profiles', () => {
+  it('expands mutual lists on requests and suggestions, opens profiles, and refreshes after sending', async () => {
+    friends.incoming = [{ ...connection('Request'), mutualFriends: [profile('Alice')] }]
+    friends.suggestions = [{ profile: profile('Cara'), mutualFriends: [profile('Bob')] }]
+    profileView = { profile: profile('Cara'), mutualFriends: [profile('Bob')], relationship: 'none', requestId: null }
+    mutation = (path) => {
+      if (path === '/api/friends/requests') {
+        friends.suggestions = []
+        profileView = { ...profileView!, relationship: 'outgoing', requestId: 'new-request' }
+        return { requestId: 'new-request', status: 'pending' }
+      }
+      return {}
+    }
+    await mount()
+    const requests = screen.getByRole('heading', { name: 'Friend requests' }).closest('section')!
+    const suggestions = screen.getByRole('heading', { name: 'People you may know' }).closest('section')!
+    expect(within(requests).getByText('1')).toBeTruthy()
+    fireEvent.click(within(requests).getByText('mutual friend', { exact: false }))
+    expect(within(requests).getByRole('button', { name: "View Alice's profile" })).toBeTruthy()
+    fireEvent.click(within(suggestions).getByText('mutual friend', { exact: false }))
+    expect(within(suggestions).getByRole('button', { name: "View Bob's profile" })).toBeTruthy()
+    fireEvent.click(within(suggestions).getByRole('button', { name: "View Cara's profile" }))
+    const dialog = await screen.findByRole('dialog')
+    await within(dialog).findByText('@Cara')
+    expect(within(dialog).getByRole('button', { name: "View Bob's profile" })).toBeTruthy()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Add friend' }))
+    await within(dialog).findByText('Request sent')
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'People you may know' })).toBeNull())
+    expect(writes()[0]).toEqual(['/api/friends/requests', { method: 'POST', body: { userId: 'Cara' } }])
+  })
+
+  it('opens a Pool friend profile, shows an empty mutual list, and handles unavailable profiles', async () => {
+    profileView = { profile: profile('Alice'), relationship: 'friends', requestId: 'friend-Alice', mutualFriends: [] }
+    await mount()
+    fireEvent.click(within(poolRegion()).getByRole('button', { name: "View Alice's profile" }))
+    const dialog = await screen.findByRole('dialog')
+    await within(dialog).findByText('No mutual friends')
+    expect(within(dialog).queryByRole('button', { name: 'Add friend' })).toBeNull()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
+    profileView = null
+    fireEvent.click(within(friendsRegion()).getByRole('button', { name: "View Bob's profile" }))
+    await screen.findByRole('alert')
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy()
+  })
+})
+
+
+it('accepts an incoming request from a profile and refreshes its relationship', async () => {
+  profileView = { profile: profile('Bob'), relationship: 'incoming', requestId: 'incoming-Bob', mutualFriends: [] }
+  mutation = () => { profileView!.relationship = 'friends'; return {} }
+  await mount()
+  fireEvent.click(within(friendsRegion()).getByRole('button', { name: "View Bob's profile" }))
+  const dialog = await screen.findByRole('dialog')
+  fireEvent.click(await within(dialog).findByRole('button', { name: 'Accept request' }))
+  await waitFor(() => expect(within(dialog).queryByRole('button', { name: 'Accept request' })).toBeNull())
+  expect(writes()[0]).toEqual(['/api/friends/requests/incoming-Bob/accept', { method: 'POST' }])
 })

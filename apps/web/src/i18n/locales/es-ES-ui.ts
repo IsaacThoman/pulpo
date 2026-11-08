@@ -1,4 +1,13 @@
 const esUi: Record<string, string> = {
+  "People you may know": "Personas que quizá conozcas",
+  "See who you know in common.": "Descubre a quiénes conocéis en común.",
+  "Loading profile…": "Cargando perfil…",
+  "No mutual friends": "No hay amigos en común",
+  "Mutual friends": "Amigos en común",
+  "Accept request": "Aceptar solicitud",
+  "{{0}} mutual friend": "{{0}} amigo en común",
+  "{{0}} mutual friends": "{{0}} amigos en común",
+  "View {{0}}'s profile": "Ver el perfil de {{0}}",
   "Model settings": "Configuración del modelo",
   "Minimum output allocation": "Asignación mínima de salida",
   "Output tokens the account must be able to afford before a call starts. Smaller request or model limits lower this minimum. Responses can finish sooner; unused allocation is released.": "Tokens de salida que la cuenta debe poder pagar antes de iniciar una llamada. Los límites inferiores de la solicitud o del modelo reducen este mínimo. Las respuestas pueden terminar antes; la asignación no utilizada se libera.",

@@ -1,5 +1,5 @@
 import { queryOptions, type QueryClient } from '@tanstack/react-query'
-import type { FriendSearchResponse, FriendsList, InviteCodeList, PoolSummary } from '@pulpo/contracts'
+import type { FriendProfileView, FriendSearchResponse, FriendsList, InviteCodeList, PoolSummary } from '@pulpo/contracts'
 import { apiRequest } from '../../api/client'
 
 /**
@@ -21,6 +21,14 @@ export const poolKeys = {
 
 export function friendsListQuery(namespace: string) {
   return queryOptions({ queryKey: friendsKeys.list(namespace), queryFn: () => apiRequest<FriendsList>('/api/friends'), staleTime: 0 })
+}
+
+export function friendProfileQuery(namespace: string, userId: string) {
+  return queryOptions({
+    queryKey: [...friendsKeys.all(namespace), 'profile', userId],
+    queryFn: () => apiRequest<FriendProfileView>(`/api/friends/profiles/${userId}`),
+    staleTime: 0,
+  })
 }
 
 export function poolQuery(namespace: string) {

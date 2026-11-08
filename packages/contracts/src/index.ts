@@ -440,11 +440,25 @@ export const friendSearchResponseSchema = z.object({
 })
 export type FriendSearchResponse = z.infer<typeof friendSearchResponseSchema>
 
+export const friendSuggestionSchema = z.object({
+  profile: friendProfileSchema,
+  mutualFriends: z.array(friendProfileSchema),
+})
+export type FriendSuggestion = z.infer<typeof friendSuggestionSchema>
+
+export const friendProfileViewSchema = friendSuggestionSchema.extend({
+  relationship: friendRelationshipSchema,
+  requestId: idSchema.nullable(),
+})
+export type FriendProfileView = z.infer<typeof friendProfileViewSchema>
+
 export const friendConnectionSchema = z.object({
   requestId: idSchema,
   profile: friendProfileSchema,
   requestedAt: isoDateSchema,
   acceptedAt: isoDateSchema.nullable(),
+  // Optional for clients connected to an older server.
+  mutualFriends: z.array(friendProfileSchema).optional(),
 })
 export type FriendConnection = z.infer<typeof friendConnectionSchema>
 
@@ -453,6 +467,8 @@ export const friendsListSchema = z.object({
   incoming: z.array(friendConnectionSchema),
   outgoing: z.array(friendConnectionSchema),
   blocked: z.array(friendProfileSchema),
+  // Optional for clients connected to an older server.
+  suggestions: z.array(friendSuggestionSchema).max(6).optional(),
 })
 export type FriendsList = z.infer<typeof friendsListSchema>
 

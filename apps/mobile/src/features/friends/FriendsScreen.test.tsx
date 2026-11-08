@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createElement, type ComponentProps, type ReactNode } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { FriendConnection, FriendProfile, FriendSearchResult, FriendsList, PoolSummary } from '@pulpo/contracts'
+import type { FriendConnection, FriendProfile, FriendProfileView, FriendSearchResult, FriendsList, PoolSummary } from '@pulpo/contracts'
 
 type Modifier = { type: string; value?: unknown }
 type AlertButton = { text: string; style?: string; onPress?: () => void }
@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   apiRequest: vi.fn(),
   alert: vi.fn(),
   showActions: vi.fn(),
+  push: vi.fn(),
 }))
 const { passthrough, modifier } = vi.hoisted(() => ({
   passthrough: ({ children }: { children?: unknown }) => children,
@@ -31,7 +32,7 @@ vi.mock('expo-clipboard', () => ({ setStringAsync: vi.fn(() => Promise.resolve(t
 vi.mock('@expo/ui/swift-ui', () => ({
   Host: passthrough, Form: passthrough, HStack: passthrough, VStack: passthrough, RNHostView: passthrough,
   Spacer: () => null, Image: () => null, Divider: () => createElement('hr'), ProgressView: () => null,
-  Section: ({ title, header, footer, children }: { title?: string; header?: ReactNode; footer?: ReactNode; children: ReactNode }) => createElement('section', { 'aria-label': title }, header, children, footer),
+  Section: ({ title, header, footer, children }: { title?: string; header?: ReactNode; footer?: ReactNode; children: ReactNode }) => createElement('section', { 'aria-label': title }, title ? createElement('h2', null, title) : header, children, footer),
   Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
   Button: ({ label, onPress, children, modifiers }: { label?: string; onPress?: () => void; children?: ReactNode; modifiers?: Modifier[] }) => createElement('button', { onClick: onPress, disabled: Boolean(modifier(modifiers, 'disabled')), 'aria-label': modifier(modifiers, 'accessibilityLabel') as string | undefined }, label ?? children),
   Menu: ({ children, modifiers }: { children: ReactNode; modifiers?: Modifier[] }) => createElement('div', { role: 'menu', 'aria-label': modifier(modifiers, 'accessibilityLabel') as string }, children),
@@ -57,7 +58,7 @@ vi.mock('../../mockup5/src/components/PrototypeUI', () => ({
   SectionTitle: ({ children, trailing }: { children: ReactNode; trailing?: ReactNode }) => createElement('h2', null, children, trailing),
   EmptyState: ({ title, detail }: { title: string; detail: string }) => createElement('div', null, title, detail),
   Field: ({ label, onChangeText }: { label: string; onChangeText: (value: string) => void }) => createElement('input', { 'aria-label': label, onChange: (event: { target: { value: string } }) => onChangeText(event.target.value) }),
-  ListRow: ({ title, detail, value, onPress, children }: { title: string; detail?: string; value?: string; onPress?: () => void; children?: ReactNode }) => createElement(onPress ? 'button' : 'div', { onClick: onPress }, ...[title, detail, value].filter(Boolean).map((text) => createElement('span', { key: text }, text)), children),
+  ListRow: ({ title, detail, value, onPress, onIdentityPress, children }: { title: string; detail?: string; value?: string; onPress?: () => void; onIdentityPress?: () => void; children?: ReactNode }) => createElement(onPress ? 'button' : 'div', { onClick: onPress }, createElement(onIdentityPress ? 'button' : 'div', { onClick: onIdentityPress, 'aria-label': onIdentityPress ? `View ${title}'s profile` : undefined }, ...[title, detail, value].filter(Boolean).map((text) => createElement('span', { key: text }, text))), children),
 }))
 vi.mock('../usage-limits/UsageLimitsSettings', () => ({
   NativeUsageLimit: ({ row }: { row: { label: string; remainingPercentage: number } }) => createElement('div', null, `${row.label}: ${row.remainingPercentage}% left`),
@@ -75,12 +76,13 @@ vi.mock('../../store/session', () => ({
     config: { capabilities: { usageLimits: mocks.usageLimits }, auth: { inviteCodesEnabled: false } },
   }),
 }))
-import { FriendsScreen } from './FriendsScreen'
+import { FriendProfileScreen, FriendsScreen } from './FriendsScreen'
 
 const profile = (id: string): FriendProfile => ({ id, displayName: id, username: id.toLowerCase(), avatarUrl: null, profileColor: null })
 const connection = (id: string): FriendConnection => ({ requestId: `request-${id}`, profile: profile(id), requestedAt: new Date().toISOString(), acceptedAt: null })
 const member = (id: string, owner = false) => ({ profile: profile(id), owner, contributionBalanceMicros: 5_000_000, reservedMicros: 100_000, joinedAt: '2026-09-01T00:00:00.000Z' })
 
+let profileView: FriendProfileView | null
 let friends: FriendsList
 let summary: PoolSummary
 let searchResults: FriendSearchResult[]
@@ -89,12 +91,15 @@ const lastAlert = () => mocks.alert.mock.calls.at(-1) as [string, string | undef
 const pressAlert = (label: string) => lastAlert()[2].find((button) => button.text === label)!.onPress!()
 
 beforeEach(() => {
+  profileView = null
   friends = { friends: ['Alice', 'Bob', 'Cara'].map(connection), incoming: [connection('Dan')], outgoing: [connection('Eve')], blocked: [profile('Finn')] }
   summary = { accountBalanceMicros: 5_000_000, incomingInvitations: [], pool: { id: 'pool', ownerUserId: 'me', pooledBalanceMicros: 10_000_000, members: [member('me', true), member('Alice')], pendingInvitations: [], sharedUsage: null } }
   searchResults = []
   mocks.apiRequest.mockImplementation(async (path: string, options?: { method?: string; body?: { userId?: string } }) => {
     if (options?.method === 'POST' && path === '/api/friends/requests') {
       searchResults = searchResults.map((result) => result.profile.id === options.body?.userId ? { ...result, relationship: 'outgoing', requestId: 'new' } : result)
+      friends.suggestions = friends.suggestions?.filter((s) => s.profile.id !== options.body?.userId)
+      if (profileView) profileView.relationship = 'outgoing'
       return { requestId: 'new', status: 'pending' }
     }
     if (options?.method === 'DELETE' && path.startsWith('/api/friends/requests/')) {
@@ -103,7 +108,12 @@ beforeEach(() => {
       searchResults = searchResults.map((result) => result.requestId === requestId ? { ...result, relationship: 'none', requestId: null } : result)
       return {}
     }
+    if (options?.method === 'POST' && path.endsWith('/accept') && profileView) profileView.relationship = 'friends'
     if (options?.method) return {}
+    if (path.startsWith('/api/friends/profiles/')) {
+      if (!profileView) throw new Error('Profile unavailable')
+      return structuredClone(profileView)
+    }
     if (path === '/api/friends') return structuredClone(friends)
     if (path === '/api/pools/me') return structuredClone(summary)
     if (path.startsWith('/api/friends/search')) return { results: searchResults }
@@ -114,7 +124,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); mocks.usageLimits = true })
 
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><FriendsScreen {...({ navigation: { goBack: vi.fn() }, route: {} } as unknown as ComponentProps<typeof FriendsScreen>)} /></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><FriendsScreen {...({ navigation: { goBack: vi.fn(), push: mocks.push }, route: {} } as unknown as ComponentProps<typeof FriendsScreen>)} /></QueryClientProvider>)
 }
 
 /** The actions in a person's menu: inline on iOS, a Material menu on Android. */
@@ -250,4 +260,52 @@ describe.each(['ios', 'android'])('Friends on %s', (platform) => {
     fireEvent.click(screen.getByText('Cancel'))
     await waitFor(() => expect(writes()).toEqual([['/api/friends/requests/request-Eve', { method: 'DELETE' }]]))
   })
+})
+
+
+describe.each(['ios', 'android'])('Discovery and profiles on %s', (platform) => {
+  beforeEach(() => { mocks.platform = platform })
+
+  it('shows suggestions and request mutuals, opens friends, and sends a suggestion request without navigating', async () => {
+    friends.suggestions = [{ profile: profile('Grace'), mutualFriends: [profile('Bob')] }]
+    friends.incoming[0]!.mutualFriends = [profile('Cara')]
+    mount()
+    await screen.findByText('People you may know')
+    expect(screen.getAllByText(/1 mutual friend/)).toHaveLength(2)
+    fireEvent.click(screen.getAllByText(/1 mutual friend/)[0]!)
+    expect(screen.getAllByText('Cara').length).toBeGreaterThan(1)
+    fireEvent.click(screen.getByRole('button', { name: "View Alice's profile" }))
+    expect(mocks.push).toHaveBeenCalledWith('FriendProfile', { userId: 'Alice' })
+    mocks.push.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    await waitFor(() => expect(screen.queryByText('Grace')).toBeNull())
+    expect(mocks.push).not.toHaveBeenCalled()
+    expect(writes()[0]).toEqual(['/api/friends/requests', { method: 'POST', body: { userId: 'Grace' } }])
+  })
+
+  it('loads a profile, lists mutual friends, and refreshes its relationship after sending', async () => {
+    profileView = { profile: profile('Grace'), mutualFriends: [profile('Bob')], relationship: 'none', requestId: null }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><FriendProfileScreen {...({ navigation: { goBack: vi.fn(), push: mocks.push }, route: { params: { userId: 'Grace' } } } as unknown as ComponentProps<typeof FriendProfileScreen>)} /></QueryClientProvider>)
+    await screen.findByText('Grace')
+    expect(screen.getByText('Mutual friends (1)')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: "View Bob's profile" }))
+    expect(mocks.push).toHaveBeenCalledWith('FriendProfile', { userId: 'Bob' })
+    mocks.push.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'Add friend' }))
+    await screen.findByText(/Request sent/)
+    expect(mocks.push).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Add friend' })).toBeNull()
+  })
+
+  it('accepts requests from a profile and shows an empty mutual list', async () => {
+    profileView = { profile: profile('Grace'), mutualFriends: [], relationship: 'incoming', requestId: 'incoming-Grace' }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><FriendProfileScreen {...({ navigation: { goBack: vi.fn(), push: mocks.push }, route: { params: { userId: 'Grace' } } } as unknown as ComponentProps<typeof FriendProfileScreen>)} /></QueryClientProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Accept request' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Accept request' })).toBeNull())
+    expect(screen.getByText('No mutual friends')).toBeTruthy()
+    expect(writes()[0]).toEqual(['/api/friends/requests/incoming-Grace/accept', { method: 'POST' }])
+  })
+
 })

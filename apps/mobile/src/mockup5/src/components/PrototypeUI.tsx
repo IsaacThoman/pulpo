@@ -78,19 +78,22 @@ export function SectionTitle({ children, trailing }: { children: ReactNode; trai
   return <View style={styles.sectionTitleRow}><Text style={[styles.sectionTitle, { color: theme.secondary }]}>{children}</Text>{trailing}</View>;
 }
 
-export function ListRow({ icon, iconColor, leading, title, detail, value, onPress, destructive = false, last = false, children }: {
-  icon?: string; iconColor?: string; leading?: ReactNode; title: string; detail?: string; value?: string; onPress?: () => void; destructive?: boolean; last?: boolean; children?: ReactNode;
+export function ListRow({ icon, iconColor, leading, title, detail, value, onPress, onIdentityPress, destructive = false, last = false, children }: {
+  icon?: string; iconColor?: string; leading?: ReactNode; title: string; detail?: string; value?: string; onPress?: () => void; onIdentityPress?: () => void; destructive?: boolean; last?: boolean; children?: ReactNode;
 }) {
   const theme = useAppTheme();
-  if (Platform.OS === 'ios' && onPress && !leading && !children) {
+  if (Platform.OS === 'ios' && onPress && !leading && !children && !onIdentityPress) {
     const rowHeight = detail ? 66 : 54;
     return <View style={!last ? { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.separator } : undefined}><SwiftUIHost matchContents={{ vertical: true }} style={{ minHeight: rowHeight }}><SwiftUIButton onPress={onPress} role={destructive ? 'destructive' : 'default'} modifiers={[buttonStyle('plain'), foregroundStyle(destructive ? theme.red : 'primary')]}><SwiftUIHStack modifiers={[frame({ maxWidth: Infinity, minHeight: rowHeight }), padding({ horizontal: 14, vertical: 6 })]} spacing={12}>{icon ? <SwiftUIImage systemName={icon as never} size={17} color={iconColor ?? (destructive ? theme.red : theme.secondary)} modifiers={[frame({ width: 22, height: 22 })]} /> : null}<SwiftUIVStack alignment="leading" spacing={3}><SwiftUIText modifiers={[font({ textStyle: 'subheadline', weight: 'medium' }), lineLimit(3)]}>{title}</SwiftUIText>{detail ? <SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary'), lineLimit(3)]}>{detail}</SwiftUIText> : null}</SwiftUIVStack><SwiftUISpacer />{value ? <SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary'), lineLimit(1)]}>{value}</SwiftUIText> : null}<SwiftUIImage systemName="chevron.right" size={11} color={theme.tertiary} /></SwiftUIHStack></SwiftUIButton></SwiftUIHost></View>;
   }
-  if (Platform.OS === 'android' && !leading && !children) return <MaterialRow title={title} detail={detail} value={value} icon={icon} destructive={destructive} onPress={onPress} />;
-  const body = <>
+  if (Platform.OS === 'android' && !leading && !children && !onIdentityPress) return <MaterialRow title={title} detail={detail} value={value} icon={icon} destructive={destructive} onPress={onPress} />;
+  const identity = <>
     {icon ? <View style={[styles.rowIcon, Platform.OS !== 'ios' && { backgroundColor: `${iconColor ?? theme.secondary}20` }]}><SymbolView name={icon as never} size={17} tintColor={iconColor ?? theme.secondary} /></View> : null}
     {leading}
     <View style={styles.rowText}><Text style={[styles.rowTitle, { color: destructive ? theme.red : theme.text }]}>{title}</Text>{detail ? <Text style={[styles.rowDetail, { color: theme.secondary }]}>{detail}</Text> : null}</View>
+  </>;
+  const body = <>
+    {onIdentityPress ? <Pressable accessibilityRole="button" accessibilityLabel={`View ${title}'s profile`} onPress={onIdentityPress} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}>{identity}</Pressable> : identity}
     {value ? <Text style={[styles.rowValue, { color: theme.secondary }]}>{value}</Text> : null}
     {children}
     {onPress ? <SymbolView name="chevron.right" size={13} tintColor={theme.tertiary} weight="semibold" /> : null}
