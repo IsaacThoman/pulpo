@@ -10,10 +10,38 @@ import { cn } from '@/lib/utils'
 import { sessionColor, sessionLabel } from '../../editor/presence'
 import { ToolbarButton } from '../../editor/ToolbarButton'
 import type { LiveEditorProps } from '../types'
+import { TextStatusCounts } from './TextCounts'
 
 /** Waits this long after the last keystroke before rendering the HTML preview again. */
 const PREVIEW_DELAY_MS = 400
 const WRAP_KEY = 'pulpo:text-editor:wrap'
+
+/** The wrap preference; storage can be unavailable (private windows, blocked site data). */
+function storedWrap(): boolean {
+  try {
+    return localStorage.getItem(WRAP_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function storeWrap(wrap: boolean): void {
+  try {
+    localStorage.setItem(WRAP_KEY, String(wrap))
+  } catch {
+    // The choice still applies to this editor.
+  }
+}
+
+/** Find, replace, and go to line, pressed while focus is on the toolbar or status bar rather than in the text. */
+function findCommand(event: React.KeyboardEvent, mac: boolean): 'find' | 'replace' | 'line' | null {
+  const key = event.key.toLowerCase()
+  const mod = mac ? event.metaKey : event.ctrlKey
+  if (event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && key === 'g') return 'line'
+  if (!mod) return null
+  if (mac ? (event.altKey && event.code === 'KeyF') || (event.shiftKey && key === 'h') : !event.altKey && !event.shiftKey && key === 'h') return 'replace'
+  return !event.altKey && !event.shiftKey && key === 'f' ? 'find' : null
+}
 
 /** Whether the app is showing its dark theme; it toggles a class on the root element. */
 function useDarkTheme(): boolean {
@@ -100,7 +128,7 @@ function HtmlPreview({ doc, name }: { doc: Y.Doc; name: string }) {
   return <SandboxFrame key={code} kind="html" code={code} title={uit`Preview of ${name}`} />
 }
 
-function IndentMenu({ indent, disabled, onChange }: { indent: TextEditorIndent; disabled: boolean; onChange: (indent: TextEditorIndent) => void }) {
+function IndentMenu({ indent, disabled, onChange, onClosed }: { indent: TextEditorIndent; disabled: boolean; onChange: (indent: TextEditorIndent) => void; onClosed: () => void }) {
   const option = (next: TextEditorIndent, label: string) => (
     <DropdownMenuItem key={label} onSelect={() => onChange(next)}>
       <Check className={cn('size-4', !(next.tabs === indent.tabs && next.size === indent.size) && 'invisible')} />
@@ -120,7 +148,14 @@ function IndentMenu({ indent, disabled, onChange }: { indent: TextEditorIndent; 
           <ChevronDown className="size-3" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <DropdownMenuContent
+        align="start"
+        onCloseAutoFocus={(event) => {
+          // Typing goes on in the text, not on the menu's button.
+          event.preventDefault()
+          onClosed()
+        }}
+      >
         <DropdownMenuLabel>{ui("Indent with spaces")}</DropdownMenuLabel>
         {[2, 4, 8].map((size) => option({ size, tabs: false }, uit`${size} spaces`))}
         <DropdownMenuSeparator />
@@ -157,7 +192,7 @@ export function TextDocEditor({ session, name, editable, width, toolbarSlot }: L
       name: initialName,
       labels: editorLabels(),
       dark: initialDark,
-      wrap: localStorage.getItem(WRAP_KEY) === 'true',
+      wrap: storedWrap(),
       onChange: setState,
     })
     editor.current = created
@@ -169,13 +204,19 @@ export function TextDocEditor({ session, name, editable, width, toolbarSlot }: L
   }, [session])
 
   useEffect(() => { editor.current?.setReadOnly(!editable) }, [editable])
+  useEffect(() => {
+    // An opened file takes the keyboard once it can be edited (so Ctrl+F finds in it), unless
+    // something else has it; the side panel never takes it from the chat.
+    if (editable && width !== 'fill' && (!document.activeElement || document.activeElement === document.body)) editor.current?.focus()
+  }, [editable, width, session])
   useEffect(() => { editor.current?.setDark(dark) }, [dark])
   useEffect(() => { editor.current?.setName(name) }, [name])
 
-  const run = (action: (target: TextEditor) => void) => () => {
+  const run = (action: (target: TextEditor) => void, options: { focus?: boolean } = {}) => () => {
     if (!editor.current) return
     action(editor.current)
-    editor.current.focus()
+    // Find and go to line put the caret in their own field.
+    if (options.focus !== false) editor.current.focus()
   }
   const button = (label: string, icon: ReactNode, onClick: () => void, options: { active?: boolean; disabled?: boolean; shortcut?: { label: string; aria: string } } = {}) => (
     <ToolbarButton label={label} onClick={onClick} active={options.active} disabled={options.disabled} shortcut={options.shortcut}>{icon}</ToolbarButton>
@@ -183,20 +224,31 @@ export function TextDocEditor({ session, name, editable, width, toolbarSlot }: L
   const mac = /Mac|iPhone|iPad/.test(navigator.platform)
   const shortcut = (key: string) => ({ label: mac ? `⌘${key.toUpperCase()}` : `Ctrl+${key.toUpperCase()}`, aria: `${mac ? 'Meta' : 'Control'}+${key}` })
 
+  const onKeyDown = (event: React.KeyboardEvent) => {
+    // Inside the text, CodeMirror's own keymap has these.
+    if (!editor.current || (event.target instanceof Node && editor.current.view.dom.contains(event.target))) return
+    const command = findCommand(event, mac)
+    if (!command) return
+    event.preventDefault()
+    if (command === 'find') editor.current.openSearch()
+    else if (command === 'replace') editor.current.openReplace()
+    else editor.current.openGotoLine()
+  }
+
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col" onKeyDown={onKeyDown}>
       <div className="flex flex-wrap items-center gap-2 border-b bg-background/95 px-4 py-1.5 sm:px-6">
         <div role="toolbar" aria-label={ui("Editing")} className="flex min-w-0 flex-1 flex-wrap items-center gap-0.5">
           {button(ui("Undo"), <Undo2 className="size-4" />, run((target) => target.undo()), { disabled: !editable || !state?.canUndo, shortcut: shortcut('z') })}
           {button(ui("Redo"), <Redo2 className="size-4" />, run((target) => target.redo()), { disabled: !editable || !state?.canRedo })}
           <span className="mx-1 h-5 w-px bg-border" />
-          {button(ui("Find and replace"), <Search className="size-4" />, run((target) => target.openSearch()), { shortcut: shortcut('f') })}
+          {button(ui("Find and replace"), <Search className="size-4" />, run((target) => target.openSearch(), { focus: false }), { shortcut: shortcut('f') })}
           {button(ui("Wrap lines"), <WrapText className="size-4" />, run((target) => {
             const next = !target.state().wrap
-            localStorage.setItem(WRAP_KEY, String(next))
+            storeWrap(next)
             target.setWrap(next)
           }), { active: state?.wrap ?? false })}
-          {state && <IndentMenu indent={state.indent} disabled={!editable} onChange={(indent) => run((target) => target.setIndent(indent))()} />}
+          {state && <IndentMenu indent={state.indent} disabled={!editable} onChange={(indent) => editor.current?.setIndent(indent)} onClosed={() => editor.current?.focus()} />}
           {html && (
             <>
               <span className="mx-1 h-5 w-px bg-border" />
@@ -215,7 +267,20 @@ export function TextDocEditor({ session, name, editable, width, toolbarSlot }: L
         )}
       </div>
       <div className="flex shrink-0 items-center gap-3 border-t px-4 py-1 text-[11px] text-muted-foreground tabular-nums sm:px-6" aria-live="off">
-        {state && <span>{state.selected ? uit`Ln ${state.line}, Col ${state.column} (${state.selected} selected)` : uit`Ln ${state.line}, Col ${state.column}`}</span>}
+        {state && (
+          <button
+            type="button"
+            className="cursor-pointer rounded px-1 hover:bg-accent hover:text-foreground"
+            title={`${ui("Go to line")} (${mac ? '⌃G' : 'Ctrl+G'})`}
+            aria-keyshortcuts="Control+g"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={run((target) => target.openGotoLine(), { focus: false })}
+            data-text-position
+          >
+            {state.selected ? uit`Ln ${state.line}, Col ${state.column} (${state.selected} selected)` : uit`Ln ${state.line}, Col ${state.column}`}
+          </button>
+        )}
+        {state && <TextStatusCounts editor={editor.current} doc={session.doc} name={name} state={state} onDone={() => editor.current?.focus()} />}
         <span className="flex-1" />
         {!editable && <span>{ui("Read-only")}</span>}
         <span>{state?.language ?? ui("Plain text")}</span>
