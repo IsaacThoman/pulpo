@@ -1603,7 +1603,7 @@ export class DocxEditor {
     return this.run(changeCase(change))
   }
 
-  /** The link at the cursor (inside it or at either end): its target, text, and range. */
+  /** The link at the cursor (inside it or at its end): its target, text, and range. */
   linkAt(): Omit<LinkRange, 'mark'> | null {
     const { state } = this.activeView
     if (!state.selection.empty) return null
@@ -2147,7 +2147,8 @@ export class DocxEditor {
    * Null outside the editable text.
    */
   contextAt(clientX: number, clientY: number, options: { select?: boolean } = {}): DocxContextInfo | null {
-    const target = typeof document.elementFromPoint === 'function' ? document.elementFromPoint(clientX, clientY) : null
+    const owner = this.root.ownerDocument
+    const target = typeof owner.elementFromPoint === 'function' ? owner.elementFromPoint(clientX, clientY) : null
     const story = this.storyEditor && target && this.storyEditor.view.dom.contains(target) ? this.storyEditor : null
     const view = story?.view ?? this.view
     if (target && !view.dom.contains(target)) return null
@@ -2183,7 +2184,7 @@ export class DocxEditor {
     const $pos = view.state.doc.resolve(Math.min(pos, view.state.doc.content.size))
     let table = false
     for (let depth = $pos.depth; depth > 0; depth--) if ($pos.node(depth).type.name === 'tableCell') table = true
-    const link = linkAround(view.state.doc, pos)
+    const link = linkAround(view.state.doc, pos, Boolean(target?.closest?.('a.docx-link')))
     const comments = target?.closest?.('.docx-comment-range')?.getAttribute('data-comments')?.split(' ').filter(Boolean) ?? []
     const storyId = story?.storyId ?? null
     const revisions = listRevisions(view.state.doc, storyId ?? undefined).filter((revision) => revision.from <= pos && revision.to >= pos)

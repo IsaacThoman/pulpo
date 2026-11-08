@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { TextSelection } from '@tiptap/pm/state'
 import type { EditorView } from '@tiptap/pm/view'
@@ -318,6 +318,19 @@ describe('autoformat', () => {
     type(editor.view, 'a"')
     press(editor.view, { key: 'Backspace' })
     expect(firstText()).toBe('a”')
+  })
+
+  it('tracks curled quotes and dashes as plain insertions while suggesting', () => {
+    setBody(editor.view, [p('Start')], 6)
+    editor.setMode('suggesting')
+    type(editor.view, ' "a" b--c ')
+    expect(firstText()).toBe('Start “a” b—c ')
+    expect(editor.revisions().map((revision) => [revision.kind, revision.text])).toEqual([['insert', ' “a” b—c ']])
+    // Over a selection, the quote replaces it and is curled.
+    editor.setMode('editing')
+    editor.view.dispatch(editor.view.state.tr.setSelection(TextSelection.create(editor.view.state.doc, 1, 6)))
+    type(editor.view, '"')
+    expect(firstText().startsWith('“ ')).toBe(true)
   })
 
   it('links an address before Enter splits the paragraph', () => {
@@ -781,9 +794,12 @@ assert d.tables[0].rows[0]._tr.trPr.xml.count('w:tblHeader') == 1
 print('ok')
 `, output], { encoding: 'utf8', timeout: 180_000 })
     expect(check.stdout.trim(), check.stderr).toBe('ok')
-    if (existsSync('/Applications/LibreOffice.app/Contents/MacOS/soffice') || process.env.PULPO_DOCX_SOFFICE) {
-      const converted = spawnSync(python, ['-I', join(process.cwd(), 'scripts/docx-fidelity/libreoffice.py'), output, '--outdir', work], { encoding: 'utf8', timeout: 180_000 })
+    const soffice = process.env.PULPO_DOCX_SOFFICE ?? '/Applications/LibreOffice.app/Contents/MacOS/soffice'
+    if (existsSync(soffice)) {
+      // A profile of its own: fidelity.test.ts converts with the shared one at the same time.
+      const converted = spawnSync(soffice, [`-env:UserInstallation=file://${join(work, 'profile')}`, '--headless', '--convert-to', 'pdf', '--outdir', work, output], { encoding: 'utf8', timeout: 180_000 })
       expect(converted.status, converted.stdout + converted.stderr).toBe(0)
+      expect(statSync(join(work, 'tools.pdf')).size).toBeGreaterThan(1000)
     }
   })
 

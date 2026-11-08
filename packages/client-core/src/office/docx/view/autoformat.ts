@@ -191,8 +191,9 @@ export function autoformatPlugin(host: AutoformatHost): Plugin {
     },
     props: {
       handleTextInput(view, from, to, text, deflt) {
-        if (view.composing || !view.editable || from !== to) return false
-        if (text !== ' ' && text !== '"' && text !== "'") return false
+        if (view.composing || !view.editable) return false
+        // A space over a selection replaces it; a quote typed over one is still curled.
+        if (text === ' ' ? from !== to : text !== '"' && text !== "'") return false
         const options = host.options()
         const state = view.state
         const before = textBefore(state, from)

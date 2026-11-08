@@ -933,7 +933,8 @@ export function editSections(state: EditorState, context: DocxViewContext, index
     const next = edit(structuredClone(current), index)
     if (!next) return null
     const packed = packJml(sortSect(next))
-    if (holder.sectPr && packed === packJml(holder.sectPr)) continue
+    // Unchanged sections are left as written, even when their children are out of order.
+    if (packed === packJml(sortSect(current))) continue
     if (holder.pos === null) maps.push(['docx', 'sectPr', packed])
     else {
       const node = tr.doc.nodeAt(holder.pos)!
@@ -1038,7 +1039,7 @@ export function hasTitlePage(sectPr: JmlElement | undefined): boolean {
   return element !== undefined && jmlOn(element) !== false
 }
 
-/** A link the caret is in (or at either end of), across the bookmarks and comment ranges inside it. */
+/** A whole link, across the bookmarks and comment ranges inside it. */
 export interface LinkRange {
   from: number
   to: number
@@ -1053,7 +1054,12 @@ export interface LinkRange {
 /** Markers that sit inside links without carrying their mark. */
 const LINK_TRANSPARENT = new Set(['commentMark', 'bookmark'])
 
-export function linkAround(doc: ProseMirrorNode, pos: number): LinkRange | null {
+/**
+ * The link around a position: one the position is inside or at the end of (the caret there types
+ * with the link's formatting, so Word edits that link), or with `after` also one starting there
+ * (a point on a link's first character).
+ */
+export function linkAround(doc: ProseMirrorNode, pos: number, after = false): LinkRange | null {
   const $pos = doc.resolve(Math.max(0, Math.min(pos, doc.content.size)))
   const parent = $pos.parent
   const type = parent.type.schema.marks.link
@@ -1062,9 +1068,8 @@ export function linkAround(doc: ProseMirrorNode, pos: number): LinkRange | null 
   parent.forEach((node, offset) => { nodes.push({ node, start: offset }) })
   const linkOf = (index: number) => (index >= 0 && index < nodes.length ? inlineMarks(nodes[index]!.node).find((mark) => mark.type === type) : undefined)
   const offset = $pos.parentOffset
-  // The text before the caret first, so the caret at a link's end still edits it, as in Word.
   let index = nodes.findIndex(({ node, start }) => start < offset && offset <= start + node.nodeSize)
-  if (!linkOf(index)) index = nodes.findIndex(({ start }) => start === offset)
+  if (!linkOf(index) && after) index = nodes.findIndex(({ start }) => start === offset)
   const mark = linkOf(index)
   if (!mark) return null
   const transparent = (at: number) => LINK_TRANSPARENT.has(nodes[at]?.node.type.name ?? '')
