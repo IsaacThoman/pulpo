@@ -45,15 +45,16 @@ function ProfileHoverCard({ profile, children }: { profile: FriendProfile; child
   </TooltipProvider>
 }
 
-export function ProfileIdentity({ profile, detail, query, matchedOn, href }: {
+export function ProfileIdentity({ profile, detail, query, matchedOn, href, avatarShape }: {
   profile: FriendProfile
   detail?: string
   query?: string
   matchedOn?: FriendSearchResult['matchedOn']
   href?: string
+  avatarShape?: 'square' | 'circle'
 }) {
   const content = <>
-      <ProfileAvatar name={profile.displayName} avatarUrl={profile.avatarUrl} className="size-10" fallbackClassName="text-xs" />
+      <ProfileAvatar name={profile.displayName} avatarUrl={profile.avatarUrl} shape={avatarShape} className="size-10" fallbackClassName="text-xs" />
       <div className="min-w-0">
         <div className={cn('truncate text-sm font-medium', href && 'group-hover/profile:underline')}>{query && matchedOn === 'displayName' ? <HighlightedText value={profile.displayName} query={query} /> : profile.displayName}</div>
         <div className="flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground">

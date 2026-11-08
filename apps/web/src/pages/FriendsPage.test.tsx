@@ -4,11 +4,20 @@ import { describe, expect, it, vi } from 'vitest'
 import { MyProfileLink } from './FriendsPage'
 
 describe('MyProfileLink', () => {
-  it('links to the signed-in user profile', () => {
-    const html = renderToStaticMarkup(<MemoryRouter><MyProfileLink username="preview_admin" /></MemoryRouter>)
+  it('shows and links the signed-in user profile', () => {
+    const html = renderToStaticMarkup(<MemoryRouter><MyProfileLink profile={{
+      id: 'me',
+      displayName: 'Jordan Lee',
+      username: 'jordan_lee',
+      avatarUrl: null,
+      profileColor: null,
+    }} /></MemoryRouter>)
 
-    expect(html).toContain('My profile')
-    expect(html).toContain('href="/preview_admin"')
+    expect(html).toContain('Jordan Lee')
+    expect(html).toContain('@jordan_lee')
+    expect(html).toContain('href="/jordan_lee"')
+    expect(html).toContain('rounded-full')
+    expect(html).not.toContain('My profile')
     expect(html).not.toContain('Your handle is')
   })
 })

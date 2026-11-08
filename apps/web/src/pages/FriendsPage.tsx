@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { FriendConnection, FriendProfile, FriendSearchResponse, FriendSearchResult, FriendSuggestion, FriendsList, PoolSummary } from '@pulpo/contracts'
 import { Check, ChevronDown, ChevronRight, LoaderCircle, MoreHorizontal, Search, UserRoundPlus, UsersRound } from 'lucide-react'
-import { Link } from 'react-router-dom'
 import { ApiError, apiRequest, isNetworkError } from '@/lib/api'
 import { nextFriendSearchIndex, normalizedFriendSearchQuery, shouldSearchFriends } from '@/lib/friend-search'
 import { friendRequestAge } from '@/lib/friends'
@@ -22,12 +21,8 @@ import { PoolSection } from '@/components/PoolSection'
 import { InviteCodesCard } from '@/components/InviteCodesCard'
 import { ui, uit } from '@/i18n/ui'
 
-export function MyProfileLink({ username }: { username: string }) {
-  return <h2 className="text-lg font-medium">
-    <Link to={`/${username}`} className="rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-      {ui("My profile")}
-    </Link>
-  </h2>
+export function MyProfileLink({ profile }: { profile: FriendProfile }) {
+  return <ProfileIdentity profile={profile} href={`/${profile.username}`} avatarShape="circle" />
 }
 
 function Section({ title, count, empty, children }: { title: string; count: number; empty?: string; children: React.ReactNode }) {
@@ -272,7 +267,13 @@ export function FriendsPage() {
   const poolFull = Boolean(pool && pool.members.length + pool.pendingInvitations.length >= 6)
   return (
     <div className="mx-auto w-full max-w-3xl space-y-5 px-5 py-6">
-      {user && <MyProfileLink username={user.username} />}
+      {user && <MyProfileLink profile={{
+        id: user.id,
+        displayName: user.name,
+        username: user.username,
+        avatarUrl: user.avatarUrl,
+        profileColor: user.profileColor,
+      }} />}
       <InviteCodesCard />
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />

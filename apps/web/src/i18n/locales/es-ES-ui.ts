@@ -1235,7 +1235,6 @@ const esUi: Record<string, string> = {
   "Move {{0}} up": "Mover {{0}} hacia arriba",
   "MRR": "MRR",
   "Must be a JSON object": "Debe ser un objeto JSON",
-  "My profile": "Mi perfil",
   "Name": "Nombre",
   "Name or username": "Nombre o nombre de usuario",
   "name@example.com": "name@example.com",
