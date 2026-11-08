@@ -2683,6 +2683,15 @@ const esUi: Record<string, string> = {
   "Pulpo was updated": "Pulpo se actualizó",
   "Reload to get the latest version.": "Recarga para obtener la versión más reciente.",
   "Reload the page to try again.": "Recarga la página para volver a intentarlo.",
+  "Amber": "Ámbar",
+  "Selected": "Seleccionado",
+  "Settings sections": "Secciones de ajustes",
+  "Usage sections": "Secciones de uso",
+  "Role for {{0}}": "Rol de {{0}}",
+  "Enable {{0}}": "Activar {{0}}",
+  "Search models": "Buscar modelos",
+  "Filter models": "Filtrar modelos",
+  "Search API keys": "Buscar claves de API",
 }
 
 export default esUi

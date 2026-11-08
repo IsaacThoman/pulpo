@@ -4,7 +4,7 @@ import { refreshInstanceFeatures } from '@/lib/instance-features'
 import { DeleteAccountSettings } from './DeleteAccountSettings'
 import { DeviceSettings } from './DeviceSettings'
 import { SignedInAccountsSettings } from '@/components/layout/AccountSwitcher'
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -124,32 +124,77 @@ interface StorageUsage {
   remainingBytes: number
 }
 
-function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+/** Props a settings row hands its control so the visible label and hint name and describe it. */
+interface RowControlProps {
+  id: string
+  'aria-describedby'?: string
+}
+
+/**
+ * A labelled settings row. Pass a render function as children to get the ids that tie
+ * the visible label (`<label htmlFor>`) and hint (`aria-describedby`) to the control.
+ * With `group`, the label names a group of controls via `aria-labelledby` instead.
+ */
+function Row({ label, hint, group, children }: {
+  label: string
+  hint?: string
+  group?: boolean
+  children: React.ReactNode | ((control: RowControlProps & { labelId: string }) => React.ReactNode)
+}) {
+  const baseId = useId()
+  const controlId = `${baseId}-control`
+  const labelId = `${baseId}-label`
+  const hintId = hint ? `${baseId}-hint` : undefined
+  const labelsControl = typeof children === 'function' && !group
+  const labelClassName = 'block text-sm font-medium'
   return (
     <div className="flex min-w-0 flex-col items-stretch gap-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium">{label}</div>
-        {hint && <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
+        {labelsControl
+          ? <label id={labelId} htmlFor={controlId} className={labelClassName}>{label}</label>
+          : <div id={labelId} className={labelClassName}>{label}</div>}
+        {hint && <div id={hintId} className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
       </div>
-      <div className="min-w-0 self-start sm:shrink-0 sm:self-auto">{children}</div>
+      <div className="min-w-0 self-start sm:shrink-0 sm:self-auto">
+        {typeof children === 'function' ? children({ id: controlId, labelId, 'aria-describedby': hintId }) : children}
+      </div>
     </div>
   )
 }
 
-function ThemePicker() {
+/** A small subsection heading inside a settings panel (panel titles are h2). */
+function SubsectionHeading({ id, children }: { id?: string; children: React.ReactNode }) {
+  return <h3 id={id} className="text-sm font-medium">{children}</h3>
+}
+
+function profileColorName(color: string): string {
+  switch (color) {
+    case '#3b82f6': return ui('Blue')
+    case '#8b5cf6': return ui('Purple')
+    case '#ec4899': return ui('Pink')
+    case '#f59e0b': return ui('Amber')
+    case '#10b981': return ui('Green')
+    case '#ef4444': return ui('Red')
+    default: return color
+  }
+}
+
+function ThemePicker({ labelId, describedBy }: { labelId: string; describedBy?: string }) {
   const { t } = useTranslation()
   const theme = useSettings((s) => s.theme)
   const setTheme = useSettings((s) => s.setTheme)
   const opts: { id: Theme; icon: React.ReactNode; label: string }[] = [
-    { id: 'light', icon: <Sun className="size-4" />, label: t('settings.general.light') },
-    { id: 'dark', icon: <Moon className="size-4" />, label: t('settings.general.dark') },
-    { id: 'system', icon: <Monitor className="size-4" />, label: t('settings.general.system') },
+    { id: 'light', icon: <Sun className="size-4" aria-hidden />, label: t('settings.general.light') },
+    { id: 'dark', icon: <Moon className="size-4" aria-hidden />, label: t('settings.general.dark') },
+    { id: 'system', icon: <Monitor className="size-4" aria-hidden />, label: t('settings.general.system') },
   ]
   return (
-    <div className="flex w-full rounded-lg border p-0.5 sm:w-auto">
+    <div role="group" aria-labelledby={labelId} aria-describedby={describedBy} className="flex w-full rounded-lg border p-0.5 sm:w-auto">
       {opts.map((o) => (
         <button
           key={o.id}
+          type="button"
+          aria-pressed={theme === o.id}
           onClick={() => setTheme(o.id)}
           className={cn(
             'flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors sm:flex-none sm:px-3',
@@ -312,6 +357,7 @@ export function SettingsModal({
     label: t(SECTION_CONFIG[id].labelKey),
   }))
   const [section, setSection] = useState<SettingsSectionId>(initialSection)
+  const fieldId = useId()
   const s = useSettings()
   const user = useAuth((a) => a.user)
   const signOutActiveAccount = useAuth((a) => a.signOutActiveAccount)
@@ -585,13 +631,12 @@ export function SettingsModal({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="flex h-[min(680px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] w-full flex-col gap-0 overflow-hidden p-0 sm:h-[600px] sm:max-h-[85vh] sm:max-w-[calc(100%-2rem)] lg:max-w-3xl">
-        <DialogTitle className="sr-only">{t('settings.title')}</DialogTitle>
+      <DialogContent aria-describedby={undefined} className="flex h-[min(680px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] w-full flex-col gap-0 overflow-hidden p-0 sm:h-[600px] sm:max-h-[85vh] sm:max-w-[calc(100%-2rem)] lg:max-w-3xl">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden sm:flex-row">
           {/* nav */}
           <div className="flex w-full shrink-0 flex-col border-b bg-muted/30 p-2 sm:w-52 sm:border-r sm:border-b-0 sm:p-3">
-            <div className="px-2 pb-1.5 pr-8 text-sm font-semibold sm:pb-2 sm:pr-2">{t('settings.title')}</div>
-            <div className="settings-section-nav flex gap-1 overflow-x-auto pb-0.5 sm:block sm:space-y-0.5 sm:overflow-visible sm:pb-0">
+            <DialogTitle className="px-2 pb-1.5 pr-8 text-sm font-semibold sm:pb-2 sm:pr-2">{t('settings.title')}</DialogTitle>
+            <nav aria-label={ui("Settings sections")} className="settings-section-nav flex gap-1 overflow-x-auto pb-0.5 sm:block sm:space-y-0.5 sm:overflow-visible sm:pb-0">
               {sections.filter((sec) => (
                 (sec.id !== 'api' || useAuth.getState().apiKeysEnabled)
                 && (sec.id !== 'billing' || billingEnabled)
@@ -599,6 +644,8 @@ export function SettingsModal({
               )).map((sec) => (
                 <button
                   key={sec.id}
+                  type="button"
+                  aria-current={section === sec.id ? 'page' : undefined}
                   onClick={() => setSection(sec.id)}
                   className={cn(
                     'flex shrink-0 cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition-colors sm:w-full sm:gap-2.5',
@@ -607,11 +654,11 @@ export function SettingsModal({
                       : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
                   )}
                 >
-                  <sec.icon className="size-4" />
+                  <sec.icon className="size-4" aria-hidden />
                   {sec.label}
                 </button>
               ))}
-            </div>
+            </nav>
             {user?.role === 'admin' && (
               <div className="mt-auto hidden border-t pt-3 sm:block">
                 <button
@@ -636,16 +683,18 @@ export function SettingsModal({
                   <Row label={ui("Trash retention period")} hint={trashQuery.data?.files === false
                     ? ui("How long trashed chats and folders stay recoverable before they are deleted forever. Folders are always kept for at least 24 hours.")
                     : ui("How long trashed chats and files stay recoverable before they are deleted forever. Files are always kept for at least 24 hours.")}>
-                    <Select value={s.trashRetention} disabled={trashRetentionSaving} onValueChange={(value) => void updateTrashRetention(value as TrashRetention)}>
-                      <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {TRASH_RETENTION_VALUES.map((value) => (
-                          <SelectItem key={value} value={value}>{trashRetentionLabel(value)}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {(control) => (
+                      <Select value={s.trashRetention} disabled={trashRetentionSaving} onValueChange={(value) => void updateTrashRetention(value as TrashRetention)}>
+                        <SelectTrigger {...control} aria-invalid={trashRetentionError ? true : undefined} className="w-36"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {TRASH_RETENTION_VALUES.map((value) => (
+                            <SelectItem key={value} value={value}>{trashRetentionLabel(value)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </Row>
-                  {trashRetentionError && <p className="text-right text-xs text-destructive">{trashRetentionError}</p>}
+                  {trashRetentionError && <p role="alert" className="text-right text-xs text-destructive">{trashRetentionError}</p>}
                   <Separator className="my-3" />
                   <Row
                     label={ui("Trashed items")}
@@ -666,22 +715,24 @@ export function SettingsModal({
                 <div>
                   <h2 className="text-base font-semibold">{t('settings.general.title')}</h2>
                   <Separator className="my-3" />
-                  <Row label={t('settings.general.theme')} hint={t('settings.general.themeHint')}>
-                    <ThemePicker />
+                  <Row label={t('settings.general.theme')} hint={t('settings.general.themeHint')} group>
+                    {(control) => <ThemePicker labelId={control.labelId} describedBy={control['aria-describedby']} />}
                   </Row>
                   <Row label={t('settings.general.language')}>
-                    <Select value={s.language} onValueChange={(value) => s.set('language', normalizeLanguage(value))}>
-                      <SelectTrigger className="w-40">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {SUPPORTED_LANGUAGES.map((language) => (
-                          <SelectItem key={language.value} value={language.value}>
-                            {language.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {(control) => (
+                      <Select value={s.language} onValueChange={(value) => s.set('language', normalizeLanguage(value))}>
+                        <SelectTrigger {...control} className="w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SUPPORTED_LANGUAGES.map((language) => (
+                            <SelectItem key={language.value} value={language.value}>
+                              {language.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </Row>
                 </div>
               )}
@@ -710,7 +761,7 @@ export function SettingsModal({
                       {user?.avatarUrl && <button
                         type="button"
                         disabled={profileSaving}
-                        className="mt-1 cursor-pointer text-[10px] leading-none text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                        className="mt-1 cursor-pointer text-xs leading-none text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => void removeAvatar()}
                       >{ui("Remove")}</button>}
                     </div>
@@ -742,12 +793,13 @@ export function SettingsModal({
                     <AvatarCropEditor key={avatarCandidate.url} imageUrl={avatarCandidate.url} settings={avatarCrop} onChange={setAvatarCrop} />
                     <div className="mt-3 flex justify-end gap-2"><Button size="sm" disabled={profileSaving} onClick={() => void uploadAvatar()}>{ui("Use picture")}</Button><Button size="sm" variant="outline" disabled={profileSaving} onClick={() => setAvatarCandidate(null)}>{ui("Cancel")}</Button></div>
                   </div>}
-                  <Row label={ui("Display name")}><Input value={profileName} onChange={(event) => { setProfileMessage(''); setProfileName(event.target.value) }} maxLength={120} className="w-52" /></Row>
-                  <Row label={ui("Friends chart color")} hint="Used on accepted friends’ usage charts."><div className="flex flex-wrap items-center justify-end gap-2">
+                  <Row label={ui("Display name")}>{(control) => <Input {...control} autoComplete="name" value={profileName} onChange={(event) => { setProfileMessage(''); setProfileName(event.target.value) }} maxLength={120} className="w-52" />}</Row>
+                  <Row label={ui("Friends chart color")} hint="Used on accepted friends’ usage charts." group>{(control) => <div role="group" aria-labelledby={control.labelId} aria-describedby={control['aria-describedby']} className="flex flex-wrap items-center justify-end gap-2">
                     {PROFILE_COLORS.map((color) => <button
                       key={color}
                       type="button"
-                      aria-label={uit`Profile color ${color}`}
+                      aria-label={profileColorName(color)}
+                      aria-pressed={!customColorSelected && profileColor === color}
                       className={cn('size-5 cursor-pointer rounded border', !customColorSelected && profileColor === color && 'ring-2 ring-foreground ring-offset-2 ring-offset-background')}
                       style={{ backgroundColor: color }}
                       onClick={() => { setProfileMessage(''); setCustomColorSelected(false); setProfileColor(color) }}
@@ -756,6 +808,7 @@ export function SettingsModal({
                       <input
                         type="color"
                         aria-label={ui("Choose a custom profile color")}
+                        aria-describedby={customColorSelected ? `${fieldId}-custom-color-state` : undefined}
                         value={profileColor}
                         className="peer absolute inset-0 z-10 size-full cursor-pointer opacity-0"
                         onPointerDown={() => setCustomColorSelected(true)}
@@ -774,11 +827,12 @@ export function SettingsModal({
                           ? { backgroundImage: 'conic-gradient(#ef4444, #f59e0b, #10b981, #3b82f6, #8b5cf6, #ec4899, #ef4444)' }
                           : { backgroundColor: profileColor }}
                       />
+                      {customColorSelected && <span id={`${fieldId}-custom-color-state`} className="sr-only">{ui("Selected")}</span>}
                     </div>
-                  </div></Row>
+                  </div>}</Row>
                   <div className="flex min-h-10 items-center justify-end gap-3 py-2">
-                    {profileError && <span className="mr-auto text-sm text-destructive">{profileError}</span>}
-                    {!profileError && profileMessage && <span className="mr-auto text-sm text-muted-foreground">{profileMessage}</span>}
+                    {profileError && <span role="alert" className="mr-auto text-sm text-destructive">{profileError}</span>}
+                    <span role="status" className={cn('mr-auto text-sm text-muted-foreground', (profileError || !profileMessage) && 'sr-only')}>{profileError ? '' : profileMessage}</span>
                     <Button size="sm" disabled={!profileDirty || profileSaving || !profileName.trim()} onClick={() => void saveProfile()}>{profileSaving ? ui("Saving…") : ui("Save profile")}</Button>
                   </div>
                 </div>
@@ -810,18 +864,20 @@ export function SettingsModal({
                   <h2 className="text-base font-semibold">{ui("Personalization")}</h2>
                   <Separator className="my-3" />
                   <div className="py-3">
-                    <Label className="text-sm font-medium">{ui("Custom instructions")}</Label>
-                    <p className="mb-2 mt-0.5 text-xs text-muted-foreground"> {ui("Appended to every conversation as a system prompt.")} </p>
+                    <Label htmlFor={`${fieldId}-custom-instructions`} className="text-sm font-medium">{ui("Custom instructions")}</Label>
+                    <p id={`${fieldId}-custom-instructions-hint`} className="mb-2 mt-0.5 text-xs text-muted-foreground"> {ui("Appended to every conversation as a system prompt.")} </p>
                     <Textarea
+                      id={`${fieldId}-custom-instructions`}
+                      aria-describedby={`${fieldId}-custom-instructions-hint`}
                       value={s.customInstructions}
                       onChange={(e) => s.set('customInstructions', e.target.value)}
                       placeholder={ui("e.g. Be terse. Prefer code over prose. Never apologize.")}
                       rows={5}
                     />
                     {instructionPresets.length > 0 && (
-                      <div className="mt-3">
-                        <Label className="text-sm font-medium">{ui("Instruction presets")}</Label>
-                        <p className="mb-2 mt-0.5 text-xs text-muted-foreground"> {ui("Click to toggle preset behaviors.")} </p>
+                      <div className="mt-3" role="group" aria-labelledby={`${fieldId}-presets`} aria-describedby={`${fieldId}-presets-hint`}>
+                        <Label id={`${fieldId}-presets`} className="text-sm font-medium">{ui("Instruction presets")}</Label>
+                        <p id={`${fieldId}-presets-hint`} className="mb-2 mt-0.5 text-xs text-muted-foreground"> {ui("Click to toggle preset behaviors.")} </p>
                         <InstructionPresetButtons
                           presets={instructionPresets}
                           selections={s.instructionPresetSelections}
@@ -836,10 +892,12 @@ export function SettingsModal({
                   <div className="py-3">
                     <div className="flex items-center justify-between gap-4">
                       <div>
-                        <Label className="text-sm font-medium">{ui("Memories")}</Label>
-                        <p className="mt-0.5 text-xs text-muted-foreground"> {ui("Include your MEMORY.md profile and recall relevant context from eligible chats.")} </p>
+                        <Label htmlFor={`${fieldId}-memories`} className="text-sm font-medium">{ui("Memories")}</Label>
+                        <p id={`${fieldId}-memories-hint`} className="mt-0.5 text-xs text-muted-foreground"> {ui("Include your MEMORY.md profile and recall relevant context from eligible chats.")} </p>
                       </div>
                       <Switch
+                        id={`${fieldId}-memories`}
+                        aria-describedby={`${fieldId}-memories-hint`}
                         checked={s.memoryEnabled}
                         onCheckedChange={(value) => s.set('memoryEnabled', value)}
                       />
@@ -847,12 +905,12 @@ export function SettingsModal({
                     <div className="mt-4 space-y-3">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <Label className="text-sm font-medium">{ui('MEMORY.md')}</Label>
-                          <p className="mt-0.5 text-xs text-muted-foreground">{ui('Pulpo includes this user-controlled profile in every eligible conversation. Agent mode can update it when permitted.')}</p>
+                          <SubsectionHeading id={`${fieldId}-memory-document`}>{ui('MEMORY.md')}</SubsectionHeading>
+                          <p id={`${fieldId}-memory-document-hint`} className="mt-0.5 text-xs text-muted-foreground">{ui('Pulpo includes this user-controlled profile in every eligible conversation. Agent mode can update it when permitted.')}</p>
                         </div>
-                        <div className="flex rounded-md border p-0.5 text-xs">
-                          <button type="button" onClick={() => setMemoryPreview(false)} className={cn('cursor-pointer rounded px-2 py-1', !memoryPreview && 'bg-accent font-medium')}>{ui('Write')}</button>
-                          <button type="button" onClick={() => setMemoryPreview(true)} className={cn('cursor-pointer rounded px-2 py-1', memoryPreview && 'bg-accent font-medium')}>{ui('Preview')}</button>
+                        <div role="group" aria-labelledby={`${fieldId}-memory-document`} className="flex rounded-md border p-0.5 text-xs">
+                          <button type="button" aria-pressed={!memoryPreview} onClick={() => setMemoryPreview(false)} className={cn('cursor-pointer rounded px-2 py-1', !memoryPreview && 'bg-accent font-medium')}>{ui('Write')}</button>
+                          <button type="button" aria-pressed={memoryPreview} onClick={() => setMemoryPreview(true)} className={cn('cursor-pointer rounded px-2 py-1', memoryPreview && 'bg-accent font-medium')}>{ui('Preview')}</button>
                         </div>
                       </div>
                       {memoryLoading ? (
@@ -865,6 +923,8 @@ export function SettingsModal({
                         </div>
                       ) : (
                         <Textarea
+                          aria-labelledby={`${fieldId}-memory-document`}
+                          aria-describedby={`${fieldId}-memory-document-hint`}
                           value={memoryDraft}
                           onChange={(event) => setMemoryDraft(event.target.value)}
                           placeholder={ui('# About me\n\n- My name is…\n\n# Preferences\n\n- I prefer…')}
@@ -895,10 +955,10 @@ export function SettingsModal({
                           </div>
                         </div>
                       )}
-                      {memoryError && <p className="text-xs text-destructive">{memoryError}</p>}
+                      {memoryError && <p role="alert" className="text-xs text-destructive">{memoryError}</p>}
                       <Separator />
                       <div>
-                        <div className="text-sm font-medium">{ui('Recent edits')}</div>
+                        <h4 className="text-sm font-medium">{ui('Recent edits')}</h4>
                         <p className="mt-0.5 text-xs text-muted-foreground">{ui('Previous versions remain restorable for 24 hours.')}</p>
                       </div>
                       {!memoryLoading && memoryRevisions.length === 0 && (
@@ -929,82 +989,93 @@ export function SettingsModal({
                   <h2 className="text-base font-semibold">{ui("Interface")}</h2>
                   <Separator className="my-3" />
                   <Row label={ui("Chat width")}>
-                    <Select
-                      value={s.chatWidth}
-                      onValueChange={(v) => s.set('chatWidth', v as 'full' | 'narrow')}
-                    >
-                      <SelectTrigger className="w-40">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="narrow">{ui("Comfortable")}</SelectItem>
-                        <SelectItem value="full">{ui("Full width")}</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    {(control) => (
+                      <Select
+                        value={s.chatWidth}
+                        onValueChange={(v) => s.set('chatWidth', v as 'full' | 'narrow')}
+                      >
+                        <SelectTrigger {...control} className="w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="narrow">{ui("Comfortable")}</SelectItem>
+                          <SelectItem value="full">{ui("Full width")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
                   </Row>
                   <Row label={ui("Chat order")} hint={ui("Default keeps your manual drag order. Recent lists unfiled chats by last activity.")}>
-                    <Select
-                      value={s.chatSortMode}
-                      onValueChange={(v) => s.set('chatSortMode', v as ChatSortMode)}
-                    >
-                      <SelectTrigger className="w-40" aria-label={ui("Chat order")}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="default">{t('sidebar.chatSort.default')}</SelectItem>
-                        <SelectItem value="recent">{t('sidebar.chatSort.recent')}</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    {(control) => (
+                      <Select
+                        value={s.chatSortMode}
+                        onValueChange={(v) => s.set('chatSortMode', v as ChatSortMode)}
+                      >
+                        <SelectTrigger {...control} className="w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="default">{t('sidebar.chatSort.default')}</SelectItem>
+                          <SelectItem value="recent">{t('sidebar.chatSort.recent')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
                   </Row>
                   <Row label={ui("Double-click a file")} hint={ui("What double-clicking a file on the Files page does. Hold Cmd or Ctrl to do the other.")}>
-                    <Select
-                      value={s.fileDoubleClickAction}
-                      onValueChange={(v) => s.set('fileDoubleClickAction', v as FileDoubleClickAction)}
-                    >
-                      <SelectTrigger className="w-40" aria-label={ui("Double-click a file")}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="open">{ui("Open")}</SelectItem>
-                        <SelectItem value="openBeside">{ui("Open to the right")}</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    {(control) => (
+                      <Select
+                        value={s.fileDoubleClickAction}
+                        onValueChange={(v) => s.set('fileDoubleClickAction', v as FileDoubleClickAction)}
+                      >
+                        <SelectTrigger {...control} className="w-40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="open">{ui("Open")}</SelectItem>
+                          <SelectItem value="openBeside">{ui("Open to the right")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
                   </Row>
                   <Row label={ui("Animation speed")} hint={ui("Controls visual transitions and loading motion. 1× is normal speed.")}>
-                    <AnimationSpeedInput
-                      value={s.animationSpeed}
-                      onChange={(value) => s.set('animationSpeed', value)}
-                    />
+                    {(control) => (
+                      <AnimationSpeedInput
+                        {...control}
+                        value={s.animationSpeed}
+                        onChange={(value) => s.set('animationSpeed', value)}
+                      />
+                    )}
                   </Row>
                   <Row label={ui("Send with Enter")} hint="Press Shift+Enter to add a new line. Cmd/Ctrl+Enter still sends when this is off.">
-                    <Switch checked={s.sendWithEnter} onCheckedChange={(v) => s.set('sendWithEnter', v)} />
+                    {(control) => <Switch {...control} checked={s.sendWithEnter} onCheckedChange={(v) => s.set('sendWithEnter', v)} />}
                   </Row>
                   <Row label={ui("Sync composer drafts")} hint={ui("Share unsent drafts across your devices. This account setting applies to web, desktop, and mobile. Turning it off keeps drafts local on each device; existing server drafts remain.")}>
-                    <Switch aria-label={ui("Sync composer drafts")} checked={s.composerSyncEnabled} onCheckedChange={(enabled) => s.set('composerSyncEnabled', enabled)} />
+                    {(control) => <Switch {...control} checked={s.composerSyncEnabled} onCheckedChange={(enabled) => s.set('composerSyncEnabled', enabled)} />}
                   </Row>
                   <Row label={ui("Open search with double Shift")} hint={ui("Press Shift twice quickly to open search.")}>
-                    <Switch checked={s.doubleShiftSearch} onCheckedChange={(v) => s.set('doubleShiftSearch', v)} />
+                    {(control) => <Switch {...control} checked={s.doubleShiftSearch} onCheckedChange={(v) => s.set('doubleShiftSearch', v)} />}
                   </Row>
                   <Row label={ui("Show prompt suggestions")} hint={ui("Show suggested prompts in new chats.")}>
-                    <Switch aria-label={ui("Show prompt suggestions")} checked={s.showPromptSuggestions} onCheckedChange={(v) => s.set('showPromptSuggestions', v)} />
+                    {(control) => <Switch {...control} checked={s.showPromptSuggestions} onCheckedChange={(v) => s.set('showPromptSuggestions', v)} />}
                   </Row>
                   <Row label={ui("Show model warnings")} hint={ui("Show notes from your administrator about the selected model above the composer.")}>
-                    <Switch aria-label={ui("Show model warnings")} checked={s.showModelWarnings} onCheckedChange={(v) => s.set('showModelWarnings', v)} />
+                    {(control) => <Switch {...control} checked={s.showModelWarnings} onCheckedChange={(v) => s.set('showModelWarnings', v)} />}
                   </Row>
                   <Row label={ui("Show reasoning")} hint="Show expandable thought/work activity above assistant replies.">
-                    <Switch checked={s.showReasoning} onCheckedChange={(v) => s.set('showReasoning', v)} />
+                    {(control) => <Switch {...control} checked={s.showReasoning} onCheckedChange={(v) => s.set('showReasoning', v)} />}
                   </Row>
                   <Row label={ui("Show response costs")} hint={ui("Show the cost of each assistant response with its tokens, speed, and time.")}>
-                    <Switch checked={s.showResponseCost} onCheckedChange={(v) => s.set('showResponseCost', v)} />
+                    {(control) => <Switch {...control} checked={s.showResponseCost} onCheckedChange={(v) => s.set('showResponseCost', v)} />}
                   </Row>
                   <Row label={ui("Chats kept on this device")} hint="Recent chats remain available instantly and while offline (0–500).">
-                    <Input className="w-28" type="number" min={0} max={500} value={s.localChatLimit} onChange={(event) => s.set('localChatLimit', Math.min(500, Math.max(0, Number(event.target.value))))} />
+                    {(control) => <Input {...control} className="w-28" type="number" min={0} max={500} value={s.localChatLimit} onChange={(event) => s.set('localChatLimit', Math.min(500, Math.max(0, Number(event.target.value))))} />}
                   </Row>
                   <Row label={ui("Downloaded attachment cache")} hint="Maximum file data retained after you upload or explicitly download a file.">
-                    <div className="flex items-center gap-2">
-                      <Input className="w-24" type="number" min={0} max={2048} step={10} value={s.localAttachmentCacheMb} onChange={(event) => s.set('localAttachmentCacheMb', Math.min(2048, Math.max(0, Number(event.target.value))))} />
-                      <span className="text-xs text-muted-foreground">{ui("MB")}</span>
-                    </div>
+                    {(control) => (
+                      <div className="flex items-center gap-2">
+                        <Input id={control.id} aria-describedby={[control['aria-describedby'], `${control.id}-unit`].filter(Boolean).join(' ')} className="w-24" type="number" min={0} max={2048} step={10} value={s.localAttachmentCacheMb} onChange={(event) => s.set('localAttachmentCacheMb', Math.min(2048, Math.max(0, Number(event.target.value))))} />
+                        <span id={`${control.id}-unit`} className="text-xs text-muted-foreground">{ui("MB")}</span>
+                      </div>
+                    )}
                   </Row>
                 </div>
               )}
@@ -1014,14 +1085,17 @@ export function SettingsModal({
                   <h2 className="text-base font-semibold">{ui('Agent')}</h2>
                   <Separator className="my-3" />
                   <Row label={ui("Enable cost warning threshold")} hint={ui("Pause for confirmation after an agent loop exceeds set cost threshold. Does not guarantee total cost remains below threshold.")}>
-                    <Switch aria-label={ui("Enable cost warning threshold")} checked={s.agentCostLimitEnabled} onCheckedChange={(v) => s.set('agentCostLimitEnabled', v)} />
+                    {(control) => <Switch {...control} checked={s.agentCostLimitEnabled} onCheckedChange={(v) => s.set('agentCostLimitEnabled', v)} />}
                   </Row>
                   {s.agentCostLimitEnabled && (
                     <Row label={ui("Cost threshold")}>
-                      <CostLimitInput
-                        value={s.agentCostLimitMicros}
-                        onChange={(value) => s.set('agentCostLimitMicros', value)}
-                      />
+                      {(control) => (
+                        <CostLimitInput
+                          {...control}
+                          value={s.agentCostLimitMicros}
+                          onChange={(value) => s.set('agentCostLimitMicros', value)}
+                        />
+                      )}
                     </Row>
                   )}
                   <Separator className="my-3" />
@@ -1050,7 +1124,7 @@ export function SettingsModal({
                   <h2 className="text-base font-semibold">{ui("Billing")}</h2>
                   <Separator className="my-3" />
                   <div className="py-2">
-                    <div className="text-sm font-medium">{ui("Credits and plan")}</div>
+                    <SubsectionHeading>{ui("Credits and plan")}</SubsectionHeading>
                     <p className="mt-1 text-sm text-muted-foreground"> {ui("Add credits, manage your plan, and review payment history.")} </p>
                   </div>
                   <Button
@@ -1068,17 +1142,19 @@ export function SettingsModal({
                   <h2 className="text-base font-semibold">{ui("Data controls")}</h2>
                   <Separator className="my-3" />
                   <Row label={ui("Automatic chat expiration")} hint="Move chats to Trash automatically unless saved within the selected period.">
-                    <Select
-                      value={s.automaticChatExpiration}
-                      onValueChange={(value) => s.set('automaticChatExpiration', value as AutomaticChatExpiration)}
-                    >
-                      <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="disabled">{ui("Disabled")}</SelectItem>
-                        <SelectItem value="24h">{ui("24 hours")}</SelectItem>
-                        <SelectItem value="7d">{ui("7 days")}</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    {(control) => (
+                      <Select
+                        value={s.automaticChatExpiration}
+                        onValueChange={(value) => s.set('automaticChatExpiration', value as AutomaticChatExpiration)}
+                      >
+                        <SelectTrigger {...control} className="w-40"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="disabled">{ui("Disabled")}</SelectItem>
+                          <SelectItem value="24h">{ui("24 hours")}</SelectItem>
+                          <SelectItem value="7d">{ui("7 days")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
                   </Row>
                   <div className="py-3">
                     <div className="flex items-center justify-between text-sm">
@@ -1087,7 +1163,15 @@ export function SettingsModal({
                         {storageUsage ? uit`${formatBytes(storageUsage.usedBytes)} of ${formatBytes(storageUsage.limitBytes)}` : ui("Loading…")}
                       </span>
                     </div>
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+                    <div
+                      role="progressbar"
+                      aria-label={ui("File storage")}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={storageUsage?.limitBytes ? Math.round(Math.min(100, storageUsage.usedBytes / storageUsage.limitBytes * 100)) : 0}
+                      aria-valuetext={storageUsage ? uit`${formatBytes(storageUsage.usedBytes)} of ${formatBytes(storageUsage.limitBytes)}` : undefined}
+                      className="mt-2 h-2 overflow-hidden rounded-full bg-muted"
+                    >
                       <div
                         className="h-full rounded-full bg-primary transition-[width]"
                         style={{ width: `${storageUsage?.limitBytes ? Math.min(100, storageUsage.usedBytes / storageUsage.limitBytes * 100) : 0}%` }}

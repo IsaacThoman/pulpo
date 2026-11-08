@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Eye, EyeOff, Loader2, Server, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, Loader2, Server, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -10,6 +10,10 @@ import { useAuth } from '@/stores/auth'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui } from '@/i18n/ui'
 import { SignedInAccountChooser } from '@/components/layout/AccountSwitcher'
+import { AuthFormError, PasswordVisibilityToggle } from './auth-form'
+import { errorFieldProps } from './error-field-props'
+
+const ERROR_ID = 'login-error'
 
 export function LoginPage() {
   const { t } = useTranslation()
@@ -90,6 +94,7 @@ export function LoginPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            {...errorFieldProps(ERROR_ID, Boolean(error))}
           />
         </div>}
         {!twoFactorStep && <div className="space-y-2">
@@ -104,23 +109,16 @@ export function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               className="pr-10"
               required
+              {...errorFieldProps(ERROR_ID, Boolean(error))}
             />
-            <button
-              type="button"
-              onClick={() => setShowPw((v) => !v)}
-              className="absolute top-1/2 right-2 -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:text-foreground"
-              tabIndex={-1}
-              aria-label={showPw ? t('auth.hidePassword') : t('auth.showPassword')}
-            >
-              {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-            </button>
+            <PasswordVisibilityToggle shown={showPw} onToggle={() => setShowPw((v) => !v)} controls="password" />
           </div>
         </div>}
 
         {twoFactorStep && <div className="space-y-2">
           <Label htmlFor="two-factor-code">{recoveryMode ? t('auth.recoveryCode') : t('auth.authenticatorCode')}</Label>
           <div className="relative">
-            <ShieldCheck className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <ShieldCheck className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <Input
               id="two-factor-code"
               autoFocus
@@ -132,6 +130,7 @@ export function LoginPage() {
               onChange={(event) => setTwoFactorCode(recoveryMode ? event.target.value.toUpperCase() : event.target.value.replace(/\D/g, '').slice(0, 6))}
               className="pl-9 font-mono tracking-widest"
               required
+              {...errorFieldProps(ERROR_ID, Boolean(error))}
             />
           </div>
           <button type="button" onClick={() => { setRecoveryMode((value) => !value); setTwoFactorCode(''); setError(null) }} className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
@@ -139,11 +138,7 @@ export function LoginPage() {
           </button>
         </div>}
 
-        {error && (
-          <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {error}
-          </div>
-        )}
+        {error && <AuthFormError id={ERROR_ID}>{error}</AuthFormError>}
 
         <Button type="submit" className="w-full" disabled={loading}>
           {loading && <Loader2 className="animate-spin" />}

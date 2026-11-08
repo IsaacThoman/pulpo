@@ -193,10 +193,10 @@ export function AdminModelsPage() {
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input className="pl-8" placeholder={ui("Search models…")} value={query} onChange={(event) => setQuery(event.target.value)} />
+          <Input className="pl-8" aria-label={ui("Search models")} placeholder={ui("Search models…")} value={query} onChange={(event) => setQuery(event.target.value)} />
         </div>
         <Select value={filter} onValueChange={(v: typeof filter) => setFilter(v)}>
-          <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+          <SelectTrigger aria-label={ui("Filter models")} className="w-32"><SelectValue /></SelectTrigger>
           <SelectContent>
             {(['visible', 'hidden', 'all', 'enabled', 'disabled', 'restricted'] as const).map((v) => (
               <SelectItem key={v} value={v} className="capitalize">{v}</SelectItem>
@@ -258,6 +258,7 @@ export function AdminModelsPage() {
                   <Trash2 className="size-4" />
                 </Button>
                 <Switch
+                  aria-label={uit`Enable ${model.name}`}
                   checked={model.enabled}
                   onCheckedChange={(enabled) => void apiRequest(`/api/admin/models/${model.id}`, { method: 'PATCH', body: { enabled } }).then(() => Promise.all([load(), useCatalog.getState().load()]))}
                 />
@@ -511,8 +512,8 @@ function ModelEditorBody({
       </div>
 
       <div className="space-y-1.5">
-        <Label className="text-xs">{ui("Description")}</Label>
-        <Textarea rows={2} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
+        <Label className="text-xs" htmlFor="model-description">{ui("Description")}</Label>
+        <Textarea id="model-description" rows={2} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
       </div>
 
       <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
@@ -557,8 +558,8 @@ function ModelEditorBody({
         <ToggleRow label={ui("Enable Pi agent mode")} checked={draft.agentEnabled} onChange={(agentEnabled) => setDraft({ ...draft, agentEnabled })} />
         {draft.agentEnabled && (
           <div className="space-y-1.5">
-            <Label className="text-xs">{ui("Agent instructions")}</Label>
-            <Textarea rows={3} placeholder={ui("Additional instructions appended to Pulpo's Pi coding prompt.")} value={draft.agentInstructions} onChange={(e) => setDraft({ ...draft, agentInstructions: e.target.value })} />
+            <Label className="text-xs" htmlFor="model-agent-instructions">{ui("Agent instructions")}</Label>
+            <Textarea id="model-agent-instructions" rows={3} placeholder={ui("Additional instructions appended to Pulpo's Pi coding prompt.")} value={draft.agentInstructions} onChange={(e) => setDraft({ ...draft, agentInstructions: e.target.value })} />
           </div>
         )}
       </div>
@@ -794,8 +795,9 @@ function ModelEditorBody({
       <Separator />
 
       <div className="space-y-1.5">
-        <Label className="text-xs">{ui("System prompt")}</Label>
+        <Label className="text-xs" htmlFor="model-system-prompt">{ui("System prompt")}</Label>
         <Textarea
+          id="model-system-prompt"
           rows={3}
           placeholder={ui("You are a helpful assistant.")}
           value={draft.systemPrompt}
@@ -1042,12 +1044,13 @@ function RetainedUserTokensField({ value, onChange }: { value: number; onChange:
   )
 }
 
+/** Label + control stack. The label wraps its control, so the control's accessible name is the label. */
 function Field({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
   return (
-    <div className={cn('space-y-1.5', className)}>
-      <Label className="text-xs">{label}</Label>
+    <label className={cn('block space-y-1.5', className)}>
+      <span className="flex items-center gap-2 text-xs leading-none font-medium select-none">{label}</span>
       {children}
-    </div>
+    </label>
   )
 }
 
@@ -1411,12 +1414,12 @@ function PresetsEditor({
                 >
                   <Plus /> {ui("Add choice")} </Button>
                 <div className="ml-auto flex items-center gap-2">
-                  <Label className="text-xs text-muted-foreground">{ui("Default")}</Label>
+                  <Label className="text-xs text-muted-foreground" htmlFor={`chat-preset-${index}-default`}>{ui("Default")}</Label>
                   <Select
                     value={preset.defaultChoiceId ?? 'none'}
                     onValueChange={(defaultChoiceId) => update(index, { defaultChoiceId: defaultChoiceId === 'none' ? null : defaultChoiceId })}
                   >
-                    <SelectTrigger className="h-8 w-40"><SelectValue /></SelectTrigger>
+                    <SelectTrigger id={`chat-preset-${index}-default`} className="h-8 w-40"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">{ui("First choice")}</SelectItem>
                       {preset.choices.map((choice) => (

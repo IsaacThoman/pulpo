@@ -260,7 +260,7 @@ export function BillingPage() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mobile-page-content mx-auto w-full max-w-5xl space-y-8 px-5 py-6 sm:px-6 sm:py-8">
           <div>
-            <h2 className="text-xl font-semibold tracking-tight">{ui("Billing")}</h2>
+            <h1 className="text-xl font-semibold tracking-tight">{ui("Billing")}</h1>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{ui("There are two ways to pay for usage: buy credits and pay as you go, or subscribe to a monthly plan. You can use either one or both.")}</p>
           </div>
 
@@ -392,9 +392,9 @@ export function BillingPage() {
             <div className="space-y-4 py-2">
               <div className="grid grid-cols-2 gap-2">{CREDIT_AMOUNTS.map((amount) => {
                 const selected = creditCents === amount * 100
-                return <button key={amount} type="button" onClick={() => setCreditAmountInput(amount.toFixed(2))} className={cn('relative flex h-14 cursor-pointer items-center justify-center rounded-lg border text-base font-medium transition-colors hover:bg-accent', selected && 'border-primary bg-accent ring-1 ring-primary')}>${amount}{selected && <Check className="absolute right-2 top-2 size-3.5" />}</button>
+                return <button key={amount} type="button" aria-pressed={selected} onClick={() => setCreditAmountInput(amount.toFixed(2))} className={cn('relative flex h-14 cursor-pointer items-center justify-center rounded-lg border text-base font-medium transition-colors hover:bg-accent', selected && 'border-primary bg-accent ring-1 ring-primary')}>${amount}{selected && <Check className="absolute right-2 top-2 size-3.5" aria-hidden />}</button>
               })}</div>
-              <div className="space-y-2"><Label htmlFor="credit-amount">{ui("Credit amount")}</Label><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span><Input id="credit-amount" inputMode="decimal" placeholder="5.00–500.00" className="pl-7 text-lg tabular-nums" value={creditAmountInput} onChange={(event) => { const value = event.target.value; if (value === '' || /^\d*(?:\.\d{0,2})?$/.test(value)) setCreditAmountInput(value) }} aria-invalid={Boolean(creditAmountInput) && !validPurchase} autoFocus /></div>{creditAmountInput && !validPurchase && <p className="text-xs text-destructive">{ui("Enter an amount between $5.00 and $500.00.")}</p>}</div>
+              <div className="space-y-2"><Label htmlFor="credit-amount">{ui("Credit amount")}</Label><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span><Input id="credit-amount" inputMode="decimal" placeholder="5.00–500.00" className="pl-7 text-lg tabular-nums" value={creditAmountInput} onChange={(event) => { const value = event.target.value; if (value === '' || /^\d*(?:\.\d{0,2})?$/.test(value)) setCreditAmountInput(value) }} aria-invalid={Boolean(creditAmountInput) && !validPurchase} aria-describedby={creditAmountInput && !validPurchase ? 'credit-amount-error' : undefined} autoFocus /></div>{creditAmountInput && !validPurchase && <p id="credit-amount-error" className="text-xs text-destructive">{ui("Enter an amount between $5.00 and $500.00.")}</p>}</div>
               {validPurchase && quoteQuery.isPending && <div className="flex items-center gap-2 rounded-lg bg-muted/50 p-4 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />{ui("Calculating total before tax…")}</div>}
               {quote && <Quote credits={purchaseAmount} fee={feeCoverageAmount} charge={chargeAmount} />}
               {quoteQuery.isError && <p className="text-xs text-destructive">{ui("Could not calculate this purchase. Try again.")}</p>}
@@ -425,7 +425,7 @@ export function BillingPage() {
                   </>}
                 </div>
               )}
-              {topUpError && <p className="text-sm text-destructive">{topUpError}</p>}
+              {topUpError && <p role="alert" className="text-sm text-destructive">{topUpError}</p>}
             </div>
             <DialogFooter><Button variant="outline" disabled={submitting} onClick={() => setTopUpStep('amount')}><ArrowLeft />{ui("Back")}</Button><Button disabled={submitting || (saveCardForAutoTopUp && autoTopUpAvailable && autoTopUpFormError !== null)} onClick={() => void startCreditCheckout()}>{submitting && <Loader2 className="animate-spin" />}{ui("Continue to checkout")}</Button></DialogFooter>
           </>}
@@ -466,7 +466,7 @@ function PaymentOption({ icon, title, badge, className, children }: { icon: Reac
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
           <span className="shrink-0 text-muted-foreground" aria-hidden>{icon}</span>
-          <h3 className="text-base font-semibold">{title}</h3>
+          <h2 className="text-base font-semibold">{title}</h2>
         </div>
         {badge && <div className="shrink-0">{badge}</div>}
       </div>
