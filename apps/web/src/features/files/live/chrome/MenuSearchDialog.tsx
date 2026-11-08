@@ -29,14 +29,23 @@ export function MenuSearchDialog({ open, onOpenChange, menus, returnFocus }: {
   const [commands, setCommands] = useState<MenuCommand[]>([])
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [wasOpen, setWasOpen] = useState(false)
-  // Read the menus once per opening, in the render that opens it, so the list never flashes empty.
+  // The menus the list was read from, while it shows.
+  const [readFrom, setReadFrom] = useState<readonly MenuDefinition[] | null>(null)
   if (open !== wasOpen) {
     setWasOpen(open)
     if (open) {
-      setCommands(flattenMenus(menus))
       setQuery('')
       setActiveKey(null)
     }
+  }
+  // Read in the render that opens it, so the list never flashes empty, and again whenever the
+  // editor renders new menus while it shows (a collaborator's edit, the file going read-only), as
+  // an open menu does: a command greyed meanwhile never runs. Closing keeps the list as it fades.
+  if (open && readFrom !== menus) {
+    setReadFrom(menus)
+    setCommands(flattenMenus(menus))
+  } else if (!open && readFrom !== null) {
+    setReadFrom(null)
   }
   const results = useMemo(() => searchMenuCommands(commands, query), [commands, query])
   const listId = useId()
@@ -174,9 +183,10 @@ export function MenuSearchDialog({ open, onOpenChange, menus, returnFocus }: {
             </div>
           ))}
         </div>
-        {!results.length && (
-          <p className="px-3 py-8 text-center text-sm text-muted-foreground" role="status">{ui("No commands match “{{query}}”", { query: query.trim() })}</p>
-        )}
+        {/* Always there, so screen readers hear it when a query stops matching. */}
+        <p className={results.length ? 'sr-only' : 'px-3 py-8 text-center text-sm text-muted-foreground'} role="status">
+          {results.length ? '' : ui("No commands match “{{query}}”", { query: query.trim() })}
+        </p>
       </DialogContent>
     </Dialog>
   )

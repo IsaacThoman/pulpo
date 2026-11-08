@@ -341,6 +341,28 @@ describe('EditorMenuBar: Search the menus and the File menu key', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
+  it('reads the menus again when the editor changes them while it shows, keeping the query', async () => {
+    const onBold = vi.fn()
+    // A collaborator trashed the file meanwhile: the editor went read-only and greyed Bold.
+    const bar = (readOnly: boolean) => (
+      <div data-file-editor="document">
+        <EditorMenuBar menus={[{ id: 'format', label: 'Format', items: () => [{ type: 'item', id: 'bold', label: 'Bold', disabled: readOnly, onSelect: onBold }] }]} />
+      </div>
+    )
+    const view = render(bar(false))
+    fireEvent.click(trigger('Search the menus'))
+    await screen.findByRole('dialog', { name: 'Search the menus' })
+    fireEvent.change(field(), { target: { value: 'bo' } })
+    expect(options()[0]!.getAttribute('aria-disabled')).toBeNull()
+    view.rerender(bar(true))
+    expect((field() as HTMLInputElement).value).toBe('bo')
+    expect(options()[0]!.getAttribute('aria-disabled')).toBe('true')
+    fireEvent.keyDown(field(), { key: 'Enter' })
+    fireEvent.click(options()[0]!)
+    expect(onBold).not.toHaveBeenCalled()
+    expect(palette()).toBeTruthy()
+  })
+
   it('leaves focus where a command run from the search put it', async () => {
     const onClose = vi.fn()
     render(<Searchable onClose={onClose} />)
