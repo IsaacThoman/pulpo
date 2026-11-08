@@ -3437,6 +3437,12 @@ const esUi: Record<string, string> = {
   "Heading 5": "Título 5",
   "Heading 6": "Título 6",
   "Switch between editing and suggesting": "Alternar entre editar y sugerir",
+  "Search the menus": "Buscar en los menús",
+  "Type a command, then press Enter to run it.": "Escribe un comando y pulsa Intro para ejecutarlo.",
+  "Commands": "Comandos",
+  "No commands match “{{query}}”": "Ningún comando coincide con «{{query}}»",
+  "Menus": "Menús",
+  "Open the File menu": "Abrir el menú Archivo",
 }
 
 export default esUi
