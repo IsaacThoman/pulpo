@@ -2062,7 +2062,11 @@ try {
     const count = await page.evaluate(() => window.harness.editors[0].pages)
     const footers = await page.locator('.docx-band .docx-story[data-story^="footer:"]').allInnerTexts()
     assert.deepEqual(footers.map((footer) => footer.trim()), Array.from({ length: count }, (_, index) => `Page ${index + 1} of ${count}`))
-    assert.equal(await page.locator('.docx-band .docx-story[data-story^="footer:"] p').first().evaluate((element) => getComputedStyle(element).textAlign), 'right')
+    // Read in one go: closing the footer lays the pages out again, which rebuilds the bands.
+    await page.waitForFunction(() => {
+      const footer = document.querySelector('.docx-band .docx-story[data-story^="footer:"] p')
+      return footer?.isConnected && getComputedStyle(footer).textAlign === 'right'
+    })
     // From web layout, Insert ▸ Header brings the pages back first.
     await page.getByRole('button', { name: 'Web layout' }).click()
     await page.waitForFunction(() => document.querySelectorAll('.docx-page').length === 0)
