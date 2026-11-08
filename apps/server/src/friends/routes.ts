@@ -9,7 +9,7 @@ import { friendships, userBlocks, users } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { publicFriendProfile } from '../profile/service.js'
-import { bumpAccountRevisions, publishScopedStateChanges } from './sync.js'
+import { bumpAccountRevisions, friendNetworkIds, publishScopedStateChanges } from './sync.js'
 import { publishPoolChanges, separatePoolOnBlock } from '../pools/service.js'
 
 export function orderedPair(left: string, right: string): [string, string] {
@@ -366,7 +366,7 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
           .where(eq(friendships.id, existing!.id)).returning()
         return {
           relationship: accepted!,
-          changes: await bumpAccountRevisions(tx, [userAId, userBId]),
+          changes: await bumpAccountRevisions(tx, await friendNetworkIds(tx, [userAId, userBId])),
         }
       }
       const [created] = await tx.insert(friendships).values({
@@ -399,7 +399,7 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
       )).limit(1)
       if (block) throw notFound('Friend request')
       await tx.update(friendships).set({ status: 'accepted', acceptedAt: new Date(), updatedAt: new Date() }).where(eq(friendships.id, id))
-      return bumpAccountRevisions(tx, [current.userAId, current.userBId])
+      return bumpAccountRevisions(tx, await friendNetworkIds(tx, [current.userAId, current.userBId]))
     })
     await publishScopedStateChanges(changes, ['friends'])
     return { status: 'accepted' }
@@ -431,7 +431,7 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${userAId}:${userBId}`}))`)
       const deleted = await tx.delete(friendships).where(and(pairWhere(user.id, userId), eq(friendships.status, 'accepted'))).returning({ id: friendships.id })
       if (!deleted.length) throw notFound('Friendship')
-      return bumpAccountRevisions(tx, [userAId, userBId])
+      return bumpAccountRevisions(tx, await friendNetworkIds(tx, [userAId, userBId]))
     })
     await publishScopedStateChanges(changes, ['friends'])
     reply.code(204).send()
@@ -446,10 +446,13 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
     const [userAId, userBId] = orderedPair(user.id, userId)
     const result = await db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${userAId}:${userBId}`}))`)
-      await tx.delete(friendships).where(pairWhere(user.id, userId))
+      const removed = await tx.delete(friendships).where(pairWhere(user.id, userId)).returning({ status: friendships.status })
       await tx.insert(userBlocks).values({ blockerUserId: user.id, blockedUserId: userId }).onConflictDoNothing()
       const poolUsers = await separatePoolOnBlock(tx, user.id, userId)
-      return { changes: await bumpAccountRevisions(tx, [userAId, userBId]), poolUsers }
+      const affectedUserIds = removed.some((row) => row.status === 'accepted')
+        ? await friendNetworkIds(tx, [userAId, userBId])
+        : [userAId, userBId]
+      return { changes: await bumpAccountRevisions(tx, affectedUserIds), poolUsers }
     })
     await publishScopedStateChanges(result.changes, ['friends'])
     if (result.poolUsers.length) await publishPoolChanges(result.poolUsers)

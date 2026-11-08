@@ -4,11 +4,12 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import type { FriendProfileDetail } from '@pulpo/contracts'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApiError } from '@/lib/api'
 import { queryClient } from '@/lib/query-client'
 import { FriendProfilePage } from './FriendProfilePage'
 
 const mocks = vi.hoisted(() => ({ request: vi.fn() }))
-vi.mock('@/lib/api', () => ({ apiRequest: mocks.request }))
+vi.mock('@/lib/api', async (importOriginal) => ({ ...await importOriginal<typeof import('@/lib/api')>(), apiRequest: mocks.request }))
 vi.mock('@/lib/runtime-resource', () => ({ useRuntimeImageUrl: () => ({ url: null }) }))
 
 const friendId = '00000000-0000-4000-8000-000000000001'
@@ -67,5 +68,17 @@ describe('profile page', () => {
     await screen.findByRole('button', { name: 'Cancel request' })
     expect(mocks.request).toHaveBeenCalledWith('/api/friends/requests', { method: 'POST', body: { userId: friendId } })
     await waitFor(() => expect(queryClient.getQueryState(['friend-profile', 'alice'])?.fetchStatus).toBe('idle'))
+  })
+
+  it('hides the cached profile once a refetch says it no longer exists', async () => {
+    mount()
+    await screen.findByRole('heading', { name: 'Alice' })
+
+    mocks.request.mockRejectedValue(new ApiError(404, 'not_found', 'Profile not found'))
+    await queryClient.refetchQueries({ queryKey: ['friend-profile', 'alice'] })
+
+    await screen.findByText('Profile not found')
+    expect(screen.queryByRole('heading', { name: 'Alice' })).toBeNull()
+    expect(screen.queryByText('Mutual friends')).toBeNull()
   })
 })

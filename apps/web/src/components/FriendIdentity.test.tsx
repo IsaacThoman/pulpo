@@ -44,4 +44,12 @@ describe('friend profile hover cards', () => {
     render(<MemoryRouter><MutualFriends friends={[profile('Maya Ortiz')]} /></MemoryRouter>)
     await expectProfileCard(screen.getByRole('link', { name: 'Maya Ortiz' }), 'Maya Ortiz', 'maya_ortiz', 'focus')
   })
+
+  it('bounds the avatar stack while counting and labeling every mutual friend', () => {
+    const friends = ['Ada', 'Ben', 'Cy', 'Dee', 'Eve'].map(profile)
+    render(<MemoryRouter><MutualFriends friends={friends} /></MemoryRouter>)
+    const group = screen.getByRole('group', { name: 'Mutual friends: Ada, Ben, Cy, Dee, Eve' })
+    expect(within(group).getAllByRole('link')).toHaveLength(3)
+    expect(within(group).getByText('5 mutuals')).toBeTruthy()
+  })
 })

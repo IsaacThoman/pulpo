@@ -69,12 +69,15 @@ export function ProfileIdentity({ profile, detail, query, matchedOn, href }: {
   return <ProfileHoverCard profile={profile}>{identity}</ProfileHoverCard>
 }
 
+/** Rows also hold identity and actions, so only a few avatars render; the count covers the rest. */
+const MUTUAL_AVATAR_LIMIT = 3
+
 export function MutualFriends({ friends, className }: { friends: FriendProfile[]; className?: string }) {
   if (!friends.length) return null
   const label = `${friends.length === 1 ? ui('Mutual friend:') : ui('Mutual friends:')} ${friends.map((friend) => friend.displayName).join(', ')}`
   return <div className={cn('flex shrink-0 items-center gap-2', className)} role="group" aria-label={label}>
     <div className="flex -space-x-2">
-      {friends.map((friend) => <ProfileHoverCard key={friend.id} profile={friend}>
+      {friends.slice(0, MUTUAL_AVATAR_LIMIT).map((friend) => <ProfileHoverCard key={friend.id} profile={friend}>
         <Link
           to={`/${friend.username}`}
           className="relative rounded-full focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
