@@ -95,6 +95,26 @@ describe('notebook search', () => {
     expect(search.getState().revealed).toBe(revealed + 1)
   })
 
+  it('keeps the current match while the query is typed, though moving to it moves the caret there', async () => {
+    const { controller, search } = await open(CELLS)
+    // The view selects each match it moves to, so the active cell's caret ends up after it.
+    let caret = 0
+    controller.setCursorProvider(() => caret)
+    search.subscribe((state) => {
+      const match = state.matches[state.current]
+      if (match) caret = match.to
+    })
+    controller.select(controller.getState().cells[1]!.key)
+    search.setQuery({ text: 'c' })
+    expect(search.getState().matches[search.getState().current]).toMatchObject({ key: controller.getState().cells[1]!.key, from: 0 })
+    search.setQuery({ text: 'ca' })
+    search.setQuery({ text: 'cat' })
+    expect(search.getState().matches[search.getState().current]).toMatchObject({ key: controller.getState().cells[1]!.key, from: 0, to: 3 })
+    // A longer query that no longer matches there moves on to the next place it does.
+    search.setQuery({ text: 'cat)' })
+    expect(search.getState().matches[search.getState().current]).toMatchObject({ from: 19, to: 23 })
+  })
+
   it('replaces one match at a time, moving on, each one undo step', async () => {
     const { doc, controller, search } = await open(CELLS)
     controller.select(controller.getState().cells[0]!.key)

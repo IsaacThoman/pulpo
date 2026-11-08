@@ -142,16 +142,21 @@ export class NotebookSearch {
     return { matches: entry.matches, current: current >= 0 && current < entry.matches.length ? current : -1 }
   }
 
-  /** Searches for a query; the current match becomes the first at or after the cursor, as typing in a find field does. */
+  /**
+   * Searches for a query. The current match becomes the first at or after the cursor or, while
+   * the query is being typed, at or after where the current match starts, so it stays put as long
+   * as the longer query still matches there (as a browser's find does).
+   */
   setQuery(query: NotebookSearchQuery): void {
     if (this.destroyed) return
     if (sameQuery(query, this.state.query)) {
       this.flush()
       return
     }
-    this.recount(query, null)
+    const previous = this.state.matches[this.state.current]
+    this.recount(query, previous ? { key: previous.key, offset: previous.from } : null)
     if (!query.text) return
-    const next = this.nearest(1)
+    const next = previous ? this.state.current : this.nearest(1)
     if (next >= 0) this.moveTo(next)
   }
 
