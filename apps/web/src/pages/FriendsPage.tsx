@@ -49,9 +49,9 @@ export function FriendsHandle({ username }: { username: string }) {
 }
 
 /** The viewer's own profile, as friends see it, with the handle they share to be found. */
-export function MyProfileCard({ profile, friendCount }: { profile: FriendProfile; friendCount?: number }) {
+export function MyProfileHeader({ profile, friendCount }: { profile: FriendProfile; friendCount?: number }) {
   return (
-    <section className="flex items-center gap-4 rounded-xl border px-4 py-4" aria-label={ui("Your profile")}>
+    <section className="flex items-center gap-4" aria-label={ui("Your profile")}>
       <Link to={`/${profile.username}`} className="shrink-0 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" tabIndex={-1} aria-hidden>
         <ProfileAvatar name={profile.displayName} avatarUrl={profile.avatarUrl} className="size-14" fallbackClassName="text-base" />
       </Link>
@@ -309,7 +309,7 @@ export function FriendsPage() {
   const poolFull = Boolean(pool && pool.members.length + pool.pendingInvitations.length >= 6)
   return (
     <div className="mx-auto w-full max-w-3xl space-y-5 px-5 py-6">
-      {user && <MyProfileCard
+      {user && <MyProfileHeader
         profile={{ id: user.id, displayName: user.name, username: user.username, avatarUrl: user.avatarUrl, profileColor: user.profileColor }}
         friendCount={data?.friends.length}
       />}
