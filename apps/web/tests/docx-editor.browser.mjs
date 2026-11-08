@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
 import { createServer } from 'vite'
 import * as Y from 'yjs'
+import { unzipSync } from 'fflate'
 import { docxCodec, readDocxModel, MemoryAssetStore } from '@pulpo/client-core/office/docx'
 
 const root = new URL('..', import.meta.url).pathname
@@ -1567,6 +1568,265 @@ try {
       editor.relayout()
     })
     assert.ok((await metrics()).pages < baseline.pages, JSON.stringify(baseline))
+  })
+
+  await step('breaks lines with Shift+Enter and formats lists, quotes, and links as you type', async () => {
+    await open('')
+    await flow.click()
+    await page.keyboard.type('Line one')
+    await page.keyboard.press('Shift+Enter')
+    await page.keyboard.type('Line two')
+    const broken = flow.locator('p.docx-p', { hasText: 'Line two' })
+    assert.equal(await broken.locator('br:not(.ProseMirror-trailingBreak)').count(), 1)
+    assert.match(await broken.innerText(), /Line one\nLine two/)
+    assert.equal(await page.evaluate(() => window.harness.editors[0].view.state.doc.childCount), 1)
+    assert.match(await exported(), /^Line one\nLine two\n?$/)
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('1. First')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('Second')
+    await flow.locator('p[data-label="1."]', { hasText: 'First' }).waitFor()
+    await flow.locator('p[data-label="2."]', { hasText: 'Second' }).waitFor()
+    // A line break inside a list item keeps one number.
+    await page.keyboard.press('Shift+Enter')
+    await page.keyboard.type('more')
+    assert.equal(await flow.locator('p[data-label]').count(), 2)
+    await page.keyboard.press('Enter')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('- ')
+    await flow.locator('p[data-label="•"]').last().waitFor()
+    // Backspace right after the conversion gives the typed marker back.
+    await page.keyboard.press('Backspace')
+    await page.waitForFunction(() => window.harness.editors[0].view.state.doc.lastChild.textContent === '- ')
+    assert.equal(await page.evaluate(() => window.harness.editors[0].state().list), null)
+    await page.keyboard.press('Backspace')
+    await page.keyboard.press('Backspace')
+    await page.keyboard.type('a) ')
+    await flow.locator('p[data-label="a)"]').waitFor()
+    // Undo right after the conversion keeps the literal marker, with the cursor after it.
+    await page.keyboard.press(`${mod}+z`)
+    await page.keyboard.type('Lettered')
+    await page.waitForFunction(() => window.harness.editors[0].view.state.doc.lastChild.textContent === 'a) Lettered')
+    assert.equal(await flow.locator('p[data-label="a)"]').count(), 0)
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('She said "it\'s fine" -- see www.example.com and more')
+    const last = await page.evaluate(() => window.harness.editors[0].view.state.doc.lastChild.textContent)
+    assert.equal(last, 'She said “it’s fine” – see www.example.com and more')
+    await flow.locator('a[href="https://www.example.com"]', { hasText: 'www.example.com' }).waitFor()
+    assert.deepEqual(errors, [])
+  })
+
+  await step('moves through table cells with Tab, adds a row from the last, and keeps focus in the document', async () => {
+    await open('')
+    await flow.click()
+    await page.keyboard.type('Before the table')
+    await page.getByRole('button', { name: 'Insert', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Table', exact: true }).hover()
+    await page.getByRole('button', { name: '2 by 3 table' }).click()
+    const table = flow.locator('table.docx-table').last()
+    for (let cell = 0; cell < 6; cell++) {
+      await page.keyboard.type(`C${cell}`)
+      await page.keyboard.press('Tab')
+    }
+    assert.equal(await table.locator('tr').count(), 3)
+    assert.ok(await page.evaluate(() => document.activeElement?.closest('.docx-flow') !== null))
+    await page.keyboard.type('Row three')
+    assert.match(await table.locator('tr').nth(2).locator('td').first().innerText(), /Row three/)
+    await page.keyboard.press('Shift+Tab')
+    assert.ok(await page.evaluate(() => document.activeElement?.closest('.docx-flow') !== null))
+    await clickEnd('Before the table')
+    await page.keyboard.press('Shift+Tab')
+    assert.ok(await page.evaluate(() => document.activeElement?.closest('.docx-flow') !== null))
+    assert.match(await exported(), /\| C0 \| C1 \|/)
+    assert.match(await exported(), /\| Row three \|/)
+  })
+
+  await step('keeps the app shortcuts it handles inside an editable document', async () => {
+    await open('?file=basic-formatting.docx')
+    await clickEnd('A normal paragraph with plain text', 0, 5)
+    await page.evaluate(() => {
+      window.keyLog = []
+      window.addEventListener('keydown', (event) => { if ((event.ctrlKey || event.metaKey) && !['Control', 'Meta'].includes(event.key)) window.keyLog.push({ key: event.key, prevented: event.defaultPrevented }) })
+    })
+    let dialogs = 0
+    const dismiss = async (dialog) => { dialogs++; await dialog.dismiss() }
+    page.on('dialog', dismiss)
+    for (const key of ['b', 'j', 'e', 'k', '\\', ',']) {
+      await page.keyboard.press(`${mod}+${key}`)
+      await page.keyboard.press(`${mod}+${key}`)
+    }
+    page.off('dialog', dismiss)
+    const log = await page.evaluate(() => window.keyLog)
+    assert.equal(log.length, 12)
+    assert.deepEqual(log.filter((entry) => !entry.prevented), [])
+    assert.equal(dialogs, 2)
+    // Ctrl/Cmd+J twice justifies, then goes back to left, as in Word.
+    assert.equal(await page.evaluate(() => window.harness.editors[0].state().alignment), 'left')
+  })
+
+  await step('applies heading styles with Ctrl+Alt+number, adding built-in ones the document lacks', async () => {
+    await open('')
+    await flow.click()
+    await page.keyboard.type('Fourth level')
+    await page.keyboard.press(`${mod}+Alt+4`)
+    await flow.locator('p.docx-ps-Heading4', { hasText: 'Fourth level' }).waitFor()
+    await page.keyboard.press(`${mod}+Alt+6`)
+    const sixth = flow.locator('p.docx-ps-Heading6', { hasText: 'Fourth level' })
+    await sixth.waitFor()
+    // Word's built-in Heading 6 came with it: accent-colored, not the body's black.
+    assert.notEqual(await sixth.evaluate((element) => getComputedStyle(element).color), 'rgb(0, 0, 0)')
+    await page.keyboard.press(`${mod}+Alt+0`)
+    await flow.locator('p.docx-ps-Normal', { hasText: 'Fourth level' }).waitFor()
+    await page.keyboard.press(`${mod}+Alt+1`)
+    await page.keyboard.press(`${mod}+b`)
+    await clickEnd('Fourth level', 0, 6)
+    await page.keyboard.press(`${mod}+b`)
+    assert.equal(await page.evaluate(() => window.harness.editors[0].state().bold), true)
+    await page.keyboard.press('Control+Space')
+    assert.deepEqual(await page.evaluate(() => { const state = window.harness.editors[0].state(); return [state.styleId, state.bold] }), ['Heading1', false])
+  })
+
+  await step('pastes and drops picture files where they land, and refuses formats Word cannot show', async () => {
+    await open('?file=basic-formatting.docx')
+    await clickEnd('Hanging indent.')
+    await page.evaluate(() => {
+      window.refused = []
+      window.harness.editors[0].on('imageRefused', (image) => window.refused.push(image))
+    })
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    const before = await flow.locator('.docx-drawing').count()
+    await page.evaluate((png) => {
+      const bytes = Uint8Array.from(atob(png), (char) => char.charCodeAt(0))
+      const data = new DataTransfer()
+      data.items.add(new File([bytes], 'screenshot.png', { type: 'image/png' }))
+      window.harness.editors[0].view.dom.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+    }, png)
+    await page.waitForFunction((count) => document.querySelectorAll('.docx-flow .docx-drawing').length === count + 1, before)
+    assert.ok((await paragraph('Hanging indent.').locator('.docx-drawing').count()) === 1)
+    const target = await paragraph('Line spacing single').boundingBox()
+    await page.evaluate(({ png, x, y }) => {
+      const bytes = Uint8Array.from(atob(png), (char) => char.charCodeAt(0))
+      const data = new DataTransfer()
+      data.items.add(new File(['<svg xmlns="http://www.w3.org/2000/svg"/>'], 'logo.svg', { type: 'image/svg+xml' }))
+      data.items.add(new File([bytes], 'dropped.png', { type: 'image/png' }))
+      const flow = window.harness.editors[0].view.dom
+      flow.dispatchEvent(new DragEvent('dragover', { dataTransfer: data, clientX: x, clientY: y, bubbles: true, cancelable: true }))
+      flow.dispatchEvent(new DragEvent('drop', { dataTransfer: data, clientX: x, clientY: y, bubbles: true, cancelable: true }))
+    }, { png, x: target.x + 20, y: target.y + target.height / 2 })
+    await page.waitForFunction((count) => document.querySelectorAll('.docx-flow .docx-drawing').length === count + 2, before)
+    assert.equal(await paragraph('Line spacing single').locator('.docx-drawing').count(), 1)
+    assert.deepEqual(await page.evaluate(() => window.refused), [{ name: 'logo.svg', type: 'image/svg+xml', reason: 'unsupported' }])
+    const files = unzipSync(new Uint8Array(Buffer.from(await page.evaluate(() => window.harness.exportFile()), 'base64')))
+    assert.ok(Object.keys(files).some((path) => path.startsWith('word/media/')))
+  })
+
+  await step('creates headers and footers with page numbers on every page', async () => {
+    await open('?generate=80')
+    const pages = await page.evaluate(() => window.harness.editors[0].pages)
+    assert.ok(pages > 2)
+    assert.equal(await page.evaluate(() => window.harness.editors[0].insertPageNumber({ kind: 'footer', align: 'center' })), true)
+    await page.keyboard.press('Escape')
+    await page.locator('.docx-story-editor').waitFor({ state: 'detached' })
+    const footers = await page.locator('.docx-band .docx-story[data-story^="footer:"]').allInnerTexts()
+    assert.deepEqual(footers.map((text) => text.trim()), Array.from({ length: pages }, (_, index) => String(index + 1)))
+    assert.equal(await page.locator('.docx-band .docx-story[data-story^="footer:"] p').first().evaluate((element) => getComputedStyle(element).textAlign), 'center')
+    await clickEnd('Section 2')
+    assert.equal(await page.evaluate(() => window.harness.editors[0].addHeaderFooter('header') !== null), true)
+    await page.locator('.docx-story-editor').waitFor()
+    await page.keyboard.type('Running head')
+    await page.keyboard.press('Escape')
+    await page.locator('.docx-band .docx-story[data-story^="header:"]', { hasText: 'Running head' }).nth(pages - 1).waitFor()
+    assert.match(await exported('header'), /Running head/)
+    assert.match(await exported('footer'), /^1$/)
+    await page.evaluate(() => window.harness.editors[0].setMode('suggesting'))
+    assert.equal(await page.evaluate(() => window.harness.editors[0].addHeaderFooter('footer', 'first')), null)
+  })
+
+  await step('changes page setup, repaginates, and undoes it', async () => {
+    await open('?generate=80')
+    const metrics = () => page.evaluate(() => {
+      const sheet = document.querySelector('.docx-page').getBoundingClientRect()
+      return { pages: window.harness.editors[0].pages, width: sheet.width, height: sheet.height }
+    })
+    const before = await metrics()
+    assert.ok(before.height > before.width)
+    await clickEnd('Section 3')
+    assert.equal(await page.evaluate(() => window.harness.editors[0].setPageSetup({ width: 595.3, height: 841.9, orientation: 'landscape' })), true)
+    await page.waitForFunction(() => { const sheet = document.querySelector('.docx-page').getBoundingClientRect(); return sheet.width > sheet.height })
+    assert.deepEqual(await page.evaluate(() => { const setup = window.harness.editors[0].pageSetup(); return [setup.width, setup.height, setup.orientation] }), [841.9, 595.3, 'landscape'])
+    const landscape = await metrics()
+    // Deep margins leave less text per page, so the document grows.
+    assert.equal(await page.evaluate(() => window.harness.editors[0].setPageSetup({ margins: { top: 180, bottom: 180 } })), true)
+    await page.waitForFunction((pages) => window.harness.editors[0].pages > pages, landscape.pages)
+    await page.keyboard.press(`${mod}+z`)
+    await page.waitForFunction((pages) => window.harness.editors[0].pages === pages, landscape.pages)
+    await page.keyboard.press(`${mod}+z`)
+    await page.waitForFunction(() => { const sheet = document.querySelector('.docx-page').getBoundingClientRect(); return sheet.height > sheet.width })
+    assert.equal((await metrics()).pages, before.pages)
+    const current = await page.evaluate(() => window.harness.editors[0].currentPage())
+    assert.ok(current.index >= 1 && current.count === before.pages, JSON.stringify(current))
+  })
+
+  await step('shows the page of the cursor and counts the selection', async () => {
+    await open('?generate=80')
+    await clickEnd('Section 4')
+    const current = await page.evaluate(() => window.harness.editors[0].currentPage())
+    assert.ok(current.index > 1 && current.index <= current.count, JSON.stringify(current))
+    assert.equal(current.number, current.index)
+    await clickEnd('Section 4', 0, 1)
+    assert.deepEqual(await page.evaluate(() => window.harness.editors[0].wordCount('selection').words), 1)
+  })
+
+  await step('paints a copied format onto the next mouse selection', async () => {
+    await open('?file=basic-formatting.docx')
+    await clickEnd('A normal paragraph with plain text', 0, 5)
+    await page.keyboard.press(`${mod}+b`)
+    await page.getByRole('button', { name: 'Format painter' }).click()
+    assert.equal(await page.evaluate(() => document.querySelector('.docx-editor').classList.contains('docx-painting')), true)
+    const target = paragraph('Line spacing single')
+    const box = await target.boundingBox()
+    await page.mouse.move(box.x + 2, box.y + box.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(box.x + 60, box.y + box.height / 2, { steps: 5 })
+    await page.mouse.up()
+    await target.locator('span[style*="font-weight: 700"]').first().waitFor()
+    await page.waitForFunction(() => !document.querySelector('.docx-editor').classList.contains('docx-painting'))
+    await page.locator('button[aria-label="Format painter"][aria-pressed="false"]').waitFor()
+    await page.evaluate(() => window.harness.editors[0].formatPainter({ sticky: true }))
+    await paragraph('Line spacing double').click()
+    await paragraph('Line spacing 1.5').click()
+    assert.equal(await page.evaluate(() => window.harness.editors[0].state().formatPainter), true)
+    await page.keyboard.press('Escape')
+    assert.equal(await page.evaluate(() => window.harness.editors[0].state().formatPainter), false)
+    assert.equal(await paragraph('Line spacing double').locator('span[style*="font-weight: 700"]').count() > 0, true)
+  })
+
+  await step('describes what is under the pointer and pastes host clipboard data through Ctrl+V', async () => {
+    await open('?file=notes-fields.docx')
+    const link = flow.locator('a[href="https://example.com/"]').first()
+    const box = await link.boundingBox()
+    const context = await page.evaluate(({ x, y }) => window.harness.editors[0].contextAt(x, y, { select: true }), { x: box.x + 3, y: box.y + box.height / 2 })
+    assert.equal(context.link.href, 'https://example.com/')
+    assert.equal(context.table, false)
+    await open('?file=tables.docx')
+    const cell = flow.locator('td.docx-cell').first()
+    const cellBox = await cell.boundingBox()
+    assert.equal(await page.evaluate(({ x, y }) => window.harness.editors[0].contextAt(x, y).table, { x: cellBox.x + 5, y: cellBox.y + 5 }), true)
+    await open('?file=basic-formatting.docx')
+    await clickEnd('A normal paragraph with plain text', 0, 5)
+    await page.keyboard.press(`${mod}+b`)
+    const copy = await page.evaluate(() => {
+      const data = new DataTransfer()
+      window.harness.editors[0].view.dom.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }))
+      return { html: data.getData('text/html'), text: data.getData('text/plain') }
+    })
+    await clickEnd('Line spacing single')
+    assert.equal(await page.evaluate((copy) => window.harness.editors[0].pasteData(copy), copy), true)
+    await paragraph('Line spacing single').locator('span[style*="font-weight: 700"]', { hasText: copy.text }).waitFor()
+    await clickEnd('Line spacing double')
+    await page.evaluate((copy) => window.harness.editors[0].pasteData(copy, { plain: true }), copy)
+    assert.match(await paragraph('Line spacing double').innerText(), new RegExp(`${copy.text}$`))
+    assert.equal(await paragraph('Line spacing double').locator('span[style*="font-weight: 700"]').count(), 0)
   })
 
   await step('lays out a 100-page document within budget', async () => {
