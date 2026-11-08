@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { friendSearchHighlight } from '@/lib/friend-search'
 import { cn } from '@/lib/utils'
-import { ui } from '@/i18n/ui'
+import { ui, uit } from '@/i18n/ui'
 
 function HighlightedText({ value, query }: { value: string; query: string }) {
   return friendSearchHighlight(value, query).map((part, index) => part.match
@@ -35,21 +35,26 @@ export function ProfileIdentity({ profile, detail, query, matchedOn, href }: {
 export function MutualFriends({ friends, className }: { friends: FriendProfile[]; className?: string }) {
   if (!friends.length) return null
   const label = `${friends.length === 1 ? ui('Mutual friend:') : ui('Mutual friends:')} ${friends.map((friend) => friend.displayName).join(', ')}`
-  return <div className={cn('flex shrink-0 -space-x-2', className)} role="group" aria-label={label}>
-    {friends.map((friend) => <Link
-      key={friend.id}
-      to={`/${friend.username}`}
-      className="relative rounded-full focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      aria-label={friend.displayName}
-      title={friend.displayName}
-    >
-      <ProfileAvatar
-        name={friend.displayName}
-        avatarUrl={friend.avatarUrl}
-        shape="circle"
-        className="size-6 ring-2 ring-background"
-        fallbackClassName="text-[9px]"
-      />
-    </Link>)}
+  return <div className={cn('flex shrink-0 items-center gap-2', className)} role="group" aria-label={label}>
+    <span className="text-xs text-muted-foreground" aria-hidden>
+      {friends.length === 1 ? ui('1 mutual') : uit`${friends.length} mutuals`}
+    </span>
+    <div className="flex -space-x-2">
+      {friends.map((friend) => <Link
+        key={friend.id}
+        to={`/${friend.username}`}
+        className="relative rounded-full focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={friend.displayName}
+        title={friend.displayName}
+      >
+        <ProfileAvatar
+          name={friend.displayName}
+          avatarUrl={friend.avatarUrl}
+          shape="circle"
+          className="size-6 ring-2 ring-background"
+          fallbackClassName="text-[9px]"
+        />
+      </Link>)}
+    </div>
   </div>
 }

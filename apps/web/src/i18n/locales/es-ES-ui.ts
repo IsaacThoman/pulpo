@@ -1015,6 +1015,8 @@ const esUi: Record<string, string> = {
   "Mutual friend:": "Amigo en común:",
   "Mutual friends:": "Amigos en común:",
   "Mutual friends": "Amigos en común",
+  "1 mutual": "1 en común",
+  "{{0}} mutuals": "{{0}} en común",
   "Back to friends": "Volver a amigos",
   "Loading profile…": "Cargando perfil…",
   "No mutual friends yet.": "Aún no hay amigos en común.",
