@@ -128,17 +128,22 @@ export function textCounts(text: string): TextCounts {
   }
 }
 
-/** Opens the search panel with the caret in one of its fields (the panel mounts while it opens). */
+/**
+ * Opens the search panel (it mounts while it opens) with the caret in its find field or, for
+ * replace, in the replace field once there is something to find (the selection, or the last
+ * search), as VS Code does; Word and Google Docs start in the find field too.
+ */
 function focusSearchField(view: EditorView, field: 'search' | 'replace'): boolean {
   openSearchPanel(view)
-  const input = view.dom.querySelector<HTMLInputElement>(`.cm-search input[name=${field}]`)
+  const search = view.dom.querySelector<HTMLInputElement>('.cm-search input[name=search]')
+  const input = field === 'replace' && search?.value ? view.dom.querySelector<HTMLInputElement>('.cm-search input[name=replace]') : search
   if (!input) return false
   input.focus()
   input.select()
   return true
 }
 
-/** Ctrl+H, or Cmd+Option+F and Cmd+Shift+H on Mac (as in VS Code and Google Docs): find with the caret in the replace field. */
+/** Ctrl+H, or Cmd+Option+F and Cmd+Shift+H on Mac (VS Code's and Google Docs' keys): find and replace. */
 export const openReplacePanel = (view: EditorView): boolean => focusSearchField(view, 'replace')
 
 /**
@@ -148,7 +153,9 @@ export const openReplacePanel = (view: EditorView): boolean => focusSearchField(
 export function gotoLineColumn(view: EditorView): boolean {
   const open = getDialog(view, 'cm-goto-line')
   if (open) {
-    open.dom.querySelector<HTMLInputElement>('input[name=line]')?.select()
+    const field = open.dom.querySelector<HTMLInputElement>('input[name=line]')
+    field?.focus()
+    field?.select()
     return true
   }
   const { state } = view

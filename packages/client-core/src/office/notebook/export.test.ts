@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 import { MemoryLiveAssetStore } from '../assets.js'
 import { notebookCodec } from './codec.js'

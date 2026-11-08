@@ -156,9 +156,10 @@ describe('cell keys', () => {
     expect(cell.view.dom.querySelector('.cm-search')).toBeNull()
   })
 
-  it('opens the cell\'s replace field with Ctrl+H when the host has no find of its own', async () => {
-    const { doc } = await notebook('x')
+  it('opens the cell\'s find and replace with Ctrl+H when the host has no find of its own', async () => {
+    const { doc } = await notebook('needle')
     const cell = editor(doc)
+    cell.view.dispatch({ selection: { anchor: 0, head: 6 } })
     expect(press(cell, 'h', { ctrlKey: true })).toBe(true)
     expect(document.activeElement).toBe(cell.view.dom.querySelector('.cm-search input[name=replace]'))
   })

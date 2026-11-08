@@ -40,15 +40,20 @@ describe('text editor find and go to line', () => {
     expect(document.activeElement).toBe(editor.view.dom.querySelector('.cm-search input[name=search]'))
   })
 
-  it('opens replace with the caret in the replace field, from the method and Ctrl+H', () => {
+  it('opens replace in the find field, then in the replace field once there is something to find', () => {
     const { editor } = open('alpha\nbeta')
+    const field = (name: string) => editor.view.dom.querySelector(`.cm-search input[name=${name}]`)
     editor.openReplace()
-    expect(document.activeElement).toBe(editor.view.dom.querySelector('.cm-search input[name=replace]'))
+    expect(document.activeElement).toBe(field('search'))
     editor.focus()
-    expect(document.activeElement).toBe(editor.view.contentDOM)
-    // jsdom is not a Mac, so the Windows and Linux binding applies.
+    editor.view.dispatch({ selection: { anchor: 0, head: 5 } })
+    // jsdom is not a Mac, so the Windows and Linux binding applies; the selection is the query.
     expect(press(editor, 'h', { ctrlKey: true })).toBe(true)
-    expect(document.activeElement).toBe(editor.view.dom.querySelector('.cm-search input[name=replace]'))
+    expect((field('search') as HTMLInputElement).value).toBe('alpha')
+    expect(document.activeElement).toBe(field('replace'))
+    editor.focus()
+    editor.openReplace()
+    expect(document.activeElement).toBe(field('replace'))
   })
 
   it('goes to a line (and column) with Ctrl+G', async () => {
