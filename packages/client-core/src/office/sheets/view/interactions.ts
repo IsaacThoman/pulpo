@@ -17,11 +17,29 @@ import * as commands from './commands.js'
 import { fillSeries, fillStructuredFormula, indexFillTables } from './fill.js'
 import { applyCompletion, argumentHint, completions, partialFunctionName, type FunctionDoc } from './formula-assist.js'
 import { POINTS_TO_PIXELS } from './layout.js'
-import type { Scene } from './renderer.js'
-import { cssFontFamily, EMU_PER_PIXEL, type SheetView } from './sheet-view.js'
+import { GridRenderer, type Scene } from './renderer.js'
+import { cssFontFamily, EMU_PER_PIXEL, type QuickFormat, type SheetNotice, type SheetView } from './sheet-view.js'
 
 /** Invisible content kept selected in the input while not editing, so copy and cut always fire. */
 const IDLE_TEXT = '​'
+
+const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+
+/** Windows reports AltGr as Ctrl+Alt; European layouts type @ # € [ ] { } with it. */
+function altGraph(event: KeyboardEvent): boolean {
+  return !!event.getModifierState?.('AltGraph')
+}
+
+/** Ctrl+Shift+1…6 and Ctrl+Shift+`, by key position (Google Sheets' and Excel's format keys). */
+const QUICK_FORMAT_KEYS: Record<string, QuickFormat> = {
+  Digit1: 'number',
+  Digit2: 'time',
+  Digit3: 'date',
+  Digit4: 'currency',
+  Digit5: 'percent',
+  Digit6: 'scientific',
+  Backquote: 'general',
+}
 
 type Drag =
   | { kind: 'select'; add: boolean }
@@ -59,6 +77,16 @@ export class SheetInteractions {
   private touchStart: { x: number; y: number; time: number; id: number } | undefined
   private pinch: { distance: number; zoom: number; pointers: Map<number, { x: number; y: number }> } = { distance: 0, zoom: 1, pointers: new Map() }
   private cut: { token: string; sheet: string; range: CellRange; signature: string } | undefined
+  /** Where a run of Tabs started: Enter returns to its column, as in Excel and Google. */
+  private tabOrigin: { row: number; col: number } | undefined
+  /** Set while Enter/Tab move the selection, so that move keeps `tabOrigin`. */
+  private moving = false
+  /** Paint format: formats picked up from a selection, applied to the next one. */
+  private painter: { payload: ClipboardPayload; sticky: boolean } | undefined
+  /** Ctrl+Shift+V: the paste that follows pastes values only. */
+  private pasteValuesNext = false
+  /** The open list validation dropdown, for keyboard navigation. */
+  private list: { row: number; col: number; items: string[]; options: HTMLElement[]; index: number } | undefined
 
   constructor(private readonly view: SheetView) {
     const { scroller, input, root } = view
@@ -144,12 +172,28 @@ export class SheetInteractions {
     view.focus()
     const hit = view.hitTest(x, y)
     if (event.button === 2) {
-      // Right-click inside the selection keeps it (for the context menu).
-      const inside = view.selection.ranges.some((range) => hit.area === 'cell' && rangeContains(range, hit.row, hit.col))
-      if (!inside && hit.area === 'cell') view.select({ top: hit.row, left: hit.col, bottom: hit.row, right: hit.col }, { scroll: false })
+      // Right-click inside the selection keeps it (for the context menu). On a header outside it,
+      // that row or column (or everything, on the corner) is selected first, as in Excel and Google.
+      const ranges = view.selection.ranges
+      if (hit.area === 'cell' && !ranges.some((range) => rangeContains(range, hit.row, hit.col))) view.select({ top: hit.row, left: hit.col, bottom: hit.row, right: hit.col }, { scroll: false })
+      if (hit.area === 'colHeader' && !ranges.some((range) => commands.isWholeColumns(range) && hit.col >= range.left && hit.col <= range.right)) {
+        view.select({ top: 0, left: hit.col, bottom: MAX_ROWS - 1, right: hit.col }, { active: { row: 0, col: hit.col }, scroll: false })
+      }
+      if (hit.area === 'rowHeader' && !ranges.some((range) => commands.isWholeRows(range) && hit.row >= range.top && hit.row <= range.bottom)) {
+        view.select({ top: hit.row, left: 0, bottom: hit.row, right: MAX_COLS - 1 }, { active: { row: hit.row, col: 0 }, scroll: false })
+      }
+      if (hit.area === 'corner' && !ranges.some((range) => commands.isWholeColumns(range) && commands.isWholeRows(range))) {
+        view.select({ top: 0, left: 0, bottom: MAX_ROWS - 1, right: MAX_COLS - 1 }, { active: { row: 0, col: 0 }, scroll: false })
+      }
       return
     }
-    const border = this.headerBorderAt(x, y)
+    const mark = !view.readOnly ? this.hiddenMarkAt(x, y, false) : undefined
+    if (mark) {
+      view.unhideBefore(mark.kind, mark.index)
+      return
+    }
+    // While painting formats, a press only picks the destination.
+    const border = !this.painter ? this.headerBorderAt(x, y) : undefined
     if (border && !view.readOnly) {
       const guide = document.createElement('div')
       guide.style.cssText = `position:absolute;background:${'#1A73E8'};pointer-events:none;z-index:4;${border.axis === 'col' ? 'top:0;bottom:0;width:1px;' : 'left:0;right:0;height:1px;'}`
@@ -159,7 +203,7 @@ export class SheetInteractions {
       this.updateResizeGuide(x, y)
       return
     }
-    if (this.overFillHandle(x, y) && !view.readOnly) {
+    if (!this.painter && this.overFillHandle(x, y) && !view.readOnly) {
       const source = view.selection.ranges[0]!
       this.drag = { kind: 'fill', source, target: source }
       return
@@ -182,7 +226,7 @@ export class SheetInteractions {
       return
     }
     // Filter buttons and validation list arrows.
-    if (this.onButton(x, y, hit.row, hit.col)) return
+    if (!this.painter && this.onButton(x, y, hit.row, hit.col)) return
     if (view.editing) {
       if (view.pointAt({ top: hit.row, left: hit.col, bottom: hit.row, right: hit.col })) {
         this.drag = { kind: 'point' }
@@ -191,7 +235,7 @@ export class SheetInteractions {
       if (!view.commitEdit()) return
     }
     // Ctrl/Cmd+click follows a link.
-    if ((event.ctrlKey || event.metaKey) && this.followLink(hit.row, hit.col)) return
+    if (!this.painter && (event.ctrlKey || event.metaKey) && this.followLink(hit.row, hit.col)) return
     if (event.shiftKey) view.extendTo(hit.row, hit.col)
     else view.select({ top: hit.row, left: hit.col, bottom: hit.row, right: hit.col }, { add, scroll: false })
     this.drag = { kind: 'select', add }
@@ -210,7 +254,7 @@ export class SheetInteractions {
     }
     const drag = this.drag
     if (!drag) {
-      if (event.pointerType === 'mouse') view.scroller.style.cursor = this.headerBorderAt(x, y)?.axis === 'col' ? 'col-resize' : this.headerBorderAt(x, y) ? 'row-resize' : this.overFillHandle(x, y) ? 'crosshair' : 'cell'
+      if (event.pointerType === 'mouse') view.scroller.style.cursor = this.cursorAt(x, y)
       return
     }
     this.autoScroll(x, y)
@@ -303,31 +347,71 @@ export class SheetInteractions {
       case 'drawing':
         this.finishDrawingDrag(drag, event)
         break
+      case 'select':
+      case 'rows':
+      case 'cols':
+        if (event.type === 'pointerup') this.applyPainter()
+        break
     }
     view.focus()
+  }
+
+  private cursorAt(x: number, y: number): string {
+    if (this.hiddenMarkAt(x, y, false)) return 'pointer'
+    if (this.painter) return 'copy'
+    const border = this.headerBorderAt(x, y)
+    return border?.axis === 'col' ? 'col-resize' : border ? 'row-resize' : this.overFillHandle(x, y) ? 'crosshair' : 'cell'
+  }
+
+  /**
+   * The hidden-lines marker under a header point: the visible line after the hidden run. Mouse
+   * presses within 4px of the boundary still resize; touch takes the whole marker area.
+   */
+  private hiddenMarkAt(x: number, y: number, touch: boolean): { kind: 'row' | 'col'; index: number } | undefined {
+    const view = this.view
+    const inColumns = y < view.headerHeight && x > view.headerWidth
+    const inRows = x < view.headerWidth && y > view.headerHeight
+    if (!inColumns && !inRows) return undefined
+    const marks = view.hiddenMarks()
+    const geometry = view.sceneGeometry() as Scene
+    const near = (distance: number, reach: number) => Math.abs(distance) <= reach && (touch || Math.abs(distance) > 4)
+    if (inColumns) {
+      const col = marks.cols.find((index) => near(x - GridRenderer.x(geometry, index), 12))
+      return col === undefined ? undefined : { kind: 'col', index: col }
+    }
+    const row = marks.rows.find((index) => near(y - GridRenderer.y(geometry, index), 10))
+    return row === undefined ? undefined : { kind: 'row', index: row }
   }
 
   private onTap(x: number, y: number): void {
     const view = this.view
     const hit = view.hitTest(x, y)
     view.focus()
+    const mark = !view.readOnly ? this.hiddenMarkAt(x, y, true) : undefined
+    if (mark) {
+      view.unhideBefore(mark.kind, mark.index)
+      return
+    }
     if (hit.area === 'colHeader') {
       view.select({ top: 0, left: hit.col, bottom: MAX_ROWS - 1, right: hit.col }, { active: { row: 0, col: hit.col }, scroll: false })
+      this.applyPainter()
       return
     }
     if (hit.area === 'rowHeader') {
       view.select({ top: hit.row, left: 0, bottom: hit.row, right: MAX_COLS - 1 }, { active: { row: hit.row, col: 0 }, scroll: false })
+      this.applyPainter()
       return
     }
     if (hit.area !== 'cell') return
-    if (this.onButton(x, y, hit.row, hit.col)) return
+    if (!this.painter && this.onButton(x, y, hit.row, hit.col)) return
     if (view.editing && view.pointAt({ top: hit.row, left: hit.col, bottom: hit.row, right: hit.col })) return
     if (view.editing && !view.commitEdit()) return
     const now = performance.now()
     const double = this.lastTap && now - this.lastTap.time < 400 && this.lastTap.row === hit.row && this.lastTap.col === hit.col
     this.lastTap = { time: now, row: hit.row, col: hit.col }
     view.select({ top: hit.row, left: hit.col, bottom: hit.row, right: hit.col }, { scroll: false })
-    if (double) view.beginEdit(undefined, false)
+    if (this.painter) this.applyPainter()
+    else if (double) view.beginEdit(undefined, false)
   }
 
   private onDoubleClick(event: MouseEvent): void {
@@ -431,10 +515,13 @@ export class SheetInteractions {
     if (this.composing || event.isComposing || event.keyCode === 229) return
     const view = this.view
     const mod = event.ctrlKey || event.metaKey
+    // Only the paste event of the Ctrl+Shift+V press itself pastes values.
+    this.pasteValuesNext = false
     if (view.editing) {
       this.onEditKey(event)
       return
     }
+    if (this.list && this.onListKey(event)) return
     if (this.selectedDrawing && (event.key === 'Delete' || event.key === 'Backspace')) {
       event.preventDefault()
       const id = this.selectedDrawing
@@ -449,6 +536,18 @@ export class SheetInteractions {
       const next = view.nextCell(from.row, from.col, dRow, dCol, mod)
       if (event.shiftKey) view.extendTo(next.row, next.col)
       else view.select({ top: next.row, left: next.col, bottom: next.row, right: next.col })
+    }
+    // Alt+Down opens the active cell's dropdown list, or its filter menu on a filter header.
+    if (event.altKey && !mod && event.key === 'ArrowDown') {
+      event.preventDefault()
+      this.openDropdown()
+      return
+    }
+    // AutoSum is Alt+= on Windows and Linux (Option+= types ≠ on a Mac: Cmd+Shift+T there).
+    if (!IS_MAC && event.altKey && !mod && !altGraph(event) && (event.key === '=' || (event.code === 'Equal' && !event.shiftKey))) {
+      event.preventDefault()
+      view.autoSum()
+      return
     }
     switch (event.key) {
       case 'ArrowUp':
@@ -468,11 +567,14 @@ export class SheetInteractions {
         return this.moveWithin(event.shiftKey ? -1 : 1, 0)
       case 'Home':
         event.preventDefault()
+        // Shift extends: to column A (Shift+Home) or to A1 (Ctrl+Shift+Home).
+        if (event.shiftKey) return mod ? view.extendTo(0, 0) : view.extendTo(this.extentCorner().row, 0)
         return mod ? view.select({ top: 0, left: 0, bottom: 0, right: 0 }) : view.select({ top: active.row, left: 0, bottom: active.row, right: 0 })
       case 'End': {
         event.preventDefault()
         const used = view.sheet.usedRange()
-        if (mod && used) view.select({ top: used.bottom, left: used.right, bottom: used.bottom, right: used.right })
+        if (mod && used && event.shiftKey) view.extendTo(used.bottom, used.right)
+        else if (mod && used) view.select({ top: used.bottom, left: used.right, bottom: used.bottom, right: used.right })
         return
       }
       case 'PageDown':
@@ -493,6 +595,11 @@ export class SheetInteractions {
         view.beginEdit('', true)
         return
       case 'F2':
+        // Shift+F2 asks the host for its note editor, as in Excel.
+        if (event.shiftKey) {
+          if (!view.readOnly && view.request({ request: 'note' })) event.preventDefault()
+          return
+        }
         event.preventDefault()
         view.beginEdit(undefined, false)
         return
@@ -502,6 +609,7 @@ export class SheetInteractions {
           view.copyRange = undefined
           view.scheduleRender()
         }
+        this.cancelFormatPainter()
         this.closePopup()
         return
       case ' ':
@@ -522,6 +630,10 @@ export class SheetInteractions {
     const view = this.view
     const key = event.key.toLowerCase()
     const handled = () => event.preventDefault()
+    // Unclaimed requests leave the browser's own shortcut alone.
+    const ask = (request: 'link' | 'print' | 'save' | 'replace' | 'goto' | 'shortcuts' | 'deleteLines') => {
+      if (view.request({ request })) handled()
+    }
     if (key === 'z' && !event.shiftKey) return handled(), view.undo()
     if ((key === 'z' && event.shiftKey) || key === 'y') return handled(), view.redo()
     if (key === 'a') {
@@ -531,7 +643,48 @@ export class SheetInteractions {
       const same = last.top === region.top && last.left === region.left && last.bottom === region.bottom && last.right === region.right
       return same || (region.top === region.bottom && region.left === region.right) ? view.select({ top: 0, left: 0, bottom: MAX_ROWS - 1, right: MAX_COLS - 1 }, { active: view.selection.active }) : view.select(region, { active: view.selection.active })
     }
+    if (!event.altKey) {
+      if (key === 'p' && !event.shiftKey) return ask('print')
+      if (key === 's' && !event.shiftKey) return ask('save')
+      if (key === 'g' && !event.shiftKey) return ask('goto')
+      if (event.code === 'Slash' && !event.shiftKey) return ask('shortcuts')
+      // Cmd+H hides the app on a Mac, so Google uses Cmd+Shift+H there.
+      if (key === 'h' && (IS_MAC ? event.metaKey && event.shiftKey : !event.shiftKey)) return ask('replace')
+      // Ctrl+` shows formulas (Ctrl+Shift+` is the General format, below).
+      if (event.code === 'Backquote' && !event.shiftKey) return handled(), view.setShowFormulas(!view.showFormulas)
+    }
     if (view.readOnly) return
+    const last = view.selection.ranges[view.selection.ranges.length - 1]!
+    const lines = commands.isWholeColumns(last) && commands.isWholeRows(last) ? undefined : commands.isWholeColumns(last) ? 'col' as const : commands.isWholeRows(last) ? 'row' as const : undefined
+    if (!event.altKey) {
+      if (key === 'k' && !event.shiftKey) return ask('link')
+      if (IS_MAC && event.metaKey && event.shiftKey && key === 't') return handled(), void view.autoSum()
+      if (event.shiftKey) {
+        // Format shortcuts go by key position: Shift turns the digits into symbols.
+        const format = QUICK_FORMAT_KEYS[event.code]
+        if (format) return handled(), view.applyQuickFormat(format)
+        // The browser's paste-as-plain-text fires the paste event next; it pastes values only.
+        if (key === 'v') return void (this.pasteValuesNext = true)
+        if (key === 'l') return handled(), view.toggleFilter()
+      }
+      // Ctrl++ and Ctrl+- insert and delete selected rows or columns (Excel). With cells selected
+      // they stay the browser's zoom keys.
+      if (lines && (key === '+' || event.code === 'NumpadAdd')) return handled(), view.insert(lines, 'before')
+      if (lines && !event.shiftKey && (key === '-' || event.code === 'NumpadSubtract')) return handled(), view.deleteLines(lines)
+      // Ctrl+9 and Ctrl+0 hide rows and columns, with Shift they unhide (Excel).
+      if (event.code === 'Digit9' || event.code === 'Digit0') return handled(), this.hideSelected(event.code === 'Digit9' ? 'row' : 'col', !event.shiftKey)
+      if (key === '\\' && !event.shiftKey) return handled(), view.clearFormats()
+    } else if (IS_MAC ? event.metaKey : event.ctrlKey && !altGraph(event)) {
+      // Google's Ctrl+Alt (Cmd+Option) keys. AltGr also reports Ctrl+Alt on Windows, so these
+      // match the typed character there: AltGr+9 types `]` on a German keyboard, not `9`.
+      const typed = (code: string, char: string) => IS_MAC ? event.code === code : event.key === char
+      if (typed('Equal', '=')) return handled(), view.insert(lines ?? 'row', 'before')
+      if (typed('Minus', '-')) return lines ? (handled(), view.deleteLines(lines)) : ask('deleteLines')
+      if (typed('Digit9', '9')) return handled(), this.hideSelected('row', !event.shiftKey)
+      if (typed('Digit0', '0')) return handled(), this.hideSelected('col', !event.shiftKey)
+      return
+    }
+    if (event.altKey) return
     if (key === 'b') return handled(), view.toggleStyle('bold')
     if (key === 'i') return handled(), view.toggleStyle('italic')
     if (key === 'u') return handled(), view.toggleUnderline()
@@ -554,14 +707,27 @@ export class SheetInteractions {
     return { row: range.top === anchor.row ? range.bottom : range.top, col: range.left === anchor.col ? range.right : range.left }
   }
 
-  /** Enter/Tab: move the active cell, within the selection when it has more than one cell. */
+  /**
+   * Enter/Tab: move the active cell, within the selection when it has more than one cell. After a
+   * run of Tabs, Enter goes to the next row in the column the run started from.
+   */
   moveWithin(dRow: number, dCol: number): void {
     const view = this.view
     const range = view.selection.ranges[view.selection.ranges.length - 1]!
     const { active } = view.selection
     if (range.top === range.bottom && range.left === range.right) {
-      const next = view.nextCell(active.row, active.col, dRow, dCol, false)
-      view.select({ top: next.row, left: next.col, bottom: next.row, right: next.col })
+      let from = active
+      if (dCol && this.tabOrigin?.row !== active.row) this.tabOrigin = { ...active }
+      if (dRow && this.tabOrigin?.row === active.row) from = { row: active.row, col: this.tabOrigin.col }
+      const origin = dRow ? undefined : this.tabOrigin
+      const next = view.nextCell(from.row, from.col, dRow, dCol, false)
+      this.moving = true
+      try {
+        view.select({ top: next.row, left: next.col, bottom: next.row, right: next.col })
+      } finally {
+        this.moving = false
+      }
+      this.tabOrigin = origin
       return
     }
     let row = active.row + dRow
@@ -620,13 +786,18 @@ export class SheetInteractions {
           return
         }
         event.preventDefault()
-        if (!view.commitEdit({ fill: event.ctrlKey || event.metaKey })) return
-        if (!(event.ctrlKey || event.metaKey)) this.moveWithin(event.shiftKey ? -1 : 1, 0)
+        {
+          const fill = event.ctrlKey || event.metaKey
+          const then = () => { if (!fill) this.moveWithin(event.shiftKey ? -1 : 1, 0) }
+          if (view.commitEdit({ fill, ask: true, then })) then()
+        }
         return
-      case 'Tab':
+      case 'Tab': {
         event.preventDefault()
-        if (view.commitEdit()) this.moveWithin(0, event.shiftKey ? -1 : 1)
+        const then = () => this.moveWithin(0, event.shiftKey ? -1 : 1)
+        if (view.commitEdit({ ask: true, then })) then()
         return
+      }
       case 'Escape':
         event.preventDefault()
         view.cancelEdit()
@@ -661,9 +832,12 @@ export class SheetInteractions {
           if (event.defaultPrevented) return
         }
         event.preventDefault()
-        if (view.commitEdit()) {
-          const next = view.nextCell(edit.row, edit.col, dRow, dCol, false)
-          view.select({ top: next.row, left: next.col, bottom: next.row, right: next.col })
+        {
+          const then = () => {
+            const next = view.nextCell(edit.row, edit.col, dRow, dCol, false)
+            view.select({ top: next.row, left: next.col, bottom: next.row, right: next.col })
+          }
+          if (view.commitEdit({ ask: true, then })) then()
         }
         return
       }
@@ -755,10 +929,12 @@ export class SheetInteractions {
     if (view.readOnly) return
     const vertical = target.top !== source.top || target.bottom !== source.bottom
     const backward = vertical ? target.top < source.top : target.left < source.left
-    if (!contains(target, source) || !commands.canExpandRanges([target])) return
+    const refuse = (message: string) => this.showMessage(message, view.selection.active.row, view.selection.active.col)
+    if (!contains(target, source)) return
+    if (!commands.canExpandRanges([target])) return refuse(view.labels.dataErrors.size)
     if (!view.canWriteArrays(sheet, this.fillWriteRanges(source, target))) return
     // These fill patterns need shape-aware repetition; reject them before any write.
-    if (sheet.mergedRanges().some((m) => intersects(m.range, target))) return
+    if (sheet.mergedRanges().some((m) => intersects(m.range, target))) return refuse(view.labels.dataErrors.merges)
     let arraySource = false
     const spillSources = new RangeIndex<CellRange>()
     sheet.forEachCell((row, col, data) => {
@@ -770,7 +946,7 @@ export class SheetInteractions {
       spillSources.add(range, range)
       if (data.array || rangeContains(source, row, col) && span(Math.max(row, source.top), Math.min(range.bottom, source.bottom)).some((r) => view.rows.isHidden(r))) arraySource = true
     })
-    if (arraySource) return
+    if (arraySource) return refuse(view.labels.dataErrors.partialArray)
     const jobs: {
       sourceCells: { row: number; col: number }[]
       targets: { row: number; col: number }[]
@@ -829,13 +1005,17 @@ export class SheetInteractions {
 
   // ── Clipboard ────────────────────────────────────────────────────────────
 
-  /** The selection as clipboard data (text, HTML, and snapshots for pasting here). */
+  /** The selection as clipboard data (text, HTML, and snapshots for pasting here); refusals are shown. */
   copyPayload(cut = false): ClipboardPayload | undefined {
     const view = this.view
-    if (view.selection.ranges.length !== 1) return undefined
+    const refuse = (message: string) => {
+      this.showMessage(message, view.selection.active.row, view.selection.active.col)
+      return undefined
+    }
+    if (view.selection.ranges.length !== 1) return refuse(view.labels.multipleSelections)
     const sheet = view.sheet
     const range = commands.clampToUsed(sheet, view.selection.ranges[0]!)
-    if (!commands.canExpandRanges([range])) return undefined
+    if (!commands.canExpandRanges([range])) return refuse(view.labels.dataErrors.size)
     if (cut && !view.canWriteArrays(sheet, [range])) return undefined
     const sourceRows = span(range.top, range.bottom).filter((row) => cut || !view.rows.isHidden(row))
     // Like Excel, hidden columns remain part of a normal copied rectangle.
@@ -865,9 +1045,9 @@ export class SheetInteractions {
     const merges: CellRange[] = []
     for (const merge of sheet.mergedRanges()) {
       if (!intersects(range, merge.range)) continue
-      if (!contains(range, merge.range)) return undefined
+      if (!contains(range, merge.range)) return refuse(view.labels.dataErrors.merges)
       const top = (rowPositions.get(merge.range.top) ?? -1), bottom = (rowPositions.get(merge.range.bottom) ?? -1)
-      if (top < 0 || bottom - top !== merge.range.bottom - merge.range.top) return undefined
+      if (top < 0 || bottom - top !== merge.range.bottom - merge.range.top) return refuse(view.labels.dataErrors.merges)
       const rect = { top, bottom, left: merge.range.left - range.left, right: merge.range.right - range.left }
       merges.push(rect)
       for (let r = top; r <= bottom; r++) for (let c = rect.left; c <= rect.right; c++) {
@@ -919,9 +1099,10 @@ export class SheetInteractions {
   private onCopy(event: ClipboardEvent, cut: boolean): void {
     const view = this.view
     if (view.editing) return
+    // Even a refused copy must not put the input's invisible placeholder on the clipboard.
+    event.preventDefault()
     const payload = this.copyPayload(cut)
     if (!payload || !event.clipboardData) return
-    event.preventDefault()
     event.clipboardData.setData('text/plain', toTsv(payload.rows))
     event.clipboardData.setData('text/html', toHtml(payload))
     view.copyRange = payload.internal!.source
@@ -930,19 +1111,25 @@ export class SheetInteractions {
 
   private onPaste(event: ClipboardEvent): void {
     const view = this.view
+    const values = this.pasteValuesNext
+    this.pasteValuesNext = false
     if (view.editing || view.readOnly || !event.clipboardData) return
     event.preventDefault()
-    this.paste({ html: event.clipboardData.getData('text/html'), text: event.clipboardData.getData('text/plain') })
+    this.paste({ html: event.clipboardData.getData('text/html'), text: event.clipboardData.getData('text/plain') }, values ? { values: true } : {})
   }
 
-  /** Pastes clipboard content at the selection (paste special: values or formats only). */
-  paste(data: { html?: string; text?: string }, mode: PasteMode = {}): void {
+  /**
+   * Pastes clipboard content at the selection (paste special: values or formats only); refusals
+   * are shown. `payload` pastes a snapshot from `copyPayload` directly.
+   */
+  paste(data: { html?: string; text?: string; payload?: ClipboardPayload }, mode: PasteMode = {}): void {
     const view = this.view
     if (view.readOnly) return
     const sheet = view.sheet
     const target = view.selection.ranges[view.selection.ranges.length - 1]!
     const origin = { row: target.top, col: target.left }
-    const parsed = data.html ? parseHtml(data.html) : undefined
+    const refuse = (message: string) => this.showMessage(message, view.selection.active.row, view.selection.active.col)
+    const parsed = data.payload?.internal ? { cells: [], merges: data.payload.internal.merges, internal: data.payload.internal } : data.html ? parseHtml(data.html) : undefined
     const internal = parsed?.internal
     const cells = parsed?.cells ?? parseTsv(data.text ?? '').map((row) => row.map((text) => ({ text })))
     const height = internal?.cells.length ?? cells.length
@@ -956,11 +1143,11 @@ export class SheetInteractions {
     const relocate = moving && cut.signature === this.cutSignature(cut.sheet, cut.range)
     const selectedHeight = target.bottom - target.top + 1, selectedWidth = target.right - target.left + 1
     const tile = !moving && selectedHeight >= height && selectedWidth >= width && selectedHeight % height === 0 && selectedWidth % width === 0
-    if (!moving && !tile && (selectedHeight > height || selectedWidth > width)) return
+    if (!moving && !tile && (selectedHeight > height || selectedWidth > width)) return refuse(view.labels.pasteShape)
     const rows = tile ? selectedHeight : height, cols = tile ? selectedWidth : width
     const destination = { top: origin.row, left: origin.col, bottom: origin.row + rows - 1, right: origin.col + cols - 1 }
     // Preflight is outside the transaction: failures must not leave a partial paste behind.
-    if (!commands.canExpandRanges([destination])) return
+    if (!commands.canExpandRanges([destination])) return refuse(view.labels.dataErrors.size)
     if (placeOptions.values && !view.canWriteArrays(sheet, relocate && cut.sheet === sheet.id ? [destination, cut.range] : [destination])) return
     if (relocate) {
       const source = view.workbook.sheet(cut.sheet)!
@@ -968,17 +1155,17 @@ export class SheetInteractions {
       for (const owner of new Set([source, sheet])) for (const collection of [owner.tables, owner.merges]) for (const raw of collection.values()) {
         const rect = owner.resolveRange((raw as { range: import('../model/schema.js').RangeIds }).range)
         if (!rect) continue
-        if (owner === source && intersects(rect, cut.range) && !contains(cut.range, rect)) return
-        if (owner === sheet && intersects(rect, destination) && !(owner === source && contains(cut.range, rect))) return
+        if (owner === source && intersects(rect, cut.range) && !contains(cut.range, rect)) return refuse(view.labels.partialMove)
+        if (owner === sheet && intersects(rect, destination) && !(owner === source && contains(cut.range, rect))) return refuse(view.labels.partialMove)
       }
     } else {
-      for (const merge of sheet.mergedRanges()) if (intersects(merge.range, destination) && !contains(destination, merge.range)) return
+      for (const merge of sheet.mergedRanges()) if (intersects(merge.range, destination) && !contains(destination, merge.range)) return refuse(view.labels.dataErrors.merges)
     }
     const merges = internal?.merges ?? parsed?.merges ?? []
     // Legacy array formulas must keep their entire original shape.
     if (internal && placeOptions.values && !mode.values) for (let r = 0; r < height; r++) for (let c = 0; c < width; c++) {
       const size = internal.cells[r]![c]!.data?.array
-      if (size && (r + size.rows > height || c + size.cols > width || internal.sourceRows[r + size.rows - 1]! - internal.sourceRows[r]! !== size.rows - 1)) return
+      if (size && (r + size.rows > height || c + size.cols > width || internal.sourceRows[r + size.rows - 1]! - internal.sourceRows[r]! !== size.rows - 1)) return refuse(view.labels.dataErrors.partialArray)
     }
     view.workbook.transact(() => {
       if (relocate) {
@@ -1075,6 +1262,7 @@ export class SheetInteractions {
   onEditStart(): void {
     const view = this.view
     const edit = view.editing!
+    this.closePopup()
     view.input.value = edit.text
     view.input.setSelectionRange(edit.caret, edit.caret)
     this.positionEditor()
@@ -1100,6 +1288,8 @@ export class SheetInteractions {
   }
 
   onSelectionChange(): void {
+    // Clicks, arrows and other moves start a new Tab run.
+    if (!this.moving) this.tabOrigin = undefined
     this.closePopup()
     this.positionIdleInput()
     this.layoutHandles()
@@ -1267,6 +1457,144 @@ export class SheetInteractions {
   private closePopup(): void {
     this.popup?.remove()
     this.popup = undefined
+    if (this.list) this.view.input.removeAttribute('aria-activedescendant')
+    this.list = undefined
+  }
+
+  /** Alt+Down: the active cell's list, or the filter menu of a filter header cell. */
+  private openDropdown(): void {
+    const view = this.view
+    const { row, col } = view.selection.active
+    const filter = view.sheet.filter.get('value') as AutoFilter | undefined
+    const filterRange = filter && view.sheet.resolveRange(filter.range)
+    if (filterRange && row === filterRange.top && col >= filterRange.left && col <= filterRange.right) {
+      this.openFilterMenu(col, view.cellRect(row, col))
+      return
+    }
+    const validation = commands.validationAt(view.sheet, row, col)
+    if (validation?.type === 'list' && !validation.showDropDown && !view.readOnly) this.openList(row, col)
+  }
+
+  /** Keys while a list dropdown is open (focus stays in the grid's input); true when used. */
+  private onListKey(event: KeyboardEvent): boolean {
+    const list = this.list!
+    const step = (index: number) => {
+      event.preventDefault()
+      list.index = Math.max(0, Math.min(list.items.length - 1, index))
+      this.highlightListItem()
+      return true
+    }
+    switch (event.key) {
+      case 'ArrowDown':
+        return step(list.index + 1)
+      case 'ArrowUp':
+        return step(list.index - 1)
+      case 'Home':
+        return step(0)
+      case 'End':
+        return step(list.items.length - 1)
+      case 'PageDown':
+        return step(list.index + 8)
+      case 'PageUp':
+        return step(list.index - 8)
+      case 'Enter':
+      case 'Tab': {
+        event.preventDefault()
+        const item = list.items[list.index]
+        if (item !== undefined) this.pickListItem(list.row, list.col, item)
+        else this.closePopup()
+        return true
+      }
+      case 'Escape':
+        event.preventDefault()
+        this.closePopup()
+        return true
+    }
+    // Anything else (typing, other keys) closes the list and acts as usual.
+    this.closePopup()
+    return false
+  }
+
+  private highlightListItem(): void {
+    const list = this.list
+    if (!list) return
+    list.options.forEach((option, index) => {
+      const current = index === list.index
+      option.setAttribute('aria-selected', String(current))
+      option.style.background = current ? 'rgba(26,115,232,0.12)' : ''
+      if (current) {
+        option.scrollIntoView?.({ block: 'nearest' })
+        this.view.input.setAttribute('aria-activedescendant', option.id)
+      }
+    })
+  }
+
+  private pickListItem(row: number, col: number, item: string): void {
+    const view = this.view
+    if (view.readOnly) return
+    this.closePopup()
+    view.dataOperation(() => commands.setCellInput(view.sheet, row, col, item, { valuesOnly: view.valuesOnly, currentFormat: view.styleAt(row, col).numFmt }))
+    view.focus()
+  }
+
+  // ── Paint format ─────────────────────────────────────────────────────────
+
+  get formatPainter(): { sticky: boolean } | undefined {
+    return this.painter && { sticky: this.painter.sticky }
+  }
+
+  startFormatPainter(sticky: boolean): boolean {
+    const view = this.view
+    if (view.readOnly || view.valuesOnly || !view.commitEdit()) return false
+    const payload = this.copyPayload(false)
+    if (!payload) return false
+    // Picking up formats ends a pending copy, as in Excel.
+    view.copyRange = undefined
+    this.painter = { payload, sticky }
+    view.scheduleRender()
+    view.notify()
+    return true
+  }
+
+  cancelFormatPainter(): void {
+    if (!this.painter) return
+    this.painter = undefined
+    this.view.scroller.style.cursor = 'cell'
+    this.view.notify()
+  }
+
+  /**
+   * Paints the picked-up formats onto the selection just made. A destination that isn't a whole
+   * multiple of the source takes the source's shape from its top-left cell, as in Excel.
+   */
+  private applyPainter(): void {
+    const painter = this.painter
+    const view = this.view
+    if (!painter) return
+    if (!painter.sticky) this.cancelFormatPainter()
+    const source = painter.payload.internal!
+    const height = source.cells.length
+    const width = source.cells[0]?.length ?? 0
+    if (!height || !width) return
+    // Whole rows and columns are painted as far as the used area goes.
+    const selected = view.selection.ranges[view.selection.ranges.length - 1]!
+    const target = commands.clampToUsed(view.sheet, selected)
+    const rows = target.bottom - target.top + 1, cols = target.right - target.left + 1
+    const misfit = rows % height !== 0 || cols % width !== 0
+    if (misfit || target.bottom !== selected.bottom || target.right !== selected.right) {
+      const shaped = misfit ? { top: target.top, left: target.left, bottom: target.top + height - 1, right: target.left + width - 1 } : target
+      view.select(shaped, { active: { row: shaped.top, col: shaped.left }, scroll: false })
+    }
+    // A copy each time: pasting maps the snapshot's style indexes in place.
+    this.paste({ payload: JSON.parse(JSON.stringify(painter.payload)) as ClipboardPayload }, { formats: true })
+    view.notify()
+  }
+
+  /** Hides (or unhides) the selected rows or columns; never every row of whole columns. */
+  private hideSelected(kind: 'row' | 'col', hidden: boolean): void {
+    const ranges = this.view.selection.ranges
+    if (hidden && ranges.some((range) => kind === 'row' ? commands.isWholeColumns(range) : commands.isWholeRows(range))) return
+    this.view.hideLines(kind, hidden)
   }
 
   private openPopup(x: number, y: number): HTMLDivElement {
@@ -1318,21 +1646,21 @@ export class SheetInteractions {
     if (!items?.length) return
     const popup = this.openPopup(rect.x, rect.y + rect.height + 2)
     popup.setAttribute('role', 'listbox')
+    popup.id = `pulpo-sheet-list-${randomId()}`
     const current = view.displayText(row, col)
-    for (const item of items) {
+    const options = items.map((item, index) => {
       const option = document.createElement('div')
       option.setAttribute('role', 'option')
-      option.setAttribute('aria-selected', String(item === current))
+      option.id = `${popup.id}-${index}`
       option.textContent = item
-      option.style.cssText = `padding:6px 12px;cursor:pointer;${item === current ? 'background:rgba(26,115,232,0.12);' : ''}`
-      option.addEventListener('click', () => {
-        if (view.readOnly) return
-        this.closePopup()
-        view.dataOperation(() => commands.setCellInput(view.sheet, row, col, item, { valuesOnly: view.valuesOnly, currentFormat: view.styleAt(row, col).numFmt }))
-        view.focus()
-      })
+      option.style.cssText = 'padding:6px 12px;cursor:pointer;'
+      option.addEventListener('click', () => this.pickListItem(row, col, item))
       popup.appendChild(option)
-    }
+      return option
+    })
+    // Arrows, Enter and Escape work on the list while the grid keeps the focus.
+    this.list = { row, col, items, options, index: Math.max(0, items.indexOf(current)) }
+    this.highlightListItem()
   }
 
   /** The autofilter menu of a column: sort, search, and value checkboxes. */
@@ -1500,9 +1828,12 @@ export class SheetInteractions {
     this.notePopup = undefined
   }
 
+  /** A message beside a cell, unless the host claims the `sheetnotice` to show it itself. */
   showMessage(text: string, row: number, col: number): void {
     this.hideMessage()
     const view = this.view
+    const detail: SheetNotice = { message: text, row, col }
+    if (!view.root.dispatchEvent(new CustomEvent<SheetNotice>('sheetnotice', { bubbles: true, cancelable: true, detail }))) return
     const rect = view.cellRect(row, col)
     const message = document.createElement('div')
     message.setAttribute('role', 'alert')

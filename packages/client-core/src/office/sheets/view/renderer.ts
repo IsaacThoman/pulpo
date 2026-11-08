@@ -99,6 +99,8 @@ export interface Scene {
    */
   widthScale: number
   fillHandle: boolean
+  /** Visible lines right after a run of hidden rows or columns: headers mark the boundary. */
+  hiddenMarks?: { rows: number[]; cols: number[] }
 }
 
 interface Pane {
@@ -805,6 +807,7 @@ export class GridRenderer {
       }
       ctx.restore()
     }
+    this.drawHiddenMarks(scene)
     ctx.fillStyle = palette.headerBorder
     ctx.fillRect(0, scene.headerHeight - 1, scene.width, 1)
     ctx.fillRect(scene.headerWidth - 1, 0, 1, scene.height)
@@ -817,6 +820,55 @@ export class GridRenderer {
     ctx.lineTo(scene.headerWidth - 4, scene.headerHeight - 4)
     ctx.lineTo(scene.headerWidth - 14, scene.headerHeight - 4)
     ctx.fill()
+    ctx.restore()
+  }
+
+  /**
+   * Small arrows either side of a boundary where rows or columns are hidden, pointing away from
+   * it as Google Sheets draws them; clicking them unhides the run. They sit clear of the 4px
+   * resize zone at the boundary.
+   */
+  private drawHiddenMarks(scene: Scene): void {
+    const marks = scene.hiddenMarks
+    if (!marks || (!marks.rows.length && !marks.cols.length)) return
+    const { ctx } = this
+    const frozenWidth = scene.cols.offset(scene.frozenCols) * scene.zoom
+    const frozenHeight = scene.rows.offset(scene.frozenRows) * scene.zoom
+    const size = Math.max(3, Math.round(3.5 * scene.zoom))
+    const triangle = (a: [number, number], b: [number, number], c: [number, number]) => {
+      ctx.beginPath()
+      ctx.moveTo(...a)
+      ctx.lineTo(...b)
+      ctx.lineTo(...c)
+      ctx.closePath()
+      ctx.fill()
+    }
+    ctx.save()
+    ctx.fillStyle = scene.palette.headerText
+    ctx.beginPath()
+    ctx.rect(scene.headerWidth, 0, scene.width - scene.headerWidth, scene.headerHeight)
+    ctx.clip()
+    const middle = scene.headerHeight / 2
+    for (const col of marks.cols) {
+      const x = Math.round(GridRenderer.x(scene, col))
+      // Scrolled under the frozen columns.
+      if (col >= scene.frozenCols && x < scene.headerWidth + frozenWidth - 1) continue
+      triangle([x - 5, middle - size], [x - 5, middle + size], [x - 5 - size, middle])
+      triangle([x + 5, middle - size], [x + 5, middle + size], [x + 5 + size, middle])
+    }
+    ctx.restore()
+    ctx.save()
+    ctx.fillStyle = scene.palette.headerText
+    ctx.beginPath()
+    ctx.rect(0, scene.headerHeight, scene.headerWidth, scene.height - scene.headerHeight)
+    ctx.clip()
+    const right = scene.headerWidth - 3
+    for (const row of marks.rows) {
+      const y = Math.round(GridRenderer.y(scene, row))
+      if (row >= scene.frozenRows && y < scene.headerHeight + frozenHeight - 1) continue
+      triangle([right - 2 * size, y - 5], [right, y - 5], [right - size, y - 5 - size])
+      triangle([right - 2 * size, y + 5], [right, y + 5], [right - size, y + 5 + size])
+    }
     ctx.restore()
   }
 }

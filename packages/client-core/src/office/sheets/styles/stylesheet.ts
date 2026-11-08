@@ -210,6 +210,24 @@ function parseXf(element: XmlElement): XfRecord {
 
 const SAME = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 
+/**
+ * Preset highlight styles of conditional formats: Excel's six (Highlight Cells Rules) and a light
+ * fill for alternating rows, in a fixed order. The order and XML never change, so every client
+ * writes the identical stylesheet when adding them.
+ */
+export const CONDITIONAL_STYLES = ['lightRedFillDarkRedText', 'yellowFillDarkYellowText', 'greenFillDarkGreenText', 'lightRedFill', 'redText', 'redBorder', 'alternateFill'] as const
+export type ConditionalStyle = (typeof CONDITIONAL_STYLES)[number]
+
+const PRESET_DXFS: Record<ConditionalStyle, { font?: string; fill?: string; border?: string }> = {
+  lightRedFillDarkRedText: { font: 'FF9C0006', fill: 'FFFFC7CE' },
+  yellowFillDarkYellowText: { font: 'FF9C5700', fill: 'FFFFEB9C' },
+  greenFillDarkGreenText: { font: 'FF006100', fill: 'FFC6EFCE' },
+  lightRedFill: { fill: 'FFFFC7CE' },
+  redText: { font: 'FF9C0006' },
+  redBorder: { border: 'FF9C0006' },
+  alternateFill: { fill: 'FFF3F3F3' },
+}
+
 export class Stylesheet {
   readonly document: XmlDocument
   private numFmts = new Map<number, string>()
@@ -562,6 +580,43 @@ export class Stylesheet {
     const next = children(root).find((node) => ORDER.indexOf(node.localName ?? '') > position) ?? before.map((entry) => this.section(entry)).find(Boolean)
     root.insertBefore(element, next ?? null)
     return element
+  }
+
+  /**
+   * The dxf index of each preset highlight style (CONDITIONAL_STYLES), appending the missing ones
+   * in their fixed order. Equal styles already present (from Excel files too) are reused.
+   */
+  ensurePresetDxfs(): Record<ConditionalStyle, number> {
+    const result = {} as Record<ConditionalStyle, number>
+    for (const name of CONDITIONAL_STYLES) {
+      const element = this.presetDxf(name)
+      const parsed = this.parseDxf(element)
+      let index = this.dxfs.findIndex((existing) => SAME(existing, parsed))
+      if (index < 0) {
+        const dxfs = this.ensureSection('dxfs', ['tableStyles', 'colors', 'extLst'])
+        dxfs.appendChild(element)
+        dxfs.setAttribute('count', String(children(dxfs, 'dxf').length))
+        this.dxfs.push(parsed)
+        index = this.dxfs.length - 1
+      }
+      result[name] = index
+    }
+    return result
+  }
+
+  private presetDxf(name: ConditionalStyle): XmlElement {
+    const preset = PRESET_DXFS[name]
+    const element = (tag: string, attrs: Record<string, string> = {}, ...content: XmlElement[]) => {
+      const node = this.document.createElementNS(SHEET_NS, tag)
+      for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value)
+      for (const child of content) node.appendChild(child)
+      return node
+    }
+    const parts: XmlElement[] = []
+    if (preset.font) parts.push(element('font', {}, element('color', { rgb: preset.font })))
+    if (preset.fill) parts.push(element('fill', {}, element('patternFill', {}, element('bgColor', { rgb: preset.fill }))))
+    if (preset.border) parts.push(element('border', {}, ...['left', 'right', 'top', 'bottom'].map((side) => element(side, { style: 'thin' }, element('color', { rgb: preset.border! })))))
+    return element('dxf', {}, ...parts)
   }
 
   /** The stylesheet XML, including formats added by `intern`. */

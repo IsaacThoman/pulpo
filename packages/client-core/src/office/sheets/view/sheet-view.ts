@@ -9,10 +9,11 @@ import { normalizeRanges, subtractRanges } from '../range-set.js'
 import { columnIntervalProps } from '../model/column-intervals.js'
 import { cellName, MAX_COLS, MAX_ROWS, parseCellName, parseRangeName, rangeContains, rangeName, type CellRange } from '../address.js'
 import { toA1Form, toIdForm } from '../model/formula-ids.js'
-import type { AutoFilter, DataValidation, DrawingObject, Hyperlink, Note, RangeIds, SheetColor, SheetFormat, StyleProps } from '../model/schema.js'
+import type { AutoFilter, CfValue, ConditionalRule, DataValidation, DrawingObject, Hyperlink, Note, RangeIds, SheetColor, SheetFormat, StyleProps } from '../model/schema.js'
+import { metadataFormula } from '../model/range-metadata.js'
 import { WorkbookModel, type SheetModel } from '../model/workbook.js'
 import { cellStyle } from '../styles/cell-style.js'
-import { Stylesheet, type ResolvedStyle } from '../styles/stylesheet.js'
+import { Stylesheet, type ConditionalStyle, type ResolvedStyle } from '../styles/stylesheet.js'
 import { CachedValues, forEachPopulatedValue, isErrorValue, type CellValue, type SheetValues } from '../values.js'
 import { cssColor, readThemeColors, type ThemeColors } from './colors.js'
 import * as commands from './commands.js'
@@ -46,6 +47,12 @@ export interface SheetViewLabels {
   chartUnavailable: string
   imageUnavailable: string
   linkHint: string
+  /** Copying (or painting formats from) several ranges at once is refused. */
+  multipleSelections: string
+  /** Pasting into a selection that is not a whole multiple of what was copied. */
+  pasteShape: string
+  /** A cut-and-paste move that would split a merged cell or a table. */
+  partialMove: string
 }
 
 export const DEFAULT_LABELS: SheetViewLabels = {
@@ -63,6 +70,96 @@ export const DEFAULT_LABELS: SheetViewLabels = {
   chartUnavailable: "This chart type can't be shown yet",
   imageUnavailable: "This image can't be shown",
   linkHint: 'Ctrl+click to open the link',
+  multipleSelections: "This action won't work on multiple selections.",
+  pasteShape: "The copy area and paste area aren't the same size.",
+  partialMove: "Can't move part of a merged cell or a table.",
+}
+
+/** Number formats of the format shortcuts (Ctrl+Shift+1…6 and Ctrl+Shift+`), as Google Sheets applies them. */
+export type QuickFormat = 'general' | 'number' | 'time' | 'date' | 'currency' | 'percent' | 'scientific'
+
+export const QUICK_FORMATS: Record<QuickFormat, string> = {
+  general: 'General',
+  number: '#,##0.00',
+  time: 'h:mm:ss AM/PM',
+  date: 'm/d/yyyy',
+  currency: '"$"#,##0.00',
+  percent: '0.00%',
+  scientific: '0.00E+00',
+}
+
+/**
+ * Asks the host for UI the grid can't draw itself, as a cancelable `sheetrequest` CustomEvent on
+ * the view's root (bubbling to the editor's container). A host claims a request by calling
+ * `preventDefault()`; an unclaimed request falls back to the default (the browser's own shortcut,
+ * or accepting a value for a validation prompt).
+ */
+export type SheetRequest =
+  /** Ctrl+K, Shift+F2, Ctrl+P, Ctrl+S, Ctrl+H (Cmd+Shift+H on Mac), Ctrl+G, Ctrl+/. */
+  | { request: 'link' | 'note' | 'print' | 'save' | 'replace' | 'goto' | 'shortcuts' }
+  /** Ctrl+Alt+- on cells (not whole rows or columns): the host may offer rows or columns to delete. */
+  | { request: 'deleteLines' }
+  /**
+   * A typed value broke a 'warning' or 'information' validation rule. The edit stays open until
+   * `respond` is called: 'accept' commits it (and continues the Enter/Tab move), 'retry' keeps
+   * editing, 'cancel' discards the edit. Excel's Yes/No/Cancel (warning) and OK/Cancel (information).
+   */
+  | { request: 'validation'; style: 'warning' | 'information'; title?: string; message: string; row: number; col: number; respond: (answer: 'accept' | 'retry' | 'cancel') => void }
+
+/**
+ * A message the grid would show beside the active cell (refused pastes, validation errors, …),
+ * dispatched first as a cancelable `sheetnotice` CustomEvent; a host that claims it with
+ * `preventDefault()` shows it itself (a toast), otherwise the grid draws it.
+ */
+export interface SheetNotice {
+  message: string
+  row: number
+  col: number
+}
+
+/** A data validation rule without its ranges (formulas as typed: A1 text, without `=`). */
+export type ValidationRule = Omit<DataValidation, 'ranges' | 'fileOrder'>
+
+/**
+ * A conditional format rule to add: formulas as A1 text (without `=`) for the top-left cell of the
+ * first selected range, and either a preset highlight `style` or a `dxfId` of the stylesheet.
+ */
+export type ConditionalRuleInput = Omit<ConditionalRule, 'priority' | 'dxfId' | 'xml'> & { style?: ConditionalStyle; dxfId?: number }
+
+/** Transaction origin of preset styles: kept out of every undo history. */
+const PRESET_STYLES_ORIGIN = { sheetPresetStyles: true }
+
+/** The formula Excel writes for text rules (other readers evaluate it instead of `text`). */
+function textRuleFormula(rule: Pick<ConditionalRule, 'type' | 'text'>, cell: string): string[] | undefined {
+  const text = `"${(rule.text ?? '').replace(/"/g, '""')}"`
+  switch (rule.type) {
+    case 'containsText':
+      return [`NOT(ISERROR(SEARCH(${text},${cell})))`]
+    case 'notContainsText':
+      return [`ISERROR(SEARCH(${text},${cell}))`]
+    case 'beginsWith':
+      return [`LEFT(${cell},LEN(${text}))=${text}`]
+    case 'endsWith':
+      return [`RIGHT(${cell},LEN(${text}))=${text}`]
+    case 'containsBlanks':
+      return [`LEN(TRIM(${cell}))=0`]
+    case 'notContainsBlanks':
+      return [`LEN(TRIM(${cell}))>0`]
+    case 'containsErrors':
+      return [`ISERROR(${cell})`]
+    case 'notContainsErrors':
+      return [`NOT(ISERROR(${cell}))`]
+  }
+  return undefined
+}
+
+/** The validation covering the active cell. */
+export interface ActiveValidation {
+  /** Pass as `ruleId` to `setValidation` to edit this rule in place, keeping its ranges. */
+  id: string
+  /** Its formulas as A1 text written for the rule's top-left cell. */
+  rule: ValidationRule
+  ranges: CellRange[]
 }
 
 export interface SheetViewUser {
@@ -89,6 +186,8 @@ export interface SheetViewOptions {
   renderChart?: (xml: string, size: { width: number; height: number }, theme: ThemeColors, resolve: (formula: string) => CellValue[][] | undefined) => string | undefined
   /** Opens an external link (never fetched automatically). Default: a new tab without opener. */
   openLink?: (url: string) => void
+  /** Codes the format shortcuts apply, e.g. a euro currency for the user's locale. */
+  quickFormats?: Partial<Record<QuickFormat, string>>
 }
 
 export interface Selection {
@@ -149,6 +248,15 @@ export interface SheetViewState {
   valuesOnly: boolean
   hasFilter: boolean
   summary: SheetSummary
+  /** What the last selected range spans: menus offer row or column commands to match. */
+  selectionShape: 'cells' | 'rows' | 'columns' | 'all'
+  /** Set while Paint format is waiting for its destination (sticky: until Escape). */
+  formatPainter?: { sticky: boolean }
+  activeValidation?: ActiveValidation
+  showGridLines: boolean
+  showHeadings: boolean
+  /** Formula cells show their formulas (this viewer only; not saved). */
+  showFormulas: boolean
 }
 
 const FONT_FALLBACKS: Record<string, string> = {
@@ -234,6 +342,8 @@ export class SheetView {
   /** A reference being inserted by pointing while editing a formula. */
   pointing: { start: number; end: number; anchor: { row: number; col: number }; corner: { row: number; col: number } } | undefined
   private readOnlyValue = false
+  /** Formula cells show their formulas (this viewer only). */
+  showFormulas = false
   /** Invalidates chart output when cells or calculated values change. */
   valuesRevision = 0
   private themeXml: string | undefined
@@ -466,7 +576,7 @@ export class SheetView {
     this.populatedColumns = undefined
     this.conditional = new ConditionalFormatter(this.sheet, this.values, this.stylesheet, this.theme)
     this.display = new CellDisplay(this.sheet, this.stylesheet, this.values, this.theme, this.conditional, this.workbook.date1904)
-    this.zoom = (this.sheet.viewProp('zoom') ?? 100) / 100
+    this.zoom = this.sheetZoom()
     const used = this.sheet.usedRange()
     this.rowCount = Math.min(MAX_ROWS, Math.max(1000, (used?.bottom ?? 0) + 100))
     this.colCount = Math.min(MAX_COLS, Math.max(26, (used?.right ?? 0) + 10))
@@ -581,7 +691,6 @@ export class SheetView {
         const target = event.target as unknown
         if (target === this.sheet.rowMeta || target === this.sheet.colMeta || target === this.sheet.rows.order || target === this.sheet.cols.order || target === this.sheet.view || target === this.sheet.raw || target === sheetMap) layout = true
         if (target === this.sheet.xf || target === this.sheet.fmt || target === this.sheet.rowMeta || target === this.sheet.colMeta || target === this.sheet.rows.order || target === this.sheet.cols.order) styles = true
-        if (target === this.sheet.view) this.zoom = (this.sheet.viewProp('zoom') ?? 100) / 100
         // Font size changes resize rows that fit their content.
         if (target === this.sheet.fmt && [...(event as Y.YMapEvent<unknown>).keysChanged].some((changed) => changed.endsWith('|fontSize'))) layout = true
       }
@@ -688,7 +797,8 @@ export class SheetView {
       palette,
       showGridLines: sheet.viewProp('showGridLines') !== false,
       showHeadings: sheet.viewProp('showHeadings') !== false,
-      cell: (row, col) => this.display.render(row, col),
+      cell: this.showFormulas ? (row, col) => this.formulaRender(row, col) : (row, col) => this.display.render(row, col),
+      hiddenMarks: this.hiddenMarks(),
       populatedColumns: (row) => {
         if (!this.populatedColumns) {
           this.populatedColumns = new Map()
@@ -718,6 +828,50 @@ export class SheetView {
       widthScale: this.widthScale,
       fillHandle: !this.readOnly && !this.editing && this.selection.ranges.length === 1,
     }
+  }
+
+  /** Show formulas: formula cells draw their formula text, left-aligned, as Excel and Google do. */
+  private formulaRender(row: number, col: number): CellRender {
+    const render = this.display.render(row, col)
+    const data = this.sheet.cell(row, col)
+    if (data?.f === undefined) return render
+    const { repeat: _repeat, runs: _runs, ...rest } = render
+    return { ...rest, text: this.inputText(row, col), numeric: false, hAlign: 'left' }
+  }
+
+  /**
+   * Where hidden rows and columns sit in the visible panes, by the visible line right after each
+   * hidden run; headers draw markers there and clicking one unhides the run. Rows a filter hides
+   * get none (the filter menu shows them again).
+   */
+  hiddenMarks(): { rows: number[]; cols: number[] } {
+    const sheet = this.sheet
+    if (sheet.viewProp('showHeadings') === false) return { rows: [], cols: [] }
+    const panes = GridRenderer.panes({ ...this.sceneGeometry(), width: this.width, height: this.height } as Scene)
+    const filter = sheet.filter.get('value') as AutoFilter | undefined
+    const filtered = new Set(filter?.hiddenRows)
+    const rows = new Set<number>()
+    const cols = new Set<number>()
+    for (const pane of panes) {
+      for (let col = Math.max(1, pane.cols[0]); col <= pane.cols[1]; col++) {
+        if (!this.colLayout.isHidden(col) && this.colLayout.isHidden(col - 1)) cols.add(col)
+      }
+      for (let row = Math.max(1, pane.rows[0]); row <= pane.rows[1]; row++) {
+        if (this.rowLayout.isHidden(row) || !this.rowLayout.isHidden(row - 1)) continue
+        if (sheet.rowProp(row - 1, 'manualHidden') || !filtered.has(sheet.rows.idAt(row - 1))) rows.add(row)
+      }
+    }
+    return { rows: [...rows].sort((a, b) => a - b), cols: [...cols].sort((a, b) => a - b) }
+  }
+
+  /** Unhides the run of hidden rows or columns just before visible line `index` (a marker click). */
+  unhideBefore(kind: 'row' | 'col', index: number): void {
+    const layout = kind === 'row' ? this.rowLayout : this.colLayout
+    if (index <= 0 || !layout.isHidden(index - 1)) return
+    let start = index - 1
+    while (start > 0 && layout.isHidden(start - 1)) start--
+    const positions = Array.from({ length: index - start }, (_, offset) => start + offset)
+    this.run(() => commands.setHidden(this.sheet, kind, positions, false))
   }
 
   // ── Collaboration ────────────────────────────────────────────────────────
@@ -778,6 +932,7 @@ export class SheetView {
     const key = sheet.keyAt(active.row, active.col)
     const note = sheet.notes.get(key) as Note | undefined
     const link = sheet.linkAt(active.row, active.col)
+    const validation = this.activeValidation()
     return {
       sheetId: this.sheetIdValue,
       sheets: this.workbook.sheets().map((entry) => {
@@ -799,6 +954,27 @@ export class SheetView {
       valuesOnly: this.valuesOnly,
       hasFilter: sheet.filter.has('value'),
       summary: this.summary(),
+      selectionShape: commands.isWholeColumns(last) && commands.isWholeRows(last) ? 'all' : commands.isWholeColumns(last) ? 'columns' : commands.isWholeRows(last) ? 'rows' : 'cells',
+      ...(this.interactions.formatPainter ? { formatPainter: this.interactions.formatPainter } : {}),
+      ...(validation ? { activeValidation: validation } : {}),
+      showGridLines: sheet.viewProp('showGridLines') !== false,
+      showHeadings: sheet.viewProp('showHeadings') !== false,
+      showFormulas: this.showFormulas,
+    }
+  }
+
+  private activeValidation(): ActiveValidation | undefined {
+    const sheet = this.sheet
+    const entry = commands.validationEntryAt(sheet, this.selection.active.row, this.selection.active.col)
+    if (!entry) return undefined
+    const { ranges: ids, fileOrder: _order, ...rule } = entry.value
+    const a1 = (formula: string | undefined) => formula === undefined ? undefined : toA1Form(formula, sheet, this.workbook, { followDeletedRelative: true })
+    const formula1 = a1(rule.formula1)
+    const formula2 = a1(rule.formula2)
+    return {
+      id: entry.id,
+      rule: { ...rule, ...(formula1 !== undefined ? { formula1 } : {}), ...(formula2 !== undefined ? { formula2 } : {}) },
+      ranges: ids.map((range) => sheet.resolveRange(range)).filter((range): range is CellRange => !!range),
     }
   }
 
@@ -868,6 +1044,7 @@ export class SheetView {
   }
 
   private readonly viewStates = new Map<string, { selection: Selection; scrollLeft: number; scrollTop: number }>()
+  private readonly zooms = new Map<string, number>()
 
   private saveViewState(): void {
     this.viewStates.set(this.sheetIdValue, { selection: this.selection, scrollLeft: this.scroller.scrollLeft, scrollTop: this.scroller.scrollTop })
@@ -1115,8 +1292,13 @@ export class SheetView {
     this.notify()
   }
 
-  /** Commits the edit; returns false when validation rejected it (the edit stays open). */
-  commitEdit(options: { fill?: boolean } = {}): boolean {
+  /**
+   * Commits the edit; returns false when validation rejected it (the edit stays open). With `ask`
+   * (keyboard commits), a value breaking a warning or information rule is first offered to the
+   * host as a 'validation' request; while it is answered the edit stays open, and accepting it
+   * commits and then runs `then` (the Enter or Tab move).
+   */
+  commitEdit(options: { fill?: boolean; ask?: boolean; then?: () => void } = {}): boolean {
     if (this.readOnly) {
       this.cancelEdit()
       return true
@@ -1137,7 +1319,9 @@ export class SheetView {
       this.interactions.showMessage(this.labels.dataErrors.size, row, col)
       return false
     }
-    if (!this.validateEdit(options.fill ? fillRanges : [{ top: row, bottom: row, left: col, right: col }], edit, !!options.fill)) return false
+    const targets = options.fill ? fillRanges : [{ top: row, bottom: row, left: col, right: col }]
+    if (!this.validateEdit(targets, edit, !!options.fill)) return false
+    if (options.ask && (options.fill || edit.text !== this.inputText(row, col)) && this.askValidation(targets, edit, options)) return false
     const writes = options.fill ? fillRanges : edit.text !== this.inputText(row, col) ? [{ top: row, bottom: row, left: col, right: col }] : []
     if (!this.canWriteArrays(sheet, writes)) return false
     this.editing = undefined
@@ -1171,12 +1355,57 @@ export class SheetView {
 
   /** Visit only rule-covered destinations, before any document transaction or undo entry. */
   private validateEdit(ranges: CellRange[], edit: EditState, fill: boolean): boolean {
+    const failure = this.validationFailure(ranges, edit, fill, false)
+    if (!failure) return true
+    this.ensureExtent(failure.row, failure.col)
+    this.scrollIntoView(failure.row, failure.col)
+    this.scheduleRender()
+    this.interactions.showMessage(failure.validation.error || this.labels.invalidValue, failure.row, failure.col)
+    return false
+  }
+
+  /** Offers a value breaking a warning or information rule to the host; true while it is asked. */
+  private askValidation(ranges: CellRange[], edit: EditState, options: { fill?: boolean; then?: () => void }): boolean {
+    const failure = this.validationFailure(ranges, edit, !!options.fill, true)
+    if (!failure) return false
+    const { validation } = failure
+    let answered = false
+    const respond = (answer: 'accept' | 'retry' | 'cancel') => {
+      const current = this.editing
+      // A stale answer (the draft changed or closed meanwhile) does nothing.
+      if (answered || this.destroyed || !current || current.text !== edit.text || current.sheetId !== edit.sheetId || current.rowId !== edit.rowId || current.colId !== edit.colId) return
+      answered = true
+      if (answer === 'accept') {
+        if (this.commitEdit({ fill: !!options.fill })) options.then?.()
+      } else if (answer === 'cancel') this.cancelEdit()
+      this.focus()
+    }
+    this.ensureExtent(failure.row, failure.col)
+    this.scrollIntoView(failure.row, failure.col)
+    this.scheduleRender()
+    return this.request({
+      request: 'validation',
+      style: validation.errorStyle === 'information' ? 'information' : 'warning',
+      ...(validation.errorTitle ? { title: validation.errorTitle } : {}),
+      message: validation.error || this.labels.invalidValue,
+      row: failure.row,
+      col: failure.col,
+      respond,
+    })
+  }
+
+  /**
+   * The first destination (in worksheet order) whose rule rejects the edit: stop rules, or with
+   * `warnings` the warning and information ones (which only ask).
+   */
+  private validationFailure(ranges: CellRange[], edit: EditState, fill: boolean, warnings: boolean): { row: number; col: number; validation: DataValidation } | undefined {
+    const blocks = (validation: DataValidation) => validation.showErrorMessage !== false && (validation.errorStyle === 'warning' || validation.errorStyle === 'information') === warnings
     const covered: CellRange[] = []
     let remaining = ranges
     for (const raw of this.sheet.dv.values()) {
       const validation = raw as DataValidation
       const ruleRanges = validation.ranges.map((ids) => this.sheet.resolveRange(ids)).filter((range): range is CellRange => !!range)
-      if (validation.showErrorMessage !== false && validation.errorStyle !== 'warning' && validation.errorStyle !== 'information' && (edit.text !== '' || validation.allowBlank === false)) {
+      if (blocks(validation) && (edit.text !== '' || validation.allowBlank === false)) {
         for (const rule of ruleRanges) {
           for (const range of remaining) covered.push({ top: Math.max(range.top, rule.top), bottom: Math.min(range.bottom, rule.bottom), left: Math.max(range.left, rule.left), right: Math.min(range.right, rule.right) })
         }
@@ -1192,7 +1421,7 @@ export class SheetView {
         for (let col = range.left; col <= range.right; col++) {
           if (failure && (row > failure.row || (row === failure.row && col >= failure.col))) break cells
           const validation = commands.validationAt(this.sheet, row, col)
-          if (!validation || validation.showErrorMessage === false || validation.errorStyle === 'warning' || validation.errorStyle === 'information') continue
+          if (!validation || !blocks(validation)) continue
           const text = fill ? commands.fillInputText(edit.text, edit, row, col, { valuesOnly: this.valuesOnly }) : edit.text
           if (!this.passesValidation(validation, text, row, col)) {
             failure = { row, col, validation }
@@ -1201,12 +1430,7 @@ export class SheetView {
         }
       }
     }
-    if (!failure) return true
-    this.ensureExtent(failure.row, failure.col)
-    this.scrollIntoView(failure.row, failure.col)
-    this.scheduleRender()
-    this.interactions.showMessage(failure.validation.error || this.labels.invalidValue, failure.row, failure.col)
-    return false
+    return failure
   }
 
   private passesValidation(validation: DataValidation, text: string, row: number, col: number): boolean {
@@ -1475,6 +1699,10 @@ export class SheetView {
     this.run(() => commands.setFrozen(this.sheet, target.rows, target.cols))
   }
 
+  /**
+   * Zoom is each viewer's own, like Google Sheets and Excel for the web: it is never written to
+   * the shared document or the undo stack, and the file keeps the zoom it was saved with.
+   */
   setZoom(zoom: number): void {
     const next = Math.min(4, Math.max(0.1, Math.round(zoom * 100) / 100))
     if (next === this.zoom) return
@@ -1483,12 +1711,22 @@ export class SheetView {
     const left = this.scroller.scrollLeft * ratio
     const top = this.scroller.scrollTop * ratio
     this.zoom = next
+    this.zooms.set(this.sheetIdValue, next)
     this.updateSpacer()
     this.scroller.scrollLeft = left
     this.scroller.scrollTop = top
-    if (!this.readOnly) this.sheet.setViewProp('zoom', Math.round(next * 100) === 100 ? undefined : Math.round(next * 100))
     this.scheduleRender()
     this.notify()
+  }
+
+  /** The viewer's zoom of the current sheet; the file's stored zoom only seeds its first visit. */
+  private sheetZoom(): number {
+    let zoom = this.zooms.get(this.sheetIdValue)
+    if (zoom === undefined) {
+      zoom = (this.sheet.viewProp('zoom') ?? 100) / 100
+      this.zooms.set(this.sheetIdValue, zoom)
+    }
+    return zoom
   }
 
   sort(descending: boolean, column = this.selection.active.col, options: { header?: boolean; caseSensitive?: boolean } = {}): void {
@@ -1555,6 +1793,188 @@ export class SheetView {
         if (link?.display && !this.sheet.cell(row, col)) this.sheet.setCell(row, col, { v: link.display })
       }),
     )
+  }
+
+  /** The number format a format shortcut applies (QUICK_FORMATS unless the host set its own). */
+  quickFormat(kind: QuickFormat): string {
+    return this.options.quickFormats?.[kind] ?? QUICK_FORMATS[kind]
+  }
+
+  applyQuickFormat(kind: QuickFormat): void {
+    if (this.valuesOnly) return
+    this.setNumberFormat(this.quickFormat(kind))
+  }
+
+  /**
+   * Gridlines and headings belong to the sheet: saved in the file (`showGridLines`,
+   * `showRowColHeaders`), shared, and undoable like freezing panes.
+   */
+  setViewOption(prop: 'showGridLines' | 'showHeadings', on: boolean): void {
+    if (this.valuesOnly) return
+    this.run(() => this.sheet.setViewProp(prop, on ? undefined : false))
+  }
+
+  /** Show formulas is this viewer's own and never saved, as in Google Sheets. */
+  setShowFormulas(on: boolean): void {
+    if (this.showFormulas === on) return
+    this.showFormulas = on
+    this.scheduleRender()
+    this.notify()
+  }
+
+  /** Paint format: the selection's formats go to the next selection made (sticky: until Escape). */
+  startFormatPainter(sticky = false): boolean {
+    return this.interactions.startFormatPainter(sticky)
+  }
+
+  cancelFormatPainter(): void {
+    this.interactions.cancelFormatPainter()
+  }
+
+  /**
+   * AutoSum (Alt+=, Cmd+Shift+T on Mac). On one cell it starts `=SUM(…)` over the numbers right
+   * above it (else to its left), with the reference pointed so Shift+arrows adjust it and Enter
+   * commits. On a range it writes a total below each column with numbers (or right of a single
+   * row) in one undo step. `fn` is any function name (AVERAGE, COUNT, MAX, MIN, …).
+   */
+  autoSum(fn = 'SUM'): boolean {
+    const name = fn.toUpperCase()
+    if (this.readOnly || this.valuesOnly || this.editing || !/^[A-Z][A-Z0-9.]*$/.test(name)) return false
+    const sheet = this.sheet
+    const ranges = this.selection.ranges
+    const last = ranges[ranges.length - 1]!
+    const { active } = this.selection
+    const merge = sheet.mergedRanges().find((entry) => rangeContains(entry.range, active.row, active.col))?.range
+    const cell = merge ?? { top: active.row, left: active.col, bottom: active.row, right: active.col }
+    if (ranges.length === 1 && last.top === cell.top && last.left === cell.left && last.bottom === cell.bottom && last.right === cell.right) {
+      const source = commands.autoSumSource((row, col) => this.valueAt(row, col), cell.top, cell.left)
+      const reference = source ? rangeName(source) : ''
+      const prefix = `=${name}(`
+      if (!this.beginEdit(`${prefix}${reference})`, true)) return false
+      const caret = prefix.length + reference.length
+      this.editing = { ...this.editing!, caret }
+      this.input.setSelectionRange(caret, caret)
+      if (source) this.pointing = { start: prefix.length, end: caret, anchor: { row: source.top, col: source.left }, corner: { row: source.bottom, col: source.right } }
+      this.scheduleRender()
+      this.notify()
+      return true
+    }
+    if (ranges.length !== 1) {
+      this.interactions.showMessage(this.labels.multipleSelections, active.row, active.col)
+      return false
+    }
+    const area = commands.clampToUsed(sheet, last)
+    if (!commands.canExpandRanges([area])) {
+      this.interactions.showMessage(this.labels.dataErrors.size, active.row, active.col)
+      return false
+    }
+    const totals = commands.autoSumTotals((row, col) => this.valueAt(row, col), area, sheet.usedRange())
+    if (!totals.length) return false
+    const merges = sheet.mergedRanges().map((entry) => entry.range)
+    if (totals.some(({ row, col }) => merges.some((range) => rangeContains(range, row, col) && (range.top !== row || range.left !== col)))) {
+      this.interactions.showMessage(this.labels.dataErrors.merges, active.row, active.col)
+      return false
+    }
+    let written = false
+    this.run(() => {
+      commands.setCellInputs(sheet, totals.map(({ row, col, source }) => ({ row, col, text: `=${name}(${rangeName(source)})`, options: { date1904: this.workbook.date1904, currentFormat: this.display.style(row, col).numFmt } })))
+      written = true
+    })
+    if (written) this.select({ top: area.top, left: area.left, bottom: Math.max(area.bottom, maxOf(totals.map((total) => total.row))), right: Math.max(area.right, maxOf(totals.map((total) => total.col))) }, { active, scroll: false })
+    return written
+  }
+
+  /**
+   * Sets data validation. With `ruleId` (from `getState().activeValidation`) that rule is edited
+   * in place and keeps its ranges, as Google's rule panel does; otherwise the rule applies to the
+   * selection, replacing rules there (Excel's dialog). Formulas are A1 text for the top-left cell
+   * of the first selected range (or of the rule). `undefined` removes validation.
+   */
+  setValidation(rule: ValidationRule | undefined, options: { ruleId?: string } = {}): boolean {
+    if (this.readOnly || this.valuesOnly) return false
+    const sheet = this.sheet
+    const { ruleId } = options
+    if (ruleId !== undefined && !sheet.dv.has(ruleId)) return false
+    let applied = false
+    this.run(() => {
+      const stored = rule && this.storedValidation(rule)
+      if (ruleId !== undefined) commands.updateValidation(sheet, ruleId, stored)
+      else commands.setValidation(sheet, this.targetRanges, stored)
+      applied = true
+    })
+    return applied
+  }
+
+  private storedValidation(rule: ValidationRule): Omit<DataValidation, 'ranges'> {
+    const stored = (formula: string | undefined) => formula === undefined || formula.trim() === '' ? undefined : metadataFormula(formula.trim().replace(/^=/, ''), this.sheet)
+    const { formula1: _formula1, formula2: _formula2, ...rest } = rule
+    const formula1 = stored(rule.formula1)
+    const formula2 = stored(rule.formula2)
+    return { ...rest, ...(formula1 !== undefined ? { formula1 } : {}), ...(formula2 !== undefined ? { formula2 } : {}) }
+  }
+
+  /**
+   * Adds a conditional format rule to the selection, above the sheet's other rules. Formulas are
+   * A1 text for the top-left cell of the first selected range; `style` picks one of the preset
+   * highlight styles (see CONDITIONAL_STYLES). Text rules get Excel's formula when given none.
+   */
+  addConditionalRule(input: ConditionalRuleInput): boolean {
+    if (this.readOnly || this.valuesOnly || !this.commitEdit()) return false
+    const sheet = this.sheet
+    const ranges = this.targetRanges
+    const dxfId = input.style !== undefined ? this.presetDxfs()[input.style] : input.dxfId
+    let added = false
+    this.run(() => {
+      commands.addConditionalRule(sheet, ranges, this.storedRule(input, ranges[0]!, dxfId))
+      added = true
+    })
+    return added
+  }
+
+  /** Removes conditional formats from the selection (splitting rules that reach beyond it) or the whole sheet. */
+  clearConditionalFormats(scope: 'selection' | 'sheet' = 'selection'): void {
+    if (this.valuesOnly) return
+    const sheet = this.sheet
+    if (scope === 'sheet') this.run(() => this.workbook.transact(() => { for (const id of [...sheet.cf.keys()]) sheet.cf.delete(id) }))
+    else this.run(() => commands.setConditionalFormat(sheet, this.targetRanges, undefined))
+  }
+
+  private storedRule(input: ConditionalRuleInput, anchor: CellRange, dxfId: number | undefined): ConditionalRule {
+    const { style: _style, dxfId: _dxfId, formulas, colorScale, dataBar, iconSet, ...rest } = input
+    const stored = (formula: string) => metadataFormula(formula.trim().replace(/^=/, ''), this.sheet)
+    const values = (entries: CfValue[]) => entries.map((entry) => entry.type === 'formula' && entry.value !== undefined ? { ...entry, value: stored(entry.value) } : entry)
+    const texts = formulas ?? textRuleFormula(input, cellName(anchor.top, anchor.left))
+    return {
+      ...rest,
+      priority: 1,
+      ...(dxfId !== undefined ? { dxfId } : {}),
+      ...(texts?.length ? { formulas: texts.map(stored) } : {}),
+      ...(colorScale ? { colorScale: { ...colorScale, values: values(colorScale.values) } } : {}),
+      ...(dataBar ? { dataBar: { ...dataBar, values: values(dataBar.values) } } : {}),
+      ...(iconSet ? { iconSet: { ...iconSet, values: values(iconSet.values) } } : {}),
+    }
+  }
+
+  /**
+   * The preset highlight styles' dxf indexes. They are added to the stylesheet as one canonical
+   * block outside the undo history: other users' rules may point at them by then, and every
+   * client writes the identical stylesheet, so concurrent writers converge.
+   */
+  private presetDxfs(): Record<ConditionalStyle, number> {
+    const styles = new Stylesheet(this.workbook.metaValue('stylesXml'))
+    const ids = styles.ensurePresetDxfs()
+    if (styles.changed) {
+      const xml = styles.toXml()
+      this.options.doc.transact(() => this.workbook.setMeta('stylesXml', xml), PRESET_STYLES_ORIGIN)
+    }
+    return ids
+  }
+
+  // ── Requests to the host ─────────────────────────────────────────────────
+
+  /** Dispatches a `sheetrequest` (see SheetRequest); true when the host claimed it. */
+  request(detail: SheetRequest): boolean {
+    return !this.root.dispatchEvent(new CustomEvent<SheetRequest>('sheetrequest', { bubbles: true, cancelable: true, detail }))
   }
 
   undo(): void {

@@ -16,7 +16,7 @@ import { randomId } from '../model/axis.js'
 import { columnIntervalProps, columnIntervals } from '../model/column-intervals.js'
 import { toA1Form, toIdForm } from '../model/formula-ids.js'
 import { formatA1Reference, rewriteReferences, shiftFormula } from '../model/references.js'
-import type { AutoFilter, BorderEdge, BorderStyle, CellData, ConditionalFormat, DataValidation, Hyperlink, Note, SheetTable, SheetColor, StyleProp, StyleProps } from '../model/schema.js'
+import type { AutoFilter, BorderEdge, BorderStyle, CellData, ConditionalFormat, ConditionalRule, DataValidation, Hyperlink, Note, SheetTable, SheetColor, StyleProp, StyleProps } from '../model/schema.js'
 import { deleteAxis, insertAxis, type AxisKind } from '../model/structure.js'
 import { splitCellKey, type SheetModel } from '../model/workbook.js'
 import { sortPositions } from './sort-positions.js'
@@ -489,6 +489,14 @@ function checkAxisPositions(kind: AxisKind, positions: number[]): void {
 export function setHidden(sheet: SheetModel, kind: AxisKind, positions: number[], hidden: boolean): void {
   checkAxisPositions(kind, positions)
   sheet.workbook.transact(() => {
+    if (!hidden) {
+      // Lines dragged to zero size come back at the default size, as in Excel.
+      const collapsed = positions.filter((p) => ((kind === 'row' ? sheet.rowProp(p, 'size') : sheet.colProp(p, 'size')) ?? 1) <= 0)
+      for (const prop of ['size', 'custom'] as const) {
+        if (kind === 'row') sheet.setRowProp(collapsed, prop, undefined)
+        else sheet.setColProp(collapsed, prop, undefined)
+      }
+    }
     if (kind === 'col') { sheet.setColProp(positions, 'hidden', hidden || undefined); return }
     const filter = sheet.filter.get('value') as AutoFilter | undefined
     const filteredRows = new Set(filter?.hiddenRows)
@@ -933,11 +941,99 @@ export function setConditionalFormat(sheet: SheetModel, ranges: CellRange[], for
 
 /** The validation rule covering a cell, if any. */
 export function validationAt(sheet: SheetModel, row: number, col: number): DataValidation | undefined {
+  return validationEntryAt(sheet, row, col)?.value
+}
+
+/** The validation covering a cell with its key in `sheet.dv`, for editing it in place. */
+export function validationEntryAt(sheet: SheetModel, row: number, col: number): { id: string; value: DataValidation } | undefined {
   const lookup = cachedSheetRead(sheet.workbook.doc, sheet.map, 'validations', () => new RangeLookup(
-    [...sheet.dv.values()] as DataValidation[],
-    (value) => value.ranges.flatMap((ids) => { const range = sheet.resolveRange(ids); return range ? [range] : [] }),
+    [...sheet.dv.entries()].map(([id, value]) => ({ id, value: value as DataValidation })),
+    (entry) => entry.value.ranges.flatMap((ids) => { const range = sheet.resolveRange(ids); return range ? [range] : [] }),
   ))
   return lookup.first(row, col)
+}
+
+/** Replaces one validation's settings in place: its ranges (and file position) stay as they are. */
+export function updateValidation(sheet: SheetModel, id: string, validation: Omit<DataValidation, 'ranges'> | undefined): void {
+  const existing = sheet.dv.get(id) as DataValidation | undefined
+  if (!existing) return
+  sheet.workbook.transact(() => {
+    if (!validation) sheet.dv.delete(id)
+    else sheet.dv.set(id, { ...validation, ranges: existing.ranges, ...(existing.fileOrder !== undefined ? { fileOrder: existing.fileOrder } : {}) })
+  })
+}
+
+/** A list validation's literal `"a,b,c"` formula; undefined when an item can't be written in one (commas). */
+export function listValidationFormula(items: string[]): string | undefined {
+  const cleaned = items.map((item) => item.trim()).filter(Boolean)
+  if (!cleaned.length || cleaned.some((item) => item.includes(','))) return undefined
+  return `"${cleaned.join(',').replace(/"/g, '""')}"`
+}
+
+/**
+ * Adds a conditional format rule over ranges with the highest priority, as Excel adds new rules
+ * at the top: every other rule on the sheet moves down one, keeping priorities unique.
+ */
+export function addConditionalRule(sheet: SheetModel, ranges: CellRange[], rule: ConditionalRule): void {
+  sheet.workbook.transact(() => {
+    for (const [id, raw] of [...sheet.cf]) {
+      const format = raw as ConditionalFormat
+      if (format.rules.some((existing) => existing.priority >= rule.priority)) sheet.cf.set(id, { ...format, rules: format.rules.map((existing) => existing.priority >= rule.priority ? { ...existing, priority: existing.priority + 1 } : existing) })
+    }
+    setConditionalFormat(sheet, ranges, { rules: [rule] }, 'add')
+  })
+}
+
+/** The contiguous numbers directly above a cell, else left of it, for AutoSum to total. */
+export function autoSumSource(value: (row: number, col: number) => CellValue, row: number, col: number): CellRange | undefined {
+  const numeric = (r: number, c: number) => typeof value(r, c) === 'number'
+  if (row > 0 && numeric(row - 1, col)) {
+    let top = row - 1
+    while (top > 0 && numeric(top - 1, col)) top--
+    return { top, bottom: row - 1, left: col, right: col }
+  }
+  if (col > 0 && numeric(row, col - 1)) {
+    let left = col - 1
+    while (left > 0 && numeric(row, left - 1)) left--
+    return { top: row, bottom: row, left, right: col - 1 }
+  }
+  return undefined
+}
+
+/**
+ * Where AutoSum puts totals for a selected range: below each column that has numbers (in the
+ * selection's own last row when that row is empty), or right of a single selected row.
+ */
+export function autoSumTotals(value: (row: number, col: number) => CellValue, range: CellRange, used: CellRange | undefined): { row: number; col: number; source: CellRange }[] {
+  const blank = (r: number, c: number) => { const v = value(r, c); return v === null || v === '' }
+  const hasNumber = (source: CellRange) => {
+    for (let r = source.top; r <= source.bottom; r++) for (let c = source.left; c <= source.right; c++) if (typeof value(r, c) === 'number') return true
+    return false
+  }
+  // Past the used area every cell is empty, so scans stop there.
+  const lastRow = Math.min(MAX_ROWS - 1, Math.max(range.bottom, used?.bottom ?? 0) + 1)
+  const lastCol = Math.min(MAX_COLS - 1, Math.max(range.right, used?.right ?? 0) + 1)
+  if (range.top === range.bottom && range.right > range.left) {
+    if (!hasNumber(range)) return []
+    let col = range.right + 1
+    while (col < lastCol && !blank(range.top, col)) col++
+    return col < MAX_COLS && blank(range.top, col) ? [{ row: range.top, col, source: range }] : []
+  }
+  const columns = span(range.left, range.right)
+  let row: number
+  let bottom = range.bottom
+  if (range.bottom > range.top && columns.every((c) => blank(range.bottom, c))) {
+    row = range.bottom
+    bottom = range.bottom - 1
+  } else {
+    row = range.bottom + 1
+    while (row < lastRow && !columns.every((c) => blank(row, c))) row++
+    if (row >= MAX_ROWS || !columns.every((c) => blank(row, c))) return []
+  }
+  return columns.flatMap((col) => {
+    const source = { top: range.top, bottom, left: col, right: col }
+    return hasNumber(source) ? [{ row, col, source }] : []
+  })
 }
 
 /** The choices of a list validation written as a literal (`"a,b,c"`), or undefined for references. */

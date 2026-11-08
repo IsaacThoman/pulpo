@@ -190,7 +190,8 @@ export function SheetEditor({ doc, awareness, readOnly, fileFormat, assets, user
   }
 
   const editable = !!state && !state.readOnly
-  const area = menu?.area
+  // Whole columns or rows selected get only their own commands, wherever the menu opened.
+  const area = state?.selectionShape === 'columns' ? 'colHeader' : state?.selectionShape === 'rows' ? 'rowHeader' : menu?.area
   return (
     <div className="pulpo-sheet-editor flex h-full min-h-0 w-full flex-col bg-background text-foreground" data-testid="sheet-editor">
       {view && state && (
