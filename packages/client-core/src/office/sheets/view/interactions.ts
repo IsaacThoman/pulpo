@@ -83,6 +83,8 @@ export class SheetInteractions {
   private readonly disposers: (() => void)[] = []
   private composing = false
   private popup: HTMLDivElement | undefined
+  /** Where the grid was scrolled when the popup opened (it is placed for that position). */
+  private popupScroll: { left: number; top: number } | undefined
   private completionList: { element: HTMLDivElement; items: FunctionDoc[]; index: number; start: number; touched: boolean } | undefined
   private hint: HTMLDivElement | undefined
   private message: HTMLDivElement | undefined
@@ -1410,7 +1412,10 @@ export class SheetInteractions {
   }
 
   onScroll(): void {
-    this.closePopup()
+    // Scroll events come a frame late: one for a scroll made before a popup opened (Go to, then
+    // Alt+Down) leaves it open, as it was placed for where the grid is now.
+    const { scrollLeft, scrollTop } = this.view.scroller
+    if (scrollLeft !== this.popupScroll?.left || scrollTop !== this.popupScroll.top) this.closePopup()
     this.hideNote()
     if (this.view.editing) this.positionEditor()
     else this.positionIdleInput()
@@ -1571,6 +1576,7 @@ export class SheetInteractions {
   private closePopup(): void {
     this.popup?.remove()
     this.popup = undefined
+    this.popupScroll = undefined
     if (this.list) {
       this.view.input.removeAttribute('aria-activedescendant')
       this.view.input.removeAttribute('aria-controls')
@@ -1644,7 +1650,10 @@ export class SheetInteractions {
       option.setAttribute('aria-selected', String(current))
       option.style.background = current ? 'rgba(26,115,232,0.12)' : ''
       if (current) {
-        option.scrollIntoView?.({ block: 'nearest' })
+        // Scrolls the list only: scrollIntoView would also scroll the grid's clipped root, shifting the whole grid.
+        const popup = this.popup
+        if (popup && option.offsetTop < popup.scrollTop) popup.scrollTop = option.offsetTop
+        else if (popup && option.offsetTop + option.offsetHeight > popup.scrollTop + popup.clientHeight) popup.scrollTop = option.offsetTop + option.offsetHeight - popup.clientHeight
         this.view.input.setAttribute('aria-activedescendant', option.id)
       }
     })
@@ -1732,6 +1741,7 @@ export class SheetInteractions {
     })
     this.view.root.appendChild(popup)
     this.popup = popup
+    this.popupScroll = { left: this.view.scroller.scrollLeft, top: this.view.scroller.scrollTop }
     return popup
   }
 
@@ -1779,6 +1789,9 @@ export class SheetInteractions {
       popup.appendChild(option)
       return option
     })
+    // Under a cell at the right edge, the list ends at the grid's edge rather than past it.
+    const overflow = popup.offsetLeft + popup.offsetWidth - view.root.clientWidth
+    if (overflow > 0) popup.style.left = `${Math.max(0, popup.offsetLeft - overflow)}px`
     // Arrows, Enter and Escape work on the list while the grid keeps the focus.
     this.list = { row, col, items, options, index: Math.max(0, items.indexOf(current)) }
     view.input.setAttribute('aria-controls', popup.id)

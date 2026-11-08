@@ -865,6 +865,20 @@ describe('data validation', () => {
     expect(view.getState().selectionLabel).toBe('D5')
   })
 
+  it('keeps the list open for the late scroll event of a move made before it opened', () => {
+    const { view } = setup()
+    view.setValidation({ type: 'list', formula1: '"one,two,three"' })
+    // Go to a cell off to the right: the grid scrolls now, its scroll event comes on the next frame.
+    view.scroller.scrollLeft = 300
+    key(view, 'ArrowDown', { altKey: true })
+    view.scroller.dispatchEvent(new Event('scroll'))
+    expect(view.root.querySelector('.pulpo-sheet-popup')).not.toBeNull()
+    // Scrolling the grid under the open list closes it.
+    view.scroller.scrollLeft = 200
+    view.scroller.dispatchEvent(new Event('scroll'))
+    expect(view.root.querySelector('.pulpo-sheet-popup')).toBeNull()
+  })
+
   it('builds literal list formulas', () => {
     expect(commands.listValidationFormula([' a ', 'b"c', ''])).toBe('"a,b""c"')
     expect(commands.listValidationFormula(['a,b'])).toBeUndefined()
