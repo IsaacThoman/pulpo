@@ -182,12 +182,13 @@ export class SlideCanvas {
     // Moving to another shape or table cell restarts the editor on that text.
     const target = editing ? `${editing.slide}\u0000${editing.shape}\u0000${editing.row ?? ''}\u0000${editing.column ?? ''}` : undefined
     if (this.editor && (!editing || editing.slide !== slide || target !== this.editorTarget)) this.stopEditing()
+    // Draw first: a cell's editor is placed over the rendered cell, which may be in a row just added.
+    if (change.parts || change.assets || change.order || change.selection || (slide && change.slides.has(slide))) this.render()
+    else if (change.presence) this.drawOverlay()
     if (editing && !this.editor && !this.controller.readOnly) {
       this.editorTarget = target
       this.startEditing(editing.shape, editing.row, editing.column)
     }
-    if (change.parts || change.assets || change.order || change.selection || (slide && change.slides.has(slide))) this.render()
-    else if (change.presence) this.drawOverlay()
     if (this.editor && this.controller.state.editing && slide && (change.slides.has(slide) || change.parts)) this.refreshEditorFrame()
   }
 
@@ -627,6 +628,13 @@ export class SlideCanvas {
     const cells = table.rows.flatMap((row) => table.columns.filter((column) => row.cells[column.key] && !row.cells[column.key]!.hMerge && !row.cells[column.key]!.vMerge).map((column) => ({ row: row.key, column: column.key })))
     const index = cells.findIndex((cell) => cell.row === rowKey && cell.column === columnKey)
     const next = cells[index + (backward ? -1 : 1)]
+    if (index >= 0 && !next && !backward) {
+      // Tab in the last cell adds a row, as in PowerPoint and Google Slides.
+      const row = this.controller.insertTableRow('below')
+      const first = row ? this.controller.shape(slide, shapeKey)?.table?.columns[0]?.key : undefined
+      if (row && first) this.controller.setState({ editing: { slide, shape: shapeKey, row, column: first } })
+      return true
+    }
     if (index < 0 || !next) return true
     this.controller.setState({ editing: { slide, shape: shapeKey, row: next.row, column: next.column } })
     return true
@@ -643,20 +651,31 @@ export class SlideCanvas {
     return { context: layout.context, body: layout.body, env: layout.env }
   }
 
-  private cellStyle(frame: HTMLElement, shapeKey: string): TextEditorStyle | undefined {
-    const editing = this.controller.state.editing!
+  /** The rendered cell being edited, read back from the slide (rows and columns can move under it). */
+  private editedCell(shapeKey: string): { cell: HTMLTableCellElement; shape: HTMLElement } | undefined {
+    const editing = this.controller.state.editing
+    if (!editing) return undefined
     const table = this.controller.shape(editing.slide, shapeKey)?.table
-    const shapeElement = this.slideLayer.querySelector<HTMLElement>(`.pp-slide > [data-key="${cssEscape(shapeKey)}"]`)
+    const shape = this.slideLayer.querySelector<HTMLElement>(`.pp-slide > [data-key="${cssEscape(shapeKey)}"]`)
     const rowIndex = table?.rows.findIndex((row) => row.key === editing.row) ?? -1
     const columnIndex = table?.columns.findIndex((column) => column.key === editing.column) ?? -1
-    const cell = shapeElement?.querySelector<HTMLTableCellElement>(`td[data-row="${rowIndex}"][data-col="${columnIndex}"]`) ?? undefined
-    const slide = this.controller.slide(editing.slide)
-    if (!cell || !shapeElement || !slide) return undefined
-    const { env } = slideEnvironment(slide, this.controller.renderOptions('edit', 'editor', editing.slide))
-    const left = shapeElement.offsetLeft + cell.offsetLeft
-    const top = shapeElement.offsetTop + cell.offsetTop
+    const cell = shape?.querySelector<HTMLTableCellElement>(`td[data-row="${rowIndex}"][data-col="${columnIndex}"]`) ?? undefined
+    return cell && shape ? { cell, shape } : undefined
+  }
+
+  private cellFrameStyle(found: { cell: HTMLTableCellElement; shape: HTMLElement }): string {
+    const { cell, shape } = found
     const computed = getComputedStyle(cell)
-    frame.setAttribute('style', `position:absolute;left:${left}px;top:${top}px;width:${cell.offsetWidth}px;min-height:${cell.offsetHeight}px;background:${computed.backgroundColor};padding:${computed.padding};box-sizing:border-box;white-space:pre-wrap;--pp-fs:1`)
+    return `position:absolute;left:${shape.offsetLeft + cell.offsetLeft}px;top:${shape.offsetTop + cell.offsetTop}px;width:${cell.offsetWidth}px;min-height:${cell.offsetHeight}px;background:${computed.backgroundColor};padding:${computed.padding};box-sizing:border-box;white-space:pre-wrap;--pp-fs:1`
+  }
+
+  private cellStyle(frame: HTMLElement, shapeKey: string): TextEditorStyle | undefined {
+    const editing = this.controller.state.editing!
+    const found = this.editedCell(shapeKey)
+    const slide = this.controller.slide(editing.slide)
+    if (!found || !slide) return undefined
+    const { env } = slideEnvironment(slide, this.controller.renderOptions('edit', 'editor', editing.slide))
+    frame.setAttribute('style', this.cellFrameStyle(found))
     frame.innerHTML = '<div class="pp-editor-inner"></div>'
     const deck = this.controller.deck()
     return {
@@ -669,7 +688,16 @@ export class SlideCanvas {
   private refreshEditorFrame(): void {
     const editing = this.controller.state.editing
     if (!editing || !this.editor || !this.editorFrame) return
-    if (editing.row) return
+    if (editing.row) {
+      // Rows or columns inserted or deleted around the cell move it.
+      const found = this.editedCell(editing.shape)
+      const style = found ? this.cellFrameStyle(found) : undefined
+      if (style && this.editorFrame.dataset.style !== style) {
+        this.editorFrame.setAttribute('style', style)
+        this.editorFrame.dataset.style = style
+      }
+      return
+    }
     const layout = this.controller.textLayout(editing.slide, editing.shape)
     if (!layout) return
     const { box, transform } = layout

@@ -3,11 +3,12 @@ import * as Y from 'yjs'
 import { blankPresentation } from '../blank.js'
 import { copyContent } from '../clipboard.js'
 import { presentationCodec } from '../codec.js'
-import { groupShapes, insertShapes, presetShape, readSlide, readXfrm, tableShape } from '../commands.js'
+import { cellFragment, groupShapes, insertShapes, presetShape, readSlide, readXfrm, tableShape } from '../commands.js'
+import { textToPlain } from '../text.js'
 import { memoryAssets } from '../testing/assets.js'
 import { fidelityAvailable, fixture, runPython, scratchDir, writeScratch } from '../testing/fixtures.js'
 import { readSnapshot } from '../ydoc.js'
-import { PresentationController } from './controller.js'
+import { LOCAL_ORIGIN, PresentationController } from './controller.js'
 
 const controllers: PresentationController[] = []
 afterEach(() => { for (const controller of controllers.splice(0)) { controller.destroy(); controller.doc.destroy() } })
@@ -19,6 +20,31 @@ async function open(bytes = blankPresentation()) {
   const controller = new PresentationController({ doc, assets, readOnly: false, user: { name: 'Editor', color: '#123456' } })
   controllers.push(controller)
   return { doc, assets, controller }
+}
+
+/** A second collaborator on a copy of `doc`, kept apart until `sync`. */
+function collaborator(doc: Y.Doc, assets: ReturnType<typeof memoryAssets>) {
+  const other = new Y.Doc()
+  Y.applyUpdate(other, Y.encodeStateAsUpdate(doc))
+  const controller = new PresentationController({ doc: other, assets, readOnly: false, user: { name: 'Other', color: '#654321' } })
+  controllers.push(controller)
+  return controller
+}
+
+function sync(a: Y.Doc, b: Y.Doc): void {
+  Y.applyUpdate(a, Y.encodeStateAsUpdate(b, Y.encodeStateVector(a)))
+  Y.applyUpdate(b, Y.encodeStateAsUpdate(a, Y.encodeStateVector(b)))
+}
+
+/** Edits the given cell of the controller's selected table, as a double click would. */
+function editCell(controller: PresentationController, tableKey: string, row: number, column: number): void {
+  const table = controller.shape(controller.state.slide!, tableKey)!.table!
+  controller.setState({ shapes: [tableKey], editing: { slide: controller.state.slide!, shape: tableKey, row: table.rows[row]!.key, column: table.columns[column]!.key } })
+}
+
+function grid(controller: PresentationController, tableKey: string): string[][] {
+  const table = controller.shape(controller.state.slide!, tableKey)!.table!
+  return table.rows.map((row) => table.columns.map((column) => (row.cells[column.key] ? textToPlain(row.cells[column.key]!.text) : '-')))
 }
 
 describe('presentation interaction regressions', () => {
@@ -66,6 +92,11 @@ describe('presentation interaction regressions', () => {
     controller.setBullets('char')
     controller.changeLevel(1)
     controller.setLineSpacing(2)
+    controller.insertTableRow('below')
+    controller.insertTableColumn('right')
+    controller.deleteTableRows()
+    controller.deleteTableColumns()
+    controller.deleteTable()
     controller.undo()
     controller.redo()
     await controller.insertImage(new Uint8Array([1]), 'image/png')
@@ -169,5 +200,96 @@ describe('presentation interaction regressions', () => {
     expect(resized.xfrm).toMatchObject({ x: 400_000, y: box.y, cx: 2_000_000, cy: 3_000_000 })
     expect(readXfrm(doc, slide, keys[1]!)).toMatchObject({ x: 400_000, y: box.y, cx: 2_000_000, cy: 3_000_000 })
     controller.undoManager.stopCapturing()
+  })
+
+  it('inserts and deletes table rows and columns around the edited cell, each one undo step', async () => {
+    const { controller, doc, assets } = await open()
+    const table = controller.insertTable(2, 2)!
+    editCell(controller, table, 0, 0)
+    const rowKey = controller.insertTableRow('below')!
+    const columnKey = controller.insertTableColumn('right')!
+    let shape = controller.shape(controller.state.slide!, table)!
+    expect(shape.table!.rows.map((row) => row.key).indexOf(rowKey)).toBe(1)
+    expect(shape.table!.columns.map((column) => column.key).indexOf(columnKey)).toBe(1)
+    expect(grid(controller, table).map((row) => row.length)).toEqual([3, 3, 3])
+    // The editor stays in its cell, which the inserts did not move.
+    expect(controller.tableSelection()?.cell).toMatchObject({ rowIndex: 0, columnIndex: 0 })
+    controller.insertTableRow('above')
+    expect(controller.tableSelection()?.cell).toMatchObject({ rowIndex: 1, columnIndex: 0 })
+    controller.undo()
+    expect(controller.shape(controller.state.slide!, table)!.table!.rows.length).toBe(3)
+    // Exported row and column ids stay unique.
+    const bytes = await presentationCodec.exportFile(doc, { name: 'deck.pptx', assets })
+    const xml = new TextDecoder().decode((await import('fflate')).unzipSync(bytes)['ppt/slides/slide1.xml'])
+    const rowIds = [...xml.matchAll(/rowId[^>]*val="(\d+)"/g)].map((match) => match[1])
+    const columnIds = [...xml.matchAll(/colId[^>]*val="(\d+)"/g)].map((match) => match[1])
+    expect(rowIds.length).toBe(3)
+    expect(new Set(rowIds).size).toBe(3)
+    expect(new Set(columnIds).size).toBe(3)
+    // Delete the inserted row and column from one of their cells.
+    shape = controller.shape(controller.state.slide!, table)!
+    editCell(controller, table, 1, 1)
+    controller.deleteTableRows()
+    expect(controller.shape(controller.state.slide!, table)!.table!.rows.length).toBe(2)
+    expect(controller.state.editing?.row).toBeDefined()
+    controller.deleteTableColumns()
+    expect(grid(controller, table)).toEqual([['', ''], ['', '']])
+    // Deleting every row deletes the table.
+    editCell(controller, table, 0, 0)
+    controller.deleteTableColumns()
+    controller.deleteTableColumns()
+    expect(controller.shape(controller.state.slide!, table)).toBeUndefined()
+    expect(controller.state.editing).toBeUndefined()
+    controller.undo()
+    expect(controller.shape(controller.state.slide!, table)!.table!.columns.length).toBe(1)
+  })
+
+  it('inserts rows below a merged cell and columns at the edges of a selected table', async () => {
+    const { controller, doc } = await open()
+    const slide = controller.state.slide!
+    const shape = tableShape(3, 2, { x: 0, y: 0, cx: 2_000_000, cy: 1_200_000 }, 'Merged')
+    const [first, second] = shape.table!.rows
+    first!.cells[shape.table!.columns[0]!.key]!.rowSpan = 2
+    second!.cells[shape.table!.columns[0]!.key]!.vMerge = true
+    insertShapes(doc, slide, [shape], LOCAL_ORIGIN)
+    editCell(controller, shape.key, 0, 0)
+    const row = controller.insertTableRow('below')!
+    expect(controller.shape(slide, shape.key)!.table!.rows.map((entry) => entry.key).indexOf(row)).toBe(2)
+    controller.setState({ editing: undefined, shapes: [shape.key] })
+    const left = controller.insertTableColumn('left')!
+    const right = controller.insertTableColumn('right')!
+    const columns = controller.shape(slide, shape.key)!.table!.columns.map((column) => column.key)
+    expect(columns.indexOf(left)).toBe(0)
+    expect(columns.indexOf(right)).toBe(columns.length - 1)
+    // Row and column deletion need a cell.
+    controller.deleteTableRows()
+    expect(controller.shape(slide, shape.key)!.table!.rows.length).toBe(4)
+  })
+
+  it('merges table rows one collaborator inserts with columns and typing from another', async () => {
+    const { controller: a, doc, assets } = await open()
+    const table = a.insertTable(2, 2)!
+    const b = collaborator(doc, assets)
+    b.goToSlide(a.state.slide!)
+    editCell(a, table, 0, 0)
+    editCell(b, table, 1, 1)
+    a.insertTableRow('below')
+    b.insertTableColumn('left')
+    const cell = b.tableSelection()!.cell!
+    const fragment = cellFragment(b.doc, b.state.slide!, table, cell.row, cell.column)!
+    b.doc.transact(() => {
+      fragment.delete(0, fragment.length)
+      const paragraph = new Y.XmlElement('paragraph')
+      fragment.insert(0, [paragraph])
+      paragraph.insert(0, [new Y.XmlText('typed by B')])
+    }, LOCAL_ORIGIN)
+    sync(doc, b.doc)
+    expect(readSnapshot(doc)).toEqual(readSnapshot(b.doc))
+    expect(grid(a, table).map((row) => row.length)).toEqual([3, 3, 3])
+    expect(grid(a, table)[2]).toEqual(['', '', 'typed by B'])
+    // Undo takes back only each user's own edit.
+    a.undo()
+    sync(doc, b.doc)
+    expect(grid(b, table)).toEqual([['', '', ''], ['', '', 'typed by B']])
   })
 })
