@@ -1,6 +1,9 @@
 import { agentCostLimitMicrosSchema, DEFAULT_AGENT_COST_LIMIT_MICROS, DEFAULT_TRASH_COLOR, type FileColor, imageGenerationPreferencesSchema, trashColorSchema, type ImageGenerationPreferences, instructionPresetSelectionsSchema, modelWarningDismissalsSchema, type ModelWarningDismissals, speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
 export type ThemePreference = 'system' | 'light' | 'dark'
 export type TextSizePreference = 'default' | 'large' | 'extra-large'
+
+/** How much the in-app Text size preference enlarges text, on top of the system's Dynamic Type. */
+export const TEXT_SIZE_SCALE: Record<TextSizePreference, number> = { default: 1, large: 1.12, 'extra-large': 1.25 }
 export type TrashRetentionPreference = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefinite'
 export type AutomaticChatExpirationPreference = 'disabled' | '24h' | '7d'
 /** Unfiled history chats: manual order, or most recently updated first under time headings. */

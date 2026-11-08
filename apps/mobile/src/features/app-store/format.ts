@@ -65,12 +65,12 @@ export function planFillColor(plan: 'eight' | 'fat', dark: boolean): string {
 }
 
 /**
- * Each plan's "Choose" button in its own color. White text needs Tailwind teal-600 to stay readable on
- * Eight in light mode; dark mode uses the 400 fills with 950 text.
+ * Each plan's "Choose" button in its own color. White text needs the 700 shades (the plan title colors)
+ * to reach 4.5:1 in light mode; dark mode uses the 400 fills with 950 text.
  */
 export function planButtonColors(plan: 'eight' | 'fat', dark: boolean): { background: string; text: string } {
-  if (plan === 'eight') return dark ? { background: '#2DD4BF', text: '#042F2E' } : { background: '#0D9488', text: '#FFFFFF' }
-  return dark ? { background: '#F472B6', text: '#500724' } : { background: '#EC4899', text: '#FFFFFF' }
+  if (plan === 'eight') return dark ? { background: '#2DD4BF', text: '#042F2E' } : { background: '#0F766E', text: '#FFFFFF' }
+  return dark ? { background: '#F472B6', text: '#500724' } : { background: '#BE185D', text: '#FFFFFF' }
 }
 
 /** A light wash of each plan's color, for its "Current plan" badge and Manage Subscription button (Tailwind 500 at 15%). */

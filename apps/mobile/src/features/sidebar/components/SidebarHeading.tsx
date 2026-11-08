@@ -47,7 +47,7 @@ export function SidebarHeading({ title, titleStyle, order, filesEnabled, canCrea
     <Pressable
       accessibilityLabel="New folder"
       accessibilityRole="button"
-      hitSlop={10}
+      hitSlop={4}
       onPress={() => { Haptics.selectionAsync(); onNewFolder() }}
       style={({ pressed }) => [styles.button, pressed && styles.pressed]}
       testID="sidebar-new-folder"
@@ -63,7 +63,7 @@ export function SidebarHeading({ title, titleStyle, order, filesEnabled, canCrea
         {/* The list owns these insets; SwiftUI can retain a top inset after scrolling offscreen. */}
         <SwiftUIHost ignoreSafeArea="all" matchContents style={styles.menuHost}>
           <SwiftUIMenu
-            label={<SwiftUIImage systemName="ellipsis.circle" size={16} color={theme.secondary} modifiers={[frame({ width: 28, height: 28 })]} />}
+            label={<SwiftUIImage systemName="ellipsis.circle" size={16} color={theme.secondary} modifiers={[frame({ width: 44, height: 44 })]} />}
             modifiers={[accessibilityLabel('Chat list options')]}
           >
             {creates ? <SwiftUIButton label="New Document" systemImage="doc.badge.plus" onPress={onNewDocument} /> : null}
@@ -114,7 +114,8 @@ export function SidebarHeading({ title, titleStyle, order, filesEnabled, canCrea
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, marginBottom: 0, marginLeft: 12, marginRight: 6, minHeight: 32 },
   title: { flex: 1, marginTop: 0, marginBottom: 0, marginHorizontal: 0 },
-  button: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: 14 },
+  // 44-point targets that take up no more room than their 28-point glyphs.
+  button: { width: 44, height: 44, marginVertical: -8, marginHorizontal: -8, alignItems: 'center', justifyContent: 'center', borderRadius: 22 },
   pressed: { opacity: 0.5 },
-  menuHost: { width: 28, height: 28 },
+  menuHost: { width: 44, height: 44, marginVertical: -8, marginHorizontal: -8 },
 })
