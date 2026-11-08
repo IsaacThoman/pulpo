@@ -11,6 +11,8 @@ import {
   Baseline,
   Bold,
   ChevronDown,
+  DollarSign,
+  Euro,
   Funnel,
   Grid2x2,
   ImagePlus,
@@ -18,10 +20,13 @@ import {
   Link2,
   MessageSquarePlus,
   PaintBucket,
+  Paintbrush,
+  Percent,
   Printer,
   Redo2,
   RemoveFormatting,
   Search,
+  Sigma,
   Snowflake,
   Strikethrough,
   TableCellsMerge,
@@ -29,7 +34,7 @@ import {
   Undo2,
   WrapText,
 } from 'lucide-react'
-import { cssColor, type BorderPreset, type SheetView, type SheetViewState } from '@pulpo/client-core/office/sheets/view'
+import { cssColor, type BorderPreset, type QuickFormat, type SheetView, type SheetViewState } from '@pulpo/client-core/office/sheets/view'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,16 +44,21 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
+import { isAppleShortcut } from '../../browser/shortcuts'
 import { ToolbarButton } from '../../editor/ToolbarButton'
+import { FontSizeInput } from '../chrome/FontSizeInput'
 import { ColorBar, ColorPicker } from './ColorPicker'
-import { NUMBER_FORMATS } from './number-formats'
+import { FunctionMenuItems } from './FunctionMenu'
+import { runCommonFunction } from './functions'
+import { NUMBER_FORMATS, numberFormatChoice, numberFormatCode } from './number-formats'
+import { QUICK_FORMAT_DIGITS } from './sheet-menus'
 
 function Divider() {
-  return <span aria-hidden className="mx-1 h-5 w-px shrink-0 bg-border" />
+  return <span aria-hidden className="mx-0.5 h-5 w-px shrink-0 bg-border" />
 }
 
 /** A toolbar dropdown: a labeled trigger and its items. */
-function Menu({ label, trigger, disabled, children, wide }: { label: string; trigger: ReactNode; disabled?: boolean; children: ReactNode; wide?: boolean }) {
+function Menu({ label, trigger, disabled, children, wide, className, contentClassName }: { label: string; trigger: ReactNode; disabled?: boolean; children: ReactNode; wide?: boolean; className?: string; contentClassName?: string }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild disabled={disabled}>
@@ -58,13 +68,13 @@ function Menu({ label, trigger, disabled, children, wide }: { label: string; tri
           title={label}
           disabled={disabled}
           onMouseDown={(event) => event.preventDefault()}
-          className={cn('flex h-8 shrink-0 cursor-pointer items-center gap-0.5 rounded-md px-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40', wide && 'min-w-24 justify-between')}
+          className={cn('flex h-8 shrink-0 cursor-pointer items-center gap-0.5 rounded-md px-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40', wide && 'min-w-16 justify-between', className)}
         >
           {trigger}
           <ChevronDown className="size-3 opacity-60" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" onCloseAutoFocus={(event) => event.preventDefault()}>
+      <DropdownMenuContent align="start" className={contentClassName} onCloseAutoFocus={(event) => event.preventDefault()}>
         {children}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -89,17 +99,28 @@ const BORDER_PRESETS: { preset: BorderPreset; label: () => string }[] = [
   { preset: 'none', label: () => ui("No borders") },
 ]
 
-const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 /** A shortcut as the toolbar shows and announces it. */
-const keys = (key: string) => ({ label: mac ? `⌘${key.toUpperCase()}` : `Ctrl+${key.toUpperCase()}`, aria: `${mac ? 'Meta' : 'Control'}+${key}` })
+const keys = (key: string) => {
+  const mac = isAppleShortcut()
+  return { label: mac ? `⌘${key.toUpperCase()}` : `Ctrl+${key.toUpperCase()}`, aria: `${mac ? 'Meta' : 'Control'}+${key}` }
+}
+/** The format keys: Ctrl+Shift+digit everywhere (Cmd+Shift+4 takes a screenshot on a Mac). */
+const formatKeys = (kind: QuickFormat) => {
+  const digit = QUICK_FORMAT_DIGITS[kind]
+  return { label: isAppleShortcut() ? `⌃⇧${digit}` : `Ctrl+Shift+${digit}`, aria: `Control+Shift+${digit}` }
+}
+/** AutoSum: Alt+= on Windows and Linux, Cmd+Shift+T on a Mac (Option+= types ≠ there). */
+const autoSumKeys = () => isAppleShortcut() ? { label: '⌘⇧T', aria: 'Meta+Shift+T' } : { label: 'Alt+=', aria: 'Alt+=' }
 
-export function SheetToolbar({ view, state, onFind, onNote, onInsertImage, onPrint, slot }: {
+export function SheetToolbar({ view, state, onFind, onNote, onLink, onInsertImage, onPrint, onCustomNumberFormat, slot }: {
   view: SheetView
   state: SheetViewState
   onFind: () => void
   onNote: () => void
+  onLink: () => void
   onInsertImage: () => void
   onPrint: () => void
+  onCustomNumberFormat: () => void
   /** Rendered at the end of the toolbar (Files puts its own controls there). */
   slot?: ReactNode
 }) {
@@ -109,71 +130,65 @@ export function SheetToolbar({ view, state, onFind, onNote, onInsertImage, onPri
   const formatDisabled = disabled || valuesOnly
   const fontColor = cssColor(style.fontColor, view.theme) ?? (document.documentElement.classList.contains('dark') ? '#E3E3E3' : '#000000')
   const fillColor = cssColor(style.fill, view.theme)
-  const currentFormat = NUMBER_FORMATS.find((format) => format.code === style.numFmt)
-  const askFormat = () => {
-    const code = window.prompt(ui("Custom number format"), style.numFmt)
-    if (code) view.setNumberFormat(code)
+  const currentFormat = numberFormatChoice(view, style.numFmt)
+  const currency = view.quickFormat('currency')
+  const CurrencyIcon = currency.includes('€') ? Euro : DollarSign
+  const painting = state.formatPainter
+  // Click picks formats up for one paste and click again puts them down; a double-click keeps
+  // painting until Escape or another click (Google's Paint format, Excel's Format Painter).
+  const togglePainter = () => {
+    if (view.getState().formatPainter) view.cancelFormatPainter()
+    else view.startFormatPainter(false)
   }
-  const askLink = () => {
-    const current = state.activeLink?.target ?? state.activeLink?.location ?? 'https://'
-    const target = window.prompt(ui("Link URL or cell (Sheet1!A1)"), current)
-    if (target === null) return
-    if (!target.trim()) view.setLink(undefined)
-    else if (/^[a-z][\w+.-]*:/i.test(target.trim())) view.setLink({ target: target.trim() })
-    else view.setLink({ location: target.trim() })
-  }
-  const zoomSteps = [0.5, 0.75, 0.9, 1, 1.25, 1.5, 2]
 
   return (
-    <div role="toolbar" aria-label={ui("Spreadsheet formatting")} className="flex min-h-10 shrink-0 flex-wrap items-center gap-0.5 border-b border-border bg-background px-2 py-1">
+    <div role="toolbar" aria-label={ui("Spreadsheet formatting")} className="flex min-h-10 shrink-0 flex-wrap items-center gap-px border-b border-border bg-background px-1.5 py-1">
       <ToolbarButton label={ui("Undo")} shortcut={keys('z')} disabled={disabled || !state.canUndo} onClick={() => view.undo()}>
         <Undo2 className="size-4" />
       </ToolbarButton>
       <ToolbarButton label={ui("Redo")} shortcut={keys('y')} disabled={disabled || !state.canRedo} onClick={() => view.redo()}>
         <Redo2 className="size-4" />
       </ToolbarButton>
-      <ToolbarButton label={ui("Print")} onClick={onPrint}>
+      <ToolbarButton label={ui("Print")} shortcut={keys('p')} onClick={onPrint}>
         <Printer className="size-4" />
       </ToolbarButton>
-      <Menu label={ui("Zoom")} trigger={<span className="tabular-nums">{Math.round(state.zoom * 100)}%</span>}>
-        {zoomSteps.map((step) => (
-          <DropdownMenuItem key={step} onSelect={() => view.setZoom(step)}>
-            {Math.round(step * 100)}%
-          </DropdownMenuItem>
-        ))}
-      </Menu>
+      <span className="contents" onDoubleClick={() => { if (!formatDisabled) view.startFormatPainter(true) }} data-sheet-paint-format={painting ? (painting.sticky ? 'sticky' : 'once') : undefined}>
+        <ToolbarButton label={ui("Paint format")} active={!!painting} disabled={formatDisabled} onClick={togglePainter}>
+          <Paintbrush className="size-4" />
+        </ToolbarButton>
+      </span>
       <Divider />
-      <Menu label={ui("Number format")} disabled={formatDisabled} trigger={<span className="max-w-24 truncate">{currentFormat?.label() ?? ui("Custom")}</span>} wide>
-        {NUMBER_FORMATS.map((format) => (
-          <DropdownMenuItem key={format.code} onSelect={() => view.setNumberFormat(format.code)} className="justify-between gap-6">
-            <span>{format.label()}</span>
-            <span className="text-xs text-muted-foreground">{format.example}</span>
-          </DropdownMenuItem>
-        ))}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={askFormat}>{ui("Custom number format…")}</DropdownMenuItem>
-      </Menu>
+      <ToolbarButton label={ui("Format as currency")} shortcut={formatKeys('currency')} active={style.numFmt === currency} disabled={formatDisabled} onClick={() => view.applyQuickFormat('currency')}>
+        <CurrencyIcon className="size-4" />
+      </ToolbarButton>
+      <ToolbarButton label={ui("Format as percent")} shortcut={formatKeys('percent')} active={style.numFmt === view.quickFormat('percent')} disabled={formatDisabled} onClick={() => view.applyQuickFormat('percent')}>
+        <Percent className="size-4" />
+      </ToolbarButton>
       <ToolbarButton label={ui("Decrease decimal places")} disabled={formatDisabled} onClick={() => view.changeDecimals(-1)}>
         <span className="text-[11px] font-medium">.0←</span>
       </ToolbarButton>
       <ToolbarButton label={ui("Increase decimal places")} disabled={formatDisabled} onClick={() => view.changeDecimals(1)}>
         <span className="text-[11px] font-medium">.00→</span>
       </ToolbarButton>
+      <Menu label={ui("Number format")} disabled={formatDisabled} trigger={<span className="max-w-20 truncate">{currentFormat?.label() ?? ui("Custom")}</span>} wide>
+        {NUMBER_FORMATS.map((format) => (
+          <DropdownMenuItem key={format.id} onSelect={() => view.setNumberFormat(numberFormatCode(view, format))} className="justify-between gap-6">
+            <span>{format.label()}</span>
+            <span className="text-xs text-muted-foreground">{format.example}</span>
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={onCustomNumberFormat}>{ui("Custom number format…")}</DropdownMenuItem>
+      </Menu>
       <Divider />
-      <Menu label={ui("Font")} disabled={formatDisabled} trigger={<span className="max-w-24 truncate" style={{ fontFamily: style.fontName }}>{style.fontName}</span>} wide>
+      <Menu label={ui("Font")} disabled={formatDisabled} trigger={<span className="max-w-20 truncate" style={{ fontFamily: style.fontName }}>{style.fontName}</span>} wide>
         {FONTS.map((font) => (
           <DropdownMenuItem key={font} onSelect={() => view.setStyle({ fontName: font })} style={{ fontFamily: font }}>
             {font}
           </DropdownMenuItem>
         ))}
       </Menu>
-      <Menu label={ui("Font size")} disabled={formatDisabled} trigger={<span className="w-6 text-center tabular-nums">{style.fontSize}</span>}>
-        {SIZES.map((size) => (
-          <DropdownMenuItem key={size} onSelect={() => view.setStyle({ fontSize: size })}>
-            {size}
-          </DropdownMenuItem>
-        ))}
-      </Menu>
+      <FontSizeInput value={style.fontSize} sizes={SIZES} min={1} max={409} disabled={formatDisabled} onChange={(size) => view.setStyle({ fontSize: size })} onDone={() => view.focus()} />
       <Divider />
       <ToolbarButton label={ui("Bold")} shortcut={keys('b')} active={style.bold} disabled={formatDisabled} onClick={() => view.toggleStyle('bold')}>
         <Bold className="size-4" />
@@ -184,7 +199,7 @@ export function SheetToolbar({ view, state, onFind, onNote, onInsertImage, onPri
       <ToolbarButton label={ui("Underline")} shortcut={keys('u')} active={!!style.underline} disabled={formatDisabled} onClick={() => view.toggleUnderline()}>
         <Underline className="size-4" />
       </ToolbarButton>
-      <ToolbarButton label={ui("Strikethrough")} active={style.strike} disabled={formatDisabled} onClick={() => view.toggleStyle('strike')}>
+      <ToolbarButton label={ui("Strikethrough")} shortcut={keys('5')} active={style.strike} disabled={formatDisabled} onClick={() => view.toggleStyle('strike')}>
         <Strikethrough className="size-4" />
       </ToolbarButton>
       <ColorPicker label={ui("Text color")} theme={view.theme} automaticLabel={ui("Automatic")} disabled={formatDisabled} onPick={(color) => view.setStyle({ fontColor: color })}>
@@ -227,7 +242,7 @@ export function SheetToolbar({ view, state, onFind, onNote, onInsertImage, onPri
       <ToolbarButton label={ui("Wrap text")} active={style.wrap} disabled={formatDisabled} onClick={() => view.toggleStyle('wrap')}>
         <WrapText className="size-4" />
       </ToolbarButton>
-      <ToolbarButton label={ui("Clear formatting")} disabled={formatDisabled} onClick={() => view.clearFormats()}>
+      <ToolbarButton label={ui("Clear formatting")} shortcut={keys('\\')} disabled={formatDisabled} onClick={() => view.clearFormats()}>
         <RemoveFormatting className="size-4" />
       </ToolbarButton>
       <Divider />
@@ -247,15 +262,24 @@ export function SheetToolbar({ view, state, onFind, onNote, onInsertImage, onPri
         <Funnel className="size-4" />
       </ToolbarButton>
       <Divider />
-      <ToolbarButton label={ui("Insert link")} disabled={disabled} active={!!state.activeLink} onClick={askLink}>
+      <ToolbarButton label={ui("Insert link")} shortcut={keys('k')} disabled={formatDisabled} active={!!state.activeLink} onClick={onLink}>
         <Link2 className="size-4" />
       </ToolbarButton>
-      <ToolbarButton label={ui("Note")} disabled={disabled} active={!!state.activeNote} onClick={onNote}>
+      <ToolbarButton label={ui("Note")} disabled={formatDisabled} active={!!state.activeNote} onClick={onNote}>
         <MessageSquarePlus className="size-4" />
       </ToolbarButton>
       <ToolbarButton label={ui("Insert image")} disabled={formatDisabled} onClick={onInsertImage}>
         <ImagePlus className="size-4" />
       </ToolbarButton>
+      {/* Excel's AutoSum: the button sums, its arrow lists the other functions. */}
+      <div className="flex shrink-0 items-center" data-sheet-functions="">
+        <ToolbarButton label={ui("Sum")} shortcut={autoSumKeys()} disabled={formatDisabled} onClick={() => runCommonFunction(view, 'SUM')}>
+          <Sigma className="size-4" />
+        </ToolbarButton>
+        <Menu label={ui("Functions")} disabled={formatDisabled} trigger={null} className="-ml-1 w-4 justify-center px-0" contentClassName="min-w-44">
+          <FunctionMenuItems view={view} />
+        </Menu>
+      </div>
       <ToolbarButton label={ui("Find and replace")} shortcut={keys('f')} onClick={onFind}>
         <Search className="size-4" />
       </ToolbarButton>

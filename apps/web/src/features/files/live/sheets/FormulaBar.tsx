@@ -1,7 +1,10 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 import { formulaReferences, type SheetView, type SheetViewState } from '@pulpo/client-core/office/sheets/view'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
+import { FunctionMenuItems } from './FunctionMenu'
+import { canInsertFunction } from './functions'
 
 /** Splits formula text into plain and reference pieces, colored like the grid highlights. */
 function highlighted(text: string): { text: string; color?: string }[] {
@@ -17,9 +20,18 @@ function highlighted(text: string): { text: string; color?: string }[] {
   return pieces
 }
 
-/** The name box and the formula bar above the grid, editing the same text as the cell editor. */
-export function FormulaBar({ view, state }: { view: SheetView; state: SheetViewState }) {
-  const nameBox = useRef<HTMLInputElement>(null)
+/**
+ * The name box and the formula bar above the grid, editing the same text as the cell editor. Its
+ * fx button lists functions to insert, as Excel's Insert Function and Google's Σ menu do.
+ */
+export function FormulaBar({ view, state, nameBoxRef }: {
+  view: SheetView
+  state: SheetViewState
+  /** The name box, for Ctrl+G (Go to). */
+  nameBoxRef?: RefObject<HTMLInputElement | null>
+}) {
+  const ownNameBox = useRef<HTMLInputElement>(null)
+  const nameBox = nameBoxRef ?? ownNameBox
   const input = useRef<HTMLTextAreaElement>(null)
   const text = state.editing?.text ?? state.activeInput
   const editable = !state.readOnly
@@ -28,7 +40,7 @@ export function FormulaBar({ view, state }: { view: SheetView; state: SheetViewS
   useEffect(() => {
     const element = nameBox.current
     if (element && document.activeElement !== element) element.value = state.selectionLabel
-  }, [state.selectionLabel])
+  }, [nameBox, state.selectionLabel])
 
   // While the cell editor types, the bar follows; while the bar types, the grid follows.
   useEffect(() => {
@@ -83,7 +95,24 @@ export function FormulaBar({ view, state }: { view: SheetView; state: SheetViewS
         }}
         className="w-28 shrink-0 border-r border-border bg-transparent px-2 font-mono text-xs outline-none focus:bg-accent/40"
       />
-      <span aria-hidden className="grid w-8 shrink-0 place-items-center border-r border-border font-serif text-sm italic text-muted-foreground">{ui("fx")}</span>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild disabled={!canInsertFunction(view)}>
+          <button
+            type="button"
+            aria-label={ui("Insert function")}
+            title={ui("Insert function")}
+            disabled={!canInsertFunction(view)}
+            // Keeps the cell (or this bar's) edit focused, so a function goes in at the caret.
+            onMouseDown={(event) => event.preventDefault()}
+            className="grid w-8 shrink-0 cursor-pointer place-items-center border-r border-border font-serif text-sm italic text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+          >
+            <span aria-hidden>{ui("fx")}</span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="min-w-44" onCloseAutoFocus={(event) => { event.preventDefault(); view.focus() }}>
+          <FunctionMenuItems view={view} />
+        </DropdownMenuContent>
+      </DropdownMenu>
       <div className="relative min-w-0 flex-1">
         {/* Colored references under a transparent textarea, so typing and selection stay native. */}
         <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre px-2 py-1.5 font-mono text-xs leading-5">

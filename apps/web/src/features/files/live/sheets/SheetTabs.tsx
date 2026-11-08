@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { ChevronDown, Plus } from 'lucide-react'
+import { ChevronDown, Menu as MenuIcon, Plus } from 'lucide-react'
 import type { SheetView, SheetViewState } from '@pulpo/client-core/office/sheets/view'
 import { validateSheetName } from '@pulpo/client-core/office/sheets'
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -31,11 +32,17 @@ function nameError(message: string): string {
   }
 }
 
+/**
+ * The sheet tabs at the bottom, as Google Sheets has them: Add sheet (+), All sheets (≡, hidden
+ * ones too), the tabs (click, double-click to rename, drag to reorder, right-click or the arrow for
+ * the tab's menu), and the status bar's figures and zoom at the right.
+ */
 export function SheetTabs({ view, state, summary }: { view: SheetView; state: SheetViewState; summary?: React.ReactNode }) {
   const [renaming, setRenaming] = useState<string>()
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string>()
   const [dragged, setDragged] = useState<string>()
+  const [menuFor, setMenuFor] = useState<string>()
   const visible = state.sheets.filter((sheet) => sheet.state === 'visible')
   const hidden = state.sheets.filter((sheet) => sheet.state === 'hidden')
   const editable = !state.readOnly && !state.valuesOnly
@@ -56,17 +63,49 @@ export function SheetTabs({ view, state, summary }: { view: SheetView; state: Sh
     setRenaming(undefined)
     view.focus()
   }
+  const showSheet = (id: string) => {
+    view.setSheetHidden(id, false)
+    view.setActiveSheet(id)
+  }
+  // Commands go back to the grid, except Rename, whose box takes the focus.
+  const closeFocus = (event: Event) => {
+    event.preventDefault()
+    if (!document.activeElement || document.activeElement === document.body) view.focus()
+  }
 
   return (
-    <div className="flex h-9 shrink-0 items-stretch border-t border-border bg-muted/40 text-sm">
+    <div className="@container flex h-9 shrink-0 items-stretch border-t border-border bg-muted/40 text-sm">
       {editable && (
         <button type="button" aria-label={ui("Add sheet")} title={ui("Add sheet")} onClick={() => view.addSheet()} className="grid w-9 shrink-0 cursor-pointer place-items-center text-muted-foreground hover:bg-accent hover:text-foreground">
           <Plus className="size-4" />
         </button>
       )}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" aria-label={ui("All sheets")} title={ui("All sheets")} className="grid w-9 shrink-0 cursor-pointer place-items-center text-muted-foreground hover:bg-accent hover:text-foreground data-[state=open]:bg-accent">
+            <MenuIcon className="size-4" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent side="top" align="start" className="max-h-80 min-w-48" onCloseAutoFocus={closeFocus} data-sheet-list="">
+          {state.sheets.filter((sheet) => sheet.state !== 'veryHidden').map((sheet) => (
+            <DropdownMenuCheckboxItem
+              key={sheet.id}
+              role="menuitemradio"
+              checked={sheet.id === state.sheetId}
+              disabled={sheet.state === 'hidden' && !editable}
+              onSelect={() => (sheet.state === 'hidden' ? showSheet(sheet.id) : view.setActiveSheet(sheet.id))}
+              className={cn(sheet.state === 'hidden' && 'text-muted-foreground')}
+            >
+              {sheet.color && <span aria-hidden className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: sheet.color }} />}
+              <span className="min-w-0 flex-1 truncate">{sheet.state === 'hidden' ? ui("{{name}} (hidden)", { name: sheet.name }) : sheet.name}</span>
+            </DropdownMenuCheckboxItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
       <div role="tablist" aria-label={ui("Sheets")} className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
         {visible.map((sheet) => {
           const active = sheet.id === state.sheetId
+          const position = state.sheets.findIndex((entry) => entry.id === sheet.id)
           if (renaming === sheet.id) {
             return (
               <div key={sheet.id} className="relative flex items-center px-1">
@@ -94,7 +133,7 @@ export function SheetTabs({ view, state, summary }: { view: SheetView; state: Sh
             )
           }
           return (
-            <DropdownMenu key={sheet.id}>
+            <DropdownMenu key={sheet.id} open={menuFor === sheet.id} onOpenChange={(open) => setMenuFor(open ? sheet.id : undefined)}>
               <div
                 role="tab"
                 aria-selected={active}
@@ -103,11 +142,18 @@ export function SheetTabs({ view, state, summary }: { view: SheetView; state: Sh
                 onDragStart={() => setDragged(sheet.id)}
                 onDragOver={(event) => dragged && event.preventDefault()}
                 onDrop={() => {
-                  if (dragged && dragged !== sheet.id) view.moveSheet(dragged, state.sheets.findIndex((entry) => entry.id === sheet.id))
+                  if (dragged && dragged !== sheet.id) view.moveSheet(dragged, position)
                   setDragged(undefined)
                 }}
                 onClick={() => view.setActiveSheet(sheet.id)}
                 onDoubleClick={() => editable && startRename(sheet.id, sheet.name)}
+                // Right-click opens the tab's menu, as in Google Sheets and Excel.
+                onContextMenu={(event) => {
+                  event.preventDefault()
+                  if (!active) view.setActiveSheet(sheet.id)
+                  setMenuFor(sheet.id)
+                }}
+                data-sheet-tab={sheet.id}
                 className={cn(
                   'group relative flex max-w-48 shrink-0 cursor-pointer items-center gap-1 border-r border-border px-3 text-muted-foreground hover:bg-accent/60',
                   active && 'bg-background font-medium text-foreground shadow-[inset_0_2px_0_var(--color-primary)]',
@@ -121,10 +167,10 @@ export function SheetTabs({ view, state, summary }: { view: SheetView; state: Sh
                   </button>
                 </DropdownMenuTrigger>
               </div>
-              <DropdownMenuContent align="start" side="top" onCloseAutoFocus={(event) => event.preventDefault()}>
-                <DropdownMenuItem disabled={!editable} onSelect={() => startRename(sheet.id, sheet.name)}>{ui("Rename")}</DropdownMenuItem>
-                <DropdownMenuItem disabled={!editable} onSelect={() => view.duplicateSheet(sheet.id)}>{ui("Duplicate")}</DropdownMenuItem>
+              <DropdownMenuContent align="start" side="top" onCloseAutoFocus={closeFocus} data-sheet-tab-menu={sheet.id}>
                 <DropdownMenuItem disabled={!editable || visible.length < 2} onSelect={() => view.deleteSheet(sheet.id)}>{ui("Delete")}</DropdownMenuItem>
+                <DropdownMenuItem disabled={!editable} onSelect={() => view.duplicateSheet(sheet.id)}>{ui("Duplicate")}</DropdownMenuItem>
+                <DropdownMenuItem disabled={!editable} onSelect={() => startRename(sheet.id, sheet.name)}>{ui("Rename")}</DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger disabled={!editable}>{ui("Change color")}</DropdownMenuSubTrigger>
@@ -132,32 +178,29 @@ export function SheetTabs({ view, state, summary }: { view: SheetView; state: Sh
                     <DropdownMenuItem onSelect={() => view.setTabColor(sheet.id, undefined)}>{ui("No color")}</DropdownMenuItem>
                     <div className="grid grid-cols-5 gap-1 p-1">
                       {TAB_COLORS.map((rgb) => (
-                        <button key={rgb} type="button" aria-label={`#${rgb.slice(2)}`} onClick={() => view.setTabColor(sheet.id, { rgb })} className="size-5 cursor-pointer rounded-[3px] border border-black/10" style={{ backgroundColor: `#${rgb.slice(2)}` }} />
+                        <button key={rgb} type="button" aria-label={`#${rgb.slice(2)}`} onClick={() => { view.setTabColor(sheet.id, { rgb }); setMenuFor(undefined) }} className="size-5 cursor-pointer rounded-[3px] border border-black/10" style={{ backgroundColor: `#${rgb.slice(2)}` }} />
                       ))}
                     </div>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
                 <DropdownMenuItem disabled={!editable || visible.length < 2} onSelect={() => view.setSheetHidden(sheet.id, true)}>{ui("Hide sheet")}</DropdownMenuItem>
-                <DropdownMenuItem disabled={!editable || state.sheets[0]?.id === sheet.id} onSelect={() => view.moveSheet(sheet.id, Math.max(0, state.sheets.findIndex((entry) => entry.id === sheet.id) - 1))}>{ui("Move left")}</DropdownMenuItem>
-                <DropdownMenuItem disabled={!editable || state.sheets[state.sheets.length - 1]?.id === sheet.id} onSelect={() => view.moveSheet(sheet.id, state.sheets.findIndex((entry) => entry.id === sheet.id) + 1)}>{ui("Move right")}</DropdownMenuItem>
+                {hidden.length > 0 && (
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger disabled={!editable}>{ui("Unhide sheet")}</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      {hidden.map((entry) => (
+                        <DropdownMenuItem key={entry.id} onSelect={() => showSheet(entry.id)}>{entry.name}</DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem disabled={!editable || position === 0} onSelect={() => view.moveSheet(sheet.id, Math.max(0, position - 1))}>{ui("Move left")}</DropdownMenuItem>
+                <DropdownMenuItem disabled={!editable || position === state.sheets.length - 1} onSelect={() => view.moveSheet(sheet.id, position + 1)}>{ui("Move right")}</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )
         })}
-        {editable && hidden.length > 0 && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button type="button" className="shrink-0 cursor-pointer px-3 text-xs text-muted-foreground hover:bg-accent">{ui("{{count}} hidden", { count: hidden.length })}</button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="top" align="start">
-              {hidden.map((sheet) => (
-                <DropdownMenuItem key={sheet.id} onSelect={() => view.setSheetHidden(sheet.id, false)}>
-                  {ui("Unhide {{name}}", { name: sheet.name })}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
       </div>
       {summary}
     </div>
