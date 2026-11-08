@@ -59,6 +59,7 @@ import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
 import { liveFormatsForNew } from '@/features/files/live/registry'
 import { requestTitleFocus } from '@/features/files/title-focus'
+import { isInFileEditor } from '@/features/files/live/chrome/editor-root'
 import { createDoc, createFolder, fetchFolder, fetchFolderLayout, folderLayoutQueryKey, folderQueryKey, updateFolderLayout, uploadFile } from '@/features/files/api'
 import { arrangeGrid, GRID_CELL, moveInGrid, readingOrder } from '@/features/files/browser/grid-layout'
 import { dropFolderOf, filesErrorMessage } from '@/features/files/file-display'
@@ -169,15 +170,23 @@ function SortHeader({ label, sortKey, sort, onSort, className }: {
 
 /*
  * Which files view keys go to: the one last clicked. Before any click only the page listens,
- * so a browser in the side panel never takes arrow keys meant for a chat beside it.
+ * so a browser in the side panel never takes arrow keys meant for a chat beside it. Picks in
+ * menus and popovers (body portals) leave it alone: they act on the view that opened them.
  */
 let lastPointerDown: Element | null = null
 if (typeof window !== 'undefined') {
-  window.addEventListener('pointerdown', (event) => { lastPointerDown = event.target instanceof Element ? event.target : null }, true)
+  window.addEventListener('pointerdown', (event) => {
+    const target = event.target instanceof Element ? event.target : null
+    if (target?.closest('[data-radix-popper-content-wrapper]')) return
+    lastPointerDown = target
+  }, true)
 }
 
-function ownsKeys(layout: FilesViewPlace['layout'], root: HTMLElement | null): boolean {
+/** Focus wins over the last click: keys pressed in an editor (a slide, a notebook's cells) or in the other view stay there. */
+function ownsKeys(layout: FilesViewPlace['layout'], root: HTMLElement | null, target: EventTarget | null): boolean {
+  if (isInFileEditor(target)) return false
   if (layout === 'panel') return Boolean(root && lastPointerDown && root.contains(lastPointerDown))
+  if (target instanceof Element && target.closest('[data-side-panel]')) return false
   return !lastPointerDown?.closest('[data-side-panel]')
 }
 
@@ -598,7 +607,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   // One window listener that always sees the latest state, like a desktop file manager.
   const handleKey = (event: KeyboardEvent) => {
     if (event.defaultPrevented || isEditableTarget(event.target) || renamingId || moving || restoring || pendingDeletion || menu) return
-    if (!ownsKeys(layout, rootRef.current)) return
+    if (!ownsKeys(layout, rootRef.current, event.target)) return
     const mod = hasPrimaryModifier(event)
     const key = event.key
     if (NAVIGATION_KEYS.has(key) && !mod) {
