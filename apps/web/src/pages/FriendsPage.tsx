@@ -84,9 +84,9 @@ function ConnectionRow({ connection, detail, actions, profileHref, showMutualFri
   showMutualFriends?: boolean
 }) {
   return <div className="flex items-center justify-between gap-3 px-4 py-3">
-    <div className="min-w-0 flex-1">
+    <div className="flex min-w-0 flex-1 items-center gap-3">
       <ProfileIdentity profile={connection.profile} detail={detail} href={profileHref} />
-      {showMutualFriends && <MutualFriends friends={connection.mutualFriends ?? []} className="pl-[3.25rem]" />}
+      {showMutualFriends && <MutualFriends friends={connection.mutualFriends ?? []} />}
     </div>
     <div className="flex shrink-0 items-center gap-2">{actions}</div>
   </div>
@@ -354,9 +354,9 @@ export function FriendsPage() {
 
       {suggestions.length > 0 && <Section title={ui("People you may know")} count={suggestions.length}>
         {suggestions.map((suggestion) => <div key={suggestion.profile.id} className="flex items-center justify-between gap-3 px-4 py-3">
-          <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             <ProfileIdentity profile={suggestion.profile} href={`/${suggestion.profile.username}`} />
-            <MutualFriends friends={suggestion.mutualFriends} className="pl-[3.25rem]" />
+            <MutualFriends friends={suggestion.mutualFriends} />
           </div>
           <Button size="sm" disabled={actionIds.has(`request:${suggestion.profile.id}`)} onClick={() => sendSuggestionRequest(suggestion)}>
             <UserRoundPlus />{actionIds.has(`request:${suggestion.profile.id}`) ? ui("Sending…") : ui("Add friend")}

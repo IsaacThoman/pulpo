@@ -1,6 +1,4 @@
-import { Fragment } from 'react'
 import type { FriendProfile, FriendSearchResult } from '@pulpo/contracts'
-import { UsersRound } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { friendSearchHighlight } from '@/lib/friend-search'
@@ -36,14 +34,22 @@ export function ProfileIdentity({ profile, detail, query, matchedOn, href }: {
 
 export function MutualFriends({ friends, className }: { friends: FriendProfile[]; className?: string }) {
   if (!friends.length) return null
-  return <div className={cn('mt-1 flex min-w-0 items-start gap-1 text-xs text-muted-foreground', className)}>
-    <UsersRound className="mt-0.5 size-3 shrink-0" aria-hidden />
-    <span className="shrink-0">{friends.length === 1 ? ui('Mutual friend:') : ui('Mutual friends:')}</span>
-    <span className="min-w-0">
-      {friends.map((friend, index) => <Fragment key={friend.id}>
-        {index > 0 && ', '}
-        <Link className="underline-offset-2 hover:text-foreground hover:underline" to={`/${friend.username}`}>{friend.displayName}</Link>
-      </Fragment>)}
-    </span>
+  const label = `${friends.length === 1 ? ui('Mutual friend:') : ui('Mutual friends:')} ${friends.map((friend) => friend.displayName).join(', ')}`
+  return <div className={cn('flex shrink-0 -space-x-2', className)} role="group" aria-label={label}>
+    {friends.map((friend) => <Link
+      key={friend.id}
+      to={`/${friend.username}`}
+      className="relative rounded-full focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      aria-label={friend.displayName}
+      title={friend.displayName}
+    >
+      <ProfileAvatar
+        name={friend.displayName}
+        avatarUrl={friend.avatarUrl}
+        shape="circle"
+        className="size-6 ring-2 ring-background"
+        fallbackClassName="text-[9px]"
+      />
+    </Link>)}
   </div>
 }

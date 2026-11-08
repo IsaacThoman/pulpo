@@ -9,15 +9,17 @@ export function ProfileAvatar({
   avatarUrl,
   className,
   fallbackClassName,
+  shape = 'square',
 }: {
   name: string
   avatarUrl?: string | null
   className?: string
   fallbackClassName?: string
+  shape?: 'square' | 'circle'
 }) {
   const image = useRuntimeImageUrl(avatarUrl, { authenticated: true })
   return (
-    <Avatar className={cn(className, 'rounded-none')}>
+    <Avatar className={cn(className, shape === 'circle' ? 'rounded-full' : 'rounded-none')}>
       {image.url && <AvatarImage src={image.url} alt={uit`${name}'s profile picture`} className="object-contain" />}
       <AvatarFallback className={cn('bg-zinc-700 font-semibold text-zinc-100 dark:bg-zinc-300 dark:text-zinc-900', fallbackClassName)}>
         {profileInitials(name)}

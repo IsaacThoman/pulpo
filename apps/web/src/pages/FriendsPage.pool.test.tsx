@@ -75,10 +75,12 @@ describe('combined Friends and Pool page', () => {
     await mount()
 
     const requestRegion = screen.getByRole('heading', { name: 'Friend requests' }).closest('section')!
-    expect(within(requestRegion).getByText('Mutual friends:')).toBeTruthy()
+    expect(within(requestRegion).queryByText('Mutual friends:')).toBeNull()
+    expect(within(requestRegion).getByRole('group', { name: 'Mutual friends: Alice, Bob' })).toBeTruthy()
     expect(within(requestRegion).getByRole('link', { name: 'Alice' }).getAttribute('href')).toBe('/alice')
     const suggestionRegion = screen.getByRole('heading', { name: 'People you may know' }).closest('section')!
     expect(within(suggestionRegion).getByText('Carol')).toBeTruthy()
+    expect(within(suggestionRegion).getByRole('group', { name: 'Mutual friends: Alice, Bob' })).toBeTruthy()
     expect(within(suggestionRegion).getByRole('link', { name: 'Bob' }).getAttribute('href')).toBe('/bob')
     expect(within(friendsRegion()).getByRole('link', { name: 'Bob' }).getAttribute('href')).toBe('/bob')
 
