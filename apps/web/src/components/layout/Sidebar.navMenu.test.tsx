@@ -167,17 +167,48 @@ describe('sidebar nav button menus', () => {
     expect(location.pathname).toBe('/billing')
   })
 
-  it('shows and hides sidebar items from the account menu with checkbox items', async () => {
+  it.each([
+    { pinned: true, key: 'Enter', label: 'Unpin Usage from sidebar' },
+    { pinned: false, key: ' ', label: 'Pin Usage to sidebar' },
+  ])('lets the keyboard activate "$label" with $key without leaving the menu', async ({ pinned, key, label }) => {
+    settings.sidebarPins.usage = pinned
+    mount()
+    const account = screen.getByRole('button', { name: /Octo/ })
+    fireEvent.keyDown(account, { key: 'ArrowDown' })
+    const search = await screen.findByRole('menuitem', { name: 'Search' })
+    await waitFor(() => expect(document.activeElement).toBe(search))
+    const searchPin = screen.getByRole('menuitem', { name: 'Unpin Search from sidebar' })
+    fireEvent.keyDown(search, { key: 'ArrowDown' })
+    await waitFor(() => expect(document.activeElement).toBe(searchPin))
+    fireEvent.keyDown(searchPin, { key: 'ArrowDown' })
+    const usage = screen.getByRole('menuitem', { name: 'Usage' })
+    await waitFor(() => expect(document.activeElement).toBe(usage))
+    const pin = screen.getByRole('menuitem', { name: label })
+    fireEvent.keyDown(usage, { key: 'ArrowDown' })
+    await waitFor(() => expect(document.activeElement).toBe(pin))
+    fireEvent.keyDown(pin, { key })
+    expect(settings.set).toHaveBeenCalledExactlyOnceWith('sidebarPins', expect.objectContaining({ usage: !pinned }))
+    expect(document.activeElement).toBe(pin)
+    expect(screen.getByRole('menu')).toBeTruthy()
+    expect(location.pathname).toBe('/usage')
+    expect(onOpenSearch).not.toHaveBeenCalled()
+    expect(screen.queryByRole('menuitem', { name: 'Show in sidebar' })).toBeNull()
+
+    fireEvent.keyDown(pin, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(account))
+  })
+
+  it('keeps the pin click separate from opening the page', async () => {
     mount()
     fireEvent.contextMenu(screen.getByRole('button', { name: /Octo/ }))
-    const trigger = await screen.findByRole('menuitem', { name: 'Show in sidebar' })
-    fireEvent.keyDown(trigger, { key: 'ArrowRight' })
-    const usage = await screen.findByRole('menuitemcheckbox', { name: 'Usage' })
-    expect(usage.getAttribute('aria-checked')).toBe('true')
-    fireEvent.click(usage)
-    expect(settings.set).toHaveBeenCalledWith('sidebarPins', expect.objectContaining({ usage: false }))
-    // The hover-only pin buttons stay out of the menu's accessibility tree.
-    expect(screen.queryByRole('button', { name: /sidebar/ })).toBeNull()
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Unpin Billing from sidebar' }))
+    expect(settings.set).toHaveBeenCalledExactlyOnceWith('sidebarPins', expect.objectContaining({ billing: false }))
+    expect(location.pathname).toBe('/usage')
+    expect(screen.getByRole('menu')).toBeTruthy()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Billing' }))
+    expect(location.pathname).toBe('/billing')
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
   })
 
   it('opens the account menu on right-click, as on click', async () => {
