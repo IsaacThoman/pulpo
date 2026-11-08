@@ -46,7 +46,7 @@ const CSS = `
 .pp-sorter{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--pp-sorter-size,200px),1fr));gap:16px;padding:16px;overflow:auto;height:100%;box-sizing:border-box;align-content:start;outline:none}
 .pp-sorter .pp-thumb{flex-direction:column}
 .pp-sorter .pp-thumb-number{width:auto;text-align:left}
-.pp-sorter .pp-thumb-frame{width:100%}
+.pp-sorter .pp-thumb-frame{width:100%;flex:none}
 .pp-present{position:fixed;inset:0;z-index:2147483000;background:#000;display:flex;align-items:center;justify-content:center;outline:none;user-select:none;-webkit-user-select:none;touch-action:none}
 .pp-present-stage{position:relative;overflow:hidden}
 .pp-present-content{position:absolute;left:0;top:0;transform-origin:0 0}

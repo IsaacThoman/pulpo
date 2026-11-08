@@ -1409,6 +1409,11 @@ try {
     await page.getByRole('button', { name: 'Slide sorter' }).click()
     await page.getByTestId('presentation-sorter').waitFor()
     assert.deepEqual((await state(page)).shapes, [])
+    // Its thumbnails have the slide's shape (they used to collapse to no height in the grid).
+    await page.waitForFunction(() => {
+      const frames = [...document.querySelectorAll('.pp-sorter .pp-thumb-frame')]
+      return frames.length > 0 && frames.every((frame) => frame.offsetHeight > 0.5 * frame.offsetWidth && frame.querySelector('.pp-slide'))
+    }, null, { timeout: 5000 })
     await bar.getByRole('menuitem', { name: 'Insert', exact: true }).click()
     for (const id of ['text-box', 'image', 'insert-shape', 'insert-line', 'insert-table']) {
       assert.notEqual(await page.locator(`[role="menu"] [data-menu-item="${id}"]`).getAttribute('data-disabled'), null, `Insert ▸ ${id} is off in the sorter`)
