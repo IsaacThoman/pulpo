@@ -291,7 +291,8 @@ export function sheetMenus(view: SheetView, file: MenuDefinition, actions: Sheet
         const current = view.getState()
         const style = current.activeStyle
         const disabled = current.readOnly || current.valuesOnly
-        const align = (hAlign: 'left' | 'center' | 'right') => view.setStyle({ hAlign: style.hAlign === hAlign ? 'general' : hAlign })
+        // Radio choices: picking the checked one keeps it (only the toolbar's buttons toggle off).
+        const align = (hAlign: 'left' | 'center' | 'right') => view.setStyle({ hAlign })
         return [
           { type: 'submenu', id: 'format-number', label: ui("Number"), icon: Hash, disabled, items: numberFormatEntries(view, actions.customNumberFormat) },
           {

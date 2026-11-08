@@ -135,6 +135,19 @@ describe('sheet menus', () => {
     expect(item(menu(readOnly, 'view'), 'show-formulas').disabled).toBeFalsy()
   })
 
+  it('keeps the checked alignment when it is picked again, as a radio choice does', () => {
+    const view = makeView()
+    view.select({ top: 1, left: 1, bottom: 1, right: 1 })
+    item(menu(view, 'format'), 'align-center').onSelect()
+    expect(view.styleAt(1, 1).hAlign).toBe('center')
+    const format = menu(view, 'format')
+    expect(item(format, 'align-center').checked).toBe(true)
+    item(format, 'align-center').onSelect()
+    expect(view.styleAt(1, 1).hAlign).toBe('center')
+    item(menu(view, 'format'), 'align-right').onSelect()
+    expect(view.styleAt(1, 1).hAlign).toBe('right')
+  })
+
   it('adds alternating colors over the data around a single cell', () => {
     const view = makeView()
     view.select({ top: 1, left: 0, bottom: 1, right: 0 })
