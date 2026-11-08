@@ -357,7 +357,7 @@ export class SheetInteractions {
   }
 
   private cursorAt(x: number, y: number): string {
-    if (this.hiddenMarkAt(x, y, false)) return 'pointer'
+    if (!this.view.readOnly && this.hiddenMarkAt(x, y, false)) return 'pointer'
     if (this.painter) return 'copy'
     const border = this.headerBorderAt(x, y)
     return border?.axis === 'col' ? 'col-resize' : border ? 'row-resize' : this.overFillHandle(x, y) ? 'crosshair' : 'cell'
@@ -538,9 +538,8 @@ export class SheetInteractions {
       else view.select({ top: next.row, left: next.col, bottom: next.row, right: next.col })
     }
     // Alt+Down opens the active cell's dropdown list, or its filter menu on a filter header.
-    if (event.altKey && !mod && event.key === 'ArrowDown') {
+    if (event.altKey && !mod && event.key === 'ArrowDown' && this.openDropdown()) {
       event.preventDefault()
-      this.openDropdown()
       return
     }
     // AutoSum is Alt+= on Windows and Linux (Option+= types ≠ on a Mac: Cmd+Shift+T there).
@@ -1461,18 +1460,20 @@ export class SheetInteractions {
     this.list = undefined
   }
 
-  /** Alt+Down: the active cell's list, or the filter menu of a filter header cell. */
-  private openDropdown(): void {
+  /** Alt+Down: the active cell's list, or the filter menu of a filter header cell; false when it has neither. */
+  private openDropdown(): boolean {
     const view = this.view
     const { row, col } = view.selection.active
     const filter = view.sheet.filter.get('value') as AutoFilter | undefined
     const filterRange = filter && view.sheet.resolveRange(filter.range)
     if (filterRange && row === filterRange.top && col >= filterRange.left && col <= filterRange.right) {
       this.openFilterMenu(col, view.cellRect(row, col))
-      return
+      return true
     }
     const validation = commands.validationAt(view.sheet, row, col)
-    if (validation?.type === 'list' && !validation.showDropDown && !view.readOnly) this.openList(row, col)
+    if (validation?.type !== 'list' || validation.showDropDown || view.readOnly) return false
+    this.openList(row, col)
+    return !!this.list
   }
 
   /** Keys while a list dropdown is open (focus stays in the grid's input); true when used. */

@@ -1,4 +1,8 @@
 // @vitest-environment jsdom
+import { execFileSync, spawnSync } from 'node:child_process'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { strFromU8, unzipSync } from 'fflate'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
@@ -720,6 +724,10 @@ describe('data validation', () => {
     key(view, 'Escape')
     expect(view.root.querySelector('.pulpo-sheet-popup')).toBeNull()
     expect(view.inputText(0, 0)).toBe('two')
+    // Without a list, Alt+Down still moves down.
+    view.select(cell(3, 3))
+    key(view, 'ArrowDown', { altKey: true })
+    expect(view.getState().selectionLabel).toBe('D5')
   })
 
   it('builds literal list formulas', () => {
@@ -894,6 +902,59 @@ describe('conditional formatting', () => {
     // Equal priorities from the race resolve the same way on both replicas.
     a.select({ top: 0, left: 0, bottom: 5, right: 1 })
     expect(JSON.stringify([...Array(6).keys()].map((row) => [a.cellRender(row, 0).overlay, a.cellRender(row, 1).overlay]))).toBe(JSON.stringify([...Array(6).keys()].map((row) => [b.cellRender(row, 0).overlay, b.cellRender(row, 1).overlay])))
+  })
+
+  // The fidelity venv from scripts/sheets/setup-fidelity-env.sh (testing/fidelity.ts is Node-only).
+  const python = join(process.env.PULPO_SHEETS_VENV ?? join(homedir(), '.cache', 'pulpo-sheets-venv'), 'bin', 'python')
+  it.skipIf(process.env.PULPO_SHEETS_FIDELITY !== '1' || !existsSync(python))('writes rules and preset styles that openpyxl and LibreOffice read', async () => {
+    const { doc, sheet, view } = setup()
+    values(sheet)
+    view.select({ top: 0, left: 0, bottom: 9, right: 0 })
+    view.addConditionalRule(highlightRule('greaterThan', ['5']))
+    view.select({ top: 0, left: 1, bottom: 9, right: 1 })
+    view.addConditionalRule(highlightRule('textContains', ['x'], 'yellowFillDarkYellowText'))
+    view.select({ top: 0, left: 2, bottom: 9, right: 2 })
+    view.addConditionalRule(colorScaleRule('greenWhiteRed'))
+    view.select({ top: 0, left: 3, bottom: 3, right: 3 })
+    view.setValidation({ type: 'list', formula1: '"Low,High"', errorStyle: 'warning', error: 'Pick one' })
+    const work = mkdtempSync(join(tmpdir(), 'pulpo-sheet-parity-'))
+    try {
+      const file = join(work, 'parity.xlsx')
+      writeFileSync(file, await new SheetCodec().exportFile(doc, { name: 'parity.xlsx', assets: view.options.assets }))
+      const inspect = (path: string) => {
+        const run = spawnSync(python, ['-I', '-c', `import json,sys,openpyxl
+s=openpyxl.load_workbook(sys.argv[1]).active
+def color(c): return c.rgb if c is not None and isinstance(c.rgb, str) else None
+rules=[]
+for k in s.conditional_formatting:
+  for r in k.rules:
+    d=r.dxf
+    rules.append([str(k.sqref),r.type,r.operator,list(r.formula or []),color(d.fill.bgColor) if d and d.fill else None,color(d.font.color) if d and d.font else None])
+print(json.dumps({'cf':sorted(rules),'dv':[[str(v.sqref),v.type,v.formula1,v.errorStyle] for v in s.data_validations.dataValidation]}))`, path], { encoding: 'utf8' })
+        expect(run.status, run.stderr).toBe(0)
+        return JSON.parse(run.stdout) as { cf: unknown[][]; dv: unknown[][] }
+      }
+      const read = inspect(file)
+      expect(read.cf).toEqual([
+        ['A1:A10', 'cellIs', 'greaterThan', ['5'], 'FFFFC7CE', 'FF9C0006'],
+        ['B1:B10', 'containsText', 'containsText', ['NOT(ISERROR(SEARCH("x",B1)))'], 'FFFFEB9C', 'FF9C5700'],
+        ['C1:C10', 'colorScale', null, [], null, null],
+      ])
+      expect(read.dv).toEqual([['D1:D4', 'list', '"Low,High"', 'warning']])
+      if (process.env.PULPO_OFFICE_FIDELITY === '1') {
+        // Run the Node-only LibreOffice tooling outside jsdom (whose import.meta URLs are HTTP).
+        const converted = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e', `
+          import { libreOfficeAvailable, libreOfficeConvert } from './dist/office/sheets/testing/fidelity.js'
+          console.log(JSON.stringify(libreOfficeAvailable() ? libreOfficeConvert(process.argv[1], 'xlsx', process.argv[2]) : { ok: false, error: 'no LibreOffice' }))
+        `, file, join(work, 'lo')], { encoding: 'utf8' })) as { ok: boolean; error?: string; outputs?: string[] }
+        expect(converted.ok, converted.error).toBe(true)
+        const calc = inspect(converted.outputs![0]!)
+        expect(calc.cf.map((rule) => [rule[0], rule[4]])).toEqual(expect.arrayContaining([['A1:A10', 'FFFFC7CE'], ['B1:B10', 'FFFFEB9C']]))
+        expect(calc.dv.map((rule) => rule[2])).toEqual(['"Low,High"'])
+      }
+    } finally {
+      rmSync(work, { recursive: true, force: true })
+    }
   })
 
   it('is refused in read-only and CSV views', () => {
