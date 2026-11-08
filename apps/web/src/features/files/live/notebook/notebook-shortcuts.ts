@@ -1,6 +1,7 @@
 import { ui } from '@/i18n/ui'
 import { redoShortcut } from '../chrome/standard-menus'
 import type { ShortcutGroup } from '../chrome/shortcuts'
+import { FAMILIAR_SHORTCUTS } from './shortcuts'
 import { PRINT_SHORTCUT, SAVE_SHORTCUT, SHORTCUTS_SHORTCUT } from '../chrome/use-editor-shortcuts'
 
 const mod = (key: string, more: { shift?: boolean; alt?: boolean } = {}) => ({ key, mod: true, ...more })
@@ -44,8 +45,12 @@ export function notebookShortcutGroups(): ShortcutGroup[] {
         { label: ui("Split the cell at the cursor"), keys: [mod('-', { shift: true })] },
         { label: ui("Go to the cell above or below"), keys: [ui("↑ on the first line"), ui("↓ on the last line")] },
         { label: ui("Comment or uncomment lines"), keys: [mod('/')] },
-        { label: ui("Find in the cell"), keys: [mod('f')] },
       ],
+    },
+    {
+      id: 'familiar',
+      title: ui("JupyterLab, VS Code, and Colab"),
+      items: FAMILIAR_SHORTCUTS.map(([keys, label]) => ({ label: label(), keys: [keys] })),
     },
     {
       id: 'common',

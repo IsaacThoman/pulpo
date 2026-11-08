@@ -9,6 +9,7 @@ import {
   mergeCells,
   moveCells,
   setCellType,
+  setHeadingLevel,
   setOutputsCollapsed,
   setSourceCollapsed,
   shiftCells,
@@ -78,6 +79,12 @@ export interface NotebookEditorState {
   peers: Record<string, NotebookPeer[]>
 }
 
+/**
+ * Commands whose effect is the view's, not the document's: notebook-wide find, line numbers, the
+ * shortcuts help, and scrolling long outputs. The view handles them (see `setViewCommandHandler`).
+ */
+export type NotebookViewCommand = 'find' | 'replace' | 'lineNumbers' | 'shortcuts' | 'outputScroll'
+
 export interface NotebookControllerOptions {
   doc: Y.Doc
   awareness: Awareness
@@ -92,6 +99,8 @@ interface Clipboard {
   docGuid: string
   assets: LiveAssetStore
   cells: CellInit[]
+  /** The plain text copy gave other apps, to recognize it when it is pasted back. */
+  text: string
 }
 
 // One in-memory clipboard per page; it is neither persisted nor shared across browser tabs.
@@ -105,6 +114,9 @@ function setClipboard(value: Clipboard | null): void {
 
 /** Two presses of D within this long delete the selected cells, as in Jupyter. */
 const DOUBLE_KEY_MS = 800
+/** After Ctrl+M, the next key within this long picks a command, as in Colab. */
+const CHORD_MS = 1_500
+const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'AltGraph', 'CapsLock', 'Fn'])
 /**
  * The server relays awareness as volatile messages, which a busy connection may drop; once this
  * session's cursor and cell settle, its state is sent once more so others never keep a stale one.
@@ -113,10 +125,18 @@ const AWARENESS_RESEND_MS = 1_000
 
 export interface NotebookKey {
   key: string
+  /** The physical key (`KeyF`), which names the letter when Option changes the character on a Mac. */
+  code?: string
   shiftKey?: boolean
   ctrlKey?: boolean
   metaKey?: boolean
   altKey?: boolean
+}
+
+/** The key's letter, lower case; with Alt held, the physical key's (Option+F types ƒ on a Mac). */
+function letterOf(event: NotebookKey): string {
+  if (event.altKey && event.code && /^Key[A-Z]$/.test(event.code)) return event.code.slice(3).toLowerCase()
+  return event.key.length === 1 ? event.key.toLowerCase() : event.key
 }
 
 function blobsWithAssets(init: CellInit): NotebookBlob[] {
@@ -135,6 +155,9 @@ export class NotebookController {
   private anchor: string | null = null
   private lastKey: { key: string; at: number } | null = null
   private cursorOf: ((key: string) => number | null) | null = null
+  private viewHandler: ((command: NotebookViewCommand) => boolean) | null = null
+  /** When the pending Ctrl+M chord expires (0: none pending). */
+  private chordUntil = 0
   private scheduled = false
   private destroyed = false
   private resendTimer: ReturnType<typeof setTimeout> | null = null
@@ -187,6 +210,23 @@ export class NotebookController {
   /** How the view reports a cell editor's cursor, for splitting at it. */
   setCursorProvider(provider: ((key: string) => number | null) | null): void {
     this.cursorOf = provider
+  }
+
+  /** The cursor's offset in a cell's source, if the view has an editor for it. */
+  cursorIn(key: string): number | null {
+    return this.cursorOf?.(key) ?? null
+  }
+
+  /**
+   * How the view runs view commands (find, line numbers, help); the handler returns whether it
+   * did. Without one, their keys are left to the browser.
+   */
+  setViewCommandHandler(handler: ((command: NotebookViewCommand) => boolean) | null): void {
+    this.viewHandler = handler
+  }
+
+  private view(command: NotebookViewCommand): boolean {
+    return this.viewHandler?.(command) ?? false
   }
 
   setReadOnly(readOnly: boolean): void {
@@ -404,10 +444,11 @@ export class NotebookController {
   copy(): string {
     const keys = new Set(this.targets())
     const cells = orderedCells(this.doc).filter((entry) => keys.has(entry.key))
-    const copied = { docGuid: this.doc.guid, assets: this.assets, cells: cells.map((entry) => cellInitOf(entry.cell)) }
-    setClipboard(copied)
+    const inits = cells.map((entry) => cellInitOf(entry.cell))
     // Plain text for other apps: the sources, a blank line apart.
-    return copied.cells.map((cell) => cell.source ?? '').join('\n\n')
+    const text = inits.map((cell) => cell.source ?? '').join('\n\n')
+    setClipboard({ docGuid: this.doc.guid, assets: this.assets, cells: inits, text: text.replace(/\r\n?/g, '\n') })
+    return text
   }
 
   cut(): string {
@@ -452,6 +493,35 @@ export class NotebookController {
       this.anchor = keys[0]!
       this.update({ active: keys[keys.length - 1]!, mode: 'command', selected: keys })
     }
+  }
+
+  /**
+   * Pastes what the system clipboard holds (Ctrl/Cmd+V in command mode). Text this page copied as
+   * cells pastes the cells whole, outputs and all; any other text becomes one new code cell.
+   */
+  async pasteText(text: string, where: 'above' | 'below' = 'below'): Promise<void> {
+    if (!this.editable) return
+    const normalized = text.replace(/\r\n?/g, '\n')
+    if (clipboard && (!normalized || normalized === clipboard.text)) return this.paste(where)
+    if (normalized) this.insert(where, 'code', { source: normalized })
+  }
+
+  /** Copies the selected cells, outputs included, next to them and selects the copies. */
+  duplicate(where: 'above' | 'below' = 'below'): string[] {
+    if (!this.editable) return []
+    const wanted = new Set(this.targets())
+    const cells = orderedCells(this.doc).filter((entry) => wanted.has(entry.key))
+    if (!cells.length) return []
+    const position: CellPosition = where === 'above' ? { before: cells[0]!.key } : { after: cells[cells.length - 1]!.key }
+    this.undoManager.stopCapturing()
+    // The copies stay in this notebook, so their images are already among its assets.
+    const keys = insertCells(this.doc, position, cells.map((entry) => cellInitOf(entry.cell)), this.origin)
+    this.refresh()
+    if (keys.length) {
+      this.anchor = keys[0]!
+      this.update({ active: keys[keys.length - 1]!, mode: 'command', selected: keys })
+    }
+    return keys
   }
 
   move(direction: 'up' | 'down'): void {
@@ -530,6 +600,35 @@ export class NotebookController {
     this.undoManager.stopCapturing()
   }
 
+  /**
+   * Collapses or expands every code cell's source or outputs as one undo step (JupyterLab's
+   * View menu). Collapsing outputs skips cells without any, so their metadata stays as it was.
+   */
+  setAllCollapsed(kind: 'source' | 'outputs', collapsed: boolean): void {
+    if (!this.editable) return
+    const keys = orderedCells(this.doc).filter(({ cell }) => {
+      if (cellType(cell) !== 'code') return false
+      const current = kind === 'source' ? sourceCollapsed(cell) : outputsCollapsed(cell)
+      if (current === collapsed) return false
+      return kind === 'source' || !collapsed || cellOutputs(cell).json !== '[]'
+    }).map((entry) => entry.key)
+    if (!keys.length) return
+    this.undoManager.stopCapturing()
+    if (kind === 'source') setSourceCollapsed(this.doc, keys, collapsed, this.origin)
+    else setOutputsCollapsed(this.doc, keys, collapsed, this.origin)
+    this.undoManager.stopCapturing()
+  }
+
+  /** Makes the selected cells Markdown headings of a level (Jupyter's 1 to 6 keys). */
+  setHeading(level: number): void {
+    if (!this.editable) return
+    const keys = this.targets()
+    if (!keys.length) return
+    this.undoManager.stopCapturing()
+    setHeadingLevel(this.doc, keys, level, this.origin)
+    this.refresh()
+  }
+
   undo(): void {
     if (this.editable) this.undoManager.undo()
   }
@@ -553,17 +652,68 @@ export class NotebookController {
   }
 
   /**
+   * Colab's Ctrl+M chords, in either mode (the cell editor sends its keys here first): Ctrl+M,
+   * then A or B inserts a code cell above or below, D deletes, Y and M make code or Markdown,
+   * O hides outputs, - splits, K and J move, N and P select the next or previous cell, Z undoes,
+   * L toggles line numbers, and H shows the shortcuts. Ctrl is literal on every platform (Cmd+M
+   * minimizes the window on a Mac). Returns whether the key was the chord's.
+   */
+  handleChordKey(event: NotebookKey): boolean {
+    const now = Date.now()
+    const pending = this.chordUntil > 0 && now <= this.chordUntil
+    // With Ctrl still held, the second M of Ctrl+M M is Ctrl+M again; it makes Markdown, as Ctrl+M Ctrl+B inserts.
+    if (!pending && event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && (event.key.toLowerCase() === 'm' || event.code === 'KeyM')) {
+      this.chordUntil = now + CHORD_MS
+      return true
+    }
+    if (!pending) {
+      this.chordUntil = 0
+      return false
+    }
+    // Shift and the like, pressed on the way to the next key, leave the chord pending.
+    if (MODIFIER_KEYS.has(event.key)) return false
+    this.chordUntil = 0
+    const edit = this.state.mode === 'edit'
+    switch (letterOf(event)) {
+      case 'a': this.insert('above', 'code', { edit }); break
+      case 'b': this.insert('below', 'code', { edit }); break
+      case 'd': this.deleteSelected(); break
+      case 'y': this.setType('code'); break
+      case 'm': this.setType('markdown'); break
+      case 'o': this.toggleOutputs(); break
+      case '-': this.split(); break
+      case 'k': this.move('up'); break
+      case 'j': this.move('down'); break
+      case 'n': this.step('down', { mode: this.state.mode }); break
+      case 'p': this.step('up', { mode: this.state.mode }); break
+      case 'z': this.undo(); break
+      case 'l': this.view('lineNumbers'); break
+      case 'h': this.view('shortcuts'); break
+      default:
+        // Any other key ends the chord without typing itself, as in Colab.
+        break
+    }
+    return true
+  }
+
+  /**
    * Jupyter's command-mode keys. Returns whether the key was handled, so the view can prevent the
    * browser's default. Edit-mode keys are the cell editor's.
    */
   handleCommandKey(event: NotebookKey): boolean {
     if (this.state.mode !== 'command') return false
+    if (this.handleChordKey(event)) return true
     const mod = Boolean(event.ctrlKey || event.metaKey)
     const key = event.key.length === 1 ? event.key.toLowerCase() : event.key
     const repeat = this.lastKey?.key === key && Date.now() - this.lastKey.at < DOUBLE_KEY_MS
     this.lastKey = { key, at: Date.now() }
     if (mod) {
-      if (key === 'z' && !event.shiftKey) this.undo()
+      const letter = letterOf(event)
+      // Find, and replace with Ctrl+H, or Cmd+Option+F and Cmd+Shift+H on a Mac (Cmd+H hides the app).
+      if (letter === 'f' && !event.shiftKey) return this.view(event.altKey ? 'replace' : 'find')
+      if (letter === 'h' && !event.altKey) return this.view('replace')
+      if ((key === 'ArrowUp' || key === 'ArrowDown') && event.shiftKey && !event.altKey) this.move(key === 'ArrowUp' ? 'up' : 'down')
+      else if (key === 'z' && !event.shiftKey) this.undo()
       else if ((key === 'z' && event.shiftKey) || key === 'y') this.redo()
       else if (key === 'a') this.selectAll()
       else if (key === 'Enter') this.setMode('command')
@@ -573,6 +723,12 @@ export class NotebookController {
     if (event.altKey) {
       if (key === 'Enter') {
         this.insert('below', 'code', { edit: true })
+        return true
+      }
+      // VS Code's Alt+Up/Down moves cells, and Shift+Alt+Up/Down copies them up or down.
+      if (key === 'ArrowUp' || key === 'ArrowDown') {
+        if (event.shiftKey) this.duplicate(key === 'ArrowUp' ? 'above' : 'below')
+        else this.move(key === 'ArrowUp' ? 'up' : 'down')
         return true
       }
       return false
@@ -612,7 +768,9 @@ export class NotebookController {
         void this.paste(event.shiftKey ? 'above' : 'below')
         return true
       case 'z':
-        this.undo()
+        // Shift+Z redoes, as in JupyterLab.
+        if (event.shiftKey) this.redo()
+        else this.undo()
         return true
       case 'y':
         this.setType('code')
@@ -625,7 +783,22 @@ export class NotebookController {
         this.setType('raw')
         return true
       case 'o':
+        // Shift+O scrolls long outputs, as in classic Jupyter, where the view can.
+        if (event.shiftKey && this.view('outputScroll')) return true
         this.toggleOutputs()
+        return true
+      case 'l':
+        // Shift+L shows line numbers, as in JupyterLab.
+        return Boolean(event.shiftKey) && this.view('lineNumbers')
+      case 'h':
+        return this.view('shortcuts')
+      case '1':
+      case '2':
+      case '3':
+      case '4':
+      case '5':
+      case '6':
+        this.setHeading(Number(key))
         return true
       case 'Home':
         if (this.state.cells[0]) this.select(this.state.cells[0].key)

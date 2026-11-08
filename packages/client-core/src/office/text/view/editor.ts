@@ -3,18 +3,21 @@ import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
 import { defaultKeymap, indentLess, indentMore, indentWithTab } from '@codemirror/commands'
 import { bracketMatching, foldGutter, foldKeymap, HighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language'
 import { highlightSelectionMatches, openSearchPanel, search, searchKeymap } from '@codemirror/search'
-import { Compartment, EditorState, type Extension } from '@codemirror/state'
+import { Compartment, EditorSelection, EditorState, type Extension } from '@codemirror/state'
 import {
   crosshairCursor,
   drawSelection,
   dropCursor,
   EditorView,
+  getDialog,
   highlightActiveLine,
   highlightActiveLineGutter,
   highlightSpecialChars,
   keymap,
   lineNumbers,
   rectangularSelection,
+  showDialog,
+  type KeyBinding,
 } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
@@ -46,6 +49,8 @@ export interface TextEditorState {
   column: number
   /** Characters selected, 0 for a caret. */
   selected: number
+  /** Cursors and selected ranges (more than one with multiple cursors). */
+  selections: number
   lines: number
   /** The language highlighting the file, or null for plain text. */
   language: string | null
@@ -89,9 +94,106 @@ export interface TextEditor {
   /** Indents or outdents the selected lines, for keyboards without a Tab key. */
   indent(direction: 'more' | 'less'): void
   openSearch(): void
+  /** Opens find and replace with the caret in the replace field. */
+  openReplace(): void
+  /** Opens the "Go to line" prompt (`12`, `12:4`, `+5`, `50%`). */
+  openGotoLine(): void
+  /**
+   * Words and characters of the document or the selection, counted like the Word editor's status
+   * bar. Not part of `state()`: a long file takes a moment to count, and mobile posts every state.
+   */
+  counts(scope: 'document' | 'selection'): TextCounts
   focus(): void
   destroy(): void
 }
+
+export interface TextCounts {
+  words: number
+  /** Characters other than whitespace. */
+  characters: number
+  /** Characters, spaces included (line breaks are not). */
+  charactersWithSpaces: number
+  lines: number
+}
+
+/** Words and characters in text, by the Word editor's rules: a word is a run of non-spaces with a letter or digit. */
+export function textCounts(text: string): TextCounts {
+  let words = 0
+  for (const word of text.split(/\s+/u)) if (/[\p{L}\p{N}]/u.test(word)) words += 1
+  return {
+    words,
+    characters: text.replace(/\s/gu, '').length,
+    charactersWithSpaces: text.replace(/\n/g, '').length,
+    lines: text ? text.split('\n').length : 0,
+  }
+}
+
+/**
+ * Opens the search panel (it mounts while it opens) with the caret in its find field or, for
+ * replace, in the replace field once there is something to find (the selection, or the last
+ * search), as VS Code does; Word and Google Docs start in the find field too.
+ */
+function focusSearchField(view: EditorView, field: 'search' | 'replace'): boolean {
+  openSearchPanel(view)
+  const search = view.dom.querySelector<HTMLInputElement>('.cm-search input[name=search]')
+  const input = field === 'replace' && search?.value ? view.dom.querySelector<HTMLInputElement>('.cm-search input[name=replace]') : search
+  if (!input) return false
+  input.focus()
+  input.select()
+  return true
+}
+
+/** Ctrl+H, or Cmd+Option+F and Cmd+Shift+H on Mac (VS Code's and Google Docs' keys): find and replace. */
+export const openReplacePanel = (view: EditorView): boolean => focusSearchField(view, 'replace')
+
+/**
+ * Asks for a line to go to: `12`, `12:4` (line and column, counted from 1 like the status bar),
+ * `+5` and `-5` (relative), or `50%`. CodeMirror's own `gotoLine` counts columns from 0.
+ */
+export function gotoLineColumn(view: EditorView): boolean {
+  const open = getDialog(view, 'cm-goto-line')
+  if (open) {
+    const field = open.dom.querySelector<HTMLInputElement>('input[name=line]')
+    field?.focus()
+    field?.select()
+    return true
+  }
+  const { state } = view
+  const start = state.doc.lineAt(state.selection.main.head)
+  const { close, result } = showDialog(view, {
+    class: 'cm-goto-line',
+    label: state.phrase('Go to line'),
+    input: { type: 'text', name: 'line', value: String(start.number) },
+    focus: true,
+    submitLabel: state.phrase('go'),
+  })
+  void result.then((form) => {
+    const field = form?.elements.namedItem('line')
+    const match = field instanceof HTMLInputElement ? /^\s*([+-])?(\d+)?(?::(\d+))?(%)?\s*$/.exec(field.value) : null
+    if (!match || (!match[2] && !match[3])) {
+      view.dispatch({ effects: close })
+      return
+    }
+    const [, sign, digits, column, percent] = match
+    let number = digits ? Number(digits) : start.number
+    if (digits && percent) number = Math.round(view.state.doc.lines * (sign ? (sign === '-' ? -1 : 1) * number / 100 + start.number / view.state.doc.lines : number / 100))
+    else if (digits && sign) number = start.number + (sign === '-' ? -number : number)
+    const line = view.state.doc.line(Math.max(1, Math.min(view.state.doc.lines, number)))
+    const selection = EditorSelection.cursor(line.from + Math.max(0, Math.min(line.length, (column ? Number(column) : 1) - 1)))
+    view.dispatch({ effects: [close, EditorView.scrollIntoView(selection.from, { y: 'center' })], selection })
+    view.focus()
+  })
+  return true
+}
+
+/** Find, replace, and go-to-line keys that CodeMirror's search keymap lacks; they go before it. */
+export const findKeymap: readonly KeyBinding[] = [
+  { key: 'Mod-h', mac: 'Mod-Alt-f', run: openReplacePanel, preventDefault: true },
+  { mac: 'Mod-Shift-h', run: openReplacePanel, preventDefault: true },
+  // Literal Control everywhere, as in VS Code, so Cmd+G stays Find next on Mac.
+  { key: 'Ctrl-g', run: gotoLineColumn, preventDefault: true },
+  { key: 'Mod-Alt-g', run: gotoLineColumn, preventDefault: true },
+]
 
 /** How the file indents already: tabs if most indented lines start with one, else the common space width. */
 export function detectIndent(text: string): TextEditorIndent {
@@ -285,7 +387,7 @@ export function createTextEditor(options: TextEditorOptions): TextEditor {
         highlightActiveLine(),
         highlightSelectionMatches(),
         search({ top: true }),
-        keymap.of([...closeBracketsKeymap, ...yUndoManagerKeymap, ...searchKeymap, ...foldKeymap, indentWithTab, ...defaultKeymap]),
+        keymap.of([...closeBracketsKeymap, ...yUndoManagerKeymap, ...findKeymap, ...searchKeymap, ...foldKeymap, indentWithTab, ...defaultKeymap]),
         yCollab(ytext, options.awareness, { undoManager }),
         editorTheme,
         language.of([]),
@@ -338,6 +440,7 @@ export function createTextEditor(options: TextEditorOptions): TextEditor {
       line: line.number,
       column: head - line.from + 1,
       selected: view.state.selection.ranges.reduce((total, range) => total + range.to - range.from, 0),
+      selections: view.state.selection.ranges.length,
       lines: view.state.doc.lines,
       language: current.language,
       wrap: current.wrap,
@@ -384,7 +487,25 @@ export function createTextEditor(options: TextEditorOptions): TextEditor {
       if (!current.readOnly) (direction === 'more' ? indentMore : indentLess)(view)
     },
     openSearch() {
-      openSearchPanel(view)
+      focusSearchField(view, 'search')
+    },
+    openReplace() {
+      focusSearchField(view, 'replace')
+    },
+    openGotoLine() {
+      gotoLineColumn(view)
+    },
+    counts(scope) {
+      const { state } = view
+      if (scope === 'document') return { ...textCounts(state.doc.toString()), lines: state.doc.lines }
+      const ranges = state.selection.ranges.filter((range) => !range.empty)
+      const counted = textCounts(ranges.map((range) => state.sliceDoc(range.from, range.to)).join('\n'))
+      // Lines the selection touches, each once.
+      const lines = new Set<number>()
+      for (const range of ranges) {
+        for (let line = state.doc.lineAt(range.from).number; line <= state.doc.lineAt(range.to).number; line += 1) lines.add(line)
+      }
+      return { ...counted, lines: lines.size }
     },
     focus() {
       view.focus()

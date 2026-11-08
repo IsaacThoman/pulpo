@@ -4,12 +4,14 @@ import { exportNotebookFile, parseNotebook, renderNotebookHtml, type MimeBundle,
 import {
   createCellEditor,
   NotebookController,
+  NotebookSearch,
   readAttachments,
   readOutputs,
   type CellEditor,
   type NotebookCellState,
   type NotebookEditorState,
   type NotebookPeer,
+  type NotebookSearchMatch,
 } from '@pulpo/client-core/office/notebook/view'
 import {
   ArrowDown,
@@ -21,11 +23,13 @@ import {
   Eraser,
   GripVertical,
   Keyboard,
+  ListTree,
   Merge,
   Play,
   Plus,
   Redo2,
   Scissors,
+  Search,
   SplitSquareVertical,
   Trash2,
   Undo2,
@@ -49,6 +53,13 @@ import { helpMenu, undoRedoEntries } from '../chrome/standard-menus'
 import { useEditorShortcuts } from '../chrome/use-editor-shortcuts'
 import type { LiveEditorProps } from '../types'
 import { notebookShortcutGroups } from './notebook-shortcuts'
+import { CellToolbar } from './CellToolbar'
+import { NotebookFindBar, type NotebookFindRequest } from './NotebookFindBar'
+import { NotebookOutline } from './NotebookOutline'
+import { NotebookPosition, OutputScroll } from './NotebookStatus'
+import { NotebookViewMenu } from './NotebookViewMenu'
+import { NOTEBOOK_PREFERENCES, useStoredFlag } from './preferences'
+import { CursorStore, NotebookViewContext, useCurrentMatchIn, useNotebookView, type NotebookView } from './view-context'
 
 /** The phrases CodeMirror shows in cells, in the app's language. */
 function editorLabels(): Record<string, string> {
@@ -64,6 +75,12 @@ function editorLabels(): Record<string, string> {
     replace: ui("replace"),
     'replace all': ui("replace all"),
     close: ui("close"),
+    'Go to line': ui("Go to line"),
+    go: ui("go"),
+    'current match': ui("current match"),
+    'on line': ui("on line"),
+    'replaced match on line $': ui("replaced match on line $"),
+    'replaced $ matches': ui("replaced $ matches"),
     'Control character': ui("Control character"),
   }
 }
@@ -136,16 +153,25 @@ interface CellProps {
 
 /** A cell's source in CodeMirror, bound to its Y.Text. */
 function CellSource({ controller, cell, language, editable, dark, registerEditor, autoFocus }: Pick<CellProps, 'controller' | 'cell' | 'language' | 'editable' | 'dark' | 'registerEditor'> & { autoFocus: boolean }) {
+  const view = useNotebookView()
   const container = useRef<HTMLDivElement>(null)
   const editor = useRef<CellEditor | null>(null)
-  const latest = useRef({ cell, language, editable, dark, autoFocus })
-  latest.current = { cell, language, editable, dark, autoFocus }
+  const latest = useRef({ cell, language, editable, dark, autoFocus, view })
+  latest.current = { cell, language, editable, dark, autoFocus, view }
   const { key } = cell
 
   useEffect(() => {
     const text = controller.sourceOf(key)
     if (!text || !container.current) return
     const initial = latest.current
+    // The caret, for the status bar's "Ln, Col".
+    const report = () => {
+      const state = editor.current?.view.state
+      if (!state) return
+      const head = state.selection.main.head
+      const line = state.doc.lineAt(head)
+      latest.current.view.cursor.report({ key, line: line.number, column: head - line.from + 1, selected: state.selection.ranges.reduce((total, range) => total + range.to - range.from, 0) })
+    }
     const created = createCellEditor({
       container: container.current,
       text,
@@ -158,7 +184,16 @@ function CellSource({ controller, cell, language, editable, dark, registerEditor
       labels: editorLabels(),
       label: uit`${typeLabel(initial.cell.type)} cell`,
       placeholder: initial.cell.type === 'markdown' ? ui("Write Markdown") : initial.cell.type === 'code' ? ui("Write code") : undefined,
-      onFocus: () => controller.select(key, { mode: 'edit' }),
+      lineNumbers: initial.view.lineNumbers,
+      wrap: initial.view.wrap || null,
+      onFind: (command) => latest.current.view.onFind(key, command),
+      // Colab's Ctrl+M chords work while typing too.
+      onKeyDown: (event) => controller.handleChordKey(event),
+      onSelection: report,
+      onFocus: () => {
+        controller.select(key, { mode: 'edit' })
+        report()
+      },
       onShiftEnter: () => controller.advance(),
       onModEnter: () => controller.setMode('command'),
       onAltEnter: () => controller.insert('below', 'code', { edit: true }),
@@ -179,17 +214,49 @@ function CellSource({ controller, cell, language, editable, dark, registerEditor
   useEffect(() => { editor.current?.setReadOnly(!editable) }, [editable])
   useEffect(() => { editor.current?.setDark(dark) }, [dark])
   useEffect(() => { editor.current?.setType(cell.type, language) }, [cell.type, language])
+  useEffect(() => { editor.current?.setLineNumbers(view.lineNumbers) }, [view.lineNumbers])
+  useEffect(() => { editor.current?.setWrap(view.wrap || null) }, [view.wrap])
+  // The find bar's matches in this cell; moving to one selects it here.
+  useEffect(() => {
+    const { search } = view
+    let shown: { matches: unknown; current: number } | null = null
+    let revealed = -1
+    const apply = () => {
+      const target = editor.current
+      if (!target) return
+      const { matches, current } = search.matchesIn(key)
+      if (shown?.matches !== matches || shown.current !== current) {
+        shown = { matches, current }
+        target.setSearchMatches(matches, current)
+      }
+      const { revealed: revision } = search.getState()
+      if (current >= 0 && revision !== revealed) target.select(matches[current]!.from, matches[current]!.to)
+      revealed = revision
+    }
+    apply()
+    return search.subscribe(apply)
+  }, [view.search, key])
 
   return <div ref={container} className="min-w-0 flex-1" data-cell-source />
 }
 
 /** The source as highlighted text, until the cell comes into view. */
-function StaticSource({ controller, cellKey, language }: { controller: NotebookController; cellKey: string; language: string | null }) {
+function StaticSource({ controller, cellKey, language, lineNumbers }: { controller: NotebookController; cellKey: string; language: string | null; lineNumbers: boolean }) {
   const text = controller.sourceOf(cellKey)?.toString() ?? ''
-  return (
+  const source = (
     <pre className="code-highlight min-w-0 flex-1 overflow-hidden px-2.5 py-1.5 font-mono text-[13px] leading-[1.6]">
       <HighlightedCode code={text} language={language} />
     </pre>
+  )
+  if (!lineNumbers) return source
+  // Numbered as the editor that replaces it will be, so mounting it does not shift the text.
+  return (
+    <div className="flex min-w-0 flex-1">
+      <pre aria-hidden className="min-w-8 shrink-0 py-1.5 pr-0.5 pl-2 text-right font-mono text-[13px] leading-[1.6] text-muted-foreground opacity-70 select-none">
+        {text.split('\n').map((_, index) => index + 1).join('\n')}
+      </pre>
+      {source}
+    </div>
   )
 }
 
@@ -219,19 +286,25 @@ function outputKey(output: NotebookOutput, index: number): string {
 }
 
 function CellOutputs({ cell, assets, dark, controller, editable }: { cell: NotebookCellState; assets: LiveAssetStore; dark: boolean; controller: NotebookController; editable: boolean }) {
+  const view = useNotebookView()
   const outputs = useResolved<NotebookOutput[]>(() => (cell.outputs ? readOutputs(cell.outputs, assets) : Promise.resolve([])), [cell.outputs, assets], [])
   // Sandboxed outputs render once per mount, so changed content needs a new frame.
   const keys = useMemo(() => outputs.map(outputKey), [outputs])
   if (!outputs.length) return null
-  if (cell.outputsCollapsed) {
+  if (cell.outputsCollapsed && !view.revealed.has(`${cell.key}:outputs`)) {
     return (
       <div className="flex min-w-0 gap-2">
         <div className="w-10 shrink-0 sm:w-14" />
         <button
           type="button"
-          disabled={!editable}
-          onClick={() => { controller.select(cell.key); controller.toggleOutputs() }}
-          className="h-6 flex-1 cursor-pointer rounded border border-dashed text-left text-xs text-muted-foreground hover:bg-accent disabled:cursor-default"
+          onClick={() => {
+            // Editors show them for everyone; viewers only for themselves.
+            if (!editable) return view.reveal(`${cell.key}:outputs`)
+            controller.select(cell.key)
+            controller.toggleOutputs()
+            view.focusNotebook()
+          }}
+          className="h-6 flex-1 cursor-pointer rounded border border-dashed text-left text-xs text-muted-foreground hover:bg-accent"
         >
           <span className="px-2">{outputs.length === 1 ? ui("1 output hidden") : uit`${outputs.length} outputs hidden`}</span>
         </button>
@@ -239,15 +312,17 @@ function CellOutputs({ cell, assets, dark, controller, editable }: { cell: Noteb
     )
   }
   return (
-    <div className="flex flex-col gap-1.5" data-cell-outputs>
-      {outputs.map((output, index) => (
-        <div key={keys[index]} className="flex min-w-0 gap-2">
-          <Prompt kind="out" count={output.type === 'execute_result' ? output.executionCount : null} />
-          <div className="min-w-0 flex-1 overflow-x-auto">
-            <OutputBody output={output} dark={dark} />
+    <div className="min-w-0" data-cell-outputs>
+      <OutputScroll cellKey={cell.key}>
+        {outputs.map((output, index) => (
+          <div key={keys[index]} className="flex min-w-0 gap-2">
+            <Prompt kind="out" count={output.type === 'execute_result' ? output.executionCount : null} />
+            <div className="min-w-0 flex-1 overflow-x-auto">
+              <OutputBody output={output} dark={dark} />
+            </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </OutputScroll>
     </div>
   )
 }
@@ -268,9 +343,13 @@ function PeerBadges({ peers }: { peers: readonly NotebookPeer[] }) {
 const NotebookCell = memo(function NotebookCell(props: CellProps) {
   const { controller, cell, index, active, selected, mode, peers, language, editable, dark, assets, registerEditor, dropEdge } = props
   const ref = useRef<HTMLElement>(null)
+  const view = useNotebookView()
   const editing = active && mode === 'edit'
-  const near = useNearViewport(ref, editing)
-  const showEditor = cell.type !== 'markdown' || editing
+  // A find match here shows the source (rendered Markdown too), with the match marked.
+  const found = useCurrentMatchIn(view.search, cell.key)
+  const near = useNearViewport(ref, editing || found)
+  const showEditor = cell.type !== 'markdown' || editing || found
+  const sourceHidden = cell.sourceCollapsed && !editing && !found && !view.revealed.has(`${cell.key}:source`)
   const highlight = cell.type === 'code' ? language : cell.type === 'markdown' ? 'markdown' : null
 
   useEffect(() => {
@@ -329,25 +408,29 @@ const NotebookCell = memo(function NotebookCell(props: CellProps) {
           )}
         </div>
         <div className={cn('flex min-w-0 flex-1 flex-col rounded-md', cell.type !== 'markdown' || editing ? 'border bg-code' : '', editing && 'ring-1 ring-emerald-500/50')}>
-          {cell.sourceCollapsed && !editing ? (
-            <button type="button" onClick={() => editable && (controller.select(cell.key), controller.toggleSource())} className="h-7 cursor-pointer px-2.5 text-left text-xs text-muted-foreground">
+          {sourceHidden ? (
+            <button
+              type="button"
+              onClick={() => {
+                // Editors show it for everyone; viewers only for themselves.
+                if (!editable) return view.reveal(`${cell.key}:source`)
+                controller.select(cell.key)
+                controller.toggleSource()
+                view.focusNotebook()
+              }}
+              className="h-7 cursor-pointer px-2.5 text-left text-xs text-muted-foreground"
+            >
               {ui("Source hidden")}
             </button>
           ) : showEditor ? (
             near
               ? <CellSource controller={controller} cell={cell} language={language} editable={editable} dark={dark} registerEditor={registerEditor} autoFocus={editing} />
-              : <StaticSource controller={controller} cellKey={cell.key} language={highlight} />
+              : <StaticSource controller={controller} cellKey={cell.key} language={highlight} lineNumbers={view.lineNumbers} />
           ) : (
             <RenderedMarkdown controller={controller} cell={cell} assets={assets} />
           )}
         </div>
-        {active && editable && (
-          <div className="absolute -top-3 right-2 z-10 hidden items-center gap-0.5 rounded-md border bg-background px-0.5 shadow-sm group-hover/cell:flex group-focus-within/cell:flex">
-            <ToolbarButton label={ui("Move cell up")} onClick={() => controller.move('up')}><ArrowUp className="size-3.5" /></ToolbarButton>
-            <ToolbarButton label={ui("Move cell down")} onClick={() => controller.move('down')}><ArrowDown className="size-3.5" /></ToolbarButton>
-            <ToolbarButton label={ui("Delete cell")} onClick={() => controller.deleteSelected()}><Trash2 className="size-3.5" /></ToolbarButton>
-          </div>
-        )}
+        {active && editable && <CellToolbar controller={controller} cell={cell} mode={mode} focusNotebook={view.focusNotebook} />}
       </div>
       {cell.type === 'code' && <CellOutputs cell={cell} assets={assets} dark={dark} controller={controller} editable={editable} />}
     </section>
@@ -371,6 +454,17 @@ function writeClipboard(text: string) {
 }
 
 /**
+ * Whether text is selected in an output or rendered Markdown inside an element. A cell editor's
+ * selection does not count: it stays on the page after Escape, when C copies the cell.
+ */
+function textSelectedIn(element: HTMLElement): boolean {
+  const selection = window.getSelection()
+  const anchor = selection?.anchorNode
+  const node = anchor instanceof Element ? anchor : anchor?.parentElement
+  return Boolean(selection && !selection.isCollapsed && selection.toString() && node && element.contains(node) && !node.closest('.cm-editor'))
+}
+
+/**
  * Jupyter notebooks, edited collaboratively: cells in CodeMirror (code highlighted in the kernel's
  * language, Markdown rendered when not editing), outputs as the notebook viewer shows them (HTML
  * and scripts only in the sandbox), Jupyter's command and edit modes and keys, and other sessions'
@@ -385,6 +479,21 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
   const root = useRef<HTMLDivElement>(null)
   const dark = useDarkTheme()
   const [shortcuts, setShortcuts] = useState(false)
+  const [search, setSearch] = useState<NotebookSearch | null>(null)
+  const [find, setFind] = useState<NotebookFindRequest | null>(null)
+  const [lineNumbers, setLineNumbers] = useStoredFlag(NOTEBOOK_PREFERENCES.lineNumbers)
+  const [wrap, setWrap] = useStoredFlag(NOTEBOOK_PREFERENCES.wrap)
+  const [outlinePinned, setOutlinePinned] = useStoredFlag(NOTEBOOK_PREFERENCES.outline)
+  // In the side panel the outline floats over the cells, so it opens only when asked there.
+  const [outlineFloating, setOutlineFloating] = useState(false)
+  const outline = width === 'fill' ? outlineFloating : outlinePinned
+  const setOutline = width === 'fill' ? setOutlineFloating : setOutlinePinned
+  const [revealed, setRevealed] = useState<ReadonlySet<string>>(() => new Set())
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
+  const [cursor] = useState(() => new CursorStore())
+  const findOpen = useRef(false)
+  findOpen.current = Boolean(find)
+  const pasteFallback = useRef<number | undefined>(undefined)
   const [drag, setDrag] = useState<{ keys: string[]; over: { key: string; edge: 'before' | 'after' } | null } | null>(null)
   const latestEditable = useRef(editable)
   latestEditable.current = editable
@@ -398,9 +507,15 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
       user: { name: sessionLabel(), color: sessionColor(session.doc.clientID) },
     })
     created.setCursorProvider((key) => editors.current.get(key)?.cursor() ?? null)
+    const finder = new NotebookSearch(created)
     setController(created)
-    return () => created.destroy()
+    setSearch(finder)
+    return () => {
+      finder.destroy()
+      created.destroy()
+    }
   }, [session, assets])
+  useEffect(() => () => cursor.destroy(), [cursor])
 
   useEffect(() => { controller?.setReadOnly(!editable) }, [controller, editable])
 
@@ -410,6 +525,83 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
     if (editor) editors.current.set(key, editor)
     else editors.current.delete(key)
   }, [])
+
+  /** Gives the keyboard back to the notebook after a menu or button: the active cell's editor while editing, else the cell list. */
+  const focusNotebook = useCallback(() => {
+    const current = controller?.getState()
+    const editor = current?.mode === 'edit' && current.active ? editors.current.get(current.active) : undefined
+    if (editor) editor.focus('keep')
+    else root.current?.focus({ preventScroll: true })
+  }, [controller])
+
+  /** Opens (or focuses) the find bar, seeded with the cell's selected text when it is one line, as VS Code does. */
+  const openFind = useCallback((mode: 'find' | 'replace', key?: string | null) => {
+    const state = key ? editors.current.get(key)?.view.state : undefined
+    const selected = state ? state.sliceDoc(state.selection.main.from, state.selection.main.to) : ''
+    setFind((current) => ({ mode, text: selected.includes('\n') ? '' : selected, nonce: (current?.nonce ?? 0) + 1 }))
+  }, [])
+
+  // Cells are memoized, so what they read from the view changes only with what it holds, not on every render.
+  const view = useMemo<NotebookView | null>(() => search && {
+    lineNumbers,
+    wrap,
+    search,
+    cursor,
+    onFind: (key, command) => {
+      if ((command === 'next' || command === 'previous') && findOpen.current) search.step(command === 'next' ? 1 : -1)
+      else openFind(command === 'replace' ? 'replace' : 'find', key)
+    },
+    revealed,
+    reveal: (id) => setRevealed((current) => new Set(current).add(id)),
+    expanded,
+    toggleExpanded: (key) => setExpanded((current) => {
+      const next = new Set(current)
+      if (!next.delete(key)) next.add(key)
+      return next
+    }),
+    focusNotebook,
+  }, [lineNumbers, wrap, search, cursor, openFind, revealed, expanded, focusNotebook])
+
+  // Keys that change the view, not the notebook (find, line numbers, help, output scrolling).
+  useEffect(() => {
+    if (!controller) return
+    controller.setViewCommandHandler((command) => {
+      if (command === 'find' || command === 'replace') openFind(command, controller.getState().mode === 'edit' ? controller.getState().active : null)
+      else if (command === 'lineNumbers') setLineNumbers((on) => !on)
+      else if (command === 'shortcuts') setShortcuts(true)
+      else {
+        const keys = controller.getState().selected
+        setExpanded((current) => {
+          const next = new Set(current)
+          const all = keys.every((key) => current.has(key))
+          for (const key of keys) {
+            if (all) next.delete(key)
+            else next.add(key)
+          }
+          return next
+        })
+      }
+      return true
+    })
+    return () => controller.setViewCommandHandler(null)
+  }, [controller, openFind, setLineNumbers])
+
+  // Ctrl/Cmd+V in command mode: the system clipboard's text, which may be cells copied here (see onKeyDown).
+  useEffect(() => {
+    if (!controller) return
+    const onPaste = (event: ClipboardEvent) => {
+      const state = controller.getState()
+      if (document.activeElement !== root.current || state.mode !== 'command' || state.readOnly) return
+      event.preventDefault()
+      window.clearTimeout(pasteFallback.current)
+      void controller.pasteText(event.clipboardData?.getData('text/plain') ?? '')
+    }
+    document.addEventListener('paste', onPaste)
+    return () => {
+      document.removeEventListener('paste', onPaste)
+      window.clearTimeout(pasteFallback.current)
+    }
+  }, [controller])
 
   // When the active cell or mode changes (never on others' edits, which must not pull focus back
   // from the chat or a menu), edit mode focuses the cell's editor and command mode keeps keys on
@@ -427,13 +619,6 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
     }
   }, [active, mode])
 
-  /** Back to the active cell while editing it, else to the cell list (command mode keys). */
-  const focusNotebook = () => {
-    const current = controller?.getState()
-    const editor = current?.mode === 'edit' && current.active ? editors.current.get(current.active) : undefined
-    if (editor) editor.focus('keep')
-    else root.current?.focus({ preventScroll: true })
-  }
   /**
    * Prints the notebook as the viewer renders it, from the same export downloads use. An export
    * that fails (its images unavailable offline, say) prints nothing.
@@ -455,23 +640,57 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
     focus: focusNotebook,
   })
 
-  if (!controller || !state) return null
+  if (!controller || !state || !search || !view) return null
   const selected = new Set(state.selected)
   const canEdit = editable && !state.readOnly
   const run = (action: () => void) => () => {
     action()
-    if (state.mode === 'command') root.current?.focus({ preventScroll: true })
+    focusNotebook()
   }
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (state.mode !== 'command' || event.target !== root.current) return
+    // A pending Ctrl+M chord takes the next key, whatever it is.
+    if (controller.handleChordKey(event)) {
+      event.preventDefault()
+      return
+    }
     const key = event.key.length === 1 ? event.key.toLowerCase() : event.key
-    if (!event.metaKey && !event.ctrlKey && !event.altKey && (key === 'c' || key === 'x')) {
+    const plain = !event.metaKey && !event.ctrlKey && !event.altKey
+    const primary = (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey
+    // Ctrl/Cmd+C copies text selected in an output or rendered Markdown, as it does anywhere else.
+    if (primary && (key === 'c' || key === 'x') && textSelectedIn(root.current)) return
+    if ((plain || primary) && (key === 'c' || key === 'x')) {
       event.preventDefault()
       writeClipboard(key === 'c' ? controller.copy() : controller.cut())
       return
     }
+    if (primary && key === 'v') {
+      // The paste event that follows brings the system clipboard's text; where a browser sends
+      // none to the cell list, cells copied on this page still paste.
+      window.clearTimeout(pasteFallback.current)
+      pasteFallback.current = window.setTimeout(() => { if (controller.getState().canPaste) void controller.paste('below') }, 0)
+      return
+    }
+    // F3 and Ctrl/Cmd+G find the next match here too, as in a cell: stepping to another cell leaves the keyboard here.
+    const findMod = mac ? event.metaKey : event.ctrlKey
+    if (!event.altKey && ((key === 'F3' && !event.metaKey && !event.ctrlKey) || (findMod && key === 'g'))) {
+      event.preventDefault()
+      if (findOpen.current) search.step(event.shiftKey ? -1 : 1)
+      else openFind('find')
+      return
+    }
     if (controller.handleCommandKey(event)) event.preventDefault()
   }
+  const closeFind = (match: NotebookSearchMatch | null) => {
+    setFind(null)
+    const editor = match ? editors.current.get(match.key) : undefined
+    if (!match || !editor || !canEdit) return focusNotebook()
+    // As after finding in a browser or Word, the match stays selected, ready to type over.
+    controller.select(match.key, { mode: 'edit' })
+    editor.select(match.from, match.to)
+    editor.focus('keep')
+  }
+  const activeIndex = state.cells.findIndex((cell) => cell.key === state.active)
   const activeCell = state.cells.find((cell) => cell.key === state.active)
   const locale = activeLocale()
   const menus: MenuDefinition[] = [
@@ -525,7 +744,14 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
                 <ChevronDown className="size-3" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
+            <DropdownMenuContent
+              align="start"
+              onCloseAutoFocus={(event) => {
+                // Keys go on working in the notebook, not on the menu's button.
+                event.preventDefault()
+                focusNotebook()
+              }}
+            >
               {(['code', 'markdown', 'raw'] as const).map((type) => (
                 <DropdownMenuItem key={type} onSelect={() => controller.setType(type)}>
                   {typeLabel(type)}
@@ -544,12 +770,22 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
                 <Eraser className="size-4" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
+            <DropdownMenuContent
+              align="start"
+              onCloseAutoFocus={(event) => {
+                event.preventDefault()
+                focusNotebook()
+              }}
+            >
               <DropdownMenuItem disabled={!state.active} onSelect={() => controller.clearOutputs('selected')}>{ui("Clear outputs of selected cells")}</DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => controller.clearOutputs('all')}>{ui("Clear all outputs")}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <span className="mx-1 h-5 w-px bg-border" />
+          <ToolbarButton label={ui("Find and replace")} shortcut={{ label: `${mod}F`, aria: `${mac ? 'Meta' : 'Control'}+f` }} onClick={() => openFind('find', state.mode === 'edit' ? state.active : null)}><Search className="size-4" /></ToolbarButton>
+          <ToolbarButton label={ui("Table of contents")} active={outline} onClick={() => setOutline((open) => !open)}><ListTree className="size-4" /></ToolbarButton>
+          <NotebookViewMenu controller={controller} canEdit={canEdit} lineNumbers={lineNumbers} onLineNumbers={setLineNumbers} wrap={wrap} onWrap={setWrap} focusNotebook={focusNotebook} />
           <ToolbarButton label={ui("Keyboard shortcuts")} onClick={() => setShortcuts(true)}><Keyboard className="size-4" /></ToolbarButton>
           {onRunWithAgent && (
             <>
@@ -562,64 +798,87 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
         </div>
         {toolbarSlot}
       </div>
-      <div
-        ref={root}
-        tabIndex={0}
-        role="list"
-        aria-label={ui("Notebook cells")}
-        onKeyDown={onKeyDown}
-        className="min-h-0 flex-1 overflow-y-auto outline-none"
-        onDragEnd={() => setDrag(null)}
-      >
-        <div className={cn('mx-auto flex w-full flex-col py-4 pr-3 pl-1 sm:pr-6', width === 'narrow' ? 'max-w-4xl' : width === 'wide' ? 'max-w-6xl' : '')}>
-          {!state.cells.length && <p className="p-8 text-center text-sm text-muted-foreground">{ui("This notebook has no cells.")}</p>}
-          {state.cells.map((cell, index) => (
-            <div key={cell.key} role="listitem">
-              {index > 0 && canEdit && (
-                <InsertBar onInsert={(type) => {
-                  controller.select(state.cells[index - 1]!.key)
-                  controller.insert('below', type, { edit: true })
-                }} />
-              )}
-              <NotebookCell
-                controller={controller}
-                cell={cell}
-                index={index}
-                active={cell.key === state.active}
-                selected={selected.has(cell.key)}
-                mode={state.mode}
-                peers={state.peers[cell.key] ?? NO_PEERS}
-                language={state.language}
-                editable={canEdit}
-                dark={dark}
-                assets={assets}
-                registerEditor={registerEditor}
-                dropEdge={drag?.over?.key === cell.key ? drag.over.edge : null}
-                onDragStart={(key, event) => {
-                  const keys = selected.has(key) ? state.selected : [key]
-                  event.dataTransfer.setData('application/x-pulpo-notebook-cell', keys.join(','))
-                  event.dataTransfer.effectAllowed = 'move'
-                  const section = (event.target as HTMLElement).closest('section')
-                  if (section) event.dataTransfer.setDragImage(section, 20, 20)
-                  setDrag({ keys, over: null })
-                }}
-                onDragOverCell={(key, edge) => setDrag((current) => current && (edge ? { ...current, over: { key, edge } } : current.over?.key === key ? { ...current, over: null } : current))}
-                onDrop={(key, edge) => {
-                  if (drag && !drag.keys.includes(key)) controller.moveTo(drag.keys, edge === 'before' ? { before: key } : { after: key })
-                  setDrag(null)
-                }}
-              />
+      {find && <NotebookFindBar search={search} request={find} readOnly={!canEdit} onClose={closeFind} />}
+      <div className="relative flex min-h-0 flex-1">
+        {outline && (
+          <NotebookOutline
+            doc={session.doc}
+            activeIndex={activeIndex}
+            overlay={width === 'fill'}
+            onJump={(key) => {
+              root.current?.querySelector(`[data-cell-key="${key}"]`)?.scrollIntoView({ block: 'start' })
+              controller.select(key)
+              if (width === 'fill') setOutline(false)
+              root.current?.focus({ preventScroll: true })
+            }}
+            onClose={() => {
+              setOutline(false)
+              focusNotebook()
+            }}
+          />
+        )}
+        <div
+          ref={root}
+          tabIndex={0}
+          role="list"
+          aria-label={ui("Notebook cells")}
+          onKeyDown={onKeyDown}
+          className="min-h-0 min-w-0 flex-1 overflow-y-auto outline-none"
+          onDragEnd={() => setDrag(null)}
+        >
+          <NotebookViewContext.Provider value={view}>
+            <div className={cn('mx-auto flex w-full flex-col py-4 pr-3 pl-1 sm:pr-6', width === 'narrow' ? 'max-w-4xl' : width === 'wide' ? 'max-w-6xl' : '')}>
+              {!state.cells.length && <p className="p-8 text-center text-sm text-muted-foreground">{ui("This notebook has no cells.")}</p>}
+              {state.cells.map((cell, index) => (
+                <div key={cell.key} role="listitem">
+                  {index > 0 && canEdit && (
+                    <InsertBar onInsert={(type) => {
+                      controller.select(state.cells[index - 1]!.key)
+                      controller.insert('below', type, { edit: true })
+                    }} />
+                  )}
+                  <NotebookCell
+                    controller={controller}
+                    cell={cell}
+                    index={index}
+                    active={cell.key === state.active}
+                    selected={selected.has(cell.key)}
+                    mode={state.mode}
+                    peers={state.peers[cell.key] ?? NO_PEERS}
+                    language={state.language}
+                    editable={canEdit}
+                    dark={dark}
+                    assets={assets}
+                    registerEditor={registerEditor}
+                    dropEdge={drag?.over?.key === cell.key ? drag.over.edge : null}
+                    onDragStart={(key, event) => {
+                      const keys = selected.has(key) ? state.selected : [key]
+                      event.dataTransfer.setData('application/x-pulpo-notebook-cell', keys.join(','))
+                      event.dataTransfer.effectAllowed = 'move'
+                      const section = (event.target as HTMLElement).closest('section')
+                      if (section) event.dataTransfer.setDragImage(section, 20, 20)
+                      setDrag({ keys, over: null })
+                    }}
+                    onDragOverCell={(key, edge) => setDrag((current) => current && (edge ? { ...current, over: { key, edge } } : current.over?.key === key ? { ...current, over: null } : current))}
+                    onDrop={(key, edge) => {
+                      if (drag && !drag.keys.includes(key)) controller.moveTo(drag.keys, edge === 'before' ? { before: key } : { after: key })
+                      setDrag(null)
+                    }}
+                  />
+                </div>
+              ))}
+              {canEdit && <InsertBar always onInsert={(type) => {
+                const last = state.cells[state.cells.length - 1]
+                if (last) controller.select(last.key)
+                controller.insert('below', type, { edit: true })
+              }} />}
             </div>
-          ))}
-          {canEdit && <InsertBar always onInsert={(type) => {
-            const last = state.cells[state.cells.length - 1]
-            if (last) controller.select(last.key)
-            controller.insert('below', type, { edit: true })
-          }} />}
+          </NotebookViewContext.Provider>
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-3 border-t px-4 py-1 text-[11px] text-muted-foreground tabular-nums sm:px-6" aria-live="off">
         <span>{state.mode === 'edit' ? ui("Edit mode") : ui("Command mode")}</span>
+        <NotebookPosition cursor={cursor} state={state} />
         {state.selected.length > 1 && <span>{uit`${state.selected.length} cells selected`}</span>}
         <span className="flex-1" />
         {!editable && <span>{ui("Read-only")}</span>}

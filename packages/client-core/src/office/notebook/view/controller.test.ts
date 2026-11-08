@@ -27,7 +27,7 @@ async function open(bytes?: Uint8Array) {
   return { doc, assets, awareness, controller }
 }
 
-const press = (controller: NotebookController, key: string, extra: Partial<{ shiftKey: boolean; metaKey: boolean; altKey: boolean }> = {}) => controller.handleCommandKey({ key, ...extra })
+const press = (controller: NotebookController, key: string, extra: Partial<{ shiftKey: boolean; metaKey: boolean; altKey: boolean; ctrlKey: boolean }> = {}) => controller.handleCommandKey({ key, ...extra })
 const types = (controller: NotebookController) => controller.getState().cells.map((cell) => cell.type)
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -217,5 +217,236 @@ describe('undo steps', () => {
     await flush()
     expect(controller.getState().cells).toHaveLength(1)
     expect(cellSourceText(orderedCells(doc)[0]!.cell)).toBe('print(1)!')
+  })
+})
+
+describe('familiar notebook keys and commands', () => {
+  const sources = (doc: Y.Doc) => orderedCells(doc).map(({ cell }) => cellSourceText(cell))
+
+  it('redoes with Shift+Z, as JupyterLab does', async () => {
+    const { controller } = await open()
+    press(controller, 'b')
+    expect(types(controller)).toHaveLength(2)
+    press(controller, 'z')
+    await flush()
+    expect(types(controller)).toHaveLength(1)
+    press(controller, 'Z', { shiftKey: true })
+    await flush()
+    expect(types(controller)).toHaveLength(2)
+  })
+
+  it('makes headings with 1 to 6 in one undo step', async () => {
+    const { doc, controller } = await open()
+    controller.sourceOf(controller.getState().active!)!.insert(0, 'Title')
+    expect(press(controller, '2')).toBe(true)
+    await flush()
+    expect(types(controller)).toEqual(['markdown'])
+    expect(sources(doc)).toEqual(['## Title'])
+    press(controller, '1')
+    expect(sources(doc)).toEqual(['# Title'])
+    controller.undo()
+    controller.undo()
+    await flush()
+    expect(types(controller)).toEqual(['code'])
+    expect(sources(doc)).toEqual(['Title'])
+    // Shift+1 types "!", which is no heading key.
+    expect(press(controller, '!', { shiftKey: true })).toBe(false)
+  })
+
+  it('moves cells with Alt+arrows and Mod+Shift+arrows, and copies them with Shift+Alt+arrows', async () => {
+    const { doc, controller } = await open()
+    controller.sourceOf(controller.getState().active!)!.insert(0, 'a')
+    controller.insert('below', 'code', { source: 'b' })
+    expect(sources(doc)).toEqual(['a', 'b'])
+    press(controller, 'ArrowUp', { altKey: true })
+    expect(sources(doc)).toEqual(['b', 'a'])
+    press(controller, 'ArrowDown', { metaKey: true, shiftKey: true })
+    expect(sources(doc)).toEqual(['a', 'b'])
+    press(controller, 'ArrowDown', { altKey: true, shiftKey: true })
+    expect(sources(doc)).toEqual(['a', 'b', 'b'])
+    expect(controller.getState().active).toBe(orderedCells(doc)[2]!.key)
+  })
+
+  it('duplicates the selection with its outputs, gives the copies new ids, and undoes in one step', async () => {
+    const { doc, assets, controller } = await open(new Uint8Array(readFileSync(FIXTURE)))
+    const plot = controller.getState().cells[3]!
+    controller.select(plot.key)
+    controller.select(controller.getState().cells[4]!.key, { extend: true })
+    const before = controller.getState().cells.length
+    const copies = controller.duplicate()
+    expect(copies).toHaveLength(2)
+    expect(controller.getState().selected).toEqual(copies)
+    const written = JSON.parse(new TextDecoder().decode(await notebookCodec.exportFile(doc, { name: 'a.ipynb', assets })))
+    expect(written.cells).toHaveLength(before + 2)
+    expect(written.cells[5].outputs).toEqual(written.cells[3].outputs)
+    expect(written.cells[6].source).toEqual(written.cells[4].source)
+    expect(new Set(written.cells.map((cell: { id: string }) => cell.id)).size).toBe(written.cells.length)
+    controller.undo()
+    await flush()
+    expect(controller.getState().cells).toHaveLength(before)
+  })
+
+  it('collapses and expands every code cell in one undo step, leaving cells without outputs alone', async () => {
+    const { doc, controller } = await open(new Uint8Array(readFileSync(FIXTURE)))
+    const withOutputs = orderedCells(doc).filter(({ cell }) => cell.get('cell_type') === 'code' && (cell.get('outputs') as { json: string }).json !== '[]')
+    controller.insert('below', 'code')
+    const code = () => controller.getState().cells.filter((cell) => cell.type === 'code')
+    controller.setAllCollapsed('source', true)
+    await flush()
+    expect(code().every((cell) => cell.sourceCollapsed)).toBe(true)
+    controller.setAllCollapsed('outputs', true)
+    await flush()
+    expect(code().filter((cell) => cell.outputsCollapsed)).toHaveLength(withOutputs.length)
+    expect(code().find((cell) => cell.outputs?.json === '[]')!.outputsCollapsed).toBe(false)
+    expect(controller.getState().cells.filter((cell) => cell.type === 'markdown').every((cell) => !cell.sourceCollapsed && !cell.outputsCollapsed)).toBe(true)
+    controller.undo()
+    await flush()
+    expect(code().some((cell) => cell.outputsCollapsed)).toBe(false)
+    expect(code().every((cell) => cell.sourceCollapsed)).toBe(true)
+    controller.setAllCollapsed('source', false)
+    await flush()
+    expect(code().some((cell) => cell.sourceCollapsed)).toBe(false)
+  })
+
+  it('hides a cell\'s code, and undo shows it again', async () => {
+    const { controller } = await open()
+    controller.toggleSource()
+    await flush()
+    expect(controller.getState().cells[0]!.sourceCollapsed).toBe(true)
+    controller.undo()
+    await flush()
+    expect(controller.getState().cells[0]!.sourceCollapsed).toBe(false)
+  })
+
+  it('runs Colab Ctrl+M chords in command and edit mode', async () => {
+    const { doc, controller } = await open()
+    controller.sourceOf(controller.getState().active!)!.insert(0, 'first')
+    expect(press(controller, 'm', { ctrlKey: true })).toBe(true)
+    expect(press(controller, 'b')).toBe(true)
+    expect(types(controller)).toEqual(['code', 'code'])
+    expect(controller.getState().mode).toBe('command')
+    // The chord's D deletes at once; no second D.
+    press(controller, 'm', { ctrlKey: true })
+    press(controller, 'd')
+    await flush()
+    expect(types(controller)).toEqual(['code'])
+    // While editing, the cell editor sends its keys here first; the letter is not typed.
+    controller.setMode('edit')
+    expect(controller.handleChordKey({ key: 'm', ctrlKey: true })).toBe(true)
+    expect(controller.handleChordKey({ key: 'Shift', shiftKey: true })).toBe(false)
+    expect(controller.handleChordKey({ key: 'm' })).toBe(true)
+    await flush()
+    expect(types(controller)).toEqual(['markdown'])
+    expect(controller.getState().mode).toBe('edit')
+    controller.handleChordKey({ key: 'm', ctrlKey: true })
+    controller.handleChordKey({ key: 'a' })
+    await flush()
+    expect(types(controller)).toEqual(['code', 'markdown'])
+    expect(controller.getState().mode).toBe('edit')
+    expect(sources(doc)).toEqual(['', 'first'])
+    // Without a pending chord, keys are the editor's.
+    expect(controller.handleChordKey({ key: 'b' })).toBe(false)
+  })
+
+  it('reads a chord pressed with Ctrl still held, Ctrl+M Ctrl+M making Markdown', async () => {
+    const { controller } = await open()
+    press(controller, 'm', { ctrlKey: true })
+    expect(press(controller, 'b', { ctrlKey: true })).toBe(true)
+    await flush()
+    expect(types(controller)).toEqual(['code', 'code'])
+    press(controller, 'm', { ctrlKey: true })
+    expect(press(controller, 'm', { ctrlKey: true })).toBe(true)
+    await flush()
+    expect(types(controller)).toEqual(['code', 'markdown'])
+    // The chord is over: the next Ctrl+M starts another.
+    expect(press(controller, 'm', { ctrlKey: true })).toBe(true)
+    press(controller, 'y')
+    await flush()
+    expect(types(controller)).toEqual(['code', 'code'])
+  })
+
+  it('lets a Ctrl+M chord expire', async () => {
+    const { controller } = await open()
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
+    try {
+      press(controller, 'm', { ctrlKey: true })
+      now.mockReturnValue(1_000_000 + 2_000)
+      // D alone is the first half of D, D again, not the chord's delete.
+      expect(press(controller, 'd')).toBe(true)
+      expect(types(controller)).toHaveLength(1)
+    } finally {
+      now.mockRestore()
+    }
+  })
+
+  it('hands view commands to the view, and leaves their keys to the browser without one', async () => {
+    const { controller } = await open()
+    expect(press(controller, 'f', { metaKey: true })).toBe(false)
+    expect(press(controller, 'L', { shiftKey: true })).toBe(false)
+    const commands: string[] = []
+    controller.setViewCommandHandler((command) => {
+      commands.push(command)
+      return true
+    })
+    expect(press(controller, 'f', { metaKey: true })).toBe(true)
+    expect(press(controller, 'h', { ctrlKey: true })).toBe(true)
+    expect(controller.handleCommandKey({ key: 'ƒ', code: 'KeyF', metaKey: true, altKey: true })).toBe(true)
+    expect(press(controller, 'L', { shiftKey: true })).toBe(true)
+    expect(press(controller, 'l')).toBe(false)
+    expect(press(controller, 'h')).toBe(true)
+    expect(press(controller, 'O', { shiftKey: true })).toBe(true)
+    press(controller, 'm', { ctrlKey: true })
+    press(controller, 'l')
+    expect(commands).toEqual(['find', 'replace', 'replace', 'lineNumbers', 'shortcuts', 'outputScroll', 'lineNumbers'])
+  })
+
+  it('pastes cells it copied back whole, and other text as a new code cell', async () => {
+    const from = await open(new Uint8Array(readFileSync(FIXTURE)))
+    from.controller.select(from.controller.getState().cells[3]!.key)
+    const text = from.controller.copy()
+    const to = await open()
+    // The system clipboard may hand the text back with Windows line breaks.
+    await to.controller.pasteText(text.replace(/\n/g, '\r\n'))
+    expect(to.controller.getState().cells[1]!.outputs!.assets.length).toBeGreaterThan(0)
+    await to.controller.pasteText('print("from elsewhere")\r\n')
+    expect(to.controller.getState().cells).toHaveLength(3)
+    const added = to.controller.getState().cells[2]!
+    expect(added.type).toBe('code')
+    expect(cellSourceText(cellsMap(to.doc).get(added.key)!)).toBe('print("from elsewhere")\n')
+    to.controller.undo()
+    await flush()
+    expect(to.controller.getState().cells).toHaveLength(2)
+  })
+
+  it('converges when two collaborators duplicate, make headings, and hide code at once', async () => {
+    const a = await open()
+    const b = new Y.Doc()
+    Y.applyUpdate(b, Y.encodeStateAsUpdate(a.doc))
+    const awareness = new Awareness(b)
+    const other = new NotebookController({ doc: b, awareness, assets: a.assets, readOnly: false, user: { name: 'Bo', color: '#ff0000' } })
+    cleanup.push(() => { other.destroy(); awareness.destroy(); b.destroy() })
+    const sync = () => {
+      Y.applyUpdate(b, Y.encodeStateAsUpdate(a.doc, Y.encodeStateVector(b)))
+      Y.applyUpdate(a.doc, Y.encodeStateAsUpdate(b, Y.encodeStateVector(a.doc)))
+    }
+    a.controller.sourceOf(a.controller.getState().active!)!.insert(0, 'Intro')
+    sync()
+    await flush()
+    a.controller.setHeading(1)
+    other.duplicate()
+    other.toggleSource()
+    sync()
+    await flush()
+    expect(sources(a.doc)).toEqual(sources(b))
+    expect(a.controller.getState().cells.map((cell) => [cell.type, cell.sourceCollapsed])).toEqual(other.getState().cells.map((cell) => [cell.type, cell.sourceCollapsed]))
+    expect(a.controller.getState().cells).toHaveLength(2)
+    // Undo takes back each session's own edits only.
+    other.undo()
+    other.undo()
+    sync()
+    await flush()
+    expect(a.controller.getState().cells).toHaveLength(1)
+    expect(sources(a.doc)).toEqual(['# Intro'])
+    expect(sources(b)).toEqual(['# Intro'])
   })
 })
