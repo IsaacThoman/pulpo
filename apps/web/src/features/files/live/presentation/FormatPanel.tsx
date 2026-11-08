@@ -1,31 +1,35 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { EMU_PER_PX, lineEdits } from '@pulpo/client-core/office/presentation'
 import type { PresentationController } from '@pulpo/client-core/office/presentation/view'
-import { PaintBucket, PenLine } from 'lucide-react'
+import { FlipHorizontal2, FlipVertical2, PaintBucket, PenLine, RotateCcw, RotateCw, X } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
+import { ToolbarButton } from '@/features/files/editor/ToolbarButton'
 import { activeLocale, ui } from '@/i18n/ui'
+import { DASHES } from './names'
 import { ColorPicker } from './pickers'
 import { themeColors } from './theme'
 
 /**
- * The format side panel: size and position, rotation, fill, outline, and shadow of the selected
- * shapes, or the slide background when nothing is selected. Lengths show in centimeters for
- * Spanish and inches otherwise, like Office.
+ * The format side panel (Slides' Format options, PowerPoint's Format Shape): size, position, and
+ * rotation, text box options, fill, outline, shadow, and alt text of the selected shapes, or the
+ * slide background when nothing is selected. Lengths show in centimeters for Spanish and inches
+ * otherwise, like Office.
  */
 
 const EMU_PER_INCH = 914_400
 const EMU_PER_CM = 360_000
 const LINE_WIDTHS = [0.25, 0.5, 0.75, 1, 1.5, 2.25, 3, 4.5, 6]
-const DASHES = ['solid', 'dot', 'dash', 'lgDash', 'dashDot', 'sysDash', 'sysDot']
 const DEFAULT_LINE_FILL = '<a:solidFill><a:schemeClr val="tx1"/></a:solidFill>'
 const SHADOW = '<a:effectLst><a:outerShdw blurRad="50800" dist="38100" dir="2700000" algn="tl" rotWithShape="0"><a:prstClr val="black"><a:alpha val="40000"/></a:prstClr></a:outerShdw></a:effectLst>'
+const selectClass = 'h-8 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm text-foreground'
 
-function NumberField({ label, value, unit, onCommit, step = 0.01 }: { label: string; value: number | undefined; unit: string; onCommit(value: number): void; step?: number }) {
+function NumberField({ label, value, unit, onCommit, step = 0.01, min }: { label: string; value: number | undefined; unit: string; onCommit(value: number): void; step?: number; min?: number }) {
   const [draft, setDraft] = useState(value === undefined ? '' : String(Math.round(value * 100) / 100))
   useEffect(() => setDraft(value === undefined ? '' : String(Math.round(value * 100) / 100)), [value])
   const commit = () => {
     const number = Number(draft.replace(',', '.'))
-    if (Number.isFinite(number) && draft !== '') onCommit(number)
+    if (Number.isFinite(number) && draft !== '' && (min === undefined || number >= min)) onCommit(number)
   }
   return (
     <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -34,6 +38,7 @@ function NumberField({ label, value, unit, onCommit, step = 0.01 }: { label: str
         <input
           type="number"
           step={step}
+          min={min}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
@@ -46,10 +51,32 @@ function NumberField({ label, value, unit, onCommit, step = 0.01 }: { label: str
   )
 }
 
-export function FormatPanel({ controller }: { controller: PresentationController }) {
+/** The picture's (or shape's) description for screen readers; saved when the field is left. */
+function AltText({ value, onCommit }: { value: string; onCommit(value: string): void }) {
+  const [draft, setDraft] = useState(value)
+  const id = useId()
+  useEffect(() => setDraft(value), [value])
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="font-medium"><label htmlFor={id}>{ui("Alt text")}</label></h2>
+      <Textarea
+        id={id}
+        value={draft}
+        rows={3}
+        placeholder={ui("Describe it for people who cannot see it")}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => { if (draft.trim() !== value) onCommit(draft.trim()) }}
+        className="min-h-16 text-sm"
+      />
+    </section>
+  )
+}
+
+export function FormatPanel({ controller, onClose }: { controller: PresentationController; onClose?: () => void }) {
   const metric = activeLocale() === 'es-ES'
   const unitEmu = metric ? EMU_PER_CM : EMU_PER_INCH
   const unit = metric ? 'cm' : 'in'
+  const id = useId()
   const slide = controller.state.slide
   const keys = controller.state.shapes
   const key = keys[0]
@@ -62,10 +89,16 @@ export function FormatPanel({ controller }: { controller: PresentationController
     controller.setXfrm(key, patch)
   }
   if (!slide) return null
+  const header = (title: string) => (
+    <div className="flex items-center justify-between gap-2">
+      <h2 className="font-medium">{title}</h2>
+      {onClose && <ToolbarButton label={ui("Close")} onClick={onClose}><X className="size-4" /></ToolbarButton>}
+    </div>
+  )
   if (!key || !xfrm) {
     return (
       <div className="flex flex-col gap-4 p-4 text-sm" aria-label={ui("Format slide")}>
-        <h2 className="font-medium">{ui("Slide background")}</h2>
+        {header(ui("Slide background"))}
         <div className="flex items-center gap-2">
           <ColorPicker label={ui("Background color")} icon={<PaintBucket className="size-4" />} theme={theme} onPick={(choice) => controller.setBackground(choice.kind === 'fill' ? choice.xml : undefined)} />
           <span className="text-muted-foreground">{ui("Background color")}</span>
@@ -91,8 +124,14 @@ export function FormatPanel({ controller }: { controller: PresentationController
     )
   }
   const shadow = /outerShdw/.test(shape?.effects ?? '')
+  // Tables, charts, and other frames stay upright, as in PowerPoint.
+  const turns = shape?.kind !== 'graphicFrame' && shape?.kind !== 'opaque'
+  const format = controller.formatState()
+  const box = !format.notes ? format.textBox : undefined
+  const knownDashes = DASHES.some((entry) => entry.value === dash)
   return (
     <div className="flex flex-col gap-4 p-4 text-sm" aria-label={ui("Format shape")}>
+      {header(ui("Format options"))}
       <section className="flex flex-col gap-2">
         <h2 className="font-medium">{ui("Size and position")}</h2>
         <div className="grid grid-cols-2 gap-2">
@@ -106,7 +145,51 @@ export function FormatPanel({ controller }: { controller: PresentationController
           <Switch checked={lockAspect} onCheckedChange={setLockAspect} aria-label={ui("Lock aspect ratio")} />
           {ui("Lock aspect ratio")}
         </label>
+        {turns && (
+          <div className="flex items-center gap-0.5" role="group" aria-label={ui("Rotate")}>
+            <ToolbarButton label={ui("Rotate counter-clockwise 90°")} onClick={() => controller.rotateBy(-90)}><RotateCcw className="size-4" /></ToolbarButton>
+            <ToolbarButton label={ui("Rotate clockwise 90°")} onClick={() => controller.rotateBy(90)}><RotateCw className="size-4" /></ToolbarButton>
+            <ToolbarButton label={ui("Flip horizontally")} onClick={() => controller.flip('horizontal')}><FlipHorizontal2 className="size-4" /></ToolbarButton>
+            <ToolbarButton label={ui("Flip vertically")} onClick={() => controller.flip('vertical')}><FlipVertical2 className="size-4" /></ToolbarButton>
+          </div>
+        )}
       </section>
+      {box && (
+        <section className="flex flex-col gap-2" data-format-text-box="">
+          <h2 className="font-medium">{ui("Text fitting")}</h2>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            {ui("Vertical alignment")}
+            <select value={box.anchor} onChange={(event) => controller.setTextAnchor(event.target.value as 't' | 'ctr' | 'b')} className={selectClass}>
+              <option value="t">{ui("Top")}</option>
+              <option value="ctr">{ui("Middle")}</option>
+              <option value="b">{ui("Bottom")}</option>
+            </select>
+          </label>
+          <fieldset className="flex flex-col gap-1.5">
+            <legend className="mb-1 text-xs text-muted-foreground">{ui("Autofit")}</legend>
+            {([
+              ['none', ui("Do not autofit")],
+              ['norm', ui("Shrink text on overflow")],
+              ['shape', ui("Resize shape to fit text")],
+            ] as const).map(([value, label]) => (
+              <label key={value} className="flex items-center gap-2">
+                <input type="radio" name={`${id}-autofit`} value={value} checked={box.autofit === value} onChange={() => controller.setAutofit(value)} className="accent-primary" />
+                {label}
+              </label>
+            ))}
+          </fieldset>
+          <div className="grid grid-cols-2 gap-2">
+            <NumberField label={ui("Left margin")} unit={unit} min={0} value={box.insets.l / unitEmu} onCommit={(value) => controller.setTextInsets({ l: Math.round(value * unitEmu) })} />
+            <NumberField label={ui("Right margin")} unit={unit} min={0} value={box.insets.r / unitEmu} onCommit={(value) => controller.setTextInsets({ r: Math.round(value * unitEmu) })} />
+            <NumberField label={ui("Top margin")} unit={unit} min={0} value={box.insets.t / unitEmu} onCommit={(value) => controller.setTextInsets({ t: Math.round(value * unitEmu) })} />
+            <NumberField label={ui("Bottom margin")} unit={unit} min={0} value={box.insets.b / unitEmu} onCommit={(value) => controller.setTextInsets({ b: Math.round(value * unitEmu) })} />
+          </div>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Switch checked={box.wrap} onCheckedChange={(wrap) => controller.setTextWrap(wrap)} aria-label={ui("Wrap text in shape")} />
+            {ui("Wrap text in shape")}
+          </label>
+        </section>
+      )}
       <section className="flex flex-col gap-2">
         <h2 className="font-medium">{ui("Fill")}</h2>
         <div className="flex items-center gap-2">
@@ -126,10 +209,11 @@ export function FormatPanel({ controller }: { controller: PresentationController
               <option key={width} value={width}>{`${width} pt`}</option>
             ))}
           </select>
-          <select aria-label={ui("Dash type")} value={dash} onChange={(event) => setLine({ dash: event.target.value })} className="h-8 rounded-md border border-input bg-background px-2 text-sm">
-            {DASHES.map((value) => (
-              <option key={value} value={value}>
-                {value}
+          <select aria-label={ui("Dash type")} value={dash} onChange={(event) => setLine({ dash: event.target.value })} className="h-8 min-w-0 rounded-md border border-input bg-background px-2 text-sm">
+            {!knownDashes && <option value={dash}>{dash}</option>}
+            {DASHES.map((entry) => (
+              <option key={entry.value} value={entry.value}>
+                {entry.name()}
               </option>
             ))}
           </select>
@@ -139,6 +223,7 @@ export function FormatPanel({ controller }: { controller: PresentationController
         <Switch checked={shadow} onCheckedChange={(on) => controller.setShapeProperty('effects', on ? SHADOW : '<a:effectLst/>')} aria-label={ui("Shadow")} />
         <span>{ui("Shadow")}</span>
       </section>
+      {keys.length === 1 && shape && <AltText key={shape.key} value={shape.descr ?? ''} onCommit={(value) => controller.setShapeProperty('descr', value || undefined)} />}
       <p className="text-xs text-muted-foreground">{`${Math.round(xfrm.cx / EMU_PER_PX)} × ${Math.round(xfrm.cy / EMU_PER_PX)} px`}</p>
     </div>
   )
