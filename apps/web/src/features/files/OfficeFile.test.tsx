@@ -89,6 +89,32 @@ describe('office files', () => {
     expect(screen.queryByRole('note')).toBeNull()
   })
 
+  it('shows the export while the server converts, and exports a file once at a time', async () => {
+    let finish = () => {}
+    api.downloadFileAsPdf.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve }))
+    let conversion: ReturnType<typeof useOfficeConversion> | undefined
+    function Exporter() {
+      conversion = useOfficeConversion(vi.fn())
+      return <output aria-label="Exporting">{String(conversion.exporting.has(converted.id))}</output>
+    }
+    renderWithProviders(<Exporter />)
+    // The File menu keeps the closure it was built with: both picks go through the first render's.
+    const first = conversion!
+    void first.downloadPdf(converted)
+    void first.downloadPdf(converted)
+    await waitFor(() => expect(screen.getByRole('status', { name: 'Exporting' }).textContent).toBe('true'))
+    expect(api.downloadFileAsPdf).toHaveBeenCalledOnce()
+    expect(useFileToasts.getState().toasts).toEqual([expect.objectContaining({ message: 'Exporting “Budget.xlsx” as PDF…', persistent: true })])
+    finish()
+    await waitFor(() => expect(screen.getByRole('status', { name: 'Exporting' }).textContent).toBe('false'))
+    expect(useFileToasts.getState().toasts).toEqual([])
+    // Once done, it can be exported again.
+    void conversion!.downloadPdf(converted)
+    expect(api.downloadFileAsPdf).toHaveBeenCalledTimes(2)
+    finish()
+    await waitFor(() => expect(useFileToasts.getState().toasts).toEqual([]))
+  })
+
   it('explains the read-only state of legacy files', () => {
     renderWithProviders(<OfficeConversionBanner node={legacy} />)
     expect(screen.getByRole('note').textContent).toBe(".xls files open read only. Converting makes a .xlsx copy beside it; the original stays as it is.")

@@ -518,6 +518,7 @@ function OpenLiveDoc({ userId, docId, view, web }: { userId: string; docId: stri
     titleRef,
     download,
     downloadPdf: node && officeFileActions(node, officeEnabled).pdf ? () => void conversion.downloadPdf(node) : undefined,
+    pdfBusy: Boolean(node && conversion.exporting.has(node.id)),
   })
 
   return (

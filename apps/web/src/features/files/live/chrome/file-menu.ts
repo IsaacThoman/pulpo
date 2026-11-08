@@ -27,6 +27,8 @@ export interface FileMenuHost {
   download?: () => void
   /** The server's PDF, when the office converter is configured. */
   downloadPdf?: () => void
+  /** True while that PDF is being exported (a toast shows it): the item waits for it. */
+  pdfBusy?: boolean
   copyLink?: () => void
   /** Puts focus in the title, with the name selected. */
   rename?: () => void
@@ -36,7 +38,10 @@ export interface FileMenuHost {
   /** Moves the file to the trash (with an undo toast) and leaves the view. */
   trash?: () => void
   details?: () => void
-  /** True while the file cannot change (in the trash, or read-only): commands that change it are disabled. */
+  /**
+   * True while the file cannot change (in the trash, or read-only): commands that change it, or
+   * that need it live (New beside it, Pin, Show in folder), are disabled.
+   */
   locked?: boolean
 }
 
@@ -79,7 +84,7 @@ export function composeFileMenu(host: FileMenuHost | undefined, parts: EditorFil
     ...item('download-native', nativeDownloadLabel(host.name), host.download),
     ...(host.downloadPdf
       // The converter exports the stored file, which it refuses while in the trash.
-      ? item('download-pdf', ui("PDF document (.pdf)"), host.downloadPdf, { disabled: locked })
+      ? item('download-pdf', ui("PDF document (.pdf)"), host.downloadPdf, { disabled: locked || Boolean(host.pdfBusy) })
       : item('download-pdf-print', ui("PDF (print, then save as PDF)"), parts.print)),
     ...(parts.downloads ?? []),
   ] : [...(parts.downloads ?? [])]
@@ -89,6 +94,8 @@ export function composeFileMenu(host: FileMenuHost | undefined, parts: EditorFil
       id: 'new',
       label: ui("New"),
       icon: FilePlus2,
+      // Beside a file in the trash, possibly in a trashed folder too.
+      disabled: locked,
       items: host.create.map((command): MenuEntry => ({ type: 'item', ...command })),
     } satisfies MenuEntry] : []),
     ...item('make-copy', ui("Make a copy"), host?.makeCopy, { icon: Copy, disabled: locked }),
@@ -98,8 +105,9 @@ export function composeFileMenu(host: FileMenuHost | undefined, parts: EditorFil
     separator,
     ...item('rename', ui("Rename"), host?.rename, { icon: Pencil, disabled: locked }),
     ...item('move', ui("Move to…"), host?.move, { icon: FolderInput, disabled: locked }),
-    ...(host?.pin ? item('pin', host.pin.pinned ? ui("Unpin from sidebar") : ui("Pin to sidebar"), host.pin.toggle, { icon: host.pin.pinned ? PinOff : Pin }) : []),
-    ...item('show-in-folder', ui("Show in folder"), host?.showInFolder, { icon: FolderOpen }),
+    // The sidebar refuses trashed files, and their folder no longer lists them.
+    ...(host?.pin ? item('pin', host.pin.pinned ? ui("Unpin from sidebar") : ui("Pin to sidebar"), host.pin.toggle, { icon: host.pin.pinned ? PinOff : Pin, disabled: locked }) : []),
+    ...item('show-in-folder', ui("Show in folder"), host?.showInFolder, { icon: FolderOpen, disabled: locked }),
     ...item('trash', ui("Move to trash"), host?.trash, { icon: Trash2, destructive: true, disabled: locked }),
     separator,
     ...item('details', ui("Details"), host?.details, { icon: Info }),
