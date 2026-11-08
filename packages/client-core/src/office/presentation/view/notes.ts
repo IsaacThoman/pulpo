@@ -60,12 +60,15 @@ export class NotesEditor {
     this.editor?.setReadOnly(this.controller.readOnly)
     const slide = this.controller.state.slide
     const fragment = slide ? this.fragment(slide) : undefined
-    if (slide === this.slide && (this.editor ? this.editorFragment === fragment : !fragment)) {
-      this.updateEmpty()
-      return
+    if (slide !== this.slide || (this.editor ? this.editorFragment !== fragment : !!fragment)) {
+      this.slide = slide
+      this.mount(fragment)
+    } else this.updateEmpty()
+    const reveal = slide && this.editor ? this.controller.takeReveal({ notes: true, slide }) : undefined
+    if (reveal && this.editor) {
+      if (reveal.focus) this.controller.setNotesTarget(this.editor)
+      this.editor.selectText(reveal.paragraph, reveal.from, reveal.to, reveal.focus)
     }
-    this.slide = slide
-    this.mount(fragment)
   }
 
   private editorFragment?: Y.XmlFragment

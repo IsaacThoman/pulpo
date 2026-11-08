@@ -1,8 +1,8 @@
 import { baseKeymap, chainCommands, createParagraphNear, liftEmptyBlock, newlineInCode, splitBlockAs } from '@tiptap/pm/commands'
 import { keymap } from '@tiptap/pm/keymap'
 import type { Mark, Node as ProseMirrorNode } from '@tiptap/pm/model'
-import { EditorState, Selection, TextSelection, type Command as PmCommand } from '@tiptap/pm/state'
-import { EditorView, type MarkViewConstructor, type NodeViewConstructor } from '@tiptap/pm/view'
+import { EditorState, Plugin, PluginKey, Selection, TextSelection, type Command as PmCommand } from '@tiptap/pm/state'
+import { Decoration, DecorationSet, EditorView, type MarkViewConstructor, type NodeViewConstructor } from '@tiptap/pm/view'
 import { yCursorPlugin, ySyncPlugin, ySyncPluginKey } from '@tiptap/y-tiptap'
 import type { Awareness } from 'y-protocols/awareness'
 import type * as Y from 'yjs'
@@ -47,6 +47,34 @@ export interface InlineTextEditorOptions {
 }
 
 const scratch = parseXmlDocument('<w/>')
+
+/** A found match, highlighted while focus stays in the find bar (the selection only shows in a focused editor). */
+const findHighlight = new PluginKey<DecorationSet>('pp-find-highlight')
+
+function findHighlightPlugin(): Plugin<DecorationSet> {
+  return new Plugin<DecorationSet>({
+    key: findHighlight,
+    state: {
+      init: () => DecorationSet.empty,
+      apply(transaction, set) {
+        const range = transaction.getMeta(findHighlight) as { from: number; to: number } | null | undefined
+        if (range === null) return DecorationSet.empty
+        if (range) return DecorationSet.create(transaction.doc, [Decoration.inline(range.from, range.to, { class: 'pp-find-match' })])
+        return set.map(transaction.mapping, transaction.doc)
+      },
+    },
+    props: {
+      decorations: (state) => findHighlight.getState(state),
+      handleDOMEvents: {
+        // Once the text has focus its own selection shows the match.
+        focus: (view) => {
+          if (findHighlight.getState(view.state) !== DecorationSet.empty) view.dispatch(view.state.tr.setMeta(findHighlight, null))
+          return false
+        },
+      },
+    },
+  })
+}
 
 function parsed(xml: unknown): XmlElement | undefined {
   if (typeof xml !== 'string' || !xml) return undefined
@@ -145,6 +173,7 @@ export class InlineTextEditor {
         Escape: () => (options.onEscape?.(), true),
       }),
       keymap(baseKeymap),
+      findHighlightPlugin(),
     ]
     const state = EditorState.create({ schema: slideTextSchema(), plugins })
     const refreshNumbers = () => this.refreshNumbers()
@@ -241,6 +270,28 @@ export class InlineTextEditor {
     view.focus()
     view.dispatch(view.state.tr.setSelection(selection))
     return true
+  }
+
+  /**
+   * Selects text by paragraph and offsets in it (a line break or field counts as one character),
+   * as find reports matches. Without `focus` the range is highlighted, since focus stays elsewhere.
+   */
+  selectText(paragraph: number, from: number, to: number, focus = false): boolean {
+    const { doc } = this.view.state
+    if (paragraph < 0 || paragraph >= doc.childCount) return false
+    let start = 0
+    for (let index = 0; index < paragraph; index++) start += doc.child(index).nodeSize
+    const size = doc.child(paragraph).content.size
+    const position = (offset: number) => start + 1 + Math.max(0, Math.min(offset, size))
+    const range = { from: position(from), to: position(to) }
+    if (focus) this.view.focus()
+    this.view.dispatch(this.view.state.tr.setSelection(TextSelection.create(doc, range.from, range.to)).setMeta(findHighlight, focus ? null : range).scrollIntoView())
+    return true
+  }
+
+  /** Removes a find highlight. */
+  clearHighlight(): void {
+    if (!this.view.isDestroyed && findHighlight.getState(this.view.state) !== DecorationSet.empty) this.view.dispatch(this.view.state.tr.setMeta(findHighlight, null))
   }
 
   /** Selects a range of the document (ProseMirror positions), scrolling it into view. */

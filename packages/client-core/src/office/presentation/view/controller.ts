@@ -4,6 +4,7 @@ import type { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import type { LiveAssetStore } from '../../live-format.js'
 import { copyContent, pasteShapes, pasteSlides, parseClipboard, type PresentationClipboard } from '../clipboard.js'
+import { findMatches, replaceAll, replaceMatch, type FindMatch, type FindOptions } from '../find.js'
 import { slideSections } from '../sections.js'
 import * as commands from '../commands.js'
 import {
@@ -85,6 +86,9 @@ export const DEFAULT_PRESENTATION_LABELS: PresentationLabels = {
   elapsed: 'Elapsed time',
   shapeNames: { rectangle: 'Rectangle', textBox: 'TextBox', picture: 'Picture', table: 'Table', group: 'Group', shape: 'Shape' },
 }
+
+/** Where `revealMatch` selects text once the editor for it is open. */
+type PendingReveal = { paragraph: number; from: number; to: number; focus: boolean } & ({ notes: true; slide: string } | { target: EditingTarget })
 
 /** UI a host draws for the view core: the find bar (`find`, `replace`) and the link box (`link`). */
 export type PresentationRequest = 'find' | 'replace' | 'link'
@@ -1357,6 +1361,65 @@ export class PresentationController {
     } catch {
       return undefined
     }
+  }
+
+  // Find and replace
+
+  /** Every match in the deck, in order: slides, their shapes in drawing order (tables cell by cell), then their notes. */
+  find(query: string, options: FindOptions = {}): FindMatch[] {
+    return findMatches(this.doc, query, options)
+  }
+
+  /** Replaces one match, when its text is still there; formatting stays (one undo step). */
+  replaceMatch(match: FindMatch, replacement: string): boolean {
+    if (this.readOnly || this.destroyed) return false
+    return this.step(() => replaceMatch(this.doc, match, replacement, LOCAL_ORIGIN))
+  }
+
+  /** Replaces every match as one undo step; returns how many. */
+  replaceAll(query: string, replacement: string, options: FindOptions = {}): number {
+    if (this.readOnly || this.destroyed) return 0
+    return this.step(() => replaceAll(this.doc, query, replacement, options, LOCAL_ORIGIN))
+  }
+
+  private pendingReveal?: PendingReveal
+
+  /**
+   * Shows a match: goes to its slide, selects its shape, and selects the text in the slide's
+   * or the notes' editor, highlighted while focus stays in the find bar (`focus` moves focus to
+   * the text). A match inside a group selects the group; its text cannot be edited in place.
+   */
+  revealMatch(match: FindMatch, options: { focus?: boolean } = {}): void {
+    if (this.destroyed || !this.slideKeys().includes(match.slide)) return
+    const range = { paragraph: match.paragraph, from: match.from, to: match.to, focus: options.focus === true }
+    if (this.state.slide !== match.slide) this.goToSlide(match.slide)
+    if (match.notes) {
+      this.pendingReveal = { notes: true, slide: match.slide, ...range }
+      if (this.state.editing) this.setState({ editing: undefined })
+      else this.emit({ selection: true })
+      return
+    }
+    const shape = match.shape
+    if (!shape || match.root !== shape || this.readOnly) {
+      this.pendingReveal = undefined
+      this.setState({ shapes: match.root ? [match.root] : [], editing: undefined })
+      return
+    }
+    const target: EditingTarget = { slide: match.slide, shape, ...(match.row && match.column ? { row: match.row, column: match.column } : {}) }
+    this.pendingReveal = { target, ...range }
+    this.setState({ shapes: [shape], editing: target })
+  }
+
+  /** For views opening an editor: the range `revealMatch` wants selected in it, if any (taken once). */
+  takeReveal(where: { notes: true; slide: string } | EditingTarget): { paragraph: number; from: number; to: number; focus: boolean } | undefined {
+    const pending = this.pendingReveal
+    if (!pending) return undefined
+    const matches = 'notes' in pending
+      ? 'notes' in where && where.slide === pending.slide
+      : !('notes' in where) && where.slide === pending.target.slide && where.shape === pending.target.shape && where.row === pending.target.row && where.column === pending.target.column
+    if (!matches) return undefined
+    this.pendingReveal = undefined
+    return { paragraph: pending.paragraph, from: pending.from, to: pending.to, focus: pending.focus }
   }
 
   /** Copies the selected shapes (else the selected slides; always the slides with `'slides'`) to the system clipboard. */

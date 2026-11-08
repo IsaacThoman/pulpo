@@ -27,6 +27,7 @@ const CSS = `
 .pp-editor-text .pp-text-editor{outline:none;white-space:inherit;cursor:text;user-select:text;-webkit-user-select:text}
 .pp-editor-inner .pp-text-editor:has(> .pp-p:only-child > span:empty)::before,.pp-editor-inner[data-placeholder]:not([data-placeholder=""]) .pp-text-editor:has(> .pp-p:only-child .ProseMirror-trailingBreak:only-child)::before{content:attr(data-placeholder);position:absolute;opacity:.5;pointer-events:none}
 .pp-text-editor .pp-p{margin:0}
+.pp-find-match{background:var(--pp-find,rgba(255,196,0,.5));border-radius:1px}
 .ProseMirror-yjs-cursor{position:relative;margin-left:-1px;margin-right:-1px;border-left:1px solid black;border-right:1px solid black;word-break:normal;pointer-events:none}
 .ProseMirror-yjs-cursor>div{position:absolute;top:-1.05em;left:-1px;font:600 11px/normal system-ui,sans-serif;user-select:none;color:#fff;padding:0 3px;white-space:nowrap}
 .pp-slide p,.pp-slide .pp-p{margin:0}

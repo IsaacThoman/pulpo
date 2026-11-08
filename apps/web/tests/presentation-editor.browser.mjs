@@ -887,6 +887,37 @@ try {
     await page.close()
   })
 
+  await check('find shows matches on slides and in notes without taking focus; replace all reaches the collaborator', async () => {
+    const { page, errors } = await open(context, 'deck=generated/text-formatting.pptx&split=1')
+    await page.waitForFunction(() => window.harness.controllers.b)
+    // The find bar's input keeps focus while matches are shown.
+    await page.evaluate(() => {
+      const field = document.createElement('input')
+      field.id = 'find-field'
+      document.body.prepend(field)
+      field.focus()
+    })
+    const matches = await page.evaluate(() => window.harness.controllers.a.find('formatting').map((match) => ({ ...match })))
+    assert.ok(matches.length >= 2, `${matches.length} matches`)
+    await page.evaluate((match) => window.harness.controllers.a.revealMatch(match), matches[1])
+    await page.locator('.pp-canvas .pp-find-match').first().waitFor()
+    assert.equal(await page.locator('.pp-canvas .pp-find-match').first().innerText(), 'formatting')
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'find-field')
+    assert.equal(await page.evaluate(() => window.harness.controllers.a.state.slide), matches[1].slide)
+    const notes = await page.evaluate(() => window.harness.controllers.a.find('notes').find((match) => match.notes))
+    await page.evaluate((match) => window.harness.controllers.a.revealMatch(match), notes)
+    await page.locator('[data-testid="presentation-notes"] .pp-find-match').first().waitFor()
+    assert.equal(await page.locator('[data-testid="presentation-notes"] .pp-find-match').first().innerText(), 'notes')
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'find-field')
+    const count = await page.evaluate(() => window.harness.controllers.a.replaceAll('formatting', 'styling'))
+    assert.equal(count, matches.length)
+    await page.waitForFunction(() => window.harness.text('b').includes('Character styling'))
+    await page.evaluate(() => window.harness.controllers.a.undo())
+    await page.waitForFunction(() => window.harness.text('b').includes('Character formatting'))
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
   await check('speaker notes take formatting from shortcuts and the toolbar while they have focus', async () => {
     const { page, errors } = await open(context, 'deck=generated/text-formatting.pptx')
     const shape = slideShapes(page).first()

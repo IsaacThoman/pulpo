@@ -1,4 +1,5 @@
 export * from './controller.js'
+export type { FindMatch, FindOptions } from '../find.js'
 export { SlideCanvas, ZOOM_STEPS, type SlideCanvasOptions } from './canvas.js'
 export { SlideList, type SlideListOptions } from './thumbnails.js'
 export { NotesEditor } from './notes.js'

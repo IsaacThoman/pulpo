@@ -235,6 +235,10 @@ export class SlideCanvas {
     if (editing && !this.editor && !this.controller.readOnly) {
       this.editorTarget = target
       this.startEditing(editing.shape, editing.row, editing.column)
+    } else if (editing && this.editor) {
+      // Find moved to another match in the text already open.
+      const reveal = this.controller.takeReveal(editing)
+      if (reveal) this.editor.selectText(reveal.paragraph, reveal.from, reveal.to, reveal.focus)
     }
     if (this.editor && this.controller.state.editing && slide && (change.slides.has(slide) || change.parts)) this.refreshEditorFrame()
   }
@@ -664,7 +668,11 @@ export class SlideCanvas {
     this.controller.activeEditor = this.editor
     const caret = this.pendingCaret
     this.pendingCaret = undefined
-    if (!caret || !this.editor.caretAt(caret, caret.word)) this.editor.focus()
+    const editing = this.controller.state.editing
+    const reveal = editing ? this.controller.takeReveal(editing) : undefined
+    // A match find shows keeps focus in the find bar unless it asks for the text.
+    if (reveal) this.editor.selectText(reveal.paragraph, reveal.from, reveal.to, reveal.focus)
+    else if (!caret || !this.editor.caretAt(caret, caret.word)) this.editor.focus()
     this.autofit()
   }
 
