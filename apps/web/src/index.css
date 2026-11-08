@@ -17,14 +17,14 @@
   --secondary: oklch(0.967 0.001 286.375);
   --secondary-foreground: oklch(0.21 0.006 285.885);
   --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
+  --muted-foreground: oklch(0.52 0.016 285.938);
   --accent: oklch(0.967 0.001 286.375);
   --accent-foreground: oklch(0.21 0.006 285.885);
-  --destructive: oklch(0.577 0.245 27.325);
+  --destructive: oklch(0.53 0.22 27.325);
   --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(0.92 0.004 286.32);
   --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.705 0.015 286.067);
+  --ring: oklch(0.552 0.016 285.938);
   --radius: 0.5rem;
   /* The open desktop sidebar's width; AppLayout sets the user's. */
   --sidebar-width: 264px;
@@ -42,7 +42,7 @@
   --code-constant: #0550ae;
   --code-string: #0a3069;
   --code-builtin: #953800;
-  --code-comment: #6e7781;
+  --code-comment: #656d76;
   --code-tag: #116329;
   --code-section: #0550ae;
   --code-bullet: #953800;
@@ -81,7 +81,7 @@
   --muted-foreground: oklch(0.705 0.015 286.067);
   --accent: oklch(0.27 0.006 286.033);
   --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
+  --destructive: oklch(0.66 0.21 24);
   --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(1 0 0 / 9%);
   --input: oklch(1 0 0 / 13%);
@@ -478,6 +478,34 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
   }
 }
 
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Reduced motion: decorative loops stop and movement becomes a fade, while
+   loading indicators keep a slow, still-legible cue. */
+@media (prefers-reduced-motion: reduce) {
+  .stream-caret::after,
+  .animate-pulse {
+    animation: none;
+  }
+
+  /* Typing dots fade in place instead of bouncing. */
+  .animate-bounce {
+    animation-name: pulse;
+  }
+
+  .animate-spin {
+    animation-duration: 2.5s;
+  }
+
+  .animate-fade-in-up {
+    animation-name: fade-in;
+  }
+}
+
 /* Syntax highlighting — token colours follow the app theme (GitHub Light / GitHub Dark) */
 .code-highlight .hljs-doctag,
 .code-highlight .hljs-keyword,
@@ -688,10 +716,12 @@ html[data-desktop-os="darwin"] .desktop-model-titlebar-slot[data-collapsed="true
   left: 84px;
 }
 
+/* The link is padded to a 24px target with matching negative margins (see ModelSelector);
+   the +4px offsets that taller box so the label stays centered. */
 html[data-desktop="true"] .desktop-model-titlebar-slot[data-collapsed="true"] .model-selector-set-default {
   top: 50%;
   left: calc(100% + 4px);
-  transform: translateY(-50%);
+  transform: translateY(calc(-50% + 4px));
 }
 
 html[data-desktop-os="win32"] .desktop-model-titlebar-slot[data-collapsed="true"] .model-selector-set-default {
@@ -727,14 +757,14 @@ html[data-desktop="true"] .desktop-model-titlebar-slot[data-position-animation-a
     top: 50%;
     left: calc(100% + 4px);
     clip-path: inset(0 100% 0 0);
-    transform: translateY(-50%);
+    transform: translateY(calc(-50% + 4px));
   }
 
   100% {
     top: 50%;
     left: calc(100% + 4px);
     clip-path: inset(0 0 0 0);
-    transform: translateY(-50%);
+    transform: translateY(calc(-50% + 4px));
   }
 }
 
@@ -743,14 +773,14 @@ html[data-desktop="true"] .desktop-model-titlebar-slot[data-position-animation-a
     top: 50%;
     left: calc(100% + 4px);
     clip-path: inset(0 0 0 0);
-    transform: translateY(-50%);
+    transform: translateY(calc(-50% + 4px));
   }
 
   49.9% {
     top: 50%;
     left: calc(100% + 4px);
     clip-path: inset(0 0 0 100%);
-    transform: translateY(-50%);
+    transform: translateY(calc(-50% + 4px));
   }
 
   50.1% {

@@ -939,6 +939,13 @@ export function waitForResponseDispatch(responseId: string): Promise<void> {
   return responseDispatches.get(responseId) ?? Promise.resolve()
 }
 
+const userStoppedResponseIds = new Set<string>()
+
+/** Whether the user stopped this response, so its cancellation is not reported as a failure. */
+export function wasStoppedByUser(responseId: string): boolean {
+  return userStoppedResponseIds.has(responseId)
+}
+
 function enqueueChatMutation<T>(chatId: string, operation: () => Promise<T>): Promise<T> {
   const previous = chatMutationTails.get(chatId) ?? Promise.resolve()
   const result = previous.catch(() => undefined).then(operation)
@@ -2097,6 +2104,7 @@ export const useChat = create<ChatState>()((set, get) => ({
   },
   stopStreaming: (responseId) => {
     if (!responseId) return
+    userStoppedResponseIds.add(responseId)
     set((state) => {
       const affectedChatId = state.responseChatIds[responseId]
       return {

@@ -31,7 +31,7 @@ function CodeBlock({ language, code, caret }: { language: string; code: string; 
         {previewKind && (
           <button
             type="button"
-            className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-code-muted hover:text-code-foreground"
+            className="-mx-1 -my-[5px] flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md px-1 text-[11px] text-code-muted outline-none hover:text-code-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
             onClick={() => openPreview({ kind: previewKind, code, title: previewTitle(previewKind, code) })}
           >
             <Play className="size-3" />
@@ -42,16 +42,16 @@ function CodeBlock({ language, code, caret }: { language: string; code: string; 
           type="button"
           aria-label={ui("Download code")}
           title={ui("Download code")}
-          className="flex shrink-0 cursor-pointer items-center text-code-muted hover:text-code-foreground"
+          className="-mx-[3px] -my-[5px] flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-code-muted outline-none hover:text-code-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
           onClick={() => downloadCode(code, `snippet.${codeFileExtension(language)}`)}
         >
           <Download className="size-3.5" />
         </button>
         <button
           type="button"
-          aria-label={copied ? ui("Copied") : ui("Copy code")}
+          aria-label={ui("Copy code")}
           title={copied ? ui("Copied") : ui("Copy code")}
-          className="flex shrink-0 cursor-pointer items-center text-code-muted hover:text-code-foreground"
+          className="-mx-[3px] -my-[5px] flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-code-muted outline-none hover:text-code-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
           onClick={() => {
             void writeClipboardText(code).then((success) => {
               if (!success) return
@@ -62,8 +62,15 @@ function CodeBlock({ language, code, caret }: { language: string; code: string; 
         >
           {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
         </button>
+        <span role="status" className="sr-only">{copied ? ui("Copied") : ''}</span>
       </div>
-      <pre className="max-w-full overflow-x-auto p-3 text-[13px] leading-relaxed text-code-foreground">
+      {/* Focusable so keyboard users can scroll long lines. */}
+      <pre
+        tabIndex={0}
+        role="region"
+        aria-label={ui("{{language}} code", { language: language || 'text' })}
+        className="max-w-full overflow-x-auto p-3 text-[13px] leading-relaxed text-code-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50"
+      >
         <code className="code-highlight font-mono"><HighlightedCode code={code} language={language} />{caret && <span className={STREAM_CARET_CLASS} aria-hidden="true" />}</code>
       </pre>
     </div>
@@ -149,7 +156,7 @@ const markdownComponents: Components = {
     </a>
   ),
   table: ({ children }) => (
-    <div className="my-3 max-w-full overflow-x-auto rounded-lg border">
+    <div tabIndex={0} role="region" aria-label={ui("Table")} className="my-3 max-w-full overflow-x-auto rounded-lg border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
       <table className="min-w-full text-sm">{children}</table>
     </div>
   ),

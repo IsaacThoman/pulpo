@@ -6,10 +6,12 @@ import { MemoryRouter } from 'react-router-dom'
 import { SearchModal } from './SearchModal'
 import { focusComposer, registerComposerFocus } from '@/components/chat/composer-focus'
 
+const fixture = vi.hoisted(() => ({ chats: [] as unknown[] }))
 vi.mock('@/stores/chat', () => ({
-  useChat: (select: (state: { chats: [] }) => unknown) => select({ chats: [] }),
+  useChat: (select: (state: { chats: unknown[] }) => unknown) => select({ chats: fixture.chats }),
 }))
 vi.mock('@/stores/catalog', () => ({ getCatalogModel: () => undefined }))
+vi.mock('@/components/ModelIcon', () => ({ ModelIcon: () => null }))
 vi.mock('@/lib/api', () => ({ apiRequest: vi.fn(() => Promise.resolve({ data: [] })) }))
 
 function Harness({ withComposer }: { withComposer: boolean }) {
@@ -25,7 +27,14 @@ function Harness({ withComposer }: { withComposer: boolean }) {
   )
 }
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  fixture.chats = []
+})
+
+function chat(id: string, title: string, updatedAt: number) {
+  return { id, title, modelId: 'model', messages: [], updatedAt, createdAt: updatedAt, temporary: false }
+}
 
 describe('SearchModal', () => {
   it('returns focus to the composer when dismissed with Escape', async () => {
@@ -52,6 +61,36 @@ describe('SearchModal', () => {
     await new Promise((resolve) => setTimeout(resolve, 10))
     expect(focus).not.toHaveBeenCalled()
     unregister()
+  })
+})
+
+describe('SearchModal combobox', () => {
+  it('exposes the highlighted result to assistive technology', async () => {
+    fixture.chats = [chat('a', 'Lisbon trip', 3), chat('b', 'Lisbon food', 2), chat('c', 'Octopus facts', 1)]
+    render(<MemoryRouter><SearchModal open onClose={() => undefined} /></MemoryRouter>)
+
+    expect(screen.getByRole('dialog', { name: 'Search chats' })).toBeDefined()
+    const input = screen.getByRole('combobox', { name: 'Search chats and messages' })
+    const listbox = screen.getByRole('listbox')
+    expect(input.getAttribute('aria-controls')).toBe(listbox.id)
+    expect(input.getAttribute('aria-expanded')).toBe('true')
+    const options = screen.getAllByRole('option')
+    expect(input.getAttribute('aria-activedescendant')).toBe(options[0]!.id)
+    expect(options[0]!.getAttribute('aria-selected')).toBe('true')
+
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    expect(input.getAttribute('aria-activedescendant')).toBe(options[1]!.id)
+    expect(options[1]!.getAttribute('aria-selected')).toBe('true')
+    expect(options[0]!.getAttribute('aria-selected')).toBe('false')
+
+    fireEvent.change(input, { target: { value: 'lisbon' } })
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('2 results'))
+
+    fireEvent.change(input, { target: { value: 'nothing matches' } })
+    await waitFor(() => expect(screen.getByRole('status').textContent).toBe('No results'))
+    expect(screen.queryByRole('listbox')).toBeNull()
+    expect(input.getAttribute('aria-expanded')).toBe('false')
+    expect(input.hasAttribute('aria-activedescendant')).toBe(false)
   })
 })
 

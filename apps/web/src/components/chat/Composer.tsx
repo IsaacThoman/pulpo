@@ -13,7 +13,7 @@ import { useMenuTriggerFocus } from './use-menu-trigger-focus'
 import { appendToDraft, registerComposerFocus, registerComposerInsert } from './composer-focus'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
 import { MAX_MESSAGE_ATTACHMENTS, type ComposerState, type FileAccessMode } from '@pulpo/contracts'
-import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore, type Ref, type DragEvent as ReactDragEvent } from 'react'
+import { useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore, type Ref, type DragEvent as ReactDragEvent } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -38,6 +38,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -365,6 +366,18 @@ export function Composer({
     submitting,
     editingExisting,
   })
+  const primaryAction = composerPrimaryAction(Boolean(streamingResponseId) && !messageEdit, hasDraft || Boolean(editingQueueId) || Boolean(messageEdit))
+  const presetMenuId = useId()
+  // Stop turns into Send when generation ends; keep keyboard focus in the composer instead of the page.
+  const stopFocusedRef = useRef(false)
+  useLayoutEffect(() => {
+    if (primaryAction === 'stop' || !stopFocusedRef.current) return
+    stopFocusedRef.current = false
+    const active = document.activeElement
+    const focusLost = !active || active === document.body || (active instanceof HTMLButtonElement && active.disabled)
+    // Like keepFocusInComposer: touch screens would raise the keyboard.
+    if (focusLost && window.matchMedia?.('(pointer: fine)').matches) focusComposer()
+  }, [primaryAction, focusComposer])
 
   const autosize = useCallback(() => {
     const el = ref.current
@@ -1184,7 +1197,7 @@ export function Composer({
       )}
       <div
         className={cn(
-          'relative rounded-2xl border bg-card shadow-sm transition-[background-color,box-shadow,border-color] duration-200 focus-within:shadow-md',
+          'relative rounded-2xl border bg-card shadow-sm transition-[background-color,box-shadow,border-color] duration-200 focus-within:shadow-md has-[[data-composer-input]:focus-visible]:border-ring has-[[data-composer-input]:focus-visible]:ring-[3px] has-[[data-composer-input]:focus-visible]:ring-ring/50',
           (queuedMessages.length > 0 || showShelf && shelfRows.length > 0 || messageEdit || recovery) && '-mt-px rounded-t-xl',
           temporary && '!border-violet-500/50 bg-violet-100/80 dark:!border-violet-600/50 dark:bg-violet-950/60',
           temporary && 'border-dashed',
@@ -1242,6 +1255,8 @@ export function Composer({
         <div className="flex items-end pr-2.5">
           <textarea
             ref={ref}
+            data-composer-input
+            aria-label={ui('Message')}
             readOnly={handoffBusy || shelfBusy}
             value={value}
             onChange={(e) => {
@@ -1362,17 +1377,19 @@ export function Composer({
                   ref={toolbarFit.presetsRef}
                   type="button"
                   className={cn(
-                    'group/generation-options flex h-8 min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden rounded-full px-2.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-ring/50 focus-visible:ring-[3px] data-[pointer-focus]:focus-visible:ring-0',
+                    'group/generation-options flex h-8 min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden rounded-full px-2.5 text-xs text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-ring focus-visible:ring-2 data-[pointer-focus]:focus-visible:ring-0',
                     toolbarFit.fit === 2 && 'px-2',
                   )}
-                  aria-label={t('chat.generationOptions')}
+                  aria-label={[t('chat.generationOptions'), ...activePresets.map((preset) => (
+                    preset.choices.find((choice) => choice.id === selections[preset.id])?.displayName ?? preset.name
+                  ))].join(', ')}
                 >
                   {activePresets.map((preset, i) => {
                     const choice = preset.choices.find((c) => c.id === selections[preset.id])
                     const icon = choice?.icon ?? preset.icon
                     return (
                       <span key={preset.id} className="flex min-w-0 items-center gap-1">
-                        {i > 0 && <span className="text-border">·</span>}
+                        {i > 0 && <span aria-hidden="true" className="text-border">·</span>}
                         <PresetIcon name={icon} />
                         {choice && toolbarFit.fit < 2 && <span data-preset-label className="min-w-0 truncate">{choice.displayName}</span>}
                       </span>
@@ -1383,15 +1400,17 @@ export function Composer({
               </DropdownMenuTrigger>
               <DropdownMenuContent {...presetMenuFocus.contentProps} align="start" side="top" className="w-48">
                 {activePresets.map((preset, i) => (
-                  <div key={preset.id}>
+                  <DropdownMenuGroup key={preset.id} aria-labelledby={`${presetMenuId}-${i}`}>
                     {i > 0 && <DropdownMenuSeparator />}
-                    <DropdownMenuLabel className="flex items-center gap-1.5 text-xs">
+                    <DropdownMenuLabel id={`${presetMenuId}-${i}`} className="flex items-center gap-1.5 text-xs">
                       <PresetIcon name={preset.icon} />
                       {preset.name}
                     </DropdownMenuLabel>
                     {preset.choices.map((choice) => (
                       <DropdownMenuItem
                         key={choice.id}
+                        role="menuitemradio"
+                        aria-checked={selections[preset.id] === choice.id}
                         onSelect={() => {
                           presetMenuFocus.onSelect()
                           setPresetChoice(modelId, preset.id, choice.id)
@@ -1405,7 +1424,7 @@ export function Composer({
                         {selections[preset.id] === choice.id && <Check className="size-3.5" />}
                       </DropdownMenuItem>
                     ))}
-                  </div>
+                  </DropdownMenuGroup>
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1453,11 +1472,13 @@ export function Composer({
             <TooltipContent side="top">{t('chat.dictate')}</TooltipContent>
           </Tooltip>}
 
-          {composerPrimaryAction(Boolean(streamingResponseId) && !messageEdit, hasDraft || Boolean(editingQueueId) || Boolean(messageEdit)) === 'stop' ? (
+          {primaryAction === 'stop' ? (
             <Button
               size="icon-sm"
               className="rounded-full"
               disabled={!desktopCanMutate}
+              onFocus={() => { stopFocusedRef.current = true }}
+              onBlur={(event) => { if (event.relatedTarget) stopFocusedRef.current = false }}
               onClick={() => streamingResponseId && stopStreaming(streamingResponseId)}
               aria-label={t('chat.stopGenerating')}
             >
