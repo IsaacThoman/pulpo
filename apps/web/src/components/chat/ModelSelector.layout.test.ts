@@ -6,7 +6,7 @@ describe('Codex provider rail placement', () => {
     const source = readFileSync(new URL('./ModelSelector.tsx', import.meta.url), 'utf8')
     const favorites = source.indexOf('<TooltipContent side="right">{t(\'chat.favorites\')}</TooltipContent>')
     const codex = source.indexOf('{codexAvailable && (')
-    const divider = source.indexOf('<div className="my-1 h-px w-5 shrink-0 bg-border" />')
+    const divider = source.indexOf('<div className="my-1 h-px w-5 shrink-0 bg-border" aria-hidden="true" />')
     const reorderableProviders = source.indexOf('{providers.map((p) => {')
     expect(favorites).toBeGreaterThan(-1)
     expect(favorites).toBeLessThan(codex)

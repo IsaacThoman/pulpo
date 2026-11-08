@@ -7,7 +7,7 @@ import { ReportMessageButton } from './ReportMessageButton'
 import { speechPlayback } from '@/features/speech/state'
 import { ToolImagePreview } from './ToolImagePreview'
 import { collapseIntermediateReplies, collapsedWorkDurationMs, initialActivityTiming } from '@pulpo/client-core'
-import { memo, useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useId, useMemo, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import {
   Brain,
@@ -33,7 +33,7 @@ import type { Chat, Message } from '@/lib/types'
 import { hasMultipleBranches } from '@/lib/message-branches'
 import { getCatalogModel } from '@/stores/catalog'
 import { formatCost, formatDuration, formatNumber, formatSecondsLabel, timeAgo } from '@/lib/format'
-import { useChat } from '@/stores/chat'
+import { useChat, wasStoppedByUser } from '@/stores/chat'
 import { selectAvailableChatIds } from '@/lib/chat-availability'
 import { useSettings } from '@/stores/settings'
 import { useAuth } from '@/stores/auth'
@@ -671,6 +671,10 @@ export const MessageItem = memo(function MessageItem({
     else editDrafts?.delete(message.id)
   }, [editDrafts, message.id, editing, draft])
   const [capacityActionPending, setCapacityActionPending] = useState(false)
+  const headingId = useId()
+  // Only a reply that fails while open here interrupts a screen reader; older errors are read in place.
+  const [streamedHere, setStreamedHere] = useState(streaming)
+  if (streaming && !streamedHere) setStreamedHere(true)
   const [streamingFallbackDurationMs, setStreamingFallbackDurationMs] = useState<number>()
   const responseTimeline = useMemo(() => {
     if (message.role !== 'assistant') return [] as TimelineSegment[]
@@ -753,7 +757,8 @@ export const MessageItem = memo(function MessageItem({
   if (message.role === 'user') {
     const pendingDelivery = message.deliveryStatus === 'uploading' && Boolean(message.pendingSubmissionId)
     return (
-      <div className="group flex min-w-0 max-w-full flex-col items-end gap-1">
+      <article aria-labelledby={headingId} className="group flex min-w-0 max-w-full flex-col items-end gap-1">
+        <h2 id={headingId} className="sr-only">{ui('You said')}</h2>
         <div className={cn(
           'min-w-0 max-w-[85%] text-[15px] leading-7 [overflow-wrap:anywhere]',
           message.content
@@ -798,7 +803,7 @@ export const MessageItem = memo(function MessageItem({
             {!chat.expired && !pendingDelivery && <BranchControls chatId={chat.id} branch={message.branch} disabled={composerEditActive} />}
           </div>
           {message.content ? <SpeechPlayer messageKey={`${chat.id}:${message.id}`} /> : null}
-        </div>
+        </article>
     )
   }
 
@@ -814,7 +819,8 @@ export const MessageItem = memo(function MessageItem({
   let activityOrdinal = -1
 
   return (
-    <div className="group flex min-w-0 max-w-full gap-3">
+    <article aria-labelledby={headingId} className="group flex min-w-0 max-w-full gap-3">
+      <h2 id={headingId} className="sr-only">{ui('{{model}} said', { model: model.name })}</h2>
       <ModelIcon model={model} className="mt-1 size-7 rounded-[4px]" />
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-baseline gap-2">
@@ -826,6 +832,7 @@ export const MessageItem = memo(function MessageItem({
           {editing ? (
             <div className="rounded-2xl border bg-card p-3">
               <textarea
+                aria-label={t('chat.editResponse')}
                 className="w-full resize-none bg-transparent text-sm leading-6 outline-none"
                 rows={Math.min(16, Math.max(3, draft.split('\n').length + 1))}
                 value={draft}
@@ -894,9 +901,10 @@ export const MessageItem = memo(function MessageItem({
               })}
               {!hasVisibleBody && streaming && (
                 <span className="inline-flex gap-1 py-1">
-                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:0ms]" />
-                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
-                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
+                  <span className="sr-only">{ui('Thinking…')}</span>
+                  <span aria-hidden="true" className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:0ms]" />
+                  <span aria-hidden="true" className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
+                  <span aria-hidden="true" className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
                 </span>
               )}
             </>
@@ -932,7 +940,7 @@ export const MessageItem = memo(function MessageItem({
           )}
 
           {!editing && message.error && (
-            <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <div role={streamedHere && !wasStoppedByUser(message.id) ? 'alert' : undefined} className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {insufficientBalance ? (
                 <div className="space-y-2">
                   <p>{t('chat.usageLimitReached')}</p>
@@ -1007,7 +1015,7 @@ export const MessageItem = memo(function MessageItem({
         )}
         {message.done && <div className="mt-1"><SpeechPlayer messageKey={`${chat.id}:${message.id}`} /></div>}
       </div>
-    </div>
+    </article>
   )
 }, (previous, next) => (
   previous.message === next.message
