@@ -526,6 +526,39 @@ describe('keyboard shortcuts', () => {
     expect(view.rows.isHidden(6)).toBe(true)
   })
 
+  it('follows Excel for Mac and Google on a Mac, leaving Cmd+9, Cmd+0 and Cmd+H to the browser', () => {
+    vi.spyOn(navigator, 'platform', 'get').mockReturnValue('MacIntel')
+    const { sheet, view } = setup()
+    sheet.setCell(0, 0, { v: 1 })
+    sheet.setCell(1, 0, { v: 2 })
+    view.select(cell(2, 2))
+    // Cmd+9 is the last tab and Cmd+0 the actual size: neither hides anything.
+    expect(key(view, '9', { code: 'Digit9', metaKey: true }).defaultPrevented).toBe(false)
+    expect(key(view, '0', { code: 'Digit0', metaKey: true }).defaultPrevented).toBe(false)
+    expect([view.rows.isHidden(2), view.cols.isHidden(2)]).toEqual([false, false])
+    expect(view.undoManager.canUndo()).toBe(false)
+    // Excel for Mac hides with Control; Google unhides with Cmd+Shift and hides with Cmd+Option.
+    key(view, '0', { code: 'Digit0', ctrlKey: true })
+    expect(view.cols.isHidden(2)).toBe(true)
+    view.select({ top: 0, left: 1, bottom: 4, right: 3 })
+    key(view, ')', { code: 'Digit0', metaKey: true, shiftKey: true })
+    expect(view.cols.isHidden(2)).toBe(false)
+    view.select(cell(2, 2))
+    key(view, 'ª', { code: 'Digit9', metaKey: true, altKey: true })
+    expect(view.rows.isHidden(2)).toBe(true)
+    // Cmd+H hides the browser; Cmd+Shift+H asks for find and replace.
+    const seen = requests(view)
+    expect(key(view, 'h', { code: 'KeyH', metaKey: true }).defaultPrevented).toBe(false)
+    expect(key(view, 'H', { code: 'KeyH', metaKey: true, shiftKey: true }).defaultPrevented).toBe(true)
+    expect(seen).toEqual([{ request: 'replace' }])
+    // AutoSum is Cmd+Shift+T; Option+= types ≠.
+    view.select(cell(2, 0))
+    expect(key(view, '≠', { code: 'Equal', altKey: true }).defaultPrevented).toBe(false)
+    expect(view.editing).toBeUndefined()
+    key(view, 'T', { code: 'KeyT', metaKey: true, shiftKey: true })
+    expect(view.editing?.text).toBe('=SUM(A1:A2)')
+  })
+
   it('keeps AltGr characters typeable', () => {
     const { sheet, view } = setup()
     sheet.setCell(4, 4, { v: 'stay' })
@@ -714,6 +747,28 @@ describe('data validation', () => {
     void sheet
   })
 
+  it('settles the edit once when the host answers while the request is dispatched', () => {
+    const { view } = setup()
+    view.select(cell(0, 0))
+    view.setValidation({ type: 'whole', operator: 'lessThan', formula1: '10', errorStyle: 'information', error: 'Big' })
+    let answer: 'accept' | 'retry' = 'accept'
+    // This host answers at once and forgets to claim the request.
+    view.root.addEventListener('sheetrequest', (event) => {
+      const detail = (event as CustomEvent<SheetRequest>).detail
+      if (detail.request === 'validation') detail.respond(answer)
+    })
+    const steps = view.undoManager.undoStack.length
+    view.beginEdit('50', true)
+    key(view, 'Enter')
+    expect([view.inputText(0, 0), view.getState().selectionLabel]).toEqual(['50', 'A2'])
+    expect(view.undoManager.undoStack.length).toBe(steps + 1)
+    answer = 'retry'
+    view.select(cell(0, 0))
+    view.beginEdit('60', true)
+    key(view, 'Enter')
+    expect([view.editing?.text, view.inputText(0, 0), view.getState().selectionLabel]).toEqual(['60', '50', 'A1'])
+  })
+
   it('opens the list with Alt+Down and picks with the keyboard', () => {
     const { view } = setup()
     view.select(cell(0, 0))
@@ -725,9 +780,11 @@ describe('data validation', () => {
     key(view, 'ArrowDown')
     key(view, 'ArrowUp')
     expect(view.input.getAttribute('aria-activedescendant')).toBe(popup.querySelectorAll('[role="option"]')[1]!.id)
+    expect(view.input.getAttribute('aria-controls')).toBe(popup.id)
     key(view, 'Enter')
     expect(view.inputText(0, 0)).toBe('two')
     expect(view.root.querySelector('.pulpo-sheet-popup')).toBeNull()
+    expect([view.input.getAttribute('aria-activedescendant'), view.input.getAttribute('aria-controls')]).toEqual([null, null])
     key(view, 'ArrowDown', { altKey: true })
     expect(view.root.querySelector('[aria-selected="true"]')?.textContent).toBe('two')
     key(view, 'Escape')
@@ -1112,6 +1169,34 @@ describe('dragging the selection border', () => {
     drag(view, 8, 0)
     expect(alertText(view)).toBe(view.labels.moveFiltered)
     expect(view.inputText(0, 0)).toBe('1')
+  })
+
+  it('treats a press on the border that never drags as a click on the cell under it', () => {
+    const { sheet, view } = setup()
+    block(sheet)
+    const press = (init: MouseEventInit = {}) => {
+      const at = grab(view)
+      pointer(view, 'pointerdown', at.x, at.y, init)
+      pointer(view, 'pointerup', at.x, at.y, init)
+    }
+    view.select(cell(0, 0))
+    press()
+    expect(view.getState().selectionLabel).toBe('A2')
+    press({ shiftKey: true })
+    expect(view.getState().selectionLabel).toBe('A2:A3')
+    view.select(cell(0, 0))
+    press({ ctrlKey: true })
+    expect(view.selection.ranges).toEqual([cell(0, 0), cell(1, 0)])
+    // Dragging out and back again leaves everything as it was.
+    view.select(cell(0, 0))
+    const at = grab(view)
+    const away = center(view, 4, 2)
+    pointer(view, 'pointerdown', at.x, at.y)
+    pointer(view, 'pointermove', away.x, away.y)
+    pointer(view, 'pointermove', at.x, at.y)
+    pointer(view, 'pointerup', at.x, at.y)
+    expect(view.getState().selectionLabel).toBe('A1')
+    expect([view.inputText(0, 0), view.undoManager.canUndo()]).toEqual(['1', false])
   })
 
   it('still drag-selects from inside the active cell', () => {

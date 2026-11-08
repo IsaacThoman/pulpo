@@ -23,7 +23,10 @@ import { cssFontFamily, EMU_PER_PIXEL, type QuickFormat, type SheetNotice, type 
 /** Invisible content kept selected in the input while not editing, so copy and cut always fire. */
 const IDLE_TEXT = '​'
 
-const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+/** Read when a key is pressed rather than once at import, so tests can play a Mac. */
+function isMac(): boolean {
+  return typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+}
 
 /** Windows reports AltGr as Ctrl+Alt; European layouts type @ # € [ ] { } with it. */
 function altGraph(event: KeyboardEvent): boolean {
@@ -46,7 +49,7 @@ type Drag =
   | { kind: 'rows' | 'cols'; from: number; add: boolean }
   | { kind: 'resize'; axis: 'row' | 'col'; index: number; start: number; size: number; guide: HTMLDivElement }
   | { kind: 'fill'; source: CellRange; target: CellRange }
-  | { kind: 'move'; source: CellRange; grab: { row: number; col: number }; target: CellRange }
+  | { kind: 'move'; source: CellRange; grab: { row: number; col: number }; target: CellRange; moved: boolean; add: boolean; extend: boolean }
   | { kind: 'point' }
   | { kind: 'drawing'; id: string; startX: number; startY: number; element: HTMLElement; left: number; top: number; resize: boolean; width: number; height: number }
   | { kind: 'handle'; corner: 'start' | 'end' }
@@ -211,7 +214,7 @@ export class SheetInteractions {
     }
     if (hit.area === 'cell' && this.overSelectionEdge(x, y)) {
       const source = view.selection.ranges[0]!
-      this.drag = { kind: 'move', source, grab: { row: hit.row, col: hit.col }, target: source }
+      this.drag = { kind: 'move', source, grab: { row: hit.row, col: hit.col }, target: source, moved: false, add: event.ctrlKey || event.metaKey, extend: event.shiftKey }
       return
     }
     const add = event.ctrlKey || event.metaKey
@@ -303,6 +306,7 @@ export class SheetInteractions {
         const top = Math.max(0, Math.min(MAX_ROWS - 1 - height, source.top + hit.row - grab.row))
         const left = Math.max(0, Math.min(MAX_COLS - 1 - width, source.left + hit.col - grab.col))
         drag.target = { top, left, bottom: top + height, right: left + width }
+        if (top !== source.top || left !== source.left) drag.moved = true
         this.showFillOutline(drag.target)
         break
       }
@@ -362,7 +366,11 @@ export class SheetInteractions {
       case 'move':
         this.fillOutline?.remove()
         this.fillOutline = undefined
-        if (event.type === 'pointerup' && (drag.target.top !== drag.source.top || drag.target.left !== drag.source.left)) this.moveSelection(drag.source, drag.target, event.altKey || (!IS_MAC && event.ctrlKey))
+        if (event.type !== 'pointerup') break
+        if (drag.target.top !== drag.source.top || drag.target.left !== drag.source.left) this.moveSelection(drag.source, drag.target, event.altKey || (!isMac() && event.ctrlKey))
+        // A press on the border that never dragged is a click on the cell under it.
+        else if (!drag.moved && drag.extend) view.extendTo(drag.grab.row, drag.grab.col)
+        else if (!drag.moved) view.select({ top: drag.grab.row, left: drag.grab.col, bottom: drag.grab.row, right: drag.grab.col }, { add: drag.add, scroll: false })
         break
       case 'drawing':
         this.finishDrawingDrag(drag, event)
@@ -563,7 +571,7 @@ export class SheetInteractions {
       return
     }
     // AutoSum is Alt+= on Windows and Linux (Option+= types ≠ on a Mac: Cmd+Shift+T there).
-    if (!IS_MAC && event.altKey && !mod && !altGraph(event) && (event.key === '=' || (event.code === 'Equal' && !event.shiftKey))) {
+    if (!isMac() && event.altKey && !mod && !altGraph(event) && (event.key === '=' || (event.code === 'Equal' && !event.shiftKey))) {
       event.preventDefault()
       view.autoSum()
       return
@@ -669,7 +677,7 @@ export class SheetInteractions {
       // By character: the slash key's position types `-` on German keyboards (Ctrl+- below).
       if (key === '/') return ask('shortcuts')
       // Cmd+H hides the app on a Mac, so Google uses Cmd+Shift+H there.
-      if (key === 'h' && (IS_MAC ? event.metaKey && event.shiftKey : !event.shiftKey)) return ask('replace')
+      if (key === 'h' && (isMac() ? event.metaKey && event.shiftKey : !event.shiftKey)) return ask('replace')
       // Ctrl+` shows formulas (Ctrl+Shift+` is the General format, below).
       if (event.code === 'Backquote' && !event.shiftKey) return handled(), view.setShowFormulas(!view.showFormulas)
     }
@@ -678,7 +686,7 @@ export class SheetInteractions {
     const lines = commands.isWholeColumns(last) && commands.isWholeRows(last) ? undefined : commands.isWholeColumns(last) ? 'col' as const : commands.isWholeRows(last) ? 'row' as const : undefined
     if (!event.altKey) {
       if (key === 'k' && !event.shiftKey) return ask('link')
-      if (IS_MAC && event.metaKey && event.shiftKey && key === 't') return handled(), void view.autoSum()
+      if (isMac() && event.metaKey && event.shiftKey && key === 't') return handled(), void view.autoSum()
       if (event.shiftKey) {
         // Format shortcuts go by key position: Shift turns the digits into symbols.
         const format = QUICK_FORMAT_KEYS[event.code]
@@ -691,13 +699,15 @@ export class SheetInteractions {
       // they stay the browser's zoom keys.
       if (lines && (key === '+' || event.code === 'NumpadAdd')) return handled(), view.insert(lines, 'before')
       if (lines && !event.shiftKey && (key === '-' || event.code === 'NumpadSubtract')) return handled(), view.deleteLines(lines)
-      // Ctrl+9 and Ctrl+0 hide rows and columns, with Shift they unhide (Excel).
-      if (event.code === 'Digit9' || event.code === 'Digit0') return handled(), this.hideSelected(event.code === 'Digit9' ? 'row' : 'col', !event.shiftKey)
+      // Ctrl+9 and Ctrl+0 hide rows and columns, with Shift they unhide (Excel). Excel for Mac
+      // hides with Control too: Cmd+9 and Cmd+0 stay the browser's (last tab, actual size).
+      const browserKey = isMac() && event.metaKey && !event.shiftKey
+      if ((event.code === 'Digit9' || event.code === 'Digit0') && !browserKey) return handled(), this.hideSelected(event.code === 'Digit9' ? 'row' : 'col', !event.shiftKey)
       if (key === '\\' && !event.shiftKey) return handled(), view.clearFormats()
-    } else if (IS_MAC ? event.metaKey : event.ctrlKey && !altGraph(event)) {
+    } else if (isMac() ? event.metaKey : event.ctrlKey && !altGraph(event)) {
       // Google's Ctrl+Alt (Cmd+Option) keys. AltGr also reports Ctrl+Alt on Windows, so these
       // match the typed character there: AltGr+9 types `]` on a German keyboard, not `9`.
-      const typed = (code: string, char: string) => IS_MAC ? event.code === code : event.key === char
+      const typed = (code: string, char: string) => isMac() ? event.code === code : event.key === char
       if (typed('Equal', '=')) return handled(), view.insert(lines ?? 'row', 'before')
       if (typed('Minus', '-')) return lines ? (handled(), view.deleteLines(lines)) : ask('deleteLines')
       if (typed('Digit9', '9')) return handled(), this.hideSelected('row', !event.shiftKey)
@@ -1515,7 +1525,10 @@ export class SheetInteractions {
   private closePopup(): void {
     this.popup?.remove()
     this.popup = undefined
-    if (this.list) this.view.input.removeAttribute('aria-activedescendant')
+    if (this.list) {
+      this.view.input.removeAttribute('aria-activedescendant')
+      this.view.input.removeAttribute('aria-controls')
+    }
     this.list = undefined
   }
 
@@ -1720,6 +1733,7 @@ export class SheetInteractions {
     })
     // Arrows, Enter and Escape work on the list while the grid keeps the focus.
     this.list = { row, col, items, options, index: Math.max(0, items.indexOf(current)) }
+    view.input.setAttribute('aria-controls', popup.id)
     this.highlightListItem()
   }
 

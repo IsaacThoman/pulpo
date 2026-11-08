@@ -1386,7 +1386,7 @@ export class SheetView {
     this.ensureExtent(failure.row, failure.col)
     this.scrollIntoView(failure.row, failure.col)
     this.scheduleRender()
-    return this.request({
+    const claimed = this.request({
       request: 'validation',
       style: validation.errorStyle === 'information' ? 'information' : 'warning',
       ...(validation.errorTitle ? { title: validation.errorTitle } : {}),
@@ -1395,6 +1395,8 @@ export class SheetView {
       col: failure.col,
       respond,
     })
+    // An answer given during dispatch has already settled the edit, claimed or not.
+    return claimed || answered
   }
 
   /**

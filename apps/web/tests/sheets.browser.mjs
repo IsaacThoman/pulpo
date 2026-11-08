@@ -609,6 +609,11 @@ try {
     assert.deepEqual(await parity.evaluate(() => [9, 10, 11].map((row) => window.__sheets.views[0].rows.isHidden(row))), [true, true, false])
     await parity.keyboard.press('Control+Shift+Digit9')
     assert.deepEqual(await parity.evaluate(() => [9, 10].map((row) => window.__sheets.views[0].rows.isHidden(row))), [false, false])
+    if (process.platform === 'darwin') {
+      // Cmd+0 stays the browser's actual size on a Mac.
+      await parity.keyboard.press('Meta+Digit0')
+      assert.equal(await parity.evaluate(() => window.__sheets.views[0].cols.isHidden(0)), false)
+    }
   })
 
   await step('data validation lists open and pick from the keyboard', async () => {
@@ -688,6 +693,12 @@ try {
     assert.equal(await label(), 'C14:D14')
     await parity.keyboard.press(`${mod}+z`)
     assert.deepEqual([await inputText(parity, 11, 1), await inputText(parity, 11, 2), await inputText(parity, 13, 2)], ['move me', '=B12', ''])
+    // A plain click just below the border still selects the cell there.
+    await go(parity, 'B12')
+    const edge = await cellPoint(parity, 11, 1)
+    await parity.mouse.click(edge.x, edge.top + edge.height + 2)
+    assert.equal(await label(), 'B13')
+    assert.equal(await inputText(parity, 11, 1), 'move me')
   })
 
   await step('zoom is personal: collaborators keep theirs and undo skips it', async () => {
