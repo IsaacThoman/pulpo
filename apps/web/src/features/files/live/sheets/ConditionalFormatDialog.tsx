@@ -155,7 +155,12 @@ export function ConditionalFormatDialog({ view, open, tab: initialTab = 'single'
     const [first, second] = values
     if (spec.values >= 1 && !first.trim()) return spec.kind === 'formula' ? ui("Enter a formula, like =A1>0.") : ui("Enter a value.")
     if (spec.values === 2 && !second.trim()) return ui("Enter a value.")
-    if (spec.kind === 'rank' && !(Number(first) >= 1)) return ui("Enter a number of 1 or more.")
+    if (spec.kind === 'rank') {
+      // Excel's Top 10 rules take 1 to 1000 items, or 1 to 100 percent.
+      const rank = Number(first)
+      const most = condition === 'topPercent' || condition === 'bottomPercent' ? 100 : 1000
+      if (!Number.isInteger(rank) || rank < 1 || rank > most) return ui("Enter a whole number from 1 to {{max}}.", { max: most })
+    }
     if (condition === 'formula') return formulaRule(first.trim().replace(/^=/, ''), style)
     return highlightRule(condition, spec.values === 2 ? [first, second] : spec.values === 1 ? [first] : [], style)
   }

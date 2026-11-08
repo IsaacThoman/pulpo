@@ -3493,7 +3493,7 @@ const esUi: Record<string, string> = {
   "5 quarters": "5 cuartos",
   "Enter a formula, like =A1>0.": "Introduce una fórmula, como =A1>0.",
   "Enter a value.": "Introduce un valor.",
-  "Enter a number of 1 or more.": "Introduce un número igual o mayor que 1.",
+  "Enter a whole number from 1 to {{max}}.": "Introduce un número entero de 1 a {{max}}.",
   "Value or formula": "Valor o fórmula",
   "Conditional formatting": "Formato condicional",
   "Apply to range: {{range}}": "Aplicar al intervalo: {{range}}",

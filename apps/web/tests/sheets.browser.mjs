@@ -1076,6 +1076,23 @@ try {
     assert.equal((await sheetState()).showGridLines, true)
   })
 
+  await step('Top N% asks for 1 to 100 before it adds the rule', async () => {
+    await go(ui, 'C2:C5')
+    await menuPath('Format', 'Conditional formatting…')
+    const dialog = ui.getByRole('dialog', { name: 'Conditional formatting' })
+    await dialog.getByRole('combobox', { name: 'Format cells if…' }).click()
+    await ui.getByRole('option', { name: 'Top N%', exact: true }).click()
+    await dialog.getByLabel('Number of items').fill('150')
+    await dialog.getByRole('button', { name: 'Done' }).click()
+    await dialog.getByRole('alert').filter({ hasText: 'Enter a whole number from 1 to 100.' }).waitFor()
+    await dialog.getByLabel('Number of items').fill('25')
+    await dialog.getByRole('button', { name: 'Done' }).click()
+    await dialog.waitFor({ state: 'detached' })
+    const rules = await ui.evaluate(() => [...window.__sheets.views[0].sheet.cf.values()].flatMap((format) => format.rules).filter((rule) => rule.type === 'top10'))
+    assert.deepEqual(rules.map((rule) => ({ rank: rule.rank, percent: rule.percent })), [{ rank: 25, percent: true }])
+    await gridFocused()
+  })
+
   assert.deepEqual(uiErrors, [])
   await uiContext.close()
 
