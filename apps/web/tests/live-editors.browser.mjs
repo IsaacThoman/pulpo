@@ -60,7 +60,12 @@ try {
   const active = (page) => page.locator('[data-replica="a"] [data-cell-key][data-active]')
   const shot = async (page, name) => { if (screenshots) await page.screenshot({ path: join(screenshots, `${name}.png`) }) }
   // A chosen menu item closes its menu with an animation; keys pressed meanwhile still go to the menu.
-  const menuClosed = (page) => page.getByRole('menu').waitFor({ state: 'detached' })
+  // Radix then hands the keyboard back (onCloseAutoFocus) a task after the menu has gone, so keys
+  // pressed as soon as it detaches land on the page: wait until the editor has the keyboard again.
+  const menuClosed = async (page) => {
+    await page.getByRole('menu').waitFor({ state: 'detached' })
+    await page.waitForFunction(() => document.activeElement?.closest('[data-replica="a"]') != null)
+  }
   const focused = (page) => page.evaluate(() => {
     const element = document.activeElement
     return { tag: element?.tagName, name: element?.getAttribute('name'), label: element?.getAttribute('aria-label'), role: element?.getAttribute('role'), editor: Boolean(element?.closest('.cm-editor')) }
@@ -312,7 +317,7 @@ try {
     assert.deepEqual((await cells(page)).map((cell) => cell.source), ['## Title', 'x = 1', '    y', '    y'])
     await page.locator('[data-replica="a"]').getByText(/^Cell 3 of 4$/).waitFor()
     await page.keyboard.press('h')
-    await page.getByRole('dialog', { name: 'Notebook shortcuts' }).waitFor()
+    await page.getByRole('dialog', { name: 'Keyboard shortcuts' }).waitFor()
     await page.keyboard.press('Escape')
     await page.context().close()
   })
