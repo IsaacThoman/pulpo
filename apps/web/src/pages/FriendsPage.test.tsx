@@ -1,15 +1,15 @@
 import { renderToStaticMarkup } from 'react-dom/server'
+import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
-import { FriendsHandle } from './FriendsPage'
+import { MyProfileLink } from './FriendsPage'
 
-describe('FriendsHandle', () => {
-  it('shows the signed-in handle as a copy control', () => {
-    const html = renderToStaticMarkup(<FriendsHandle username="preview_admin" />)
+describe('MyProfileLink', () => {
+  it('links to the signed-in user profile', () => {
+    const html = renderToStaticMarkup(<MemoryRouter><MyProfileLink username="preview_admin" /></MemoryRouter>)
 
-    expect(html).toContain('Your handle is')
-    expect(html).toContain('@preview_admin')
-    expect(html).toContain('Copy @preview_admin')
-    expect(html).not.toContain('Edit profile')
+    expect(html).toContain('My profile')
+    expect(html).toContain('href="/preview_admin"')
+    expect(html).not.toContain('Your handle is')
   })
 })
 

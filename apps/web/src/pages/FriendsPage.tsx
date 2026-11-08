@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { FriendConnection, FriendProfile, FriendSearchResponse, FriendSearchResult, FriendSuggestion, FriendsList, PoolSummary } from '@pulpo/contracts'
-import { Check, ChevronDown, ChevronRight, Copy, LoaderCircle, MoreHorizontal, Search, UserRoundPlus, UsersRound } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, LoaderCircle, MoreHorizontal, Search, UserRoundPlus, UsersRound } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { ApiError, apiRequest, isNetworkError } from '@/lib/api'
 import { nextFriendSearchIndex, normalizedFriendSearchQuery, shouldSearchFriends } from '@/lib/friend-search'
 import { friendRequestAge } from '@/lib/friends'
@@ -21,29 +22,12 @@ import { PoolSection } from '@/components/PoolSection'
 import { InviteCodesCard } from '@/components/InviteCodesCard'
 import { ui, uit } from '@/i18n/ui'
 
-export function FriendsHandle({ username }: { username: string }) {
-  const [copied, setCopied] = useState(false)
-  const copyHandle = async () => {
-    await navigator.clipboard.writeText(username)
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1_500)
-  }
-  return (
-    <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-      <span>{ui("Your handle is")}</span>
-      <button
-        type="button"
-        className="inline-flex cursor-pointer items-center gap-1"
-        onClick={() => void copyHandle()}
-        aria-label={uit`Copy @${username}`}
-        title={copied ? ui("Copied") : ui("Copy handle")}
-      >
-        <span>@{username}</span>
-        {copied ? <Check className="size-3.5" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}
-      </button>
-      <span className="sr-only" aria-live="polite">{copied ? ui("Handle copied") : ''}</span>
-    </p>
-  )
+export function MyProfileLink({ username }: { username: string }) {
+  return <h2 className="text-lg font-medium">
+    <Link to={`/${username}`} className="rounded-sm hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      {ui("My profile")}
+    </Link>
+  </h2>
 }
 
 function Section({ title, count, empty, children }: { title: string; count: number; empty?: string; children: React.ReactNode }) {
@@ -288,10 +272,7 @@ export function FriendsPage() {
   const poolFull = Boolean(pool && pool.members.length + pool.pendingInvitations.length >= 6)
   return (
     <div className="mx-auto w-full max-w-3xl space-y-5 px-5 py-6">
-      <div>
-        <h2 className="text-lg font-medium">{ui("Find your friends")}</h2>
-        {user && <FriendsHandle username={user.username} />}
-      </div>
+      {user && <MyProfileLink username={user.username} />}
       <InviteCodesCard />
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
