@@ -9,6 +9,7 @@ import '../../src/index.css'
 import '../../src/i18n'
 import { DocxDiffView } from '../../src/features/files/live/docx/DocxDiffView'
 import { DocxEditorView } from '../../src/features/files/live/docx/DocxEditorView'
+import { FileToasts } from '../../src/features/files/browser/FileToasts'
 
 /** An agent-style revision of the document for the diff view: reworded, trimmed, extended, bolded. */
 function revised(doc: Y.Doc): Y.Doc {
@@ -155,6 +156,7 @@ export function Harness() {
           onEditor={(editor) => setEditors((current) => current[index] === editor ? current : Object.assign([...current], { [index]: editor }))}
         />
       ))}
+      <FileToasts />
     </div>
   )
 }
