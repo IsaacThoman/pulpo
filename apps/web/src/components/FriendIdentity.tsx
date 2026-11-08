@@ -20,9 +20,9 @@ function ProfileHoverCard({ profile, children }: { profile: FriendProfile; child
       <TooltipContent
         side="top"
         sideOffset={8}
-        className="w-64 rounded-xl border bg-popover p-4 text-popover-foreground shadow-lg [&>svg]:hidden"
+        hideArrow
+        className="w-64 rounded-xl border bg-popover p-4 text-popover-foreground shadow-lg"
       >
-        <p className="mb-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{ui('Profile')}</p>
         <div className="flex min-w-0 items-center gap-3">
           <ProfileAvatar
             name={profile.displayName}
