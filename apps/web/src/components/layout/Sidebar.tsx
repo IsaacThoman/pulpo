@@ -2062,7 +2062,7 @@ export function Sidebar({
               {rootGroups.map(({ group, entries }) => (
                 <div key={group ?? 'default'} className={cn(group && group !== rootGroups[0]!.group && 'mt-3')}>
                   {group && (
-                    <div className="px-2 pb-1 pt-1 text-[11px] font-medium text-muted-foreground/80">
+                    <div className="px-2 pb-1 pt-1 text-[11px] font-medium text-muted-foreground">
                       {t(`sidebar.groups.${group}`)}
                     </div>
                   )}

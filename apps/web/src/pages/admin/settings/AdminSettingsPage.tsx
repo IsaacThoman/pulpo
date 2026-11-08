@@ -55,10 +55,12 @@ export function AdminSettingsPage() {
   return (
     <div className="@container">
       <div className="flex min-w-0 flex-col gap-6 @[46rem]:flex-row">
-        <nav className="settings-section-nav flex min-w-0 shrink-0 gap-1 overflow-x-auto @[46rem]:block @[46rem]:w-44 @[46rem]:space-y-0.5">
+        <nav aria-label={ui("Settings sections")} className="settings-section-nav flex min-w-0 shrink-0 gap-1 overflow-x-auto @[46rem]:block @[46rem]:w-44 @[46rem]:space-y-0.5">
           {sections.map((s) => (
             <button
               key={s.id}
+              type="button"
+              aria-current={active === s.id ? 'page' : undefined}
               onClick={() => setActive(s.id)}
               className={cn(
                 'flex shrink-0 cursor-pointer whitespace-nowrap @[46rem]:w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors',
@@ -67,12 +69,16 @@ export function AdminSettingsPage() {
                   : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
               )}
             >
-              <s.icon className="size-4" />
+              <s.icon className="size-4" aria-hidden />
               {ui(s.label)}
             </button>
           ))}
         </nav>
-        <div className="min-w-0 flex-1"><CurrentSection /></div>
+        <div className="min-w-0 flex-1">
+          {/* Section cards use h3 titles; this keeps the outline h1 (Admin panel) → h2 → h3. */}
+          <h2 className="sr-only">{ui(current.label)}</h2>
+          <CurrentSection />
+        </div>
       </div>
     </div>
   )

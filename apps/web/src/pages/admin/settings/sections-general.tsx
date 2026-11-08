@@ -299,24 +299,24 @@ export function InterfaceSection() {
                 <div key={prompt.id} className="space-y-2 rounded-lg border p-3">
                   <div className="flex items-start gap-2">
                     <div className="grid min-w-0 flex-1 gap-2">
-                      <div>
-                        <div className="mb-1 text-xs text-muted-foreground">{ui("Button label")}</div>
+                      <label className="block">
+                        <span className="mb-1 block text-xs text-muted-foreground">{ui("Button label")}</span>
                         <Input
                           className="h-8"
                           value={prompt.label}
                           onChange={(e) => updatePrompt(index, { label: e.target.value })}
                           placeholder={ui("Shown on the button")}
                         />
-                      </div>
-                      <div>
-                        <div className="mb-1 text-xs text-muted-foreground">{ui("Message")}</div>
+                      </label>
+                      <label className="block">
+                        <span className="mb-1 block text-xs text-muted-foreground">{ui("Message")}</span>
                         <Input
                           className="h-8"
                           value={prompt.message}
                           onChange={(e) => updatePrompt(index, { message: e.target.value })}
                           placeholder={ui("Submitted when clicked")}
                         />
-                      </div>
+                      </label>
                     </div>
                     <Button
                       type="button"

@@ -216,7 +216,7 @@ describe('DictationBar', () => {
   it('turns the timer amber in the last ten seconds', () => {
     const view = renderBar({ startedAt: Date.now() - 80_000 })
     expect(view.getByTestId('dictation-elapsed').textContent).toBe('1:20')
-    expect(view.getByTestId('dictation-elapsed').className).toContain('text-amber-600')
+    expect(view.getByTestId('dictation-elapsed').className).toContain('text-amber-700')
   })
 
   it('cancels and finishes through its buttons', () => {

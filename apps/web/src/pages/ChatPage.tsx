@@ -10,6 +10,7 @@ import { ModelSelector } from '@/components/chat/ModelSelector'
 import { Composer, type ComposerMessageEdit } from '@/components/chat/Composer'
 import { ExpiryCountdown } from '@/components/chat/ExpiryCountdown'
 import { MessageList } from '@/components/chat/MessageList'
+import { GenerationStatus } from '@/components/chat/GenerationStatus'
 import { CodePreviewPanel } from '@/components/chat/CodePreviewPanel'
 import { useCodePreview } from '@/stores/codePreview'
 import { ModelIcon } from '@/components/ModelIcon'
@@ -106,7 +107,7 @@ function Placeholder({
           aria-label={badge?.kind === 'expiration' && expirationPeriod ? t('chat.expirationBadgeLabel', { period: expirationPeriod }) : undefined}
           data-visible={badge?.kind === 'expiration'}
           role="status"
-          className="chat-landing-badge-transition absolute inset-x-0 bottom-full mb-3 flex items-center justify-center gap-1.5 px-2 text-center text-xs font-medium text-teal-600 dark:text-teal-400"
+          className="chat-landing-badge-transition absolute inset-x-0 bottom-full mb-3 flex items-center justify-center gap-1.5 px-2 text-center text-xs font-medium text-teal-700 dark:text-teal-400"
         >
           <Hourglass className="size-3.5" />
           {expirationPeriod ? t('chat.expiresIn', { period: expirationPeriod }) : null}
@@ -398,6 +399,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
       )} data-desktop-temporary-chat={temporaryMode ? 'true' : undefined}>
         {/* header */}
         <header className="chat-header relative z-20 flex h-12 min-w-0 shrink-0 items-center gap-1 px-3">
+          {chat && <h1 className="sr-only">{chat.title || t('chat.newChat')}</h1>}
           {desktopSidebarVisible ? (
             <DesktopModelTitleBarSlot>
               <ModelSelector value={modelId} onChange={selectModel} onSelectClose={focusComposer} />
@@ -412,9 +414,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               <TooltipTrigger asChild>
                 <button
                   className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-                  aria-label={expirationEnabled
-                    ? t('chat.disableChatExpiry')
-                    : expirationPeriodLabel ? t('chat.expireChatIn', { period: expirationPeriodLabel }) : t('chat.enableChatExpiry')}
+                  aria-label={ui('Chat expiry')}
                   aria-pressed={expirationEnabled}
                   onClick={toggleExpiration}
                 >
@@ -491,9 +491,10 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
             )}
           </ChatHeaderActions>
         </header>
+        <GenerationStatus chatId={chat?.id ?? null} />
 
         {temporaryError && (
-          <div role="status" className="mx-auto w-full max-w-5xl px-4 pb-2 text-sm text-destructive">
+          <div role="alert" className="mx-auto w-full max-w-5xl px-4 pb-2 text-sm text-destructive">
             {temporaryError}
           </div>
         )}
