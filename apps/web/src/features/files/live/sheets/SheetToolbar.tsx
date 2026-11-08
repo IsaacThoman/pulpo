@@ -58,7 +58,7 @@ function Divider() {
 }
 
 /** A toolbar dropdown: a labeled trigger and its items. */
-function Menu({ label, trigger, disabled, children, wide, className, contentClassName }: { label: string; trigger: ReactNode; disabled?: boolean; children: ReactNode; wide?: boolean; className?: string; contentClassName?: string }) {
+function Menu({ label, trigger, disabled, children, wide, className, contentClassName, onDone }: { label: string; trigger: ReactNode; disabled?: boolean; children: ReactNode; wide?: boolean; className?: string; contentClassName?: string; onDone: () => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild disabled={disabled}>
@@ -74,7 +74,15 @@ function Menu({ label, trigger, disabled, children, wide, className, contentClas
           <ChevronDown className="size-3 opacity-60" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className={contentClassName} onCloseAutoFocus={(event) => event.preventDefault()}>
+      <DropdownMenuContent
+        align="start"
+        className={contentClassName}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          // Back to the grid, unless a command moved focus on (a dialog).
+          if (!document.activeElement || document.activeElement === document.body) onDone()
+        }}
+      >
         {children}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -134,6 +142,7 @@ export function SheetToolbar({ view, state, onFind, onNote, onLink, onInsertImag
   const currency = view.quickFormat('currency')
   const CurrencyIcon = currency.includes('€') ? Euro : DollarSign
   const painting = state.formatPainter
+  const focusGrid = () => view.focus()
   // Click picks formats up for one paste and click again puts them down; a double-click keeps
   // painting until Escape or another click (Google's Paint format, Excel's Format Painter).
   const togglePainter = () => {
@@ -170,7 +179,7 @@ export function SheetToolbar({ view, state, onFind, onNote, onLink, onInsertImag
       <ToolbarButton label={ui("Increase decimal places")} disabled={formatDisabled} onClick={() => view.changeDecimals(1)}>
         <span className="text-[11px] font-medium">.00→</span>
       </ToolbarButton>
-      <Menu label={ui("Number format")} disabled={formatDisabled} trigger={<span className="max-w-20 truncate">{currentFormat?.label() ?? ui("Custom")}</span>} wide>
+      <Menu onDone={focusGrid} label={ui("Number format")} disabled={formatDisabled} trigger={<span className="max-w-20 truncate">{currentFormat?.label() ?? ui("Custom")}</span>} wide>
         {NUMBER_FORMATS.map((format) => (
           <DropdownMenuItem key={format.id} onSelect={() => view.setNumberFormat(numberFormatCode(view, format))} className="justify-between gap-6">
             <span>{format.label()}</span>
@@ -181,14 +190,14 @@ export function SheetToolbar({ view, state, onFind, onNote, onLink, onInsertImag
         <DropdownMenuItem onSelect={onCustomNumberFormat}>{ui("Custom number format…")}</DropdownMenuItem>
       </Menu>
       <Divider />
-      <Menu label={ui("Font")} disabled={formatDisabled} trigger={<span className="max-w-20 truncate" style={{ fontFamily: style.fontName }}>{style.fontName}</span>} wide>
+      <Menu onDone={focusGrid} label={ui("Font")} disabled={formatDisabled} trigger={<span className="max-w-20 truncate" style={{ fontFamily: style.fontName }}>{style.fontName}</span>} wide>
         {FONTS.map((font) => (
           <DropdownMenuItem key={font} onSelect={() => view.setStyle({ fontName: font })} style={{ fontFamily: font }}>
             {font}
           </DropdownMenuItem>
         ))}
       </Menu>
-      <FontSizeInput value={style.fontSize} sizes={SIZES} min={1} max={409} disabled={formatDisabled} onChange={(size) => view.setStyle({ fontSize: size })} onDone={() => view.focus()} />
+      <FontSizeInput value={style.fontSize} sizes={SIZES} min={1} max={409} disabled={formatDisabled} onChange={(size) => view.setStyle({ fontSize: size })} onDone={focusGrid} />
       <Divider />
       <ToolbarButton label={ui("Bold")} shortcut={keys('b')} active={style.bold} disabled={formatDisabled} onClick={() => view.toggleStyle('bold')}>
         <Bold className="size-4" />
@@ -211,14 +220,14 @@ export function SheetToolbar({ view, state, onFind, onNote, onLink, onInsertImag
         <PaintBucket className="size-4" />
         <ColorBar color={fillColor} />
       </ColorPicker>
-      <Menu label={ui("Borders")} disabled={formatDisabled} trigger={<Grid2x2 className="size-4" />}>
+      <Menu onDone={focusGrid} label={ui("Borders")} disabled={formatDisabled} trigger={<Grid2x2 className="size-4" />}>
         {BORDER_PRESETS.map((entry) => (
           <DropdownMenuItem key={entry.preset} onSelect={() => view.setBorders(entry.preset)}>
             {entry.label()}
           </DropdownMenuItem>
         ))}
       </Menu>
-      <Menu label={ui("Merge cells")} disabled={formatDisabled} trigger={<TableCellsMerge className="size-4" />}>
+      <Menu onDone={focusGrid} label={ui("Merge cells")} disabled={formatDisabled} trigger={<TableCellsMerge className="size-4" />}>
         <DropdownMenuItem onSelect={() => view.merge('all')}>{ui("Merge all")}</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => view.merge('center')}>{ui("Merge and center")}</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => view.merge('across')}>{ui("Merge horizontally")}</DropdownMenuItem>
@@ -234,7 +243,7 @@ export function SheetToolbar({ view, state, onFind, onNote, onLink, onInsertImag
       <ToolbarButton label={ui("Align right")} active={style.hAlign === 'right'} disabled={formatDisabled} onClick={() => view.setStyle({ hAlign: style.hAlign === 'right' ? 'general' : 'right' })}>
         <AlignRight className="size-4" />
       </ToolbarButton>
-      <Menu label={ui("Vertical align")} disabled={formatDisabled} trigger={style.vAlign === 'top' ? <AlignVerticalJustifyStart className="size-4" /> : style.vAlign === 'center' ? <AlignVerticalJustifyCenter className="size-4" /> : <AlignVerticalJustifyEnd className="size-4" />}>
+      <Menu onDone={focusGrid} label={ui("Vertical align")} disabled={formatDisabled} trigger={style.vAlign === 'top' ? <AlignVerticalJustifyStart className="size-4" /> : style.vAlign === 'center' ? <AlignVerticalJustifyCenter className="size-4" /> : <AlignVerticalJustifyEnd className="size-4" />}>
         <DropdownMenuItem onSelect={() => view.setStyle({ vAlign: 'top' })}>{ui("Top")}</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => view.setStyle({ vAlign: 'center' })}>{ui("Middle")}</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => view.setStyle({ vAlign: 'bottom' })}>{ui("Bottom")}</DropdownMenuItem>
@@ -246,7 +255,7 @@ export function SheetToolbar({ view, state, onFind, onNote, onLink, onInsertImag
         <RemoveFormatting className="size-4" />
       </ToolbarButton>
       <Divider />
-      <Menu label={ui("Freeze")} disabled={disabled} trigger={<Snowflake className="size-4" />}>
+      <Menu onDone={focusGrid} label={ui("Freeze")} disabled={disabled} trigger={<Snowflake className="size-4" />}>
         <DropdownMenuItem onSelect={() => view.freeze(0, 0)}>{ui("No frozen rows or columns")}</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => view.freeze(1, state.frozen.cols)}>{ui("Freeze first row")}</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => view.freeze(state.frozen.rows, 1)}>{ui("Freeze first column")}</DropdownMenuItem>
@@ -276,7 +285,7 @@ export function SheetToolbar({ view, state, onFind, onNote, onLink, onInsertImag
         <ToolbarButton label={ui("Sum")} shortcut={autoSumKeys()} disabled={formatDisabled} onClick={() => runCommonFunction(view, 'SUM')}>
           <Sigma className="size-4" />
         </ToolbarButton>
-        <Menu label={ui("Functions")} disabled={formatDisabled} trigger={null} className="-ml-1 w-4 justify-center px-0" contentClassName="min-w-44">
+        <Menu onDone={focusGrid} label={ui("Functions")} disabled={formatDisabled} trigger={null} className="-ml-1 w-4 justify-center px-0" contentClassName="min-w-44">
           <FunctionMenuItems view={view} />
         </Menu>
       </div>
