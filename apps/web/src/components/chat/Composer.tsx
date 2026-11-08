@@ -1197,7 +1197,7 @@ export function Composer({
       )}
       <div
         className={cn(
-          'relative rounded-2xl border bg-card shadow-sm transition-[background-color,box-shadow,border-color] duration-200 focus-within:shadow-md has-[[data-composer-input]:focus-visible]:border-ring has-[[data-composer-input]:focus-visible]:ring-[3px] has-[[data-composer-input]:focus-visible]:ring-ring/50',
+          'relative rounded-2xl border bg-card shadow-sm transition-[background-color,box-shadow,border-color] duration-200 focus-within:shadow-md',
           (queuedMessages.length > 0 || showShelf && shelfRows.length > 0 || messageEdit || recovery) && '-mt-px rounded-t-xl',
           temporary && '!border-violet-500/50 bg-violet-100/80 dark:!border-violet-600/50 dark:bg-violet-950/60',
           temporary && 'border-dashed',
