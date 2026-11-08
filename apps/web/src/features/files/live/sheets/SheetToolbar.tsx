@@ -48,6 +48,7 @@ import { isAppleShortcut } from '../../browser/shortcuts'
 import { ToolbarButton } from '../../editor/ToolbarButton'
 import { FontSizeInput } from '../chrome/FontSizeInput'
 import { ColorBar, ColorPicker } from './ColorPicker'
+import { focusIsIdle } from './dialog-focus'
 import { FunctionMenuItems } from './FunctionMenu'
 import { runCommonFunction } from './functions'
 import { NUMBER_FORMATS, numberFormatChoice, numberFormatCode } from './number-formats'
@@ -80,7 +81,7 @@ function Menu({ label, trigger, disabled, children, wide, className, contentClas
         onCloseAutoFocus={(event) => {
           event.preventDefault()
           // Back to the grid, unless a command moved focus on (a dialog).
-          if (!document.activeElement || document.activeElement === document.body) onDone()
+          if (focusIsIdle()) onDone()
         }}
       >
         {children}

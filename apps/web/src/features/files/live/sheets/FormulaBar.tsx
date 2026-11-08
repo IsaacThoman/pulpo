@@ -3,6 +3,7 @@ import { formulaReferences, type SheetView, type SheetViewState } from '@pulpo/c
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
+import { focusIsIdle } from './dialog-focus'
 import { FunctionMenuItems } from './FunctionMenu'
 import { canInsertFunction } from './functions'
 
@@ -109,7 +110,15 @@ export function FormulaBar({ view, state, nameBoxRef }: {
             <span aria-hidden>{ui("fx")}</span>
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="min-w-44" onCloseAutoFocus={(event) => { event.preventDefault(); view.focus() }}>
+        <DropdownMenuContent
+          align="start"
+          className="min-w-44"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault()
+            // It closes after its animation: by then a menu opened next may hold the focus.
+            if (focusIsIdle()) view.focus()
+          }}
+        >
           <FunctionMenuItems view={view} />
         </DropdownMenuContent>
       </DropdownMenu>

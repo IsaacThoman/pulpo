@@ -8,3 +8,13 @@ export const focusGridOnClose = (view: Pick<SheetView, 'focus'>) => (event: Even
   event.preventDefault()
   view.focus()
 }
+
+/**
+ * Whether focus has nowhere to be, as when a menu has just closed (Escape, a command run). A menu
+ * hands focus back to the grid only then: a click that closed it by going on to the menu bar, the
+ * name box or a dialog keeps the focus it took.
+ */
+export function focusIsIdle(): boolean {
+  const active = document.activeElement
+  return !active || active === document.body
+}

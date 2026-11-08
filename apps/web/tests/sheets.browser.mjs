@@ -1117,6 +1117,29 @@ try {
     await gridFocused()
   })
 
+  await step('a click elsewhere while the cell menu is open keeps the focus it took', async () => {
+    const settle = async () => {
+      // The menu hands focus on once its closing animation is over (and a task later).
+      await ui.locator('[data-sheet-context-menu]').waitFor({ state: 'detached' })
+      await ui.waitForTimeout(150)
+    }
+    await go(ui, 'B3')
+    const b3 = await cellPoint(ui, 2, 1)
+    await ui.mouse.click(b3.x, b3.y, { button: 'right' })
+    await ui.locator('[data-sheet-context-menu]').waitFor()
+    await bar.getByRole('menuitem', { name: 'Insert', exact: true }).click()
+    await settle()
+    assert.equal(await ui.getByRole('menuitem', { name: 'Rows', exact: true }).count(), 1, 'the Insert menu stays open')
+    await ui.keyboard.press('Escape')
+    await gridFocused()
+    await ui.mouse.click(b3.x, b3.y, { button: 'right' })
+    await ui.locator('[data-sheet-context-menu]').waitFor()
+    await editor.getByLabel('Name box').click()
+    await settle()
+    assert.equal(await ui.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Name box')
+    await editor.getByLabel('Name box').press('Escape')
+  })
+
   assert.deepEqual(uiErrors, [])
   await uiContext.close()
 

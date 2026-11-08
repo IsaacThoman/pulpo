@@ -10,6 +10,7 @@ import {
 import { ui } from '@/i18n/ui'
 import { ZoomControl } from '../chrome/ZoomControl'
 import { AGGREGATES, aggregateText, aggregateValue, readAggregate, shownAggregate, writeAggregate, type Aggregate } from './aggregates'
+import { focusIsIdle } from './dialog-focus'
 
 /**
  * Google's "Sum: 1,234 ▾" (Excel's status bar figures): with several cells selected, one
@@ -59,10 +60,12 @@ export function SummaryChooser({ summary, onDone }: { summary: SheetSummary; onD
  * View ▸ Zoom and pinching still zoom there.
  */
 export function SheetStatus({ view, state }: { view: SheetView; state: SheetViewState }) {
+  // Their lists close after an animation: by then a menu opened next may hold the focus.
+  const backToGrid = () => { if (focusIsIdle()) view.focus() }
   return (
     <div className="flex shrink-0 items-center gap-1 pr-1" data-sheet-status="">
-      <SummaryChooser summary={state.summary} onDone={() => view.focus()} />
-      <ZoomControl compact className="hidden @lg:flex" zoom={state.zoom} onZoom={(zoom) => view.setZoom(zoom)} min={0.25} max={4} onDone={() => view.focus()} valueProps={{ 'data-sheet-zoom': '' }} />
+      <SummaryChooser summary={state.summary} onDone={backToGrid} />
+      <ZoomControl compact className="hidden @lg:flex" zoom={state.zoom} onZoom={(zoom) => view.setZoom(zoom)} min={0.25} max={4} onDone={backToGrid} valueProps={{ 'data-sheet-zoom': '' }} />
     </div>
   )
 }

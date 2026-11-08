@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
+import { focusIsIdle } from './dialog-focus'
 
 const TAB_COLORS = ['FFC00000', 'FFFF0000', 'FFFFC000', 'FFFFFF00', 'FF92D050', 'FF00B050', 'FF00B0F0', 'FF0070C0', 'FF002060', 'FF7030A0']
 
@@ -70,7 +71,7 @@ export function SheetTabs({ view, state, summary }: { view: SheetView; state: Sh
   // Commands go back to the grid, except Rename, whose box takes the focus.
   const closeFocus = (event: Event) => {
     event.preventDefault()
-    if (!document.activeElement || document.activeElement === document.body) view.focus()
+    if (focusIsIdle()) view.focus()
   }
 
   return (

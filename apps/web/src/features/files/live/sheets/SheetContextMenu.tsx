@@ -14,6 +14,7 @@ import {
 import { ui } from '@/i18n/ui'
 import { normalizeEntries, type MenuEntry } from '../chrome/menu'
 import { ariaKeyShortcuts, formatShortcut } from '../chrome/shortcuts'
+import { focusIsIdle } from './dialog-focus'
 
 /** Where the menu opened, from the grid's `sheetcontextmenu` event (or the keyboard's menu key). */
 export interface SheetMenuPoint {
@@ -69,7 +70,8 @@ function ContextMenuEntries({ entries }: { entries: readonly MenuEntry[] }) {
 /**
  * The grid's right-click menu (see `cellMenuEntries`) at the pointer: an invisible trigger there
  * gives it the dropdown's styling, keyboard handling and collision avoidance. Focus goes back to
- * the grid when it closes, unless a command opened a dialog that took it.
+ * the grid when it closes, unless something else took it (a dialog a command opened, or the menu
+ * bar or name box clicked while it was open: it doesn't block the page).
  */
 export function SheetContextMenu({ point, entries, onClose, returnFocus }: {
   point: SheetMenuPoint | undefined
@@ -90,9 +92,8 @@ export function SheetContextMenu({ point, entries, onClose, returnFocus }: {
         data-sheet-context-menu=""
         onCloseAutoFocus={(event) => {
           event.preventDefault()
-          const active = document.activeElement
-          // A dialog the command opened keeps the focus it took.
-          if (!active || active === document.body || !active.closest('[role="dialog"], [role="alertdialog"]')) returnFocus()
+          // A dialog the command opened, or the menu bar or name box clicked instead, keeps its focus.
+          if (focusIsIdle()) returnFocus()
         }}
       >
         {point && <ContextMenuEntries entries={entries()} />}
