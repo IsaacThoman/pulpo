@@ -4319,7 +4319,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
   const colorScheme = useColorScheme();
   const foreground = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const [labsMenuRevision, setLabsMenuRevision] = useState(0);
-  const { sections: modelSections, section, sectionLabel, visibleModels, setSection } = useModelMenu(models);
+  const { sections: modelSections, sectionLabel, visibleModels, setSection } = useModelMenu(models);
 
   return (
     <SwiftUIHost key={tinted ? 'tinted' : 'default'} ignoreSafeArea="all" matchContents style={styles.modelMenuHost}>
@@ -4353,15 +4353,14 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
         ]}
       >
         <SwiftUISection key="models" title={sectionLabel}>
-          <NativeMenuPicker
-            label="Model"
-            selection={model.id}
-            options={visibleModels.map((candidate) => ({ id: candidate.id, label: candidate.name, icon: <NativeModelMenuIcon model={candidate} /> }))}
-            onSelect={(id) => {
-              const candidate = visibleModels.find((item) => item.id === id);
-              if (candidate) onSelectModel(candidate);
-            }}
-          />
+          {visibleModels.map((candidate) => (
+            <SwiftUIButton
+              key={candidate.id}
+              onPress={() => onSelectModel(candidate)}
+            >
+              <NativeModelMenuRow label={candidate.name} model={candidate} />
+            </SwiftUIButton>
+          ))}
         </SwiftUISection>
         <SwiftUIDivider key="divider" />
         <SwiftUIMenu
@@ -4378,41 +4377,56 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
             />
           )}
         >
-          <NativeMenuPicker
-            label="Labs"
-            modifiers={[menuActionDismissBehavior('disabled')]}
-            selection={section}
-            options={modelSections.map((candidateSection) => ({
-              id: candidateSection.id,
-              label: candidateSection.label,
-              icon: <NativeModelSectionIcon section={candidateSection.id} models={models} />,
-            }))}
-            onSelect={(id) => {
-              setSection(id);
-              setLabsMenuRevision((current) => current + 1);
-              Haptics.selectionAsync();
-            }}
-          />
+          {modelSections.map((candidateSection) => (
+            <SwiftUIButton
+              key={candidateSection.id}
+              modifiers={[menuActionDismissBehavior('disabled')]}
+              onPress={() => {
+                setSection(candidateSection.id);
+                setLabsMenuRevision((current) => current + 1);
+                Haptics.selectionAsync();
+              }}
+            >
+              <NativeModelSectionRow label={candidateSection.label} section={candidateSection.id} models={models} />
+            </SwiftUIButton>
+          ))}
         </SwiftUIMenu>
       </SwiftUIMenu>
     </SwiftUIHost>
   );
 });
 
-// The menu's inline picker draws the selected checkmark.
-function NativeModelMenuIcon({ model }: { model: Model }) {
-  return <SwiftUIImage uiImage={Image.resolveAssetSource(model.menuIcon ?? model.icon).uri} modifiers={[resizable(), frame({ width: 20, height: 20 })]} />;
+// No checkmark beside the current model or lab: the menu button already names the model
+// ("Model, …" for VoiceOver), and the open lab is the section shown.
+function NativeModelMenuRow({ label, model }: { label: string; model: Model }) {
+  return (
+    <SwiftUIHStack modifiers={[frame({ width: 220 })]} spacing={10}>
+      <SwiftUILabel
+        title={label}
+        icon={<SwiftUIImage uiImage={Image.resolveAssetSource(model.menuIcon ?? model.icon).uri} modifiers={[resizable(), frame({ width: 20, height: 20 })]} />}
+      />
+      <SwiftUISpacer />
+    </SwiftUIHStack>
+  );
 }
 
-function NativeModelSectionIcon({ section, models }: { section: ModelSection; models: Model[] }) {
+function NativeModelSectionRow({ label, section, models }: { label: string; section: ModelSection; models: Model[] }) {
   const colorScheme = useColorScheme();
   const labModel = section === '__favorites__' ? null : models.find((model) => model.providerGroupId === section);
-  return labModel
-    ? <SwiftUIImage uiImage={Image.resolveAssetSource(labModel.labIcon ?? labModel.icon).uri} modifiers={[resizable(), frame({ width: 20, height: 20 })]} />
-    : <SwiftUIImage
-        assetName={colorScheme === 'dark' ? 'FavoriteStarWhite' : 'FavoriteStar'}
-        modifiers={[resizable(), frame({ width: 20, height: 20 })]}
-      />;
+  return (
+    <SwiftUIHStack modifiers={[frame({ width: 220 })]} spacing={10}>
+      <SwiftUILabel
+        title={label}
+        icon={labModel
+          ? <SwiftUIImage uiImage={Image.resolveAssetSource(labModel.labIcon ?? labModel.icon).uri} modifiers={[resizable(), frame({ width: 20, height: 20 })]} />
+          : <SwiftUIImage
+              assetName={colorScheme === 'dark' ? 'FavoriteStarWhite' : 'FavoriteStar'}
+              modifiers={[resizable(), frame({ width: 20, height: 20 })]}
+            />}
+      />
+      <SwiftUISpacer />
+    </SwiftUIHStack>
+  );
 }
 
 function SuggestedPromptButton({ label, accessible, onPress, temporary = false }: { label: string; accessible: boolean; onPress: () => void; temporary?: boolean }) {
