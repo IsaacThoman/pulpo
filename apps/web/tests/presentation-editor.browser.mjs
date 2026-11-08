@@ -1357,6 +1357,20 @@ try {
     const xfrm = await xfrmOf(page, key)
     assert.ok(Math.abs(xfrm.x - (size.width * 9525 - xfrm.cx) / 2) < 2, JSON.stringify(xfrm))
     await focusIn(page, '.pp-canvas')
+    // Several shapes move as one, keeping their spacing, as in Google Slides (not each to the center).
+    const box = await page.evaluate(() => window.harness.controllers.a.insertTextBox({ x: 100_000, y: 100_000, cx: 1_000_000, cy: 400_000 }))
+    const pair = [key, box]
+    await page.evaluate((pair) => window.harness.controllers.a.selectShapes(pair), pair)
+    const xs = () => Promise.all(pair.map(async (shape) => (await xfrmOf(page, shape)).x))
+    const apart = await xs()
+    await menu('Arrange', 'Horizontally', 'Center on page')
+    const together = await xs()
+    assert.equal(together[1] - together[0], apart[1] - apart[0], 'the shapes keep their places relative to each other')
+    assert.notDeepEqual(together, apart)
+    await focusIn(page, '.pp-canvas')
+    await page.keyboard.press('Meta+z')
+    assert.deepEqual(await xs(), apart, 'one undo step')
+    await page.evaluate((key) => window.harness.controllers.a.selectShapes([key]), key)
     // Format ▸ Text fitting ▸ Resize shape to fit text.
     await menu('Format', 'Resize shape to fit text', 'Text fitting')
     assert.equal(await page.evaluate(() => window.harness.controllers.a.formatState().textBox?.autofit), 'shape')

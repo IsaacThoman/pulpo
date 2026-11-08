@@ -224,6 +224,29 @@ describe('presentation menus', () => {
     expect(Math.abs(xfrm.x - (width - xfrm.cx) / 2)).toBeLessThan(2)
   })
 
+  it('centers several shapes on the page as one, keeping their spacing (one undo step)', async () => {
+    const controller = await deck()
+    const left = textBox(controller, 'Left', 300_000)
+    const right = textBox(controller, 'Right', 2_700_000)
+    const slide = controller.state.slide!
+    controller.selectShapes([left, right])
+    const before = [controller.shapeXfrm(slide, left)!, controller.shapeXfrm(slide, right)!]
+    item(asUndoSteps(controller, arrangeMenuEntries(host(controller))), 'center-horizontal').onSelect()
+    const after = [controller.shapeXfrm(slide, left)!, controller.shapeXfrm(slide, right)!]
+    // Moved together: the gap between them stays, and the pair's middle is the slide's.
+    expect(after[1]!.x - after[0]!.x).toBe(before[1]!.x - before[0]!.x)
+    const width = controller.size().width * 9525
+    expect(Math.abs((after[0]!.x + after[1]!.x + after[1]!.cx) / 2 - width / 2)).toBeLessThanOrEqual(1)
+    expect(after.map((xfrm) => xfrm.y)).toEqual(before.map((xfrm) => xfrm.y))
+    item(arrangeMenuEntries(host(controller)), 'center-vertical').onSelect()
+    const height = controller.size().height * 9525
+    const moved = [controller.shapeXfrm(slide, left)!, controller.shapeXfrm(slide, right)!]
+    expect(Math.abs(moved[0]!.y + moved[0]!.cy / 2 - height / 2)).toBeLessThanOrEqual(1)
+    controller.undo()
+    controller.undo()
+    expect([controller.shapeXfrm(slide, left)!.x, controller.shapeXfrm(slide, right)!.x]).toEqual(before.map((xfrm) => xfrm.x))
+  })
+
   it('offers slide commands on the slide and its thumbnails, sections included', async () => {
     const controller = await deck(3)
     const [a, b] = controller.slideKeys()

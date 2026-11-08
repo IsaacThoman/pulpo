@@ -1,6 +1,6 @@
 import type { PresentationController } from '@pulpo/client-core/office/presentation/view'
 import { maxOf, minOf } from '@pulpo/client-core/collections'
-import { PRESET_SHAPE_GALLERY } from '@pulpo/client-core/office/presentation'
+import { EMU_PER_PX, PRESET_SHAPE_GALLERY } from '@pulpo/client-core/office/presentation'
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
@@ -640,13 +640,31 @@ export function distributeSubmenu(host: PresentationMenuHost): MenuEntry {
   }
 }
 
-/** Slides' Center on page: the selection, as one, in the middle of the slide (one undo step). */
+/**
+ * Slides' Center on page: the selection moves as one into the middle of the slide, keeping the
+ * shapes where they are relative to each other (Align ▸ Align to slide stacks each on the center).
+ * One undo step.
+ */
+export function centerOnPage(controller: PresentationController, axis: 'horizontal' | 'vertical'): void {
+  const slide = controller.state.slide
+  if (!slide) return
+  const xfrms = controller.state.shapes.map((key) => controller.shapeXfrm(slide, key)).filter((xfrm) => xfrm !== undefined)
+  if (!xfrms.length) return
+  const horizontal = axis === 'horizontal'
+  const start = minOf(xfrms.map((xfrm) => (horizontal ? xfrm.x : xfrm.y)))
+  const end = maxOf(xfrms.map((xfrm) => (horizontal ? xfrm.x + xfrm.cx : xfrm.y + xfrm.cy)))
+  const size = controller.size()
+  const extent = (horizontal ? size.width : size.height) * EMU_PER_PX
+  const delta = Math.round((extent - (end - start)) / 2 - start)
+  if (delta) controller.nudge(horizontal ? delta : 0, horizontal ? 0 : delta)
+}
+
 export function centerSubmenu(controller: PresentationController): MenuEntry {
   return {
     type: 'submenu', id: 'center-on-page', label: ui("Center on page"), icon: AlignCenterHorizontal, disabled: controller.readOnly || !controller.state.shapes.length,
     items: [
-      { type: 'item', id: 'center-horizontal', label: ui("Horizontally"), icon: AlignCenterVertical, onSelect: () => controller.align('center', 'slide') },
-      { type: 'item', id: 'center-vertical', label: ui("Vertically"), icon: AlignCenterHorizontal, onSelect: () => controller.align('middle', 'slide') },
+      { type: 'item', id: 'center-horizontal', label: ui("Horizontally"), icon: AlignCenterVertical, onSelect: () => centerOnPage(controller, 'horizontal') },
+      { type: 'item', id: 'center-vertical', label: ui("Vertically"), icon: AlignCenterHorizontal, onSelect: () => centerOnPage(controller, 'vertical') },
     ],
   }
 }
