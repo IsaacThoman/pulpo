@@ -481,10 +481,14 @@ function linkTarget(link: XmlElement, env: RenderEnv): string | undefined {
 
 /** Field text: slide numbers and dates are computed; other fields show their cached text. */
 export function fieldText(field: XmlElement, env: RenderEnv): string {
-  const type = attr(field, 'type') ?? ''
-  if (type === 'slidenum') return String(env.slideNumber)
-  if (type.startsWith('datetime')) return formatDate(type, env.now)
-  return child(field, 't', NS.a)?.textContent ?? ''
+  return computedFieldText(attr(field, 'type') ?? '', env.slideNumber, env.now) ?? child(field, 't', NS.a)?.textContent ?? ''
+}
+
+/** The text of a slide number or date field, or undefined for fields that keep their saved text. */
+export function computedFieldText(type: string, slideNumber: number, now: Date): string | undefined {
+  if (type === 'slidenum') return String(slideNumber)
+  if (type.startsWith('datetime')) return formatDate(type, now)
+  return undefined
 }
 
 function formatDate(type: string, date: Date): string {

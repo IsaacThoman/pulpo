@@ -3,6 +3,7 @@ import { ensureNotes, slideMap } from '../commands.js'
 import { emptyBag } from '../render/props.js'
 import { bodyLayout } from '../render/text.js'
 import { LOCAL_ORIGIN, type PresentationController } from './controller.js'
+import { editorShortcut } from './shortcuts.js'
 import { ensureStyles } from './styles.js'
 import { InlineTextEditor } from './text-editor.js'
 
@@ -27,14 +28,26 @@ export class NotesEditor {
     this.element.dataset.placeholder = controller.labels.notesPlaceholder
     container.append(this.element)
     this.element.addEventListener('pointerdown', this.onPointerDown)
+    this.element.addEventListener('focusin', this.onFocus)
     this.unsubscribe = controller.subscribe(() => this.sync())
     this.sync()
   }
 
   destroy(): void {
     this.unsubscribe()
+    this.release()
     this.editor?.destroy()
     this.element.remove()
+  }
+
+  /** Formatting no longer goes to an editor that is going away. */
+  private release(): void {
+    if (this.editor) this.controller.releaseNotesTarget(this.editor)
+  }
+
+  // Typing notes makes them the target of the toolbar's text formatting.
+  private readonly onFocus = (): void => {
+    if (this.editor && !this.controller.readOnly) this.controller.setNotesTarget(this.editor)
   }
 
   private fragment(slideKey: string): Y.XmlFragment | undefined {
@@ -47,17 +60,21 @@ export class NotesEditor {
     this.editor?.setReadOnly(this.controller.readOnly)
     const slide = this.controller.state.slide
     const fragment = slide ? this.fragment(slide) : undefined
-    if (slide === this.slide && (this.editor ? this.editorFragment === fragment : !fragment)) {
-      this.updateEmpty()
-      return
+    if (slide !== this.slide || (this.editor ? this.editorFragment !== fragment : !!fragment)) {
+      this.slide = slide
+      this.mount(fragment)
+    } else this.updateEmpty()
+    const reveal = slide && this.editor ? this.controller.takeReveal({ notes: true, slide }) : undefined
+    if (reveal && this.editor) {
+      if (reveal.focus) this.controller.setNotesTarget(this.editor)
+      this.editor.selectText(reveal.paragraph, reveal.from, reveal.to, reveal.focus)
     }
-    this.slide = slide
-    this.mount(fragment)
   }
 
   private editorFragment?: Y.XmlFragment
 
   private mount(fragment: Y.XmlFragment | undefined): void {
+    this.release()
     this.editor?.destroy()
     this.editor = undefined
     this.editorFragment = fragment
@@ -76,7 +93,18 @@ export class NotesEditor {
       readOnly: this.controller.readOnly,
       onUndo: () => this.controller.undo(),
       onRedo: () => this.controller.redo(),
-      onSelectionChange: () => this.updateEmpty(),
+      // Notes inherit no formatting but 12 pt, so the controller toggles against the notes text.
+      onToggleMark: (mark) => {
+        if (!this.editor || this.controller.readOnly) return
+        this.controller.setNotesTarget(this.editor)
+        this.controller.toggleMark(mark)
+      },
+      onKey: (event) => editorShortcut(this.controller, event),
+      onSelectionChange: () => {
+        this.updateEmpty()
+        // Toolbar state follows the notes selection while they are the target.
+        if (this.editor && this.controller.notesFocused) this.controller.setState({})
+      },
     })
     this.updateEmpty()
   }

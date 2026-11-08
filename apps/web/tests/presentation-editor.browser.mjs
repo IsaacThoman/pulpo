@@ -191,6 +191,78 @@ try {
     await page.close()
   })
 
+  await check('puts the caret where you click: double click selects the word, a second click edits at the pointer', async () => {
+    const { page, errors } = await open(context, 'deck=generated/text-formatting.pptx')
+    await page.locator('.pp-thumbs .pp-thumb').nth(1).click()
+    const box = slideShapes(page).nth(1)
+    const key = await box.getAttribute('data-key')
+    const paragraphs = () => page.evaluate((shape) => {
+      const controller = window.harness.controllers.a
+      const flat = (node) => (node?.text ?? '') + (node?.content ?? []).map(flat).join('')
+      return controller.shape(controller.state.slide, shape).text.content.map(flat)
+    }, key)
+    // Client coordinates of a word in the rendered slide.
+    const wordPoint = (word) => page.evaluate(([shape, text]) => {
+      const root = document.querySelector(`.pp-canvas-slide [data-key="${shape}"]`)
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const index = node.data.indexOf(text)
+        if (index < 0) continue
+        const range = document.createRange()
+        range.setStart(node, index)
+        range.setEnd(node, index + 1)
+        const rect = range.getBoundingClientRect()
+        return { x: rect.left + 1, y: rect.top + rect.height / 2 }
+      }
+      return undefined
+    }, [key, word])
+    const before = await paragraphs()
+    const arial = await wordPoint('Arial')
+    await page.mouse.dblclick(arial.x + 2, arial.y)
+    await page.locator('.pp-canvas .pp-text-editor').waitFor()
+    await page.keyboard.type('Helvetica')
+    assert.equal((await paragraphs())[1], before[1].replace('Arial', 'Helvetica'), 'the double-clicked word is replaced')
+    await page.keyboard.press('Escape')
+    assert.deepEqual((await state(page)).shapes, [key])
+    // A click on the selected text box opens its text with the caret at the pointer.
+    const roman = await wordPoint('Roman')
+    await page.mouse.click(roman.x, roman.y)
+    assert.ok((await state(page)).editing, 'editing after a second click')
+    await page.keyboard.type('X')
+    const line = (await paragraphs())[2]
+    const at = before[2].indexOf('Roman')
+    assert.ok(Math.abs(line.indexOf('X') - at) <= 1, `caret at the click: ${line}`)
+    await page.keyboard.press('Escape')
+    // A selected shape without text stays selected on a second click, so it can be dragged.
+    const rect = await page.evaluate(() => window.harness.controllers.a.insertShape('rect'))
+    const shape = page.locator(`.pp-canvas-slide [data-key="${rect}"]`)
+    await shape.click()
+    assert.equal((await state(page)).editing, undefined)
+    assert.deepEqual((await state(page)).shapes, [rect])
+    // A double click that opens no text (on a group) leaves no caret behind for the next editor.
+    const [group, textBox] = await page.evaluate(() => {
+      const controller = window.harness.controllers.a
+      const first = controller.insertShape('rect', { x: 300_000, y: 3_000_000, cx: 900_000, cy: 600_000 })
+      const second = controller.insertShape('ellipse', { x: 300_000, y: 4_000_000, cx: 900_000, cy: 600_000 })
+      controller.selectShapes([first, second])
+      controller.group()
+      const grouped = controller.state.shapes[0]
+      const text = controller.insertTextBox({ x: 6_000_000, y: 3_000_000, cx: 3_000_000, cy: 600_000 })
+      return [grouped, text]
+    })
+    await page.locator('.pp-canvas .pp-text-editor').waitFor()
+    await page.keyboard.type('abc')
+    await page.keyboard.press('Escape')
+    await page.locator(`.pp-canvas-slide [data-key="${group}"]`).dblclick({ position: { x: 20, y: 20 } })
+    assert.equal((await state(page)).editing, undefined)
+    await page.evaluate((key) => window.harness.controllers.a.setState({ shapes: [key], editing: { slide: window.harness.controllers.a.state.slide, shape: key } }), textBox)
+    await page.locator('.pp-canvas .pp-text-editor').waitFor()
+    await page.keyboard.type('Z')
+    assert.equal(await page.evaluate((key) => window.harness.controllers.a.shape(window.harness.controllers.a.state.slide, key).text.content[0].content[0].text, textBox), 'abcZ', 'typing goes on at the end')
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
   await check('inserts text boxes, shapes, tables, and images; edits table cells', async () => {
     const { page, errors } = await open(context, 'blank=1')
     await page.getByRole('button', { name: 'Text box' }).click()
@@ -231,6 +303,95 @@ try {
     await page.close()
   })
 
+  await check('pastes and drops images at their aspect ratio; a drop on the slide stays out of the chat', async () => {
+    const { page, errors } = await open(context, 'blank=1')
+    // A 4×2 px PNG.
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAACCAIAAADwyuo0AAAAEElEQVR4nGP4z8AARwzIHABvqgf5gNwAKAAAAABJRU5ErkJggg=='
+    const pictures = () => page.evaluate(() => {
+      const controller = window.harness.controllers.a
+      return controller.slide(controller.state.slide).shapes.filter((shape) => shape.kind === 'pic').map((shape) => ({ ...controller.shapeXfrm(controller.state.slide, shape.key), descr: shape.descr }))
+    })
+    await page.evaluate((base64) => {
+      const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))
+      const data = new DataTransfer()
+      data.items.add(new File([bytes], 'image.png', { type: 'image/png' }))
+      const canvas = document.querySelector('.pp-canvas')
+      canvas.focus()
+      canvas.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+    }, png)
+    await page.waitForFunction(() => window.harness.controllers.a.slide(window.harness.controllers.a.state.slide).shapes.some((shape) => shape.kind === 'pic'))
+    const [pasted] = await pictures()
+    assert.equal(pasted.cx / pasted.cy, 2, `pasted at 2:1, not 4:3 (${pasted.cx}×${pasted.cy})`)
+    const stage = await page.locator('.pp-canvas-stage').boundingBox()
+    const point = { x: stage.x + stage.width * 0.25, y: stage.y + stage.height * 0.75 }
+    const reached = await page.evaluate(([base64, at]) => {
+      let windowDrops = 0
+      window.addEventListener('drop', () => { windowDrops++ })
+      const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))
+      const data = new DataTransfer()
+      data.items.add(new File([bytes], 'wide logo.png', { type: 'image/png' }))
+      const target = document.elementFromPoint(at.x, at.y)
+      const over = new DragEvent('dragover', { dataTransfer: data, clientX: at.x, clientY: at.y, bubbles: true, cancelable: true })
+      target.dispatchEvent(over)
+      target.dispatchEvent(new DragEvent('drop', { dataTransfer: data, clientX: at.x, clientY: at.y, bubbles: true, cancelable: true }))
+      return { accepted: over.defaultPrevented, windowDrops }
+    }, [png, point])
+    assert.deepEqual(reached, { accepted: true, windowDrops: 0 })
+    await page.waitForFunction(() => window.harness.controllers.a.slide(window.harness.controllers.a.state.slide).shapes.filter((shape) => shape.kind === 'pic').length === 2)
+    const dropped = (await pictures())[1]
+    const size = await page.evaluate(() => window.harness.controllers.a.size())
+    assert.equal(dropped.cx / dropped.cy, 2)
+    assert.ok(Math.abs(dropped.x + dropped.cx / 2 - size.width * 0.25 * 9525) < 3 * 9525, 'centered on the drop point (x)')
+    assert.ok(Math.abs(dropped.y + dropped.cy / 2 - size.height * 0.75 * 9525) < 3 * 9525, 'centered on the drop point (y)')
+    assert.equal(dropped.descr, 'wide logo')
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
+  await check('arrows keep their heads when the format panel changes the line; flips and text box options draw', async () => {
+    const { page, errors } = await open(context, 'blank=1')
+    const key = await page.evaluate(() => window.harness.controllers.a.insertShape('straightConnector1', { x: 1_000_000, y: 1_000_000, cx: 3_000_000, cy: 0 }, { tail: 'triangle' }))
+    const line = () => page.evaluate((shape) => window.harness.controllers.a.shape(window.harness.controllers.a.state.slide, shape).line, key)
+    await page.locator(`.pp-canvas-slide [data-key="${key}"] marker`).first().waitFor({ state: 'attached' })
+    await page.getByRole('button', { name: 'Format panel' }).click()
+    await page.getByRole('combobox', { name: 'Line width' }).selectOption('3')
+    await page.getByRole('combobox', { name: 'Dash type' }).selectOption('dash')
+    assert.match(await line(), /w="38100"/)
+    assert.match(await line(), /<a:prstDash val="dash"\/><a:tailEnd type="triangle"\/>/)
+    await page.locator(`.pp-canvas-slide [data-key="${key}"] marker`).first().waitFor({ state: 'attached' })
+    const reopened = await page.evaluate(async () => {
+      const bytes = Uint8Array.from(atob(await window.harness.exportFile()), (char) => char.charCodeAt(0))
+      const doc = new window.harness.docA.constructor()
+      await window.harness.codec.importFile(doc, bytes, { name: 'Blank.pptx', assets: window.harness.assets })
+      const slides = doc.getMap('presentation').get('slides')
+      return [...slides.values()].flatMap((slide) => [...slide.get('shapes').values()].map((shape) => shape.get('line') ?? '')).join('')
+    })
+    assert.match(reopened, /tailEnd type="triangle"/)
+    // A text box has no line of its own or from a style: choosing a width draws one.
+    const box = await page.evaluate(() => {
+      const controller = window.harness.controllers.a
+      const key = controller.insertTextBox()
+      controller.setState({ editing: undefined })
+      return key
+    })
+    await page.getByRole('combobox', { name: 'Line width' }).selectOption('3')
+    const boxLine = await page.evaluate((shape) => window.harness.controllers.a.shape(window.harness.controllers.a.state.slide, shape).line, box)
+    assert.match(boxLine, /w="38100"><a:solidFill><a:schemeClr val="tx1"\/><\/a:solidFill><\/a:ln>$/)
+    // Flip and bottom-anchored text render.
+    const title = await slideShapes(page).first().getAttribute('data-key')
+    await page.evaluate((shape) => {
+      const controller = window.harness.controllers.a
+      controller.selectShapes([shape])
+      controller.setTextAnchor('b')
+      controller.selectShapes([shape])
+      controller.flip('vertical')
+    }, title)
+    await page.locator(`.pp-canvas-slide [data-key="${title}"] .pp-text[data-anchor="b"]`).waitFor({ state: 'attached' })
+    assert.equal(await page.evaluate((shape) => window.harness.controllers.a.shapeXfrm(window.harness.controllers.a.state.slide, shape).flipV, title), true)
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
   await check('manages slides in the strip: add, duplicate, reorder by dragging, hide, delete', async () => {
     const { page, errors } = await open(context, 'deck=generated/layouts-notes-sections.pptx')
     const keys = () => page.evaluate(() => window.harness.controllers.a.slideKeys())
@@ -259,6 +420,35 @@ try {
     assert.equal((await keys()).length, original.length + 1)
     // Section headers are shown in the strip.
     assert.ok((await page.locator('.pp-section').count()) >= 2)
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
+  await check('applying a layout adds its placeholders, reset brings back their place, and undo takes each back', async () => {
+    const { page, errors } = await open(context, 'deck=generated/layouts-notes-sections.pptx')
+    await page.locator('.pp-thumbs .pp-thumb').nth(6).click()
+    assert.equal(await slideShapes(page).count(), 0, 'a blank slide')
+    await page.getByRole('button', { name: 'Slide', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Title and Content', exact: true }).click()
+    await page.locator('.pp-canvas-slide .pp-prompt').first().waitFor()
+    assert.equal(await slideShapes(page).count(), 2)
+    assert.deepEqual(await page.locator('.pp-canvas-slide .pp-prompt').allInnerTexts(), ['Click to add title', 'Click to add text'])
+    // Move the title away, then reset the slide: it returns to the layout's place.
+    const title = await slideShapes(page).first().getAttribute('data-key')
+    const inherited = await xfrmOf(page, title)
+    await page.evaluate((key) => {
+      const controller = window.harness.controllers.a
+      controller.selectShapes([key])
+      controller.nudge(95250 * 5, 95250 * 3)
+      controller.resetSlides()
+    }, title)
+    assert.deepEqual(await xfrmOf(page, title), inherited)
+    await page.locator('.pp-canvas').focus()
+    await page.keyboard.press('Meta+z')
+    assert.notDeepEqual(await xfrmOf(page, title), inherited, 'undo takes back the reset')
+    await page.keyboard.press('Meta+z')
+    await page.keyboard.press('Meta+z')
+    assert.equal(await slideShapes(page).count(), 0, 'undo takes back the layout and its placeholders')
     assert.deepEqual(errors, [])
     await page.close()
   })
@@ -635,6 +825,186 @@ try {
     await page.keyboard.press('Tab')
     assert.notEqual((await state(page)).editing?.column, column)
     await page.keyboard.press('Escape')
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
+  await check('table rows and columns: Tab in the last cell adds a row; inserts keep the editor on its cell', async () => {
+    const { page, errors } = await open(context, 'blank=1')
+    const key = await page.evaluate(() => window.harness.controllers.a.insertTable(2, 2))
+    const table = page.locator(`.pp-canvas-slide [data-key="${key}"]`)
+    const rows = () => page.evaluate((shape) => window.harness.controllers.a.shape(window.harness.controllers.a.state.slide, shape).table.rows.length, key)
+    const cellAt = () => page.evaluate(() => window.harness.controllers.a.tableSelection()?.cell)
+    let box = await table.locator('td[data-row="1"][data-col="1"]').boundingBox()
+    await page.mouse.dblclick(box.x + box.width / 2, box.y + box.height / 2)
+    await page.locator('.pp-canvas .pp-text-editor').waitFor()
+    await page.keyboard.type('last')
+    await page.keyboard.press('Tab')
+    assert.equal(await rows(), 3)
+    assert.deepEqual(await cellAt().then((cell) => [cell.rowIndex, cell.columnIndex]), [2, 0], 'the caret moves into the new row')
+    await page.keyboard.type('new')
+    assert.match(await page.evaluate(() => window.harness.text('a')), /new/)
+    // A row inserted above the edited cell moves the cell, and the editor goes with it.
+    await page.evaluate(() => window.harness.controllers.a.insertTableRow('above'))
+    assert.deepEqual(await cellAt().then((cell) => [cell.rowIndex, cell.columnIndex]), [3, 0])
+    box = await table.locator('td[data-row="3"][data-col="0"]').boundingBox()
+    const frame = await page.locator('.pp-editor-frame').boundingBox()
+    assert.ok(Math.abs(frame.y - box.y) < 2 && Math.abs(frame.x - box.x) < 2, `editor over its cell: ${JSON.stringify([frame, box])}`)
+    await page.keyboard.press('Meta+z')
+    assert.equal(await rows(), 3, 'one undo takes back the inserted row')
+    await page.keyboard.press('Escape')
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
+  await check('keyboard shortcuts: formatting selected shapes, new and duplicate slides, page keys, zoom, and host requests', async () => {
+    const { page, errors } = await open(context, 'deck=generated/text-formatting.pptx')
+    await page.evaluate(() => {
+      window.requests = []
+      window.harness.controllers.a.onRequest((request) => window.requests.push(request))
+    })
+    await page.locator('.pp-thumbs .pp-thumb').nth(2).click()
+    const box = slideShapes(page).nth(1)
+    const key = await box.getAttribute('data-key')
+    await box.click()
+    const text = () => page.evaluate((shape) => window.harness.controllers.a.shape(window.harness.controllers.a.state.slide, shape).text, key)
+    const runs = (json) => json.content.flatMap((paragraph) => paragraph.content ?? []).filter((node) => node.type === 'text')
+    await page.keyboard.press('Meta+b')
+    assert.ok(runs(await text()).every((run) => run.marks.some((mark) => mark.type === 'b' && mark.attrs.value === true)), 'all runs bold')
+    await page.keyboard.press('Meta+Shift+e')
+    assert.ok((await text()).content.every((paragraph) => /algn="ctr"/.test(paragraph.attrs.pPr ?? '')), 'every paragraph centered')
+    const before = await page.evaluate(() => window.harness.controllers.a.formatState().fontSize)
+    await page.keyboard.press('Meta+Shift+Period')
+    assert.ok(await page.evaluate(() => window.harness.controllers.a.formatState().fontSize) > before, 'bigger')
+    assert.equal(await state(page).then((value) => value.editing), undefined, 'formatting does not open the text')
+    // Ctrl+M adds a slide after the current one; Cmd+D with nothing selected duplicates it.
+    const count = () => page.evaluate(() => window.harness.controllers.a.slideKeys().length)
+    const slides = await count()
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Control+m')
+    assert.equal(await count(), slides + 1)
+    await page.keyboard.press('Meta+d')
+    assert.equal(await count(), slides + 2)
+    const index = () => page.evaluate(() => window.harness.controllers.a.slideKeys().indexOf(window.harness.controllers.a.state.slide))
+    const at = await index()
+    await page.keyboard.press('PageUp')
+    assert.equal(await index(), at - 1)
+    await page.keyboard.press('PageDown')
+    assert.equal(await index(), at)
+    // Zoom by keys; Mod+Alt+0 fits again.
+    const width = async () => (await page.locator('.pp-canvas-stage').boundingBox()).width
+    const fitted = await width()
+    await page.keyboard.press('Meta+Alt+Equal')
+    assert.ok(await width() > fitted)
+    await page.keyboard.press('Meta+Alt+Digit0')
+    assert.ok(Math.abs(await width() - fitted) < 1)
+    // Requests go to the host: find on the canvas, link in text being edited.
+    await page.keyboard.press('Meta+f')
+    await page.keyboard.press('Control+h')
+    await page.locator('.pp-thumbs .pp-thumb').nth(2).click()
+    await slideShapes(page).nth(1).dblclick()
+    await page.locator('.pp-canvas .pp-text-editor').waitFor()
+    await page.keyboard.press('Meta+k')
+    await page.keyboard.press('Meta+Shift+l')
+    assert.deepEqual(await page.evaluate(() => window.requests), ['find', 'replace', 'link'])
+    assert.equal(await page.evaluate(() => window.harness.controllers.a.formatState().align), 'l', 'Mod+Shift+L aligns left while editing')
+    await page.keyboard.press('Escape')
+    // Cmd+Enter presents from the current slide, Cmd+Shift+Enter from the beginning (Google Slides, PowerPoint for Mac).
+    const current = await page.evaluate(() => window.harness.controllers.a.state.slide)
+    await page.keyboard.press('Meta+Enter')
+    await page.locator('.pp-present .pp-present-stage').waitFor()
+    assert.equal(await page.locator('.pp-present .pp-present-stage').getAttribute('data-slide'), current)
+    await page.keyboard.press('Escape')
+    await page.locator('.pp-present').waitFor({ state: 'detached' })
+    // Presenting with a shape selected does not open its text behind the show.
+    assert.equal((await state(page)).editing, undefined)
+    assert.equal(await page.evaluate(() => document.activeElement?.className), 'pp-canvas')
+    await page.keyboard.press('Meta+Shift+Enter')
+    await page.locator('.pp-present .pp-present-stage').waitFor()
+    assert.equal(await page.locator('.pp-present .pp-present-stage').getAttribute('data-slide'), await page.evaluate(() => window.harness.controllers.a.slideKeys()[0]))
+    await page.keyboard.press('Escape')
+    await page.locator('.pp-present').waitFor({ state: 'detached' })
+    // In the strip, Cmd+A selects every slide.
+    await page.locator('.pp-thumbs').focus()
+    await page.keyboard.press('Meta+a')
+    assert.equal((await state(page)).slides.length, await count())
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
+  await check('find shows matches on slides and in notes without taking focus; replace all reaches the collaborator', async () => {
+    const { page, errors } = await open(context, 'deck=generated/text-formatting.pptx&split=1')
+    await page.waitForFunction(() => window.harness.controllers.b)
+    // The find bar's input keeps focus while matches are shown.
+    await page.evaluate(() => {
+      const field = document.createElement('input')
+      field.id = 'find-field'
+      document.body.prepend(field)
+      field.focus()
+    })
+    const matches = await page.evaluate(() => window.harness.controllers.a.find('formatting').map((match) => ({ ...match })))
+    assert.ok(matches.length >= 2, `${matches.length} matches`)
+    await page.evaluate((match) => window.harness.controllers.a.revealMatch(match), matches[1])
+    await page.locator('.pp-canvas .pp-find-match').first().waitFor()
+    assert.equal(await page.locator('.pp-canvas .pp-find-match').first().innerText(), 'formatting')
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'find-field')
+    assert.equal(await page.evaluate(() => window.harness.controllers.a.state.slide), matches[1].slide)
+    const notes = await page.evaluate(() => window.harness.controllers.a.find('notes').find((match) => match.notes))
+    await page.evaluate((match) => window.harness.controllers.a.revealMatch(match), notes)
+    await page.locator('[data-testid="presentation-notes"] .pp-find-match').first().waitFor()
+    assert.equal(await page.locator('[data-testid="presentation-notes"] .pp-find-match').first().innerText(), 'notes')
+    assert.equal(await page.evaluate(() => document.activeElement?.id), 'find-field')
+    const count = await page.evaluate(() => window.harness.controllers.a.replaceAll('formatting', 'styling'))
+    assert.equal(count, matches.length)
+    await page.waitForFunction(() => window.harness.text('b').includes('Character styling'))
+    await page.evaluate(() => window.harness.controllers.a.undo())
+    await page.waitForFunction(() => window.harness.text('b').includes('Character formatting'))
+    // Focus coming back to the slide (the find bar closed) goes on in the shown match's text:
+    // typing replaces the match, not the whole text of the shape.
+    const shown = matches.find((match) => match.shape && match.root === match.shape && !match.row)
+    await page.evaluate((match) => window.harness.controllers.a.revealMatch(match), shown)
+    await page.locator('.pp-canvas .pp-find-match').first().waitFor()
+    const shapeText = () => page.evaluate((match) => {
+      const controller = window.harness.controllers.a
+      const flat = (node) => (node?.text ?? '') + (node?.content ?? []).map(flat).join('')
+      return controller.shape(match.slide, match.shape).text.content.map(flat)
+    }, shown)
+    const original = await shapeText()
+    await page.locator('.pp-canvas').first().focus()
+    await page.keyboard.type('styling')
+    const typed = await shapeText()
+    assert.equal(typed[shown.paragraph], original[shown.paragraph].slice(0, shown.from) + 'styling' + original[shown.paragraph].slice(shown.to))
+    assert.equal(typed.length, original.length)
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
+  await check('speaker notes take formatting from shortcuts and the toolbar while they have focus', async () => {
+    const { page, errors } = await open(context, 'deck=generated/text-formatting.pptx')
+    const shape = slideShapes(page).first()
+    const key = await shape.getAttribute('data-key')
+    await shape.click()
+    const titleRuns = () => page.evaluate((key) => JSON.stringify(window.harness.controllers.a.shape(window.harness.controllers.a.state.slide, key).text), key)
+    const title = await titleRuns()
+    const notes = page.locator('[data-testid="presentation-notes"] .pp-text-editor')
+    await notes.click()
+    await page.keyboard.press('Meta+ArrowDown')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('Bold words')
+    await page.keyboard.press('Meta+Shift+ArrowLeft')
+    // The editor reads the selection asynchronously; wait until it has, as a person would.
+    await page.waitForFunction(() => window.harness.controllers.a.notesTarget?.view.state.selection.empty === false)
+    await page.keyboard.press('Meta+b')
+    await page.getByRole('button', { name: 'Italic' }).first().click()
+    const notesRun = await page.evaluate(() => {
+      const controller = window.harness.controllers.a
+      const paragraphs = controller.slide(controller.state.slide).notes.text.content
+      return paragraphs[paragraphs.length - 1].content[0]
+    })
+    assert.equal(notesRun.text, 'Bold words')
+    assert.ok(notesRun.marks.some((mark) => mark.type === 'b') && notesRun.marks.some((mark) => mark.type === 'i'), JSON.stringify(notesRun))
+    assert.equal(await titleRuns(), title, 'the selected shape is untouched')
+    assert.equal(await page.evaluate(() => document.activeElement?.closest('[data-testid="presentation-notes"]') !== null), true, 'focus stays in the notes')
     assert.deepEqual(errors, [])
     await page.close()
   })

@@ -1,5 +1,6 @@
 import type { ChangeSet, PresentationController } from './controller.js'
-import { readClipboard, writeClipboard } from './clipboard-io.js'
+import { readClipboard } from './clipboard-io.js'
+import { isNewSlideShortcut, requestShortcut, sendRequest } from './shortcuts.js'
 import { ensureStyles } from './styles.js'
 
 /**
@@ -10,7 +11,10 @@ import { ensureStyles } from './styles.js'
 
 export interface SlideListOptions {
   layout: 'strip' | 'grid'
+  /** Right-click or long press on a thumbnail; the slide is selected by then. */
   onContextMenu?(event: MouseEvent, slideKey: string): void
+  /** Right-click on a section header (strip only), with the section's key. */
+  onSectionContextMenu?(event: MouseEvent, sectionKey: string): void
   /** Double click (or Enter) in the sorter opens a slide. */
   onOpen?(slideKey: string): void
 }
@@ -98,6 +102,7 @@ export class SlideList {
       if (section && this.options.layout === 'strip') {
         const header = document.createElement('div')
         header.className = 'pp-section'
+        header.dataset.section = section.key
         header.textContent = section.name
         this.element.append(header)
       }
@@ -227,10 +232,31 @@ export class SlideList {
     }
     if (mod && event.key.toLowerCase() === 'c') {
       event.preventDefault()
-      void controller.copy('slides').then((copied) => copied && writeClipboard(copied)).catch(() => {})
+      void controller.copyToClipboard('slides').catch(() => {})
+      return
+    }
+    const request = requestShortcut(event)
+    if (request === 'find' || request === 'replace') {
+      if (sendRequest(controller, request)) event.preventDefault()
+      return
+    }
+    if (mod && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'a') {
+      event.preventDefault()
+      controller.selectAllSlides()
+      return
+    }
+    if ((event.key === 'Home' || event.key === 'End') && !mod) {
+      event.preventDefault()
+      const target = event.key === 'Home' ? keys[0] : keys[keys.length - 1]
+      if (target) controller.goToSlide(target, event.shiftKey ? 'range' : 'replace')
       return
     }
     if (controller.readOnly) return
+    if (isNewSlideShortcut(event)) {
+      event.preventDefault()
+      controller.addSlide()
+      return
+    }
     if (event.key === 'Delete' || event.key === 'Backspace') {
       event.preventDefault()
       controller.deleteSlides()
@@ -243,11 +269,7 @@ export class SlideList {
       else controller.addSlide()
     } else if (mod && event.key.toLowerCase() === 'x') {
       event.preventDefault()
-      void controller.copy('slides').then(async (copied) => {
-        if (!copied) return
-        await writeClipboard(copied)
-        controller.deleteSlides()
-      }).catch(() => {})
+      void controller.cutToClipboard('slides').catch(() => {})
     } else if (mod && event.key.toLowerCase() === 'v') {
       event.preventDefault()
       void readClipboard().then((payload) => (payload ? controller.paste(payload, 'slides') : false))
@@ -267,6 +289,12 @@ export class SlideList {
   }
 
   private readonly onContextMenu = (event: MouseEvent): void => {
+    const header = event.target instanceof Element ? event.target.closest<HTMLElement>('.pp-section[data-section]') : null
+    if (header && this.options.onSectionContextMenu) {
+      event.preventDefault()
+      this.options.onSectionContextMenu(event, header.dataset.section!)
+      return
+    }
     const item = this.itemAt(event.target)
     if (!item || !this.options.onContextMenu) return
     event.preventDefault()

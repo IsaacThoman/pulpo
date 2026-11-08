@@ -137,9 +137,14 @@ function PresentationEditorView({ controller, startInShow, toolbarSlot, classNam
       const editable = target?.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')
       // A running show takes its own keys (focus may still be on the menu that started it).
       if (!inEditor || editable || presenter.current) return
-      if (event.key === 'F5' || ((event.metaKey || event.ctrlKey) && event.key === 'Enter')) {
+      // PowerPoint for Windows: F5 from the beginning, Shift+F5 from the current slide. Google Slides
+      // and PowerPoint for Mac: Cmd/Ctrl+Enter from the current slide, with Shift from the beginning.
+      if (event.key === 'F5') {
         event.preventDefault()
         present(event.shiftKey ? 'current' : 'start')
+      } else if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+        event.preventDefault()
+        present(event.shiftKey ? 'start' : 'current')
       }
     }
     // Capturing, so the app's own Cmd/Ctrl+Shift+Enter (the side panel's) sees the key handled.

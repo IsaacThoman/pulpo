@@ -5,11 +5,13 @@ import type { Xfrm } from '../model.js'
 import { EMU_PER_PX } from '../render/env.js'
 import { slideEnvironment } from '../render/slide.js'
 import { bodyLayout, textFrameStyles } from '../render/text.js'
-import { serializeNode, parseFragment } from '../xml.js'
-import { LOCAL_ORIGIN, type ChangeSet, type PresentationController } from './controller.js'
-import { readClipboard, writeClipboard } from './clipboard-io.js'
+import { bodyEdits, editBodyProperties } from '../formatting.js'
+import { LOCAL_ORIGIN, type ChangeSet, type EditingTarget, type PresentationController } from './controller.js'
+import { readClipboard } from './clipboard-io.js'
+import { dragHasImages, imageSize } from './images.js'
 import { MediaPlayer } from './media.js'
 import { ensureStyles } from './styles.js'
+import { applyTextShortcut, editorShortcut, isNewSlideShortcut, requestShortcut, sendRequest, textShortcut } from './shortcuts.js'
 import { InlineTextEditor, type TextEditorStyle } from './text-editor.js'
 
 /**
@@ -35,14 +37,34 @@ interface Gesture {
   end: () => void
   moved: boolean
   marqueeAdd?: string[]
+  /** A click (no drag) on the shape that was already selected alone edits its text, as in Google Slides. */
+  clickToEdit?: string
+}
+
+/** Where the caret goes when an editor opens from a click (client coordinates). */
+interface CaretPoint {
+  x: number
+  y: number
+  /** Select the word there (a double click). */
+  word: boolean
 }
 
 export interface SlideCanvasOptions {
-  /** Called on right-click or long press, with the shape under the pointer (if any). */
-  onContextMenu?(event: MouseEvent, shapeKey: string | undefined): void
+  /**
+   * Called on right-click or long press, with the shape under the pointer (if any) and, on a
+   * table, the cell (row and column keys; pass them to the controller's table commands so they act
+   * on that cell). The canvas has selected the shape by then. Inside text being edited the
+   * browser's own menu (spelling, cut, copy, paste) shows instead.
+   */
+  onContextMenu?(event: MouseEvent, shapeKey: string | undefined, cell?: { row: string; column: string }): void
   /** Opens a link the user clicked; the canvas only passes http(s) and mailto URLs. */
   onOpenLink?(url: string): void
+  /** The zoom changed (wheel, pinch, keys, `setZoom`, or fitting a resized window); 1 is 100%. */
+  onZoomChange?(zoom: number, fit: boolean): void
 }
+
+/** Zoom levels Mod+Alt+= and Mod+Alt+- step through, as in PowerPoint's zoom menu. */
+export const ZOOM_STEPS = [0.1, 0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5, 6, 8] as const
 
 const SNAP_PX = 6
 const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
@@ -71,6 +93,12 @@ export class SlideCanvas {
   private readonly pointers = new Map<number, { x: number; y: number }>()
   private pinch?: { distance: number; zoom: number }
   private lastTap = { time: 0, key: '' as string | undefined }
+  /** The caret position for the editor the next `startEditing` opens. */
+  private pendingCaret?: CaretPoint
+  /** When a click on a selected shape opened its editor: the double click that follows selects a word. */
+  private clickEdit?: { time: number; x: number; y: number }
+  /** A press and release on the selected shape, waiting for its click event (see onPointerUp). */
+  private pendingClickEdit?: { key: string; target: Element | null; x: number; y: number }
   private renderedKey = ''
   private readonly media: MediaPlayer
 
@@ -110,6 +138,9 @@ export class SlideCanvas {
     this.element.addEventListener('cut', this.onCut)
     this.element.addEventListener('paste', this.onPaste)
     this.element.addEventListener('click', this.onClick)
+    this.element.addEventListener('dragover', this.onDragOver)
+    this.element.addEventListener('drop', this.onDrop)
+    this.element.addEventListener('focusin', this.onFocusIn)
     if (typeof ResizeObserver !== 'undefined') {
       this.resizeObserver = new ResizeObserver(() => this.layout())
       this.resizeObserver.observe(this.element)
@@ -130,14 +161,56 @@ export class SlideCanvas {
     return this.zoom
   }
 
+  /** Whether the slide is scaled to fit the window (the zoom follows its size). */
+  isFit(): boolean {
+    return this.fit
+  }
+
   /** Sets the zoom (1 = 100%); `fit` scales the slide to the available width and height. */
   setZoom(zoom: number | 'fit'): void {
+    if (zoom !== 'fit' && !Number.isFinite(zoom)) return
     this.fit = zoom === 'fit'
     if (zoom !== 'fit') this.zoom = Math.min(8, Math.max(0.1, zoom))
     this.layout()
   }
 
+  /** The next zoom step up. */
+  zoomIn(): void {
+    this.setZoom(ZOOM_STEPS.find((step) => step > this.zoom + 0.001) ?? ZOOM_STEPS[ZOOM_STEPS.length - 1]!)
+  }
+
+  /** The next zoom step down. */
+  zoomOut(): void {
+    this.setZoom([...ZOOM_STEPS].reverse().find((step) => step < this.zoom - 0.001) ?? ZOOM_STEPS[0])
+  }
+
+  private reportedZoom?: { zoom: number; fit: boolean }
+
+  private reportZoom(): void {
+    const reported = this.reportedZoom
+    if (reported && Math.abs(reported.zoom - this.zoom) < 0.0005 && reported.fit === this.fit) return
+    this.reportedZoom = { zoom: this.zoom, fit: this.fit }
+    this.options.onZoomChange?.(this.zoom, this.fit)
+  }
+
+  /** The previous or next slide. */
+  private stepSlide(delta: -1 | 1): void {
+    const keys = this.controller.slideKeys()
+    const index = this.controller.state.slide ? keys.indexOf(this.controller.state.slide) : -1
+    const next = keys[Math.max(0, Math.min(keys.length - 1, index + delta))]
+    if (next && next !== this.controller.state.slide) this.controller.goToSlide(next)
+  }
+
+  /**
+   * Focuses the slide, or the text open for editing on it with its selection kept (a match find
+   * showed while focus stayed in the find bar), so typing goes on in that text.
+   */
   focus(): void {
+    if (this.editor && !this.editor.view.isDestroyed) this.editor.view.focus()
+    else this.focusSlide()
+  }
+
+  private focusSlide(): void {
     this.element.focus({ preventScroll: true })
   }
 
@@ -156,6 +229,7 @@ export class SlideCanvas {
     this.host.style.height = `${size.height}px`
     this.host.style.transform = `scale(${this.zoom})`
     this.drawOverlay()
+    this.reportZoom()
   }
 
   private onChange(change: ChangeSet): void {
@@ -166,12 +240,17 @@ export class SlideCanvas {
     // Moving to another shape or table cell restarts the editor on that text.
     const target = editing ? `${editing.slide}\u0000${editing.shape}\u0000${editing.row ?? ''}\u0000${editing.column ?? ''}` : undefined
     if (this.editor && (!editing || editing.slide !== slide || target !== this.editorTarget)) this.stopEditing()
+    // Draw first: a cell's editor is placed over the rendered cell, which may be in a row just added.
+    if (change.parts || change.assets || change.order || change.selection || (slide && change.slides.has(slide))) this.render()
+    else if (change.presence) this.drawOverlay()
     if (editing && !this.editor && !this.controller.readOnly) {
       this.editorTarget = target
       this.startEditing(editing.shape, editing.row, editing.column)
+    } else if (editing && this.editor) {
+      // Find moved to another match in the text already open.
+      const reveal = this.controller.takeReveal(editing)
+      if (reveal) this.editor.selectText(reveal.paragraph, reveal.from, reveal.to, reveal.focus)
     }
-    if (change.parts || change.assets || change.order || change.selection || (slide && change.slides.has(slide))) this.render()
-    else if (change.presence) this.drawOverlay()
     if (this.editor && this.controller.state.editing && slide && (change.slides.has(slide) || change.parts)) this.refreshEditorFrame()
   }
 
@@ -250,6 +329,7 @@ export class SlideCanvas {
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
+    this.pendingClickEdit = undefined
     this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
     if (this.pointers.size === 2) {
       const [a, b] = [...this.pointers.values()]
@@ -259,10 +339,11 @@ export class SlideCanvas {
     }
     if (event.button !== 0 || this.controller.readOnly) return
     const target = event.target as Element
-    if (target.closest('.pp-text-editor') || target.closest('.pp-media')) return
+    // The editor frame handles clicks beside the text itself (see startEditing).
+    if (target.closest('.pp-text-editor') || target.closest('.pp-editor-frame') || target.closest('.pp-media')) return
     const slide = this.controller.state.slide
     if (!slide) return
-    this.focus()
+    this.focusSlide()
     const handle = target instanceof HTMLElement ? (target.dataset.handle as Handle | undefined) : undefined
     const point = this.slidePoint(event)
     const key = this.shapeAt(target)
@@ -270,7 +351,7 @@ export class SlideCanvas {
     // Touch: a second tap on a shape enters text editing, like a double click.
     if (event.pointerType === 'touch' && key && this.lastTap.key === key && Date.now() - this.lastTap.time < 350) {
       this.lastTap = { time: 0, key: undefined }
-      this.beginEditing(key, event)
+      this.beginEditing(key, event, { x: event.clientX, y: event.clientY, word: false })
       return
     }
     this.lastTap = { time: Date.now(), key }
@@ -285,13 +366,18 @@ export class SlideCanvas {
       return
     }
     let selection = this.controller.state.shapes
-    if (event.shiftKey || event.metaKey || event.ctrlKey) selection = selection.includes(key) ? selection.filter((entry) => entry !== key) : [...selection, key]
+    const modified = event.shiftKey || event.metaKey || event.ctrlKey
+    // While editing a table cell, a click on another cell of that table moves the editor there.
+    const editing = this.controller.state.editing
+    const alone = !modified && selection.length === 1 && selection[0] === key && (!editing || (editing.shape === key && editing.row !== undefined))
+    if (modified) selection = selection.includes(key) ? selection.filter((entry) => entry !== key) : [...selection, key]
     else if (!selection.includes(key)) selection = [key]
     this.controller.selectShapes(selection)
-    if (selection.includes(key)) this.beginGesture(event, 'move', selection)
+    // Touch keeps its double tap: a single tap on a selected shape must not raise the keyboard.
+    if (selection.includes(key)) this.beginGesture(event, 'move', selection, undefined, undefined, alone && event.pointerType !== 'touch' ? key : undefined)
   }
 
-  private beginGesture(event: PointerEvent, kind: Gesture['kind'], keys: string[], handle?: Handle, marqueeAdd?: string[]): void {
+  private beginGesture(event: PointerEvent, kind: Gesture['kind'], keys: string[], handle?: Handle, marqueeAdd?: string[], clickToEdit?: string): void {
     const slide = this.controller.state.slide!
     const start = new Map<string, Xfrm>()
     for (const key of keys) {
@@ -310,6 +396,7 @@ export class SlideCanvas {
       end: kind === 'marquee' ? () => undefined : this.controller.beginGesture(),
       moved: false,
       ...(marqueeAdd ? { marqueeAdd } : {}),
+      ...(clickToEdit ? { clickToEdit } : {}),
     }
   }
 
@@ -352,6 +439,28 @@ export class SlideCanvas {
     gesture.end()
     this.guides = ''
     this.drawOverlay()
+    this.pendingClickEdit = undefined
+    if (event.type === 'pointerup' && gesture.kind === 'move' && !gesture.moved && gesture.clickToEdit && !this.controller.readOnly) {
+      // Pointer capture retargets the event to the canvas; find what is under the pointer.
+      const target = this.element.ownerDocument.elementFromPoint(event.clientX, event.clientY)
+      // The editor opens on the click that follows: redrawing the slide now would remove the
+      // pressed element, and the browser would then send no click or double click at all.
+      if (this.shapeAt(target) === gesture.clickToEdit && this.clickEdits(gesture.clickToEdit)) this.pendingClickEdit = { key: gesture.clickToEdit, target, x: event.clientX, y: event.clientY }
+    }
+  }
+
+  /**
+   * Whether clicking the selected shape again edits its text: text boxes, placeholders, shapes
+   * with text, and table cells. An empty rectangle stays selected, so a second press can drag it.
+   */
+  private clickEdits(key: string): boolean {
+    const slide = this.controller.state.slide
+    const shape = slide ? this.controller.shape(slide, key) : undefined
+    if (!shape) return false
+    if (shape.table) return true
+    if (shape.kind !== 'sp') return false
+    const text = shape.text?.content?.some((paragraph) => paragraph.content?.length) === true
+    return text || /<p:cNvSpPr\b[^>]*\btxBox="(1|true)"|<p:ph\b/.test(shape.xml)
   }
 
   private updateMarquee(gesture: Gesture, event: PointerEvent): void {
@@ -469,14 +578,23 @@ export class SlideCanvas {
 
   private readonly onDoubleClick = (event: MouseEvent): void => {
     if (this.controller.readOnly) return
+    const point = { x: event.clientX, y: event.clientY }
+    // The click before this one opened the editor: the double click selects the word, as it
+    // would have had the editor been open already.
+    const clickEdit = this.clickEdit
+    this.clickEdit = undefined
+    if (this.editor && clickEdit && Date.now() - clickEdit.time < 1000 && Math.hypot(clickEdit.x - point.x, clickEdit.y - point.y) < 6) {
+      this.editor.caretAt(point, true)
+      return
+    }
     // Pointer capture during the click retargets it to the canvas; find what is under the pointer.
     const target = this.element.ownerDocument.elementFromPoint(event.clientX, event.clientY)
     const key = this.shapeAt(target)
-    if (key) this.beginEditing(key, { target })
+    if (key) this.beginEditing(key, { target }, { ...point, word: true })
   }
 
-  /** Enters text editing in a shape (or the table cell under the pointer). */
-  private beginEditing(key: string, event?: { target: EventTarget | null }): void {
+  /** Enters text editing in a shape (or the table cell under the pointer), with the caret at `caret` or the end. */
+  private beginEditing(key: string, event?: { target: EventTarget | null }, caret?: CaretPoint): void {
     if (this.controller.readOnly) return
     const slide = this.controller.state.slide
     if (!slide) return
@@ -493,17 +611,33 @@ export class SlideCanvas {
       if (!Number.isInteger(rowIndex) || !Number.isInteger(column)) return
       const rowKey = table.rows[rowIndex]?.key
       const columnKey = table.columns[column]?.key
-      if (rowKey && columnKey) this.controller.setState({ shapes: [key], editing: { slide, shape: key, row: rowKey, column: columnKey } })
+      if (rowKey && columnKey) this.edit({ slide, shape: key, row: rowKey, column: columnKey }, caret)
       return
     }
     if (shape.kind !== 'sp') return
-    this.controller.setState({ shapes: [key], editing: { slide, shape: key } })
+    this.edit({ slide, shape: key }, caret)
+  }
+
+  private edit(target: EditingTarget, caret: CaretPoint | undefined): void {
+    const current = this.controller.state.editing
+    const same = current && current.slide === target.slide && current.shape === target.shape && current.row === target.row && current.column === target.column
+    // Already editing that text: only the caret moves.
+    if (same && this.editor) {
+      this.pendingCaret = undefined
+      if (caret) this.editor.caretAt(caret, caret.word)
+      return
+    }
+    // Set only when an editor opens, so a click that edits nothing (a group) leaves no stale caret.
+    this.pendingCaret = caret
+    this.controller.setState({ shapes: [target.shape], editing: target })
   }
 
   // -------------------------------------------------------------------------------------------
   // Inline text editing
 
   private startEditing(shapeKey: string, rowKey?: string, columnKey?: string): void {
+    const caret = this.pendingCaret
+    this.pendingCaret = undefined
     const slide = this.controller.state.slide
     if (!slide) return
     const fragment = rowKey && columnKey ? cellFragment(this.controller.doc, slide, shapeKey, rowKey, columnKey) : shapeFragment(this.controller.doc, slide, shapeKey, LOCAL_ORIGIN)
@@ -522,6 +656,13 @@ export class SlideCanvas {
       return
     }
     const mount = frame.querySelector<HTMLElement>('.pp-editor-inner') ?? frame
+    // A press in the text box beside the text (padding, below the last line) moves the caret
+    // there instead of leaving the editor; the default would also move focus to the canvas.
+    frame.addEventListener('mousedown', (event) => {
+      if (event.button !== 0 || (event.target as Element).closest?.('.pp-text-editor')) return
+      event.preventDefault()
+      this.editor?.caretAt({ x: event.clientX, y: event.clientY })
+    })
     this.editor = new InlineTextEditor({
       mount,
       fragment,
@@ -533,13 +674,18 @@ export class SlideCanvas {
       onEscape: () => this.controller.setState({ editing: undefined }),
       ...(rowKey && columnKey ? { onTab: (backward: boolean) => this.moveToCell(shapeKey, rowKey, columnKey, backward) } : {}),
       onToggleMark: (mark) => this.controller.toggleMark(mark),
+      onKey: (event) => editorShortcut(this.controller, event),
       onSelectionChange: () => {
         this.autofit()
         this.controller.setState({})
       },
     })
     this.controller.activeEditor = this.editor
-    this.editor.focus()
+    const editing = this.controller.state.editing
+    const reveal = editing ? this.controller.takeReveal(editing) : undefined
+    // A match find shows keeps focus in the find bar unless it asks for the text.
+    if (reveal) this.editor.selectText(reveal.paragraph, reveal.from, reveal.to, reveal.focus)
+    else if (!caret || !this.editor.caretAt(caret, caret.word)) this.editor.focus()
     this.autofit()
   }
 
@@ -551,6 +697,13 @@ export class SlideCanvas {
     const cells = table.rows.flatMap((row) => table.columns.filter((column) => row.cells[column.key] && !row.cells[column.key]!.hMerge && !row.cells[column.key]!.vMerge).map((column) => ({ row: row.key, column: column.key })))
     const index = cells.findIndex((cell) => cell.row === rowKey && cell.column === columnKey)
     const next = cells[index + (backward ? -1 : 1)]
+    if (index >= 0 && !next && !backward) {
+      // Tab in the last cell adds a row, as in PowerPoint and Google Slides.
+      const row = this.controller.insertTableRow('below')
+      const first = row ? this.controller.shape(slide, shapeKey)?.table?.columns[0]?.key : undefined
+      if (row && first) this.controller.setState({ editing: { slide, shape: shapeKey, row, column: first } })
+      return true
+    }
     if (index < 0 || !next) return true
     this.controller.setState({ editing: { slide, shape: shapeKey, row: next.row, column: next.column } })
     return true
@@ -567,20 +720,31 @@ export class SlideCanvas {
     return { context: layout.context, body: layout.body, env: layout.env }
   }
 
-  private cellStyle(frame: HTMLElement, shapeKey: string): TextEditorStyle | undefined {
-    const editing = this.controller.state.editing!
+  /** The rendered cell being edited, read back from the slide (rows and columns can move under it). */
+  private editedCell(shapeKey: string): { cell: HTMLTableCellElement; shape: HTMLElement } | undefined {
+    const editing = this.controller.state.editing
+    if (!editing) return undefined
     const table = this.controller.shape(editing.slide, shapeKey)?.table
-    const shapeElement = this.slideLayer.querySelector<HTMLElement>(`.pp-slide > [data-key="${cssEscape(shapeKey)}"]`)
+    const shape = this.slideLayer.querySelector<HTMLElement>(`.pp-slide > [data-key="${cssEscape(shapeKey)}"]`)
     const rowIndex = table?.rows.findIndex((row) => row.key === editing.row) ?? -1
     const columnIndex = table?.columns.findIndex((column) => column.key === editing.column) ?? -1
-    const cell = shapeElement?.querySelector<HTMLTableCellElement>(`td[data-row="${rowIndex}"][data-col="${columnIndex}"]`) ?? undefined
-    const slide = this.controller.slide(editing.slide)
-    if (!cell || !shapeElement || !slide) return undefined
-    const { env } = slideEnvironment(slide, this.controller.renderOptions('edit', 'editor', editing.slide))
-    const left = shapeElement.offsetLeft + cell.offsetLeft
-    const top = shapeElement.offsetTop + cell.offsetTop
+    const cell = shape?.querySelector<HTMLTableCellElement>(`td[data-row="${rowIndex}"][data-col="${columnIndex}"]`) ?? undefined
+    return cell && shape ? { cell, shape } : undefined
+  }
+
+  private cellFrameStyle(found: { cell: HTMLTableCellElement; shape: HTMLElement }): string {
+    const { cell, shape } = found
     const computed = getComputedStyle(cell)
-    frame.setAttribute('style', `position:absolute;left:${left}px;top:${top}px;width:${cell.offsetWidth}px;min-height:${cell.offsetHeight}px;background:${computed.backgroundColor};padding:${computed.padding};box-sizing:border-box;white-space:pre-wrap;--pp-fs:1`)
+    return `position:absolute;left:${shape.offsetLeft + cell.offsetLeft}px;top:${shape.offsetTop + cell.offsetTop}px;width:${cell.offsetWidth}px;min-height:${cell.offsetHeight}px;background:${computed.backgroundColor};padding:${computed.padding};box-sizing:border-box;white-space:pre-wrap;--pp-fs:1`
+  }
+
+  private cellStyle(frame: HTMLElement, shapeKey: string): TextEditorStyle | undefined {
+    const editing = this.controller.state.editing!
+    const found = this.editedCell(shapeKey)
+    const slide = this.controller.slide(editing.slide)
+    if (!found || !slide) return undefined
+    const { env } = slideEnvironment(slide, this.controller.renderOptions('edit', 'editor', editing.slide))
+    frame.setAttribute('style', this.cellFrameStyle(found))
     frame.innerHTML = '<div class="pp-editor-inner"></div>'
     const deck = this.controller.deck()
     return {
@@ -593,7 +757,16 @@ export class SlideCanvas {
   private refreshEditorFrame(): void {
     const editing = this.controller.state.editing
     if (!editing || !this.editor || !this.editorFrame) return
-    if (editing.row) return
+    if (editing.row) {
+      // Rows or columns inserted or deleted around the cell move it.
+      const found = this.editedCell(editing.shape)
+      const style = found ? this.cellFrameStyle(found) : undefined
+      if (style && this.editorFrame.dataset.style !== style) {
+        this.editorFrame.setAttribute('style', style)
+        this.editorFrame.dataset.style = style
+      }
+      return
+    }
     const layout = this.controller.textLayout(editing.slide, editing.shape)
     if (!layout) return
     const { box, transform } = layout
@@ -636,25 +809,20 @@ export class SlideCanvas {
       text.style.setProperty('--pp-fs', String(scale))
     }
     if (Math.abs(scale - layout.body.fontScale) < 0.001) return
-    const bodyPr = shape.bodyPr ? parseFragment(shape.bodyPr) : parseFragment('<a:bodyPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"/>')
-    for (const child of Array.from(bodyPr.childNodes)) if ((child as { localName?: string }).localName === 'normAutofit' || (child as { localName?: string }).localName === 'spAutoFit' || (child as { localName?: string }).localName === 'noAutofit') bodyPr.removeChild(child)
-    const norm = bodyPr.ownerDocument!.createElementNS('http://schemas.openxmlformats.org/drawingml/2006/main', 'a:normAutofit')
-    if (scale < 1) {
-      norm.setAttribute('fontScale', String(Math.round(scale * 100000)))
-      norm.setAttribute('lnSpcReduction', scale < 0.9 ? '20000' : '10000')
-    }
-    bodyPr.insertBefore(norm, bodyPr.firstChild)
-    this.controller.setShapeProperty('bodyPr', serializeNode(bodyPr))
+    this.controller.setShapeProperty('bodyPr', editBodyProperties(shape.bodyPr, bodyEdits.autofit('norm', { fontScale: scale * 100000, lineReduction: scale < 0.9 ? 20000 : 10000 })))
   }
 
   private stopEditing(): void {
     if (!this.editor) return
+    // Keyboard focus stays on the slide (arrows then move the shape), unless it went elsewhere,
+    // such as into the speaker notes, which closing this editor must not take it from.
+    const focused = this.editor.view.hasFocus()
     this.editor.destroy()
     this.editor = undefined
     this.controller.activeEditor = undefined
     this.editorFrame?.remove()
     this.editorFrame = undefined
-    this.focus()
+    if (focused) this.focusSlide()
   }
 
   // -------------------------------------------------------------------------------------------
@@ -664,10 +832,48 @@ export class SlideCanvas {
     // Handled by the text editor already (Escape closing it must not also deselect the shape).
     if (event.defaultPrevented) return
     if (this.editor && (event.target as Element).closest?.('.pp-text-editor')) return
+    // Text open without focus (find showed a match from its bar): keys go on in that text, never
+    // to the shape, where typing would replace all of its text and Delete would remove it.
+    if (this.editor && !(event.metaKey || event.ctrlKey) && event.key !== 'Escape') {
+      if (event.key === 'Tab') event.preventDefault()
+      this.editor.view.focus()
+      return
+    }
     const controller = this.controller
     const mod = event.metaKey || event.ctrlKey
     const key = event.key
+    const request = requestShortcut(event)
+    if (request) {
+      if (sendRequest(controller, request)) event.preventDefault()
+      return
+    }
+    // Option/Alt with Mod and =, -, 0: browser zoom stays on Mod with =, - and 0 alone.
+    if (mod && event.altKey && ['Equal', 'NumpadAdd', 'Minus', 'NumpadSubtract', 'Digit0', 'Numpad0'].includes(event.code)) {
+      event.preventDefault()
+      if (event.code === 'Digit0' || event.code === 'Numpad0') this.setZoom('fit')
+      else if (event.code === 'Equal' || event.code === 'NumpadAdd') this.zoomIn()
+      else this.zoomOut()
+      return
+    }
+    // Page Up and Page Down change slides, as in PowerPoint's normal view.
+    if ((key === 'PageUp' || key === 'PageDown') && !mod && !event.altKey) {
+      event.preventDefault()
+      this.stepSlide(key === 'PageUp' ? -1 : 1)
+      return
+    }
     if (controller.readOnly) return
+    if (isNewSlideShortcut(event)) {
+      event.preventDefault()
+      controller.addSlide()
+      return
+    }
+    const shortcut = textShortcut(event)
+    if (shortcut && controller.state.shapes.length) {
+      // Formatting with shapes selected (not editing their text) changes all of their text.
+      event.preventDefault()
+      applyTextShortcut(controller, shortcut)
+      return
+    }
     if (mod && key.toLowerCase() === 'z') {
       event.preventDefault()
       if (event.shiftKey) controller.redo()
@@ -688,8 +894,15 @@ export class SlideCanvas {
       const step = (event.shiftKey ? 10 : event.altKey ? 0.5 : 2) * EMU_PER_PX
       controller.nudge(key === 'ArrowLeft' ? -step : key === 'ArrowRight' ? step : 0, key === 'ArrowUp' ? -step : key === 'ArrowDown' ? step : 0)
     } else if (mod && key.toLowerCase() === 'd') {
+      // Cmd/Ctrl+D with nothing selected duplicates the slide, as in PowerPoint.
       event.preventDefault()
-      controller.duplicateSelection()
+      if (shapes.length) controller.duplicateSelection()
+      else controller.duplicateSlides([controller.state.slide ?? ''].filter(Boolean))
+    } else if ((key === 'Home' || key === 'End') && !shapes.length && !mod) {
+      event.preventDefault()
+      const keys = controller.slideKeys()
+      const target = key === 'Home' ? keys[0] : keys[keys.length - 1]
+      if (target) controller.goToSlide(target)
     } else if (mod && key.toLowerCase() === 'g') {
       event.preventDefault()
       if (event.shiftKey) controller.ungroup()
@@ -699,7 +912,8 @@ export class SlideCanvas {
       controller.selectShapes(controller.slide(controller.state.slide ?? '')?.shapes.map((shape) => shape.key) ?? [])
     } else if (key === 'Escape') {
       controller.selectShapes([])
-    } else if ((key === 'Enter' || key === 'F2') && shapes.length === 1) {
+    } else if ((key === 'Enter' || key === 'F2') && shapes.length === 1 && !mod && !event.altKey) {
+      // Cmd/Ctrl+Enter presents (the host's key), so only Enter alone opens the text.
       event.preventDefault()
       this.beginEditing(shapes[0]!)
     } else if (key === 'Tab' && !mod) {
@@ -729,22 +943,14 @@ export class SlideCanvas {
   private readonly onCopy = (event: ClipboardEvent): void => {
     if (this.editor || !event.clipboardData) return
     event.preventDefault()
-    void this.copyTo().catch(() => {})
-  }
-
-  private async copyTo(): Promise<boolean> {
-    const copied = await this.controller.copy()
-    if (!copied) return false
-    await writeClipboard(copied)
-    return true
+    void this.controller.copyToClipboard().catch(() => {})
   }
 
   private readonly onCut = (event: ClipboardEvent): void => {
     if (this.editor || !event.clipboardData || this.controller.readOnly) return
     event.preventDefault()
-    void this.copyTo().then((copied) => {
-      if (copied) this.controller.deleteSelection()
-    }).catch(() => {})
+    // With nothing selected this copies the slide and deletes nothing, as it always has.
+    void (this.controller.state.shapes.length ? this.controller.cutToClipboard() : this.controller.copyToClipboard()).catch(() => {})
   }
 
   private readonly onPaste = (event: ClipboardEvent): void => {
@@ -752,7 +958,8 @@ export class SlideCanvas {
     event.preventDefault()
     const image = Array.from(event.clipboardData?.files ?? []).find((file) => file.type.startsWith('image/'))
     if (image) {
-      void image.arrayBuffer().then((buffer) => this.controller.insertImage(new Uint8Array(buffer), image.type))
+      // A pasted screenshot is named "image.png": no useful alt text.
+      void this.insertImages([image], undefined, false)
       return
     }
     const text = event.clipboardData?.getData('text/plain') ?? ''
@@ -762,18 +969,73 @@ export class SlideCanvas {
     })
   }
 
+  /** Inserts image files at their natural aspect ratio, cascading from `at` (slide EMU) when several. */
+  private async insertImages(files: readonly File[], at: { x: number; y: number } | undefined, describe: boolean): Promise<void> {
+    for (const [index, file] of files.entries()) {
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        const size = await imageSize(file)
+        const offset = index * 182_880
+        // Hosts without an asset store (the mobile page) reject the insert; nothing to show.
+        await this.controller.insertImage(bytes, file.type || 'image/png', size, describe ? file.name.replace(/\.[^.]+$/, '') : '', at && { x: at.x + offset, y: at.y + offset })
+      } catch {
+        // An image that cannot be stored is skipped.
+      }
+    }
+  }
+
+  // The chat composer listens for drops on the whole window: a drop the slide takes must stop here.
+  private readonly onDragOver = (event: DragEvent): void => {
+    if (this.controller.readOnly || !this.controller.state.slide || !dragHasImages(event.dataTransfer)) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+  }
+
+  private readonly onDrop = (event: DragEvent): void => {
+    if (this.controller.readOnly || !this.controller.state.slide) return
+    const files = Array.from(event.dataTransfer?.files ?? []).filter((file) => file.type.startsWith('image/'))
+    if (!files.length) return
+    event.preventDefault()
+    event.stopPropagation()
+    const point = this.slidePoint(event)
+    void this.insertImages(files, { x: point.x * EMU_PER_PX, y: point.y * EMU_PER_PX }, true)
+  }
+
   private pasteText(text: string): void {
     const key = this.controller.insertTextBox()
     if (!key) return
     queueMicrotask(() => { if (!this.controller.readOnly) this.editor?.view.dispatch(this.editor.view.state.tr.insertText(text)) })
   }
 
+  // The slide (or its text) getting focus takes text formatting back from the speaker notes.
+  private readonly onFocusIn = (): void => {
+    if (this.controller.notesFocused) this.controller.setNotesTarget(undefined)
+  }
+
   private readonly onContextMenu = (event: MouseEvent): void => {
     if (!this.options.onContextMenu) return
+    const target = event.target instanceof Element ? event.target : null
+    // In text being edited, the browser's menu has spelling suggestions and text cut, copy, paste.
+    if (target?.closest('.pp-text-editor')) return
     event.preventDefault()
-    const key = this.shapeAt(event.target)
+    const editing = this.controller.state.editing
+    // Beside the text in an open editor: the shape (or cell) being edited.
+    const inEditor = editing && target?.closest('.pp-editor-frame') ? editing : undefined
+    const key = inEditor ? inEditor.shape : this.shapeAt(target)
+    const cell = inEditor?.row && inEditor.column ? { row: inEditor.row, column: inEditor.column } : key ? this.cellAt(key, target) : undefined
     if (key && !this.controller.state.shapes.includes(key)) this.controller.selectShapes([key])
-    this.options.onContextMenu(event, key)
+    this.options.onContextMenu(event, key, cell)
+  }
+
+  /** The table cell (row and column keys) an element of a table shape belongs to. */
+  private cellAt(shapeKey: string, target: Element | null): { row: string; column: string } | undefined {
+    const cell = target?.closest<HTMLElement>('td[data-row][data-col]')
+    const table = this.controller.state.slide ? this.controller.shape(this.controller.state.slide, shapeKey)?.table : undefined
+    if (!cell || !table || cell.closest('[data-key]')?.getAttribute('data-key') !== shapeKey) return undefined
+    const row = table.rows[Number(cell.dataset.row)]?.key
+    const column = table.columns[Number(cell.dataset.col)]?.key
+    return row && column ? { row, column } : undefined
   }
 
   private readonly onWheel = (event: WheelEvent): void => {
@@ -783,6 +1045,13 @@ export class SlideCanvas {
   }
 
   private readonly onClick = (event: MouseEvent): void => {
+    const pending = this.pendingClickEdit
+    this.pendingClickEdit = undefined
+    if (pending && !this.controller.readOnly && Math.hypot(pending.x - event.clientX, pending.y - event.clientY) < 4) {
+      this.clickEdit = { time: Date.now(), x: event.clientX, y: event.clientY }
+      this.beginEditing(pending.key, { target: pending.target }, { x: event.clientX, y: event.clientY, word: false })
+      return
+    }
     const target = (this.element.ownerDocument.elementFromPoint(event.clientX, event.clientY) ?? event.target) as Element
     const media = target.closest<HTMLElement>('.pp-media')
     if (media) {

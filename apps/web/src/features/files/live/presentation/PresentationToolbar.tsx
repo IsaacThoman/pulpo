@@ -1,5 +1,5 @@
 import { useRef, type ReactNode } from 'react'
-import type { PresentationController } from '@pulpo/client-core/office/presentation/view'
+import { imageSize, type PresentationController } from '@pulpo/client-core/office/presentation/view'
 import {
   AlignCenter,
   AlignHorizontalJustifyCenter,
@@ -331,20 +331,4 @@ export function PresentationToolbar({ controller, view, onViewChange, formatPane
       </div>
     </div>
   )
-}
-
-function imageSize(file: File): Promise<{ width: number; height: number } | undefined> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(file)
-    const image = new Image()
-    image.onload = () => {
-      resolve({ width: image.naturalWidth, height: image.naturalHeight })
-      URL.revokeObjectURL(url)
-    }
-    image.onerror = () => {
-      resolve(undefined)
-      URL.revokeObjectURL(url)
-    }
-    image.src = url
-  })
 }

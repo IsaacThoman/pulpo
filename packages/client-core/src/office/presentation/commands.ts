@@ -4,7 +4,7 @@ import * as Y from 'yjs'
 import type { LiveAssetRef } from '../live-format.js'
 import type { NotesSnapshot, PartSnapshot, RelTarget, ShapeSnapshot, SlideSnapshot, TableCell, TableRow, Xfrm } from './model.js'
 import { readShape } from './read.js'
-import { DeckResources, placeholderOf, placeholderType } from './render/deck.js'
+import { DeckResources, matchPlaceholder, placeholderOf, placeholderType } from './render/deck.js'
 import { slideSections } from './sections.js'
 import { EMPTY_TEXT, plainToText, textNode, type TextJSON } from './text.js'
 import { addShape, insertSlide, orderedKeys, presentationRoot, readSlideMap, readText, readXfrmMap, setCell, setNotes, setRow, setText, syncKeys } from './ydoc.js'
@@ -69,9 +69,14 @@ const PLACEHOLDER_NAMES: Record<string, string> = {
 
 /** Placeholder shapes a new slide on `layout` starts with (footers are left off, as in PowerPoint). */
 export function placeholdersFor(deck: DeckResources, layoutPath: string): ShapeSnapshot[] {
+  return layoutPlaceholders(deck, layoutPath).map((entry) => entry.shape)
+}
+
+/** The layout's placeholders (but footers) and the slide shapes that start them. */
+function layoutPlaceholders(deck: DeckResources, layoutPath: string): { element: XmlElement; ph: XmlElement; shape: ShapeSnapshot }[] {
   const layout = deck.layout(layoutPath)
   const tree = path(layout?.root, 'cSld', 'spTree')
-  const shapes: ShapeSnapshot[] = []
+  const shapes: { element: XmlElement; ph: XmlElement; shape: ShapeSnapshot }[] = []
   let id = 2
   for (const element of childElements(tree)) {
     const ph = placeholderOf(element)
@@ -82,14 +87,55 @@ export function placeholdersFor(deck: DeckResources, layoutPath: string): ShapeS
       .filter(Boolean)
       .join(' ')
     const name = `${PLACEHOLDER_NAMES[attr(ph, 'type') ?? 'obj'] ?? 'Placeholder'} ${id - 1}`
-    shapes.push(
-      shapeFromTemplate(
+    shapes.push({
+      element,
+      ph,
+      shape: shapeFromTemplate(
         `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${escapeAttribute(name)}"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph ${attrs}/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="en-US"/></a:p></p:txBody></p:sp>`,
       ),
-    )
+    })
     id++
   }
   return shapes
+}
+
+/** A short stable hash (FNV-1a), for keys every replica derives the same way. */
+function stableHash(value: string): string {
+  let hash = 0x811c9dc5
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(36)
+}
+
+/**
+ * Adds the layout's placeholders the slide has nothing for, empty and inheriting their place.
+ * Keys come from the layout and placeholder, so two people applying the same layout at once
+ * write the same shapes instead of two copies of each.
+ */
+function addMissingPlaceholders(doc: Y.Doc, deck: DeckResources, slideKey: string, layoutPath: string): string[] {
+  const map = slideMap(doc, slideKey)
+  const layout = deck.layout(layoutPath)
+  if (!map || !layout) return []
+  const store = map.get('shapes') as Y.Map<YMap>
+  const matched = new Set<XmlElement>()
+  for (const shape of store.values()) {
+    const ph = phOf(shape)
+    const match = ph ? matchPlaceholder(layout.placeholders, ph) : undefined
+    if (match) matched.add(match)
+  }
+  const added: ShapeSnapshot[] = []
+  for (const { element, ph, shape } of layoutPlaceholders(deck, layoutPath)) {
+    if (matched.has(element)) continue
+    const key = `ph${stableHash(`${layoutPath}\u0000${placeholderType(ph)}\u0000${attr(ph, 'idx') ?? ''}`)}`
+    // A shape already under that key (an odd file, a renamed placeholder) is never replaced.
+    if (store.has(key) || added.some((entry) => entry.key === key)) continue
+    const { nvId: _nvId, ...rest } = shape
+    added.push({ ...rest, key })
+  }
+  if (added.length) insertShapes(doc, slideKey, added)
+  return added.map((shape) => shape.key)
 }
 
 /** Adds a slide based on `layoutPath` at `index`; returns its key. */
@@ -342,6 +388,28 @@ export function setSlideLayout(doc: Y.Doc, deck: DeckResources, slideKey: string
       if (inherited) setXfrm(doc, slideKey, key, inherited)
     }
     map.set('layout', layoutPath)
+    // Like PowerPoint, the new layout's empty placeholders appear ("Click to add title").
+    addMissingPlaceholders(doc, deck, slideKey, layoutPath)
+  }, origin)
+}
+
+/**
+ * PowerPoint's Reset: placeholders the layout defines go back to its position, size, and look
+ * (their text stays), and placeholders the slide lost come back. Placeholders the layout does not
+ * have keep what they have; table frames always keep their position.
+ */
+export function resetSlide(doc: Y.Doc, deck: DeckResources, slideKey: string, origin?: unknown): void {
+  const map = slideMap(doc, slideKey)
+  const layoutPath = map?.get('layout') as string | undefined
+  const layout = layoutPath ? deck.layout(layoutPath) : undefined
+  if (!map || !layoutPath || !layout) return
+  doc.transact(() => {
+    for (const shape of (map.get('shapes') as Y.Map<YMap>).values()) {
+      const ph = phOf(shape)
+      if (!ph || shape.get('kind') === 'graphicFrame' || !matchPlaceholder(layout.placeholders, ph)) continue
+      for (const property of ['xfrm', 'geom', 'fill', 'line', 'effects', 'bodyPr']) if (shape.has(property)) shape.delete(property)
+    }
+    addMissingPlaceholders(doc, deck, slideKey, layoutPath)
   }, origin)
 }
 
@@ -457,7 +525,8 @@ export function removeSection(doc: Y.Doc, key: string, origin?: unknown): void {
   }, origin)
 }
 
-function newGuid(): string {
+/** A GUID in braces, as `p14:section/@id` and `a:fld/@id` take. */
+export function newGuid(): string {
   const bytes = new Uint8Array(16)
   globalThis.crypto.getRandomValues(bytes)
   const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('').toUpperCase()
