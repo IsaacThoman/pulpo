@@ -434,17 +434,22 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
     if (editor) editor.focus('keep')
     else root.current?.focus({ preventScroll: true })
   }
-  const printNotebook = async () => {
-    const bytes = await exportNotebookFile(session.doc, { assets })
-    const model = parseNotebook(new TextDecoder().decode(bytes))
-    printHtmlDocument(renderNotebookHtml(model, {
-      title: name,
-      labels: { empty: ui("This notebook has no cells."), widget: ui("Interactive widgets need a running kernel and are not shown."), unsupported: ui("This output type can’t be shown") },
-    }))
+  /**
+   * Prints the notebook as the viewer renders it, from the same export downloads use. An export
+   * that fails (its images unavailable offline, say) prints nothing.
+   */
+  const printNotebook = () => {
+    void exportNotebookFile(session.doc, { assets }).then((bytes) => {
+      const model = parseNotebook(new TextDecoder().decode(bytes))
+      printHtmlDocument(renderNotebookHtml(model, {
+        title: name,
+        labels: { empty: ui("This notebook has no cells."), widget: ui("Interactive widgets need a running kernel and are not shown."), unsupported: ui("This output type can’t be shown") },
+      }))
+    }).catch(() => undefined)
   }
 
   useEditorShortcuts(shell, {
-    print: () => { void printNotebook() },
+    print: printNotebook,
     save: onSaveShortcut,
     shortcuts: () => setShortcuts(true),
     focus: focusNotebook,
@@ -470,7 +475,7 @@ export function NotebookDocEditor({ session, name, editable, width, toolbarSlot,
   const activeCell = state.cells.find((cell) => cell.key === state.active)
   const locale = activeLocale()
   const menus: MenuDefinition[] = [
-    fileMenuDefinition(fileMenu, () => ({ print: () => { void printNotebook() } })),
+    fileMenuDefinition(fileMenu, () => ({ print: printNotebook })),
     {
       id: 'edit',
       label: ui("Edit"),
