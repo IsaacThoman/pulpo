@@ -24,6 +24,7 @@ export function docxShortcutGroups(): ShortcutGroup[] {
         { label: ui("Print"), keys: [PRINT_SHORTCUT] },
         { label: ui("Show that changes are saved"), keys: [SAVE_SHORTCUT] },
         { label: ui("Keyboard shortcuts"), keys: [SHORTCUTS_SHORTCUT] },
+        { label: ui("Switch between editing and suggesting"), keys: [mod('e', { shift: true })] },
       ],
     },
     {
@@ -39,6 +40,7 @@ export function docxShortcutGroups(): ShortcutGroup[] {
         { label: ui("Increase font size"), keys: [mod(']'), mod('.', { shift: true })] },
         { label: ui("Decrease font size"), keys: [mod('['), mod(',', { shift: true })] },
         { label: ui("Clear formatting"), keys: [mod('\\'), mod(' ')] },
+        { label: ui("Change case"), keys: [{ key: 'F3', shift: true }] },
       ],
     },
     {
@@ -56,6 +58,9 @@ export function docxShortcutGroups(): ShortcutGroup[] {
         { label: ui("Heading 1"), keys: [mod('1', { alt: true })] },
         { label: ui("Heading 2"), keys: [mod('2', { alt: true })] },
         { label: ui("Heading 3"), keys: [mod('3', { alt: true })] },
+        { label: ui("Heading 4"), keys: [mod('4', { alt: true })] },
+        { label: ui("Heading 5"), keys: [mod('5', { alt: true })] },
+        { label: ui("Heading 6"), keys: [mod('6', { alt: true })] },
         { label: ui("Normal text"), keys: [mod('0', { alt: true }), mod('n', { shift: true })] },
       ],
     },
@@ -67,6 +72,7 @@ export function docxShortcutGroups(): ShortcutGroup[] {
         { label: ui("Comment"), keys: [mod('m', { alt: true })] },
         { label: ui("Footnote"), keys: [mod('f', { alt: true })] },
         { label: ui("Endnote"), keys: [mod('d', { alt: true })] },
+        { label: ui("Line break"), keys: [{ key: 'Enter', shift: true }] },
         { label: ui("Page break"), keys: [mod('Enter')] },
       ],
     },

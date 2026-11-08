@@ -3432,6 +3432,11 @@ const esUi: Record<string, string> = {
   "That name would change what kind of file this is.": "Ese nombre cambiaría el tipo de archivo.",
   "Untitled presentation": "Presentación sin título",
   "JupyterLab, VS Code, and Colab": "JupyterLab, VS Code y Colab",
+  "Change case": "Cambiar mayúsculas y minúsculas",
+  "Heading 4": "Título 4",
+  "Heading 5": "Título 5",
+  "Heading 6": "Título 6",
+  "Switch between editing and suggesting": "Alternar entre editar y sugerir",
 }
 
 export default esUi
