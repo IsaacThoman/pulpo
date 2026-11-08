@@ -17,18 +17,22 @@ export function isInFileEditor(target: EventTarget | null): boolean {
 
 /**
  * Cmd/Ctrl combos that format text in Word, Docs, Sheets, and Slides (Bold, Justify, Subscript,
- * Clear formatting): inside an editor they are the document's, even where the editor ignores them
- * (read-only, a cell being typed), so the app's sidebar, agent, settings, and panel keys never fire.
+ * Clear formatting): inside those editors they are the document's, even where the editor ignores
+ * them (read-only, a cell being typed), so the app's sidebar, agent, settings, and panel keys never
+ * fire. Code and notebook editors bind none of them; there they stay the app's, as Cmd/Ctrl+B
+ * toggles the sidebar in VS Code and JupyterLab.
  */
 const EDITOR_KEYS = new Set(['b', 'j', ',', '\\'])
+const FORMATTING_EDITORS = new Set(['document', 'sheet', 'presentation'])
 
 /**
  * Whether app-level shortcuts should leave this key alone: an editor already handled it, or it is
- * one of the formatting combos above pressed inside an editor. Unlike `isEditableTarget`, the chat
- * composer and other fields keep the app's shortcuts.
+ * one of the formatting combos above pressed inside an Office editor. Unlike `isEditableTarget`,
+ * the chat composer and other fields keep the app's shortcuts.
  */
 export function editorOwnsKey(event: KeyboardEvent): boolean {
   if (event.defaultPrevented) return true
-  if (!(event.metaKey || event.ctrlKey) || event.altKey) return false
-  return EDITOR_KEYS.has(event.key.toLowerCase()) && isInFileEditor(event.target)
+  if (!(event.metaKey || event.ctrlKey) || event.altKey || !EDITOR_KEYS.has(event.key.toLowerCase())) return false
+  const editor = event.target instanceof Element ? event.target.closest(`[${FILE_EDITOR_ATTRIBUTE}]`) : null
+  return FORMATTING_EDITORS.has(editor?.getAttribute(FILE_EDITOR_ATTRIBUTE) ?? '')
 }

@@ -226,6 +226,7 @@ describe('app shortcuts around editors', () => {
   }
   const page = <>
     <div data-file-editor="document"><div role="textbox" tabIndex={0} aria-label="Document body" /></div>
+    <div data-file-editor="notebook"><div role="textbox" tabIndex={0} aria-label="Notebook cell" /></div>
     <textarea aria-label="Composer" />
   </>
   const handled = (event: Event) => event.preventDefault()
@@ -240,6 +241,9 @@ describe('app shortcuts around editors', () => {
     expect(sidebar.getAttribute('data-collapsed')).toBe('true')
     fireEvent.keyDown(window, { key: 'b', ctrlKey: true })
     expect(sidebar.getAttribute('data-collapsed')).toBe('false')
+    // Notebooks and code bind no Bold: Cmd/Ctrl+B toggles the sidebar there, as in JupyterLab and VS Code.
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Notebook cell' }), { key: 'b', metaKey: true })
+    expect(sidebar.getAttribute('data-collapsed')).toBe('true')
   })
 
   it('ignores keys a field already handled', () => {
