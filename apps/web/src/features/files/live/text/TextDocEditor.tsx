@@ -225,8 +225,10 @@ export function TextDocEditor({ session, name, editable, width, toolbarSlot }: L
   const shortcut = (key: string) => ({ label: mac ? `⌘${key.toUpperCase()}` : `Ctrl+${key.toUpperCase()}`, aria: `${mac ? 'Meta' : 'Control'}+${key}` })
 
   const onKeyDown = (event: React.KeyboardEvent) => {
-    // Inside the text, CodeMirror's own keymap has these.
+    // Inside the text, CodeMirror's own keymap has these; menus and dialogs (portaled, but their
+    // keys bubble here through React) keep theirs.
     if (!editor.current || (event.target instanceof Node && editor.current.view.dom.contains(event.target))) return
+    if (event.target instanceof Element && event.target.closest('[role="dialog"], [role="menu"]')) return
     const command = findCommand(event, mac)
     if (!command) return
     event.preventDefault()
