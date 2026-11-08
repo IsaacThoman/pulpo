@@ -73,7 +73,8 @@ function mount() {
 }
 
 const onOpenSearch = vi.fn()
-const navButton = (name: string) => screen.getByRole('button', { name })
+// Pages are links in the primary nav; New chat and Search are actions.
+const navButton = (name: string) => screen.queryByRole('button', { name }) ?? screen.getByRole('link', { name })
 const openMenu = async (name: string) => {
   fireEvent.contextMenu(navButton(name), { clientX: 20, clientY: 40 })
   await screen.findByRole('menu')
@@ -152,6 +153,31 @@ describe('sidebar nav button menus', () => {
     expect(await openMenu('API keys')).toEqual(['View keys', 'New key', 'Unpin'])
     choose('New key')
     expect(`${location.pathname}${location.search}`).toBe('/api-keys?new=1')
+  })
+
+  it('marks the open page in a labeled primary nav and announces pending counts', () => {
+    mount()
+    const nav = screen.getByRole('navigation', { name: 'Primary' })
+    const usage = screen.getByRole('link', { name: 'Usage' })
+    expect(nav.contains(usage)).toBe(true)
+    expect(usage.getAttribute('aria-current')).toBe('page')
+    expect(usage.getAttribute('href')).toBe('/usage')
+    expect(screen.getByRole('link', { name: 'Billing' }).getAttribute('aria-current')).toBeNull()
+    fireEvent.click(screen.getByRole('link', { name: 'Billing' }))
+    expect(location.pathname).toBe('/billing')
+  })
+
+  it('shows and hides sidebar items from the account menu with checkbox items', async () => {
+    mount()
+    fireEvent.contextMenu(screen.getByRole('button', { name: /Octo/ }))
+    const trigger = await screen.findByRole('menuitem', { name: 'Show in sidebar' })
+    fireEvent.keyDown(trigger, { key: 'ArrowRight' })
+    const usage = await screen.findByRole('menuitemcheckbox', { name: 'Usage' })
+    expect(usage.getAttribute('aria-checked')).toBe('true')
+    fireEvent.click(usage)
+    expect(settings.set).toHaveBeenCalledWith('sidebarPins', expect.objectContaining({ usage: false }))
+    // The hover-only pin buttons stay out of the menu's accessibility tree.
+    expect(screen.queryByRole('button', { name: /sidebar/ })).toBeNull()
   })
 
   it('opens the account menu on right-click, as on click', async () => {

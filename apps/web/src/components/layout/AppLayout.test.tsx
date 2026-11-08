@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { AppLayout } from './AppLayout'
 import { DesktopActionsTitleBarSlot, DesktopModelTitleBarSlot } from '@/components/desktop/DesktopSidebarTitleBar'
 import { useDesktopChrome } from '@/stores/desktopChrome'
+import { useSidePanel } from '@/features/side-panel/store'
 
 vi.mock('@/stores/chat', () => ({ useChat: { getState: () => ({ abandonTemporaryChat: vi.fn() }) } }))
 vi.mock('@/stores/settings', () => ({
@@ -14,6 +15,12 @@ vi.mock('@/stores/settings', () => ({
 vi.mock('@/features/chat/ChatDataBridge', () => ({ ChatDataBridge: () => null }))
 vi.mock('@/features/settings/SettingsBridge', () => ({ SettingsBridge: () => null }))
 vi.mock('./BannerBar', () => ({ BannerBar: () => null }))
+vi.mock('@/features/side-panel/SidePanelLayout', () => ({
+  SidePanelLayout: ({ full, children }: { full: boolean; children: React.ReactNode }) => <>
+    {children}
+    {full && <aside data-side-panel aria-label="Side panel"><p>Panel text</p><button>Panel action</button></aside>}
+  </>,
+}))
 vi.mock('./Sidebar', () => ({
   Sidebar: ({ mobile, mobileOpen, collapsed, transitions, onToggle, onNavigate }: {
     mobile: boolean; mobileOpen: boolean; collapsed: boolean; transitions: boolean; onToggle: () => void; onNavigate: () => void
@@ -88,7 +95,8 @@ describe('narrow desktop layout', () => {
     expect(sidebar.getAttribute('aria-hidden')).toBe('true')
     fireEvent.keyDown(window, { key: 'b', metaKey: true })
     expect(sidebar.getAttribute('aria-hidden')).toBe('false')
-    fireEvent.click(screen.getByRole('button', { name: 'Close sidebar' }))
+    // The backdrop is a pointer target only; it is hidden from assistive technology.
+    fireEvent.click(view.container.querySelector('.mobile-sidebar-backdrop')!)
     expect(sidebar.getAttribute('aria-hidden')).toBe('true')
     fireEvent.click(opener)
     fireEvent.keyDown(window, { key: 'Escape' })
@@ -99,12 +107,97 @@ describe('narrow desktop layout', () => {
     expect(opener.getAttribute('aria-expanded')).toBe('false')
   })
 
+  it('makes the open drawer modal: focus moves in, the page behind is inert, and focus returns', async () => {
+    narrow = true
+    Reflect.deleteProperty(window, 'pulpoDesktop')
+    const view = mount()
+    const sidebar = view.container.querySelector('aside')!
+    const opener = screen.getByRole('button', { name: 'Open sidebar' })
+    const main = view.container.querySelector('main')!
+    opener.focus()
+    fireEvent.click(opener)
+    expect(main.closest('[inert]')).not.toBeNull()
+    expect(opener.hasAttribute('inert')).toBe(true)
+    expect(screen.getByText('Skip to message').closest('a')!.hasAttribute('inert')).toBe(true)
+    await act(() => new Promise(requestAnimationFrame))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Toggle sidebar' }))
+    // Tab wraps from the drawer's last control to its first, and Shift+Tab back.
+    screen.getByRole('button', { name: 'Navigate' }).focus()
+    fireEvent.keyDown(document.activeElement!, { key: 'Tab' })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Toggle sidebar' }))
+    fireEvent.keyDown(document.activeElement!, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Navigate' }))
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(sidebar.getAttribute('aria-hidden')).toBe('true')
+    expect(main.closest('[inert]')).toBeNull()
+    await act(() => new Promise(requestAnimationFrame))
+    expect(document.activeElement).toBe(opener)
+  })
+
+  it('lets a dialog opened from the drawer keep Tab inside itself', async () => {
+    narrow = true
+    Reflect.deleteProperty(window, 'pulpoDesktop')
+    mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Open sidebar' }))
+    await act(() => new Promise(requestAnimationFrame))
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    const field = document.createElement('input')
+    dialog.append(field)
+    document.body.append(dialog)
+    field.focus()
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    field.dispatchEvent(tab)
+    expect(tab.defaultPrevented).toBe(false)
+    expect(document.activeElement).toBe(field)
+    dialog.remove()
+  })
+
   it('keeps mobile web controls in the page header', () => {
     narrow = true
     Reflect.deleteProperty(window, 'pulpoDesktop')
     const view = mount()
     expect(view.container.querySelector('.desktop-sidebar-titlebar')).toBeNull()
     expect(screen.getByRole('button', { name: 'Model picker' }).parentElement?.tagName).toBe('HEADER')
+  })
+})
+
+describe('skip link and shortcuts', () => {
+  it('starts the page with a skip link to the main content', () => {
+    const view = mount()
+    const links = view.container.querySelectorAll('a[href], button')
+    expect(links[0]?.textContent).toBe('Skip to message')
+    const main = view.container.querySelector('main')!
+    fireEvent.click(links[0]!)
+    expect(document.activeElement).toBe(main)
+  })
+
+  it('skips to the side panel when it fills the screen and hides the main view', () => {
+    narrow = true
+    Reflect.deleteProperty(window, 'pulpoDesktop')
+    act(() => { useSidePanel.setState({ content: { kind: 'folder', id: null } }) })
+    const view = mount()
+    const link = screen.getByText('Skip to side panel').closest('a')!
+    expect(view.container.querySelector('main')!.className).toContain('hidden')
+    fireEvent.click(link)
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Panel action' }))
+    act(() => { useSidePanel.setState({ content: null }) })
+  })
+
+  it('leaves Cmd/Ctrl+B to editors that handle it, and to rich text', () => {
+    const view = mount()
+    const sidebar = view.container.querySelector('aside')!
+    const editor = document.createElement('div')
+    editor.setAttribute('contenteditable', 'true')
+    view.container.querySelector('main')!.append(editor)
+    fireEvent.keyDown(editor, { key: 'b', metaKey: true })
+    expect(sidebar.getAttribute('data-collapsed')).toBe('false')
+    const handled = new KeyboardEvent('keydown', { key: 'b', metaKey: true, bubbles: true, cancelable: true })
+    handled.preventDefault()
+    act(() => { window.dispatchEvent(handled) })
+    expect(sidebar.getAttribute('data-collapsed')).toBe('false')
+    fireEvent.keyDown(window, { key: 'b', metaKey: true })
+    expect(sidebar.getAttribute('data-collapsed')).toBe('true')
   })
 })
 

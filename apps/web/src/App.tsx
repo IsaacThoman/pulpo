@@ -1,6 +1,6 @@
 import { refreshInstanceFeatures } from '@/lib/instance-features'
 import { lazy, Suspense, useEffect, type ReactNode } from 'react'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { RequireAuth } from '@/components/auth/RequireAuth'
 import { RequireAdmin } from '@/components/auth/RequireAdmin'
 import { AuthLayout } from '@/pages/auth/AuthLayout'
@@ -13,6 +13,9 @@ import { ui } from '@/i18n/ui'
 import { LocaleBoundary } from '@/i18n/LocaleBoundary'
 import { ExternalRedirect } from '@/components/ExternalRedirect'
 import { DOCS_URL } from '@/lib/links'
+import { useRouteDocumentTitle } from '@/lib/document-title'
+import { routeTitle } from '@/lib/route-title'
+import { useTranslation } from '@/i18n/useAppTranslation'
 
 const AppLayout = lazy(() => import('@/components/layout/AppLayout').then((module) => ({ default: module.AppLayout })))
 
@@ -69,6 +72,16 @@ function RequireBilling({ children }: { children: ReactNode }) {
   return billingEnabled ? children : <Navigate to="/usage" replace />
 }
 
+/** Names the tab after the current route until a view (a chat, a document) names it itself. */
+function RouteTitle() {
+  const { t } = useTranslation()
+  const { pathname } = useLocation()
+  const signedIn = useAuth((state) => Boolean(state.user))
+  // Signed out, the root is the landing page, which keeps the plain product name.
+  useRouteDocumentTitle(pathname === '/' && !signedIn ? null : routeTitle(pathname, t('chat.newChat')))
+  return null
+}
+
 function LocalizedRoute({ children }: { children: ReactNode }) {
   return <LocaleBoundary>{children}</LocaleBoundary>
 }
@@ -103,6 +116,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <RouteTitle />
       <div className="desktop-shell h-full">
       <DesktopTitleBar />
       {startupSurface !== 'app' ? (

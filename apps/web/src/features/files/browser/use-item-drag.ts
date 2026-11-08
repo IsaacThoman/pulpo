@@ -160,7 +160,7 @@ export function useItemDrag(options: {
 
   const onPointerDown = useCallback((event: ReactPointerEvent, node: FileNode) => {
     if (event.button !== 0 || event.pointerType === 'touch' || stateRef.current.phase !== 'idle') return
-    if ((event.target as Element).closest('button, input')) return
+    if ((event.target as Element).closest('button, input, [data-file-menu-button]')) return
     const startX = event.clientX
     const startY = event.clientY
     let started = false

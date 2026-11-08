@@ -12,12 +12,14 @@ function ToastItem({ toast }: { toast: FileToast }) {
   const show = useFileToasts((state) => state.show)
   const [undoing, setUndoing] = useState(false)
   const [hovered, setHovered] = useState(false)
+  // Keyboard users reaching Undo pause the toast just as hovering does.
+  const [focused, setFocused] = useState(false)
 
   useEffect(() => {
-    if (hovered || undoing) return
+    if (hovered || focused || undoing) return
     const timer = window.setTimeout(() => dismiss(toast.id), TOAST_DURATION_MS)
     return () => window.clearTimeout(timer)
-  }, [dismiss, hovered, toast.id, undoing])
+  }, [dismiss, focused, hovered, toast.id, undoing])
 
   const undo = async () => {
     if (!toast.undo) return
@@ -36,6 +38,8 @@ function ToastItem({ toast }: { toast: FileToast }) {
       role={toast.tone === 'error' ? 'alert' : 'status'}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false) }}
       className={cn(
         'pointer-events-auto flex min-w-0 items-center gap-3 rounded-lg border bg-popover py-2 pr-2 pl-4 text-sm text-popover-foreground shadow-lg',
         toast.tone === 'error' && 'border-destructive/40 text-destructive',
@@ -72,7 +76,7 @@ function ToastItem({ toast }: { toast: FileToast }) {
 /** Bottom-centre stack of action confirmations with Undo. */
 export function FileToasts() {
   const toasts = useFileToasts((state) => state.toasts)
-  if (!toasts.length) return null
+  // The live region stays mounted, even empty, so screen readers announce the first toast too.
   return (
     <div aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2 px-4">
       {toasts.map((toast) => <div key={toast.id} className="w-full max-w-md"><ToastItem toast={toast} /></div>)}
