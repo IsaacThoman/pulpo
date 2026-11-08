@@ -879,6 +879,18 @@ try {
     assert.deepEqual(await page.evaluate(() => window.requests), ['find', 'replace', 'link'])
     assert.equal(await page.evaluate(() => window.harness.controllers.a.formatState().align), 'l', 'Mod+Shift+L aligns left while editing')
     await page.keyboard.press('Escape')
+    // Cmd+Enter presents from the current slide, Cmd+Shift+Enter from the beginning (Google Slides, PowerPoint for Mac).
+    const current = await page.evaluate(() => window.harness.controllers.a.state.slide)
+    await page.keyboard.press('Meta+Enter')
+    await page.locator('.pp-present .pp-present-stage').waitFor()
+    assert.equal(await page.locator('.pp-present .pp-present-stage').getAttribute('data-slide'), current)
+    await page.keyboard.press('Escape')
+    await page.locator('.pp-present').waitFor({ state: 'detached' })
+    await page.keyboard.press('Meta+Shift+Enter')
+    await page.locator('.pp-present .pp-present-stage').waitFor()
+    assert.equal(await page.locator('.pp-present .pp-present-stage').getAttribute('data-slide'), await page.evaluate(() => window.harness.controllers.a.slideKeys()[0]))
+    await page.keyboard.press('Escape')
+    await page.locator('.pp-present').waitFor({ state: 'detached' })
     // In the strip, Cmd+A selects every slide.
     await page.locator('.pp-thumbs').focus()
     await page.keyboard.press('Meta+a')

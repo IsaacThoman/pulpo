@@ -318,6 +318,7 @@ export class SlideCanvas {
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
+    this.pendingClickEdit = undefined
     this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
     if (this.pointers.size === 2) {
       const [a, b] = [...this.pointers.values()]

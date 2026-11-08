@@ -123,9 +123,14 @@ function PresentationEditorView({ controller, startInShow, toolbarSlot, classNam
       const inEditor = !target || target === document.body || root.current?.contains(target) === true
       const editable = target?.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')
       if (!inEditor || editable) return
-      if (event.key === 'F5' || ((event.metaKey || event.ctrlKey) && event.key === 'Enter')) {
+      // PowerPoint for Windows: F5 from the beginning, Shift+F5 from the current slide. Google Slides
+      // and PowerPoint for Mac: Cmd/Ctrl+Enter from the current slide, with Shift from the beginning.
+      if (event.key === 'F5') {
         event.preventDefault()
         present(event.shiftKey ? 'current' : 'start')
+      } else if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+        event.preventDefault()
+        present(event.shiftKey ? 'start' : 'current')
       }
     }
     window.addEventListener('keydown', onKey)
