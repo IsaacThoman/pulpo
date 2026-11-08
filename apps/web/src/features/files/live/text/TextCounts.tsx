@@ -6,6 +6,8 @@ import { activeLocale, ui, uit } from '@/i18n/ui'
 
 /** Counting waits this long after the last change; files can be megabytes long. */
 const COUNT_DELAY_MS = 300
+/** Characters past which counting waits for that delay even the first time. */
+const LARGE_TEXT = 200_000
 
 /** Files people write prose in, which show a word count as the Word editor does. */
 const PROSE = /\.(txt|text|log|rst|adoc|asciidoc|org|tex|srt|vtt)$|^(readme|license|licence|changelog|authors|contributing|notice|copying)(\.[^.]*)?$/i
@@ -29,7 +31,9 @@ function useDocumentCounts(editor: TextEditor | null, doc: Y.Doc, wanted: boolea
       window.clearTimeout(timer)
       timer = window.setTimeout(count, COUNT_DELAY_MS)
     }
-    count()
+    // A long file is counted a moment later, so starting a selection in it stays smooth.
+    if (text.length < LARGE_TEXT) count()
+    else later()
     text.observe(later)
     return () => {
       window.clearTimeout(timer)
