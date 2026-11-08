@@ -3,9 +3,9 @@ import * as Y from 'yjs'
 import { blankPresentation } from '../blank.js'
 import { copyContent } from '../clipboard.js'
 import { presentationCodec } from '../codec.js'
-import { cellFragment, groupShapes, insertShapes, presetShape, readSlide, readXfrm, tableShape } from '../commands.js'
+import { cellFragment, groupShapes, insertShapes, presetShape, readSlide, readXfrm, setShapeText, tableShape } from '../commands.js'
 import { EMU_PER_PX } from '../render/env.js'
-import { textToPlain } from '../text.js'
+import { plainToText, textToPlain } from '../text.js'
 import { memoryAssets } from '../testing/assets.js'
 import { fidelityAvailable, fixture, runPython, scratchDir, writeScratch } from '../testing/fixtures.js'
 import { readSnapshot } from '../ydoc.js'
@@ -46,6 +46,17 @@ function editCell(controller: PresentationController, tableKey: string, row: num
 function grid(controller: PresentationController, tableKey: string): string[][] {
   const table = controller.shape(controller.state.slide!, tableKey)!.table!
   return table.rows.map((row) => table.columns.map((column) => (row.cells[column.key] ? textToPlain(row.cells[column.key]!.text) : '-')))
+}
+
+function firstRuns(controller: PresentationController, slide: string, shape: string) {
+  return controller.shape(slide, shape)!.text!.content![0]!.content ?? []
+}
+
+async function exportedSlide(doc: Y.Doc, assets: ReturnType<typeof memoryAssets>) {
+  const bytes = await presentationCodec.exportFile(doc, { name: 'deck.pptx', assets })
+  const { strFromU8, unzipSync } = await import('fflate')
+  const files = unzipSync(bytes)
+  return { bytes, xml: strFromU8(files['ppt/slides/slide1.xml']!), rels: strFromU8(files['ppt/slides/_rels/slide1.xml.rels']!) }
 }
 
 describe('presentation interaction regressions', () => {
@@ -99,6 +110,19 @@ describe('presentation interaction regressions', () => {
     controller.deleteTableRows()
     controller.deleteTableColumns()
     controller.deleteTable()
+    controller.setFontSize(30)
+    controller.stepFontSize(1)
+    controller.clearFormatting()
+    controller.setHighlight('<a:srgbClr val="FFFF00"/>')
+    controller.toggleBaseline('sup')
+    expect(controller.setLink('https://example.com')).toBe(false)
+    expect(controller.insertField('slideNumber')).toBe(false)
+    expect(controller.insertText('§')).toBe(false)
+    expect(controller.addSection('Forbidden')).toBeUndefined()
+    controller.renameSection('section', 'Forbidden')
+    controller.removeSection('section')
+    expect(await controller.cutToClipboard()).toBe(false)
+    expect(await controller.pasteFromClipboard()).toBe(false)
     controller.undo()
     controller.redo()
     await controller.insertImage(new Uint8Array([1]), 'image/png')
@@ -317,5 +341,64 @@ describe('presentation interaction regressions', () => {
     const fallback = controller.shapeXfrm(slide, unknown)!
     expect(fallback.cx / fallback.cy).toBeCloseTo(4 / 3, 3)
     expect(Math.round(fallback.y + fallback.cy / 2)).toBe(Math.round(height / 2))
+  })
+  it('formats whole selected shapes: highlight, superscript, size steps, links, and clear formatting', async () => {
+    const { controller, assets } = await open()
+    const slide = controller.state.slide!
+    const [title, subtitle] = controller.slide(slide)!.shapes.map((shape) => shape.key) as [string, string]
+    setShapeText(controller.doc, slide, title, plainToText('Quarterly results'), LOCAL_ORIGIN)
+    setShapeText(controller.doc, slide, subtitle, plainToText('Second'), LOCAL_ORIGIN)
+    controller.selectShapes([title, subtitle])
+    // An untouched centered title reports its inherited alignment and font.
+    expect(controller.formatState()).toMatchObject({ align: 'ctr', fontSize: 60, resolvedFontFamily: controller.themeFonts().major, baseline: 'none', notes: false })
+    controller.setHighlight('<a:solidFill><a:srgbClr val="FFFF00"/></a:solidFill>')
+    controller.toggleBaseline('sup')
+    controller.stepFontSize(1)
+    expect(controller.formatState()).toMatchObject({ baseline: 'sup', fontSize: 66 })
+    expect(controller.formatState().highlight).toContain('FFFF00')
+    // Each shape steps from its own inherited size (the subtitle is 24 pt).
+    expect(firstRuns(controller, slide, subtitle)[0]!.marks).toContainEqual({ type: 'sz', attrs: { value: 2800 } })
+    expect(controller.setLink('example.com')).toBe(true)
+    expect(controller.formatState().link).toBe('https://example.com')
+    const formatted = await exportedSlide(controller.doc, assets)
+    expect(formatted.xml).toMatch(/<a:rPr[^>]*baseline="30000"[^>]*sz="6600"|<a:rPr[^>]*sz="6600"[^>]*baseline="30000"/)
+    expect(formatted.xml).toMatch(/<a:highlight><a:srgbClr val="FFFF00"\/><\/a:highlight>/)
+    const relId = /<a:hlinkClick[^>]*r:id="(rId\d+)"/.exec(formatted.xml)?.[1]
+    expect(relId).toBeDefined()
+    expect(formatted.rels).toMatch(new RegExp(`Id="${relId}"[^>]*Target="https://example.com"[^>]*TargetMode="External"`))
+    if (fidelityAvailable()) {
+      const file = writeScratch(scratchDir(), 'text-commands.pptx', formatted.bytes)
+      const read = JSON.parse(runPython('import sys, json\nfrom pptx import Presentation\nr=Presentation(sys.argv[1]).slides[0].shapes[0].text_frame.paragraphs[0].runs[0]\nprint(json.dumps([r.font.size.pt, r.hyperlink.address, r.font._rPr.get("baseline")]))', file))
+      expect(read).toEqual([66, 'https://example.com', '30000'])
+    }
+    // Clear formatting keeps the link and drops the rest.
+    controller.clearFormatting()
+    const cleared = firstRuns(controller, slide, title)[0]!.marks!.map((mark) => mark.type)
+    expect(cleared).toEqual(['link'])
+    expect(controller.formatState()).toMatchObject({ fontSize: 60, baseline: 'none' })
+    controller.setLink(undefined)
+    expect(firstRuns(controller, slide, title)[0]!.marks ?? []).toEqual([])
+    // Unsafe schemes are refused.
+    expect(controller.setLink('javascript:alert(1)')).toBe(false)
+  })
+
+  it('adds, renames, and removes sections through the controller, each one undo step', async () => {
+    const { controller, doc, assets } = await open()
+    controller.addSlide()
+    controller.addSlide()
+    const [, second] = controller.slideKeys()
+    const key = controller.addSection('Appendix', second)!
+    expect(controller.sections().map((section) => [section.name, section.firstSlide])).toEqual([['Default Section', controller.slideKeys()[0]], ['Appendix', second]])
+    controller.renameSection(key, 'Backup')
+    const bytes = await presentationCodec.exportFile(doc, { name: 'deck.pptx', assets })
+    const { strFromU8, unzipSync } = await import('fflate')
+    expect(strFromU8(unzipSync(bytes)['ppt/presentation.xml']!)).toMatch(/<p14:section name="Backup"/)
+    controller.removeSection(key)
+    expect(controller.sections().map((section) => section.name)).toEqual(['Default Section'])
+    controller.undo()
+    expect(controller.sections().map((section) => section.name)).toEqual(['Default Section', 'Backup'])
+    // Every slide selected at once.
+    controller.selectAllSlides()
+    expect(controller.state.slides).toEqual(controller.slideKeys())
   })
 })

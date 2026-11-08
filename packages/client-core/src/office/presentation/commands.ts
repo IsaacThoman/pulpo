@@ -525,7 +525,8 @@ export function removeSection(doc: Y.Doc, key: string, origin?: unknown): void {
   }, origin)
 }
 
-function newGuid(): string {
+/** A GUID in braces, as `p14:section/@id` and `a:fld/@id` take. */
+export function newGuid(): string {
   const bytes = new Uint8Array(16)
   globalThis.crypto.getRandomValues(bytes)
   const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('').toUpperCase()

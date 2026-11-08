@@ -21,6 +21,29 @@ export async function writeClipboard(copied: { json: string; text: string }): Pr
   lastCopied = copied
 }
 
+/**
+ * What a menu's Paste can use, read from the system clipboard (browsers may ask for permission):
+ * our payload (or the last in-app copy while the clipboard still holds its text), an image, text.
+ */
+export async function readClipboardContents(): Promise<{ payload?: string; image?: Blob; text?: string }> {
+  let payload: string | undefined
+  let image: Blob | undefined
+  let text: string | undefined
+  try {
+    for (const item of (await navigator.clipboard?.read?.()) ?? []) {
+      if (payload === undefined && item.types.includes(FORMAT)) payload = await (await item.getType(FORMAT)).text()
+      const imageType = item.types.find((type) => type.startsWith('image/'))
+      if (!image && imageType) image = await item.getType(imageType)
+      if (text === undefined && item.types.includes('text/plain')) text = await (await item.getType('text/plain')).text()
+    }
+  } catch {
+    // Permission denied or unsupported: plain text may still be readable.
+  }
+  if (text === undefined && payload === undefined && !image) text = await navigator.clipboard?.readText?.().catch(() => undefined)
+  if (payload === undefined && lastCopied && (text === undefined || text === lastCopied.text) && !image) payload = lastCopied.json
+  return { ...(payload !== undefined ? { payload } : {}), ...(image ? { image } : {}), ...(text ? { text } : {}) }
+}
+
 /** Our payload on the clipboard, if any. `text` is the clipboard's plain text, when the caller has it. */
 export async function readClipboard(text?: string): Promise<string | undefined> {
   try {

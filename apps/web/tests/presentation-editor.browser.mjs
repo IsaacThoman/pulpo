@@ -793,6 +793,96 @@ try {
     await page.close()
   })
 
+  await check('keyboard shortcuts: formatting selected shapes, new and duplicate slides, page keys, zoom, and host requests', async () => {
+    const { page, errors } = await open(context, 'deck=generated/text-formatting.pptx')
+    await page.evaluate(() => {
+      window.requests = []
+      window.harness.controllers.a.onRequest((request) => window.requests.push(request))
+    })
+    await page.locator('.pp-thumbs .pp-thumb').nth(2).click()
+    const box = slideShapes(page).nth(1)
+    const key = await box.getAttribute('data-key')
+    await box.click()
+    const text = () => page.evaluate((shape) => window.harness.controllers.a.shape(window.harness.controllers.a.state.slide, shape).text, key)
+    const runs = (json) => json.content.flatMap((paragraph) => paragraph.content ?? []).filter((node) => node.type === 'text')
+    await page.keyboard.press('Meta+b')
+    assert.ok(runs(await text()).every((run) => run.marks.some((mark) => mark.type === 'b' && mark.attrs.value === true)), 'all runs bold')
+    await page.keyboard.press('Meta+Shift+e')
+    assert.ok((await text()).content.every((paragraph) => /algn="ctr"/.test(paragraph.attrs.pPr ?? '')), 'every paragraph centered')
+    const before = await page.evaluate(() => window.harness.controllers.a.formatState().fontSize)
+    await page.keyboard.press('Meta+Shift+Period')
+    assert.ok(await page.evaluate(() => window.harness.controllers.a.formatState().fontSize) > before, 'bigger')
+    assert.equal(await state(page).then((value) => value.editing), undefined, 'formatting does not open the text')
+    // Ctrl+M adds a slide after the current one; Cmd+D with nothing selected duplicates it.
+    const count = () => page.evaluate(() => window.harness.controllers.a.slideKeys().length)
+    const slides = await count()
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Control+m')
+    assert.equal(await count(), slides + 1)
+    await page.keyboard.press('Meta+d')
+    assert.equal(await count(), slides + 2)
+    const index = () => page.evaluate(() => window.harness.controllers.a.slideKeys().indexOf(window.harness.controllers.a.state.slide))
+    const at = await index()
+    await page.keyboard.press('PageUp')
+    assert.equal(await index(), at - 1)
+    await page.keyboard.press('PageDown')
+    assert.equal(await index(), at)
+    // Zoom by keys; Mod+Alt+0 fits again.
+    const width = async () => (await page.locator('.pp-canvas-stage').boundingBox()).width
+    const fitted = await width()
+    await page.keyboard.press('Meta+Alt+Equal')
+    assert.ok(await width() > fitted)
+    await page.keyboard.press('Meta+Alt+Digit0')
+    assert.ok(Math.abs(await width() - fitted) < 1)
+    // Requests go to the host: find on the canvas, link in text being edited.
+    await page.keyboard.press('Meta+f')
+    await page.keyboard.press('Control+h')
+    await page.locator('.pp-thumbs .pp-thumb').nth(2).click()
+    await slideShapes(page).nth(1).dblclick()
+    await page.locator('.pp-canvas .pp-text-editor').waitFor()
+    await page.keyboard.press('Meta+k')
+    await page.keyboard.press('Meta+Shift+l')
+    assert.deepEqual(await page.evaluate(() => window.requests), ['find', 'replace', 'link'])
+    assert.equal(await page.evaluate(() => window.harness.controllers.a.formatState().align), 'l', 'Mod+Shift+L aligns left while editing')
+    await page.keyboard.press('Escape')
+    // In the strip, Cmd+A selects every slide.
+    await page.locator('.pp-thumbs').focus()
+    await page.keyboard.press('Meta+a')
+    assert.equal((await state(page)).slides.length, await count())
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
+  await check('speaker notes take formatting from shortcuts and the toolbar while they have focus', async () => {
+    const { page, errors } = await open(context, 'deck=generated/text-formatting.pptx')
+    const shape = slideShapes(page).first()
+    const key = await shape.getAttribute('data-key')
+    await shape.click()
+    const titleRuns = () => page.evaluate((key) => JSON.stringify(window.harness.controllers.a.shape(window.harness.controllers.a.state.slide, key).text), key)
+    const title = await titleRuns()
+    const notes = page.locator('[data-testid="presentation-notes"] .pp-text-editor')
+    await notes.click()
+    await page.keyboard.press('Meta+ArrowDown')
+    await page.keyboard.press('Enter')
+    await page.keyboard.type('Bold words')
+    await page.keyboard.press('Meta+Shift+ArrowLeft')
+    // The editor reads the selection asynchronously; wait until it has, as a person would.
+    await page.waitForFunction(() => window.harness.controllers.a.notesTarget?.view.state.selection.empty === false)
+    await page.keyboard.press('Meta+b')
+    await page.getByRole('button', { name: 'Italic' }).first().click()
+    const notesRun = await page.evaluate(() => {
+      const controller = window.harness.controllers.a
+      const paragraphs = controller.slide(controller.state.slide).notes.text.content
+      return paragraphs[paragraphs.length - 1].content[0]
+    })
+    assert.equal(notesRun.text, 'Bold words')
+    assert.ok(notesRun.marks.some((mark) => mark.type === 'b') && notesRun.marks.some((mark) => mark.type === 'i'), JSON.stringify(notesRun))
+    assert.equal(await titleRuns(), title, 'the selected shape is untouched')
+    assert.equal(await page.evaluate(() => document.activeElement?.closest('[data-testid="presentation-notes"]') !== null), true, 'focus stays in the notes')
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
   await check('Escape leaves text editing and keeps the shape selected; show shortcuts ignore text fields', async () => {
     const { page, errors } = await open(context, 'deck=generated/text-formatting.pptx')
     const shape = slideShapes(page).nth(1)

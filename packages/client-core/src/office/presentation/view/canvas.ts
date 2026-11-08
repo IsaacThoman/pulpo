@@ -7,10 +7,11 @@ import { slideEnvironment } from '../render/slide.js'
 import { bodyLayout, textFrameStyles } from '../render/text.js'
 import { serializeNode, parseFragment } from '../xml.js'
 import { LOCAL_ORIGIN, type ChangeSet, type EditingTarget, type PresentationController } from './controller.js'
-import { readClipboard, writeClipboard } from './clipboard-io.js'
+import { readClipboard } from './clipboard-io.js'
 import { dragHasImages, imageSize } from './images.js'
 import { MediaPlayer } from './media.js'
 import { ensureStyles } from './styles.js'
+import { applyTextShortcut, editorShortcut, isNewSlideShortcut, requestShortcut, sendRequest, textShortcut } from './shortcuts.js'
 import { InlineTextEditor, type TextEditorStyle } from './text-editor.js'
 
 /**
@@ -49,11 +50,20 @@ interface CaretPoint {
 }
 
 export interface SlideCanvasOptions {
-  /** Called on right-click or long press, with the shape under the pointer (if any). */
-  onContextMenu?(event: MouseEvent, shapeKey: string | undefined): void
+  /**
+   * Called on right-click or long press, with the shape under the pointer (if any) and, on a
+   * table, the cell (row and column keys). The canvas has selected the shape by then. Inside text
+   * being edited the browser's own menu (spelling, cut, copy, paste) shows instead.
+   */
+  onContextMenu?(event: MouseEvent, shapeKey: string | undefined, cell?: { row: string; column: string }): void
   /** Opens a link the user clicked; the canvas only passes http(s) and mailto URLs. */
   onOpenLink?(url: string): void
+  /** The zoom changed (wheel, pinch, keys, `setZoom`, or fitting a resized window); 1 is 100%. */
+  onZoomChange?(zoom: number, fit: boolean): void
 }
+
+/** Zoom levels Mod+Alt+= and Mod+Alt+- step through, as in PowerPoint's zoom menu. */
+export const ZOOM_STEPS = [0.1, 0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5, 6, 8] as const
 
 const SNAP_PX = 6
 const HANDLES: Handle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
@@ -149,11 +159,44 @@ export class SlideCanvas {
     return this.zoom
   }
 
+  /** Whether the slide is scaled to fit the window (the zoom follows its size). */
+  isFit(): boolean {
+    return this.fit
+  }
+
   /** Sets the zoom (1 = 100%); `fit` scales the slide to the available width and height. */
   setZoom(zoom: number | 'fit'): void {
+    if (zoom !== 'fit' && !Number.isFinite(zoom)) return
     this.fit = zoom === 'fit'
     if (zoom !== 'fit') this.zoom = Math.min(8, Math.max(0.1, zoom))
     this.layout()
+  }
+
+  /** The next zoom step up. */
+  zoomIn(): void {
+    this.setZoom(ZOOM_STEPS.find((step) => step > this.zoom + 0.001) ?? ZOOM_STEPS[ZOOM_STEPS.length - 1]!)
+  }
+
+  /** The next zoom step down. */
+  zoomOut(): void {
+    this.setZoom([...ZOOM_STEPS].reverse().find((step) => step < this.zoom - 0.001) ?? ZOOM_STEPS[0])
+  }
+
+  private reportedZoom?: { zoom: number; fit: boolean }
+
+  private reportZoom(): void {
+    const reported = this.reportedZoom
+    if (reported && Math.abs(reported.zoom - this.zoom) < 0.0005 && reported.fit === this.fit) return
+    this.reportedZoom = { zoom: this.zoom, fit: this.fit }
+    this.options.onZoomChange?.(this.zoom, this.fit)
+  }
+
+  /** The previous or next slide. */
+  private stepSlide(delta: -1 | 1): void {
+    const keys = this.controller.slideKeys()
+    const index = this.controller.state.slide ? keys.indexOf(this.controller.state.slide) : -1
+    const next = keys[Math.max(0, Math.min(keys.length - 1, index + delta))]
+    if (next && next !== this.controller.state.slide) this.controller.goToSlide(next)
   }
 
   focus(): void {
@@ -175,6 +218,7 @@ export class SlideCanvas {
     this.host.style.height = `${size.height}px`
     this.host.style.transform = `scale(${this.zoom})`
     this.drawOverlay()
+    this.reportZoom()
   }
 
   private onChange(change: ChangeSet): void {
@@ -611,6 +655,7 @@ export class SlideCanvas {
       onEscape: () => this.controller.setState({ editing: undefined }),
       ...(rowKey && columnKey ? { onTab: (backward: boolean) => this.moveToCell(shapeKey, rowKey, columnKey, backward) } : {}),
       onToggleMark: (mark) => this.controller.toggleMark(mark),
+      onKey: (event) => editorShortcut(this.controller, event),
       onSelectionChange: () => {
         this.autofit()
         this.controller.setState({})
@@ -756,12 +801,15 @@ export class SlideCanvas {
 
   private stopEditing(): void {
     if (!this.editor) return
+    // Keyboard focus stays on the slide (arrows then move the shape), unless it went elsewhere,
+    // such as into the speaker notes, which closing this editor must not take it from.
+    const focused = this.editor.view.hasFocus()
     this.editor.destroy()
     this.editor = undefined
     this.controller.activeEditor = undefined
     this.editorFrame?.remove()
     this.editorFrame = undefined
-    this.focus()
+    if (focused) this.focus()
   }
 
   // -------------------------------------------------------------------------------------------
@@ -774,7 +822,38 @@ export class SlideCanvas {
     const controller = this.controller
     const mod = event.metaKey || event.ctrlKey
     const key = event.key
+    const request = requestShortcut(event)
+    if (request) {
+      if (sendRequest(controller, request)) event.preventDefault()
+      return
+    }
+    // Option/Alt with Mod and =, -, 0: browser zoom stays on Mod with =, - and 0 alone.
+    if (mod && event.altKey && ['Equal', 'NumpadAdd', 'Minus', 'NumpadSubtract', 'Digit0', 'Numpad0'].includes(event.code)) {
+      event.preventDefault()
+      if (event.code === 'Digit0' || event.code === 'Numpad0') this.setZoom('fit')
+      else if (event.code === 'Equal' || event.code === 'NumpadAdd') this.zoomIn()
+      else this.zoomOut()
+      return
+    }
+    // Page Up and Page Down change slides, as in PowerPoint's normal view.
+    if ((key === 'PageUp' || key === 'PageDown') && !mod && !event.altKey) {
+      event.preventDefault()
+      this.stepSlide(key === 'PageUp' ? -1 : 1)
+      return
+    }
     if (controller.readOnly) return
+    if (isNewSlideShortcut(event)) {
+      event.preventDefault()
+      controller.addSlide()
+      return
+    }
+    const shortcut = textShortcut(event)
+    if (shortcut && controller.state.shapes.length) {
+      // Formatting with shapes selected (not editing their text) changes all of their text.
+      event.preventDefault()
+      applyTextShortcut(controller, shortcut)
+      return
+    }
     if (mod && key.toLowerCase() === 'z') {
       event.preventDefault()
       if (event.shiftKey) controller.redo()
@@ -795,8 +874,15 @@ export class SlideCanvas {
       const step = (event.shiftKey ? 10 : event.altKey ? 0.5 : 2) * EMU_PER_PX
       controller.nudge(key === 'ArrowLeft' ? -step : key === 'ArrowRight' ? step : 0, key === 'ArrowUp' ? -step : key === 'ArrowDown' ? step : 0)
     } else if (mod && key.toLowerCase() === 'd') {
+      // Cmd/Ctrl+D with nothing selected duplicates the slide, as in PowerPoint.
       event.preventDefault()
-      controller.duplicateSelection()
+      if (shapes.length) controller.duplicateSelection()
+      else controller.duplicateSlides([controller.state.slide ?? ''].filter(Boolean))
+    } else if ((key === 'Home' || key === 'End') && !shapes.length && !mod) {
+      event.preventDefault()
+      const keys = controller.slideKeys()
+      const target = key === 'Home' ? keys[0] : keys[keys.length - 1]
+      if (target) controller.goToSlide(target)
     } else if (mod && key.toLowerCase() === 'g') {
       event.preventDefault()
       if (event.shiftKey) controller.ungroup()
@@ -836,22 +922,14 @@ export class SlideCanvas {
   private readonly onCopy = (event: ClipboardEvent): void => {
     if (this.editor || !event.clipboardData) return
     event.preventDefault()
-    void this.copyTo().catch(() => {})
-  }
-
-  private async copyTo(): Promise<boolean> {
-    const copied = await this.controller.copy()
-    if (!copied) return false
-    await writeClipboard(copied)
-    return true
+    void this.controller.copyToClipboard().catch(() => {})
   }
 
   private readonly onCut = (event: ClipboardEvent): void => {
     if (this.editor || !event.clipboardData || this.controller.readOnly) return
     event.preventDefault()
-    void this.copyTo().then((copied) => {
-      if (copied) this.controller.deleteSelection()
-    }).catch(() => {})
+    // With nothing selected this copies the slide and deletes nothing, as it always has.
+    void (this.controller.state.shapes.length ? this.controller.cutToClipboard() : this.controller.copyToClipboard()).catch(() => {})
   }
 
   private readonly onPaste = (event: ClipboardEvent): void => {
@@ -911,10 +989,27 @@ export class SlideCanvas {
 
   private readonly onContextMenu = (event: MouseEvent): void => {
     if (!this.options.onContextMenu) return
+    const target = event.target instanceof Element ? event.target : null
+    // In text being edited, the browser's menu has spelling suggestions and text cut, copy, paste.
+    if (target?.closest('.pp-text-editor')) return
     event.preventDefault()
-    const key = this.shapeAt(event.target)
+    const editing = this.controller.state.editing
+    // Beside the text in an open editor: the shape (or cell) being edited.
+    const inEditor = editing && target?.closest('.pp-editor-frame') ? editing : undefined
+    const key = inEditor ? inEditor.shape : this.shapeAt(target)
+    const cell = inEditor?.row && inEditor.column ? { row: inEditor.row, column: inEditor.column } : key ? this.cellAt(key, target) : undefined
     if (key && !this.controller.state.shapes.includes(key)) this.controller.selectShapes([key])
-    this.options.onContextMenu(event, key)
+    this.options.onContextMenu(event, key, cell)
+  }
+
+  /** The table cell (row and column keys) an element of a table shape belongs to. */
+  private cellAt(shapeKey: string, target: Element | null): { row: string; column: string } | undefined {
+    const cell = target?.closest<HTMLElement>('td[data-row][data-col]')
+    const table = this.controller.state.slide ? this.controller.shape(this.controller.state.slide, shapeKey)?.table : undefined
+    if (!cell || !table || cell.closest('[data-key]')?.getAttribute('data-key') !== shapeKey) return undefined
+    const row = table.rows[Number(cell.dataset.row)]?.key
+    const column = table.columns[Number(cell.dataset.col)]?.key
+    return row && column ? { row, column } : undefined
   }
 
   private readonly onWheel = (event: WheelEvent): void => {

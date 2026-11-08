@@ -6,14 +6,41 @@ import type { LiveAssetStore } from '../../live-format.js'
 import { copyContent, pasteShapes, pasteSlides, parseClipboard, type PresentationClipboard } from '../clipboard.js'
 import { slideSections } from '../sections.js'
 import * as commands from '../commands.js'
-import { editAllParagraphs, markAll, markValueAt, markValueIn, paragraphAt, paragraphCommand, paragraphEdits, setMarkCommand, type MarkValue, type ParagraphEdit, type RunMark } from '../formatting.js'
+import {
+  BASELINE,
+  CLEARABLE_MARKS,
+  clearMarksAll,
+  clearMarksCommand,
+  editAllParagraphs,
+  highlightXml,
+  insertFieldCommand,
+  linkAll,
+  linkAt,
+  linkIn,
+  markAll,
+  markValueAt,
+  markValueIn,
+  paragraphAt,
+  paragraphCommand,
+  paragraphEdits,
+  setLinkCommand,
+  setMarkCommand,
+  stepFontSizeCommand,
+  stepFontSizesAll,
+  type MarkValue,
+  type ParagraphEdit,
+  type RunMark,
+} from '../formatting.js'
 import type { PartSnapshot, ShapeSnapshot, SlideSnapshot, Xfrm } from '../model.js'
-import { DeckResources } from '../render/deck.js'
+import { DeckResources, type Theme } from '../render/deck.js'
 import { mergeBag, resolveLevel } from '../render/props.js'
 import { assetObjectUrl, DEFAULT_RENDER_LABELS, displayableMediaType, EMU_PER_PX, type RenderLabels } from '../render/env.js'
 import { renderSlide, slideShapeText, slideShapeXfrm, type SlideRenderOptions } from '../render/slide.js'
+import { computedFieldText, resolveTypeface } from '../render/text.js'
 import { textToPlain } from '../text.js'
 import { orderedKeys, presentationRoot, readPart, readParts, readSlideMap } from '../ydoc.js'
+import { readClipboardContents, writeClipboard } from './clipboard-io.js'
+import { imageSize } from './images.js'
 import type { InlineTextEditor } from './text-editor.js'
 
 /**
@@ -50,6 +77,9 @@ export const DEFAULT_PRESENTATION_LABELS: PresentationLabels = {
   elapsed: 'Elapsed time',
   shapeNames: { rectangle: 'Rectangle', textBox: 'TextBox', picture: 'Picture', table: 'Table', group: 'Group', shape: 'Shape' },
 }
+
+/** UI a host draws for the view core: the find bar (`find`, `replace`) and the link box (`link`). */
+export type PresentationRequest = 'find' | 'replace' | 'link'
 
 export interface PresentationUser {
   name: string
@@ -108,11 +138,48 @@ export interface FormatState {
   italic: boolean
   underline: boolean
   strike: boolean
+  /** Points, explicit or inherited. */
   fontSize?: number
+  /** The font set on the text itself, as written (theme fonts as `+mj-lt`, `+mn-lt`). */
   fontFamily?: string
+  /** The font the text is drawn in: its own or the inherited one, with theme fonts resolved. */
+  resolvedFontFamily?: string
+  /** Paragraph alignment, explicit or inherited (`l`, `ctr`, `r`, `just`, …). */
   align?: string
   bullets: 'none' | 'char' | 'number'
+  baseline: 'sup' | 'sub' | 'none'
+  /** The text's `a:highlight` XML, when it has one. */
+  highlight?: string
+  /** The link target of the selected text, when it is one link. */
+  link?: string
   canFormatText: boolean
+  /** Formatting goes to the speaker notes. */
+  notes: boolean
+  /** Text box properties of the shape whose text is formatted (not for notes or table cells); insets in EMU. */
+  textBox?: { anchor: 't' | 'ctr' | 'b'; autofit: 'none' | 'norm' | 'shape'; wrap: boolean; insets: { l: number; t: number; r: number; b: number } }
+}
+
+/**
+ * A link as typed into a link box: http(s) and mailto URLs as they are, bare addresses and
+ * domains completed (`example.com` → `https://example.com`). Other schemes are refused.
+ */
+export function normalizeLink(input: string): string | undefined {
+  const value = input.trim()
+  if (!value || /\s/.test(value)) return undefined
+  if (/^(https?:\/\/|mailto:)/i.test(value)) return value
+  if (/^[^@/:]+@[^@/:]+\.[^@/:]+$/.test(value)) return `mailto:${value}`
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return undefined
+  if (/^([\p{L}\p{N}-]+\.)+\p{L}{2,}(:\d+)?([/?#].*)?$/u.test(value)) return `https://${value}`
+  return undefined
+}
+
+/** A typeface as drawn: theme font references resolved. */
+function themeFont(typeface: string, theme: Theme): string {
+  if (typeface === '+mj-lt') return theme.major.latin
+  if (typeface === '+mn-lt') return theme.minor.latin
+  if (typeface === '+mj-ea') return theme.major.ea || theme.major.latin
+  if (typeface === '+mn-ea') return theme.minor.ea || theme.minor.latin
+  return typeface
 }
 
 /** A table the table commands can act on, and the cell being edited in it. */
@@ -176,11 +243,31 @@ export class PresentationController {
     this.undoManager.destroy()
     for (const url of this.urls.values()) if (url?.startsWith('blob:')) URL.revokeObjectURL(url)
     this.listeners.clear()
+    this.requestListeners.clear()
   }
 
   subscribe(listener: (change: ChangeSet) => void): () => void {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
+  }
+
+  private readonly requestListeners = new Set<(request: PresentationRequest) => void>()
+
+  /**
+   * Listens for what the views ask the host to show: Mod+F (`find`), Ctrl+H or Cmd+Shift+H
+   * (`replace`), Mod+K on text (`link`, prefill it from `formatState().link`). While nothing
+   * listens, those keys keep their browser meaning.
+   */
+  onRequest(listener: (request: PresentationRequest) => void): () => void {
+    this.requestListeners.add(listener)
+    return () => this.requestListeners.delete(listener)
+  }
+
+  /** Asks the host for its UI; false when no host listens. */
+  request(request: PresentationRequest): boolean {
+    if (this.destroyed || !this.requestListeners.size) return false
+    for (const listener of this.requestListeners) listener(request)
+    return true
   }
 
   private emit(change: Partial<ChangeSet>): void {
@@ -417,6 +504,8 @@ export class PresentationController {
   // Selection and presence
 
   setState(patch: Partial<ViewState>): void {
+    // A selection on the slide (a click on the canvas or a thumbnail) takes formatting back from the notes.
+    if (patch.shapes !== undefined || patch.editing !== undefined || (patch.slide !== undefined && patch.slide !== this.state.slide)) this.notesTarget = undefined
     this.state = { ...this.state, ...patch }
     if (patch.slide) this.lastIndex = Math.max(0, this.slideKeys().indexOf(patch.slide))
     this.publishPresence()
@@ -720,6 +809,27 @@ export class PresentationController {
     if (!this.readOnly) commands.setSlideHidden(this.doc, keys, hidden, LOCAL_ORIGIN)
   }
 
+  /** Starts a section named `name` at a slide (the current one); the slides up to the next section join it. */
+  addSection(name: string, firstSlide = this.state.slide): string | undefined {
+    if (this.readOnly || !firstSlide || !this.slideKeys().includes(firstSlide)) return undefined
+    return this.step(() => commands.addSection(this.doc, name, firstSlide, LOCAL_ORIGIN))
+  }
+
+  renameSection(key: string, name: string): void {
+    if (!this.readOnly) commands.renameSection(this.doc, key, name, LOCAL_ORIGIN)
+  }
+
+  /** Removes a section (not its slides, which join the section before). */
+  removeSection(key: string): void {
+    if (!this.readOnly) this.step(() => commands.removeSection(this.doc, key, LOCAL_ORIGIN))
+  }
+
+  /** Selects every slide (the current one stays current). */
+  selectAllSlides(): void {
+    const keys = this.slideKeys()
+    if (keys.length) this.setState({ slides: [...keys], slide: this.state.slide ?? keys[0], shapes: [], editing: undefined })
+  }
+
   /** Applies a layout to the slides, adding the placeholders it has and they lack (one undo step). */
   setLayout(layoutPath: string, keys = this.state.slides): void {
     if (this.readOnly) return
@@ -840,12 +950,44 @@ export class PresentationController {
     }, LOCAL_ORIGIN)
   }
 
-  // Text formatting: the live editor's selection while editing, else all text of selected shapes.
+  // Text formatting goes to the speaker notes while they are the target, else to the live
+  // editor's selection while editing, else to all text of the selected shapes (and groups).
+
+  private notesTarget?: InlineTextEditor
+
+  /**
+   * Makes the speaker notes the target of text formatting (NotesEditor calls this when it gets
+   * focus), until the slide selection changes. As in PowerPoint, the text being edited on the
+   * slide closes.
+   */
+  setNotesTarget(editor: InlineTextEditor | undefined): void {
+    if (this.notesTarget === editor) return
+    this.notesTarget = editor
+    if (editor && this.state.editing) this.setState({ editing: undefined })
+    else this.emit({ selection: true })
+  }
+
+  /** Stops formatting going to a notes editor that is going away. */
+  releaseNotesTarget(editor: InlineTextEditor): void {
+    if (this.notesTarget === editor) this.setNotesTarget(undefined)
+  }
+
+  /** Whether text formatting currently goes to the speaker notes. */
+  get notesFocused(): boolean {
+    return this.notesTarget !== undefined && !this.notesTarget.view.isDestroyed
+  }
+
+  /** The editor formatting applies to, if any. */
+  private textEditor(): InlineTextEditor | undefined {
+    if (this.notesFocused) return this.notesTarget
+    return this.state.editing ? this.activeEditor : undefined
+  }
 
   setMark(type: RunMark, value: MarkValue): void {
     if (this.readOnly) return
-    if (this.activeEditor && this.state.editing) {
-      this.activeEditor.run(setMarkCommand(type, value))
+    const editor = this.textEditor()
+    if (editor) {
+      editor.run(setMarkCommand(type, value))
       return
     }
     this.editSelectedText((json) => markAll(json, type, value))
@@ -853,8 +995,9 @@ export class PresentationController {
 
   editParagraphs(edit: ParagraphEdit): void {
     if (this.readOnly) return
-    if (this.activeEditor && this.state.editing) {
-      this.activeEditor.run(paragraphCommand(edit))
+    const editor = this.textEditor()
+    if (editor) {
+      editor.run(paragraphCommand(edit))
       return
     }
     this.editSelectedText((json) => editAllParagraphs(json, edit))
@@ -865,6 +1008,55 @@ export class PresentationController {
     const on = type === 'b' ? state.bold : type === 'i' ? state.italic : type === 'u' ? state.underline : state.strike
     const value = type === 'u' ? (on ? 'none' : 'sng') : type === 'strike' ? (on ? 'noStrike' : 'sngStrike') : !on
     this.setMark(type, value)
+  }
+
+  /** Sets the font size in points (1–4000, as PowerPoint allows). */
+  setFontSize(points: number): void {
+    if (!Number.isFinite(points)) return
+    this.setMark('sz', Math.round(Math.min(4000, Math.max(1, points)) * 100))
+  }
+
+  /** Increase or Decrease Font Size: each run steps along PowerPoint's size ladder from its own size. */
+  stepFontSize(delta: 1 | -1): void {
+    if (this.readOnly) return
+    const editor = this.textEditor()
+    if (editor) {
+      const shape = editor === this.notesTarget ? undefined : this.state.editing?.shape
+      editor.run(stepFontSizeCommand(delta, (pPr) => this.inheritedSize(shape, pPr)))
+      return
+    }
+    this.editSelectedText((json, key) => stepFontSizesAll(json, delta, (pPr) => this.inheritedSize(key, pPr)))
+  }
+
+  /** Clear Formatting: run formatting back to what the text inherits; links stay. */
+  clearFormatting(): void {
+    if (this.readOnly) return
+    const editor = this.textEditor()
+    if (editor) {
+      editor.run(clearMarksCommand(CLEARABLE_MARKS))
+      return
+    }
+    this.editSelectedText((json) => clearMarksAll(json, CLEARABLE_MARKS))
+  }
+
+  /** Highlights text with a color (a fill like `<a:solidFill>…</a:solidFill>`, or a color element); undefined removes it. */
+  setHighlight(color: string | undefined): void {
+    let value: string | undefined
+    try {
+      value = color === undefined ? undefined : highlightXml(color)
+    } catch {
+      return
+    }
+    this.setMark('highlight', value)
+  }
+
+  setBaseline(baseline: 'sup' | 'sub' | 'none'): void {
+    this.setMark('baseline', baseline === 'none' ? undefined : BASELINE[baseline])
+  }
+
+  /** Superscript or subscript on, or off when the text already has it. */
+  toggleBaseline(baseline: 'sup' | 'sub'): void {
+    this.setBaseline(this.formatState().baseline === baseline ? 'none' : baseline)
   }
 
   setAlign(algn: 'l' | 'ctr' | 'r' | 'just'): void {
@@ -884,8 +1076,57 @@ export class PresentationController {
     this.editParagraphs(paragraphEdits.lineSpacing(multiple))
   }
 
+  /**
+   * Links the selected text, or all text of the selected shapes, to a URL (see `normalizeLink`;
+   * other schemes are refused); undefined removes links. At a caret outside a link, `text` (or
+   * the URL) is inserted as a new link.
+   */
+  setLink(href: string | undefined, text?: string): boolean {
+    if (this.readOnly) return false
+    const url = href === undefined ? undefined : normalizeLink(href)
+    if (href !== undefined && !url) return false
+    const editor = this.textEditor()
+    if (editor) {
+      editor.run(setLinkCommand(url, text))
+      return true
+    }
+    if (!this.textShapeKeys().length) return false
+    this.editSelectedText((json) => linkAll(json, url))
+    return true
+  }
+
+  /** Inserts a slide number, date, or time field at the caret of the text being edited on the slide. */
+  insertField(kind: 'slideNumber' | 'date' | 'time'): boolean {
+    const editing = this.state.editing
+    if (this.readOnly || !editing || !this.activeEditor || this.notesFocused) return false
+    const type = kind === 'slideNumber' ? 'slidenum' : kind === 'date' ? 'datetime1' : 'datetime10'
+    const text = computedFieldText(type, this.slideKeys().indexOf(editing.slide) + 1, new Date()) ?? ''
+    this.activeEditor.run(insertFieldCommand(type, text, commands.newGuid()))
+    return true
+  }
+
+  /** Types text (a symbol, say) at the caret of the text being edited, on the slide or in the notes. */
+  insertText(text: string): boolean {
+    const editor = this.textEditor()
+    if (this.readOnly || !editor || !text) return false
+    editor.run((state, dispatch) => {
+      dispatch?.(state.tr.insertText(text).scrollIntoView())
+      return true
+    })
+    return true
+  }
+
+  /** The deck's theme fonts for the current slide: headings (`+mj-lt`) and body (`+mn-lt`). */
+  themeFonts(): { major: string; minor: string } {
+    const slide = this.slideKey ? this.slide(this.slideKey) : undefined
+    const deck = this.deck()
+    const theme = (slide?.layout ? deck.layout(slide.layout)?.master?.theme : undefined) ?? deck.theme(undefined)
+    return { major: theme.major.latin, minor: theme.minor.latin }
+  }
+
   private inheritedBullet(): boolean {
-    const target = this.state.editing?.shape ?? this.state.shapes[0]
+    if (this.notesFocused) return false
+    const target = this.state.editing?.shape ?? this.textShapeKeys()[0]
     if (!this.slideKey || !target) return false
     const layout = this.textLayout(this.slideKey, target)
     if (!layout) return false
@@ -893,38 +1134,90 @@ export class PresentationController {
     return bullet !== undefined && bullet.localName !== 'buNone'
   }
 
-  private editSelectedText(edit: (json: NonNullable<ShapeSnapshot['text']>) => NonNullable<ShapeSnapshot['text']>): void {
+  /** A paragraph's inherited font size in hundredths of a point (notes are 12 pt; default 18 pt). */
+  private inheritedSize(shapeKey: string | undefined, pPr: unknown): number {
+    if (!shapeKey) return this.notesFocused ? 1200 : 1800
+    const layout = this.slideKey ? this.textLayout(this.slideKey, shapeKey) : undefined
+    const size = Number(layout ? paragraphStyleRun(layout, typeof pPr === 'string' ? pPr : null).attrs.sz : undefined)
+    return Number.isFinite(size) && size > 0 ? size : 1800
+  }
+
+  /** Selected shapes whose text whole-shape formatting changes: text shapes, and those inside selected groups. */
+  private textShapeKeys(): string[] {
+    if (!this.slideKey) return []
+    const keys: string[] = []
+    const visit = (shape: ShapeSnapshot | undefined) => {
+      if (!shape) return
+      if (shape.kind === 'grpSp') shape.children?.forEach(visit)
+      else if (shape.text && shape.kind === 'sp') keys.push(shape.key)
+    }
+    for (const key of this.state.shapes) visit(this.shape(this.slideKey, key))
+    return keys
+  }
+
+  private editSelectedText(edit: (json: NonNullable<ShapeSnapshot['text']>, shapeKey: string) => NonNullable<ShapeSnapshot['text']>): void {
     if (!this.guard()) return
     this.doc.transact(() => {
-      for (const key of this.state.shapes) {
+      for (const key of this.textShapeKeys()) {
         const shape = this.shape(this.slideKey!, key)
-        if (shape?.text) commands.setShapeText(this.doc, this.slideKey!, key, edit(shape.text), LOCAL_ORIGIN)
+        if (shape?.text) commands.setShapeText(this.doc, this.slideKey!, key, edit(shape.text, key), LOCAL_ORIGIN)
       }
     }, LOCAL_ORIGIN)
   }
 
   formatState(): FormatState {
-    const editor = this.state.editing ? this.activeEditor : undefined
-    const shape = !editor && this.slideKey && this.state.shapes[0] ? this.shape(this.slideKey, this.state.shapes[0]) : undefined
-    const layout = this.slideKey && (this.state.editing?.shape ?? this.state.shapes[0]) ? this.textLayout(this.slideKey, this.state.editing?.shape ?? this.state.shapes[0]!) : undefined
+    const editor = this.textEditor()
+    const notes = editor !== undefined && editor === this.notesTarget
+    const targetKey = notes ? undefined : (this.state.editing?.shape ?? this.textShapeKeys()[0])
+    const shape = !editor && this.slideKey && targetKey ? this.shape(this.slideKey, targetKey) : undefined
+    const cell = !notes && this.state.editing?.row !== undefined
+    const layout = !notes && this.slideKey && targetKey ? this.textLayout(this.slideKey, targetKey) : undefined
     const value = (type: RunMark): MarkValue => (editor ? markValueAt(editor.view.state, type) : shape?.text ? markValueIn(shape.text, type) : undefined)
     const paragraph = editor ? paragraphAt(editor.view.state) : undefined
     const pPr = (paragraph?.attrs.pPr ?? shape?.text?.content?.[0]?.attrs?.pPr) as string | null | undefined
-    const inheritedRun = layout ? paragraphStyleRun(layout, pPr) : undefined
+    const inheritedRun = layout && !cell ? paragraphStyleRun(layout, pPr) : undefined
     const truthy = (mark: MarkValue, inherited: string | undefined) => (mark === undefined ? inherited === '1' || inherited === 'true' : mark === true || mark === '1')
     const underline = value('u')
     const strike = value('strike')
-    const size = value('sz') ?? inheritedRun?.attrs.sz
+    const size = value('sz') ?? inheritedRun?.attrs.sz ?? (notes ? 1200 : undefined)
+    const font = value('font')
+    const theme = layout?.context.theme ?? this.deck().theme(undefined)
+    const resolvedFont = typeof font === 'string' ? themeFont(font, theme) : inheritedRun ? resolveTypeface(inheritedRun, theme) : undefined
+    const level = pPr ? Number(/lvl="(\d)"/.exec(pPr)?.[1] ?? 0) : 0
+    const align = (pPr && /algn="(\w+)"/.exec(pPr)?.[1]) || (layout && !cell ? resolveLevel([...layout.context.chain, layout.context.own], level).paragraph.attrs.algn : undefined) || 'l'
+    const baseline = Number(value('baseline') ?? inheritedRun?.attrs.baseline ?? 0)
+    const highlight = value('highlight')
+    const link = editor ? linkAt(editor.view.state) : shape?.text ? linkIn(shape.text) : undefined
+    const body = layout && !cell ? layout.body : undefined
+    const inset = (name: string, fallback: number) => {
+      const number = Number(body?.bag.attrs[name])
+      return Number.isFinite(number) && body?.bag.attrs[name] !== undefined ? number : fallback
+    }
     return {
       bold: truthy(value('b'), inheritedRun?.attrs.b),
       italic: truthy(value('i'), inheritedRun?.attrs.i),
       underline: underline === undefined ? (inheritedRun?.attrs.u ?? 'none') !== 'none' : underline !== 'none',
       strike: strike === undefined ? (inheritedRun?.attrs.strike ?? 'noStrike') !== 'noStrike' : strike !== 'noStrike',
       ...(size !== undefined ? { fontSize: Number(size) / 100 } : {}),
-      ...(typeof value('font') === 'string' ? { fontFamily: value('font') as string } : {}),
-      ...(pPr && /algn="(\w+)"/.exec(pPr) ? { align: /algn="(\w+)"/.exec(pPr)![1] } : {}),
+      ...(typeof font === 'string' ? { fontFamily: font } : {}),
+      ...(resolvedFont ? { resolvedFontFamily: resolvedFont } : {}),
+      align,
       bullets: pPr && /buAutoNum/.test(pPr) ? 'number' : pPr && /buNone/.test(pPr) ? 'none' : pPr && /buChar/.test(pPr) ? 'char' : this.inheritedBullet() ? 'char' : 'none',
+      baseline: baseline > 0 ? 'sup' : baseline < 0 ? 'sub' : 'none',
+      ...(typeof highlight === 'string' ? { highlight } : {}),
+      ...(link ? { link } : {}),
       canFormatText: !!editor || !!shape?.text,
+      notes,
+      ...(body
+        ? {
+            textBox: {
+              anchor: body.bag.attrs.anchor === 'ctr' || body.bag.attrs.anchor === 'b' ? body.bag.attrs.anchor : 't',
+              autofit: body.autofit,
+              wrap: body.bag.attrs.wrap !== 'none',
+              insets: { l: inset('lIns', 91440), t: inset('tIns', 45720), r: inset('rIns', 91440), b: inset('bIns', 45720) },
+            },
+          }
+        : {}),
     }
   }
 
@@ -945,6 +1238,52 @@ export class PresentationController {
     } catch {
       return undefined
     }
+  }
+
+  /** Copies the selected shapes (else the selected slides; always the slides with `'slides'`) to the system clipboard. */
+  async copyToClipboard(what: 'auto' | 'slides' = 'auto'): Promise<boolean> {
+    const copied = await this.copy(what)
+    if (!copied) return false
+    await writeClipboard(copied)
+    return true
+  }
+
+  /**
+   * Copies the selected shapes (or slides with `'slides'`) and deletes them once the clipboard
+   * has them; a failed copy deletes nothing.
+   */
+  async cutToClipboard(what: 'auto' | 'slides' = 'auto'): Promise<boolean> {
+    if (this.readOnly || !this.slideKey) return false
+    const slide = this.slideKey
+    const shapes = what === 'auto' ? [...this.state.shapes] : []
+    const slides = [...this.state.slides]
+    if (what === 'auto' && !shapes.length) return false
+    if (!(await this.copyToClipboard(what).catch(() => false)) || this.readOnly || this.destroyed) return false
+    if (shapes.length) {
+      commands.deleteShapes(this.doc, slide, shapes, LOCAL_ORIGIN)
+      if (this.state.slide === slide) this.selectShapes(this.state.shapes.filter((key) => !shapes.includes(key)))
+    } else this.deleteSlides(slides)
+    return true
+  }
+
+  /**
+   * A menu's Paste: copied shapes or slides from the system clipboard, else (not for `'slides'`)
+   * an image at its aspect ratio, else text as a new text box. False when nothing was pasted.
+   */
+  async pasteFromClipboard(target: 'auto' | 'slides' = 'auto'): Promise<boolean> {
+    if (this.readOnly || this.destroyed) return false
+    const contents = await readClipboardContents()
+    if (contents.payload) return this.paste(contents.payload, target)
+    if (target === 'slides' || !this.guard()) return false
+    if (contents.image) {
+      const bytes = new Uint8Array(await contents.image.arrayBuffer())
+      const size = await imageSize(contents.image)
+      return (await this.insertImage(bytes, contents.image.type || 'image/png', size).catch(() => undefined)) !== undefined
+    }
+    if (!contents.text) return false
+    const [key] = commands.insertShapes(this.doc, this.slideKey!, [commands.textBox(this.centered(3_048_000, 457_200), this.nextName(this.labels.shapeNames.textBox), contents.text)], LOCAL_ORIGIN)
+    if (key) this.selectShapes([key])
+    return key !== undefined
   }
 
   async paste(json: string, target: 'auto' | 'slides' = 'auto'): Promise<boolean> {
