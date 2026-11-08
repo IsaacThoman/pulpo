@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
-import { defaultKeymap, indentLess, indentMore, indentWithTab, toggleComment as toggleLineComment } from '@codemirror/commands'
+import { defaultKeymap, indentLess, indentMore, indentWithTab, selectAll, toggleComment as toggleLineComment } from '@codemirror/commands'
 import { bracketMatching, foldGutter, foldKeymap, HighlightStyle, indentOnInput, indentUnit, syntaxHighlighting } from '@codemirror/language'
 import { highlightSelectionMatches, openSearchPanel, search, searchKeymap } from '@codemirror/search'
 import { Compartment, EditorSelection, EditorState, type Extension } from '@codemirror/state'
@@ -99,6 +99,15 @@ export interface TextEditor {
   redo(): void
   /** Indents or outdents the selected lines, for keyboards without a Tab key. */
   indent(direction: 'more' | 'less'): void
+  /** Selects the whole file (Edit ▸ Select all). */
+  selectAll(): void
+  /** The selected text, ranges a line break apart (as CodeMirror copies them); empty with only carets. */
+  selectionText(): string
+  /**
+   * Replaces each selected range with `text`, as a paste does (or, with '' and `delete.cut`, a
+   * cut): one undo step. False in a read-only file.
+   */
+  replaceSelection(text: string, userEvent?: 'input.paste' | 'delete.cut'): boolean
   /** Whether the language at the caret has comments (plain text has none). */
   canToggleComment(): boolean
   /** Comments the selected lines out, or back in (Cmd/Ctrl+/); false where nothing changed. */
@@ -507,6 +516,21 @@ export function createTextEditor(options: TextEditorOptions): TextEditor {
     },
     indent(direction) {
       if (!current.readOnly) (direction === 'more' ? indentMore : indentLess)(view)
+    },
+    selectAll() {
+      selectAll(view)
+    },
+    selectionText() {
+      const { state } = view
+      return state.selection.ranges.filter((range) => !range.empty).map((range) => state.sliceDoc(range.from, range.to)).join(state.lineBreak)
+    },
+    replaceSelection(text, userEvent = 'input.paste') {
+      if (current.readOnly) return false
+      // Its own undo step, even right after typing (a menu command, as in Docs).
+      undoManager.stopCapturing()
+      view.dispatch(view.state.replaceSelection(text), { userEvent, scrollIntoView: true })
+      undoManager.stopCapturing()
+      return true
     },
     canToggleComment() {
       const { state } = view

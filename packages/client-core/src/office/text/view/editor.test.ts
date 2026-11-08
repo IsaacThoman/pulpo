@@ -133,3 +133,39 @@ describe('text editor view options and commands', () => {
     expect(textOf(viewer.doc).toString()).toBe('x = 1\n')
   })
 })
+
+describe('text editor clipboard commands', () => {
+  it('selects everything, reads the selection, and replaces it as one undo step', () => {
+    const { editor, doc } = open('alpha beta\ngamma')
+    expect(editor.selectionText()).toBe('')
+    editor.selectAll()
+    expect(editor.selectionText()).toBe('alpha beta\ngamma')
+    editor.view.dispatch({ selection: EditorSelection.create([EditorSelection.range(0, 5), EditorSelection.range(11, 16)]) })
+    expect(editor.selectionText()).toBe('alpha\ngamma')
+    expect(editor.replaceSelection('X')).toBe(true)
+    expect(textOf(doc).toString()).toBe('X beta\nX')
+    editor.undo()
+    expect(textOf(doc).toString()).toBe('alpha beta\ngamma')
+  })
+
+  it('keeps a replacement right after typing as its own undo step', () => {
+    const { editor, doc } = open('a')
+    editor.view.dispatch({ changes: { from: 1, insert: 'b' }, selection: { anchor: 2 }, userEvent: 'input.type' })
+    editor.replaceSelection('c')
+    expect(textOf(doc).toString()).toBe('abc')
+    editor.undo()
+    expect(textOf(doc).toString()).toBe('ab')
+  })
+
+  it('cuts with an empty replacement, and changes nothing in a read-only file', () => {
+    const { editor, doc } = open('keep cut')
+    editor.view.dispatch({ selection: { anchor: 4, head: 8 } })
+    expect(editor.replaceSelection('', 'delete.cut')).toBe(true)
+    expect(textOf(doc).toString()).toBe('keep')
+    const viewer = open('fixed', true)
+    viewer.editor.selectAll()
+    expect(viewer.editor.selectionText()).toBe('fixed')
+    expect(viewer.editor.replaceSelection('changed')).toBe(false)
+    expect(textOf(viewer.doc).toString()).toBe('fixed')
+  })
+})
