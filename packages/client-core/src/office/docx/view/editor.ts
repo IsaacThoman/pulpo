@@ -1128,7 +1128,8 @@ export class DocxEditor {
   /**
    * Tab and Shift+Tab, as in Word: between table cells (Tab in the last cell adds a row), list
    * levels in lists, a tab character or an outdent elsewhere. An editable document keeps the
-   * key, so focus never jumps out of the page; a read-only one lets it move focus.
+   * key, so focus never jumps out of the page unless Escape came first; a read-only one lets it
+   * move focus.
    */
   private tabKey(direction: 1 | -1): boolean {
     const leave = this.tabLeaves
