@@ -66,6 +66,7 @@ describe('composeFileMenu', () => {
     )
     expect(outline(entries)).toContain('Download ▸ Microsoft Word (.docx), PDF document (.pdf), CSV (current sheet)')
     expect(outline(entries)).toContain('Unpin from sidebar')
+    expect(outline(entries)).toContain('Make a copy (disabled)')
     expect(outline(entries)).toContain('Rename (disabled)')
     expect(outline(entries)).toContain('Move to… (disabled)')
     expect(outline(entries)).toContain('Move to trash (disabled) (destructive)')

@@ -90,7 +90,7 @@ export function composeFileMenu(host: FileMenuHost | undefined, parts: EditorFil
       icon: FilePlus2,
       items: host.create.map((command): MenuEntry => ({ type: 'item', ...command })),
     } satisfies MenuEntry] : []),
-    ...item('make-copy', ui("Make a copy"), host?.makeCopy, { icon: Copy }),
+    ...item('make-copy', ui("Make a copy"), host?.makeCopy, { icon: Copy, disabled: locked }),
     separator,
     ...(downloads.length ? [{ type: 'submenu', id: 'download', label: ui("Download"), icon: Download, items: downloads } satisfies MenuEntry] : []),
     ...item('copy-link', ui("Copy link"), host?.copyLink, { icon: Link2 }),
