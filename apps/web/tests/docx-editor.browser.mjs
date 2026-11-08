@@ -1718,6 +1718,31 @@ try {
     assert.deepEqual(await page.evaluate(() => window.refused), [{ name: 'logo.svg', type: 'image/svg+xml', reason: 'unsupported' }])
     const files = unzipSync(new Uint8Array(Buffer.from(await page.evaluate(() => window.harness.exportFile()), 'base64')))
     assert.ok(Object.keys(files).some((path) => path.startsWith('word/media/')))
+    // A context menu's Paste of a copied web picture: the async clipboard gives its file beside an <img> wrapper.
+    await clickEnd('Line spacing double')
+    assert.equal(await page.evaluate(async () => {
+      // Big enough to grab with the mouse below.
+      const canvas = document.createElement('canvas')
+      canvas.width = 48
+      canvas.height = 32
+      canvas.getContext('2d').fillRect(0, 0, 48, 32)
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
+      return window.harness.editors[0].pasteData({ html: '<meta charset="utf-8"><img src="https://example.com/box.png">', files: [blob] })
+    }), true)
+    await paragraph('Line spacing double').locator('.docx-drawing').waitFor()
+    // Dragging a picture moves it; it is not inserted again as a file.
+    const drawings = await flow.locator('.docx-drawing').count()
+    const picture = paragraph('Line spacing double').locator('.docx-drawing')
+    await picture.click()
+    const from = await picture.boundingBox()
+    const to = await paragraph('Line spacing 1.5').boundingBox()
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(to.x + 40, to.y + to.height / 2, { steps: 8 })
+    await page.mouse.up()
+    await paragraph('Line spacing 1.5').locator('.docx-drawing').waitFor()
+    assert.equal(await flow.locator('.docx-drawing').count(), drawings)
+    assert.equal(await paragraph('Line spacing double').locator('.docx-drawing').count(), 0)
   })
 
   await step('creates headers and footers with page numbers on every page', async () => {

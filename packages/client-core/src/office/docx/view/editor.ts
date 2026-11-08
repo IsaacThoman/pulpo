@@ -787,14 +787,15 @@ export class DocxEditor {
           const plain = (view as unknown as { input?: { shiftKey?: boolean } }).input?.shiftKey
           if (!view.editable || plain) return false
           const html = event.clipboardData?.getData('text/html')
-          // Screenshots and copied pictures come as files, sometimes with an <img> wrapper beside them.
-          const pictures = imageFiles(event.clipboardData)
+          const copy = recallCopy(html, view.state.schema)
+          // Screenshots and copied pictures come as files, sometimes with an <img> wrapper beside
+          // them. Pulpo's own copies keep their pictures exactly, even when a browser adds files.
+          const pictures = copy ? [] : imageFiles(event.clipboardData)
           if (pictures.length && (!html || onlyPictures(html))) {
             event.preventDefault()
             void this.insertImages(pictures, view)
             return true
           }
-          const copy = recallCopy(html, view.state.schema)
           if (!copy) return false
           const foreign = copy.origin.split(':', 1)[0] !== this.options.doc.guid
           const prepare = (slice: Slice) => {
@@ -836,6 +837,9 @@ export class DocxEditor {
           return false
         },
         drop: (view, event) => {
+          // Content dragged inside the editors moves as ProseMirror moves it, even with picture files beside it.
+          const dragging = [this.view, this.storyEditor?.view].some((editor) => editor?.dragging)
+          if (dragging || recallCopy(event.dataTransfer?.getData('text/html'), view.state.schema)) return false
           const pictures = imageFiles(event.dataTransfer)
           if (!pictures.length) return false
           event.preventDefault()
@@ -2209,8 +2213,9 @@ export class DocxEditor {
     if (this.readOnly) return false
     const view = this.activeView
     view.focus()
-    if (!options.plain && data.files?.length && !data.html) {
-      void this.insertImages(data.files.filter((file) => IMAGE_FILE.test(file.type)), view)
+    const pictures = (data.files ?? []).filter((file) => IMAGE_FILE.test(file.type))
+    if (!options.plain && pictures.length && !data.html) {
+      void this.insertImages(pictures, view)
       return true
     }
     // ProseMirror makes a ClipboardEvent when given none, which not every environment has.
@@ -2225,6 +2230,8 @@ export class DocxEditor {
         const transfer = new DataTransfer()
         transfer.setData('text/html', data.html)
         if (data.text) transfer.setData('text/plain', data.text)
+        // A copied picture reads back as its file beside an <img> wrapper; the paste handler takes the file.
+        for (const file of pictures) transfer.items.add(file instanceof File ? file : new File([file], 'image', { type: file.type }))
         const event = new ClipboardEvent('paste', { clipboardData: transfer, bubbles: true, cancelable: true })
         // Browsers that drop clipboardData from constructed events fall back to parsing the HTML directly.
         if (event.clipboardData) {

@@ -15,6 +15,7 @@ import { CONTENT_TYPE } from '../names.js'
 import { relationshipReferences } from '../relationships.js'
 import { docxSchema, inlineMarks } from '../schema.js'
 import { addressBefore, curlyQuote, dashBefore, listMarker } from './autoformat.js'
+import { clipboardSerializer, rememberCopy } from './clipboard.js'
 import { DocxEditor, type DocxRefusedImage } from './editor.js'
 
 const schema = docxSchema()
@@ -388,6 +389,25 @@ describe('pictures from the clipboard and drops', () => {
   it('leaves text pastes with pictures to the HTML path', () => {
     setBody(editor.view, [p('AB')], 2)
     expect(domEvent(editor.view, 'paste', { clipboardData: { files: [new File([PNG], 'x.png', { type: 'image/png' })], getData: (type: string) => (type === 'text/html' ? '<p>Words <img src="x"></p>' : '') }, preventDefault: () => {} })).toBe(false)
+  })
+
+  it('keeps Pulpo copies and moved content on their own paths, even with picture files beside them', () => {
+    setBody(editor.view, [p('AB')], 2)
+    const slice = editor.view.state.doc.slice(1, 3)
+    rememberCopy(slice, `${doc.guid}:body`)
+    const holder = document.createElement('div')
+    holder.appendChild(clipboardSerializer(schema).serializeFragment(slice.content))
+    // A browser can put a picture file beside a copy whose HTML is only a picture.
+    const html = `<img src="blob:x">${holder.innerHTML.replace(/>[^<]+</g, '><')}`
+    const files = [new File([PNG], 'x.png', { type: 'image/png' })]
+    const prevented = vi.fn()
+    expect(domEvent(editor.view, 'paste', { clipboardData: { files, getData: (type: string) => (type === 'text/html' ? html : '') }, preventDefault: prevented })).toBe(false)
+    expect(prevented).not.toHaveBeenCalled()
+    // Content dragged within the editor moves as ProseMirror moves it.
+    editor.view.dragging = { slice, move: true }
+    expect(domEvent(editor.view, 'drop', { dataTransfer: { files, getData: () => '' }, clientX: 0, clientY: 0, preventDefault: prevented })).toBe(false)
+    editor.view.dragging = null
+    expect(prevented).not.toHaveBeenCalled()
   })
 })
 
