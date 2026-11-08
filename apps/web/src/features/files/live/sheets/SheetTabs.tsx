@@ -103,9 +103,13 @@ export function SheetTabs({ view, state, summary }: { view: SheetView; state: Sh
         </DropdownMenuContent>
       </DropdownMenu>
       <div role="tablist" aria-label={ui("Sheets")} className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
-        {visible.map((sheet) => {
+        {visible.map((sheet, at) => {
           const active = sheet.id === state.sheetId
-          const position = state.sheets.findIndex((entry) => entry.id === sheet.id)
+          const indexOf = (id: string) => state.sheets.findIndex((entry) => entry.id === id)
+          const position = indexOf(sheet.id)
+          // Moving goes past the neighbouring tab people see, never just past a hidden sheet.
+          const before = visible[at - 1]
+          const after = visible[at + 1]
           if (renaming === sheet.id) {
             return (
               <div key={sheet.id} className="relative flex items-center px-1">
@@ -195,8 +199,8 @@ export function SheetTabs({ view, state, summary }: { view: SheetView; state: Sh
                   </DropdownMenuSub>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem disabled={!editable || position === 0} onSelect={() => view.moveSheet(sheet.id, Math.max(0, position - 1))}>{ui("Move left")}</DropdownMenuItem>
-                <DropdownMenuItem disabled={!editable || position === state.sheets.length - 1} onSelect={() => view.moveSheet(sheet.id, position + 1)}>{ui("Move right")}</DropdownMenuItem>
+                <DropdownMenuItem disabled={!editable || !before} onSelect={() => { if (before) view.moveSheet(sheet.id, indexOf(before.id)) }}>{ui("Move left")}</DropdownMenuItem>
+                <DropdownMenuItem disabled={!editable || !after} onSelect={() => { if (after) view.moveSheet(sheet.id, indexOf(after.id)) }}>{ui("Move right")}</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )

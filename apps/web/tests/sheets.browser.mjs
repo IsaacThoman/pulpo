@@ -1093,6 +1093,30 @@ try {
     await gridFocused()
   })
 
+  await step('Move left on a tab skips the hidden sheet next to it', async () => {
+    const tabs = () => editor.getByRole('tab').evaluateAll((list) => list.map((tab) => tab.textContent.trim()))
+    const tab = (name) => editor.getByRole('tab').filter({ hasText: new RegExp(`^${name.replace(/[()]/g, '\\$&')}$`) })
+    const names = await tabs()
+    const [left, middle, right] = names.slice(-3)
+    await tab(middle).click({ button: 'right' })
+    await ui.locator('[data-sheet-tab-menu]').getByRole('menuitem', { name: 'Hide sheet', exact: true }).click()
+    await tab(middle).waitFor({ state: 'detached' })
+    await tab(right).click({ button: 'right' })
+    await ui.locator('[data-sheet-tab-menu]').getByRole('menuitem', { name: 'Move left', exact: true }).click()
+    await ui.waitForFunction(([first, second]) => {
+      const names = [...document.querySelectorAll('[data-replica="0"] [role="tab"]')].map((tab) => tab.textContent.trim())
+      return names.at(-2) === first && names.at(-1) === second
+    }, [right, left], { timeout: 5000 })
+    // With only a hidden sheet to its left, the first tab can't move left.
+    await tab(names[0]).click({ button: 'right' })
+    await ui.locator('[data-sheet-tab-menu]').getByRole('menuitem', { name: 'Hide sheet', exact: true }).click()
+    await tab(names[0]).waitFor({ state: 'detached' })
+    await tab(names[1]).click({ button: 'right' })
+    assert.equal(await ui.locator('[data-sheet-tab-menu]').getByRole('menuitem', { name: 'Move left', exact: true }).getAttribute('aria-disabled'), 'true')
+    await ui.keyboard.press('Escape')
+    await gridFocused()
+  })
+
   assert.deepEqual(uiErrors, [])
   await uiContext.close()
 
