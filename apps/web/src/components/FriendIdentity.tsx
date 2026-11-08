@@ -36,9 +36,6 @@ export function MutualFriends({ friends, className }: { friends: FriendProfile[]
   if (!friends.length) return null
   const label = `${friends.length === 1 ? ui('Mutual friend:') : ui('Mutual friends:')} ${friends.map((friend) => friend.displayName).join(', ')}`
   return <div className={cn('flex shrink-0 items-center gap-2', className)} role="group" aria-label={label}>
-    <span className="text-xs text-muted-foreground" aria-hidden>
-      {friends.length === 1 ? ui('1 mutual') : uit`${friends.length} mutuals`}
-    </span>
     <div className="flex -space-x-2">
       {friends.map((friend) => <Link
         key={friend.id}
@@ -56,5 +53,8 @@ export function MutualFriends({ friends, className }: { friends: FriendProfile[]
         />
       </Link>)}
     </div>
+    <span className="text-xs text-muted-foreground" aria-hidden>
+      {friends.length === 1 ? ui('1 mutual') : uit`${friends.length} mutuals`}
+    </span>
   </div>
 }
