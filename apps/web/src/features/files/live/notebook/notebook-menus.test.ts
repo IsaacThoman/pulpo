@@ -4,8 +4,9 @@ import { clearNotebookClipboard, NotebookController } from '@pulpo/client-core/o
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
-import { normalizeEntries, type MenuEntry } from '../chrome/menu'
+import { normalizeEntries, shortcutGroupsFromMenus, type MenuEntry } from '../chrome/menu'
 import { cellContextEntries, notebookMenus, viewOptionEntries, type NotebookMenuContext } from './notebook-menus'
+import { notebookShortcutGroups } from './notebook-shortcuts'
 
 const cleanup: Array<() => void> = []
 afterEach(() => {
@@ -159,6 +160,17 @@ describe('notebook menus', () => {
     expect(context.insertHeading).toHaveBeenCalledWith(3)
     item(menu(context, 'insert'), 'duplicate').onSelect()
     expect(controller.getState().cells).toHaveLength(3)
+  })
+
+  it('keeps the Edit menu\'s command-mode letters out of the shortcuts dialog\'s Edit mode keys', async () => {
+    const { context } = await open([code('a', 'x')])
+    const groups = shortcutGroupsFromMenus(notebookMenus(context), notebookShortcutGroups())
+    const labels = (title: string) => groups.find((group) => group.title === title)?.items.map((entry) => entry.label) ?? []
+    // X, C, and V type letters while a cell is being edited: they are listed under the Edit menu's own name.
+    expect(labels('Edit mode')).not.toContain('Cut cells')
+    expect(labels('Edit mode')).not.toContain('Copy cells')
+    expect(labels('Edit')).toEqual(expect.arrayContaining(['Cut cells', 'Copy cells', 'Paste cells below']))
+    expect(labels('Edit mode')).toContain('Split the cell at the cursor')
   })
 
   it('groups collapsing in View, and keeps the toolbar\'s View options flat', async () => {

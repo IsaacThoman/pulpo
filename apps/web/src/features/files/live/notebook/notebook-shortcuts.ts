@@ -37,7 +37,8 @@ export function notebookShortcutGroups(): ShortcutGroup[] {
       ],
     },
     {
-      id: 'edit',
+      // Not 'edit': the Edit menu's rows (Cut cells X, Copy cells C…, command-mode keys) would join this group.
+      id: 'edit-mode',
       title: ui("Edit mode"),
       items: [
         { label: ui("Stop editing (command mode)"), keys: [{ key: 'Escape' }, mod('Enter')] },
