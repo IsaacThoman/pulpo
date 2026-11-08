@@ -94,6 +94,27 @@ describe('combined Friends and Pool page', () => {
     expect(writes()[0]).toEqual(['/api/friends/requests', { method: 'POST', body: { userId: 'Carol' } }])
   })
 
+  it('shows two suggestions above the Pool and Friends until the viewer expands them', async () => {
+    friends.suggestions = ['Carol', 'Dana', 'Erin'].map((name) => ({ profile: profile(name), mutualFriends: [profile('Alice')] }))
+    await mount()
+
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((node) => node.textContent)
+    expect(headings.indexOf('People you may know')).toBeLessThan(headings.indexOf('Pool'))
+    expect(headings.indexOf('People you may know')).toBeLessThan(headings.indexOf('Friends'))
+    const suggestionRegion = screen.getByRole('heading', { name: 'People you may know' }).closest('section')!
+    expect(within(suggestionRegion).getByText('3')).toBeTruthy()
+    expect(within(suggestionRegion).getAllByRole('button', { name: 'Add friend' })).toHaveLength(2)
+    expect(within(suggestionRegion).queryByText('Erin')).toBeNull()
+
+    fireEvent.click(within(suggestionRegion).getByRole('button', { name: 'Show 1 more' }))
+    expect(within(suggestionRegion).getByText('Erin')).toBeTruthy()
+    expect(within(suggestionRegion).getAllByRole('button', { name: 'Add friend' })).toHaveLength(3)
+    expect(within(suggestionRegion).getByRole('button', { name: 'Show less' }).getAttribute('aria-expanded')).toBe('true')
+
+    fireEvent.click(within(suggestionRegion).getByRole('button', { name: 'Show less' }))
+    expect(within(suggestionRegion).queryByText('Erin')).toBeNull()
+  })
+
   it('shows the Pool\'s combined shared usage and the viewer\'s own 5-hour shared limit', async () => {
     summary.pool!.sharedUsage = {
       total: { remainingPercentage: 64, availableBarPercentage: 64, pendingMicros: 0, pendingBarPercentage: 0, resetsAt: '2026-10-05T00:00:00.000Z' },
