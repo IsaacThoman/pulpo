@@ -600,7 +600,6 @@ export class SlideCanvas {
     if (!slide) return
     const shape = this.controller.shape(slide, key)
     if (!shape) return
-    this.pendingCaret = caret
     if (shape.table) {
       const cell = event?.target instanceof Element ? event.target.closest('td') : null
       const table = this.controller.shape(slide, key)!.table!
@@ -628,6 +627,8 @@ export class SlideCanvas {
       if (caret) this.editor.caretAt(caret, caret.word)
       return
     }
+    // Set only when an editor opens, so a click that edits nothing (a group) leaves no stale caret.
+    this.pendingCaret = caret
     this.controller.setState({ shapes: [target.shape], editing: target })
   }
 
@@ -635,6 +636,8 @@ export class SlideCanvas {
   // Inline text editing
 
   private startEditing(shapeKey: string, rowKey?: string, columnKey?: string): void {
+    const caret = this.pendingCaret
+    this.pendingCaret = undefined
     const slide = this.controller.state.slide
     if (!slide) return
     const fragment = rowKey && columnKey ? cellFragment(this.controller.doc, slide, shapeKey, rowKey, columnKey) : shapeFragment(this.controller.doc, slide, shapeKey, LOCAL_ORIGIN)
@@ -678,8 +681,6 @@ export class SlideCanvas {
       },
     })
     this.controller.activeEditor = this.editor
-    const caret = this.pendingCaret
-    this.pendingCaret = undefined
     const editing = this.controller.state.editing
     const reveal = editing ? this.controller.takeReveal(editing) : undefined
     // A match find shows keeps focus in the find bar unless it asks for the text.

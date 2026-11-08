@@ -239,6 +239,26 @@ try {
     await shape.click()
     assert.equal((await state(page)).editing, undefined)
     assert.deepEqual((await state(page)).shapes, [rect])
+    // A double click that opens no text (on a group) leaves no caret behind for the next editor.
+    const [group, textBox] = await page.evaluate(() => {
+      const controller = window.harness.controllers.a
+      const first = controller.insertShape('rect', { x: 300_000, y: 3_000_000, cx: 900_000, cy: 600_000 })
+      const second = controller.insertShape('ellipse', { x: 300_000, y: 4_000_000, cx: 900_000, cy: 600_000 })
+      controller.selectShapes([first, second])
+      controller.group()
+      const grouped = controller.state.shapes[0]
+      const text = controller.insertTextBox({ x: 6_000_000, y: 3_000_000, cx: 3_000_000, cy: 600_000 })
+      return [grouped, text]
+    })
+    await page.locator('.pp-canvas .pp-text-editor').waitFor()
+    await page.keyboard.type('abc')
+    await page.keyboard.press('Escape')
+    await page.locator(`.pp-canvas-slide [data-key="${group}"]`).dblclick({ position: { x: 20, y: 20 } })
+    assert.equal((await state(page)).editing, undefined)
+    await page.evaluate((key) => window.harness.controllers.a.setState({ shapes: [key], editing: { slide: window.harness.controllers.a.state.slide, shape: key } }), textBox)
+    await page.locator('.pp-canvas .pp-text-editor').waitFor()
+    await page.keyboard.type('Z')
+    assert.equal(await page.evaluate((key) => window.harness.controllers.a.shape(window.harness.controllers.a.state.slide, key).text.content[0].content[0].text, textBox), 'abcZ', 'typing goes on at the end')
     assert.deepEqual(errors, [])
     await page.close()
   })
