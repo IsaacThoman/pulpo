@@ -3466,7 +3466,7 @@ const esUi: Record<string, string> = {
   "Close (Esc)": "Cerrar (Esc)",
   "A collaborator's change removed the header you were editing.": "Un cambio de un colaborador quitó el encabezado que estabas editando.",
   "A collaborator's change removed the footer you were editing.": "Un cambio de un colaborador quitó el pie de página que estabas editando.",
-  "On until you press Esc":"Activo hasta que pulses Esc",
+  "On until you press Esc": "Activo hasta que pulses Esc",
   "Double-click to keep it on": "Haz doble clic para mantenerlo activo",
   "1 open comment": "1 comentario abierto",
   "{{count}} open comments": "{{count}} comentarios abiertos",

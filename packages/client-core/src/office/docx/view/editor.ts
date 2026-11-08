@@ -2021,17 +2021,24 @@ export class DocxEditor {
     const editable = link.closest('[contenteditable]')?.getAttribute('contenteditable') === 'true'
     if (editable && !event.metaKey && !event.ctrlKey) return
     const href = link.getAttribute('href') ?? ''
-    if (href.startsWith('#')) {
-      // Bookmark links render their name as written; a pasted "#a%20b" may mean "a b".
-      const name = href.slice(1)
-      let decoded = name
-      try { decoded = decodeURIComponent(name) } catch { /* a stray '%' is part of the name */ }
-      if (!this.goToBookmark(name) && decoded !== name) this.goToBookmark(decoded)
-    } else if (/^(https?:|mailto:)/i.test(href)) window.open(href, '_blank', 'noopener,noreferrer')
+    // Bookmark links render their name as written.
+    if (href.startsWith('#')) this.goToBookmark(href.slice(1))
+    else if (/^(https?:|mailto:)/i.test(href)) window.open(href, '_blank', 'noopener,noreferrer')
   }
 
-  /** Moves to a bookmark by name; false when the document has none by that name. */
+  /**
+   * Moves to a bookmark by name, as written or, when the document has none by that name, decoded
+   * (a pasted link's "a%20b" may mean "a b"; a stray '%' is part of the name and never throws);
+   * false when it has neither.
+   */
   goToBookmark(name: string): boolean {
+    if (this.goToBookmarkNamed(name)) return true
+    let decoded = name
+    try { decoded = decodeURIComponent(name) } catch { /* not encoded */ }
+    return decoded !== name && this.goToBookmarkNamed(decoded)
+  }
+
+  private goToBookmarkNamed(name: string): boolean {
     const targets = [{ view: this.activeView, storyId: this.editingStory ?? undefined }]
     if (this.storyEditor) targets.push({ view: this.view, storyId: undefined })
     for (const { view, storyId } of targets) {

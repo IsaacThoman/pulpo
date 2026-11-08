@@ -1,15 +1,18 @@
 // @vitest-environment jsdom
+import { Fragment, Slice } from '@tiptap/pm/model'
 import type { EditorView } from '@tiptap/pm/view'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Awareness } from 'y-protocols/awareness'
 import * as Y from 'yjs'
 import { OoxmlPackage, resolveTarget } from '../../ooxml/package.js'
 import { docxCodec } from '../codec.js'
+import { copyRelatedParts, receiveCopiedParts } from '../copy-relationships.js'
 import { elementToJml } from '../jsonml.js'
 import { MemoryAssetStore } from '../memory-assets.js'
 import { fragmentToNode, readDocxModel, storyFragmentName } from '../model.js'
 import { CONTENT_TYPE, REL } from '../names.js'
 import { relationshipReferences } from '../relationships.js'
+import { withoutForeignParts } from './clipboard.js'
 import { DocxEditor } from './editor.js'
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
@@ -274,6 +277,24 @@ describe('exporting removed headers and footers', () => {
     expect(pkg.text(two!.slice('header:'.length))).toContain('Chapter Two header')
   })
 
+  it('keeps the header a section break pasted from another document brings with it', async () => {
+    const { doc: source } = await editorFor(await chapters())
+    // The first chapter's paragraph ends its section, which shows that chapter's header.
+    const first = readDocxModel(source).body.firstChild!
+    expect(String(first.attrs.sectPr)).toContain('headerReference')
+    const copied = await copyRelatedParts(new Slice(Fragment.from(first), 0, 0), source, assets)
+    const slice = withoutForeignParts(await receiveCopiedParts(copied, assets))
+    expect(String(slice.content.firstChild!.attrs.sectPr)).toContain('headerReference')
+    const { editor, doc } = await editorFor()
+    editor.view.dispatch(editor.view.state.tr.replaceWith(0, editor.view.state.doc.content.size, [...slice.content.content, editor.view.state.schema.node('paragraph')]))
+    const pkg = await exported(doc)
+    assertResolved(pkg)
+    const reference = /<w:headerReference\b[^>]*r:id="([^"]+)"/.exec(pkg.text('word/document.xml') ?? '')?.[1]
+    const rel = pkg.relationships('word/document.xml').find((entry) => entry.id === reference)
+    expect(rel?.type).toBe(REL.header)
+    expect(pkg.text(resolveTarget('word/document.xml', rel!.target))).toContain('Chapter One header')
+  })
+
   it('still saves an unedited file with its headers byte for byte', async () => {
     const bytes = await chapters()
     const { doc } = await editorFor(bytes)
@@ -349,5 +370,28 @@ describe('collaborators writing the same section', () => {
     assertResolved(pkg)
     expect(pkg.text('word/document.xml')).not.toContain('headerReference')
     expect(pkg.text('word/document.xml')).toContain('w:orient="landscape"')
+  })
+
+  it('leaves out a header the file came with when its removal raced a collaborator\'s section write', async () => {
+    const { editor: ada, doc: adaDoc } = await editorFor(await chapters(), 'Ada', 2000)
+    const { editor: grace, doc: graceDoc } = await collaborator(adaDoc, 'Grace', 1000)
+    const [one, two] = storyIds(adaDoc, 'header')
+    // Grace removes the second chapter's header while Ada turns that section; Ada's section
+    // properties, still with its reference, win. The original file still has its relationship.
+    expect(grace.removeHeaderFooterStory(two!)).toBe(true)
+    expect(ada.setPageSetup({ orientation: 'landscape' })).toBe(true)
+    sync(adaDoc, graceDoc)
+    expect(String(graceDoc.getMap('docx').get('sectPr'))).toContain('headerReference')
+    // The editor shows the second chapter inheriting the first one's header; the file must too.
+    grace.goTo(grace.view.state.doc.content.size - 1)
+    expect(grace.headerFooter()).toMatchObject({ section: 1, header: { default: one } })
+    for (const doc of [adaDoc, graceDoc]) {
+      const pkg = await exported(doc)
+      assertResolved(pkg)
+      expect(zipText(pkg)).not.toContain('Chapter Two header')
+      expect(pkg.has(two!.slice('header:'.length))).toBe(false)
+      expect(pkg.text('word/header1.xml')).toContain('Chapter One header')
+      expect(pkg.text('word/document.xml')).toContain('w:orient="landscape"')
+    }
   })
 })

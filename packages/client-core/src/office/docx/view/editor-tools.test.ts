@@ -825,6 +825,12 @@ describe('counts, links, case, paragraph and table formats', () => {
     expect(link.getAttribute('href')).toBe('#50%off')
     link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true, metaKey: true }))
     expect(editor.view.state.selection.$from.index(0)).toBe(1)
+    // Hosts pass a link's name as written (the phone's read-only tap too); an encoded one is tried decoded.
+    setBody(editor.view, [p('Alpha'), schema.node('paragraph', null, [schema.node('bookmark', { edge: 'start', id: '2', name: 'a b' }), schema.text('Spaced')])], 1)
+    expect(editor.goToBookmark('a%20b')).toBe(true)
+    expect(editor.view.state.selection.$from.index(0)).toBe(1)
+    expect(editor.goToBookmark('50%off')).toBe(false)
+    expect(editor.goToBookmark('%E0%A4%A')).toBe(false)
   })
 
   it('changes case across runs, keeping formatting and deletions', () => {

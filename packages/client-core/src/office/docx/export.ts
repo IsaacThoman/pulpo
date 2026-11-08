@@ -3,7 +3,7 @@ import type { Mark, Node as ProseMirrorNode } from '@tiptap/pm/model'
 import { TableMap } from '@tiptap/pm/tables'
 import { strToU8 } from 'fflate'
 import { LiveFormatError, type LiveAssetStore } from '../live-format.js'
-import { CONTENT_TYPES_PATH, OoxmlPackage, parseXml, relativeTarget, relationshipsPathFor, resolveTarget } from '../ooxml/package.js'
+import { CONTENT_TYPES_PATH, OoxmlPackage, parseXml, relativeTarget, relationshipsPathFor, resolveTarget, type Relationship } from '../ooxml/package.js'
 import { elementToJml, jmlAttr, jmlChild, jmlElements, jmlToXml, openTag, unpackJml, walkJml, type JmlElement, type JmlNode } from './jsonml.js'
 import { mimeTypeForPart } from './import.js'
 import { parseJson, type CommentMeta, type DocxModel, type PartRef, type StoryMeta, emptyMaps } from './model.js'
@@ -1052,9 +1052,10 @@ function removeUnusedHeaderFooters(pkg: OoxmlPackage, model: DocxModel, main: st
 }
 
 /**
- * Header and footer references to relationships the main part does not have, which Word refuses
- * as unreadable content. A collaborator's section properties can win over another's removal of
- * a header (last writer wins) and keep its reference after its relationship went.
+ * Header and footer references to relationships the main part does not have (or that the model
+ * removed), which Word refuses as unreadable content or would show again. A collaborator's
+ * section properties can win over another's removal of a header (last writer wins) and keep its
+ * reference after its relationship went.
  */
 function withoutDanglingReferences(xml: string, relIds: ReadonlySet<string>): string {
   return xml.replace(/<w:(?:header|footer)Reference\b[^>]*?\/>/g, (element) => {
@@ -1091,7 +1092,11 @@ export async function exportDocx(model: DocxModel, assets: LiveAssetStore, exten
     pkg.ensureDefaultContentType(imageExtension, mimeType)
     renameMediaTarget(pkg, path, finalPath)
   }
-  const relIds = new Set(pkg.relationships(main).map((rel) => rel.id))
+  // A header or footer of the original file that the model took away is gone even though the
+  // file still has its relationship: a collaborator's section write can keep its reference past
+  // the removal. (Relationships export allocated, as for a pasted section's header, stay.)
+  const removed = (rel: Relationship) => (rel.type === REL.header || rel.type === REL.footer) && packaged.has(rel.id) && !model.maps.rels.has(rel.id)
+  const relIds = new Set(pkg.relationships(main).filter((rel) => !removed(rel)).map((rel) => rel.id))
   let mainChanged = false
   for (const [path, xml] of state.generated) {
     const fingerprint = model.maps.docx.get(`fingerprint:${path}`)

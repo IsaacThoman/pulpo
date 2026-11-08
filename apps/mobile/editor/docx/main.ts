@@ -204,7 +204,8 @@ function start(message: Extract<HostMessage, { type: 'init' }>): void {
     if (!href) return
     event.preventDefault()
     event.stopPropagation()
-    if (href.startsWith('#')) editor.goToBookmark(decodeURIComponent(href.slice(1)))
+    // The bookmark name as written (the editor tries it decoded too): decoding here would throw on a stray '%'.
+    if (href.startsWith('#')) editor.goToBookmark(href.slice(1))
     else if (/^(https?:|mailto:)/i.test(href)) post({ type: 'link', session, href })
   }, { capture: true, signal: listeners.signal })
   open = { session, doc, awareness, editor, assets, listeners }
