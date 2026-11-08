@@ -22,7 +22,8 @@ function AvatarImage({ size, uri, name, isDark }: { size: number; uri: string | 
   const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?';
   return <View pointerEvents="none" accessible accessibilityLabel={`${name}'s profile picture`} style={[styles.avatar, { width: size, height: size }]}>
     {(!loaded || failed) && <View style={[styles.avatar, StyleSheet.absoluteFill, { borderRadius: size / 2, backgroundColor: isDark ? '#d4d4d8' : '#3f3f46' }]}>
-      <Text style={{ color: isDark ? '#18181b' : '#f4f4f5', fontSize: size / 3, fontWeight: '600' }}>{initials}</Text>
+      {/* Sized to its fixed circle; the label carries the name. */}
+      <Text allowFontScaling={false} style={{ color: isDark ? '#18181b' : '#f4f4f5', fontSize: size / 3, fontWeight: '600' }}>{initials}</Text>
     </View>}
     {uri && !failed ? <Image source={{ uri, headers: nativeAuthorizationHeaders(uri) }} contentFit="contain" autoplay useAppleWebpCodec={false} style={StyleSheet.absoluteFill} onLoad={() => setLoaded(true)} onError={() => setFailed(true)} /> : null}
   </View>;

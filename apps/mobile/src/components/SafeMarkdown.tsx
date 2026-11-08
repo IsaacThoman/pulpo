@@ -2,9 +2,11 @@ import { memo, useMemo } from 'react'
 import { Linking, Platform, StyleSheet, type TextStyle, type ViewStyle } from 'react-native'
 import { EnrichedMarkdownText, type MarkdownStyle } from 'react-native-enriched-markdown'
 import { openFilesLinkInApp } from '../features/files/links'
+import { usePrototypeStore } from '../mockup5/src/store/prototypeStore'
+import { TEXT_SIZE_SCALE } from '../store/preferenceMapping'
 import { useSessionStore } from '../store/session'
 import { useAppTheme } from '../theme'
-import { beginsWithMarkdownHeading, linkMarkdownImages, normalizeMathDelimiters, unwrapBoxedMinipages } from './markdown'
+import { beginsWithMarkdownHeading, linkMarkdownImages, normalizeMathDelimiters, scaleMarkdownStyle, unwrapBoxedMinipages } from './markdown'
 
 export const SafeMarkdown = memo(function SafeMarkdown({
   children,
@@ -28,6 +30,8 @@ export const SafeMarkdown = memo(function SafeMarkdown({
 }) {
   const theme = useAppTheme()
   const instanceUrl = useSessionStore((state) => state.instanceUrl)
+  // The in-app Text size preference applies to messages as it does to the rest of the chat.
+  const textScale = usePrototypeStore((state) => TEXT_SIZE_SCALE[state.preferences.textSize] ?? 1)
   // Android's native inline math is a single bitmap span with no horizontal
   // gesture handling. Move wide formulas into the scrollable display-math view.
   const markdown = useMemo(() => normalizeMathDelimiters(linkMarkdownImages(unwrapBoxedMinipages(children)), {
@@ -36,7 +40,7 @@ export const SafeMarkdown = memo(function SafeMarkdown({
   const markdownStyle = useMemo<MarkdownStyle>(() => {
     const fontSize = compact ? 13 : 16
     const lineHeight = compact ? 19 : 24
-    return {
+    return scaleMarkdownStyle({
       paragraph: large
         ? { color: theme.text, fontSize: 18, lineHeight: 25, fontWeight: '600', marginBottom: 10 }
         : { color: compact ? theme.secondary : theme.text, fontSize, lineHeight, marginBottom: compact ? 6 : 10 },
@@ -58,8 +62,8 @@ export const SafeMarkdown = memo(function SafeMarkdown({
       taskList: { checkedColor: theme.blue, borderColor: theme.secondary, checkmarkColor: theme.background, checkedTextColor: theme.secondary },
       math: { color: theme.text, backgroundColor: theme.fill, padding: 12, marginTop: 8, marginBottom: 12, textAlign: 'center' },
       inlineMath: { color: theme.text },
-    }
-  }, [compact, large, theme])
+    }, textScale)
+  }, [compact, large, textScale, theme])
 
   if (!markdown) return null
   return <EnrichedMarkdownText

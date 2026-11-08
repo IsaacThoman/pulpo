@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { beginsWithMarkdownHeading, normalizeMathDelimiters } from './markdown'
+import { beginsWithMarkdownHeading, normalizeMathDelimiters, scaleMarkdownStyle } from './markdown'
 
 describe('beginsWithMarkdownHeading', () => {
   it('recognizes a leading heading after blank lines', () => {
@@ -97,5 +97,20 @@ $$\begin{aligned} a &= b \\ c &= d \end{aligned}$$
     expect(normalized).toContain('`' + String.raw`\(code\) and $$code$$` + '`')
     expect(normalized).toContain(String.raw`\[code block\]`)
     expect(normalized).toContain('$$\n' + String.raw`x_1` + '\n$$')
+  })
+})
+
+describe('scaleMarkdownStyle', () => {
+  it('enlarges text sizes and their spacing but leaves colors and padding alone', () => {
+    const style = { paragraph: { color: '#000', fontSize: 16, lineHeight: 24, marginBottom: 10 }, codeBlock: { fontSize: 14, padding: 12, borderWidth: 1 } }
+    expect(scaleMarkdownStyle(style, 1.25)).toEqual({
+      paragraph: { color: '#000', fontSize: 20, lineHeight: 30, marginBottom: 12.5 },
+      codeBlock: { fontSize: 17.5, padding: 12, borderWidth: 1 },
+    })
+  })
+
+  it('returns the same style at the default size', () => {
+    const style = { paragraph: { fontSize: 16 } }
+    expect(scaleMarkdownStyle(style, 1)).toBe(style)
   })
 })

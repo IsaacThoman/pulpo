@@ -25,8 +25,8 @@ export function FriendsSettingsEntry({ onPress }: { onPress: () => void }) {
       <HStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}>
         <Image systemName="person.2" size={17} modifiers={[frame({ width: 22, height: 22 })]} />
         <VStack alignment="leading" spacing={2}>
-          <Text modifiers={[font({ textStyle: 'subheadline', weight: 'medium' }), lineLimit(1)]}>Friends</Text>
-          <Text modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary'), lineLimit(1)]}>{detail}</Text>
+          <Text modifiers={[font({ textStyle: 'subheadline', weight: 'medium' }), lineLimit(2)]}>Friends</Text>
+          <Text modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary'), lineLimit(3)]}>{detail}</Text>
         </VStack>
         <Spacer />
         {count > 0 ? <Text modifiers={[font({ textStyle: 'footnote', weight: 'semibold' }), foregroundStyle('white'), padding({ horizontal: 7, vertical: 2 }), background(theme.red, shapes.capsule())]}>{badge}</Text> : null}
