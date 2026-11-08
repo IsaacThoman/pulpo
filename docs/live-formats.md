@@ -113,7 +113,7 @@ All Office engines use the same package checks. The reader walks classic ZIP and
   - line numbers, folding, bracket matching, and find and replace;
   - wrapping, indentation (detected from the file, changeable), and undo/redo of this session's own edits;
   - read-only mode, and colors from the host's CSS variables in light and dark.
-- **On the web**, `TextDocEditor` adds a toolbar and a status bar (cursor, language, encoding, line breaks). HTML files get a live preview in the opaque-origin sandbox.
+- **On the web**, `TextDocEditor` adds a menu bar (File with Print, Edit, View with wrapping and the HTML preview, Help), a toolbar, and a status bar (cursor, language, encoding, line breaks). HTML files get a live preview in the opaque-origin sandbox. Cmd/Ctrl+P prints the text, monospaced, from a hidden frame; Cmd/Ctrl+/ comments lines out as in VS Code (in plain text, where there is no comment syntax, it opens the shortcuts list). See [Editor chrome](./files.md#editor-chrome).
 - **On mobile**, the same core runs in `editor/text/` (about 1.4 MB with every grammar inlined), with undo, redo, indent, outdent, find, and wrap on the keyboard bar.
 
 ## The notebook format
@@ -184,6 +184,7 @@ Fields the editor doesn't model are kept: unknown keys anywhere, metadata, and w
   - Markdown cells render with the app's Markdown component until edited.
   - Outputs use the notebook viewer's renderers; HTML and JavaScript run only in the sandbox.
   - The toolbar has undo and redo, insert, cut, copy, paste, move, delete, cell type, split, merge, hide outputs, clear outputs, and the keyboard shortcuts.
+  - A menu bar (File with Print, Edit with undo and the cell clipboard, Help) and the shared keys of [Editor chrome](./files.md#editor-chrome): Cmd/Ctrl+P prints the notebook as the viewer renders it (`renderNotebookHtml`, in a frame without scripts), and Cmd/Ctrl+/ lists command and edit mode keys (in a cell it comments lines out instead).
   - Cells can be dragged to move them, and collaborators' cursors and cells show.
   - **Run with agent** opens a new chat with the notebook attached for direct edits and asks the agent to run it.
 - **On mobile** (`editor/notebook`). The same core is drawn for phones:
