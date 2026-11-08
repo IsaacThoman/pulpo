@@ -2163,8 +2163,13 @@ export class DocxEditor {
     this.activeView.dispatch(this.activeView.state.tr.setMeta(findKey, { query: '', options: {}, matches: [], current: -1 }))
   }
 
-  /** Words, characters, and paragraphs of the active story, or of the selection in it (zero when nothing is selected). */
-  wordCount(scope: 'document' | 'selection' = 'document'): WordCount {
+  /**
+   * Words, characters, and paragraphs of the active story, or of the selection in it (zero when
+   * nothing is selected). `body` counts the main text even while a header, footer, or note is
+   * open, as Word's and Docs' word counts do.
+   */
+  wordCount(scope: 'document' | 'selection' | 'body' = 'document'): WordCount {
+    if (scope === 'body') return wordCount(this.view.state.doc)
     const { state } = this.activeView
     return scope === 'selection' ? selectionWordCount(state) : wordCount(state.doc)
   }

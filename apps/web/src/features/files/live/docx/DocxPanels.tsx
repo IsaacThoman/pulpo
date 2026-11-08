@@ -383,8 +383,8 @@ export function StatusBar({ editor, state, showWordCount, onWordCount, zoom }: {
 }) {
   // Both walk the document or measure the layout, so they refresh a few times a second while typing.
   const page = useEditorValue(editor, () => editor.currentPage(), 150)
-  // An empty selection counts no words.
-  const words = useEditorValue(editor, () => ({ document: editor.wordCount('document').words, selected: editor.wordCount('selection').words || null }), 250)
+  // The main text's words (also while a header or note is open); an empty selection counts none.
+  const words = useEditorValue(editor, () => ({ document: editor.wordCount('body').words, selected: editor.wordCount('selection').words || null }), 250)
   const print = state.layout === 'print'
   return (
     <footer className="@container flex h-8 shrink-0 items-center gap-3 overflow-hidden border-t bg-background px-3 text-xs whitespace-nowrap text-muted-foreground" data-docx-status>

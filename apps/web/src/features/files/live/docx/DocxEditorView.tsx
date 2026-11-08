@@ -135,7 +135,8 @@ export function DocxEditorView({ className, onEditor, toolbarSlot, fileMenu, onS
     setWordCount({
       open: true,
       counts: {
-        document: editor.wordCount('document'),
+        // The main text, also while a header, footer, or note is open, as in Word.
+        document: editor.wordCount('body'),
         selection: selected ? editor.wordCount('selection') : null,
         pages: editor.layout === 'print' ? editor.pages : undefined,
       },

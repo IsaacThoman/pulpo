@@ -767,6 +767,18 @@ describe('counts, links, case, paragraph and table formats', () => {
     expect(editor.currentPage()).toEqual({ index: 1, count: 1, number: 1 })
   })
 
+  it('counts the body while a header is open', () => {
+    setBody(editor.view, [p('One two three'), p('Four five')], 1)
+    editor.setLayout('print')
+    editor.relayout()
+    editor.addHeaderFooter('header')
+    type(storyView()!, 'Running head')
+    expect(editor.wordCount()).toMatchObject({ words: 2, paragraphs: 1 })
+    expect(editor.wordCount('body')).toMatchObject({ words: 5, paragraphs: 2 })
+    editor.closeStoryEditor()
+    expect(editor.wordCount('body')).toEqual(editor.wordCount())
+  })
+
   it('edits and removes the whole link at the cursor, across markers inside it', async () => {
     const link = schema.mark('link', { v: packJml(['w:hyperlink', { 'r:id': 'rId99', 'w:history': '1' }, '\u0000']), href: 'https://a.example' })
     const style = schema.mark('rStyle', { v: packJml(['w:rStyle', { 'w:val': 'Hyperlink' }]) })
