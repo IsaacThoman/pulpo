@@ -1785,18 +1785,26 @@ try {
       window.keyLog = []
       window.addEventListener('keydown', (event) => { if ((event.ctrlKey || event.metaKey) && !['Control', 'Meta'].includes(event.key)) window.keyLog.push({ key: event.key, prevented: event.defaultPrevented }) })
     })
-    let dialogs = 0
-    const dismiss = async (dialog) => { dialogs++; await dialog.dismiss() }
+    let nativeDialogs = 0
+    const dismiss = async (dialog) => { nativeDialogs++; await dialog.dismiss() }
     page.on('dialog', dismiss)
     for (const key of ['b', 'j', 'e', 'k', '\\', ',']) {
-      await page.keyboard.press(`${mod}+${key}`)
-      await page.keyboard.press(`${mod}+${key}`)
+      for (let press = 0; press < 2; press++) {
+        await page.keyboard.press(`${mod}+${key}`)
+        if (key !== 'k') continue
+        // Ctrl/Cmd+K opens the link dialog (not a native prompt); Escape gives the keyboard back.
+        const dialog = page.getByRole('dialog')
+        await dialog.waitFor()
+        await page.keyboard.press('Escape')
+        await dialog.waitFor({ state: 'detached' })
+        await page.waitForFunction(() => document.activeElement?.closest('.docx-flow') !== null)
+      }
     }
     page.off('dialog', dismiss)
     const log = await page.evaluate(() => window.keyLog)
     assert.equal(log.length, 12)
     assert.deepEqual(log.filter((entry) => !entry.prevented), [])
-    assert.equal(dialogs, 2)
+    assert.equal(nativeDialogs, 0)
     // Ctrl/Cmd+J twice justifies, then goes back to left, as in Word.
     assert.equal(await page.evaluate(() => window.harness.editors[0].state().alignment), 'left')
   })
