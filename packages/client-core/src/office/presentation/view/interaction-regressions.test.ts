@@ -376,6 +376,14 @@ describe('presentation interaction regressions', () => {
     const relId = /<a:hlinkClick[^>]*r:id="(rId\d+)"/.exec(formatted.xml)?.[1]
     expect(relId).toBeDefined()
     expect(formatted.rels).toMatch(new RegExp(`Id="${relId}"[^>]*Target="https://example.com"[^>]*TargetMode="External"`))
+    // Reading the file back gives the same marks.
+    const reopened = new Y.Doc()
+    await presentationCodec.importFile(reopened, formatted.bytes, { name: 'deck.pptx', assets })
+    const reread = readSnapshot(reopened).slides[0]!.shapes[0]!.text!.content![0]!.content![0]!.marks!
+    expect(reread.map((mark) => mark.type).sort()).toEqual(['baseline', 'highlight', 'link', 'sz'])
+    expect(reread.find((mark) => mark.type === 'link')!.attrs).toMatchObject({ target: 'https://example.com', external: true })
+    expect(reread.find((mark) => mark.type === 'baseline')!.attrs).toEqual({ value: 30000 })
+    reopened.destroy()
     if (fidelityAvailable()) {
       const file = writeScratch(scratchDir(), 'text-commands.pptx', formatted.bytes)
       const read = JSON.parse(runPython('import sys, json\nfrom pptx import Presentation\nr=Presentation(sys.argv[1]).slides[0].shapes[0].text_frame.paragraphs[0].runs[0]\nprint(json.dumps([r.font.size.pt, r.hyperlink.address, r.font._rPr.get("baseline")]))', file))
