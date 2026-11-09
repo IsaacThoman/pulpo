@@ -258,7 +258,7 @@ describe('own profile', () => {
     expect(screen.queryByText('Mutual friends')).toBeNull()
   })
 
-  it('shows who can see your usage as an icon after your handle, with details on hover', async () => {
+  it('shows who can see your usage as an icon after your handle, on hover', async () => {
     useAuth.setState((state) => ({ user: state.user && { ...state.user, usageVisibility: 'public' } }))
     mount('/morgan')
 
@@ -271,7 +271,7 @@ describe('own profile', () => {
 
     fireEvent.focus(icon)
     const tooltip = await screen.findByRole('tooltip')
-    expect(tooltip.textContent).toContain('Anyone signed in can see your usage stats and requests.')
+    expect(tooltip.textContent).toContain('Usage visible to everyone')
 
     fireEvent.click(icon)
     expect(mocks.openSettings).toHaveBeenCalledWith('profile')

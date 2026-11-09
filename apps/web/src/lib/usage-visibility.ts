@@ -25,12 +25,3 @@ export function usageVisibilitySummary(value: UsageVisibility): string {
     case 'public': return ui("Usage visible to everyone")
   }
 }
-
-/** Who can see the signed-in user's usage, spelled out for the profile's visibility tooltip. */
-export function usageVisibilityDetail(value: UsageVisibility): string {
-  switch (value) {
-    case 'pool': return ui("Only members of your Pool can see your usage stats and requests.")
-    case 'friends': return ui("Your friends and Pool members can see your usage stats and requests.")
-    case 'public': return ui("Anyone signed in can see your usage stats and requests.")
-  }
-}

@@ -14,7 +14,7 @@ import { ApiError, apiRequest } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { queryClient } from '@/lib/query-client'
 import { profileUsageQueryKey } from '@/lib/usage-query'
-import { resolvedUsageVisibility, usageVisibilityDetail, usageVisibilitySummary } from '@/lib/usage-visibility'
+import { resolvedUsageVisibility, usageVisibilitySummary } from '@/lib/usage-visibility'
 import { useAuth } from '@/stores/auth'
 import { ui } from '@/i18n/ui'
 
@@ -41,10 +41,7 @@ function OwnProfileHeading() {
             <VisibilityIcon className="size-3" aria-hidden />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="right" className="max-w-64">
-          <p className="font-medium">{usageVisibilitySummary(visibility)}</p>
-          <p className="mt-0.5 opacity-80">{usageVisibilityDetail(visibility)} {ui("Click to change.")}</p>
-        </TooltipContent>
+        <TooltipContent side="right">{usageVisibilitySummary(visibility)}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   )
