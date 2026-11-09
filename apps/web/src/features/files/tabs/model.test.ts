@@ -9,6 +9,7 @@ import {
   duplicateTab,
   followLocation,
   initialTabs,
+  keepOneTab,
   locationNodeId,
   MAX_TABS,
   moveTab,
@@ -78,14 +79,23 @@ describe('closing tabs', () => {
     expect(data.activeId).toBe('a')
   })
 
-  it('closes the last tab too, and starts again with one when Files is next shown', () => {
-    const data = closeTab(tabs(['a']), 'a')
-    expect(data.tabs).toHaveLength(0)
+  it('keeps one tab in the main view, going back to My files after the last closes', () => {
+    const data = keepOneTab(closeTab(tabs(['a']), 'a'))
+    expect(data.tabs.map((tab) => tab.location)).toEqual([ROOT_LOCATION])
+    expect(data.activeId).toBe(data.tabs[0]!.id)
+    // What was closed can still be reopened, where it was.
     expect(data.closed).toHaveLength(1)
+    expect(reopenClosed(data).tabs.map((tab) => tab.id)).toEqual(['a', data.tabs[0]!.id])
+    // With tabs left, nothing changes.
+    const some = tabs(['a', 'b'])
+    expect(keepOneTab(some)).toBe(some)
+  })
+
+  it('starts again with a tab when Files shows after every tab closed', () => {
+    const data = closeTab(tabs(['a']), 'a')
     const back = followLocation(data, ROOT_LOCATION, 'enter')
     expect(back.tabs.map((tab) => tab.location)).toEqual([ROOT_LOCATION])
     expect(back.activeId).toBe(back.tabs[0]!.id)
-    // What was closed can still be reopened, where it was.
     expect(reopenClosed(back).tabs.map((tab) => tab.id)).toEqual(['a', back.tabs[0]!.id])
   })
 
@@ -280,5 +290,14 @@ describe('closing what can be closed', () => {
     const lone = initialTabs()
     expect(canCloseTab(lone, lone.activeId)).toBe(true)
     expect(canCloseTab(tabs(['a', 'b']), 'missing')).toBe(false)
+  })
+
+  it('has nothing to close in a lone My files tab where one tab always stays', () => {
+    const lone = initialTabs()
+    expect(canCloseTab(lone, lone.activeId, true)).toBe(false)
+    // Another lone tab goes back to My files, and a pinned My files tab comes unpinned.
+    expect(canCloseTab(tabs(['a']), 'a', true)).toBe(true)
+    expect(canCloseTab(setPinned(lone, lone.activeId, true), lone.activeId, true)).toBe(true)
+    expect(canCloseTab(tabs(['a', 'b']), 'missing', true)).toBe(false)
   })
 })

@@ -80,7 +80,6 @@ function show(path = '/files', client = seededClient(), browserHistory = false) 
               <Route path="files/d/:docId" element={<View name="Document view" />} />
             </Route>
             <Route path="c/:chatId" element={<p>{'Chat view'}</p>} />
-            <Route index element={<p>{'New chat view'}</p>} />
           </Routes>
           <Probe />
         </TooltipProvider>
@@ -181,18 +180,41 @@ describe('Files tabs', () => {
     await waitFor(() => expect(tabNames()).toEqual(['My files']))
     expect(location()).toBe('/files')
 
-    // The last tab closes too, leaving Files for a new chat.
-    fireEvent.click(selectedTab().querySelector('[data-tab-close]')!)
-    await waitFor(() => expect(location()).toBe('/'))
-    expect(screen.getByText('New chat view')).toBeTruthy()
-    expect(useFilesTabs.getState().tabs).toHaveLength(0)
+    // A lone My files tab has nothing to close.
+    expect(selectedTab().querySelector('[data-tab-close]')).toBeNull()
 
-    // Files comes back with a new tab, and the closed ones can be reopened.
-    fireEvent.click(screen.getByRole('link', { name: 'Files button' }))
+    // Another last tab goes back to My files when it closes, staying in Files.
+    fireEvent.click(screen.getByRole('link', { name: 'open archive' }))
+    await waitFor(() => expect(tabNames()).toEqual(['Archive 2025']))
+    fireEvent.click(selectedTab().querySelector('[data-tab-close]')!)
     await waitFor(() => expect(tabNames()).toEqual(['My files']))
+    expect(location()).toBe('/files')
+    expect(screen.getByText('My files view')).toBeTruthy()
+
+    // The closed tab can be reopened.
     fireEvent.contextMenu(selectedTab())
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Reopen closed tab' }))
-    await waitFor(() => expect(tabNames()).toEqual(['My files', 'My files']))
+    await waitFor(() => expect(tabNames()).toEqual(['Archive 2025', 'My files']))
+  })
+
+  it('has nothing to close in a lone My files tab, unless it is pinned', async () => {
+    show('/files')
+    const lone = await screen.findByRole('tab', { name: 'My files' })
+    fireEvent.keyDown(lone, { key: 'Delete' })
+    pointer(lone, 'pointerdown', 10, 1)
+    fireEvent(lone, new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }))
+    expect(useFilesTabs.getState().closed).toHaveLength(0)
+    fireEvent.contextMenu(lone)
+    expect((await screen.findByRole('menuitem', { name: 'Close tab' })).hasAttribute('data-disabled')).toBe(true)
+
+    // A pinned one closes, and an unpinned My files tab takes its place.
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Pin tab' }))
+    await waitFor(() => expect(tab('My files').hasAttribute('data-pinned')).toBe(true))
+    fireEvent.contextMenu(tab('My files'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Close tab' }))
+    await waitFor(() => expect(useFilesTabs.getState().closed).toHaveLength(1))
+    expect(tab('My files').hasAttribute('data-pinned')).toBe(false)
+    expect(location()).toBe('/files')
   })
 
   it('moves focus with the arrow keys, shows tabs with Enter, closes with Delete, and moves tabs with Alt+arrows', async () => {
@@ -407,7 +429,7 @@ describe('Files tabs', () => {
     expect(selectedTab()).toBe(screen.getAllByRole('tab')[0])
   })
 
-  it('keeps the desktop menu while moving around Files, and leaves Files when its last tab closes', async () => {
+  it('keeps the desktop menu while moving around Files, and closes the window when there is no tab to close', async () => {
     let command: ((name: string) => void) | null = null
     const setFilesTabsMenu = vi.fn(async () => undefined)
     const closeWindow = vi.fn(async () => undefined)
@@ -429,12 +451,10 @@ describe('Files tabs', () => {
     await waitFor(() => expect(location()).toBe('/files'))
     expect(setFilesTabsMenu.mock.calls).toEqual([[true]])
 
-    // Cmd/Ctrl+W on the last tab goes to a new chat, as closing it does.
+    // Cmd/Ctrl+W on a lone My files tab closes the window, as in browsers.
     act(() => command!('files-close-tab'))
-    await waitFor(() => expect(location()).toBe('/'))
-    expect(closeWindow).not.toHaveBeenCalled()
-    expect(useFilesTabs.getState().closed).toHaveLength(1)
-    expect(setFilesTabsMenu).toHaveBeenLastCalledWith(false)
+    expect(closeWindow).toHaveBeenCalledTimes(1)
+    expect(useFilesTabs.getState().closed).toHaveLength(0)
   })
 
   it('names every tab, even pinned and crowded ones that show only an icon', async () => {
@@ -526,10 +546,10 @@ describe('Files tabs', () => {
     expect(tabNames()).toEqual(['Projects'])
   })
 
-  it('keeps the strip while the view shows, even with no tabs left, so the view does not jump', async () => {
+  it('keeps the strip while the view shows, even with no tabs, so the view does not jump', async () => {
     show(`/files/f/${PROJECTS}`)
     await screen.findByRole('tablist', { name: 'Files tabs' })
-    // The moment between the last tab closing and the new chat replacing the view.
+    // As tabs stored with every one closed are before the location gets its tab.
     act(() => useFilesTabs.setState({ tabs: [], activeId: '' }))
     expect(screen.getByText('Folder view')).toBeTruthy()
     expect(screen.getByRole('tablist', { name: 'Files tabs' })).toBeTruthy()

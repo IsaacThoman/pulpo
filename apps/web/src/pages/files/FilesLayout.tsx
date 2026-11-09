@@ -21,8 +21,8 @@ export function FilesLayout() {
   // With Files turned off only the trash is left here, which needs no tabs.
   const filesEnabled = useAuth((state) => state.filesEnabled)
   const owner = useFilesTabsOwner(filesLocationOf(location.pathname))
-  // The strip stays while the view does, even with no tabs: closing the last one leaves Files, and
-  // the view below must not jump up for the moment before the new chat takes its place.
+  // The strip shows once the tabs are this account's, even before the location has a tab (tabs
+  // stored with every one closed get one on the way in), so the view below does not jump.
   const ready = useFilesTabs((state) => Boolean(owner) && state.owner === owner)
   const activeId = useFilesTabs((state) => state.activeId)
   const actions = useFilesTabActions()
