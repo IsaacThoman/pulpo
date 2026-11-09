@@ -64,7 +64,7 @@ function ScrollToBottomButton({ visible, onClick }: { visible: boolean; onClick:
         data-testid="chat-scroll-to-bottom"
         onClick={onClick}
         className={cn(
-          'rounded-full bg-card shadow-md transition-[opacity,scale,translate] duration-200 motion-reduce:transition-none dark:bg-card',
+          'rounded-full bg-card shadow-md transition-[opacity,scale,translate,background-color] duration-200 motion-reduce:transition-none hover:bg-accent dark:bg-card dark:hover:bg-accent',
           visible ? 'pointer-events-auto opacity-100' : 'translate-y-3 scale-60 opacity-0',
         )}
       >
