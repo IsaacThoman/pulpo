@@ -1523,6 +1523,8 @@ export const billingOrders = pgTable('billing_orders', {
   refundedAmountCents: integer('refunded_amount_cents').notNull().default(0),
   requestedCreditCents: integer('requested_credit_cents'),
   grantedCreditMicros: bigint('granted_credit_micros', { mode: 'number' }).notNull().default(0),
+  // An App Store introductory free trial. These count toward the admin's daily trial limit.
+  freeTrial: boolean('free_trial').notNull().default(false),
   paidAt: timestamp('paid_at', { withTimezone: true }),
   refundedAt: timestamp('refunded_at', { withTimezone: true }),
   ...timestamps,
@@ -1532,6 +1534,7 @@ export const billingOrders = pgTable('billing_orders', {
   index('billing_orders_payment_intent_idx').on(table.stripePaymentIntentId),
   index('billing_orders_charge_idx').on(table.stripeChargeId),
   index('billing_orders_paid_idx').on(table.paidAt),
+  index('billing_orders_free_trial_idx').on(table.paidAt).where(sql`${table.freeTrial}`),
   check('billing_orders_provider_check', sql`${table.provider} in ('stripe', 'app_store')`),
 ])
 

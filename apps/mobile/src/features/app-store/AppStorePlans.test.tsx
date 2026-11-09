@@ -49,7 +49,7 @@ const products = [
   { id: 'pulpoFat', displayName: 'Pulpo Fat', description: 'The highest usage limits', displayPrice: '$29.99', periodUnit: 'month', periodValue: 1 },
 ]
 const plans: UsageLimitsPlans = { storageLimitBytes: { baby: 2 * 1024 ** 3, eight: 10 * 1024 ** 3, fat: 25 * 1024 ** 3 }, fatSharedWeeklyPercent: 50 }
-const baby: UsageLimits = { plan: 'baby', subscription: null, plans, weekly: null, fiveHour: null, custom: [] }
+const baby: UsageLimits = { plan: 'baby', subscription: null, plans, appStoreFreeTrial: false, weekly: null, fiveHour: null, custom: [] }
 const fatSubscriber: UsageLimits = {
   ...baby,
   plan: 'fat',
@@ -150,6 +150,45 @@ describe('App Store plan cards', () => {
     mount()
     fireEvent.click(await screen.findByText('Try Again'))
     expect(await screen.findByText('Choose Eight')).toBeTruthy()
+  })
+
+  describe('with a free trial', () => {
+    const trialOffer = { ...offer, eightTrial: 'pulpoEightTrial' }
+    const trialProduct = { ...products[0]!, id: 'pulpoEightTrial', freeTrial: { periodUnit: 'week', periodValue: 1 } }
+    const mountTrial = (limits: UsageLimits = { ...baby, appStoreFreeTrial: true }) => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <AppStorePlans kit={mocks.kit as never} offer={trialOffer} limits={limits} onChanged={onChanged} />
+    </QueryClientProvider>)
+
+    it('sells Eight as the free-trial product with its terms while the server offers trials', async () => {
+      mocks.kit.products.mockResolvedValue([...products, trialProduct])
+      mocks.kit.purchase.mockResolvedValue({ status: 'purchased', transactionId: '12', originalTransactionId: '12', productId: 'pulpoEightTrial', signedTransaction: 'jws' })
+      mountTrial()
+      // The price stays the most prominent pricing element.
+      expect(await screen.findByLabelText('$9.99/month')).toBeTruthy()
+      expect(screen.getByText('1 week free, then $9.99/month')).toBeTruthy()
+      expect(screen.getByText(/free trial becomes a paid subscription when it ends unless canceled at least 24 hours before then/)).toBeTruthy()
+      expect(screen.getByText('Choose Fat')).toBeTruthy()
+      expect(mocks.kit.products).toHaveBeenCalledWith(['pulpoEight', 'pulpoFat', 'pulpoEightTrial'])
+      fireEvent.click(screen.getByText('Try 1 week free').closest('button')!)
+      await waitFor(() => expect(mocks.alert).toHaveBeenCalledWith('Your free trial has started', 'Enjoy Pulpo Eight free for 1 week.'))
+      expect(mocks.kit.purchase).toHaveBeenCalledWith('pulpoEightTrial', expect.any(String))
+    })
+
+    it('sells the regular Eight product once the server stops offering trials', async () => {
+      mocks.kit.products.mockResolvedValue([...products, trialProduct])
+      mocks.kit.purchase.mockResolvedValue({ status: 'purchased', transactionId: '13', originalTransactionId: '13', productId: 'pulpoEight', signedTransaction: 'jws' })
+      mountTrial(baby)
+      fireEvent.click((await screen.findByText('Choose Eight')).closest('button')!)
+      await waitFor(() => expect(mocks.kit.purchase).toHaveBeenCalledWith('pulpoEight', expect.any(String)))
+      expect(document.body.textContent).not.toMatch(/free/i)
+    })
+
+    it('sells the regular Eight product to an Apple Account StoreKit says has used its trial', async () => {
+      mocks.kit.products.mockResolvedValue([...products, { ...trialProduct, freeTrial: null }])
+      mountTrial()
+      expect(await screen.findByText('Choose Eight')).toBeTruthy()
+      expect(document.body.textContent).not.toMatch(/free/i)
+    })
   })
 
   it('keeps the plans clear of a side safe area, like iPhone Duo’s vertical bar', async () => {

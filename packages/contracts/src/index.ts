@@ -230,7 +230,12 @@ export const mobileConfigSchema = z.object({
     appStoreBilling: z.object({
       environments: z.array(z.enum(['production', 'sandbox'])).min(1),
       /** App Store product IDs for each plan. Servers that omit them offer no purchases. */
-      products: z.object({ eight: z.string().min(1), fat: z.string().min(1) }).optional(),
+      products: z.object({
+        eight: z.string().min(1),
+        fat: z.string().min(1),
+        /** An Eight product with a free-trial introductory offer, sold when `/api/billing/limits` says so. */
+        eightTrial: z.string().min(1).optional(),
+      }).optional(),
     }).nullable().optional().default(null),
   }),
 })
@@ -292,6 +297,11 @@ export const usageLimitsSchema = z.object({
   subscription: usageLimitsSubscriptionSchema.nullable().optional().default(null),
   /** Null from servers older than App Store billing. */
   plans: usageLimitsPlansSchema.nullable().optional().default(null),
+  /**
+   * Whether the iOS app sells Eight as the free-trial product (`products.eightTrial`) right now: the
+   * account has never subscribed and today's trial limit has room. False from older servers.
+   */
+  appStoreFreeTrial: z.boolean().optional().default(false),
   weekly: usageLimitPercentagesSchema.nullable(),
   fiveHour: usageLimitPercentagesSchema.nullable(),
   /** Admin-defined allowances the account spends first. */

@@ -2,6 +2,8 @@ import {
   APIException,
   AppStoreServerAPIClient,
   Environment,
+  OfferDiscountType,
+  OfferType,
   Order,
   ProductType,
   SignedDataVerifier,
@@ -61,9 +63,14 @@ export function acceptedAppStoreEnvironments(config: Config = getConfig()): AppS
 
 export function appStorePlanForProduct(productId: string | null | undefined, config: Config = getConfig()): PaidBillingPlan | null {
   if (!productId) return null
-  if (productId === config.APP_STORE_EIGHT_PRODUCT_ID) return 'eight'
+  if (productId === config.APP_STORE_EIGHT_PRODUCT_ID || productId === config.APP_STORE_EIGHT_TRIAL_PRODUCT_ID) return 'eight'
   if (productId === config.APP_STORE_FAT_PRODUCT_ID) return 'fat'
   return null
+}
+
+/** Whether Apple gave this transaction's period away as an introductory free trial. */
+export function isAppStoreFreeTrial(transaction: Pick<AppStoreTransaction, 'offerType' | 'offerDiscountType'>): boolean {
+  return transaction.offerType === OfferType.INTRODUCTORY_OFFER && transaction.offerDiscountType === OfferDiscountType.FREE_TRIAL
 }
 
 function decodeSegment(jws: string): Record<string, unknown> | null {

@@ -70,7 +70,8 @@ public final class PulpoStoreKitModule: Module {
 
     AsyncFunction("products") { (ids: [String]) async throws -> [[String: Any]] in
       let products = try await Product.products(for: ids)
-      return products.map { product in
+      var values: [[String: Any]] = []
+      for product in products {
         var value: [String: Any] = [
           "id": product.id,
           "displayName": product.displayName,
@@ -78,13 +79,24 @@ public final class PulpoStoreKitModule: Module {
           "displayPrice": product.displayPrice,
           "periodUnit": NSNull(),
           "periodValue": NSNull(),
+          "freeTrial": NSNull(),
         ]
-        if let period = product.subscription?.subscriptionPeriod {
-          value["periodUnit"] = Self.unitName(period.unit)
-          value["periodValue"] = period.value
+        if let subscription = product.subscription {
+          value["periodUnit"] = Self.unitName(subscription.subscriptionPeriod.unit)
+          value["periodValue"] = subscription.subscriptionPeriod.value
+          // Apple applies the introductory offer to any purchase by an eligible Apple Account,
+          // so the app only describes a free trial this account would actually get.
+          if let offer = subscription.introductoryOffer, offer.paymentMode == .freeTrial,
+            await subscription.isEligibleForIntroOffer
+          {
+            var trial: [String: Any] = ["periodUnit": NSNull(), "periodValue": offer.period.value]
+            if let unit = Self.unitName(offer.period.unit) { trial["periodUnit"] = unit }
+            value["freeTrial"] = trial
+          }
         }
-        return value
+        values.append(value)
       }
+      return values
     }
 
     AsyncFunction("purchase") { (productId: String, appAccountToken: String) async throws -> [String: Any] in

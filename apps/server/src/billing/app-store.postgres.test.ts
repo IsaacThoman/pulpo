@@ -26,6 +26,7 @@ vi.mock('../config.js', async (original) => {
     APP_STORE_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nunused\n-----END PRIVATE KEY-----',
     APP_STORE_EIGHT_PRODUCT_ID: 'pulpoEight',
     APP_STORE_FAT_PRODUCT_ID: 'pulpoFat',
+    APP_STORE_EIGHT_TRIAL_PRODUCT_ID: 'pulpoEightTrial',
     APP_STORE_ENVIRONMENTS: apple.environments,
   })
   return {
@@ -55,6 +56,7 @@ vi.mock('./app-store.js', async (original) => {
 
 const { appStoreAccountToken, processAppStoreNotification, reconcileAppStoreBilling, revokeSandboxSubscriptions, syncAppStorePurchase } = await import('./app-store-sync.js')
 const { getBillingEntitlements } = await import('./entitlements.js')
+const { appStoreFreeTrialOffered, appStoreTrialsStarted } = await import('./app-store-trials.js')
 
 const enabled = process.env.PULPO_BUDGET_POSTGRES_TEST === '1'
 if (enabled && new URL(process.env.DATABASE_URL ?? 'http://invalid').pathname !== '/pulpo_budget_test') {
@@ -193,9 +195,42 @@ describe.skipIf(!enabled)('App Store billing in PostgreSQL', () => {
     })
     expect(await ordersFor(original)).toMatchObject([{
       provider: 'app_store', status: 'paid', billingReason: 'subscription_create', currency: 'usd',
-      netAmountCents: 999, totalAmountCents: 999, processingFeeAmountCents: 150, grantedCreditMicros: 0,
+      netAmountCents: 999, totalAmountCents: 999, processingFeeAmountCents: 150, grantedCreditMicros: 0, freeTrial: false,
     }])
     expect((await getBillingEntitlements(userId)).plan).toBe('eight')
+  })
+
+  it('grants Eight for a free trial, counts it toward the daily trial limit, and bills the renewal after it', async () => {
+    const before = await appStoreTrialsStarted()
+    const trialsPerDay = before + 1
+    expect(await appStoreFreeTrialOffered({ trialsPerDay, hasSubscriptionHistory: false })).toBe(true)
+
+    const userId = await newUser()
+    const token = await appStoreAccountToken(userId)
+    const original = transactionId()
+    const trial = transaction({
+      original, product: 'pulpoEightTrial', token, price: 0, expiresDate: Date.now() + 7 * DAY,
+      offerType: 1, offerDiscountType: 'FREE_TRIAL', offerPeriod: 'P1W',
+    })
+    await syncAppStorePurchase(userId, appleReports(1, trial))
+
+    expect(await subscription(original)).toMatchObject({ status: 'active', plan: 'eight', paidPlan: 'eight', providerProductId: 'pulpoEightTrial' })
+    expect((await getBillingEntitlements(userId)).plan).toBe('eight')
+    expect(await ordersFor(original)).toMatchObject([{ freeTrial: true, netAmountCents: 0, processingFeeAmountCents: 0, billingReason: 'subscription_create' }])
+    expect(await appStoreTrialsStarted()).toBe(before + 1)
+    expect(await appStoreFreeTrialOffered({ trialsPerDay, hasSubscriptionHistory: false })).toBe(false)
+    expect(await appStoreFreeTrialOffered({ trialsPerDay: trialsPerDay + 1, hasSubscriptionHistory: false })).toBe(true)
+    // Trials started more than 24 hours ago no longer count.
+    expect(await appStoreTrialsStarted(db, new Date(Date.now() + DAY + 60_000))).toBe(0)
+
+    const paid = transaction({ id: transactionId(), original, product: 'pulpoEightTrial', token, purchaseDate: Date.now() + 7 * DAY, expiresDate: Date.now() + 37 * DAY })
+    const { payload } = notification({ type: 'DID_RENEW', transaction: paid })
+    await processAppStoreNotification(payload)
+    expect(await ordersFor(original)).toMatchObject([
+      { freeTrial: true, netAmountCents: 0 },
+      { freeTrial: false, netAmountCents: 999, billingReason: 'subscription_cycle' },
+    ])
+    expect(await appStoreTrialsStarted()).toBe(before + 1)
   })
 
   it('keeps a subscription with the account that bought it', async () => {

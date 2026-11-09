@@ -36,6 +36,7 @@ const limits: UsageLimits = {
   plan: 'eight',
   subscription: null,
   plans: null,
+  appStoreFreeTrial: false,
   weekly: { remainingPercentage: 60, availableBarPercentage: 60, pendingBarPercentage: 10, resetsAt: '2026-11-09T00:00:00.000Z' },
   fiveHour: { remainingPercentage: 25, availableBarPercentage: 25, pendingBarPercentage: 0, resetsAt: null },
   custom: [],

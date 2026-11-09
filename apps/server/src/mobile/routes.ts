@@ -93,7 +93,13 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
           ? {
             environments: acceptedAppStoreEnvironments(config),
             ...(config.APP_STORE_EIGHT_PRODUCT_ID && config.APP_STORE_FAT_PRODUCT_ID
-              ? { products: { eight: config.APP_STORE_EIGHT_PRODUCT_ID, fat: config.APP_STORE_FAT_PRODUCT_ID } }
+              ? {
+                products: {
+                  eight: config.APP_STORE_EIGHT_PRODUCT_ID,
+                  fat: config.APP_STORE_FAT_PRODUCT_ID,
+                  ...(config.APP_STORE_EIGHT_TRIAL_PRODUCT_ID ? { eightTrial: config.APP_STORE_EIGHT_TRIAL_PRODUCT_ID } : {}),
+                },
+              }
               : {}),
           }
           : null,

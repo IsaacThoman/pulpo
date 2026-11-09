@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { periodLabel, planBenefits, planButtonColors, planStorageLabel, priceLabel, subscriptionStatusLabel } from './format'
+import { freeTrialLabel, freeTrialTermsLabel, periodLabel, planBenefits, planButtonColors, planStorageLabel, priceLabel, subscriptionStatusLabel } from './format'
 
 const subscription = {
   provider: 'app_store' as const, plan: 'eight' as const, pendingPlan: null, status: 'active' as const,
@@ -7,6 +7,14 @@ const subscription = {
 }
 
 describe('App Store formatting', () => {
+  it('describes a free trial and what it costs afterwards', () => {
+    expect(freeTrialLabel({ periodUnit: 'week', periodValue: 1 })).toBe('1 week')
+    expect(freeTrialLabel({ periodUnit: 'day', periodValue: 3 })).toBe('3 days')
+    expect(freeTrialTermsLabel({ displayPrice: '$9.99', periodUnit: 'month', periodValue: 1, freeTrial: { periodUnit: 'week', periodValue: 2 } }))
+      .toBe('2 weeks free, then $9.99/month')
+    expect(freeTrialTermsLabel({ displayPrice: '$9.99', periodUnit: 'month', periodValue: 1, freeTrial: null })).toBeNull()
+  })
+
   it('shows the App Store’s price with its period', () => {
     expect(priceLabel({ displayPrice: '$9.99', periodUnit: 'month', periodValue: 1 })).toBe('$9.99/month')
     expect(priceLabel({ displayPrice: '29,99 €', periodUnit: 'month', periodValue: 3 })).toBe('29,99 € every 3 months')

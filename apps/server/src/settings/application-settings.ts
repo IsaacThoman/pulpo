@@ -39,6 +39,7 @@ export const DEFAULT_EIGHT_FIVE_HOUR_LIMIT_MICROS = 1_000_000
 export const DEFAULT_FAT_FIVE_HOUR_LIMIT_MICROS = 1_500_000
 export const DEFAULT_FAT_SHARED_WEEKLY_PERCENT = 50
 export const DEFAULT_SHARED_FIVE_HOUR_LIMIT_MICROS = 1_000_000
+export const MAX_APP_STORE_TRIALS_PER_DAY = 10_000
 
 export const usageTierSchema = z.object({
   /** Lifetime payments before tax, net of refunds. */
@@ -79,6 +80,8 @@ export const billingSettingsSchema = z.object({
   eightStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_EIGHT_STORAGE_LIMIT_BYTES),
   fatStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_FAT_STORAGE_LIMIT_BYTES),
   // Invalid stored tiers fall back to the defaults without resetting other billing settings.
+  // App Store free trials that may start in any 24 hours. Zero offers none.
+  appStoreTrialsPerDay: z.number().int().min(0).max(MAX_APP_STORE_TRIALS_PER_DAY).default(0),
   usageTiers: usageTiersSchema.catch(() => DEFAULT_USAGE_TIERS.map((tier) => ({ ...tier }))),
   lastReconciledAt: z.string().nullable().default(null),
   lastReconcileError: z.string().nullable().default(null),

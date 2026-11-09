@@ -10,10 +10,12 @@ import {
   appStoreVerificationError,
   claimedAppStoreEnvironment,
   createAppStoreGateway,
+  isAppStoreFreeTrial,
   statusFromTransaction,
   type AppStoreTransaction,
 } from './app-store.js'
 import { appStoreSubscriptionOwner } from './app-store-sync.js'
+import { appStoreFreeTrialOffered, appStoreTrialsConfigured } from './app-store-trials.js'
 import { APPLE_ROOT_CA_G3_PEM } from './apple-root-certificates.js'
 import { signAppStorePayload, testAppStoreRoot, testSigningKey } from './app-store-test-signing.js'
 
@@ -35,6 +37,7 @@ const appStoreEnvironment = {
   APP_STORE_FAT_PRODUCT_ID: 'pulpoFat',
 }
 const config = parseConfig({ ...stripeEnvironment, ...appStoreEnvironment })
+const trialConfig = parseConfig({ ...stripeEnvironment, ...appStoreEnvironment, APP_STORE_EIGHT_TRIAL_PRODUCT_ID: 'pulpoEightTrial' })
 const DAY = 86_400_000
 const now = Date.now()
 
@@ -92,6 +95,43 @@ describe('App Store configuration', () => {
     expect(appStorePlanForProduct('pulpoEight', config)).toBe('eight')
     expect(appStorePlanForProduct('pulpoFat', config)).toBe('fat')
     expect(appStorePlanForProduct('price_eight', config)).toBeNull()
+    expect(appStorePlanForProduct('pulpoEightTrial', config)).toBeNull()
+    expect(appStorePlanForProduct('pulpoEightTrial', trialConfig)).toBe('eight')
+  })
+
+  it('accepts a free-trial Eight product only alongside the rest of the App Store settings', () => {
+    expect(() => parseConfig({ ...stripeEnvironment, APP_STORE_EIGHT_TRIAL_PRODUCT_ID: 'pulpoEightTrial' }))
+      .toThrow('APP_STORE_EIGHT_TRIAL_PRODUCT_ID needs the rest of the App Store settings')
+    for (const product of ['pulpoEight', 'pulpoFat']) {
+      expect(() => parseConfig({ ...stripeEnvironment, ...appStoreEnvironment, APP_STORE_EIGHT_TRIAL_PRODUCT_ID: product }))
+        .toThrow('APP_STORE_EIGHT_TRIAL_PRODUCT_ID must differ from the Eight and Fat product IDs')
+    }
+  })
+})
+
+describe('App Store free trials', () => {
+  it('recognizes only introductory free trials', () => {
+    expect(isAppStoreFreeTrial({ offerType: 1, offerDiscountType: 'FREE_TRIAL' })).toBe(true)
+    expect(isAppStoreFreeTrial({ offerType: 1, offerDiscountType: 'PAY_AS_YOU_GO' })).toBe(false)
+    // Promotional and offer-code trials are handed out by other means and do not use the daily limit.
+    expect(isAppStoreFreeTrial({ offerType: 2, offerDiscountType: 'FREE_TRIAL' })).toBe(false)
+    expect(isAppStoreFreeTrial({ offerType: 3, offerDiscountType: 'FREE_TRIAL' })).toBe(false)
+    expect(isAppStoreFreeTrial({})).toBe(false)
+  })
+
+  it('offers trials only with the product set, a nonzero limit, and an account that never subscribed', async () => {
+    const started = (value: number) => ({ select: () => ({ from: () => ({ where: async () => [{ value }] }) }) }) as never
+    expect(appStoreTrialsConfigured(5, trialConfig)).toBe(true)
+    expect(appStoreTrialsConfigured(0, trialConfig)).toBe(false)
+    expect(appStoreTrialsConfigured(5, config)).toBe(false)
+    expect(appStoreTrialsConfigured(5, parseConfig({ ...appStoreEnvironment, APP_STORE_EIGHT_TRIAL_PRODUCT_ID: 'pulpoEightTrial' }))).toBe(false)
+    const offered = (input: { trialsPerDay: number; hasSubscriptionHistory?: boolean; startedToday: number }, from = trialConfig) =>
+      appStoreFreeTrialOffered({ trialsPerDay: input.trialsPerDay, hasSubscriptionHistory: input.hasSubscriptionHistory ?? false }, started(input.startedToday), from)
+    expect(await offered({ trialsPerDay: 5, startedToday: 4 })).toBe(true)
+    expect(await offered({ trialsPerDay: 5, startedToday: 5 })).toBe(false)
+    expect(await offered({ trialsPerDay: 5, startedToday: 0, hasSubscriptionHistory: true })).toBe(false)
+    expect(await offered({ trialsPerDay: 0, startedToday: 0 })).toBe(false)
+    expect(await offered({ trialsPerDay: 5, startedToday: 0 }, config)).toBe(false)
   })
 })
 

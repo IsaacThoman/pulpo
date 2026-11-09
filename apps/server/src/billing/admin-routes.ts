@@ -19,13 +19,14 @@ import { maintenanceQueue } from '../jobs.js'
 import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { publishStateChange } from '../responses/events.js'
-import { parseAuthSettings, parseBillingSettings, usageTiersSchema } from '../settings/application-settings.js'
+import { MAX_APP_STORE_TRIALS_PER_DAY, parseAuthSettings, parseBillingSettings, usageTiersSchema } from '../settings/application-settings.js'
 import { getBillingEntitlements, loadBillingEntitlements } from './entitlements.js'
 import { loadDailySpend } from './usage-tiers.js'
 import { planForPriceId, stripeMode } from './stripe.js'
 import { APP_STORE_COMMISSION_BASIS_POINTS, APP_STORE_PLAN_PRICE_CENTS, BILLING_PLANS, isPaidPlan, PLAN_MONTHLY_PRICE_CENTS } from './plans.js'
 import { acceptedAppStoreEnvironments, appStorePlanForProduct, getAppStoreGateway } from './app-store.js'
 import { revokeSandboxSubscriptions } from './app-store-sync.js'
+import { appStoreTrialsStarted } from './app-store-trials.js'
 import { CUSTOM_LIMIT_PERIODS, CUSTOM_LIMIT_TARGETS, customLimitResetAt, loadCustomLimitUserUsage, sharedCustomLimitMicros, type CustomLimit } from './custom-limits.js'
 import { refreshStorageLimit } from './storage-entitlements.js'
 import { mapWithConcurrency } from '../lib/concurrency.js'
@@ -42,6 +43,7 @@ const settingsPatchSchema = z.object({
   babyStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   eightStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   fatStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  appStoreTrialsPerDay: z.number().int().min(0).max(MAX_APP_STORE_TRIALS_PER_DAY).optional(),
   usageTiers: usageTiersSchema.optional(),
 })
 
@@ -238,7 +240,16 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
     return {
       range,
       stripe: { mode: stripeMode() },
-      appStore: acceptedAppStoreEnvironments().length ? { environments: acceptedAppStoreEnvironments() } : null,
+      appStore: acceptedAppStoreEnvironments().length
+        ? {
+          environments: acceptedAppStoreEnvironments(),
+          freeTrials: {
+            productConfigured: Boolean(getConfig().APP_STORE_EIGHT_TRIAL_PRODUCT_ID),
+            perDay: settings.appStoreTrialsPerDay,
+            startedLast24Hours: await appStoreTrialsStarted(),
+          },
+        }
+        : null,
       totals: {
         grossCollectedCents: Number(orderTotals?.grossCollectedCents ?? 0),
         salesBeforeTaxCents: Number(orderTotals?.salesBeforeTaxCents ?? 0),
