@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { FriendProfileDetail } from '@pulpo/contracts'
 import { ArrowLeft, ArrowRight, Check, Globe, Lock, UserRoundPlus, UsersRound, X } from 'lucide-react'
@@ -51,7 +51,17 @@ export function ProfilePage() {
   const ownUsername = useAuth((state) => state.user?.username)
   const viewerId = useAuth((state) => state.user?.id)
   const normalizedUsername = username.trim().toLowerCase()
-  const viewingOwnUsername = Boolean(ownUsername) && normalizedUsername === ownUsername?.toLowerCase()
+  // Renaming yourself on your profile keeps the old handle yours until the canonical redirect
+  // below has moved the URL off it, so the page never flashes as someone else's profile.
+  const [lastOwnUsername, setLastOwnUsername] = useState(ownUsername)
+  const [renamedFrom, setRenamedFrom] = useState<string>()
+  if (lastOwnUsername !== ownUsername) {
+    setLastOwnUsername(ownUsername)
+    if (lastOwnUsername && normalizedUsername === lastOwnUsername.toLowerCase()) setRenamedFrom(normalizedUsername)
+  }
+  if (renamedFrom && normalizedUsername !== renamedFrom) setRenamedFrom(undefined)
+  const viewingOwnUsername = Boolean(ownUsername)
+    && (normalizedUsername === ownUsername?.toLowerCase() || normalizedUsername === renamedFrom)
   const [actionPending, setActionPending] = useState(false)
   const [actionError, setActionError] = useState('')
   const profileQuery = useQuery({
@@ -73,14 +83,6 @@ export function ProfilePage() {
     const canonicalUsername = viewingOwnUsername ? ownUsername : detail?.profile.username
     if (canonicalUsername && canonicalUsername !== username) navigate(`/${canonicalUsername}`, { replace: true })
   }, [navigate, detail?.profile.username, ownUsername, username, viewingOwnUsername])
-
-  // Renaming yourself while on your profile follows you to the new handle.
-  const previousOwnUsername = useRef(ownUsername)
-  useEffect(() => {
-    const previous = previousOwnUsername.current
-    previousOwnUsername.current = ownUsername
-    if (previous && ownUsername && previous !== ownUsername && normalizedUsername === previous) navigate(`/${ownUsername}`, { replace: true })
-  }, [navigate, normalizedUsername, ownUsername])
 
   // Usage someone stopped sharing must not linger in the cache for a later visit.
   useEffect(() => {

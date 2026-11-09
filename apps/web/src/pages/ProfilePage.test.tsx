@@ -265,6 +265,26 @@ describe('own profile', () => {
     expect(mocks.openSettings).toHaveBeenCalledWith('profile')
   })
 
+  it('follows a rename to the new handle without ever showing the old one as someone else', async () => {
+    mount('/morgan')
+    await screen.findByRole('heading', { name: 'Top models' })
+    fireEvent.click(screen.getByRole('button', { name: '7d' }))
+    const sawOtherProfile = vi.fn()
+    const observer = new MutationObserver(() => {
+      if (screen.queryByText('Loading profile…') || screen.queryByRole('link', { name: 'Back to friends' })) sawOtherProfile()
+    })
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true })
+
+    useAuth.setState((state) => ({ user: state.user && { ...state.user, username: 'morgan2' } }))
+
+    await waitFor(() => expect(location.pathname).toBe('/morgan2'))
+    observer.disconnect()
+    expect(sawOtherProfile).not.toHaveBeenCalled()
+    expect(mocks.request).not.toHaveBeenCalledWith(expect.stringMatching(/^\/api\/profiles\//))
+    expect(screen.getByRole('button', { name: '7d' }).className).toContain('bg-accent')
+    expect(screen.getByRole('button', { name: '30d' }).className).not.toContain('bg-accent')
+  })
+
   it('moves a non-canonical own handle to the canonical URL', async () => {
     mount('/Morgan')
     await screen.findByRole('heading', { name: 'Morgan Viewer' })
