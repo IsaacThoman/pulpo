@@ -256,11 +256,41 @@ describe.each(['ios', 'android'])('Friends on %s', (platform) => {
     await waitFor(() => expect(writes()).toEqual([['/api/friends/requests', { method: 'POST', body: { userId: 'Gus' } }]]))
   })
 
+  it('dismisses a suggestion without sending a request', async () => {
+    friends.suggestions = [{ profile: profile('Gus'), mutualFriends: [profile('Alice')] }]
+    mount()
+    const dismiss = await screen.findByRole('button', { name: 'Dismiss Gus' })
+    // Dismiss sits just left of Add.
+    expect(dismiss.nextElementSibling?.textContent).toBe('Add')
+    friends.suggestions = []
+    fireEvent.click(dismiss)
+    await waitFor(() => expect(writes()).toEqual([['/api/friends/suggestions/dismissals', { method: 'POST', body: { userId: 'Gus' } }]]))
+    // The row goes away with the last suggestion, and a note says what dismissing did.
+    await screen.findByText("Gus won't be suggested for at least 30 days, and only if you gain mutual friends.")
+    expect(screen.queryByText('People you may know')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Dismiss Gus' })).toBeNull()
+  })
+
   it('opens a person’s profile from their row', async () => {
     mount()
     const bob = await screen.findByText('Bob')
     fireEvent.click(bob.closest('button')!)
     expect(mocks.push).toHaveBeenCalledWith('FriendProfile', { username: 'bob' })
+  })
+
+  it('opens a Pool member’s profile from their row', async () => {
+    mount()
+    await screen.findByText(/2 of 6 members/)
+    fireEvent.click(screen.getByText('Alice').closest('button')!)
+    expect(mocks.push).toHaveBeenCalledWith('FriendProfile', { username: 'alice' })
+  })
+
+  it('opens the profile of whoever sent a Pool invitation', async () => {
+    summary = { accountBalanceMicros: 0, pool: null, incomingInvitations: [{ id: 'invite', poolId: 'pool', inviter: profile('Zed'), invitee: profile('me'), memberCount: 3, createdAt: '2026-09-01T00:00:00.000Z' }] }
+    mount()
+    const zed = await screen.findByText('Zed')
+    fireEvent.click(zed.closest('button')!)
+    expect(mocks.push).toHaveBeenCalledWith('FriendProfile', { username: 'zed' })
   })
 
   it('cancels a sent request from the collapsed list', async () => {

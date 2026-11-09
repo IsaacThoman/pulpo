@@ -73,6 +73,7 @@ const icons: Record<string, ImageSourcePropType> = {
   'password': require('../../assets/material/password.xml'),
   'pending_actions': require('../../assets/material/pending_actions.xml'),
   'person': require('../../assets/material/person.xml'),
+  'person_add': require('../../assets/material/person_add.xml'),
   'photo_camera': require('../../assets/material/photo_camera.xml'),
   'photo_library': require('../../assets/material/photo_library.xml'),
   'picture_as_pdf': require('../../assets/material/picture_as_pdf.xml'),

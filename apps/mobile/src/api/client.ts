@@ -1,7 +1,7 @@
 import { protectTranscriptRequest } from '../data/transcriptResidency'
 import { nativeUsageErrorMessage } from '../features/usage-limits/errors'
 import { CLIENT_PLATFORM_HEADER, usageLimitsSchema } from '@pulpo/contracts'
-import type { NativeDevice, DeviceSessionList, MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, User } from '@pulpo/contracts'
+import type { NativeDevice, DeviceSessionList, MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, UsageVisibility, User } from '@pulpo/contracts'
 import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 
 export class ApiError extends Error {
@@ -163,7 +163,7 @@ export const mobileApi = {
   meWithToken: (token: string) => apiRequest<{ user: User }>('/api/mobile/me', { auth: false, headers: { authorization: `Bearer ${token}` } }),
   logoutWithToken: (token: string) => apiRequest<void>('/api/mobile/auth/logout', { method: 'POST', auth: false, headers: { authorization: `Bearer ${token}` } }),
   redeemInviteCode: (code: string) => apiRequest<{ user: User }>('/api/invite-codes/redeem', { method: 'POST', body: { code } }),
-  updateProfile: (patch: { name?: string; username?: string }) => apiRequest<{ user: User }>('/api/me', { method: 'PATCH', body: patch }),
+  updateProfile: (patch: { name?: string; username?: string; usageVisibility?: UsageVisibility }) => apiRequest<{ user: User }>('/api/me', { method: 'PATCH', body: patch }),
   /** `body` holds an optional `crop` field before the image `file` (see features/profile/avatar). */
   uploadAvatar: (body: FormData) => apiRequest<{ user: User }>('/api/me/avatar', { method: 'PUT', body, timeoutMs: 60_000 }),
   removeAvatar: () => apiRequest<{ user: User }>('/api/me/avatar', { method: 'DELETE' }),

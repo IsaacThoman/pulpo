@@ -13,18 +13,18 @@ import { ui } from '@/i18n/ui'
 import { LocaleBoundary } from '@/i18n/LocaleBoundary'
 import { ExternalRedirect } from '@/components/ExternalRedirect'
 import { DOCS_URL } from '@/lib/links'
+import { ownProfilePath } from '@/lib/profile'
 
 const AppLayout = lazy(() => import('@/components/layout/AppLayout').then((module) => ({ default: module.AppLayout })))
 
 const ChatPage = lazy(() => import('@/pages/ChatPage').then((module) => ({ default: module.ChatPage })))
-const UsageLayout = lazy(() => import('@/pages/usage/UsageLayout').then((module) => ({ default: module.UsageLayout })))
-const PersonalPage = lazy(() => import('@/pages/usage/PersonalPage').then((module) => ({ default: module.PersonalPage })))
 const LeaderboardPage = lazy(() => import('@/pages/usage/LeaderboardPage').then((module) => ({ default: module.LeaderboardPage })))
 const FriendsLeaderboardPage = lazy(() => import('@/pages/usage/LeaderboardPage').then((module) => ({ default: module.FriendsLeaderboardPage })))
-const FriendsLayout = lazy(() => import('@/pages/FriendsLayout').then((module) => ({ default: module.FriendsLayout })))
+const PeopleLayout = lazy(() => import('@/pages/PeopleLayout').then((module) => ({ default: module.PeopleLayout })))
 const FriendsPage = lazy(() => import('@/pages/FriendsPage').then((module) => ({ default: module.FriendsPage })))
-const FriendProfilePage = lazy(() => import('@/pages/FriendProfilePage').then((module) => ({ default: module.FriendProfilePage })))
+const ProfilePage = lazy(() => import('@/pages/ProfilePage').then((module) => ({ default: module.ProfilePage })))
 const ApiKeysPage = lazy(() => import('@/pages/ApiKeysPage').then((module) => ({ default: module.ApiKeysPage })))
+const FilesLayout = lazy(() => import('@/pages/files/FilesLayout').then((module) => ({ default: module.FilesLayout })))
 const FilesPage = lazy(() => import('@/pages/files/FilesPage').then((module) => ({ default: module.FilesPage })))
 const FileDocPage = lazy(() => import('@/pages/files/FileDocPage').then((module) => ({ default: module.FileDocPage })))
 const AttachmentPage = lazy(() => import('@/pages/AttachmentPage').then((module) => ({ default: module.AttachmentPage })))
@@ -62,12 +62,19 @@ const MobilePasskeyEnrollmentPage = lazy(() => import('@/pages/MobilePasskeyPage
 function RequireBilling({ children }: { children: ReactNode }) {
   const checkingSession = useAuth((state) => state.checkingSession)
   const billingEnabled = useAuth((state) => state.billingEnabled)
+  const username = useAuth((state) => state.user?.username)
 
   if (checkingSession) {
     return <div className="grid min-h-[50vh] place-items-center text-sm text-muted-foreground">{ui("Loading billing…")}</div>
   }
 
-  return billingEnabled ? children : <Navigate to="/usage" replace />
+  return billingEnabled ? children : <Navigate to={ownProfilePath(username)} replace />
+}
+
+/** Usage moved into the signed-in user's profile; `/usage` stays as a link to it. */
+function OwnProfileRedirect() {
+  const username = useAuth((state) => state.user?.username)
+  return <Navigate to={username ? `/${username}` : '/'} replace />
 }
 
 function LocalizedRoute({ children }: { children: ReactNode }) {
@@ -132,19 +139,22 @@ export default function App() {
           <Route element={<LocalizedRoute><AppLayout /></LocalizedRoute>}>
             <Route index element={<LocalizedRoute><ChatPage /></LocalizedRoute>} />
             <Route path="c/:chatId" element={<LocalizedRoute><ChatPage /></LocalizedRoute>} />
-            <Route path="usage" element={<LocalizedRoute><UsageLayout /></LocalizedRoute>}>
-              <Route index element={<LocalizedRoute><PersonalPage /></LocalizedRoute>} />
+            <Route path="usage">
+              <Route index element={<OwnProfileRedirect />} />
               <Route path="friends" element={<Navigate to="/friends/leaderboard" replace />} />
               <Route path="pool" element={<Navigate to="/friends/leaderboard?scope=pool" replace />} />
               <Route path="leaderboard" element={<Navigate to="/friends/leaderboard" replace />} />
             </Route>
-            <Route path="files" element={<LocalizedRoute><FilesPage /></LocalizedRoute>} />
-            <Route path="files/f/:folderId" element={<LocalizedRoute><FilesPage /></LocalizedRoute>} />
-            <Route path="files/trash" element={<LocalizedRoute><TrashFolderPage /></LocalizedRoute>} />
-            <Route path="files/trash/f/:folderId" element={<LocalizedRoute><TrashFolderPage /></LocalizedRoute>} />
-            <Route path="files/d/:docId" element={<LocalizedRoute><FileDocPage /></LocalizedRoute>} />
+            {/* Files views share a strip of tabs, which stays mounted while moving between them. */}
+            <Route element={<LocalizedRoute><FilesLayout /></LocalizedRoute>}>
+              <Route path="files" element={<LocalizedRoute><FilesPage /></LocalizedRoute>} />
+              <Route path="files/f/:folderId" element={<LocalizedRoute><FilesPage /></LocalizedRoute>} />
+              <Route path="files/trash" element={<LocalizedRoute><TrashFolderPage /></LocalizedRoute>} />
+              <Route path="files/trash/f/:folderId" element={<LocalizedRoute><TrashFolderPage /></LocalizedRoute>} />
+              <Route path="files/d/:docId" element={<LocalizedRoute><FileDocPage /></LocalizedRoute>} />
+            </Route>
             <Route path="attachments/:attachmentId" element={<LocalizedRoute><AttachmentPage /></LocalizedRoute>} />
-            <Route path="friends" element={<LocalizedRoute><FriendsLayout /></LocalizedRoute>}>
+            <Route path="friends" element={<LocalizedRoute><PeopleLayout /></LocalizedRoute>}>
               <Route index element={<LocalizedRoute><FriendsPage /></LocalizedRoute>} />
               <Route path="leaderboard" element={<LocalizedRoute><FriendsLeaderboardPage /></LocalizedRoute>} />
               <Route path="pool" element={<Navigate to="/friends" replace />} />
@@ -174,7 +184,7 @@ export default function App() {
                 <Route path="settings" element={<LocalizedRoute><AdminSettingsPage /></LocalizedRoute>} />
               </Route>
             </Route>
-            <Route path=":username" element={<LocalizedRoute><FriendProfilePage /></LocalizedRoute>} />
+            <Route path=":username" element={<LocalizedRoute><ProfilePage /></LocalizedRoute>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Route>

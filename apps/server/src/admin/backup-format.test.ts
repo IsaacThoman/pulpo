@@ -43,7 +43,7 @@ describe('full backup format', () => {
 
   it('supplies required columns added after older v1 archives were created', () => {
     const database = {
-      users: [{}],
+      users: [{}, { usage_visibility: 'public' }],
       provider_connections: [{}],
       responses: [{}],
       usage_events: [{}],
@@ -56,7 +56,8 @@ describe('full backup format', () => {
 
     applyFullBackupCompatibilityDefaults(database)
 
-    expect(database.users[0]).toMatchObject({ profile_color: null, avatar_object_key: null, avatar_version: 0 })
+    expect(database.users[0]).toMatchObject({ profile_color: null, usage_visibility: 'friends', avatar_object_key: null, avatar_version: 0 })
+    expect(database.users[1]).toMatchObject({ usage_visibility: 'public' })
     expect(database.provider_connections[0]).toMatchObject({ tool_result_image_mode: 'native', convert_images_to_webp: false, webp_quality: 80 })
     expect(database.episodic_memory_generations[0]).toMatchObject({ index_version: 1 })
     expect(database.chat_turn_embeddings[0]).toMatchObject({ chunk_index: 0 })

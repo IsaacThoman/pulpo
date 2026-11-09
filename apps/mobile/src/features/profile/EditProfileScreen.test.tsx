@@ -6,6 +6,7 @@ import type { User } from '@pulpo/contracts'
 
 const mocks = vi.hoisted(() => ({
   platform: 'ios',
+  billingEnabled: true,
   user: null as unknown as User,
   setUser: vi.fn(),
   updateProfile: vi.fn(),
@@ -31,27 +32,34 @@ vi.mock('@expo/ui/swift-ui', () => ({
   Form: passthrough, Host: passthrough, HStack: passthrough, VStack: passthrough, RNHostView: passthrough, Spacer: () => null,
   Section: ({ title, children, footer }: { title?: string; children: ReactNode; footer?: ReactNode }) => createElement('section', { 'aria-label': title }, children, footer),
   LabeledContent: ({ label, children }: { label: string; children: ReactNode }) => createElement('div', null, createElement('span', null, label), children),
-  Menu: ({ label, children }: { label: string; children: ReactNode }) => createElement('div', { role: 'menu', 'aria-label': label }, children),
+  Menu: ({ label, children }: { label: ReactNode; children: ReactNode }) => typeof label === 'string'
+    ? createElement('div', { role: 'menu', 'aria-label': label }, children)
+    : createElement('div', { role: 'menu' }, label, children),
+  Image: () => null,
   Text: ({ children }: { children: ReactNode }) => createElement('span', null, children),
   Button: ({ label, onPress }: { label: string; onPress: () => void }) => createElement('button', { onClick: onPress }, label),
   TextField: ({ text, onTextChange }: { text: { get: () => string }; onTextChange: (value: string) => void }) => createElement('input', { defaultValue: text.get(), onChange: (event: { target: { value: string } }) => onTextChange(event.target.value) }),
   useNativeState: (value: string) => ({ get: () => value, set: vi.fn() }),
 }))
-vi.mock('@expo/ui/swift-ui/modifiers', () => Object.fromEntries(['accessibilityLabel', 'autocorrectionDisabled', 'disabled', 'font', 'foregroundStyle', 'frame', 'listRowBackground', 'multilineTextAlignment', 'scrollDismissesKeyboard', 'textFieldStyle', 'textInputAutocapitalization', 'tint'].map(name => [name, vi.fn()])))
-vi.mock('../../api/client', () => ({ mobileApi: { updateProfile: mocks.updateProfile, uploadAvatar: mocks.uploadAvatar, removeAvatar: mocks.removeAvatar } }))
-vi.mock('../../store/session', () => ({
-  useSessionStore: Object.assign(
-    (selector: (state: unknown) => unknown) => selector({ user: mocks.user, setUser: mocks.setUser }),
-    { getState: () => ({ user: mocks.user, setUser: mocks.setUser }) },
-  ),
+vi.mock('@expo/ui/swift-ui/modifiers', () => Object.fromEntries(['accessibilityLabel', 'autocorrectionDisabled', 'buttonStyle', 'disabled', 'font', 'foregroundStyle', 'frame', 'listRowBackground', 'multilineTextAlignment', 'scrollDismissesKeyboard', 'textFieldStyle', 'textInputAutocapitalization', 'tint'].map(name => [name, vi.fn()])))
+vi.mock('../../platform/NativeMenuPicker', () => ({
+  NativeMenuPicker: ({ label, selection, options, onSelect }: { label: string; selection: string; options: { id: string; label: string }[]; onSelect: (id: string) => void }) =>
+    createElement('select', { 'aria-label': label, value: selection, onChange: (event: { target: { value: string } }) => onSelect(event.target.value) }, options.map((option) => createElement('option', { key: option.id, value: option.id }, option.label))),
 }))
+vi.mock('../../api/client', () => ({ mobileApi: { updateProfile: mocks.updateProfile, uploadAvatar: mocks.uploadAvatar, removeAvatar: mocks.removeAvatar } }))
+vi.mock('../../store/session', () => {
+  const state = () => ({ user: mocks.user, setUser: mocks.setUser, instanceUrl: 'https://pulpo.test', config: { capabilities: { usageLimits: mocks.billingEnabled }, auth: { inviteCodesEnabled: false } } })
+  return { useSessionStore: Object.assign((selector: (value: unknown) => unknown) => selector(state()), { getState: state }) }
+})
 vi.mock('../../platform/materialActions', () => ({ showActions: mocks.showActions }))
 vi.mock('../../mockup5/src/store/prototypeStore', () => ({ usePrototypeStore: (selector: (state: unknown) => unknown) => selector({ updateProfile: vi.fn() }) }))
 vi.mock('../../mockup5/src/theme', () => ({ useAppTheme: () => ({ blue: 'blue', red: 'red', secondary: 'gray' }) }))
 vi.mock('../../mockup5/src/components/ProfileAvatar', () => ({ ProfileAvatar: () => createElement('img', { alt: 'avatar' }) }))
 vi.mock('../../mockup5/src/components/PrototypeUI', () => ({
   Screen: passthrough, Card: passthrough, PageHeader: ({ title }: { title: string }) => createElement('h1', null, title),
-  ListRow: ({ title, value }: { title: string; value?: string }) => createElement('div', null, title, value),
+  ListRow: ({ title, detail, value, onPress }: { title: string; detail?: string; value?: string; onPress?: () => void }) => onPress
+    ? createElement('button', { onClick: onPress }, title, detail, value)
+    : createElement('div', null, title, value),
   Field: ({ label, value, onChangeText, error }: { label: string; value: string; onChangeText: (value: string) => void; error?: string }) => createElement('label', null, label, createElement('input', { 'aria-label': label, value, onChange: (event: { target: { value: string } }) => onChangeText(event.target.value) }), error),
   PrimaryButton: ({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) => createElement('button', { onClick: onPress, disabled }, label),
 }))
@@ -67,7 +75,7 @@ navigation.setOptions.mockImplementation((options: typeof header) => { header = 
 const mount = () => render(<EditProfileScreen navigation={navigation as never} route={{ key: 'EditProfile', name: 'EditProfile' } as never} />)
 const doneButton = () => render(header.headerRight!()).getByRole('button', { name: 'Done' })
 
-beforeEach(() => { mocks.user = account; mocks.platform = 'ios'; header = {} })
+beforeEach(() => { mocks.user = account; mocks.platform = 'ios'; mocks.billingEnabled = true; header = {} })
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 it('saves a changed username from Done on iOS', async () => {
@@ -88,7 +96,10 @@ it('explains an invalid username and keeps Done disabled on iOS', () => {
 })
 
 it('closes without a request when nothing changed', () => {
+  // A cached account from before the setting reads as the default.
+  expect(account.usageVisibility).toBeUndefined()
   mount()
+  expect((screen.getByRole('combobox', { name: 'Usage visibility' }) as HTMLSelectElement).value).toBe('friends')
   fireEvent.click(doneButton())
   expect(mocks.updateProfile).not.toHaveBeenCalled()
   expect(navigation.goBack).toHaveBeenCalled()
@@ -159,4 +170,89 @@ it('keeps photo changes off until a profile save finishes on Android', async () 
   await waitFor(() => expect((screen.getByRole('button', { name: 'Add photo' }) as HTMLButtonElement).disabled).toBe(true))
   await act(async () => { finishSave() })
   await waitFor(() => expect(navigation.goBack).toHaveBeenCalled())
+})
+
+const visibilityPicker = () => screen.getByRole('combobox', { name: 'Usage visibility' }) as HTMLSelectElement
+const optionLabels = (select: HTMLSelectElement) => [...select.options].map((option) => option.textContent)
+
+it('saves the usage visibility from Done on iOS', async () => {
+  mocks.updateProfile.mockResolvedValue({ user: { ...account, usageVisibility: 'public' } })
+  mount()
+  const privacy = screen.getByRole('region', { name: 'Privacy' })
+  expect(privacy.textContent).toContain('Pool members can always see your usage.')
+  expect(optionLabels(visibilityPicker())).toEqual(['Private (Pool only)', 'Friends', 'Public'])
+  fireEvent.change(visibilityPicker(), { target: { value: 'public' } })
+  expect(privacy.textContent).toContain('Public')
+  fireEvent.click(doneButton())
+  await waitFor(() => expect(navigation.goBack).toHaveBeenCalled())
+  expect(mocks.updateProfile).toHaveBeenCalledWith({ usageVisibility: 'public' })
+  expect(mocks.setUser).toHaveBeenCalledWith({ ...account, usageVisibility: 'public' })
+})
+
+// Pools work without billing, and Pool members can always see usage.
+it('keeps the Pool wording where the instance does not bill usage on iOS', () => {
+  mocks.billingEnabled = false
+  mocks.user = { ...account, usageVisibility: 'pool' }
+  mount()
+  expect(optionLabels(visibilityPicker())).toEqual(['Private (Pool only)', 'Friends', 'Public'])
+  expect(visibilityPicker().value).toBe('pool')
+  expect(screen.getByRole('region', { name: 'Privacy' }).textContent).toContain('Pool members can always see your usage.')
+})
+
+it('sends nothing when the usage visibility goes back to the saved level', () => {
+  mocks.user = { ...account, usageVisibility: 'public' }
+  mount()
+  fireEvent.change(visibilityPicker(), { target: { value: 'pool' } })
+  fireEvent.change(visibilityPicker(), { target: { value: 'public' } })
+  fireEvent.click(doneButton())
+  expect(mocks.updateProfile).not.toHaveBeenCalled()
+  expect(navigation.goBack).toHaveBeenCalled()
+})
+
+// A cold start shows the cached account first; the server's copy must not be written back over.
+it('follows a session refresh instead of saving the cached usage visibility', () => {
+  mocks.user = { ...account, usageVisibility: 'friends' }
+  const view = mount()
+  mocks.user = { ...account, usageVisibility: 'pool' }
+  view.rerender(<EditProfileScreen navigation={navigation as never} route={{ key: 'EditProfile', name: 'EditProfile' } as never} />)
+  expect(visibilityPicker().value).toBe('pool')
+  fireEvent.click(doneButton())
+  expect(mocks.updateProfile).not.toHaveBeenCalled()
+  expect(navigation.goBack).toHaveBeenCalled()
+})
+
+it('picks the usage visibility from a Material sheet and saves it on Android', async () => {
+  mocks.platform = 'android'
+  mocks.updateProfile.mockResolvedValue({ user: { ...account, usageVisibility: 'pool' } })
+  mount()
+  fireEvent.click(screen.getByRole('button', { name: /^Usage visibility/ }))
+  const [title, actions] = mocks.showActions.mock.calls[0] as [string, { label: string; selected?: boolean; onPress: () => void }[]]
+  expect(title).toBe('Usage visibility')
+  expect(actions.map(({ label, selected }) => ({ label, selected }))).toEqual([
+    { label: 'Private (Pool only)', selected: false },
+    { label: 'Friends', selected: true },
+    { label: 'Public', selected: false },
+  ])
+  act(() => { actions[0]!.onPress() })
+  expect(screen.getByRole('button', { name: /^Usage visibility/ }).textContent).toContain('Private (Pool only)')
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(navigation.goBack).toHaveBeenCalled())
+  expect(mocks.updateProfile).toHaveBeenCalledWith({ usageVisibility: 'pool' })
+})
+
+it('keeps the Pool wording where the instance does not bill usage on Android', () => {
+  mocks.platform = 'android'
+  mocks.billingEnabled = false
+  mount()
+  const row = screen.getByRole('button', { name: /^Usage visibility/ })
+  expect(row.textContent).toContain('Who can see your usage stats and requests on your profile. Pool members can always see your usage.')
+  fireEvent.click(row)
+  const [, actions] = mocks.showActions.mock.calls[0] as [string, { label: string }[]]
+  expect(actions.map((action) => action.label)).toEqual(['Private (Pool only)', 'Friends', 'Public'])
+})
+
+it.each(['ios', 'android'])('never shows balances, credits, or prices on %s', (platform) => {
+  mocks.platform = platform
+  mount()
+  expect(document.body.textContent).not.toMatch(/\$|credit|balance|price/i)
 })

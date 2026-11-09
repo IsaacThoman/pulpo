@@ -96,6 +96,7 @@ function user(id: string, name = id): User {
     username: `pulpo_${id.replace(/[^a-z0-9]/gi, '_').toLowerCase()}`,
     avatarUrl: null,
     profileColor: null,
+    usageVisibility: 'friends',
     role: 'user',
     balanceMicros: 0,
     storageLimitBytes: 1,
