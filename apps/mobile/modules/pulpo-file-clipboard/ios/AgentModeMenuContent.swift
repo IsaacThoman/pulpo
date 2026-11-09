@@ -52,23 +52,26 @@ struct AgentModeMenuContent: View {
       .pickerStyle(.inline)
       .tint(.primary)
       if model.filesVisible {
-        Section("Changes to Files") {
-          Picker("Changes to Files", selection: Binding(
-            get: { model.fileChangeMode },
-            set: { mode in
-              guard mode != model.fileChangeMode else { return }
-              // Checked here at once; JavaScript saves it and confirms through the configuration.
-              model.fileChangeMode = mode
-              onFilesAction(.changeMode(mode))
-            }
-          )) {
-            Label("Read only", systemImage: "eye").tag("read")
-            Label("Suggest changes", systemImage: "text.badge.checkmark").tag("suggest")
-            Label("Edit directly", systemImage: "pencil").tag("write")
+        Divider()
+        // A submenu keeps its label ("Changes to Files") and shows the current choice; an inline
+        // picker's section title is dropped from the menu, which would leave the modes unexplained.
+        Picker(selection: Binding(
+          get: { model.fileChangeMode },
+          set: { mode in
+            guard mode != model.fileChangeMode else { return }
+            // Checked here at once; JavaScript saves it and confirms through the configuration.
+            model.fileChangeMode = mode
+            onFilesAction(.changeMode(mode))
           }
-          .pickerStyle(.inline)
-          .tint(.primary)
+        )) {
+          Label("Read only", systemImage: "eye").tag("read")
+          Label("Suggest changes", systemImage: "text.badge.checkmark").tag("suggest")
+          Label("Edit directly", systemImage: "pencil").tag("write")
+        } label: {
+          Label("Changes to Files", systemImage: "folder.badge.gearshape")
         }
+        .pickerStyle(.menu)
+        .tint(.primary)
         if model.filesAccessVisible {
           Button {
             onFilesAction(.openAccess)
