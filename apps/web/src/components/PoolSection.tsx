@@ -66,7 +66,7 @@ export function PoolSection({ query, currentUserId, friends, busy, act, inviteTa
         {pool && <p className="mt-1 text-xs text-muted-foreground">{ui('Leave your current Pool before joining another.')}</p>}
       </div>
       <div className="divide-y">{incoming.map((invitation) => <div key={invitation.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <ProfileIdentity profile={invitation.inviter} detail={uit`${invitation.memberCount} of 6 members`} />
+        <ProfileIdentity profile={invitation.inviter} detail={uit`${invitation.memberCount} of 6 members`} href={`/${invitation.inviter.username}`} />
         <div className="flex shrink-0 gap-2">
           <Button size="sm" variant="outline" disabled={busy} onClick={() => void act(`decline-pool:${invitation.id}`, () => apiRequest(`/api/pools/invitations/${invitation.id}/decline`, { method: 'POST' }), ui('Invitation dismissed.'))}>{ui('Dismiss')}</Button>
           <Button size="sm" disabled={busy || Boolean(pool) || !query.isSuccess} onClick={(event) => { joinTriggerRef.current = event.currentTarget; setJoinTarget(invitation) }}>{ui('Join')}</Button>
@@ -95,7 +95,7 @@ export function PoolSection({ query, currentUserId, friends, busy, act, inviteTa
         const friend = friendIds.has(member.profile.id)
         return <div key={member.profile.id} className="flex items-center justify-between gap-3 px-4 py-3">
           <div className="flex min-w-0 items-center gap-2">
-            <ProfileIdentity profile={member.profile} />
+            <ProfileIdentity profile={member.profile} href={`/${member.profile.username}`} />
             {self && <span className="shrink-0 text-xs text-muted-foreground">{ui('You')}</span>}
             {member.owner && <Crown className="size-3.5 shrink-0 text-amber-500" aria-label={ui('Pool owner')} />}
           </div>
@@ -128,7 +128,7 @@ export function PoolSection({ query, currentUserId, friends, busy, act, inviteTa
           <p className="mt-1 text-xs text-muted-foreground">{ui('Pending invitations reserve a Pool seat.')}</p>
         </div>
         <div className="divide-y">{pool.pendingInvitations.map((invitation) => <div key={invitation.id} className="flex items-center justify-between gap-3 px-4 py-3">
-          <ProfileIdentity profile={invitation.invitee} />
+          <ProfileIdentity profile={invitation.invitee} href={`/${invitation.invitee.username}`} />
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => void act(`cancel-pool:${invitation.id}`, () => apiRequest(`/api/pools/invitations/${invitation.id}`, { method: 'DELETE' }), ui('Invitation canceled.'))}>{ui('Cancel')}</Button>
         </div>)}</div>
       </div>}

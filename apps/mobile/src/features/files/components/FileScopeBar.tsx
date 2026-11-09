@@ -116,7 +116,7 @@ function ScopeChip({ chip, scope, onOpen }: { chip: Chip; scope: ChatFileScope; 
           label={(
             <HStack spacing={6} modifiers={[padding({ horizontal: 10, vertical: 6 })]}>
               <SwiftUIImage systemName={icon.symbol as never} size={13} color={icon.tint} />
-              <SwiftUIText modifiers={[lineLimit(1), font({ size: 14 }), foregroundStyle(chip.missing ? 'secondary' : 'primary')]}>{chip.missing ? `${chip.name} (unavailable)` : chip.name}</SwiftUIText>
+              <SwiftUIText modifiers={[lineLimit(1), font({ textStyle: 'subheadline' }), foregroundStyle(chip.missing ? 'secondary' : 'primary')]}>{chip.missing ? `${chip.name} (unavailable)` : chip.name}</SwiftUIText>
               <SwiftUIImage systemName={MODE_SYMBOL[chip.mode] as never} size={11} color={chip.mode === 'write' ? theme.orange : theme.secondary} />
             </HStack>
           )}

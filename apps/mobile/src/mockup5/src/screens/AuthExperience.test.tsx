@@ -2,10 +2,11 @@
 import { act, createElement, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-const mocks = vi.hoisted(() => ({ openURL: vi.fn(), redeem: vi.fn(), refresh: vi.fn(), discover: vi.fn(), setUser: vi.fn(), logout: vi.fn(), state: {} as Record<string, unknown> }))
+const mocks = vi.hoisted(() => ({ announce: vi.fn(), openURL: vi.fn(), redeem: vi.fn(), refresh: vi.fn(), discover: vi.fn(), setUser: vi.fn(), logout: vi.fn(), state: {} as Record<string, unknown> }))
 vi.mock('react-native', () => {
   const Container = ({ children }: { children?: ReactNode }) => createElement('div', null, children)
   return {
+    AccessibilityInfo: { announceForAccessibilityWithOptions: mocks.announce, announceForAccessibility: mocks.announce },
     Platform: { OS: 'ios', select: (options: { ios?: unknown; default?: unknown }) => options.ios ?? options.default },
     StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 1 },
     Linking: { openURL: mocks.openURL },
@@ -116,6 +117,8 @@ describe('mobile pending approval', () => {
     await typeInviteCode('ZZZZZZ')
     await act(async () => button('Redeem invite code').click())
     expect(container.textContent).toContain('This invite code is invalid or already used')
+    // VoiceOver ignores the alert role, so the error is announced too.
+    expect(mocks.announce).toHaveBeenCalledWith('This invite code is invalid or already used', { queue: true })
     await typeInviteCode('ZZZZZZ abc-123\n')
     expect(inviteInput().value).toBe('ABC123')
     expect(container.textContent).not.toContain('This invite code is invalid')
@@ -129,6 +132,7 @@ describe('mobile pending approval', () => {
     await typeInviteCode('AB1CD2')
     await act(async () => button('Redeem invite code').click())
     expect(container.textContent).toContain('Invite accepted. Tap Refresh status to continue.')
+    expect(mocks.announce).toHaveBeenCalledWith('Invite accepted. Tap Refresh status to continue.', { queue: true })
     expect(container.querySelector('[role="alert"]')).toBeNull()
   })
 

@@ -17,7 +17,7 @@ export function syncInvalidationScopes(result: SyncResult): SyncResult['invalida
 
 export function stateInvalidationQueryKeys(scope: StateInvalidationScope, userId: string): string[][] {
   if (scope === 'friends') {
-    return [['friends', userId], ['friends-pending-count', userId], ['friends-usage', userId]]
+    return [['friends', userId], ['friends-pending-count', userId], ['friends-usage', userId], ['friend-profile']]
   }
   if (scope === 'pool') {
     return [['pool', userId], ['pool-pending-count', userId], ['pool-usage', userId]]

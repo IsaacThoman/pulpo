@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { browserSupportsWebAuthn } from '@/lib/passkeys'
 import { useAuth } from '@/stores/auth'
 import { isDesktopRuntime } from '@/lib/runtime'
+import { AuthFormError } from './auth-form'
 
 export function LoginOptionsPage() {
   const { t } = useTranslation()
@@ -48,7 +49,7 @@ export function LoginOptionsPage() {
         </Button>
 
         {!passkeySupported && <p className="text-center text-xs text-muted-foreground">{t('auth.passkeysUnsupported')}</p>}
-        {error && <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div>}
+        {error && <AuthFormError id="login-options-error">{error}</AuthFormError>}
 
         <Button asChild type="button" variant="ghost" className="w-full">
           <Link to="/login"><ArrowLeft /> {t('common.back')}</Link>

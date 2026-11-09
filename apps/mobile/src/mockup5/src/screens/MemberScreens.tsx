@@ -8,6 +8,8 @@ import { useAppStorePlans } from '../../../features/app-store/useAppStorePlans';
 import { MaterialToggleRow } from '../../../platform/MaterialUI';
 import { showActions } from '../../../platform/materialActions';
 import { useSubpageBack } from '../../../platform/useSubpageBack';
+import { NativeMenuPicker } from '../../../platform/NativeMenuPicker';
+import { useAccessibilityAnnouncement } from '../../../platform/accessibilityAnnouncement';
 import { DeleteAccountForm } from '../../../components/DeleteAccount';
 export { EditProfileScreen } from '../../../features/profile/EditProfileScreen';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
@@ -139,6 +141,7 @@ export function PasskeysScreen({ navigation }: NativeStackScreenProps<RootStackP
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [forceSafari, setForceSafari] = useState(false);
+  useAccessibilityAnnouncement(error);
   const refresh = useCallback(() => mobileApi.passkeys().then(setData).catch((next) => setError(next instanceof Error ? next.message : 'Could not load passkeys.')), []);
   useEffect(() => { void refresh(); }, [refresh]);
   const reset = () => { setAction('list'); setSelected(null); setName(''); setCurrentPassword(''); setVerificationCode(''); setError(''); setForceSafari(false); };
@@ -240,6 +243,7 @@ export function TwoFactorScreen({ navigation }: NativeStackScreenProps<RootStack
   const [confirmationCode, setConfirmationCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  useAccessibilityAnnouncement(error);
   const refresh = useCallback(() => mobileApi.twoFactorStatus().then(setStatus).catch((next) => setError(next instanceof Error ? next.message : 'Could not load two-factor status.')), []);
   useEffect(() => { void refresh(); }, [refresh]);
   const reset = () => { setAction('idle'); setEnrollment(null); setRecoveryCodes([]); setCurrentPassword(''); setVerificationCode(''); setConfirmationCode(''); setError(''); };
@@ -312,14 +316,14 @@ export function MemberSettingsScreen({ navigation }: NativeStackScreenProps<Root
 }
 
 function NativeSettingsLink({ icon, title, detail, onPress }: { icon: string; title: string; detail: string; onPress: () => void }) {
-  return <SwiftUIButton modifiers={[buttonStyle('plain'), foregroundStyle('primary')]} onPress={onPress}><SwiftUIHStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}><SwiftUIImage systemName={icon as never} size={17} modifiers={[frame({ width: 22, height: 22 })]} /><SwiftUIVStack alignment="leading" spacing={2}><SwiftUIText modifiers={[font({ textStyle: 'subheadline', weight: 'medium' }), lineLimit(1)]}>{title}</SwiftUIText><SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary'), lineLimit(1)]}>{detail}</SwiftUIText></SwiftUIVStack><SwiftUISpacer /><SwiftUIImage systemName="chevron.right" size={11} /></SwiftUIHStack></SwiftUIButton>;
+  return <SwiftUIButton modifiers={[buttonStyle('plain'), foregroundStyle('primary')]} onPress={onPress}><SwiftUIHStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}><SwiftUIImage systemName={icon as never} size={17} modifiers={[frame({ width: 22, height: 22 })]} /><SwiftUIVStack alignment="leading" spacing={2}><SwiftUIText modifiers={[font({ textStyle: 'subheadline', weight: 'medium' }), lineLimit(2)]}>{title}</SwiftUIText><SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary'), lineLimit(3)]}>{detail}</SwiftUIText></SwiftUIVStack><SwiftUISpacer /><SwiftUIImage systemName="chevron.right" size={11} /></SwiftUIHStack></SwiftUIButton>;
 }
 
 const settingTitles: Record<SettingsSection, string> = { general: 'General', interface: 'Interface', personalization: 'Personalization', data: 'Data Controls', trash: 'Trash', usage: 'Usage' };
 
 function NativeChoiceRow<T extends string>({ title, value, options, onChange, icon }: { title: string; value: T; options: readonly { value: T; label: string }[]; onChange: (value: T) => void; icon?: string }) {
   const selected = options.find((option) => option.value === value)?.label ?? value;
-  return <SwiftUIMenu label={<SwiftUIHStack spacing={12}>{icon ? <SwiftUIImage systemName={icon as never} size={17} modifiers={[frame({ width: 22, height: 22 })]} /> : null}<SwiftUIText>{title}</SwiftUIText><SwiftUISpacer /><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{selected}</SwiftUIText><SwiftUIImage systemName="chevron.up.chevron.down" size={10} modifiers={[foregroundStyle('secondary')]} /></SwiftUIHStack>} modifiers={[buttonStyle('plain'), foregroundStyle('primary')]}>{options.map((option) => <SwiftUIButton key={option.value} label={option.label} systemImage={option.value === value ? 'checkmark' : undefined} onPress={() => onChange(option.value)} />)}</SwiftUIMenu>;
+  return <SwiftUIMenu label={<SwiftUIHStack spacing={12}>{icon ? <SwiftUIImage systemName={icon as never} size={17} modifiers={[frame({ width: 22, height: 22 })]} /> : null}<SwiftUIText>{title}</SwiftUIText><SwiftUISpacer /><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{selected}</SwiftUIText><SwiftUIImage systemName="chevron.up.chevron.down" size={10} modifiers={[foregroundStyle('secondary')]} /></SwiftUIHStack>} modifiers={[buttonStyle('plain'), foregroundStyle('primary')]}><NativeMenuPicker label={title} selection={value} options={options.map((option) => ({ id: option.value, label: option.label }))} onSelect={(id) => onChange(id as T)} /></SwiftUIMenu>;
 }
 
 function NativeToggleRow({ title, detail, value, onChange, icon }: { title: string; detail: string; value: boolean; onChange: (value: boolean) => void; icon?: string }) {
@@ -406,7 +410,7 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
     </>}
   </SwiftUIForm></SwiftUIHost>;
   return <Screen><PageHeader title={settingTitles[section]} onBack={() => navigation.goBack()} />
-    {section === 'general' && <><SectionTitle>Appearance</SectionTitle><Card><View style={{ padding: 16 }}><Segmented options={[{ value: 'system', label: 'System' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }] as const} value={preferences.theme} onChange={(value) => setPreference('theme', value)} /></View></Card></>}
+    {section === 'general' && <><SectionTitle>Appearance</SectionTitle><Card><View style={{ padding: 16 }}><Segmented label="Appearance" options={[{ value: 'system', label: 'System' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }] as const} value={preferences.theme} onChange={(value) => setPreference('theme', value)} /></View></Card></>}
     {section === 'interface' && <><SectionTitle>Chat history</SectionTitle><Card><ListRow icon="arrow.up.arrow.down" iconColor={theme.blue} title="Chat order" detail={chatOrderDetail} value={preferences.chatSortMode === 'recent' ? 'Recent' : 'Default'} last onPress={() => showActions('Chat order', chatOrderOptions.map((option) => ({ label: option.label, selected: preferences.chatSortMode === option.value, onPress: () => setPreference('chatSortMode', option.value) })))} /></Card><SectionTitle>Conversation</SectionTitle><Card><Toggle title="Show prompt suggestions" detail="Show suggested prompts in new chats." value={preferences.showPromptSuggestions} onChange={(value) => setPreference('showPromptSuggestions', value)} /><Toggle title="Show model warnings" detail="Show notes from your administrator about the selected model." value={preferences.showModelWarnings} onChange={(value) => setPreference('showModelWarnings', value)} /><Toggle title="Show reasoning" detail="Show expandable work details." value={preferences.showReasoning} onChange={(value) => setPreference('showReasoning', value)} /><Toggle title="Show response costs" detail={RESPONSE_COST_DETAIL} value={preferences.showResponseCost} onChange={(value) => setPreference('showResponseCost', value)} /><Toggle title="Haptics" detail="Feedback for sends, menus, and completion." value={preferences.haptics} onChange={(value) => setPreference('haptics', value)} last /></Card><SectionTitle>Offline storage</SectionTitle><Card><ListRow title="Chats kept on device" detail="Recent chats remain instantly available." value={`${preferences.localChatLimit}`} /><ListRow title="Attachment cache" detail="Maximum local file data." value={`${preferences.attachmentCacheMb} MB`} last /></Card></>}
     {section === 'personalization' && <><CustomInstructionsSettings /><SpeechSettings /><ImageGenerationSettings /></>}
     {section === 'usage' && <UsageLimitsSettings />}

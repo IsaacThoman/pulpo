@@ -41,6 +41,15 @@ describe('response sync planning', () => {
     expect(stateInvalidationQueryKeys('folders', 'user-1')).toEqual([['folders', 'user-1']])
   })
 
+  it('refreshes open profiles when friendship state changes', () => {
+    expect(stateInvalidationQueryKeys('friends', 'user-1')).toEqual([
+      ['friends', 'user-1'],
+      ['friends-pending-count', 'user-1'],
+      ['friends-usage', 'user-1'],
+      ['friend-profile'],
+    ])
+  })
+
   it('refreshes the trash when Files change, since it lists trashed Files items', () => {
     expect(stateInvalidationQueryKeys('files', 'user-1')).toEqual([['files', 'user-1'], ['folders', 'user-1'], ['trash', 'user-1']])
   })

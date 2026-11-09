@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, NavLink, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   Archive,
@@ -655,11 +655,24 @@ interface RowSelection {
 
 const SELECTED_ROW = 'bg-sky-500/15 text-sidebar-foreground hover:bg-sky-500/20 dark:bg-sky-400/15'
 
+/**
+ * A row's "⋯" button: shown on hover as before, and also while the keyboard is in the row, so
+ * Tab reaches it. Transparent rather than `invisible`, which would leave it out of the tab order;
+ * it ignores the pointer while transparent so taps still open the row.
+ */
+const ROW_ACTION_HIDDEN = 'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100 focus-visible:opacity-100 data-[state=open]:pointer-events-auto data-[state=open]:opacity-100'
+
+/**
+ * Row buttons are 24px targets around a 16px icon; the negative margin keeps rows the height
+ * and spacing they had with 20px buttons.
+ */
+const ROW_ACTION = 'relative -m-0.5 rounded p-1 text-muted-foreground hover:bg-background/60'
+
 /** Shown in place of a row's "⋯" button while Shift is held, to trash the row in one click. */
 function QuickTrashButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
-      className="relative hidden rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-destructive group-hover:block"
+      className={cn(ROW_ACTION, 'hidden hover:text-destructive group-hover:block')}
       onClick={(event) => {
         event.stopPropagation()
         onClick()
@@ -728,8 +741,8 @@ export function ChatRow({
     state.responseChatIds,
   ))
 
-  const actionClassName =
-    'rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground'
+  const statusId = useId()
+  const status = generating ? ui("Generating…") : chat.expiresAt !== null ? ui("Set to expire") : null
 
   return (
     <div
@@ -767,6 +780,8 @@ export function ChatRow({
         />
       ) : <Link
         to={`/c/${chat.id}`}
+        aria-current={active ? 'page' : undefined}
+        aria-describedby={status ? statusId : undefined}
         draggable={canDrag ? false : undefined}
         className="flex-1 cursor-[inherit] truncate outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring"
         onClick={(e) => {
@@ -787,6 +802,7 @@ export function ChatRow({
       >
         {chat.title}
       </Link>}
+      {status && <span id={statusId} className="sr-only">{status}</span>}
       {shiftHeld && (
         <QuickTrashButton
           label={uit`${trashRetention === 'instant' ? t('common.delete') : t('chat.trash')} chat`}
@@ -797,14 +813,13 @@ export function ChatRow({
         <DropdownMenuTrigger asChild>
           <button
             className={cn(
-              actionClassName,
-              'group/chat-action relative',
-              generating || chat.expiresAt !== null ? 'visible' : 'invisible group-hover:visible',
+              ROW_ACTION,
+              'group/chat-action hover:text-foreground',
+              !generating && chat.expiresAt === null && ROW_ACTION_HIDDEN,
               shiftHeld && 'group-hover:hidden',
-              'data-[state=open]:visible',
             )}
             onClick={(e) => e.stopPropagation()}
-            aria-label={t('sidebar.chatOptions')}
+            aria-label={uit`Options for ${chat.title}`}
           >
             {generating ? (
               <>
@@ -1247,6 +1262,7 @@ function SidebarItemRow({ node, list, reorderable, sidebar, chatId, drag, onDrop
       ) : (
         <button
           type="button"
+          aria-current={active ? 'page' : undefined}
           className="min-w-0 flex-1 cursor-[inherit] truncate text-left outline-none after:absolute after:inset-0 after:rounded-lg focus-visible:after:ring-2 focus-visible:after:ring-ring"
           onClick={(event) => {
             if (drag.didDragRef.current) {
@@ -1267,11 +1283,8 @@ function SidebarItemRow({ node, list, reorderable, sidebar, chatId, drag, onDrop
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className={cn(
-              'relative invisible rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground group-hover:visible data-[state=open]:visible',
-              props.shiftHeld && 'group-hover:hidden',
-            )}
-            aria-label={ui("Item options")}
+            className={cn(ROW_ACTION, ROW_ACTION_HIDDEN, 'hover:text-foreground', props.shiftHeld && 'group-hover:hidden')}
+            aria-label={uit`Options for ${node.name}`}
           >
             <MoreHorizontal className="size-4" />
           </button>
@@ -1429,11 +1442,8 @@ function SidebarFolderNode({ folder, node, shortcut, list, reorderable, ...props
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className={cn(
-                'relative invisible rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground group-hover:visible data-[state=open]:visible',
-                props.shiftHeld && dragged && 'group-hover:hidden',
-              )}
-              aria-label={t('sidebar.folderOptions')}
+              className={cn(ROW_ACTION, ROW_ACTION_HIDDEN, 'hover:text-foreground', props.shiftHeld && dragged && 'group-hover:hidden')}
+              aria-label={uit`Options for ${shortcut?.name ?? folder.name}`}
             >
               <MoreHorizontal className="size-4" />
             </button>
@@ -1451,7 +1461,11 @@ function SidebarFolderNode({ folder, node, shortcut, list, reorderable, ...props
           onDragOver={(e) => drag.onFolderBodyDragOver(folder.id, e)}
           onDrop={onDrop}
         >
-          {entries.map((entry) => <SidebarEntryRow key={entry.id} entry={entry} list={contentsList} reorderable {...props} />)}
+          {entries.length > 0 && (
+            <ul role="list" aria-label={shortcut?.name ?? folder.name} className="space-y-0.5">
+              {entries.map((entry) => <li key={entry.id}><SidebarEntryRow entry={entry} list={contentsList} reorderable {...props} /></li>)}
+            </ul>
+          )}
           {entries.length === 0 && (
             <div className={cn('rounded-md px-2 py-1 text-xs text-muted-foreground', dropHighlight && 'bg-sidebar-accent/80 text-foreground')}>
               {dropHighlight ? t('sidebar.dropToAdd') : t('sidebar.empty')}
@@ -1534,6 +1548,7 @@ export function Sidebar({
   const [filesMenuPoint, setFilesMenuPoint] = useState<{ x: number; y: number } | null>(null)
   const [navMenu, setNavMenu] = useState<NavItemMenuState | null>(null)
   const shiftHeld = useShiftHeld()
+  const listIdBase = useId()
   const trashOps = useTrashOperations()
   const folderOfList = (list: DropList): string | null => {
     if (list === 'pinned') return null
@@ -1816,30 +1831,62 @@ export function Sidebar({
     setNavMenu({ key, x: event.clientX, y: event.clientY })
   }
 
-  const iconBtn = (label: string, onClick: () => void, icon: React.ReactNode, badge?: number, onContextMenu?: (event: React.MouseEvent) => void) => (
-    <Tooltip
-      key={label}
-      open={collapsed && activeTooltip === label}
-      onOpenChange={(open) => {
-        if (collapsed) setActiveTooltip(open ? label : null)
-      }}
-    >
-      <TooltipTrigger asChild>
-        <button className={navBtn} onClick={onClick} onContextMenu={onContextMenu} aria-label={label}>
-          <span className="relative flex size-8 shrink-0 items-center justify-center">{icon}{Boolean(badge) && <span className="absolute right-0 top-0 grid min-w-3.5 place-items-center rounded-full bg-primary px-1 text-[9px] leading-3.5 text-primary-foreground">{badge! > 99 ? '99+' : badge}</span>}</span>
-          <span
-            className={cn(
-              'min-w-0 truncate whitespace-nowrap pr-2 transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
-              sidebarTextTransition
-            )}
-          >
-            {label}
-          </span>
-        </button>
-      </TooltipTrigger>
-      {collapsed && <TooltipContent side="right">{label}</TooltipContent>}
-    </Tooltip>
-  )
+  /**
+   * A primary nav item: a link for pages (marked as the current page while open), a button for
+   * actions. The label stays the accessible name with a pending count, if any, read after it.
+   */
+  const iconBtn = (label: string, target: string | (() => void), icon: React.ReactNode, badge?: number, onContextMenu?: (event: React.MouseEvent) => void) => {
+    const content = (
+      <>
+        <span className="relative flex size-8 shrink-0 items-center justify-center">{icon}{Boolean(badge) && <span aria-hidden="true" className="absolute right-0 top-0 grid min-w-3.5 place-items-center rounded-full bg-primary px-1 text-[9px] leading-3.5 text-primary-foreground">{badge! > 99 ? '99+' : badge}</span>}</span>
+        <span
+          className={cn(
+            'min-w-0 truncate whitespace-nowrap pr-2 transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
+            sidebarTextTransition
+          )}
+        >
+          {label}
+        </span>
+      </>
+    )
+    const name = badge ? uit`${label}, ${badge} pending` : label
+    return (
+      <Tooltip
+        key={label}
+        open={collapsed && activeTooltip === label}
+        onOpenChange={(open) => {
+          if (collapsed) setActiveTooltip(open ? label : null)
+        }}
+      >
+        <TooltipTrigger asChild>
+          {typeof target === 'string' ? (
+            <NavLink
+              to={target}
+              className={navBtn}
+              onContextMenu={onContextMenu}
+              aria-label={name}
+              onClick={(event) => {
+                // Modified clicks open a new tab in the browser; the desktop app opens the page in place.
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+                  if (!isDesktopRuntime()) return
+                  event.preventDefault()
+                  navigate(target)
+                }
+                onNavigate()
+              }}
+            >
+              {content}
+            </NavLink>
+          ) : (
+            <button type="button" className={navBtn} onClick={target} onContextMenu={onContextMenu} aria-label={name}>
+              {content}
+            </button>
+          )}
+        </TooltipTrigger>
+        {collapsed && <TooltipContent side="right">{label}</TooltipContent>}
+      </Tooltip>
+    )
+  }
 
   const accountNavItem = (
     key: SidebarPinKey,
@@ -1849,7 +1896,9 @@ export function Sidebar({
     badge?: number,
   ) => {
     const pinned = sidebarPins[key]
-    const action = pinned ? 'Unpin' : 'Pin'
+    const pinLabel = pinned
+      ? ui('Unpin {{item}} from sidebar', { item: label })
+      : ui('Pin {{item}} to sidebar', { item: label })
     return (
       <div key={key} className="group/account-nav relative">
         <DropdownMenuItem className="w-full pr-9" onClick={() => typeof target === 'string' ? go(target) : target()}>
@@ -1861,19 +1910,21 @@ export function Sidebar({
             </span>}
           </span>
         </DropdownMenuItem>
-        <button
-          type="button"
-          aria-label={uit`${action} ${label} ${pinned ? 'from' : 'to'} sidebar`}
-          title={uit`${action} ${label} ${pinned ? 'from' : 'to'} sidebar`}
-          className="invisible absolute right-1 top-1/2 z-10 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground outline-hidden hover:bg-background/60 hover:text-foreground focus-visible:visible focus-visible:ring-1 focus-visible:ring-ring group-hover/account-nav:visible group-focus-within/account-nav:visible"
-          onClick={(event) => {
+        {/* A sibling menu item lets arrow keys reach the pin without nesting controls. */}
+        <DropdownMenuItem
+          asChild
+          textValue={pinLabel}
+          className="pointer-events-none absolute right-1 top-1/2 z-10 size-6 -translate-y-1/2 justify-center rounded p-0 text-muted-foreground opacity-0 hover:bg-background/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring group-hover/account-nav:pointer-events-auto group-hover/account-nav:opacity-100 group-focus-within/account-nav:pointer-events-auto group-focus-within/account-nav:opacity-100"
+          onSelect={(event) => {
+            // Keep the menu open and focus on this control after pinning or unpinning.
             event.preventDefault()
-            event.stopPropagation()
             setSetting('sidebarPins', toggleSidebarPin(sidebarPins, key))
           }}
         >
-          {pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
-        </button>
+          <button type="button" aria-label={pinLabel} title={pinLabel}>
+            {pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+          </button>
+        </DropdownMenuItem>
       </div>
     )
   }
@@ -1932,7 +1983,7 @@ export function Sidebar({
             >
               <img
                 src="/pulpo-smiley.png"
-                alt="Pulpo"
+                alt=""
                 className={cn('size-6', collapsed && 'group-hover/logo:hidden')}
               />
               {collapsed && <PanelLeftOpen className="hidden size-4 group-hover/logo:block" />}
@@ -1980,17 +2031,17 @@ export function Sidebar({
         }}
       >
         {/* primary nav */}
-        <div className="space-y-0.5 px-2" data-sidebar-nav>
+        <nav aria-label={ui("Primary")} className="space-y-0.5 px-2" data-sidebar-nav>
           {iconBtn(t('chat.newChat'), () => startNewChat(), <SquarePen className="size-4" />, undefined, openNavMenu('newChat'))}
           {sidebarPins.searchChats && iconBtn(t('sidebar.searchChats'), onOpenSearch, <Search className="size-4" />, undefined, openNavMenu('searchChats'))}
-          {filesEnabled && sidebarPins.files && iconBtn(t('sidebar.files'), () => go('/files'), <FolderIcon className="size-4" />, undefined, (event) => {
+          {filesEnabled && sidebarPins.files && iconBtn(t('sidebar.files'), '/files', <FolderIcon className="size-4" />, undefined, (event) => {
             event.preventDefault()
             setFilesMenuPoint({ x: event.clientX, y: event.clientY })
           })}
-          {sidebarPins.usage && iconBtn(t('sidebar.usage'), () => go('/usage'), <BarChart3 className="size-4" />, undefined, openNavMenu('usage'))}
-          {billingEnabled && sidebarPins.billing && iconBtn(t('sidebar.billing'), () => go('/billing'), <CreditCard className="size-4" />, undefined, openNavMenu('billing'))}
-          {sidebarPins.friends && iconBtn(t('sidebar.friends'), () => go('/friends'), <UsersRound className="size-4" />, pendingSocialCount, openNavMenu('friends'))}
-          {apiKeysEnabled && sidebarPins.apiKeys && iconBtn(t('sidebar.apiKeys'), () => go('/api-keys'), <KeyRound className="size-4" />, undefined, openNavMenu('apiKeys'))}
+          {sidebarPins.usage && iconBtn(t('sidebar.usage'), '/usage', <BarChart3 className="size-4" />, undefined, openNavMenu('usage'))}
+          {billingEnabled && sidebarPins.billing && iconBtn(t('sidebar.billing'), '/billing', <CreditCard className="size-4" />, undefined, openNavMenu('billing'))}
+          {sidebarPins.friends && iconBtn(t('sidebar.friends'), '/friends', <UsersRound className="size-4" />, pendingSocialCount, openNavMenu('friends'))}
+          {apiKeysEnabled && sidebarPins.apiKeys && iconBtn(t('sidebar.apiKeys'), '/api-keys', <KeyRound className="size-4" />, undefined, openNavMenu('apiKeys'))}
           {filesEnabled && <FilesNavMenu point={filesMenuPoint} onClose={() => setFilesMenuPoint(null)} go={go} />}
           <NavItemMenu
             menu={navMenu}
@@ -2000,11 +2051,13 @@ export function Sidebar({
             subscribed={Boolean(billingQuery.data?.subscription)}
             go={go}
           />
-        </div>
+        </nav>
 
         {/* Secondary content stays mounted so every section animates on one timeline. */}
         <div
           aria-hidden={collapsed}
+          // Hidden while collapsed, so its links must not take focus either.
+          inert={collapsed}
           className={cn(
             'transition-opacity ease-[cubic-bezier(0.4,0,0.2,1)]',
             collapsed && 'h-0 overflow-hidden',
@@ -2015,14 +2068,14 @@ export function Sidebar({
           <div className="px-2 pb-4 pt-2">
             {pinnedEntries.length > 0 && (
               <div className="mb-2" ref={pinnedZoneRef} data-pinned-zone>
-                <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                <div id={`${listIdBase}-pinned`} className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                   {t('sidebar.pinned')}
                 </div>
-                <div className="space-y-0.5">
+                <ul role="list" aria-labelledby={`${listIdBase}-pinned`} className="space-y-0.5">
                   {pinnedEntries.map((entry) => (
-                    <SidebarEntryRow key={entry.id} entry={entry} list="pinned" reorderable {...treeProps} />
+                    <li key={entry.id}><SidebarEntryRow entry={entry} list="pinned" reorderable {...treeProps} /></li>
                   ))}
-                </div>
+                </ul>
               </div>
             )}
 
@@ -2048,7 +2101,7 @@ export function Sidebar({
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      className="ml-auto flex size-5 cursor-pointer items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground disabled:cursor-default disabled:opacity-50"
+                      className="-my-0.5 ml-auto flex size-6 cursor-pointer items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground disabled:cursor-default disabled:opacity-50"
                       disabled={!sidebar}
                       onClick={() => newFolder()}
                       aria-label={t('sidebar.newFolder')}
@@ -2062,15 +2115,20 @@ export function Sidebar({
               {rootGroups.map(({ group, entries }) => (
                 <div key={group ?? 'default'} className={cn(group && group !== rootGroups[0]!.group && 'mt-3')}>
                   {group && (
-                    <div className="px-2 pb-1 pt-1 text-[11px] font-medium text-muted-foreground/80">
+                    <div id={`${listIdBase}-${group}`} className="px-2 pb-1 pt-1 text-[11px] font-medium text-muted-foreground">
                       {t(`sidebar.groups.${group}`)}
                     </div>
                   )}
-                  <div className="space-y-0.5">
+                  <ul
+                    role="list"
+                    aria-labelledby={group ? `${listIdBase}-${group}` : undefined}
+                    aria-label={group ? undefined : ui("Chats")}
+                    className="space-y-0.5"
+                  >
                     {entries.map((entry) => (
-                      <SidebarEntryRow key={entry.id} entry={entry} list="loose" reorderable={!recentOrder} {...treeProps} />
+                      <li key={entry.id}><SidebarEntryRow entry={entry} list="loose" reorderable={!recentOrder} {...treeProps} /></li>
                     ))}
-                  </div>
+                  </ul>
                 </div>
               ))}
               {drag.dragKind !== null && drag.dragList !== 'loose' && (

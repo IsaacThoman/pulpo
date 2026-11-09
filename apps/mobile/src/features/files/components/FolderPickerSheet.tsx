@@ -119,7 +119,7 @@ export function FolderPickerSheet(props: Props) {
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={props.onCancel}>
-      <SafeAreaView edges={['bottom']} style={[styles.flex, { backgroundColor: theme.isDark ? theme.elevated : theme.background }]}>
+      <SafeAreaView onAccessibilityEscape={props.onCancel} edges={['bottom']} style={[styles.flex, { backgroundColor: theme.isDark ? theme.elevated : theme.background }]}>
         <View style={[styles.header, { borderBottomColor: theme.separator }]}>
           <Pressable accessibilityRole="button" hitSlop={10} onPress={props.onCancel} style={styles.headerSide}>
             <Text style={[styles.headerButton, { color: theme.blue }]}>Cancel</Text>

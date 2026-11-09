@@ -35,7 +35,7 @@ function ConflictSheet({ action, conflicts, onClose }: { action: 'undo' | 'redo'
   const theme = useAppTheme()
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <SafeAreaView edges={['bottom']} style={[styles.flex, { backgroundColor: theme.isDark ? theme.elevated : theme.background }]}>
+      <SafeAreaView onAccessibilityEscape={onClose} edges={['bottom']} style={[styles.flex, { backgroundColor: theme.isDark ? theme.elevated : theme.background }]}>
         <View style={[styles.sheetHeader, { borderBottomColor: theme.separator }]}>
           <Text accessibilityRole="header" style={[styles.sheetTitle, { color: theme.text }]}>{action === 'undo' ? 'Can’t Undo' : 'Can’t Redo'}</Text>
           <Pressable accessibilityRole="button" hitSlop={10} onPress={onClose} style={styles.sheetDone}><Text style={[styles.sheetDoneLabel, { color: theme.blue }]}>Done</Text></Pressable>
@@ -51,7 +51,7 @@ function ConflictSheet({ action, conflicts, onClose }: { action: 'undo' | 'redo'
                 <Text style={[styles.conflictName, { color: theme.text }]}>{conflict.name}</Text>
                 <Text style={[styles.conflictReason, { color: theme.secondary }]}>{conflictReason(conflict)}</Text>
                 {rows ? diffRows(rows).map((row, index) => row.kind === 'gap' ? (
-                  <Text key={index} style={[styles.gap, { color: theme.tertiary }]}>{row.count} unchanged {row.count === 1 ? 'line' : 'lines'}</Text>
+                  <Text key={index} style={[styles.gap, { color: theme.secondary }]}>{row.count} unchanged {row.count === 1 ? 'line' : 'lines'}</Text>
                 ) : (
                   <Text key={index} style={[styles.diffLine, { color: row.kind === 'same' ? theme.secondary : theme.text, backgroundColor: row.kind === 'added' ? 'rgba(52,199,89,0.16)' : row.kind === 'removed' ? 'rgba(255,59,48,0.14)' : 'transparent' }]}>
                     {row.kind === 'added' ? '+ ' : row.kind === 'removed' ? '− ' : '  '}{row.text || ' '}

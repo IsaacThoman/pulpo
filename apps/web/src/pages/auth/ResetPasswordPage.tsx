@@ -20,9 +20,9 @@ export function ResetPasswordPage() {
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : t('auth.resetFailed')))
   }}>
     <div><h1 className="text-2xl font-semibold">{t('auth.resetPassword')}</h1><p className="mt-1 text-sm text-muted-foreground">{t('auth.resetPasswordDescription')}</p></div>
-    {message ? <div className="space-y-3"><p className="text-sm text-emerald-600">{message}</p><Button asChild className="w-full"><Link to="/login">{t('auth.signIn')}</Link></Button></div> : <>
-      <div className="space-y-1.5"><Label htmlFor="new-password">{t('auth.newPassword')}</Label><Input id="new-password" type="password" minLength={8} required value={password} onChange={(event) => setPassword(event.target.value)} /></div>
-      {error && <p className="text-sm text-destructive">{error}</p>}
+    {message ? <div className="space-y-3"><p role="status" className="text-sm text-emerald-600">{message}</p><Button asChild className="w-full"><Link to="/login">{t('auth.signIn')}</Link></Button></div> : <>
+      <div className="space-y-1.5"><Label htmlFor="new-password">{t('auth.newPassword')}</Label><Input id="new-password" type="password" autoComplete="new-password" minLength={8} required value={password} onChange={(event) => setPassword(event.target.value)} aria-invalid={error ? true : undefined} aria-describedby={error ? 'reset-password-error' : undefined} /></div>
+      {error && <p id="reset-password-error" role="alert" className="text-sm text-destructive">{error}</p>}
       <Button className="w-full" type="submit" disabled={!token}>{t('auth.updatePassword')}</Button>
     </>}
   </form>

@@ -88,6 +88,13 @@ describe('user message actions', () => {
   })
 })
 
+/** Renders a reply that fails while it is on screen, the only case announced as an alert. */
+function renderLiveFailure(MessageItem: typeof import('./MessageItem').MessageItem, failed: Message) {
+  const view = render(<MessageItem chat={chat} message={{ ...failed, error: undefined, done: false }} streaming onRegenerate={() => undefined} />)
+  view.rerender(<MessageItem chat={chat} message={failed} streaming={false} onRegenerate={() => undefined} />)
+  return view
+}
+
 describe('insufficient balance notice', () => {
   const balanceErrors = [
     'Insufficient balance for the request',
@@ -105,10 +112,12 @@ describe('insufficient balance notice', () => {
 
   it.each(balanceErrors)('links to billing for %s', async (error) => {
     const { MessageItem } = await import('./MessageItem')
-    const view = render(<MemoryRouter initialEntries={['/chat']}><Routes>
-      <Route path="/chat" element={<MessageItem chat={chat} message={assistant({ error })} streaming={false} onRegenerate={() => undefined} />} />
+    const page = (message: Message) => <MemoryRouter initialEntries={['/chat']}><Routes>
+      <Route path="/chat" element={<MessageItem chat={chat} message={message} streaming={!message.done} onRegenerate={() => undefined} />} />
       <Route path="/billing" element={<p>Billing destination</p>} />
-    </Routes></MemoryRouter>)
+    </Routes></MemoryRouter>
+    const view = render(page(assistant({ done: false })))
+    view.rerender(page(assistant({ error })))
 
     expect(view.getByRole('alert').textContent).toContain('You’ve reached your usage limit.')
     expect(view.getByRole('alert').textContent).toContain('Manage your plan or add credits to keep chatting.')
@@ -121,7 +130,7 @@ describe('insufficient balance notice', () => {
     const { useAuth } = await import('@/stores/auth')
     useAuth.setState({ billingEnabled: false })
     const { MessageItem } = await import('./MessageItem')
-    const view = render(<MessageItem chat={chat} message={assistant({ error: balanceErrors[0] })} streaming={false} onRegenerate={() => undefined} />)
+    const view = renderLiveFailure(MessageItem, assistant({ error: balanceErrors[0] }))
 
     expect(view.getByRole('alert').textContent).toBe('You’ve reached your usage limit.')
     expect(view.queryByRole('link')).toBeNull()
@@ -129,7 +138,7 @@ describe('insufficient balance notice', () => {
 
   it('preserves unrelated errors without billing guidance', async () => {
     const { MessageItem } = await import('./MessageItem')
-    const view = render(<MessageItem chat={chat} message={assistant({ error: 'Provider unavailable' })} streaming={false} onRegenerate={() => undefined} />)
+    const view = renderLiveFailure(MessageItem, assistant({ error: 'Provider unavailable' }))
 
     expect(view.getByRole('alert').textContent).toBe('Provider unavailable')
     expect(view.queryByRole('link')).toBeNull()
@@ -683,20 +692,52 @@ describe('assistant terminal error rendering', () => {
     expect(markup).toContain('Worked')
     expect(markup.indexOf('Previously generated answer')).toBeLessThan(markup.indexOf('400 Your input exceeds the context window'))
     expect(markup.indexOf('custom result')).toBeLessThan(markup.indexOf('400 Your input exceeds the context window'))
-    expect(markup).toContain('role="alert"')
+    // An earlier failure is read in place; only a reply failing while open interrupts.
+    expect(markup).not.toContain('role="alert"')
   })
 
-  it('retains the standalone alert for an error-only response', async () => {
+  it('alerts when an error-only response fails while open', async () => {
     const { MessageItem } = await import('./MessageItem')
-    const markup = renderToStaticMarkup(<MessageItem
-      chat={chat}
-      message={assistant({ error: 'Generation failed' })}
-      streaming={false}
-      onRegenerate={() => undefined}
-    />)
+    const view = renderLiveFailure(MessageItem, assistant({ error: 'Generation failed' }))
 
-    expect(markup).toContain('Generation failed')
-    expect(markup).toContain('role="alert"')
+    expect(view.getByRole('alert').textContent).toBe('Generation failed')
+  })
+
+  it('does not alert for a reply the user stopped', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const { useChat } = await import('@/stores/chat')
+    const id = 'response-stopped'
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}'))
+    const view = render(<MessageItem chat={chat} message={assistant({ id, done: false })} streaming onRegenerate={() => undefined} />)
+    useChat.getState().stopStreaming(id)
+    view.rerender(<MessageItem chat={chat} message={assistant({ id, error: 'Generation cancelled' })} streaming={false} onRegenerate={() => undefined} />)
+
+    expect(view.getByText('Generation cancelled')).toBeDefined()
+    expect(view.queryByRole('alert')).toBeNull()
+  })
+})
+
+describe('message structure', () => {
+  it('labels each turn with a heading naming its sender', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const view = render(<>
+      <MessageItem chat={chat} message={user()} streaming={false} onRegenerate={() => undefined} />
+      <MessageItem chat={chat} message={assistant({ content: 'Answer' })} streaming={false} onRegenerate={() => undefined} />
+    </>)
+
+    expect(view.getAllByRole('article').map((turn) => turn.getAttribute('aria-labelledby') && document.getElementById(turn.getAttribute('aria-labelledby')!)?.textContent))
+      .toEqual(['You said', 'model-1 said'])
+    expect(view.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual(['You said', 'model-1 said'])
+  })
+
+  it('names the editor of a response and the waiting indicator', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const view = render(<MessageItem chat={chat} message={assistant({ done: false })} streaming onRegenerate={() => undefined} />)
+    expect(view.getByText('Thinking…').className).toContain('sr-only')
+
+    view.rerender(<MessageItem chat={chat} message={assistant({ content: 'Answer' })} streaming={false} onRegenerate={() => undefined} />)
+    fireEvent.click(view.getByRole('button', { name: 'Edit response' }))
+    expect(view.getByRole('textbox', { name: 'Edit response' })).toBeDefined()
   })
 })
 

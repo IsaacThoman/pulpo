@@ -58,6 +58,8 @@ struct AgentModeMenuContent: View {
           transaction.animation = nil
           transaction.disablesAnimations = true
         }
+        // Decorative: VoiceOver otherwise names the button after the asset ("LucideBotOff").
+        .accessibilityHidden(true)
     }
     // The native style and view identity remain fixed across both states.
     .modifier(AgentModeButtonStyle())
@@ -66,6 +68,7 @@ struct AgentModeMenuContent: View {
     .menuOrder(.fixed)
     .disabled(!model.available)
     .accessibilityLabel("Agent options, \(enabled ? "Pulpo Agent" : "Disabled")")
+    .accessibilityInputLabels(["Agent", "Agent options"])
     .accessibilityHint(model.hint)
     .frame(width: 44, height: 44)
   }

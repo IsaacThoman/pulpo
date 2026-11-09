@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { FriendConnection, FriendProfile, FriendSearchResponse, FriendSearchResult, FriendsList, PoolSummary } from '@pulpo/contracts'
+import { Link } from 'react-router-dom'
+import type { FriendConnection, FriendProfile, FriendSearchResponse, FriendSearchResult, FriendSuggestion, FriendsList, PoolSummary } from '@pulpo/contracts'
 import { Check, ChevronDown, ChevronRight, Copy, LoaderCircle, MoreHorizontal, Search, UserRoundPlus, UsersRound } from 'lucide-react'
 import { ApiError, apiRequest, isNetworkError } from '@/lib/api'
 import { nextFriendSearchIndex, normalizedFriendSearchQuery, shouldSearchFriends } from '@/lib/friend-search'
@@ -16,12 +17,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
-import { ProfileIdentity } from '@/components/FriendIdentity'
+import { MutualFriends, ProfileIdentity } from '@/components/FriendIdentity'
+import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { PoolSection } from '@/components/PoolSection'
 import { InviteCodesCard } from '@/components/InviteCodesCard'
 import { ui, uit } from '@/i18n/ui'
 
-export function FriendsHandle({ username }: { username: string }) {
+export function FriendsHandle({ username, label = true }: { username: string; label?: boolean }) {
   const [copied, setCopied] = useState(false)
   const copyHandle = async () => {
     await navigator.clipboard.writeText(username)
@@ -29,22 +31,46 @@ export function FriendsHandle({ username }: { username: string }) {
     window.setTimeout(() => setCopied(false), 1_500)
   }
   return (
-    <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-      <span>{ui("Your handle is")}</span>
+    <p className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+      {label && <span className="shrink-0">{ui("Your handle is")}</span>}
       <button
         type="button"
-        className="inline-flex cursor-pointer items-center gap-1"
+        className="inline-flex min-w-0 cursor-pointer items-center gap-1"
         onClick={() => void copyHandle()}
         aria-label={uit`Copy @${username}`}
         title={copied ? ui("Copied") : ui("Copy handle")}
       >
-        <span>@{username}</span>
-        {copied ? <Check className="size-3.5" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}
+        <span className="truncate">@{username}</span>
+        {copied ? <Check className="size-3.5 shrink-0" aria-hidden /> : <Copy className="size-3.5 shrink-0" aria-hidden />}
       </button>
       <span className="sr-only" aria-live="polite">{copied ? ui("Handle copied") : ''}</span>
     </p>
   )
 }
+
+/** The viewer's own profile, as friends see it, with the handle they share to be found. */
+export function MyProfileHeader({ profile, friendCount }: { profile: FriendProfile; friendCount?: number }) {
+  const href = `/${profile.username}`
+  return (
+    <section className="flex flex-col items-center pb-2 pt-4 text-center" aria-label={ui("Your profile")}>
+      <Link to={href} className="rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" tabIndex={-1} aria-hidden>
+        <ProfileAvatar name={profile.displayName} avatarUrl={profile.avatarUrl} className="size-20" fallbackClassName="text-xl" />
+      </Link>
+      <h2 className="mt-3 max-w-full truncate text-xl font-semibold">{profile.displayName}</h2>
+      <div className="mt-1 max-w-full"><FriendsHandle username={profile.username} label={false} /></div>
+      <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+        {friendCount !== undefined && <>
+          <span>{friendCount === 1 ? ui("1 friend") : uit`${friendCount} friends`}</span>
+          <span aria-hidden>·</span>
+        </>}
+        <Link to={href} className="rounded-sm font-medium text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{ui("View profile")}</Link>
+      </div>
+    </section>
+  )
+}
+
+/** Suggestions sit above Friends, so only the strongest few show until the viewer asks for more. */
+const COLLAPSED_SUGGESTIONS = 2
 
 function Section({ title, count, empty, children }: { title: string; count: number; empty?: string; children: React.ReactNode }) {
   return (
@@ -76,8 +102,22 @@ function CollapsibleSection({ title, count, open, onToggle, children }: {
   )
 }
 
-function ConnectionRow({ connection, detail, actions }: { connection: FriendConnection; detail?: string; actions: React.ReactNode }) {
-  return <div className="flex items-center justify-between gap-3 px-4 py-3"><ProfileIdentity profile={connection.profile} detail={detail} /><div className="flex shrink-0 items-center gap-2">{actions}</div></div>
+function ConnectionRow({ connection, detail, trailingDetail, actions, profileHref, showMutualFriends = false }: {
+  connection: FriendConnection
+  detail?: string
+  trailingDetail?: string
+  actions: React.ReactNode
+  profileHref?: string
+  showMutualFriends?: boolean
+}) {
+  return <div className="flex items-center justify-between gap-3 px-4 py-3">
+    <div className="flex min-w-0 flex-1 items-center gap-3">
+      <ProfileIdentity profile={connection.profile} detail={detail} href={profileHref} />
+      {showMutualFriends && <MutualFriends friends={connection.mutualFriends ?? []} />}
+      {trailingDetail && <span className="ml-auto shrink-0 self-center whitespace-nowrap text-right text-xs text-muted-foreground">{trailingDetail}</span>}
+    </div>
+    <div className="flex shrink-0 items-center gap-2">{actions}</div>
+  </div>
 }
 
 export function FriendsPage() {
@@ -94,6 +134,7 @@ export function FriendsPage() {
   const [actionError, setActionError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [outgoingOpen, setOutgoingOpen] = useState(false)
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false)
   const [blockedOpen, setBlockedOpen] = useState(false)
   const [inviteTarget, setInviteTarget] = useState<FriendProfile | null>(null)
   const inviteTriggerRef = useRef<HTMLButtonElement | null>(null)
@@ -208,6 +249,14 @@ export function FriendsPage() {
     )
   }
 
+  const sendSuggestionRequest = (suggestion: FriendSuggestion) => {
+    void act(
+      `request:${suggestion.profile.id}`,
+      () => apiRequest('/api/friends/requests', { method: 'POST', body: { userId: suggestion.profile.id } }),
+      uit`Friend request sent to ${suggestion.profile.displayName}.`,
+    )
+  }
+
   const acceptSearchRequest = (result: FriendSearchResult) => {
     if (!result.requestId) return
     void act(
@@ -257,6 +306,8 @@ export function FriendsPage() {
     <DropdownMenuItem disabled={actionIds.size > 0} variant="destructive" onClick={() => block(profile)}>{ui("Block")}</DropdownMenuItem>
   </>
   const data = listQuery.data
+  const suggestions = data?.suggestions ?? []
+  const visibleSuggestions = suggestionsOpen ? suggestions : suggestions.slice(0, COLLAPSED_SUGGESTIONS)
   const pool = poolQuery.data?.pool
   const memberIds = new Set(pool?.members.map((member) => member.profile.id))
   const pendingIds = new Set(pool?.pendingInvitations.map((invite) => invite.invitee.id))
@@ -265,10 +316,11 @@ export function FriendsPage() {
   const poolFull = Boolean(pool && pool.members.length + pool.pendingInvitations.length >= 6)
   return (
     <div className="mx-auto w-full max-w-3xl space-y-5 px-5 py-6">
-      <div>
-        <h2 className="text-lg font-medium">{ui("Find your friends")}</h2>
-        {user && <FriendsHandle username={user.username} />}
-      </div>
+      {user && <MyProfileHeader
+        profile={{ id: user.id, displayName: user.name, username: user.username, avatarUrl: user.avatarUrl, profileColor: user.profileColor }}
+        friendCount={data?.friends.length}
+      />}
+      <h2 className="text-lg font-medium">{ui("Find your friends")}</h2>
       <InviteCodesCard />
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -302,7 +354,7 @@ export function FriendsPage() {
               className={`flex items-center justify-between gap-3 border-b px-4 py-3 last:border-b-0 ${activeSearchIndex === index ? 'bg-accent/50' : ''}`}
               onMouseEnter={() => setActiveSearchIndex(index)}
             >
-              <ProfileIdentity profile={result.profile} query={searchQuery} matchedOn={result.matchedOn} />
+              <ProfileIdentity profile={result.profile} query={searchQuery} matchedOn={result.matchedOn} href={`/${result.profile.username}`} />
               <div className="flex shrink-0 items-center gap-2">
                 {result.relationship === 'none' && <Button size="sm" disabled={actionIds.has(`request:${result.profile.id}`)} onClick={() => sendSearchRequest(result)}><UserRoundPlus />{actionIds.has(`request:${result.profile.id}`) ? ui("Sending…") : ui("Add friend")}</Button>}
                 {result.relationship === 'incoming' && <Button size="sm" disabled={actionIds.has(`accept:${result.requestId}`)} onClick={() => acceptSearchRequest(result)}>{actionIds.has(`accept:${result.requestId}`) ? ui("Accepting…") : ui("Accept")}</Button>}
@@ -318,7 +370,7 @@ export function FriendsPage() {
         : listQuery.error ? <div className="rounded-xl border py-12 text-center"><p className="text-sm text-muted-foreground">{listQuery.error.message}</p><Button className="mt-3" size="sm" variant="outline" onClick={() => void listQuery.refetch()}>{ui("Try again")}</Button></div>
           : null}
       {data && data.incoming.length > 0 && <Section title={ui("Friend requests")} count={data.incoming.length}>
-        {data.incoming.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={`Requested ${friendRequestAge(connection.requestedAt)}`} actions={<>
+        {data.incoming.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} profileHref={`/${connection.profile.username}`} trailingDetail={`Requested ${friendRequestAge(connection.requestedAt)}`} showMutualFriends actions={<>
           <Button size="sm" disabled={actionIds.has(`accept:${connection.requestId}`)} onClick={() => void act(`accept:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}/accept`, { method: 'POST' }), `${connection.profile.displayName} is now your friend.`)}>{actionIds.has(`accept:${connection.requestId}`) ? ui("Accepting…") : ui("Accept")}</Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label={uit`More options for ${connection.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
@@ -329,6 +381,27 @@ export function FriendsPage() {
             </DropdownMenuContent>
           </DropdownMenu>
         </>} />)}
+      </Section>}
+
+      {suggestions.length > 0 && <Section title={ui("People you may know")} count={suggestions.length}>
+        {visibleSuggestions.map((suggestion) => <div key={suggestion.profile.id} className="flex items-center justify-between gap-3 px-4 py-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <ProfileIdentity profile={suggestion.profile} href={`/${suggestion.profile.username}`} />
+            <MutualFriends friends={suggestion.mutualFriends} />
+          </div>
+          <Button size="sm" disabled={actionIds.has(`request:${suggestion.profile.id}`)} onClick={() => sendSuggestionRequest(suggestion)}>
+            <UserRoundPlus />{actionIds.has(`request:${suggestion.profile.id}`) ? ui("Sending…") : ui("Add friend")}
+          </Button>
+        </div>)}
+        {suggestions.length > COLLAPSED_SUGGESTIONS && <button
+          type="button"
+          className="flex w-full items-center justify-center gap-1.5 px-4 py-2.5 text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+          onClick={() => setSuggestionsOpen((value) => !value)}
+          aria-expanded={suggestionsOpen}
+        >
+          {suggestionsOpen ? ui("Show less") : uit`Show ${suggestions.length - COLLAPSED_SUGGESTIONS} more`}
+          <ChevronDown className={`size-4 transition-transform ${suggestionsOpen ? 'rotate-180' : ''}`} aria-hidden />
+        </button>}
       </Section>}
 
       {userId && <PoolSection
@@ -344,7 +417,7 @@ export function FriendsPage() {
       />}
       {data && <>
         {friends.length > 0 ? <Section title={ui("Friends")} count={friends.length}>
-          {friends.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={pendingIds.has(connection.profile.id) ? ui("Invitation sent") : undefined} actions={
+          {friends.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} profileHref={`/${connection.profile.username}`} detail={pendingIds.has(connection.profile.id) ? ui("Invitation sent") : undefined} actions={
             <DropdownMenu>
               <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" disabled={actionIds.size > 0} onFocus={(event) => { inviteTriggerRef.current = event.currentTarget }} aria-label={uit`More options for ${connection.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -362,7 +435,7 @@ export function FriendsPage() {
         </div>}
 
         {data.outgoing.length > 0 && <CollapsibleSection title={ui("Sent requests")} count={data.outgoing.length} open={outgoingOpen} onToggle={() => setOutgoingOpen((value) => !value)}>
-          {data.outgoing.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={`Sent ${friendRequestAge(connection.requestedAt)}`} actions={<Button size="sm" variant="ghost" disabled={actionIds.has(`cancel:${connection.requestId}`)} onClick={() => void act(`cancel:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request to ${connection.profile.displayName} canceled.`)}>{actionIds.has(`cancel:${connection.requestId}`) ? ui("Canceling…") : ui("Cancel")}</Button>} />)}
+          {data.outgoing.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} profileHref={`/${connection.profile.username}`} trailingDetail={`Sent ${friendRequestAge(connection.requestedAt)}`} showMutualFriends actions={<Button size="sm" variant="ghost" disabled={actionIds.has(`cancel:${connection.requestId}`)} onClick={() => void act(`cancel:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request to ${connection.profile.displayName} canceled.`)}>{actionIds.has(`cancel:${connection.requestId}`) ? ui("Canceling…") : ui("Cancel")}</Button>} />)}
         </CollapsibleSection>}
 
         {data.blocked.length > 0 && <CollapsibleSection title={ui("Blocked users")} count={data.blocked.length} open={blockedOpen} onToggle={() => setBlockedOpen((value) => !value)}>

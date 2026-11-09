@@ -16,6 +16,21 @@ export const lightTheme = {
   fill: 'rgba(0,0,0,0.045)', fillStrong: 'rgba(0,0,0,0.08)', shadow: '#74747A',
 } as const;
 
+// Increase Contrast (Settings > Accessibility > Display & Text Size), as iOS does for its own colors:
+// secondary text, links and status colors reach 7:1, and separators and tertiary glyphs get stronger.
+export const highContrastDarkTheme = {
+  ...darkTheme,
+  secondary: '#C7C7CC', tertiary: '#A8A8AE', separator: 'rgba(255,255,255,0.24)',
+  blue: '#8CC0FF', green: '#5BE38A', orange: '#FFB870', red: '#FFA8A3',
+} as const;
+
+export const highContrastLightTheme = {
+  ...lightTheme,
+  secondary: '#48484E', tertiary: '#5C5C62', separator: 'rgba(0,0,0,0.24)',
+  blue: '#0049A3', green: '#065224', orange: '#7A3800', red: '#8A1310',
+} as const;
+
 export const themePalettes = { dark: darkTheme, light: lightTheme } as const;
+export const highContrastThemePalettes = { dark: highContrastDarkTheme, light: highContrastLightTheme } as const;
 
 export type AppTheme = { [K in keyof typeof darkTheme]: K extends 'isDark' ? boolean : string };

@@ -1,5 +1,6 @@
 import { MaterialButton, MaterialField } from '../../../platform/MaterialUI';
 import { useSubpageBack } from '../../../platform/useSubpageBack';
+import { useAccessibilityAnnouncement } from '../../../platform/accessibilityAnnouncement';
 import { DeleteAccountAction } from '../../../components/DeleteAccount';
 import type { ComponentProps, PropsWithChildren, ReactNode } from 'react';
 import { useRef, useState } from 'react';
@@ -20,11 +21,14 @@ type AuthPage = 'login' | 'login-options' | 'two-factor' | 'signup' | 'forgot' |
 const mockupOneDark = {
   background: '#101014', surface: '#18181C', border: '#303036', text: '#FAFAFA',
   textMuted: '#A1A1AA', textFaint: '#98989D', accent: '#F4F4F5', accentText: '#18181B', destructive: '#FF453A',
+  // Text fields have no other outline, so their border needs 3:1 against the page and the field.
+  fieldBorder: '#76767E',
 };
 
 const mockupOneLight = {
   background: '#FFFFFF', surface: '#F8F8FA', border: '#E2E2E7', text: '#18181B',
   textMuted: '#64646D', textFaint: '#6E6E73', accent: '#18181B', accentText: '#FFFFFF', destructive: '#C5221F',
+  fieldBorder: '#8A8A90',
 };
 
 type AuthColors = Record<keyof typeof mockupOneDark, string>;
@@ -36,6 +40,7 @@ type AuthFieldProps = ComponentProps<typeof TextInput> & {
 };
 
 const COMPACT_AUTH_HEIGHT = 700;
+const TITLE_MAX_FONT_SIZE_MULTIPLIER = 1.6;
 const INVITE_CODE_LENGTH = 6;
 const DEFAULT_PENDING_MESSAGE = 'Your account is pending approval. An admin will review it shortly.';
 
@@ -77,11 +82,12 @@ function AuthShell({ title, subtitle, children, footer, colors }: PropsWithChild
   return <KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'padding' : undefined} style={[styles.root, { backgroundColor: colors.background, paddingLeft: insets.left, paddingRight: insets.right }]}>
     <ScrollView alwaysBounceVertical={false} automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, compact && styles.compactContent, { paddingTop: insets.top + (compact ? 14 : 42), paddingBottom: insets.bottom + (compact ? 8 : 24) }]}>
       <View style={[styles.brand, compact && styles.compactBrand]}>
-        <Image source={require('../../assets/pulpo-smiley.png')} style={[styles.logo, compact && styles.compactLogo]} />
-        <Text style={[styles.brandName, compact && styles.compactBrandName, { color: colors.text }]}>Pulpo</Text>
+        <Image accessible={false} accessibilityElementsHidden importantForAccessibility="no" source={require('../../assets/pulpo-smiley.png')} style={[styles.logo, compact && styles.compactLogo]} />
+        <Text maxFontSizeMultiplier={2} style={[styles.brandName, compact && styles.compactBrandName, { color: colors.text }]}>Pulpo</Text>
       </View>
       <View style={[styles.heading, compact && styles.compactHeading]}>
-        <Text accessibilityRole="header" style={[styles.title, compact && styles.compactTitle, { color: colors.text }]}>{title}</Text>
+        {/* Already large: past 1.6× its words break mid-word on a phone. */}
+        <Text accessibilityRole="header" maxFontSizeMultiplier={TITLE_MAX_FONT_SIZE_MULTIPLIER} style={[styles.title, compact && styles.compactTitle, { color: colors.text }]}>{title}</Text>
         {subtitle ? <Text style={[styles.subtitle, compact && styles.compactSubtitle, { color: colors.textMuted }]}>{subtitle}</Text> : null}
       </View>
       <View style={[styles.form, compact && styles.compactForm]}>{children}</View>
@@ -93,8 +99,8 @@ function AuthShell({ title, subtitle, children, footer, colors }: PropsWithChild
 function AuthField({ colors, icon, invalid = false, label, ...props }: AuthFieldProps) {
   const compact = useCompactAuthLayout();
   if (Platform.OS === 'android') return <MaterialField label={label} icon={typeof icon === 'string' ? icon : undefined} error={invalid ? 'Check this value' : undefined} autoCapitalize="none" {...props} />;
-  return <View style={[styles.field, compact && styles.compactField, { backgroundColor: colors.surface, borderColor: invalid ? colors.destructive : colors.border }]}>
-    <SymbolView name={icon} tintColor={colors.textFaint} size={18} />
+  return <View style={[styles.field, compact && styles.compactField, { backgroundColor: colors.surface, borderColor: invalid ? colors.destructive : colors.fieldBorder }]}>
+    <SymbolView accessibilityElementsHidden importantForAccessibility="no-hide-descendants" name={icon} tintColor={colors.textFaint} size={18} />
     <TextInput accessibilityLabel={label} placeholder={label} placeholderTextColor={colors.textFaint} autoCapitalize="none" style={[styles.input, compact && styles.compactInput, { color: colors.text }]} {...props} />
   </View>;
 }
@@ -139,14 +145,15 @@ function InviteCodeField({ colors, value, disabled, error, onChangeText, onSubmi
   const [focused, setFocused] = useState(false);
   const compact = useCompactAuthLayout();
   const activeIndex = Math.min(value.length, INVITE_CODE_LENGTH - 1);
+  useAccessibilityAnnouncement(error);
   return <View style={styles.inviteCode}>
     <Text accessible={false} style={[styles.inviteCodeLabel, { color: colors.text }]} onPress={() => inputRef.current?.focus()}>Invite code</Text>
     <View>
       <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.inviteCodeCells, compact && styles.compactInviteCodeCells]}>
         {Array.from({ length: INVITE_CODE_LENGTH }, (_, index) => {
           const active = focused && index === activeIndex;
-          return <View key={index} style={[styles.inviteCodeCell, compact && styles.compactInviteCodeCell, (error || active) && styles.emphasizedInviteCodeCell, { backgroundColor: colors.surface, borderColor: error ? colors.destructive : active ? colors.text : colors.border }]}>
-            <Text maxFontSizeMultiplier={1.3} style={[styles.inviteCodeCharacter, compact && styles.compactInviteCodeCharacter, { color: colors.text }]}>{value[index] ?? ''}</Text>
+          return <View key={index} style={[styles.inviteCodeCell, compact && styles.compactInviteCodeCell, (error || active) && styles.emphasizedInviteCodeCell, { backgroundColor: colors.surface, borderColor: error ? colors.destructive : active ? colors.text : colors.fieldBorder }]}>
+            <Text maxFontSizeMultiplier={2} numberOfLines={1} adjustsFontSizeToFit style={[styles.inviteCodeCharacter, compact && styles.compactInviteCodeCharacter, { color: colors.text }]}>{value[index] ?? ''}</Text>
           </View>;
         })}
       </View>
@@ -182,7 +189,7 @@ function BackToSignIn({ colors, onPress, label = 'Back to sign in' }: { colors: 
 
 export function AuthExperience() {
   const theme = useAppTheme();
-  const colors: AuthColors = Platform.OS === 'android' ? { background: theme.background, surface: theme.elevated, border: theme.separator, text: theme.text, textMuted: theme.secondary, textFaint: theme.secondary, accent: theme.accent, accentText: theme.accentText, destructive: theme.red } : theme.isDark ? mockupOneDark : mockupOneLight;
+  const colors: AuthColors = Platform.OS === 'android' ? { background: theme.background, surface: theme.elevated, border: theme.separator, fieldBorder: theme.tertiary, text: theme.text, textMuted: theme.secondary, textFaint: theme.secondary, accent: theme.accent, accentText: theme.accentText, destructive: theme.red } : theme.isDark ? mockupOneDark : mockupOneLight;
   const productionStatus = useSessionStore((state) => state.status);
   const productionUser = useSessionStore((state) => state.user);
   const productionInstanceUrl = useSessionStore((state) => state.instanceUrl);
@@ -222,6 +229,9 @@ export function AuthExperience() {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const pendingActionRef = useRef(false);
   const [inviteError, setInviteError] = useState('');
+  // iOS ignores the alert role and live regions below; speak errors and status as they appear.
+  useAccessibilityAnnouncement(error);
+  useAccessibilityAnnouncement(pendingFeedback);
   const [passkeyFallback, setPasskeyFallback] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
 
@@ -386,7 +396,7 @@ export function AuthExperience() {
         </View>
       </View> : null}
       <Text numberOfLines={1} ellipsizeMode="middle" style={[styles.pendingHelp, { color: colors.textMuted }]}>Signed in as <Text style={[styles.helpLink, { color: colors.text }]}>{session.user.email}</Text></Text>
-      {pendingFeedback ? <Text accessibilityLiveRegion="polite" style={[styles.pendingHelp, { color: colors.textMuted }]}>{pendingFeedback}</Text> : null}
+      {pendingFeedback ? <Text style={[styles.pendingHelp, { color: colors.textMuted }]}>{pendingFeedback}</Text> : null}
       {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
       <View style={styles.pendingActions}>
         <SecondaryAuthButton label="Sign out" colors={colors} icon="rectangle.portrait.and.arrow.right" loading={pendingAction === 'signout'} disabled={pendingAction !== null} onPress={() => { void signOut(); }} />
@@ -453,7 +463,7 @@ export function AuthExperience() {
   return <AuthShell colors={colors} title={signedInAccounts.length ? 'Add an account' : 'Welcome back'} subtitle={signedInAccounts.length ? 'Sign in to another Pulpo account. Your other accounts stay signed in.' : 'Sign in with your Pulpo account to sync conversations, models, and settings.'} footer={
     <Pressable accessibilityRole="button" accessibilityLabel={`Change server, currently ${instance.url}`} onPress={() => goTo('instance')} style={styles.instanceButton}>
       <SymbolView name="server.rack" tintColor={colors.textFaint} size={14} />
-      <Text style={[styles.instanceText, { color: colors.textMuted }]} numberOfLines={1}>{instance.url}</Text>
+      <Text style={[styles.instanceText, { color: colors.textMuted }]} numberOfLines={2}>{instance.url}</Text>
       <Text style={[styles.change, { color: colors.text }]}>Change</Text>
     </Pressable>
   }>
@@ -490,7 +500,7 @@ const styles = StyleSheet.create({
   compactForm: { marginTop: 20, gap: 10 },
   footer: { marginTop: 'auto', paddingTop: 32 },
   compactFooter: { paddingTop: 8 },
-  field: { minHeight: 56, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  field: { minHeight: 56, borderRadius: 16, borderWidth: 1, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
   compactField: { minHeight: 50, borderRadius: 15 },
   input: { flex: 1, fontSize: 17, paddingVertical: 14 },
   compactInput: { fontSize: 16, paddingVertical: 11 },
@@ -503,13 +513,13 @@ const styles = StyleSheet.create({
   compactSecondaryButton: { minHeight: 46, borderRadius: 15 },
   inactiveButton: { opacity: 0.5 },
   secondaryButtonText: { fontSize: 16, fontWeight: '600' },
-  links: { flexDirection: 'row', justifyContent: 'center', gap: 10 },
-  linkTarget: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 6 },
-  link: { fontSize: 13.5, fontWeight: '600' },
+  links: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', columnGap: 10 },
+  linkTarget: { minHeight: 44, maxWidth: '100%', justifyContent: 'center', paddingHorizontal: 6 },
+  link: { fontSize: 13.5, fontWeight: '600', textAlign: 'center' },
   backLink: { minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   backLinkText: { fontSize: 13.5, fontWeight: '600' },
   instanceButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingHorizontal: 12 },
-  instanceText: { maxWidth: 210, fontSize: 12.5 },
+  instanceText: { maxWidth: 210, flexShrink: 1, fontSize: 12.5 },
   change: { fontSize: 12.5, fontWeight: '600' },
   note: { fontSize: 12.5, lineHeight: 18, textAlign: 'center', paddingHorizontal: 10 },
   pendingHelp: { fontSize: 13.5, lineHeight: 20 },
@@ -518,7 +528,7 @@ const styles = StyleSheet.create({
   inviteCodeLabel: { fontSize: 15, fontWeight: '600' },
   inviteCodeCells: { flexDirection: 'row', gap: 10 },
   compactInviteCodeCells: { gap: 8 },
-  inviteCodeCell: { flex: 1, aspectRatio: 1, maxHeight: 64, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
+  inviteCodeCell: { flex: 1, aspectRatio: 1, maxHeight: 64, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   compactInviteCodeCell: { borderRadius: 12 },
   emphasizedInviteCodeCell: { borderWidth: 1.5 },
   inviteCodeCharacter: { fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 22, fontWeight: '600' },

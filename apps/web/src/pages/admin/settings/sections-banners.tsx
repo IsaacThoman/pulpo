@@ -128,10 +128,10 @@ export function BannersSection() {
           onChange={(dismissible) => update({ dismissible })}
         />
         <Field label={ui("Starts")} hint={ui("Leave empty to show it right away.")}>
-          <Input type="datetime-local" className="w-56" value={draft.startsAt} onChange={(event) => update({ startsAt: event.target.value })} />
+          {(control) => <Input {...control} type="datetime-local" className="w-56" value={draft.startsAt} onChange={(event) => update({ startsAt: event.target.value })} />}
         </Field>
         <Field label={ui("Ends")} hint={ui("Leave empty to show it until it is deleted.")}>
-          <Input type="datetime-local" className="w-56" value={draft.endsAt} onChange={(event) => update({ endsAt: event.target.value })} />
+          {(control) => <Input {...control} type="datetime-local" className="w-56" value={draft.endsAt} onChange={(event) => update({ endsAt: event.target.value })} />}
         </Field>
         {draft.content.trim() && (
           <div>

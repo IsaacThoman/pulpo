@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { friendRequestAction, friendSearchRelationship, orderedPair } from './routes.js'
+import { friendRequestAction, friendSearchRelationship, mutualFriendIdsForTargets, orderedPair } from './routes.js'
 
 describe('friend pair identity', () => {
   it('normalizes either request direction to the same pair', () => {
@@ -22,5 +22,19 @@ describe('friend pair identity', () => {
     expect(friendSearchRelationship('other', 'me', { status: 'pending', requestedByUserId: 'other' })).toBe('incoming')
     expect(friendSearchRelationship('other', 'me', { status: 'pending', requestedByUserId: 'me' })).toBe('outgoing')
     expect(friendSearchRelationship('other', 'me', { status: 'accepted', requestedByUserId: 'other' })).toBe('friends')
+  })
+
+  it('groups mutual friends in either edge direction without duplicates', () => {
+    const rows = [
+      { userAId: 'target-a', userBId: 'friend-a' },
+      { userAId: 'friend-b', userBId: 'target-a' },
+      { userAId: 'target-b', userBId: 'friend-a' },
+      { userAId: 'target-a', userBId: 'friend-a' },
+      { userAId: 'target-a', userBId: 'stranger' },
+    ]
+    expect([...mutualFriendIdsForTargets(rows, ['target-a', 'target-b'], ['friend-a', 'friend-b'])]).toEqual([
+      ['target-a', ['friend-a', 'friend-b']],
+      ['target-b', ['friend-a']],
+    ])
   })
 })

@@ -186,7 +186,7 @@ describe('native initial setup', () => {
     const handler = await nativeSetupHandler()
     const request = {
       body: {
-        name: 'Admin', username: 'admin', email: 'admin@example.com', password: 'password', deviceLabel: 'Pulpo for Mac',
+        name: 'Admin', username: 'pulpo_admin', email: 'admin@example.com', password: 'password', deviceLabel: 'Pulpo for Mac',
       },
     } as unknown as FastifyRequest
     const reply = { code: vi.fn().mockReturnThis() } as unknown as FastifyReply
@@ -194,7 +194,7 @@ describe('native initial setup', () => {
     const result = await handler(request, reply)
 
     expect(mocks.createInitialAdmin).toHaveBeenCalledWith({
-      name: 'Admin', username: 'admin', email: 'admin@example.com', password: 'password', deviceLabel: 'Pulpo for Mac',
+      name: 'Admin', username: 'pulpo_admin', email: 'admin@example.com', password: 'password', deviceLabel: 'Pulpo for Mac',
     })
     expect(mocks.createNativeSession).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111', 'Pulpo for Mac', request, { appType: undefined, platform: undefined })
     expect(reply.code).toHaveBeenCalledWith(201)
@@ -204,7 +204,7 @@ describe('native initial setup', () => {
   it('propagates duplicate-setup protection without creating a session', async () => {
     mocks.createInitialAdmin.mockRejectedValueOnce(new Error('Pulpo has already been set up'))
     const handler = await nativeSetupHandler()
-    const request = { body: { name: 'Admin', username: 'admin', email: 'admin@example.com', password: 'password', deviceLabel: 'Pulpo for Mac' } } as unknown as FastifyRequest
+    const request = { body: { name: 'Admin', username: 'pulpo_admin', email: 'admin@example.com', password: 'password', deviceLabel: 'Pulpo for Mac' } } as unknown as FastifyRequest
 
     await expect(handler(request, { code: vi.fn() } as unknown as FastifyReply)).rejects.toThrow('already been set up')
     expect(mocks.createNativeSession).not.toHaveBeenCalled()

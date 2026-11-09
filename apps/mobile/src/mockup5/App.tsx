@@ -29,8 +29,12 @@ import { useAppTheme } from './src/theme';
 import { MaterialSearchField, MaterialSuggestionButton, MaterialNavigationRow, MaterialButton, MaterialContextMenu, MaterialIconButton, MaterialLoading, MaterialMenu, type Action as MaterialAction } from '../platform/MaterialUI';
 import type { MenuAnchor } from '../platform/MaterialUI.types';
 import { promptText, selectText, showActions } from '../platform/materialActions';
+import { announce, useAccessibilityAnnouncement } from '../platform/accessibilityAnnouncement';
+import { NativeMenuPicker } from '../platform/NativeMenuPicker';
+import { refreshAccessibilityFrames } from '../native/accessibilityFrames';
 import { QueuedMessagesView } from '../native/QueuedMessagesView';
 import { AgentModeMenuView } from '../native/AgentModeMenuView';
+import { largeContentViewer } from '../native/largeContentViewer';
 import { StatusBarGradientView } from '../native/StatusBarGradientView';
 import { openAttachmentFile } from '../native/openFile';
 import { shareLocalFile } from '../native/shareFile';
@@ -60,6 +64,7 @@ import {
   type SetStateAction,
 } from 'react';
 import {
+  type AccessibilityActionEvent,
   AccessibilityInfo,
   ActionSheetIOS,
   ActivityIndicator,
@@ -68,6 +73,7 @@ import {
   BackHandler,
   type ColorValue,
   DynamicColorIOS,
+  findNodeHandle,
   FlatList,
   Image,
   Keyboard,
@@ -109,7 +115,9 @@ import {
   useNativeState,
 } from '@expo/ui/swift-ui';
 import {
+  accessibilityAddTraits as swiftUIAccessibilityAddTraits,
   accessibilityHint as swiftUIAccessibilityHint,
+  accessibilityInputLabels as swiftUIAccessibilityInputLabels,
   accessibilityLabel as swiftUIAccessibilityLabel,
   background as swiftUIBackground,
   buttonBorderShape,
@@ -125,6 +133,7 @@ import {
   lineLimit,
   menuActionDismissBehavior,
   minimumScaleFactor,
+  dynamicTypeSize,
   padding,
   resizable,
   shapes,
@@ -262,7 +271,8 @@ import { FileMarkdownScreen } from '../features/files/screens/FileMarkdownScreen
 import { FileQuizScreen } from '../features/files/screens/FileQuizScreen';
 import { FilesFolderScreen } from '../features/files/screens/FilesFolderScreen';
 import { FriendsScreen } from '../features/friends/FriendsScreen';
-import { timeAgo } from '../features/chat/format';
+import { FriendProfileScreen } from '../features/friends/FriendProfileScreen';
+import { spokenTimeAgo, timeAgo } from '../features/chat/format';
 import {
   MAX_COMPOSER_ATTACHMENTS,
   attachmentMetadata,
@@ -299,6 +309,7 @@ import {
 } from '../features/chat/composerDraftCache';
 import {
   historyChatSections,
+  historyChatAccessibilityLabel,
   historyChatSummary,
   resolveHistoryChatExpiryMenuAction,
   createHistoryProjector,
@@ -398,8 +409,9 @@ function systemColor(ios: string, android: string, fallback: string): ColorValue
   return fallback;
 }
 
-function readableColor(light: string, dark: string, android: string, fallback = light): ColorValue {
-  if (Platform.OS === 'ios') return DynamicColorIOS({ light, dark });
+function readableColor(light: string, dark: string, android: string, fallback = light, highContrast?: { light: string; dark: string }): ColorValue {
+  // Increase Contrast picks the high-contrast variants, as it does for system colors.
+  if (Platform.OS === 'ios') return DynamicColorIOS({ light, dark, highContrastLight: highContrast?.light, highContrastDark: highContrast?.dark });
   if (Platform.OS === 'android') return PlatformColor(android);
   return fallback;
 }
@@ -415,20 +427,26 @@ const COLORS = {
   lineSoft: systemColor('opaqueSeparator', '@color/pulpo_outline', '#c6c6c8'),
   text: systemColor('label', '@color/pulpo_text', '#000000'),
   textSoft: systemColor('label', '@color/pulpo_text', '#000000'),
-  muted: readableColor('#68686F', '#A1A1A8', '@color/pulpo_secondary'),
+  muted: readableColor('#68686F', '#A1A1A8', '@color/pulpo_secondary', undefined, { light: '#48484E', dark: '#C7C7CC' }),
   dim: systemColor('tertiaryLabel', '@color/pulpo_secondary', '#3c3c434d'),
   fill: systemColor('tertiarySystemFill', '@color/pulpo_container', '#7676801f'),
   fillStrong: systemColor('secondarySystemFill', '@color/pulpo_container', '#78788029'),
   accent: systemColor('systemBlue', '@color/pulpo_primary', '#007aff'),
+  // systemBlue is 4.0:1 on white, too faint for small text links.
+  link: readableColor('#0062CC', '#409CFF', '@color/pulpo_primary', undefined, { light: '#0040DD', dark: '#6CB4FF' }),
   positive: systemColor('systemGreen', '@color/pulpo_primary', '#34c759'),
-  critical: readableColor('#C5221F', '#FF8A84', '@color/pulpo_error'),
-  criticalAction: readableColor('#A91511', '#FFB0AB', '@color/pulpo_error'),
-  warning: readableColor('#A24B00', '#FFB15A', '@color/pulpo_primary'),
+  critical: readableColor('#C5221F', '#FF8A84', '@color/pulpo_error', undefined, { light: '#A91511', dark: '#FFB0AB' }),
+  criticalAction: readableColor('#A91511', '#FFB0AB', '@color/pulpo_error', undefined, { light: '#8A0E0B', dark: '#FFCCC8' }),
+  warning: readableColor('#A24B00', '#FFB15A', '@color/pulpo_primary', undefined, { light: '#7A3800', dark: '#FFCC8F' }),
+  // Teal for chat expiry; #14B8A6 is only 2.5:1 on white.
+  expiry: readableColor('#0F766E', '#14B8A6', '@color/pulpo_primary', '#0F766E', { light: '#0B5D57', dark: '#5EEAD4' }),
   foregroundOnAccent: Platform.OS === 'android' ? PlatformColor('@color/pulpo_on_primary') : '#ffffff',
   mono: Platform.select({ ios: 'Menlo', default: 'monospace' }) as string,
 };
 
 const DRAWER_ACTION_HEIGHT = 46;
+// Extends a small text button's touch target to at least 44 points.
+const TEXT_BUTTON_HIT_SLOP = { top: 13, bottom: 13, left: 8, right: 8 };
 const COMPACT_DRAWER_HEIGHT = 700;
 
 let hapticsEnabled = true;
@@ -819,6 +837,9 @@ function NativeComposerIconButton({
           swiftUIDisabled(disabled),
           swiftUIAccessibilityLabel(label),
           ...glassButtonStyle(prominent ? 'glassProminent' : 'glass'),
+          // Stay inside the composer at accessibility sizes; touch and hold shows the label instead.
+          dynamicTypeSize({ max: 'xxxLarge' }),
+          largeContentViewer(label, systemImage),
         ]}
       />
     </SwiftUIHost>
@@ -834,6 +855,7 @@ function NativeComposerShelfButton({ disabled, onPress }: { disabled: boolean; o
         foregroundStyle('secondary'),
         swiftUIDisabled(disabled),
         swiftUIAccessibilityLabel('Shelve draft'),
+        largeContentViewer('Shelve draft', 'archivebox'),
       ]}>
         <SwiftUIImage systemName="archivebox" size={18} modifiers={[
           frame({ width: 44, height: 44 }),
@@ -863,6 +885,8 @@ function NativeAttachmentMenu({ onTakePhoto, onPickPhotos, onPickFiles, onAddFro
           labelStyle('iconOnly'),
           swiftUIAccessibilityLabel('Add attachment'),
           ...glassButtonStyle('glass'),
+          dynamicTypeSize({ max: 'xxxLarge' }),
+          largeContentViewer('Add attachment', 'plus'),
         ]}
       >
         <SwiftUIButton label="Take Photo" systemImage="camera" onPress={onTakePhoto} />
@@ -1056,9 +1080,9 @@ function SentAttachmentWindow({ attachments, children, assistant = false }: { at
   const current = Math.min(page, last);
   return <View>
     {attachments.length > size && <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Previous attachment page" disabled={current === 0} onPress={() => setPage(current - 1)}><Text style={{ color: current === 0 ? COLORS.muted : COLORS.accent }}>Previous</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Previous attachment page" hitSlop={TEXT_BUTTON_HIT_SLOP} disabled={current === 0} onPress={() => setPage(current - 1)}><Text style={{ color: current === 0 ? COLORS.muted : COLORS.link }}>Previous</Text></Pressable>
       <Text style={{ color: COLORS.muted, fontSize: 12 }}>{current * size + 1}–{Math.min(attachments.length, (current + 1) * size)} of {attachments.length}</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel="Next attachment page" disabled={current === last} onPress={() => setPage(current + 1)}><Text style={{ color: current === last ? COLORS.muted : COLORS.accent }}>Next</Text></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Next attachment page" hitSlop={TEXT_BUTTON_HIT_SLOP} disabled={current === last} onPress={() => setPage(current + 1)}><Text style={{ color: current === last ? COLORS.muted : COLORS.link }}>Next</Text></Pressable>
     </View>}
     <View style={[styles.sentAttachments, assistant && styles.assistantAttachments]}>{children(attachments.slice(current * size, (current + 1) * size))}</View>
   </View>;
@@ -1211,7 +1235,7 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, sele
   if (Platform.OS === 'android') return <MaterialIconButton label={accessibilityLabel} icon={typeof icon === 'string' ? icon : 'menu'} onPress={onPress} selected={selected} size={size} />;
   const selectedForeground = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const ghostColor = selectedForeground;
-  const accent = selectedColor === 'teal' ? '#14B8A6' : '#AF52DE';
+  const accent = selectedColor === 'teal' ? colorScheme === 'dark' ? '#14B8A6' : '#0F766E' : '#AF52DE';
   const selectedTint = selectedColor === 'teal' ? 'rgba(20,184,166,0.20)' : 'rgba(175,82,222,0.22)';
   if (Platform.OS === 'ios') {
     return (
@@ -1227,7 +1251,9 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, sele
             ...(tinted && !selected ? [tint(selectedTint), foregroundStyle(selectedForeground)] : []),
             ...(!selected && selectedColor === 'teal' ? [foregroundStyle('secondary')] : []),
             swiftUIAccessibilityLabel(accessibilityLabel),
+            ...(selected ? [swiftUIAccessibilityAddTraits(['isSelected'])] : []),
             ...glassButtonStyle(selected || tinted ? 'glassProminent' : 'glass'),
+            largeContentViewer(accessibilityLabel, typeof icon === 'string' && icon !== 'ghost' ? icon : undefined),
           ]}
         >
           {icon === 'ghost' ? (
@@ -1263,16 +1289,17 @@ function DrawerNewChatButton({ isDark, onPress }: { isDark: boolean; onPress: ()
   const glassTintColor = isDark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.85)';
   if (Platform.OS === 'ios') {
     return (
-      <SwiftUIHost ignoreSafeArea="all" colorScheme={isDark ? 'dark' : 'light'} style={styles.drawerNewChatButtonHost}>
-        <SwiftUIButton onPress={onPress} modifiers={[buttonStyle('plain'), swiftUIAccessibilityLabel('New Chat')]}>
+      <SwiftUIHost ignoreSafeArea="all" matchContents colorScheme={isDark ? 'dark' : 'light'} style={styles.drawerNewChatButtonHost} modifiers={[dynamicTypeSize({ max: 'accessibility2' })]}>
+        <SwiftUIButton onPress={onPress} modifiers={[buttonStyle('plain'), swiftUIAccessibilityLabel('New Chat'), largeContentViewer('New Chat', 'square.and.pencil')]}>
           <SwiftUIHStack spacing={7.5} modifiers={[
-            frame({ width: 123.75, height: 48.75 }),
+            padding({ horizontal: 14, vertical: 12 }),
+            frame({ minWidth: 123.75, minHeight: 48.75 }),
             liquidGlassAvailable
               ? swiftUIGlassEffect({ glass: { variant: 'regular', interactive: true, tint: glassTintColor }, shape: 'capsule' })
               : swiftUIBackground(isDark ? '#F2F2F7' : '#1C1C1E', shapes.capsule()),
           ]}>
-            <SwiftUIImage systemName="square.and.pencil" size={16.875} modifiers={[foregroundStyle(foregroundColor)]} />
-            <SwiftUIText modifiers={[font({ size: 14.0625, weight: 'semibold' }), foregroundStyle(foregroundColor)]}>New Chat</SwiftUIText>
+            <SwiftUIImage systemName="square.and.pencil" size={16.875} modifiers={[font({ textStyle: 'subheadline', weight: 'semibold' }), foregroundStyle(foregroundColor)]} />
+            <SwiftUIText modifiers={[font({ textStyle: 'subheadline', weight: 'semibold' }), lineLimit(1), foregroundStyle(foregroundColor)]}>New Chat</SwiftUIText>
           </SwiftUIHStack>
         </SwiftUIButton>
       </SwiftUIHost>
@@ -1337,7 +1364,7 @@ function FallbackTemporaryChatHeaderControl({
   const colorScheme = useColorScheme();
   const { reduceMotion } = useAccessibilityPreferences();
   const iconColor = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
-  const expirationColor = expirationEnabled ? '#14B8A6' : iconColor;
+  const expirationColor = expirationEnabled ? colorScheme === 'dark' ? '#14B8A6' : '#0F766E' : iconColor;
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const expansion = useSharedValue(expanded ? 1 : 0);
   const trailingTransition = useSharedValue(trailingAction === 'new-chat' ? 1 : 0);
@@ -1545,6 +1572,14 @@ function NativeObjectContextMenu({
   );
 }
 
+/** What VoiceOver says when a response fails: the error itself, not just that it stopped. */
+function responseFailedAnnouncement(error: unknown) {
+  const message = typeof error === 'string' ? error
+    : error && typeof error === 'object' && typeof (error as { message?: unknown }).message === 'string' ? (error as { message: string }).message
+      : '';
+  return message ? `Response failed: ${message}` : 'Response failed';
+}
+
 async function copyText(text: string, announcement = 'Copied') {
   await Clipboard.setStringAsync(text);
   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -1571,6 +1606,10 @@ function IconAction({ disabled = false, icon, label, onPress }: { disabled?: boo
 function ModelMark({ model, size = 28, logo = 'model' }: { model: Model; size?: number; logo?: 'model' | 'lab' }) {
   return (
     <Image
+      // Decorative: the model's name is always shown beside it.
+      accessibilityElementsHidden
+      accessible={false}
+      importantForAccessibility="no"
       resizeMode="contain"
       source={logo === 'lab' ? model.labIcon ?? model.icon : model.icon}
       style={{ width: size, height: size, tintColor: model.tintColor }}
@@ -1613,7 +1652,6 @@ function ResponsePendingIndicator() {
   return (
     <View
       accessibilityLabel="Assistant is responding"
-      accessibilityLiveRegion="polite"
       accessibilityRole="progressbar"
       style={styles.responsePending}
     >
@@ -1742,6 +1780,7 @@ function PrototypeRoot() {
         <RootStack.Screen name="InstanceDetails" component={InstanceDetailsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Pulpo Instance', headerBackTitle: 'Account' }} />
         <RootStack.Screen name="SettingsDetail" component={SettingsDetailScreen} options={{ headerShown: Platform.OS === 'ios', headerBackTitle: 'Settings' }} />
         <RootStack.Screen name="Friends" component={FriendsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Friends', headerBackTitle: 'Settings' }} />
+        <RootStack.Screen name="FriendProfile" component={FriendProfileScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Profile' }} />
         <RootStack.Screen name="FilesFolder" component={FilesFolderScreen} options={{ headerShown: Platform.OS === 'ios', headerLargeTitle: true, title: 'My files' }} />
         <RootStack.Screen name="FileDocument" component={FileDocumentScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Document' }} />
         <RootStack.Screen name="FileMarkdown" component={FileMarkdownScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Markdown' }} />
@@ -1890,7 +1929,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     activeResponseSubscription.current?.();
     activeResponseSubscription.current = null;
     setAssistantStatus('idle');
-    AccessibilityInfo.announceForAccessibility(status === 'completed' ? 'Response complete' : 'Response stopped');
+    announce(status === 'completed' ? 'Response complete'
+      : status === 'failed' ? responseFailedAnnouncement(state.snapshots[responseId]?.error)
+        : 'Response stopped');
     if (status === 'completed') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }), []);
 
@@ -1975,6 +2016,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       setPanelOpen(open);
       setComposerFocusSuppressed(false);
       onFinished?.();
+      refreshAccessibilityFrames();
     });
     if (persistentSidebar) {
       finish(true);
@@ -3000,6 +3042,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           collapsable={false}
           accessibilityElementsHidden={!historyVisible}
           importantForAccessibility={!historyVisible ? 'no-hide-descendants' : 'auto'}
+          // The VoiceOver escape gesture (two-finger Z) closes the drawer, like the back gesture on Android.
+          onAccessibilityEscape={!persistentSidebar && panelOpen ? () => animatePanel(false) : undefined}
           pointerEvents={historyVisible ? 'auto' : 'none'}
           style={[
             persistentSidebar ? styles.persistentPanel : styles.drawerPanel,
@@ -3033,6 +3077,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           <View collapsable={false} style={styles.flex} importantForAccessibility={!persistentSidebar && panelOpen ? 'no-hide-descendants' : 'auto'} accessibilityElementsHidden={!persistentSidebar && panelOpen}>
           <ChatView
             acceptIncomingFiles={!activeChatId && productionScopeReady && isFocused}
+            title={activeChat?.title}
             messages={messages}
             queuedMessages={activePrototypeChat?.queuedMessages ?? EMPTY_MOBILE_QUEUE}
             chatId={activeChat?.id ?? (remoteStartedChatId.current === activeChatId ? activeChatId : null)}
@@ -3230,6 +3275,50 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
   }, [instanceUrl, message, onEdit, onRegenerate, queryClient, refresh, userId]);
 }
 
+/** The long-press message actions' state, shared by the context menu and its screen reader actions. */
+function useMessageMenu({ message, onEdit, onRegenerate }: {
+  message: Message;
+  onEdit: (message: Message, content: string) => void;
+  onRegenerate: (message: Message) => void;
+}) {
+  const speechState = useSyncExternalStore(speechPlayback.subscribe, speechPlayback.getSnapshot);
+  const speechKey = `${message.chatId ?? ''}:${message.id}`;
+  // An ended message keeps its player open; the menu reads it again from the start.
+  const speaking = speechState.key === speechKey && speechState.phase !== 'ended';
+  const canSpeak = Boolean(speechText(message.text)) && (message.role === 'user' || !message.status || ['completed', 'complete', 'failed', 'stopped'].includes(message.status));
+  const speak = () => { void readAloud(speechKey, message.text).then(() => { const error = speechPlayback.getSnapshot().error; if (error) Alert.alert('Read aloud', error); }).catch(error => Alert.alert('Read aloud', error.message)); };
+  const speechLabel = speaking ? (speechState.phase === 'loading' ? 'Stop preparing speech' : 'Stop reading') : 'Read aloud';
+  const runAction = useMessageActionRunner({ message, onEdit, onRegenerate });
+  const canReport = useCanReportMessage(message);
+  // A response can only be deleted as one of several versions; the user message owns the last one.
+  const canDelete = message.role === 'user' || (message.branches?.length ?? 0) > 1;
+  const deleteLabel = message.role === 'user' ? 'Delete message' : 'Delete version';
+  return { canDelete, canReport, canSpeak, deleteLabel, runAction, speak, speaking, speechKey, speechLabel };
+}
+
+/**
+ * The context menu's actions as VoiceOver/TalkBack custom actions, for the message's header element:
+ * a long press on the message itself is hard to find with a screen reader.
+ */
+function useMessageAccessibilityActions(message: Message, onEdit: (message: Message, content: string) => void, onRegenerate: (message: Message) => void, enabled = true) {
+  const { canDelete, canReport, canSpeak, deleteLabel, runAction, speak, speechLabel } = useMessageMenu({ message, onEdit, onRegenerate });
+  if (!enabled) return {};
+  const actions: { name: string; label: string; run: () => void }[] = [
+    { name: 'copy', label: 'Copy', run: () => runAction('copy') },
+    { name: 'share', label: 'Share', run: () => runAction(message.chatId && Platform.OS === 'ios' ? 'share-options' : 'share') },
+    { name: 'reply', label: 'Reply', run: () => runAction('reply') },
+    { name: 'edit', label: message.role === 'user' ? 'Edit message' : 'Edit response', run: () => runAction('edit') },
+    ...(message.role === 'assistant' ? [{ name: 'regenerate', label: 'Regenerate response', run: () => runAction('regenerate') }] : []),
+    ...(canSpeak ? [{ name: 'read-aloud', label: speechLabel, run: speak }] : []),
+    ...(canReport ? [{ name: 'report', label: 'Report message', run: () => runAction('report') }] : []),
+    ...(canDelete ? [{ name: 'delete', label: deleteLabel, run: () => runAction('delete') }] : []),
+  ];
+  return {
+    accessibilityActions: actions.map(({ name, label }) => ({ name, label })),
+    onAccessibilityAction: (event: AccessibilityActionEvent) => actions.find((action) => action.name === event.nativeEvent.actionName)?.run(),
+  };
+}
+
 function MessageContextMenu({
   message,
   model,
@@ -3244,19 +3333,8 @@ function MessageContextMenu({
   children: ReactNode;
 }) {
   const { styles } = useChatStyles();
-  const speechState = useSyncExternalStore(speechPlayback.subscribe, speechPlayback.getSnapshot);
-  const speechKey = `${message.chatId ?? ''}:${message.id}`;
-  // An ended message keeps its player open; the menu reads it again from the start.
-  const speaking = speechState.key === speechKey && speechState.phase !== 'ended';
-  const canSpeak = Boolean(speechText(message.text)) && (message.role === 'user' || !message.status || ['completed', 'complete', 'failed', 'stopped'].includes(message.status));
+  const { canDelete, canReport, canSpeak, deleteLabel, runAction, speak, speaking, speechKey, speechLabel } = useMessageMenu({ message, onEdit, onRegenerate });
   useEffect(() => () => { if (speechPlayback.getSnapshot().key === speechKey) speechPlayback.stop(); }, [speechKey, message.text]);
-  const speak = () => { void readAloud(speechKey, message.text).then(() => { const error = speechPlayback.getSnapshot().error; if (error) Alert.alert('Read aloud', error); }).catch(error => Alert.alert('Read aloud', error.message)); };
-  const speechLabel = speaking ? (speechState.phase === 'loading' ? 'Stop preparing speech' : 'Stop reading') : 'Read aloud';
-  const runAction = useMessageActionRunner({ message, onEdit, onRegenerate });
-  const canReport = useCanReportMessage(message);
-  // A response can only be deleted as one of several versions; the user message owns the last one.
-  const canDelete = message.role === 'user' || (message.branches?.length ?? 0) > 1;
-  const deleteLabel = message.role === 'user' ? 'Delete message' : 'Delete version';
   const previewText = message.text.length > 2_000
     ? `${message.text.slice(0, 1_999)}…`
     : message.text;
@@ -3706,6 +3784,8 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
   return (
     <View style={styles.workStep}>
       <Pressable
+        // The running and failed states are otherwise only shown by the icon.
+        accessibilityLabel={[step.tool.tool ?? 'Tool', toolStepSummary(step.tool), running ? 'running' : failed ? 'failed' : null, seconds !== null ? `${seconds} ${seconds === 1 ? 'second' : 'seconds'}` : null].filter(Boolean).join(', ')}
         accessibilityRole="button"
         accessibilityState={{ expanded: hasBody ? open : undefined }}
         disabled={!hasBody}
@@ -3778,7 +3858,7 @@ function RecallStepContent({ step, onOpenChat }: {
           <Text numberOfLines={1} style={styles.recallSourceTitle}>{source.title}</Text>
           <Text style={styles.recallSourceDate}>{dateLabel}</Text>
         </View>
-        {available ? <Pressable accessibilityLabel={`Open ${source.title}`} accessibilityRole="button" onPress={() => onOpenChat(source.chat_id)}><Text style={styles.recallSourceAction}>Open</Text></Pressable> : <Text style={styles.recallSourceUnavailable}>Source unavailable</Text>}
+        {available ? <Pressable accessibilityLabel={`Open ${source.title}`} accessibilityRole="button" hitSlop={TEXT_BUTTON_HIT_SLOP} onPress={() => onOpenChat(source.chat_id)}><Text style={styles.recallSourceAction}>Open</Text></Pressable> : <Text style={styles.recallSourceUnavailable}>Source unavailable</Text>}
       </View>
       <Text selectable style={styles.recallSourceExcerpt}>{source.excerpt}</Text>
     </View>;
@@ -3809,6 +3889,7 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
         accessibilityLabel={label}
+        hitSlop={TEXT_BUTTON_HIT_SLOP}
         onPress={() => setOpen((value) => !value)}
         style={styles.reasoningTrigger}
       >
@@ -3828,7 +3909,7 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
             if (step.kind === 'workspace') {
               const detail = step.workspace.error ?? step.workspace.state?.replaceAll('_', ' ') ?? 'Workspace';
               const failed = ['expired', 'unavailable'].includes(step.workspace.state ?? '');
-              return <View key={`workspace:${index}`} style={styles.workRow}>{failed ? <XCircle color={COLORS.critical} size={13} /> : <Server color={COLORS.muted} size={13} />}<Text style={styles.workRowText}>{detail}</Text></View>;
+              return <View accessible accessibilityLabel={failed ? `Workspace failed: ${detail}` : `Workspace: ${detail}`} key={`workspace:${index}`} style={styles.workRow}>{failed ? <XCircle color={COLORS.critical} size={13} /> : <Server color={COLORS.muted} size={13} />}<Text style={styles.workRowText}>{detail}</Text></View>;
             }
             if (step.kind === 'compaction') {
               return <CompactionStepContent key={step.compaction.id} step={step} />;
@@ -3889,28 +3970,37 @@ function BranchControls({ branches, activeIndex, onActivate, disabled = false }:
     });
   }, [branches, onActivate]);
   return (
-    <View accessibilityLabel={`Version ${activeIndex + 1} of ${branches.length}`} style={styles.branchControls}>
+    <View style={styles.branchControls}>
       <IconAction disabled={disabled || activeIndex <= 0} icon="chevron.left" label="Previous version" onPress={() => activate(activeIndex - 1)} />
-      <Text style={styles.branchLabel}>{`${activeIndex + 1} / ${branches.length}`}</Text>
+      <Text accessibilityLabel={`Version ${activeIndex + 1} of ${branches.length}`} style={styles.branchLabel}>{`${activeIndex + 1} / ${branches.length}`}</Text>
       <IconAction disabled={disabled || activeIndex >= branches.length - 1} icon="chevron.right" label="Next version" onPress={() => activate(activeIndex + 1)} />
     </View>
   );
 }
 
-function AssistantFrame({ children, model, sideRail, time }: {
+function AssistantFrame({ children, model, sideRail, time, spokenTime = time, headerActions }: {
   children: ReactNode;
   model: Model;
   sideRail: boolean;
   time: string;
+  spokenTime?: string;
+  /** The message's actions, offered to screen readers on the header that starts each response. */
+  headerActions?: Pick<ComponentProps<typeof View>, 'accessibilityActions' | 'onAccessibilityAction'>;
 }) {
   const { styles } = useChatStyles();
   return (
     <View style={styles.assistantFrame}>
-      <View style={[styles.assistantMark, !sideRail && styles.assistantMarkCompact]}>
+      <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.assistantMark, !sideRail && styles.assistantMarkCompact]}>
         <ModelMark model={model} size={28} />
       </View>
       <View style={[styles.assistantBody, sideRail && styles.assistantBodySideRail]}>
-        <View style={[styles.assistantHeader, !sideRail && styles.assistantHeaderCompact]}>
+        <View
+          accessible
+          accessibilityLabel={`${model.name}, ${spokenTime}`}
+          accessibilityRole="header"
+          {...headerActions}
+          style={[styles.assistantHeader, !sideRail && styles.assistantHeaderCompact]}
+        >
           <Text numberOfLines={1} style={styles.assistantName}>{model.name}</Text>
           <Text style={styles.messageTime}>{time}</Text>
         </View>
@@ -3925,15 +4015,16 @@ function ResponseErrorNotice({ message, onRetry }: { message: Message; onRetry: 
   const { styles, COLORS } = useChatStyles();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const limited = isUsageLimitMessage(message.error);
+  const errorText = limited && message.error ? usageLimitNoticeText(message.error) : message.error;
   return <View style={styles.responseError}>
     <Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} />
     <View style={styles.responseErrorBody}>
-      <Text style={styles.responseErrorMessage}>{limited && message.error ? usageLimitNoticeText(message.error) : message.error}</Text>
+      <Text accessibilityLabel={`Response failed: ${errorText ?? ''}`} style={styles.responseErrorMessage}>{errorText}</Text>
       <View style={styles.responseErrorActions}>
-        {limited ? <Pressable accessibilityRole="button" hitSlop={8} onPress={() => { Keyboard.dismiss(); navigation.navigate('SettingsDetail', { section: 'usage' }); }}>
+        {limited ? <Pressable accessibilityRole="button" hitSlop={TEXT_BUTTON_HIT_SLOP} onPress={() => { Keyboard.dismiss(); navigation.navigate('SettingsDetail', { section: 'usage' }); }}>
           <Text style={styles.tryAgainText}>View Usage</Text>
         </Pressable> : null}
-        <Pressable accessibilityRole="button" hitSlop={8} onPress={() => onRetry(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable>
+        <Pressable accessibilityRole="button" hitSlop={TEXT_BUTTON_HIT_SLOP} onPress={() => onRetry(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable>
       </View>
     </View>
   </View>;
@@ -3967,6 +4058,9 @@ const MessageRow = memo(function MessageRow({
   const { styles, COLORS } = useChatStyles();
   const { showReasoning } = useAppPreferences();
   const showResponseCost = usePrototypeStore((state) => state.preferences.showResponseCost);
+  const headerActions = useMessageAccessibilityActions(message, onEdit, onRegenerate, message.role === 'user'
+    ? message.text.length > 0
+    : Boolean(message.text || message.error || message.outputItems?.length || message.status === 'stopped'));
   // Token counts only accompany answer text, but a settled cost shows even when a reply stopped or failed
   // before writing any, as on web.
   const metaLabel = message.role === 'assistant' ? responseMetaLabel(message.text ? message.meta : undefined, message.costMicros, showResponseCost) : undefined;
@@ -4069,6 +4163,8 @@ const MessageRow = memo(function MessageRow({
               ))}
             </>}</SentAttachmentWindow>
           )}
+          {/* Starts each sent message for screen readers, which also find its actions here. */}
+          <View accessible accessibilityLabel="You" accessibilityRole="header" {...headerActions} style={styles.userMessageHeader} />
           {message.text.length > 0 && (
             <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
               <View style={styles.userMessageContextContent}>
@@ -4080,7 +4176,7 @@ const MessageRow = memo(function MessageRow({
           )}
         </View>
       ) : (
-        <AssistantFrame model={model} sideRail={sideRail} time={timeAgo(message.createdAt ?? Date.now())}>
+        <AssistantFrame model={model} sideRail={sideRail} time={timeAgo(message.createdAt ?? Date.now())} spokenTime={spokenTimeAgo(message.createdAt ?? Date.now())} headerActions={headerActions}>
             {timeline.length ? (
               <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
                 <View style={styles.assistantContent}>
@@ -4171,7 +4267,7 @@ const MessageRow = memo(function MessageRow({
               </View>
             )}
             {message.error && timeline.length > 0 && <ResponseErrorNotice message={message} onRetry={onRegenerate} />}
-            {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
+            {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" hitSlop={TEXT_BUTTON_HIT_SLOP} onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
             {message.agentMode && streaming && capacityWorkspace?.state === 'waiting' && canContinueWithoutAgent && (
               <Pressable
                 accessibilityRole="button"
@@ -4225,7 +4321,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
   const colorScheme = useColorScheme();
   const foreground = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const [labsMenuRevision, setLabsMenuRevision] = useState(0);
-  const { sections: modelSections, section, sectionLabel, visibleModels, setSection } = useModelMenu(models);
+  const { sections: modelSections, sectionLabel, visibleModels, setSection } = useModelMenu(models);
 
   return (
     <SwiftUIHost key={tinted ? 'tinted' : 'default'} ignoreSafeArea="all" matchContents style={styles.modelMenuHost}>
@@ -4250,8 +4346,12 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
           controlSize('regular'),
           ...(tinted ? [tint('rgba(175,82,222,0.22)'), foregroundStyle(foreground)] : []),
           swiftUIAccessibilityLabel(`Model, ${model.name}`),
+          // Voice Control: "Tap Model" works as well as the full label.
+          swiftUIAccessibilityInputLabels(['Model', model.name]),
           swiftUIAccessibilityHint('Opens models and lab sections'),
           ...glassButtonStyle(tinted ? 'glassProminent' : 'glass'),
+          // The header keeps the name to one scaled-down line; touch and hold shows it full size.
+          largeContentViewer(model.name),
         ]}
       >
         <SwiftUISection key="models" title={sectionLabel}>
@@ -4260,11 +4360,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
               key={candidate.id}
               onPress={() => onSelectModel(candidate)}
             >
-              <NativeModelMenuRow
-                label={candidate.name}
-                model={candidate}
-                selected={candidate.id === model.id}
-              />
+              <NativeModelMenuRow label={candidate.name} model={candidate} />
             </SwiftUIButton>
           ))}
         </SwiftUISection>
@@ -4293,12 +4389,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
                 Haptics.selectionAsync();
               }}
             >
-              <NativeModelSectionRow
-                label={candidateSection.label}
-                section={candidateSection.id}
-                models={models}
-                selected={candidateSection.id === section}
-              />
+              <NativeModelSectionRow label={candidateSection.label} section={candidateSection.id} models={models} />
             </SwiftUIButton>
           ))}
         </SwiftUIMenu>
@@ -4307,7 +4398,9 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
   );
 });
 
-function NativeModelMenuRow({ label, model, selected = false }: { label: string; model: Model; selected?: boolean }) {
+// No checkmark beside the current model or lab: the menu button already names the model
+// ("Model, …" for VoiceOver), and the open lab is the section shown.
+function NativeModelMenuRow({ label, model }: { label: string; model: Model }) {
   return (
     <SwiftUIHStack modifiers={[frame({ width: 220 })]} spacing={10}>
       <SwiftUILabel
@@ -4315,12 +4408,11 @@ function NativeModelMenuRow({ label, model, selected = false }: { label: string;
         icon={<SwiftUIImage uiImage={Image.resolveAssetSource(model.menuIcon ?? model.icon).uri} modifiers={[resizable(), frame({ width: 20, height: 20 })]} />}
       />
       <SwiftUISpacer />
-      {selected && <SwiftUIImage systemName="checkmark" size={15} />}
     </SwiftUIHStack>
   );
 }
 
-function NativeModelSectionRow({ label, section, models, selected = false }: { label: string; section: ModelSection; models: Model[]; selected?: boolean }) {
+function NativeModelSectionRow({ label, section, models }: { label: string; section: ModelSection; models: Model[] }) {
   const colorScheme = useColorScheme();
   const labModel = section === '__favorites__' ? null : models.find((model) => model.providerGroupId === section);
   return (
@@ -4335,7 +4427,6 @@ function NativeModelSectionRow({ label, section, models, selected = false }: { l
             />}
       />
       <SwiftUISpacer />
-      {selected && <SwiftUIImage systemName="checkmark" size={15} />}
     </SwiftUIHStack>
   );
 }
@@ -4361,7 +4452,7 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
           ]}
         >
           <SwiftUIRNHostView matchContents>
-            <Text maxFontSizeMultiplier={1.6} pointerEvents="none" style={styles.suggestionLabel}>{label}</Text>
+            <Text maxFontSizeMultiplier={2} pointerEvents="none" style={styles.suggestionLabel}>{label}</Text>
           </SwiftUIRNHostView>
         </SwiftUIButton>
       </SwiftUIHost>
@@ -4374,14 +4465,14 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
       onPress={onPress}
       style={({ pressed }) => [styles.suggestionCard, temporaryStyle, accessible && styles.suggestionCardAccessible, pressed && styles.navRowPressed]}
     >
-      <Text maxFontSizeMultiplier={1.6} style={styles.suggestionLabel}>{label}</Text>
+      <Text maxFontSizeMultiplier={2} style={styles.suggestionLabel}>{label}</Text>
     </Pressable>
   );
 }
 
 const EMPTY_MOBILE_QUEUE: MobileQueuedMessage[] = [];
 
-const COMPOSER_MAX_FONT_SIZE_MULTIPLIER = 1.6;
+const COMPOSER_MAX_FONT_SIZE_MULTIPLIER = 2;
 const COMPOSER_SECTION_SPRING = { damping: 24, stiffness: 260, mass: 0.8, overshootClamping: true };
 
 function SpeechPlayerButton({ label, icon, disabled = false, busy = false, onPress }: { label: string; icon: SymbolName; disabled?: boolean; busy?: boolean; onPress: () => void }) {
@@ -4511,11 +4602,12 @@ function SpeechPlayerBar() {
   const measure = (key: keyof typeof widths) => ({ nativeEvent: { layout } }: { nativeEvent: { layout: { width: number } } }) => {
     setWidths((current) => current[key] === layout.width ? current : { ...current, [key]: layout.width });
   };
-  if (!visible) return null;
   const loading = state.phase === 'loading';
   const ended = state.phase === 'ended';
-  const time = speechTimeLabel(progress);
   const status = ended ? 'Finished' : state.paused ? 'Paused' : loading ? 'Preparing speech…' : 'Reading aloud';
+  useAccessibilityAnnouncement(visible && status);
+  if (!visible) return null;
+  const time = speechTimeLabel(progress);
   const statusFits = !widths.meta || widths.status + 6 + widths.time <= widths.meta;
   return (
     <View accessibilityLabel="Read aloud controls" style={styles.speechPlayer}>
@@ -4525,7 +4617,7 @@ function SpeechPlayerBar() {
       <View style={styles.speechPlayerInfo}>
         <View onLayout={measure('meta')} style={styles.speechPlayerMeta}>
           <Text accessibilityElementsHidden importantForAccessibility="no-hide-descendants" numberOfLines={1} onLayout={measure('status')} style={[styles.speechPlayerStatus, styles.speechPlayerStatusMeasure]}>{status}</Text>
-          {statusFits ? <Text accessibilityLiveRegion="polite" numberOfLines={1} style={styles.speechPlayerStatus}>{status}</Text> : <View />}
+          {statusFits ? <Text numberOfLines={1} style={styles.speechPlayerStatus}>{status}</Text> : <View />}
           <Text accessibilityLabel={statusFits ? undefined : `${status}, ${time}`} onLayout={measure('time')} style={styles.speechPlayerTime}>{time}</Text>
         </View>
         <SpeechScrubTrack progress={progress} />
@@ -4596,6 +4688,14 @@ function ComposerQueueSection({ title, subject, visible, collapsed, onToggle, fa
   const headerHeight = useSharedValue(0);
   const contentHeight = useSharedValue(0);
   const dividerWidth = StyleSheet.hairlineWidth;
+  // The hidden flags below do not reliably keep an empty section's header and table out of the
+  // VoiceOver tree, where they overlap the message field; unmount them once the section has closed.
+  const [rendered, setRendered] = useState(visible);
+  useEffect(() => {
+    if (visible) { setRendered(true); return undefined; }
+    const timer = setTimeout(() => setRendered(false), reduceMotion ? 0 : 600);
+    return () => clearTimeout(timer);
+  }, [reduceMotion, visible]);
 
   useEffect(() => {
     const target = collapsed ? 0 : 1;
@@ -4624,6 +4724,7 @@ function ComposerQueueSection({ title, subject, visible, collapsed, onToggle, fa
       pointerEvents={visible ? 'auto' : 'none'}
       style={[styles.composerQueue, styles.composerQueueClip, sectionStyle]}
     >
+      {rendered && <>
       <Pressable
         onLayout={({ nativeEvent: { layout } }) => { headerHeight.set(layout.height); }}
         accessibilityRole="button"
@@ -4655,15 +4756,18 @@ function ComposerQueueSection({ title, subject, visible, collapsed, onToggle, fa
           {children}
         </Reanimated.View>
       </Reanimated.View>
+      </>}
     </Reanimated.View>
   );
 }
 
 function ChatView({
-  acceptIncomingFiles, messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, transcriptTransitionActive, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, onRemoteChatStarted, assistantStatus,
+  acceptIncomingFiles, title, messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, transcriptTransitionActive, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, onRemoteChatStarted, assistantStatus,
   onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onSelectModel, onSavePresetDefault, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, sidebarWidth, foldMargin, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   acceptIncomingFiles: boolean;
+  /** The open chat's title, announced as the screen's heading. */
+  title?: string;
   messages: Message[];
   queuedMessages: MobileQueuedMessage[];
   chatId: string | null;
@@ -6262,7 +6366,7 @@ function ChatView({
   }, [chatId, chatLoaded, messages.length, onTranscriptReady]);
   const hasPendingAssistant = messages.some((message) => message.role === 'assistant' && (message.status === 'queued' || message.status === 'streaming'));
   const pendingAssistantContent = assistantStatus === 'thinking' && !hasPendingAssistant ? (
-    <View accessibilityLiveRegion="polite" style={[styles.assistantRow, styles.transcriptColumn]}>
+    <View style={[styles.assistantRow, styles.transcriptColumn]}>
       <AssistantFrame model={model} sideRail={assistantSideRail} time="now">
         <ResponsePendingIndicator />
       </AssistantFrame>
@@ -6279,6 +6383,14 @@ function ChatView({
     && !(attachmentsRequireAgent && (!activeAgentEnabled || !canUseAgent))
     && attachmentPolicy.allowed;
   const composerAction = composerGenerationAction(assistantStatus, Boolean(messageEdit), Boolean(input.trim() || attachments.length));
+  // iOS ignores alert roles and live regions, so the status and errors shown here are spoken explicitly.
+  useAccessibilityAnnouncement(assistantStatus !== 'idle' && `${model.name} is responding`);
+  useAccessibilityAnnouncement(showConnectionBanner && (syncError ?? (connectionState === 'offline' ? 'Offline. Messages will send when Pulpo reconnects.' : 'Reconnecting to Pulpo')));
+  useAccessibilityAnnouncement(expired && 'This temporary chat expired and is now read-only.');
+  useAccessibilityAnnouncement(attachmentUploadError);
+  useAccessibilityAnnouncement(attachmentsRequireAgent && (!activeAgentEnabled || !canUseAgent) && (!canUseAgent ? 'Choose an Agent-capable model or reduce these attachments.' : 'Turn on Agent mode to use these attachments (file type, image count, or image size).'));
+  useAccessibilityAnnouncement(dictation.error);
+  useAccessibilityAnnouncement(showShelf && shelfError);
 
   useEffect(() => {
     const target = headerControl.expanded ? 1 : 0;
@@ -6316,7 +6428,7 @@ function ChatView({
             pointerEvents="none"
             style={[styles.temporaryLabel, Platform.OS === 'android' && styles.androidLandingBadge, expirationLabelAnimatedStyle]}
           >
-            {Platform.OS === 'android' ? <Icon name="hourglass" size={18} color="#14B8A6" /> : <Hourglass color="#14B8A6" size={14} strokeWidth={2} />}
+            {Platform.OS === 'android' ? <Icon name="hourglass" size={18} color="#14B8A6" /> : <Hourglass color={colorScheme === 'dark' ? '#14B8A6' : '#0F766E'} size={14} strokeWidth={2} />}
             <Text style={styles.expirationLabelText}>
               {`Expires in ${expirationPeriod === 'disabled' ? '' : expirationPeriod}`}
             </Text>
@@ -6324,11 +6436,11 @@ function ChatView({
 
           <View style={[styles.emptyModelLine, accessibilityLayout && styles.emptyModelLineAccessible]}>
             <ModelMark model={model} size={48} />
-            <Text maxFontSizeMultiplier={1.6} style={styles.emptyTitle}>{model.name}</Text>
+            <Text accessibilityRole="header" maxFontSizeMultiplier={2} style={styles.emptyTitle}>{model.name}</Text>
           </View>
         </View>
         <View style={styles.emptyProviderLine}>
-          <Text maxFontSizeMultiplier={1.6} style={styles.emptyProvider}>{modelSubtitle(model)}</Text>
+          <Text maxFontSizeMultiplier={2} style={styles.emptyProvider}>{modelSubtitle(model)}</Text>
           {model.dataRetention && <DataRetentionBadge tag={model.dataRetention} />}
         </View>
       </Reanimated.View>
@@ -6381,6 +6493,8 @@ function ChatView({
             height: insets.top + 16,
           }} />
         )}
+        {/* Screen readers start an open chat at its title; the screen shows no title bar. */}
+        {chatId && title ? <Text accessibilityRole="header" style={styles.chatTitleHeading}>{title}</Text> : null}
         {/* Header */}
         <AppHeader edgeAligned>
           <RoundButton
@@ -6647,7 +6761,7 @@ function ChatView({
                 <View style={styles.messageEditBanner}>
                   <Icon name="pencil" size={12} color={COLORS.muted} />
                   <Text style={styles.messageEditBannerText}>{queueEditRef.current ? 'Editing queued message' : 'Editing message'}</Text>
-                  <Pressable accessibilityLabel="Cancel message edit" accessibilityRole="button" disabled={sending || dictationBusy} onPress={cancelMessageEdit}>
+                  <Pressable accessibilityLabel="Cancel message edit" accessibilityRole="button" hitSlop={TEXT_BUTTON_HIT_SLOP} disabled={sending || dictationBusy} onPress={cancelMessageEdit}>
                     <Text style={styles.messageEditCancel}>Cancel</Text>
                   </Pressable>
                 </View>
@@ -6685,7 +6799,8 @@ function ChatView({
                 <ComposerPasteView onPasteFiles={pasteFiles} pasteContext={pasteContext} style={styles.composerPasteTarget}>
                   <TextInput
                     ref={composerInputRef}
-                    accessibilityLabel="Message"
+                    // iOS reads the placeholder after the label ("Message, Message…"); while it shows, it names the field.
+                    accessibilityLabel={Platform.OS === 'ios' && !input ? undefined : 'Message'}
                     disableFullscreenUI
                     // Toggling editable off resigns focus and dismisses the keyboard, so stay editable during
                     // shelf actions and temporary handoffs. transferShelf checks for edits before replacing content;
@@ -6738,20 +6853,20 @@ function ChatView({
                         buttonBorderShape('capsule'),
                         controlSize('regular'),
                         swiftUIAccessibilityLabel(`Generation options, ${presetLabel}`),
+                        swiftUIAccessibilityInputLabels(['Options', 'Generation options']),
                         swiftUIAccessibilityHint('Opens chat preset choices'),
                         ...glassButtonStyle('glass'),
                       ]}
                     >
                       {(prototypeModel?.presets ?? []).map((preset) => (
                         <SwiftUISection key={preset.id} title={preset.name}>
-                          {preset.choices.map((choice) => (
-                            <SwiftUIButton
-                              key={choice.id}
-                              label={choice.label}
-                              systemImage={choice.id === presetSelections[preset.id] ? 'checkmark' : undefined}
-                              onPress={() => onSelectPreset(preset.id, choice.id)}
-                            />
-                          ))}
+                          <NativeMenuPicker
+                            label={preset.name}
+                            selection={presetSelections[preset.id]}
+                            // Choice icons are web icon names, not SF Symbols; the menu shows labels only.
+                            options={preset.choices.map((choice) => ({ id: choice.id, label: choice.label }))}
+                            onSelect={(choiceId) => onSelectPreset(preset.id, choiceId)}
+                          />
                         </SwiftUISection>
                       ))}
                     </SwiftUIMenu>
@@ -6810,6 +6925,7 @@ function ChatView({
                     trailing={Platform.OS === 'ios'
                       ? <NativeComposerIconButton label="Finish dictation" systemImage="checkmark" prominent disabled={dictation.phase !== 'recording'} onPress={dictation.stop} />
                       : <MaterialIconButton label="Finish dictation" icon="checkmark" prominent disabled={dictation.phase !== 'recording'} onPress={dictation.stop} />}
+                    finish={{ label: 'Finish dictation', disabled: dictation.phase !== 'recording', onFinish: dictation.stop }}
                   />
                 )}
               </View>
@@ -6840,7 +6956,7 @@ function NativeDrawerSearch({ value, focused, onChange, onFocusChange, fieldRef 
   // newer keystrokes; the clear button below writes the binding explicitly.
 
   if (!focused && value.length === 0) {
-    return <SwiftUIHost style={styles.nativeDrawerSearchHost}>
+    return <SwiftUIHost matchContents={{ vertical: true }} style={styles.nativeDrawerSearchHost}>
       <SwiftUIButton
         onPress={() => {
           onFocusChange(true);
@@ -6857,7 +6973,7 @@ function NativeDrawerSearch({ value, focused, onChange, onFocusChange, fieldRef 
     </SwiftUIHost>;
   }
 
-  return <SwiftUIHost style={styles.nativeDrawerSearchHost}>
+  return <SwiftUIHost matchContents={{ vertical: true }} style={styles.nativeDrawerSearchHost}>
     <SwiftUIHStack spacing={12}>
       <SwiftUIImage systemName="magnifyingglass" size={17} modifiers={[frame({ width: 20, height: 20 }), foregroundStyle('primary')]} />
       <SwiftUITextField ref={fieldRef} placeholder="Search chats" text={nativeValue} onFocusChange={onFocusChange} onTextChange={onChange} modifiers={[textFieldStyle('plain'), font({ textStyle: 'body' }), frame({ maxWidth: Infinity, minHeight: 44 }), swiftUIAccessibilityLabel('Search chats')]} />
@@ -6869,11 +6985,11 @@ function NativeDrawerSearch({ value, focused, onChange, onFocusChange, fieldRef 
 /** The drawer's way into Files, like the web sidebar's Files button. */
 function NativeFilesRow({ onOpen }: { onOpen: () => void }) {
   const { styles } = useChatStyles();
-  return <SwiftUIHost ignoreSafeArea="all" style={styles.nativeFilesRowHost}>
+  return <SwiftUIHost ignoreSafeArea="all" matchContents={{ vertical: true }} style={styles.nativeFilesRowHost}>
     <SwiftUIButton onPress={() => { Haptics.selectionAsync(); onOpen(); }} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), swiftUIAccessibilityLabel('Files')]}>
       <SwiftUIHStack spacing={12} modifiers={[frame({ maxWidth: Infinity, minHeight: DRAWER_ACTION_HEIGHT }), contentShape(shapes.rectangle())]}>
         <SwiftUIImage systemName="doc.on.doc" size={17} modifiers={[frame({ width: 20, height: 20 })]} />
-        <SwiftUIText>Files</SwiftUIText>
+        <SwiftUIText modifiers={[font({ textStyle: 'body' })]}>Files</SwiftUIText>
         <SwiftUISpacer />
       </SwiftUIHStack>
     </SwiftUIButton>
@@ -6905,22 +7021,23 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, archiveAvailable, 
   const previewLease = useRef<(() => void) | null>(null);
   useEffect(() => () => { previewLease.current?.(); previewLease.current = null; }, [chat.id, fontScale]);
   const endPreview = () => { previewLease.current?.(); previewLease.current = null; };
-  const largeAndroidText = Platform.OS === 'android' && fontScale >= 1.5;
+  // At large text sizes the title gets the row's width and the time goes under it.
+  const largeText = fontScale >= (Platform.OS === 'android' ? 1.5 : 1.6);
   const expirationAction = expirationMenuAction?.kind ?? 'hidden';
   const rowContent = <>
     <View style={styles.flex}>
-      <Text numberOfLines={largeAndroidText ? 2 : 1} style={styles.chatTitle}>{chat.title}</Text>
-      {largeAndroidText ? <Text style={styles.chatTime}>{chat.time}</Text> : null}
+      <Text numberOfLines={largeText ? 3 : 1} style={styles.chatTitle}>{chat.title}</Text>
+      {largeText ? <Text style={styles.chatTime}>{chat.time}</Text> : null}
     </View>
-    {chat.expiresAt !== null ? <Icon name="hourglass" size={13} color="#14B8A6" /> : null}
-    <>{!largeAndroidText ? <Text style={styles.chatTime}>{chat.time}</Text> : null}</>
+    {chat.expiresAt !== null ? <Icon name="hourglass" size={13} color={COLORS.expiry} /> : null}
+    <>{!largeText ? <Text style={styles.chatTime}>{chat.time}</Text> : null}</>
   </>;
   if (Platform.OS === 'ios') return (
     <HistoryChatContextMenuView
       // Recreate the native host so a live text-size change measures the row again.
       key={fontScale}
-      accessibilityLabel={chat.title}
-      accessibilityHint="Double tap to open. Long press for more actions."
+      accessibilityLabel={historyChatAccessibilityLabel(chat)}
+      accessibilityHint="Opens the chat"
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
       pinned={chat.pinned}
@@ -6952,13 +7069,14 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, archiveAvailable, 
   );
   return (
     <Pressable
-      accessibilityHint="Double tap to open. Long press for more actions."
+      accessibilityLabel={historyChatAccessibilityLabel(chat)}
+      accessibilityHint="Opens the chat"
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
       delayLongPress={350}
       onLongPress={(event) => onOpenActions(chat, { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })}
       onPress={() => onSelectChat(chat)}
-      style={({ pressed }) => [styles.chatRow, { paddingVertical: largeAndroidText ? 10 : 4 }, depth ? { marginLeft: sidebarIndent(depth) } : null, active && styles.chatRowActive, pressed && styles.navRowPressed]}
+      style={({ pressed }) => [styles.chatRow, { paddingVertical: largeText ? 10 : 4 }, depth ? { marginLeft: sidebarIndent(depth) } : null, active && styles.chatRowActive, pressed && styles.navRowPressed]}
     >
       {rowContent}
     </Pressable>
@@ -6989,7 +7107,23 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   useFilesCapabilityRefresh();
   const insets = useSafeAreaInsets();
   const { fontScale } = useWindowDimensions();
+  // Opening the drawer hides the chat, and with it the screen reader's focus; start at the drawer's top.
+  const drawerHeadingRef = useRef<View>(null);
+  const drawerWasOpen = useRef(drawerOpen);
+  useEffect(() => {
+    const opened = drawerOpen && !drawerWasOpen.current;
+    drawerWasOpen.current = drawerOpen;
+    if (!opened) return undefined;
+    // After the hidden flag clears and the slide settles.
+    const timer = setTimeout(() => {
+      const tag = findNodeHandle(drawerHeadingRef.current);
+      if (tag) AccessibilityInfo.setAccessibilityFocus(tag);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [drawerOpen]);
   const newChatWidth = Platform.OS === 'android' ? Math.min(240, 160 + Math.max(0, fontScale - 1) * 70) : undefined;
+  // New Chat grows with the text size; the list keeps its last row clear of it.
+  const [newChatHeight, setNewChatHeight] = useState(49);
   // Chat folders from servers without the sidebar (/api/folders).
   const legacyFolders = usePrototypeStore((state) => state.folders);
   const trashChat = usePrototypeStore((state) => state.trashChat);
@@ -7388,7 +7522,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     <View style={styles.panelRoot}>
       <SafeAreaView style={styles.flex} edges={['top']}>
         <AppHeader>
-          <View style={styles.profileChip}>
+          <View ref={drawerHeadingRef} accessible accessibilityLabel="Pulpo" accessibilityRole="header" style={styles.profileChip}>
             <PulpoMark size={38} />
             <Text style={styles.profileName}>Pulpo</Text>
           </View>
@@ -7423,7 +7557,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         </Reanimated.View>
 
         <SectionList<SidebarRow, SidebarSection>
-          contentContainerStyle={[styles.chatList, { paddingBottom: insets.bottom + 82 }]}
+          contentContainerStyle={[styles.chatList, { paddingBottom: insets.bottom + 33 + newChatHeight }]}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
           keyExtractor={(row) => row.key}
@@ -7445,6 +7579,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           accessibilityElementsHidden={hideNewChatButton}
           importantForAccessibility={hideNewChatButton ? 'no-hide-descendants' : 'auto'}
           pointerEvents={hideNewChatButton ? 'none' : 'auto'}
+          onLayout={(event) => setNewChatHeight(Math.round(event.nativeEvent.layout.height))}
           style={[styles.drawerNewChatButton, { bottom: insets.bottom + 14, opacity: hideNewChatButton ? 0 : 1, ...(newChatWidth ? { width: newChatWidth, height: undefined } : {}) }]}
         >
           <DrawerNewChatButton isDark={isDark} onPress={() => { dismissSearch(); onNewChat(); }} />
@@ -7550,7 +7685,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   temporaryLabel: { position: 'absolute', left: 0, right: 0, bottom: '100%', marginBottom: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   temporaryLabelText: { color: '#6d28d9', fontSize: 12, fontWeight: '600' },
   temporaryLabelTextDark: { color: '#c4b5fd' },
-  expirationLabelText: { color: '#14B8A6', fontSize: 12, fontWeight: '600' },
+  expirationLabelText: { color: COLORS.expiry, fontSize: 12, fontWeight: '600' },
   pulpoMark: { shadowColor: COLORS.accent, shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: 6 } },
   emptyModelLine: { flexDirection: 'row', alignItems: 'center', gap: 13 },
   emptyModelLineAccessible: { flexDirection: 'column', width: '100%' },
@@ -7559,6 +7694,11 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   emptyProvider: { color: COLORS.muted, fontSize: 13.5 },
   userRow: { width: '100%', minWidth: 0, alignItems: 'flex-end', marginBottom: 30 },
   userMessageContent: { alignItems: 'flex-end', maxWidth: '88%', minWidth: 0, gap: 7 },
+  // Invisible, and just above the message so screen readers reach it first.
+  userMessageHeader: { position: 'absolute', top: -2, left: 0, width: 1, height: 1 },
+  // Read first (top left), but not drawn.
+  // (Zero opacity would hide it from VoiceOver too.)
+  chatTitleHeading: { position: 'absolute', top: 0, left: 0, width: 1, height: 1, overflow: 'hidden', color: 'transparent' },
   userMessageContextHost: { maxWidth: '85%', minWidth: 0, alignSelf: 'flex-end' },
   userMessageContextContent: { width: '100%', minWidth: 0, alignItems: 'flex-end' },
   assistantMessageContextHost: { width: '100%', minWidth: 0 },
@@ -7628,9 +7768,9 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   recallSourceHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   recallSourceIdentity: { flex: 1, minWidth: 0 },
   recallSourceTitle: { color: COLORS.textSoft, fontSize: 12.5, lineHeight: 17, fontWeight: '600' },
-  recallSourceDate: { color: COLORS.dim, fontSize: 10.5, lineHeight: 15, marginTop: 1 },
-  recallSourceAction: { color: COLORS.accent, fontSize: 11.5, lineHeight: 17, fontWeight: '600' },
-  recallSourceUnavailable: { color: COLORS.dim, fontSize: 10.5, lineHeight: 17 },
+  recallSourceDate: { color: COLORS.muted, fontSize: 10.5, lineHeight: 15, marginTop: 1 },
+  recallSourceAction: { color: COLORS.link, fontSize: 11.5, lineHeight: 17, fontWeight: '600' },
+  recallSourceUnavailable: { color: COLORS.muted, fontSize: 10.5, lineHeight: 17 },
   recallSourceExcerpt: { color: COLORS.muted, fontSize: 12, lineHeight: 18 },
   workToolTrigger: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 6 },
   workToolName: { color: COLORS.textSoft, fontSize: 12, lineHeight: 17, fontWeight: '600' },
@@ -7730,7 +7870,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   composerShelfBar: { marginTop: Platform.OS === 'ios' ? 36 + 1 - 44 : 1 },
   composerCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.fillStrong, alignItems: 'center', justifyContent: 'center' },
   nativeComposerCircleHost: { width: 44, height: 44 },
-  nativeComposerActionHost: { width: 36, height: 44 },
+  nativeComposerActionHost: { width: 44, height: 44 },
   // Align the small glyph with the first text line while retaining a 44-point hit area.
   nativeComposerShelfHost: { width: 44, height: 44, marginRight: -4, alignSelf: 'flex-start', transform: [{ translateY: -8 }] },
   agentCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
@@ -7755,11 +7895,11 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   profileChip: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   profileName: { color: COLORS.text, fontSize: 17, fontWeight: '600', letterSpacing: -0.3 },
   searchBox: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 10, marginTop: 6, borderRadius: 13, backgroundColor: COLORS.panel, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12 },
-  nativeDrawerSearchHost: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 22, marginTop: 6, borderRadius: 13, backgroundColor: COLORS.panel },
-  nativeFilesRowHost: { alignSelf: 'stretch', height: DRAWER_ACTION_HEIGHT, marginHorizontal: 22 },
+  nativeDrawerSearchHost: { minHeight: DRAWER_ACTION_HEIGHT, marginHorizontal: 22, marginTop: 6, borderRadius: 13, backgroundColor: COLORS.panel },
+  nativeFilesRowHost: { alignSelf: 'stretch', minHeight: DRAWER_ACTION_HEIGHT, marginHorizontal: 22 },
   searchInput: { flex: 1, color: COLORS.text, fontSize: 15, fontWeight: '500', padding: 0 },
   navRow: { minHeight: DRAWER_ACTION_HEIGHT, marginHorizontal: 10, borderRadius: 13, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  folderContextMenuHost: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 10 },
+  folderContextMenuHost: { minHeight: DRAWER_ACTION_HEIGHT, marginHorizontal: 10 },
   folderNavRow: { marginHorizontal: 0 },
   folderContextPreview: { width: 280, minHeight: 170, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 24, alignItems: 'center', justifyContent: 'center' },
   folderContextPreviewTitle: { color: COLORS.text, fontSize: 20, fontWeight: '600', marginTop: 12 },
@@ -7768,8 +7908,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   navText: { color: COLORS.textSoft, fontSize: 15, fontWeight: '500' },
   navMeta: { color: COLORS.muted, fontSize: 12.5, marginLeft: 'auto' },
   chatList: { paddingHorizontal: 10, paddingBottom: 16 },
-  drawerNewChatButton: { position: 'absolute', zIndex: 2, right: 16, width: Platform.OS === 'android' ? 160 : 123.75, minHeight: Platform.OS === 'android' ? 52 : undefined, height: Platform.OS === 'android' ? undefined : 48.75 },
-  drawerNewChatButtonHost: { width: 123.75, height: 48.75 },
+  drawerNewChatButton: { position: 'absolute', zIndex: 2, right: 16, width: Platform.OS === 'android' ? 160 : undefined, minHeight: Platform.OS === 'android' ? 52 : 48.75 },
+  drawerNewChatButtonHost: { minWidth: 123.75, minHeight: 48.75 },
   drawerNewChatButtonFallback: { width: 123.75, height: 48.75, borderRadius: 24.375, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7.5 },
   drawerNewChatButtonText: { color: COLORS.text, fontSize: 14.0625, fontWeight: '600' },
   sectionLabel: { color: COLORS.muted, fontSize: 11, fontWeight: '600', marginTop: 16, marginBottom: 5, marginHorizontal: 12 },
@@ -7800,12 +7940,12 @@ function ChatStylesProvider({ children }: { children: ReactNode }) {
       secondary: theme.fill, elevated: theme.elevated, line: theme.separator,
       lineSoft: theme.separator, text: theme.text, textSoft: theme.text,
       muted: theme.secondary, dim: theme.tertiary, fill: theme.fill,
-      fillStrong: theme.fillStrong, accent: theme.accent, positive: theme.green,
+      fillStrong: theme.fillStrong, accent: theme.accent, link: theme.blue, expiry: '#14B8A6', positive: theme.green,
       critical: theme.red, criticalAction: theme.red, warning: theme.orange,
       foregroundOnAccent: theme.accentText, mono: 'monospace',
     };
     return { COLORS: colors, styles: createChatStyles(colors) };
-  }, [theme.background, theme.elevated, theme.fill, theme.separator, theme.text, theme.secondary, theme.tertiary, theme.fillStrong, theme.accent, theme.green, theme.red, theme.orange, theme.accentText]);
+  }, [theme.background, theme.elevated, theme.fill, theme.separator, theme.text, theme.secondary, theme.tertiary, theme.fillStrong, theme.accent, theme.blue, theme.green, theme.red, theme.orange, theme.accentText]);
   return <ChatStylesContext.Provider value={value}>{children}</ChatStylesContext.Provider>;
 }
 

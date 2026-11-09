@@ -188,12 +188,12 @@ export function DailyUsageChart({
   )
 
   const title =
-    metric === 'cost' ? 'Daily USD Usage' : metric === 'tokens' ? 'Daily Token Usage' : 'Daily Calls'
+    metric === 'cost' ? ui("Daily USD Usage") : metric === 'tokens' ? ui("Daily Token Usage") : ui("Daily Calls")
 
   return (
     <div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <h3 className="text-sm font-medium">{title}</h3>
+        <h2 className="text-sm font-medium">{title}</h2>
         {legend.length > 0 && (
           <div className="flex flex-1 flex-wrap items-center justify-end gap-x-3 gap-y-1">
             {legend.map((s) => (
