@@ -96,8 +96,38 @@ try {
   await page.getByRole('button', { name: 'Open wide popover' }).click()
   const popover = await page.locator('[data-slot="popover-content"]').boundingBox()
   assert.ok(popover.x >= 0 && popover.x + popover.width <= 320, 'Wide pickers must fit phone screens')
+  // People's tabs share a phone header with the drawer button, and their nav hides its scrollbar, so
+  // a tab that doesn't fit is silently cut off. 60 friend + 60 Pool requests badge Friends "99+".
+  await page.route('**/api/*/pending-count', (route) => route.fulfill({ json: { count: 60 } }))
+  let peopleCases = 0
+  for (const viewport of [320, 360, 375, 390, 640]) {
+    for (const locale of ['en-US', 'es-ES']) {
+      for (const path of ['/alexandria', '/friends', '/friends/leaderboard']) {
+        await page.setViewportSize({ width: viewport, height: 720 })
+        await page.goto(`${origin}tests/responsive/people.html?locale=${locale}&path=${path}`)
+        await page.getByText('99+').waitFor()
+        const header = await page.evaluate(async () => {
+          // Measure with the app's font (Google Fonts' Inter), not a wider fallback.
+          const faces = await Promise.all(['400 14px Inter', '500 14px Inter', '400 9px Inter'].map((font) => document.fonts.load(font, 'Clasificación 99+')))
+          await new Promise(requestAnimationFrame)
+          const nav = document.querySelector('nav')
+          const last = nav.lastElementChild.getBoundingClientRect()
+          return {
+            inter: faces.every((loaded) => loaded.length > 0),
+            drawerPadding: getComputedStyle(nav.parentElement).paddingLeft,
+            slack: Math.round((nav.getBoundingClientRect().right - last.right) * 10) / 10,
+            fits: nav.scrollWidth <= nav.clientWidth,
+            pageOverflow: document.documentElement.scrollWidth > innerWidth,
+          }
+        })
+        assert.ok(header.inter, 'Inter must load from Google Fonts to measure the People header')
+        assert.deepEqual({ ...header, slack: header.slack >= 0 }, { inter: true, drawerPadding: '48px', slack: true, fits: true, pageOverflow: false }, `${viewport}px ${locale} ${path} People header (slack ${header.slack}px)`)
+        peopleCases++
+      }
+    }
+  }
   assert.deepEqual(errors, [])
-  console.log(`Passed ${cases} responsive table/stat/form cases, scrolling pagination, desktop visual parity, short dialog, and phone popover checks.`)
+  console.log(`Passed ${cases} responsive table/stat/form cases, scrolling pagination, desktop visual parity, short dialog, phone popover, and ${peopleCases} People header checks.`)
 } finally {
   await browser?.close()
   await server.close()

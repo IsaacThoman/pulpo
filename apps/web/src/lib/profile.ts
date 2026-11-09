@@ -1,3 +1,5 @@
+import { matchPath } from 'react-router-dom'
+
 export function profileInitials(name: string): string {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?'
 }
@@ -13,4 +15,11 @@ export function automaticProfileColor(id: string): string {
 /** The signed-in user's own profile, which holds their usage; `/usage` redirects there. */
 export function ownProfilePath(username: string | null | undefined): string {
   return username ? `/${username}` : '/usage'
+}
+
+/** Whether a page is one of People's tabs: your own profile, Friends, or the friends leaderboard. */
+export function isPeoplePath(pathname: string, username: string | null | undefined): boolean {
+  if (matchPath({ path: '/friends', end: false }, pathname)) return true
+  const profile = matchPath('/:username', pathname)?.params.username
+  return Boolean(username && profile?.toLowerCase() === username.toLowerCase())
 }

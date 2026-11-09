@@ -14,7 +14,7 @@ import { ProfilePage } from './ProfilePage'
 
 const mocks = vi.hoisted(() => {
   Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }), configurable: true })
-  return { request: vi.fn(), openSettings: vi.fn() }
+  return { request: vi.fn(), openSettings: vi.fn(), pendingFriendRequests: 0 }
 })
 vi.mock('@/lib/api', async (importOriginal) => ({ ...await importOriginal<typeof import('@/lib/api')>(), apiRequest: mocks.request }))
 vi.mock('@/lib/runtime-resource', () => ({ useRuntimeImageUrl: () => ({ url: null }) }))
@@ -91,8 +91,11 @@ beforeEach(() => {
   queryClient.clear()
   queryClient.setDefaultOptions({ queries: { retry: false, gcTime: Infinity } })
   mocks.openSettings.mockReset()
+  mocks.pendingFriendRequests = 0
   mocks.request.mockReset().mockImplementation(async (path: string, options?: { method?: string }) => {
     if (options?.method) return {}
+    if (path === '/api/friends/pending-count') return { count: mocks.pendingFriendRequests }
+    if (path === '/api/pools/pending-count') return { count: 0 }
     if (path === '/api/profiles/alice') return structuredClone(detail)
     if (path.startsWith('/api/profiles/alice/usage/activity?')) return activity()
     if (path.startsWith('/api/profiles/alice/usage/records?')) return structuredClone(publicRecords)
@@ -115,6 +118,8 @@ describe('profile page', () => {
 
     await screen.findByRole('heading', { name: 'Alice' })
     expect(mocks.request).toHaveBeenCalledWith('/api/profiles/alice')
+    // Someone else's profile isn't one of People's tabs.
+    expect(screen.queryByRole('navigation', { name: 'People sections' })).toBeNull()
     expect(screen.getByText('@alice')).toBeTruthy()
     expect(screen.getByText(/^Joined /)).toBeTruthy()
     expect(screen.queryByText(/Friends since/)).toBeNull()
@@ -265,11 +270,9 @@ describe('own profile', () => {
     const avatar = container.querySelector('[data-slot="avatar"]')!
     expect(avatar.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(avatar.className).toContain('rounded-full')
-    expect(screen.getByRole('heading', { level: 1, name: 'Profile' })).toBeTruthy()
     expect(screen.getByText('@morgan')).toBeTruthy()
     expect(screen.getByText(/morgan@example\.com · Joined/)).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'Back to friends' })).toBeNull()
-    expect(screen.getByRole('link', { name: 'Compare with friends' }).getAttribute('href')).toBe('/friends/leaderboard')
 
     await screen.findByRole('heading', { name: 'Top models' })
     expect(screen.getByText('Balance (pooled)').nextElementSibling?.textContent).toBe('$12.34')
@@ -278,6 +281,22 @@ describe('own profile', () => {
     expect(usageRequests().some((path) => path.startsWith('/api/usage/records?'))).toBe(true)
     expect(mocks.request).not.toHaveBeenCalledWith('/api/profiles/morgan')
     expect(screen.queryByText('Mutual friends')).toBeNull()
+  })
+
+  it("sits under People's header as its Profile tab, with the leaderboard as a tab instead of a link", async () => {
+    mocks.pendingFriendRequests = 1
+    mount('/morgan')
+
+    expect(screen.getByRole('heading', { level: 1, name: 'People' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { level: 1, name: 'Profile' })).toBeNull()
+    const tabs = within(screen.getByRole('navigation', { name: 'People sections' }))
+    const profile = tabs.getByRole('link', { name: 'Profile' })
+    expect(profile.getAttribute('href')).toBe('/morgan')
+    expect(profile.getAttribute('aria-current')).toBe('page')
+    expect(tabs.getByRole('link', { name: 'Leaderboard' }).getAttribute('href')).toBe('/friends/leaderboard')
+    expect((await tabs.findByRole('link', { name: 'Friends, 1 pending' })).getAttribute('aria-current')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Compare with friends' })).toBeNull()
+    await screen.findByRole('heading', { name: 'Top models' })
   })
 
   it('shows who can see your usage as an icon after your handle, on hover', async () => {

@@ -20,7 +20,7 @@ const AppLayout = lazy(() => import('@/components/layout/AppLayout').then((modul
 const ChatPage = lazy(() => import('@/pages/ChatPage').then((module) => ({ default: module.ChatPage })))
 const LeaderboardPage = lazy(() => import('@/pages/usage/LeaderboardPage').then((module) => ({ default: module.LeaderboardPage })))
 const FriendsLeaderboardPage = lazy(() => import('@/pages/usage/LeaderboardPage').then((module) => ({ default: module.FriendsLeaderboardPage })))
-const FriendsLayout = lazy(() => import('@/pages/FriendsLayout').then((module) => ({ default: module.FriendsLayout })))
+const PeopleLayout = lazy(() => import('@/pages/PeopleLayout').then((module) => ({ default: module.PeopleLayout })))
 const FriendsPage = lazy(() => import('@/pages/FriendsPage').then((module) => ({ default: module.FriendsPage })))
 const ProfilePage = lazy(() => import('@/pages/ProfilePage').then((module) => ({ default: module.ProfilePage })))
 const ApiKeysPage = lazy(() => import('@/pages/ApiKeysPage').then((module) => ({ default: module.ApiKeysPage })))
@@ -150,7 +150,7 @@ export default function App() {
             <Route path="files/trash/f/:folderId" element={<LocalizedRoute><TrashFolderPage /></LocalizedRoute>} />
             <Route path="files/d/:docId" element={<LocalizedRoute><FileDocPage /></LocalizedRoute>} />
             <Route path="attachments/:attachmentId" element={<LocalizedRoute><AttachmentPage /></LocalizedRoute>} />
-            <Route path="friends" element={<LocalizedRoute><FriendsLayout /></LocalizedRoute>}>
+            <Route path="friends" element={<LocalizedRoute><PeopleLayout /></LocalizedRoute>}>
               <Route index element={<LocalizedRoute><FriendsPage /></LocalizedRoute>} />
               <Route path="leaderboard" element={<LocalizedRoute><FriendsLeaderboardPage /></LocalizedRoute>} />
               <Route path="pool" element={<Navigate to="/friends" replace />} />

@@ -1,11 +1,10 @@
 import { useEffect, useId, useRef, useState, type DragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
-import { Link, NavLink, useNavigate, useParams } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   Archive,
   ArrowDownUp,
-  BarChart3,
   ClipboardPaste,
   CopyPlus,
   FilePlus2,
@@ -64,7 +63,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { AccountSwitcherMenuItems } from '@/components/layout/AccountSwitcher'
-import { apiRequest } from '@/lib/api'
 import { toggleSidebarPin, type SidebarPinKey } from '@/lib/sidebar-pins'
 import { newChatLocationState } from '@/lib/new-chat-navigation'
 import { billingPlanTier, fetchBillingSummary } from '@/lib/billing'
@@ -88,7 +86,8 @@ import { useFileOperations } from '@/features/files/browser/use-file-operations'
 import { useSidePanel } from '@/features/side-panel/store'
 import { openBeside, useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import { OpenChatToLeftItem } from '@/features/side-panel/AgentActions'
-import { ownProfilePath } from '@/lib/profile'
+import { isPeoplePath, ownProfilePath } from '@/lib/profile'
+import { usePendingSocialCount } from '@/lib/pending-social'
 import { copyChatShareLink, duplicateChats } from '@/features/chat/chat-actions'
 import { ChatExpiryMenuItem } from '@/features/chat/ChatExpiryMenuItem'
 import { sidebarChatGroups } from '@/features/sidebar/chat-groups'
@@ -1514,21 +1513,10 @@ export function Sidebar({
   const user = useAuth((s) => s.user)
   const instanceReady = useAuth((s) => s.instanceReady)
   const networkReady = !isDesktopRuntime() || instanceReady
-  const pendingFriendsQuery = useQuery({
-    queryKey: ['friends-pending-count', user?.id],
-    queryFn: () => apiRequest<{ count: number }>('/api/friends/pending-count'),
-    enabled: Boolean(networkReady && user?.id && user.role !== 'pending'),
-    staleTime: 0,
-    refetchOnWindowFocus: 'always',
-  })
-  const pendingPoolsQuery = useQuery({
-    queryKey: ['pool-pending-count', user?.id],
-    queryFn: () => apiRequest<{ count: number }>('/api/pools/pending-count'),
-    enabled: Boolean(networkReady && user?.id && user.role !== 'pending'),
-    staleTime: 0,
-    refetchOnWindowFocus: 'always',
-  })
-  const pendingSocialCount = (pendingFriendsQuery.data?.count ?? 0) + (pendingPoolsQuery.data?.count ?? 0)
+  const pendingSocialCount = usePendingSocialCount()
+  const { pathname } = useLocation()
+  // People opens your profile but covers every one of its tabs, so it stays current across them.
+  const peopleCurrent = isPeoplePath(pathname, user?.username)
   const apiKeysEnabled = useAuth((s) => s.apiKeysEnabled)
   const filesEnabled = useAuth((s) => s.filesEnabled)
   const billingEnabled = useAuth((s) => s.billingEnabled)
@@ -1833,10 +1821,11 @@ export function Sidebar({
   }
 
   /**
-   * A primary nav item: a link for pages (marked as the current page while open), a button for
-   * actions. The label stays the accessible name with a pending count, if any, read after it.
+   * A primary nav item: a link for pages (marked as the current page while open, or while `current`
+   * says so for one that covers several pages), a button for actions. The label stays the
+   * accessible name with a pending count, if any, read after it.
    */
-  const iconBtn = (label: string, target: string | (() => void), icon: React.ReactNode, badge?: number, onContextMenu?: (event: React.MouseEvent) => void) => {
+  const iconBtn = (label: string, target: string | (() => void), icon: React.ReactNode, badge?: number, onContextMenu?: (event: React.MouseEvent) => void, current?: boolean) => {
     const content = (
       <>
         <span className="relative flex size-8 shrink-0 items-center justify-center">{icon}{Boolean(badge) && <span aria-hidden="true" className="absolute right-0 top-0 grid min-w-3.5 place-items-center rounded-full bg-primary px-1 text-[9px] leading-3.5 text-primary-foreground">{badge! > 99 ? '99+' : badge}</span>}</span>
@@ -1851,6 +1840,26 @@ export function Sidebar({
       </>
     )
     const name = badge ? uit`${label}, ${badge} pending` : label
+    const link = (to: string) => {
+      const props = {
+        to,
+        className: navBtn,
+        onContextMenu,
+        'aria-label': name,
+        onClick: (event: React.MouseEvent) => {
+          // Modified clicks open a new tab in the browser; the desktop app opens the page in place.
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+            if (!isDesktopRuntime()) return
+            event.preventDefault()
+            navigate(to)
+          }
+          onNavigate()
+        },
+      }
+      return current === undefined
+        ? <NavLink {...props}>{content}</NavLink>
+        : <Link {...props} aria-current={current ? 'page' : undefined}>{content}</Link>
+    }
     return (
       <Tooltip
         key={label}
@@ -1860,25 +1869,7 @@ export function Sidebar({
         }}
       >
         <TooltipTrigger asChild>
-          {typeof target === 'string' ? (
-            <NavLink
-              to={target}
-              className={navBtn}
-              onContextMenu={onContextMenu}
-              aria-label={name}
-              onClick={(event) => {
-                // Modified clicks open a new tab in the browser; the desktop app opens the page in place.
-                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
-                  if (!isDesktopRuntime()) return
-                  event.preventDefault()
-                  navigate(target)
-                }
-                onNavigate()
-              }}
-            >
-              {content}
-            </NavLink>
-          ) : (
+          {typeof target === 'string' ? link(target) : (
             <button type="button" className={navBtn} onClick={target} onContextMenu={onContextMenu} aria-label={name}>
               {content}
             </button>
@@ -2039,9 +2030,8 @@ export function Sidebar({
             event.preventDefault()
             setFilesMenuPoint({ x: event.clientX, y: event.clientY })
           })}
-          {sidebarPins.usage && iconBtn(t('sidebar.usage'), ownProfilePath(user?.username), <BarChart3 className="size-4" />, undefined, openNavMenu('usage'))}
           {billingEnabled && sidebarPins.billing && iconBtn(t('sidebar.billing'), '/billing', <CreditCard className="size-4" />, undefined, openNavMenu('billing'))}
-          {sidebarPins.friends && iconBtn(t('sidebar.friends'), '/friends', <UsersRound className="size-4" />, pendingSocialCount, openNavMenu('friends'))}
+          {sidebarPins.friends && iconBtn(t('sidebar.friends'), ownProfilePath(user?.username), <UsersRound className="size-4" />, pendingSocialCount, openNavMenu('friends'), peopleCurrent)}
           {apiKeysEnabled && sidebarPins.apiKeys && iconBtn(t('sidebar.apiKeys'), '/api-keys', <KeyRound className="size-4" />, undefined, openNavMenu('apiKeys'))}
           {filesEnabled && <FilesNavMenu point={filesMenuPoint} onClose={() => setFilesMenuPoint(null)} go={go} />}
           <NavItemMenu
@@ -2181,8 +2171,7 @@ export function Sidebar({
             <AccountSwitcherMenuItems open={accountMenuOpen} />
             {accountNavItem('searchChats', t('sidebar.searchChats'), onOpenSearch, <Search />)}
             {filesEnabled && accountNavItem('files', t('sidebar.files'), '/files', <FolderIcon />)}
-            {accountNavItem('usage', t('sidebar.usage'), ownProfilePath(user?.username), <BarChart3 />)}
-            {accountNavItem('friends', t('sidebar.friends'), '/friends', <UsersRound />, pendingSocialCount)}
+            {accountNavItem('friends', t('sidebar.friends'), ownProfilePath(user?.username), <UsersRound />, pendingSocialCount)}
             {apiKeysEnabled && accountNavItem('apiKeys', t('sidebar.apiKeys'), '/api-keys', <KeyRound />)}
             {billingEnabled && accountNavItem('billing', t('sidebar.billing'), '/billing', <CreditCard />)}
             {billingEnabled && billingQuery.data?.onHold && (
