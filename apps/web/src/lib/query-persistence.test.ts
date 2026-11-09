@@ -18,6 +18,11 @@ describe('query persistence policy', () => {
     expect(shouldPersistQuery({ queryKey: ['admin-analytics', 'overview', 'range=24h'], state: { status: 'success', data: {} } })).toBe(false)
   })
 
+  it('never persists other people\'s profile usage', () => {
+    expect(shouldPersistQuery({ queryKey: ['profile-usage', 'viewer-1', 'alice', '30d', 'activity'], state: { status: 'success', data: {} } })).toBe(false)
+    expect(shouldPersistQuery({ queryKey: ['usage', 'viewer-1', '30d', 'activity'], state: { status: 'success', data: {} } })).toBe(true)
+  })
+
   it('retains the existing owner query behavior', () => {
     expect(shouldPersistQuery({ queryKey: ['chat', 'owner-1'], state: { status: 'success', data: { temporary: false } } })).toBe(true)
     expect(shouldPersistQuery({ queryKey: ['chat', 'owner-1'], state: { status: 'success', data: { temporary: true } } })).toBe(false)

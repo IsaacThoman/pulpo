@@ -8,7 +8,7 @@ import { useAppStorePlans } from '../../../features/app-store/useAppStorePlans';
 import { MaterialToggleRow } from '../../../platform/MaterialUI';
 import { showActions } from '../../../platform/materialActions';
 import { useSubpageBack } from '../../../platform/useSubpageBack';
-import { NativeMenuPicker } from '../../../platform/NativeMenuPicker';
+import { NativeChoiceRow } from '../../../platform/NativeChoiceRow';
 import { useAccessibilityAnnouncement } from '../../../platform/accessibilityAnnouncement';
 import { DeleteAccountForm } from '../../../components/DeleteAccount';
 export { EditProfileScreen } from '../../../features/profile/EditProfileScreen';
@@ -320,11 +320,6 @@ function NativeSettingsLink({ icon, title, detail, onPress }: { icon: string; ti
 }
 
 const settingTitles: Record<SettingsSection, string> = { general: 'General', interface: 'Interface', personalization: 'Personalization', data: 'Data Controls', trash: 'Trash', usage: 'Usage' };
-
-function NativeChoiceRow<T extends string>({ title, value, options, onChange, icon }: { title: string; value: T; options: readonly { value: T; label: string }[]; onChange: (value: T) => void; icon?: string }) {
-  const selected = options.find((option) => option.value === value)?.label ?? value;
-  return <SwiftUIMenu label={<SwiftUIHStack spacing={12}>{icon ? <SwiftUIImage systemName={icon as never} size={17} modifiers={[frame({ width: 22, height: 22 })]} /> : null}<SwiftUIText>{title}</SwiftUIText><SwiftUISpacer /><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{selected}</SwiftUIText><SwiftUIImage systemName="chevron.up.chevron.down" size={10} modifiers={[foregroundStyle('secondary')]} /></SwiftUIHStack>} modifiers={[buttonStyle('plain'), foregroundStyle('primary')]}><NativeMenuPicker label={title} selection={value} options={options.map((option) => ({ id: option.value, label: option.label }))} onSelect={(id) => onChange(id as T)} /></SwiftUIMenu>;
-}
 
 function NativeToggleRow({ title, detail, value, onChange, icon }: { title: string; detail: string; value: boolean; onChange: (value: boolean) => void; icon?: string }) {
   const theme = useAppTheme();

@@ -1009,6 +1009,47 @@ describe('response snapshot accumulation', () => {
     expect(() => updateProfileInputSchema.parse({})).toThrow()
   })
 
+  it('validates usage visibility on users, profile updates, profile details, and management settings', async () => {
+    const {
+      DEFAULT_USAGE_VISIBILITY, friendProfileDetailSchema, managementAccountSettingsSchema: accountSettings,
+      managementAccountSettingsDocumentSchema, updateProfileInputSchema, usageVisibilitySchema, userSchema,
+    } = await import('./index.js')
+    expect(usageVisibilitySchema.options).toEqual(['pool', 'friends', 'public'])
+    expect(DEFAULT_USAGE_VISIBILITY).toBe('friends')
+    expect(usageVisibilitySchema.safeParse('private').success).toBe(false)
+
+    const user = {
+      id: '00000000-0000-4000-8000-000000000001', email: 'isaac@example.com', name: 'Isaac', username: 'isaac',
+      avatarUrl: null, profileColor: null, usageVisibility: 'public', role: 'user', balanceMicros: 0,
+      storageLimitBytes: 0, blocked: false, stateRevision: 0, createdAt: '2026-11-09T00:00:00.000Z',
+    }
+    expect(userSchema.parse(user).usageVisibility).toBe('public')
+    expect(userSchema.safeParse({ ...user, usageVisibility: undefined }).success).toBe(false)
+
+    expect(updateProfileInputSchema.parse({ usageVisibility: 'pool' })).toEqual({ usageVisibility: 'pool' })
+    expect(() => updateProfileInputSchema.parse({ usageVisibility: 'everyone' })).toThrow()
+    expect(() => updateProfileInputSchema.parse({ usageVisibility: null })).toThrow()
+
+    const profile = { id: user.id, displayName: 'Isaac', username: 'isaac', avatarUrl: null, profileColor: null }
+    const detail = { profile, relationship: 'self', requestId: null, friendsSince: null, mutualFriends: [], usageVisible: true, usageVisibility: 'friends', joinedAt: '2026-07-31T00:00:00.000Z' }
+    expect(friendProfileDetailSchema.parse(detail).usageVisible).toBe(true)
+    expect(friendProfileDetailSchema.safeParse({ ...detail, usageVisible: undefined }).success).toBe(false)
+    expect(friendProfileDetailSchema.safeParse({ ...detail, usageVisibility: 'everyone' }).success).toBe(false)
+    expect(friendProfileDetailSchema.safeParse({ ...detail, joinedAt: undefined }).success).toBe(false)
+    expect(friendProfileDetailSchema.parse({ ...detail, profile: { ...profile, usageVisibility: 'pool' } }).profile)
+      .not.toHaveProperty('usageVisibility')
+
+    // Omitted means "keep the stored level", so the schema must not fill in a default.
+    expect(accountSettings.parse({ username: 'pulpo_user' })).not.toHaveProperty('usageVisibility')
+    expect(managementAccountSettingsDocumentSchema.parse({
+      apiVersion: 'pulpo.dev/management/v1', kind: 'AccountSettings', revision: 'r1', account: { username: 'pulpo_user' },
+    }).account).not.toHaveProperty('usageVisibility')
+    expect(accountSettings.parse({ username: 'pulpo_user' })).not.toHaveProperty('leaderboardVisible')
+    expect(accountSettings.parse({ username: 'pulpo_user', usageVisibility: 'public' }).usageVisibility).toBe('public')
+    expect(accountSettings.safeParse({ username: 'pulpo_user', usageVisibility: 'everyone' }).success).toBe(false)
+    expect(accountSettings.parse({ username: 'pulpo_user', leaderboardVisible: true }).leaderboardVisible).toBe(true)
+  })
+
   it('validates bounded friend search responses', async () => {
     const { friendSearchResponseSchema } = await import('./index.js')
     const result = {

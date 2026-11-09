@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { friendSearchHighlight } from '@/lib/friend-search'
+import { useProfileLinkState } from '@/lib/profile'
 import { cn } from '@/lib/utils'
 import { ui, uit } from '@/i18n/ui'
 
@@ -14,6 +15,7 @@ function HighlightedText({ value, query }: { value: string; query: string }) {
 }
 
 function ProfileHoverCard({ profile, children }: { profile: FriendProfile; children: ReactNode }) {
+  const linkState = useProfileLinkState()
   return <TooltipProvider delayDuration={1_000}>
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
@@ -25,6 +27,7 @@ function ProfileHoverCard({ profile, children }: { profile: FriendProfile; child
       >
         <Link
           to={`/${profile.username}`}
+          state={linkState}
           className="group/hover-profile flex min-w-0 items-center gap-3 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={profile.displayName}
         >
@@ -52,6 +55,7 @@ export function ProfileIdentity({ profile, detail, query, matchedOn, href }: {
   matchedOn?: FriendSearchResult['matchedOn']
   href?: string
 }) {
+  const linkState = useProfileLinkState()
   const content = <>
       <ProfileAvatar name={profile.displayName} avatarUrl={profile.avatarUrl} className="size-10" fallbackClassName="text-xs" />
       <div className="min-w-0">
@@ -64,7 +68,7 @@ export function ProfileIdentity({ profile, detail, query, matchedOn, href }: {
     </>
   const className = 'group/profile flex min-w-0 items-center gap-3 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
   const identity = href
-    ? <Link to={href} className={className} aria-label={profile.displayName}>{content}</Link>
+    ? <Link to={href} state={linkState} className={className} aria-label={profile.displayName}>{content}</Link>
     : <div className={className}>{content}</div>
   return <ProfileHoverCard profile={profile}>{identity}</ProfileHoverCard>
 }
@@ -73,6 +77,7 @@ export function ProfileIdentity({ profile, detail, query, matchedOn, href }: {
 const MUTUAL_AVATAR_LIMIT = 3
 
 export function MutualFriends({ friends, className }: { friends: FriendProfile[]; className?: string }) {
+  const linkState = useProfileLinkState()
   if (!friends.length) return null
   const label = `${friends.length === 1 ? ui('Mutual friend:') : ui('Mutual friends:')} ${friends.map((friend) => friend.displayName).join(', ')}`
   return <div className={cn('flex shrink-0 items-center gap-2', className)} role="group" aria-label={label}>
@@ -80,6 +85,7 @@ export function MutualFriends({ friends, className }: { friends: FriendProfile[]
       {friends.slice(0, MUTUAL_AVATAR_LIMIT).map((friend) => <ProfileHoverCard key={friend.id} profile={friend}>
         <Link
           to={`/${friend.username}`}
+          state={linkState}
           className="relative rounded-full focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={friend.displayName}
         >

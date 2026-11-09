@@ -1,6 +1,6 @@
 # Pulpo software privacy policy
 
-**Effective August 27, 2026**
+**Effective November 9, 2026**
 
 ::: tip Using pulpo.baby?
 This policy covers the Pulpo mobile app and self-hosted Pulpo software. If you use the hosted service at [pulpo.baby](https://pulpo.baby), the [Pulpo hosted service privacy policy](./privacy-hosted) also applies to the information handled by that service.
@@ -30,6 +30,10 @@ To provide their features, Pulpo clients send applicable account and authenticat
 
 If you use a self-hosted or third-party Pulpo instance, its operator—not the developer merely by providing the software—controls that instance’s collection, storage, access, retention, deletion, provider configuration, and security practices. Review the operator’s privacy information before using its service.
 
+## Profiles and usage visibility
+
+Signed-in users of a Pulpo server can open your profile, which shows your name, username, and profile photo. Your usage statistics and request history, including each request’s time, model, token counts, and cost, can also appear on your profile and in usage leaderboards. The **Usage visibility** setting controls who can see them: members of your active Pool only, your accepted friends and Pool members (the default), or any signed-in user of that server. Members of your active Pool can always see your usage. Your profile does not show other people your conversations or your balance.
+
 ## Memories and relevant-chat recall
 
 The Memories setting controls both the user’s editable `MEMORY.md` profile and relevant-chat recall. When Memories is enabled, the complete profile is included in eligible normal and Agent conversations. Agent mode maintains it as useful context for future conversations. Every superseded version remains restorable for 24 hours. The document is limited to 16,000 characters and is not embedded.
@@ -44,7 +48,7 @@ The administrator dashboard records hourly aggregate counts, latency histograms,
 
 ## Your choices and deletion
 
-The Pulpo app provides controls to edit certain profile information, enable or disable Memories, move individual or all conversations to Trash for deletion under the selected server’s retention settings, change servers, and sign out. When enabled by the instance administrator, use **Delete account** in web **Settings → Security** or mobile **Account** settings. Confirm your current password and authenticator or recovery code if two-factor authentication is enabled. Deletion immediately ends access and begins irreversible cleanup of account data and cancellation of subscriptions, without automatic refunds or recovery of unused credits. Background cleanup may take time; backups and payment records follow existing retention policies. If account deletion is disabled, or for other requests concerning server-held information, contact that server’s operator.
+The Pulpo app provides controls to edit certain profile information, choose who can see your usage, enable or disable Memories, move individual or all conversations to Trash for deletion under the selected server’s retention settings, change servers, and sign out. When enabled by the instance administrator, use **Delete account** in web **Settings → Security** or mobile **Account** settings. Confirm your current password and authenticator or recovery code if two-factor authentication is enabled. Deletion immediately ends access and begins irreversible cleanup of account data and cancellation of subscriptions, without automatic refunds or recovery of unused credits. Background cleanup may take time; backups and payment records follow existing retention policies. If account deletion is disabled, or for other requests concerning server-held information, contact that server’s operator.
 
 For requests involving `pulpo.baby`, see the [hosted service privacy policy](./privacy-hosted). For a different Pulpo instance, contact the organization or person operating that instance.
 

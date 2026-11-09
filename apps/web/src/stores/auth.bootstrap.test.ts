@@ -139,3 +139,14 @@ it('refreshes the Codex policy and fails closed when settings cannot be read', a
   await unavailable
   expect(useAuth.getState().codexEnabled).toBe(false)
 })
+
+it('defaults usage visibility for profiles that predate it', async () => {
+  const pending = useAuth.getState().bootstrap()
+  respond()
+  await pending
+  expect(useAuth.getState().user?.usageVisibility).toBe('friends')
+
+  useAuth.getState().replaceUser({ ...useAuth.getState().user!, usageVisibility: 'public' })
+  expect(useAuth.getState().user?.usageVisibility).toBe('public')
+  expect(JSON.parse(localStorage.getItem('pulpo-profile')!).usageVisibility).toBe('public')
+})

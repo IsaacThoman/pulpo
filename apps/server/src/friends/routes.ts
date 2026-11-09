@@ -11,6 +11,7 @@ import { newId } from '../lib/ids.js'
 import { publicFriendProfile } from '../profile/service.js'
 import { bumpAccountRevisions, friendNetworkIds, publishScopedStateChanges } from './sync.js'
 import { publishPoolChanges, separatePoolOnBlock } from '../pools/service.js'
+import { usageAccess } from '../usage/visibility.js'
 
 export function orderedPair(left: string, right: string): [string, string] {
   return left < right ? [left, right] : [right, left]
@@ -48,6 +49,19 @@ async function blockedBetween(left: string, right: string): Promise<boolean> {
     and(eq(userBlocks.blockerUserId, right), eq(userBlocks.blockedUserId, left)),
   )).limit(1)
   return Boolean(row)
+}
+
+export const profileParamsSchema = z.object({ username: z.string().trim().toLowerCase().min(3).max(30) })
+
+/** Resolves a profile the viewer may open, as a 404 when it is missing, blocked, pending, or blocked between the two. */
+export async function findProfileTarget(viewerId: string, username: string) {
+  const [target] = await db.select().from(users).where(and(
+    sql<boolean>`lower(${users.username}) = ${username}`,
+    eq(users.blocked, false),
+    ne(users.role, 'pending'),
+  )).limit(1)
+  if (!target || (target.id !== viewerId && await blockedBetween(viewerId, target.id))) throw notFound('Profile')
+  return target
 }
 
 async function requireAvailableTarget(id: string, currentUserId: string) {
@@ -247,13 +261,7 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
 
   app.get('/api/profiles/:username', async (request) => {
     const user = requireUser(request)
-    const { username } = z.object({ username: z.string().trim().toLowerCase().min(3).max(30) }).parse(request.params)
-    const [target] = await db.select().from(users).where(and(
-      sql<boolean>`lower(${users.username}) = ${username}`,
-      eq(users.blocked, false),
-      ne(users.role, 'pending'),
-    )).limit(1)
-    if (!target || (target.id !== user.id && await blockedBetween(user.id, target.id))) throw notFound('Profile')
+    const target = await findProfileTarget(user.id, profileParamsSchema.parse(request.params).username)
 
     const [relationshipRows, currentFriendRows] = await Promise.all([
       target.id === user.id
@@ -265,6 +273,7 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
       )),
     ])
     const friendship = relationshipRows[0]
+    const usageVisible = await usageAccess(user.id, target, { friends: friendship?.status === 'accepted' })
     const currentFriendIds = currentFriendRows.map((row) => row.userAId === user.id ? row.userBId : row.userAId)
     const mutualIds = target.id === user.id
       ? []
@@ -286,6 +295,9 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
       mutualFriends: mutualRows
         .map(publicFriendProfile)
         .sort((left, right) => left.displayName.localeCompare(right.displayName) || left.username.localeCompare(right.username)),
+      usageVisible,
+      usageVisibility: target.usageVisibility,
+      joinedAt: target.createdAt.toISOString(),
     }
   })
 

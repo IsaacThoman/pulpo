@@ -64,6 +64,7 @@ export const users = pgTable('users', {
   stateRevision: bigint('state_revision', { mode: 'number' }).notNull().default(0),
   username: text('username').notNull(),
   profileColor: text('profile_color'),
+  usageVisibility: text('usage_visibility', { enum: ['pool', 'friends', 'public'] }).notNull().default('friends'),
   avatarObjectKey: text('avatar_object_key'),
   avatarVersion: integer('avatar_version').notNull().default(0),
   inviteCodeQuota: integer('invite_code_quota').notNull().default(0),
@@ -74,6 +75,7 @@ export const users = pgTable('users', {
   index('users_username_trgm_idx').using('gin', sql`lower(${table.username}) gin_trgm_ops`),
   index('users_name_trgm_idx').using('gin', sql`lower(${table.name}) gin_trgm_ops`),
   check('users_invite_code_quota_check', sql`${table.inviteCodeQuota} >= 0`),
+  check('users_usage_visibility_check', sql`${table.usageVisibility} in ('pool', 'friends', 'public')`),
 ])
 
 export const friendships = pgTable('friendships', {
