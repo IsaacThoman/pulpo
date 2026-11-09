@@ -150,6 +150,17 @@ export const userBlocks = pgTable('user_blocks', {
   check('user_blocks_not_self_check', sql`${table.blockerUserId} <> ${table.blockedUserId}`),
 ])
 
+/** People the user chose not to see under "People you may know". Only the dismisser sees this. */
+export const friendSuggestionDismissals = pgTable('friend_suggestion_dismissals', {
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  dismissedUserId: uuid('dismissed_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.dismissedUserId] }),
+  index('friend_suggestion_dismissals_dismissed_idx').on(table.dismissedUserId),
+  check('friend_suggestion_dismissals_not_self_check', sql`${table.userId} <> ${table.dismissedUserId}`),
+])
+
 export const passwordCredentials = pgTable('password_credentials', {
   userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
   passwordHash: text('password_hash').notNull(),

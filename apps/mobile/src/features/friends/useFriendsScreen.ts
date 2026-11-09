@@ -55,6 +55,7 @@ export function useFriendsScreen({ openProfile }: { openProfile: (profile: Frien
     }),
     // The list refresh after sending drops them from suggestions; they show under Sent requests.
     sendSuggestion: (suggestion: FriendSuggestion) => void run(`request:${suggestion.profile.id}`, () => friendsApi.sendRequest(suggestion.profile.id)),
+    dismissSuggestion: (suggestion: FriendSuggestion) => void run(`dismiss:${suggestion.profile.id}`, () => friendsApi.dismissSuggestion(suggestion.profile.id)),
     acceptSearchResult: (result: FriendSearchResult) => {
       const requestId = result.requestId
       if (!requestId) return

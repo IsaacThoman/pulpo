@@ -94,6 +94,23 @@ describe('combined Friends and Pool page', () => {
     expect(writes()[0]).toEqual(['/api/friends/requests', { method: 'POST', body: { userId: 'Carol' } }])
   })
 
+  it('dismisses a suggestion without sending a request', async () => {
+    friends.suggestions = [{ profile: profile('Carol'), mutualFriends: [profile('Alice')] }, { profile: profile('Dana'), mutualFriends: [profile('Bob')] }]
+    await mount()
+
+    const suggestionRegion = screen.getByRole('heading', { name: 'People you may know' }).closest('section')!
+    const carolRow = within(suggestionRegion).getByRole('button', { name: 'Dismiss Carol' }).parentElement!
+    // Dismiss sits just left of Add friend.
+    expect([...carolRow.querySelectorAll('button')].map((button) => button.getAttribute('aria-label') ?? button.textContent)).toEqual(['Dismiss Carol', 'Add friend'])
+
+    mutation = () => { friends.suggestions = friends.suggestions!.filter((suggestion) => suggestion.profile.id !== 'Carol'); return undefined }
+    fireEvent.click(within(suggestionRegion).getByRole('button', { name: 'Dismiss Carol' }))
+    await waitFor(() => expect(within(suggestionRegion).queryByText('Carol')).toBeNull())
+    expect(within(suggestionRegion).getByText('Dana')).toBeTruthy()
+    expect(screen.getByRole('status').textContent).toBe("You won't see Carol in suggestions again.")
+    expect(writes()).toEqual([['/api/friends/suggestions/dismissals', { method: 'POST', body: { userId: 'Carol' } }]])
+  })
+
   it('shows two suggestions above the Pool and Friends until the viewer expands them', async () => {
     friends.suggestions = ['Carol', 'Dana', 'Erin'].map((name) => ({ profile: profile(name), mutualFriends: [profile('Alice')] }))
     await mount()

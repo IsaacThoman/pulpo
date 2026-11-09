@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import type { FriendConnection, FriendProfile, FriendSearchResponse, FriendSearchResult, FriendSuggestion, FriendsList, PoolSummary } from '@pulpo/contracts'
-import { Check, ChevronDown, ChevronRight, Copy, LoaderCircle, MoreHorizontal, Search, UserRoundPlus, UsersRound } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Copy, LoaderCircle, MoreHorizontal, Search, UserRoundPlus, UsersRound, X } from 'lucide-react'
 import { ApiError, apiRequest, isNetworkError } from '@/lib/api'
 import { nextFriendSearchIndex, normalizedFriendSearchQuery, shouldSearchFriends } from '@/lib/friend-search'
 import { friendRequestAge } from '@/lib/friends'
@@ -257,6 +257,14 @@ export function FriendsPage() {
     )
   }
 
+  const dismissSuggestion = (suggestion: FriendSuggestion) => {
+    void act(
+      `dismiss:${suggestion.profile.id}`,
+      () => apiRequest('/api/friends/suggestions/dismissals', { method: 'POST', body: { userId: suggestion.profile.id } }),
+      uit`You won't see ${suggestion.profile.displayName} in suggestions again.`,
+    )
+  }
+
   const acceptSearchRequest = (result: FriendSearchResult) => {
     if (!result.requestId) return
     void act(
@@ -389,9 +397,14 @@ export function FriendsPage() {
             <ProfileIdentity profile={suggestion.profile} href={`/${suggestion.profile.username}`} />
             <MutualFriends friends={suggestion.mutualFriends} />
           </div>
-          <Button size="sm" disabled={actionIds.has(`request:${suggestion.profile.id}`)} onClick={() => sendSuggestionRequest(suggestion)}>
-            <UserRoundPlus />{actionIds.has(`request:${suggestion.profile.id}`) ? ui("Sending…") : ui("Add friend")}
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            <Button size="icon-sm" variant="ghost" className="text-muted-foreground" disabled={actionIds.has(`dismiss:${suggestion.profile.id}`) || actionIds.has(`request:${suggestion.profile.id}`)} onClick={() => dismissSuggestion(suggestion)} aria-label={uit`Dismiss ${suggestion.profile.displayName}`} title={ui("Dismiss")}>
+              <X />
+            </Button>
+            <Button size="sm" disabled={actionIds.has(`request:${suggestion.profile.id}`) || actionIds.has(`dismiss:${suggestion.profile.id}`)} onClick={() => sendSuggestionRequest(suggestion)}>
+              <UserRoundPlus />{actionIds.has(`request:${suggestion.profile.id}`) ? ui("Sending…") : ui("Add friend")}
+            </Button>
+          </div>
         </div>)}
         {suggestions.length > COLLAPSED_SUGGESTIONS && <button
           type="button"

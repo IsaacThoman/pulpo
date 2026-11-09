@@ -5,7 +5,7 @@ import { z } from 'zod'
 import type { FriendRelationship } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { friendships, userBlocks, users } from '../database/schema.js'
+import { friendSuggestionDismissals, friendships, userBlocks, users } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { publicFriendProfile } from '../profile/service.js'
@@ -145,9 +145,11 @@ export async function friendUserIds(userId: string): Promise<string[]> {
 export async function registerFriendRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/friends', async (request) => {
     const user = requireUser(request)
-    const [connectionRows, allBlockRows] = await Promise.all([
+    const [connectionRows, allBlockRows, dismissalRows] = await Promise.all([
       db.select().from(friendships).where(or(eq(friendships.userAId, user.id), eq(friendships.userBId, user.id))),
       db.select().from(userBlocks).where(or(eq(userBlocks.blockerUserId, user.id), eq(userBlocks.blockedUserId, user.id))),
+      db.select({ id: friendSuggestionDismissals.dismissedUserId }).from(friendSuggestionDismissals)
+        .where(eq(friendSuggestionDismissals.userId, user.id)),
     ])
     const blockRows = allBlockRows.filter((row) => row.blockerUserId === user.id)
     const blockedIds = new Set(allBlockRows.map((row) => row.blockerUserId === user.id ? row.blockedUserId : row.blockerUserId))
@@ -171,6 +173,7 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
       user.id,
       ...connectionRows.map((row) => row.userAId === user.id ? row.userBId : row.userAId),
       ...blockedIds,
+      ...dismissalRows.map((row) => row.id),
     ])]
     const suggestionRows = await friendSuggestionCandidates(currentFriendIds, excludedUserIds)
     const pendingUserIds = visibleConnections
@@ -432,6 +435,22 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
       const deleted = await tx.delete(friendships).where(and(pairWhere(user.id, userId), eq(friendships.status, 'accepted'))).returning({ id: friendships.id })
       if (!deleted.length) throw notFound('Friendship')
       return bumpAccountRevisions(tx, await friendNetworkIds(tx, [userAId, userBId]))
+    })
+    await publishScopedStateChanges(changes, ['friends'])
+    reply.code(204).send()
+  })
+
+  // Hides someone from the viewer's suggestions for good. They are not told, and search and
+  // friend requests still work in both directions.
+  app.post('/api/friends/suggestions/dismissals', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (request, reply) => {
+    const user = requireUser(request)
+    const { userId } = z.object({ userId: z.uuid() }).parse(request.body)
+    if (userId === user.id) throw new AppError(409, 'cannot_dismiss_self', 'You cannot dismiss yourself')
+    const [target] = await db.select({ id: users.id }).from(users).where(eq(users.id, userId)).limit(1)
+    if (!target) throw notFound('User')
+    const changes = await db.transaction(async (tx) => {
+      await tx.insert(friendSuggestionDismissals).values({ userId: user.id, dismissedUserId: userId }).onConflictDoNothing()
+      return bumpAccountRevisions(tx, [user.id])
     })
     await publishScopedStateChanges(changes, ['friends'])
     reply.code(204).send()
