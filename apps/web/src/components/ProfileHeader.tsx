@@ -14,7 +14,8 @@ export function ProfileHeading({ name, avatarUrl, username, handleAccessory, chi
       <ProfileAvatar name={name} avatarUrl={avatarUrl} shape="circle" className="size-14" fallbackClassName="text-lg" />
       <div className="min-w-0">
         <h2 className="text-lg font-medium wrap-anywhere">{name}</h2>
-        <div className="flex min-w-0 items-center gap-1">
+        {/* The accessory sits a space-width from the handle so it reads as part of it. */}
+        <div className="flex min-w-0 items-center gap-0.5">
           <p className="min-w-0 text-xs text-muted-foreground wrap-anywhere">@{username}</p>
           {handleAccessory}
         </div>

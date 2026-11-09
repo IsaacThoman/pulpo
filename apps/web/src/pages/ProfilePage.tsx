@@ -19,7 +19,7 @@ import { useAuth } from '@/stores/auth'
 import { ui } from '@/i18n/ui'
 
 const VISIBILITY_ICONS = { pool: Lock, friends: UsersRound, public: Globe }
-const VISIBILITY_ICON_CLASS = '-my-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+const VISIBILITY_ICON_CLASS = 'inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
 /** Who can see a profile's usage, as an icon beside the handle that names the level on hover. */
 function UsageVisibilityIcon({ visibility, label, onClick }: { visibility: UsageVisibility; label: string; onClick?: () => void }) {
