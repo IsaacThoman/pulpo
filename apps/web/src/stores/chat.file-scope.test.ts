@@ -53,18 +53,18 @@ beforeEach(() => {
     id: userId, name: 'Test', email: 'test@example.com', username: 'test_user', avatarUrl: null, profileColor: null, role: 'user', initials: 'T',
     balanceMicros: 1_000, storageLimitBytes: 1_000, blocked: false, stateRevision: 0, createdAt: '2026-09-01T00:00:00.000Z',
   } })
-  useChat.setState({ chats: [chat({ fileScopeIds: [plan, notes], fileScopeAccess: { [plan]: 'write', [notes]: 'read' } })] })
+  useChat.setState({ chats: [chat({ fileScopeIds: [plan, notes], fileScopeAccess: { [plan]: 'write', [notes]: 'read' }, fileChangeMode: 'suggest' })] })
 })
 
 afterAll(() => vi.unstubAllGlobals())
 
-describe('chat Files access modes', () => {
-  it('changes one item’s mode and sends only that entry', async () => {
-    useChat.getState().setChatFileAccess('chat-1', notes, 'suggest')
+describe('chat Files access', () => {
+  it('sets the chat’s change mode, which replaces modes set per item', async () => {
+    useChat.getState().setChatFileChangeMode('chat-1', 'write')
 
-    expect(useChat.getState().chats[0]!.fileScopeAccess).toEqual({ [plan]: 'write', [notes]: 'suggest' })
+    expect(useChat.getState().chats[0]).toMatchObject({ fileChangeMode: 'write', fileScopeAccess: {} })
     await vi.waitFor(() => expect(requests).toContainEqual({
-      method: 'PATCH', path: expect.stringContaining('/api/chats/chat-1'), body: { fileScopeAccess: { [notes]: 'suggest' } },
+      method: 'PATCH', path: expect.stringContaining('/api/chats/chat-1'), body: { fileChangeMode: 'write' },
     }))
   })
 
@@ -79,9 +79,11 @@ describe('chat Files access modes', () => {
 
   it('shows the previous mode again when the server refuses the change', async () => {
     refuse = true
-    useChat.getState().setChatFileAccess('chat-1', notes, 'write')
-    expect(useChat.getState().chats[0]!.fileScopeAccess).toEqual({ [plan]: 'write', [notes]: 'write' })
-    await vi.waitFor(() => expect(useChat.getState().chats[0]!.fileScopeAccess).toEqual({ [plan]: 'write', [notes]: 'read' }))
+    useChat.getState().setChatFileChangeMode('chat-1', 'read')
+    expect(useChat.getState().chats[0]!.fileChangeMode).toBe('read')
+    await vi.waitFor(() => expect(useChat.getState().chats[0]).toMatchObject({
+      fileChangeMode: 'suggest', fileScopeAccess: { [plan]: 'write', [notes]: 'read' },
+    }))
   })
 
   it('keeps a newer change when an older one is refused', async () => {
@@ -95,18 +97,38 @@ describe('chat Files access modes', () => {
 
   it('sends nothing for a chat the server has not created yet', async () => {
     useChat.setState((state) => ({ chats: state.chats.map((item) => ({ ...item, provisional: true })) }))
-    useChat.getState().setChatFileAccess('chat-1', notes, 'write')
+    useChat.getState().setChatFileChangeMode('chat-1', 'write')
     await new Promise((resolve) => setTimeout(resolve, 10))
     expect(requests).toEqual([])
-    expect(useChat.getState().chats[0]!.fileScopeAccess).toEqual({ [plan]: 'write', [notes]: 'write' })
+    expect(useChat.getState().chats[0]!.fileChangeMode).toBe('write')
   })
 
-  it('reads modes from the server', () => {
+  it('revokes browsing for the chat', async () => {
+    useChat.setState((state) => ({ chats: state.chats.map((item) => ({ ...item, filesBrowseAllowed: true })) }))
+    useChat.getState().revokeChatFilesBrowse('chat-1')
+    expect(useChat.getState().chats[0]!.filesBrowseAllowed).toBe(false)
+    await vi.waitFor(() => expect(requests).toContainEqual({
+      method: 'PATCH', path: expect.stringContaining('/api/chats/chat-1'), body: { filesBrowseAllowed: false },
+    }))
+  })
+
+  it('answers a permission request', async () => {
+    await useChat.getState().answerFilesPermission('response-1', 'response-1:files-permission:1', 'allow_chat')
+    expect(requests).toContainEqual({
+      method: 'POST', path: expect.stringContaining('/api/responses/response-1/files-permission'),
+      body: { itemId: 'response-1:files-permission:1', decision: 'allow_chat' },
+    })
+  })
+
+  it('reads the chat’s Files access from the server', () => {
     useChat.getState().replaceSummaries([{
       id: 'chat-1', title: 'Chat', modelId: 'test-model', pinned: false, folderId: null, fileScopeIds: [plan],
-      fileScopeAccess: { [plan]: 'read' }, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z',
+      fileScopeAccess: { [plan]: 'read' }, fileChangeMode: 'write', filesBrowseAllowed: true,
+      createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z',
       activeResponseId: null, activeBranchLeafId: null,
     }])
-    expect(useChat.getState().chats.find((item) => item.id === 'chat-1')?.fileScopeAccess).toEqual({ [plan]: 'read' })
+    expect(useChat.getState().chats.find((item) => item.id === 'chat-1')).toMatchObject({
+      fileScopeAccess: { [plan]: 'read' }, fileChangeMode: 'write', filesBrowseAllowed: true,
+    })
   })
 })

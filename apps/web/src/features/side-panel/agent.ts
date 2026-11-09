@@ -1,8 +1,7 @@
 import { useEffect } from 'react'
 import { create } from 'zustand'
 import { focusComposer } from '@/components/chat/composer-focus'
-import { addFileScope, NO_FILE_ACCESS, type FileScopeAccess } from '@pulpo/client-core/files'
-import { useChat } from '@/stores/chat'
+import { FILE_SCOPE_ROOT } from '@pulpo/contracts'
 import { useSidePanel, type PanelContent } from './store'
 
 /*
@@ -27,8 +26,34 @@ export type ChatTarget = { kind: 'new' } | { kind: 'chat'; id: string }
 
 export const useChatTarget = create<{ target: ChatTarget | null }>()(() => ({ target: null }))
 
-/** Files items for the unsent new chat and their modes; the new-chat composer shows them as chips. */
-export const useNewChatScope = create<{ scopeIds: string[]; access: FileScopeAccess }>()(() => ({ scopeIds: [], access: NO_FILE_ACCESS }))
+/**
+ * Files items on their way to a chat's composer, which adds them to its message as references
+ * once it is mounted (a new chat's composer mounts after the navigation that opens it).
+ */
+export const usePendingReferences = create<{ target: ChatTarget | null; ids: string[] }>()(() => ({ target: null, ids: [] }))
+
+function sameTarget(left: ChatTarget | null, right: ChatTarget | null): boolean {
+  if (!left || !right) return false
+  return left.kind === 'new' ? right.kind === 'new' : right.kind === 'chat' && right.id === left.id
+}
+
+/** Hands items to the composer of `target`. Items are files and folders; all of My files is not one. */
+function sendReferences(target: ChatTarget, ids: string[]): void {
+  const items = ids.filter((id) => id !== FILE_SCOPE_ROOT)
+  if (!items.length) return
+  usePendingReferences.setState((state) => ({
+    target,
+    ids: sameTarget(state.target, target) ? [...new Set([...state.ids, ...items])] : items,
+  }))
+}
+
+/** Takes the items waiting for this composer's chat, if any. */
+export function takePendingReferences(target: ChatTarget): string[] {
+  const { target: pendingTarget, ids } = usePendingReferences.getState()
+  if (!sameTarget(pendingTarget, target) || !ids.length) return []
+  usePendingReferences.setState({ target: null, ids: [] })
+  return ids
+}
 
 /** The files views on screen, so Cmd/Ctrl+J can act on what the user is looking at. */
 export const useFilesViews = create<{ page: (FilesViewPlace & { item: AgentItem }) | null; panel: (FilesViewPlace & { item: AgentItem }) | null }>()(() => ({ page: null, panel: null }))
@@ -59,21 +84,6 @@ export function usePublishFilesView(place: FilesViewPlace, item: AgentItem | nul
   }, [itemKey, layout, viewKey])
 }
 
-/**
- * Whether the item itself is attached. Items inside an attached folder can still be added, so
- * the agent knows the user pointed them out.
- */
-export function scopeIncludes(scope: readonly string[], item: AgentItem): boolean {
-  return scope.includes(item.id)
-}
-
-/** The Files scope of the chat in the main view. */
-export function targetScope(target: ChatTarget | null, chats = useChat.getState().chats, draft = useNewChatScope.getState().scopeIds): string[] | null {
-  if (!target) return null
-  if (target.kind === 'new') return draft
-  return chats.find((chat) => chat.id === target.id)?.fileScopeIds ?? []
-}
-
 /** Navigates the main view (see `useMainNavigate`). */
 type Go = (pathname: string) => void
 
@@ -90,22 +100,18 @@ export function splitView(view: PanelContent, go: Go, chatId?: string): void {
  */
 export function openInNewChat(ids: string[], place: FilesViewPlace | null, go: Go): void {
   if (place?.layout === 'page' && useSidePanel.getState().splitAvailable) useSidePanel.getState().open(place.view)
-  useNewChatScope.setState({ scopeIds: addFileScope([], ids), access: NO_FILE_ACCESS })
+  usePendingReferences.setState({ target: null, ids: [] })
+  sendReferences({ kind: 'new' }, ids)
   go('/')
   // Already on the new-chat page, nothing remounts to take focus.
   requestAnimationFrame(() => focusComposer())
 }
 
-/** Adds items to the chat in the main view. */
+/** Adds items to the message being written in the chat in the main view. */
 export function addToChat(ids: string[]): void {
   const target = useChatTarget.getState().target
   if (!target) return
-  if (target.kind === 'new') {
-    useNewChatScope.setState((state) => ({ scopeIds: addFileScope(state.scopeIds, ids) }))
-  } else {
-    const chat = useChat.getState().chats.find((item) => item.id === target.id)
-    if (chat) useChat.getState().setChatFileScope(chat.id, addFileScope(chat.fileScopeIds ?? [], ids))
-  }
+  sendReferences(target, ids)
   requestAnimationFrame(() => focusComposer())
 }
 
@@ -120,10 +126,5 @@ export function runAgentShortcut(go: Go): void {
   const { page, panel } = useFilesViews.getState()
   const place = page ?? panel
   if (!place) return
-  const scope = targetScope(useChatTarget.getState().target)
-  if (place.layout === 'panel' && scope && scopeIncludes(scope, place.item)) {
-    focusComposer()
-    return
-  }
   primaryAgentAction([place.item.id], place, go)
 }

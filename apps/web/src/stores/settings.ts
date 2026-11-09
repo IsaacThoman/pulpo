@@ -1,4 +1,4 @@
-import { DEFAULT_AGENT_COST_LIMIT_MICROS, imageGenerationPreferencesSchema, type ImageGenerationPreferences, speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
+import { DEFAULT_AGENT_COST_LIMIT_MICROS, type FileAccessMode, imageGenerationPreferencesSchema, type ImageGenerationPreferences, speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
 import { DEFAULT_SIDEBAR_PINS, normalizeSidebarPins } from '@/lib/sidebar-pins'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
@@ -47,6 +47,10 @@ export interface SettingsState {
   /** Pause Agent responses for confirmation each time their accrued cost passes this limit. */
   agentCostLimitEnabled: boolean
   agentCostLimitMicros: number
+  /** Ask before an Agent reply browses Files beyond the items mentioned in its chat. */
+  agentFilesAskBeforeBrowsing: boolean
+  /** What the agent may change in Files in new chats. */
+  agentFileChangeMode: FileAccessMode
   chatWidth: 'full' | 'narrow'
   animationSpeed: number
   customInstructions: string
@@ -93,6 +97,8 @@ export const DEFAULT_SETTINGS = {
   showResponseCost: false,
   agentCostLimitEnabled: true,
   agentCostLimitMicros: DEFAULT_AGENT_COST_LIMIT_MICROS,
+  agentFilesAskBeforeBrowsing: true,
+  agentFileChangeMode: 'suggest' as FileAccessMode,
   chatWidth: 'narrow' as const,
   animationSpeed: DEFAULT_ANIMATION_SPEED,
   customInstructions: '',

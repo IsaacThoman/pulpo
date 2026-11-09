@@ -28,7 +28,9 @@ import {
   Pause,
   StepForward,
 } from 'lucide-react'
-import { findCostLimitItem, workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem, type CostLimitItem, type RecallItem } from '@pulpo/contracts'
+import { findCostLimitItem, findFilesPermissionItems, workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem, type CostLimitItem, type RecallItem } from '@pulpo/contracts'
+import { FilesPermissionIcon, FilesPermissionPrompt, FilesPermissionStepRow } from './FilesPermissionPrompt'
+import { filesPermissionStepLabel, useFilesPermissionPending } from './files-permission'
 import type { Chat, Message } from '@/lib/types'
 import { hasMultipleBranches } from '@/lib/message-branches'
 import { getCatalogModel } from '@/stores/catalog'
@@ -280,6 +282,12 @@ function CostLimitPrompt({
   )
 }
 
+/** The request while it can still be answered. */
+function PendingFilesPermission({ responseId, item }: { responseId: string; item: Parameters<typeof FilesPermissionPrompt>[0]['item'] }) {
+  const pending = useFilesPermissionPending(item, true)
+  return pending ? <FilesPermissionPrompt responseId={responseId} item={item} /> : null
+}
+
 function compactionTokensLabel(item: CompactionItem): string | null {
   if (typeof item.estimated_tokens !== 'number' || typeof item.tokens_after !== 'number') return null
   return ui("Context: {{before}} → {{after}} tokens", { before: formatNumber(item.estimated_tokens), after: formatNumber(item.tokens_after) })
@@ -483,6 +491,10 @@ function ActivityBlock({
   const pausedCostLimit = active && lastStep?.kind === 'cost_limit' && lastStep.costLimit.status === 'awaiting_confirmation'
     ? lastStep.costLimit
     : undefined
+  const waitingPermission = active && lastStep?.kind === 'files_permission' && lastStep.permission.status === 'awaiting_decision'
+    ? lastStep.permission
+    : undefined
+  const permissionPending = useFilesPermissionPending(waitingPermission, active)
   const hasReasoning = steps.some((step) => step.kind === 'reasoning' && step.text)
   const hasMessages = steps.some((step) => step.kind === 'message')
   const workspaceBusy = workspaceIsActive(workspace?.state)
@@ -528,6 +540,7 @@ function ActivityBlock({
       return workspaceLabel(workspace)
     }
     if (pausedCostLimit) return costLimitStepLabel(pausedCostLimit, true)
+    if (waitingPermission && permissionPending) return filesPermissionStepLabel(waitingPermission, true)
     if (runningTool) return toolActivityPresentation(runningTool.tool, runningTool.arguments).label
     if (active && hasTools) return ui("Working…")
     if (active) return ui("Thinking…")
@@ -555,6 +568,7 @@ function ActivityBlock({
     }
     if (workspaceFailed) return <XCircle className="size-3.5 shrink-0 text-destructive" />
     if (pausedCostLimit) return <Pause className="size-3.5 shrink-0" />
+    if (waitingPermission && permissionPending) return <FilesPermissionIcon item={waitingPermission} pending className="size-3.5 shrink-0" />
     if (runningTool) {
       const Icon = toolActivityPresentation(runningTool.tool, runningTool.arguments).icon
       return <Icon className="size-3.5 shrink-0 animate-pulse" />
@@ -602,6 +616,9 @@ function ActivityBlock({
               }
               if (step.kind === 'cost_limit') {
                 return <CostLimitStepRow key={step.costLimit.id} item={step.costLimit} live={active} />
+              }
+              if (step.kind === 'files_permission') {
+                return <FilesPermissionStepRow key={step.permission.id} item={step.permission} live={active} />
               }
               return (
                 <ActivityToolRow
@@ -811,9 +828,10 @@ export const MessageItem = memo(function MessageItem({
   const outputItems = message.outputItems ?? []
   const otherItems = outputItems.filter((item) => {
     const type = (item as { type?: string }).type
-    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit', 'pulpo_file_changes'].includes(type)
+    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit', 'pulpo_files_permission', 'pulpo_file_changes'].includes(type)
   })
   const costLimit = findCostLimitItem(outputItems)
+  const filesPermission = findFilesPermissionItems(outputItems).findLast((item) => item.status === 'awaiting_decision')
   const lastActivityIndex = activitySegments.length - 1
   const hasVisibleBody = timeline.length > 0 || Boolean(message.error)
   let activityOrdinal = -1
@@ -937,6 +955,10 @@ export const MessageItem = memo(function MessageItem({
               onStop={() => stopStreaming(message.id)}
               onContinue={() => continuePastCostLimit(message.id)}
             />
+          )}
+
+          {!editing && streaming && filesPermission && (
+            <PendingFilesPermission key={filesPermission.id} responseId={message.id} item={filesPermission} />
           )}
 
           {!editing && message.error && (
