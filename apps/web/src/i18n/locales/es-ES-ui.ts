@@ -2762,7 +2762,6 @@ const esUi: Record<string, string> = {
   "Usage visible to everyone": "Uso visible para todos",
   "Usage visible to their Pool": "Uso visible para su Pool",
   "Usage visible to their friends": "Uso visible para sus amigos",
-  "{{name}} hasn't shared their usage with you.": "{{name}} no ha compartido su uso contigo.",
   "Who can see your usage stats and requests on your profile. Pool members can always see your usage.": "Quién puede ver tus estadísticas de uso y solicitudes en tu perfil. Los miembros de tu Pool siempre pueden ver tu uso.",
 }
 
