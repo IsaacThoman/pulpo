@@ -9,37 +9,50 @@ import { PersonalUsage } from '@/components/usage/PersonalUsage'
 import { ProfileUsage, UsagePrivateNotice } from '@/components/usage/ProfileUsage'
 import { useSettingsDialog } from '@/components/settings/settings-dialog'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ApiError, apiRequest } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { queryClient } from '@/lib/query-client'
 import { profileUsageQueryKey } from '@/lib/usage-query'
-import { resolvedUsageVisibility, usageVisibilitySummary } from '@/lib/usage-visibility'
+import { resolvedUsageVisibility, usageVisibilityDetail, usageVisibilitySummary } from '@/lib/usage-visibility'
 import { useAuth } from '@/stores/auth'
 import { ui } from '@/i18n/ui'
 
 const VISIBILITY_ICONS = { pool: Lock, friends: UsersRound, public: Globe }
 
-/** The signed-in user's identity, with who can see their usage and a shortcut to change it. */
+/** The signed-in user's identity, with an icon after the name showing who can see their usage. */
 function OwnProfileHeading() {
   const user = useAuth((state) => state.user)
   const { openSettings } = useSettingsDialog()
   if (!user) return null
   const visibility = resolvedUsageVisibility(user.usageVisibility)
   const VisibilityIcon = VISIBILITY_ICONS[visibility]
+  const visibilityIcon = (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            aria-haspopup="dialog"
+            aria-label={usageVisibilitySummary(visibility)}
+            className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => openSettings('profile')}
+          >
+            <VisibilityIcon className="size-3.5" aria-hidden />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="max-w-64">
+          <p className="font-medium">{usageVisibilitySummary(visibility)}</p>
+          <p className="mt-0.5 opacity-80">{usageVisibilityDetail(visibility)} {ui("Click to change.")}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
   return (
-    <ProfileHeading name={user.name} avatarUrl={user.avatarUrl} username={user.username}>
+    <ProfileHeading name={user.name} avatarUrl={user.avatarUrl} username={user.username} nameAccessory={visibilityIcon}>
       <p className="mt-0.5 text-xs text-muted-foreground wrap-anywhere">
         {user.email} {ui("· Joined")} {formatDate(Date.parse(user.createdAt))}
       </p>
-      <button
-        type="button"
-        aria-haspopup="dialog"
-        className="mt-1 inline-flex cursor-pointer items-center gap-1 rounded-sm text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={() => openSettings('profile')}
-      >
-        <VisibilityIcon className="size-3" aria-hidden />
-        {usageVisibilitySummary(visibility)}
-      </button>
     </ProfileHeading>
   )
 }

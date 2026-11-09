@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => {
 })
 vi.mock('@/lib/api', async (importOriginal) => ({ ...await importOriginal<typeof import('@/lib/api')>(), apiRequest: mocks.request }))
 vi.mock('@/lib/runtime-resource', () => ({ useRuntimeImageUrl: () => ({ url: null }) }))
+vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
 // Keep the real chart legend, but avoid measuring the chart canvas in jsdom.
 vi.mock('recharts', async (importOriginal) => ({
   ...await importOriginal<typeof import('recharts')>(), ResponsiveContainer: () => null,
@@ -257,11 +258,22 @@ describe('own profile', () => {
     expect(screen.queryByText('Mutual friends')).toBeNull()
   })
 
-  it('shows who can see your usage and opens Profile settings to change it', async () => {
+  it('shows who can see your usage as an icon after your name, with details on hover', async () => {
     useAuth.setState((state) => ({ user: state.user && { ...state.user, usageVisibility: 'public' } }))
     mount('/morgan')
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Usage visible to everyone' }))
+    const icon = await screen.findByRole('button', { name: 'Usage visible to everyone' })
+    const name = screen.getByRole('heading', { name: 'Morgan Viewer' })
+    expect(icon.parentElement).toBe(name.parentElement)
+    expect(name.compareDocumentPosition(icon) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(icon.textContent).toBe('')
+    expect(screen.queryByText('Usage visible to everyone')).toBeNull()
+
+    fireEvent.focus(icon)
+    const tooltip = await screen.findByRole('tooltip')
+    expect(tooltip.textContent).toContain('Anyone signed in can see your usage stats and requests.')
+
+    fireEvent.click(icon)
     expect(mocks.openSettings).toHaveBeenCalledWith('profile')
   })
 
