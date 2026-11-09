@@ -262,8 +262,13 @@ describe.each(['ios', 'android'])('Friends on %s', (platform) => {
     const dismiss = await screen.findByRole('button', { name: 'Dismiss Gus' })
     // Dismiss sits just left of Add.
     expect(dismiss.nextElementSibling?.textContent).toBe('Add')
+    friends.suggestions = []
     fireEvent.click(dismiss)
     await waitFor(() => expect(writes()).toEqual([['/api/friends/suggestions/dismissals', { method: 'POST', body: { userId: 'Gus' } }]]))
+    // The row goes away with the last suggestion, and a note says what dismissing did.
+    await screen.findByText("Gus won't be suggested for at least 30 days, and only if you gain mutual friends.")
+    expect(screen.queryByText('People you may know')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Dismiss Gus' })).toBeNull()
   })
 
   it('opens a person’s profile from their row', async () => {
