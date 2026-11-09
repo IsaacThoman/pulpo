@@ -688,6 +688,27 @@ html[data-desktop="true"] .desktop-titlebar[data-temporary-chat="true"] {
   background: var(--temporary-chat-background);
 }
 
+/* Registered so the header's fade (.chat-header::before) eases with the page background
+   instead of switching a frame ahead of it, which showed as a flickering band. */
+@property --chat-header-background {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+
+.chat-page-surface {
+  --chat-header-background: var(--background);
+  transition:
+    background-color 200ms cubic-bezier(0.4, 0, 0.2, 1),
+    --chat-header-background 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-page-surface {
+    transition: none;
+  }
+}
+
 [data-desktop-temporary-chat="true"] {
   --chat-header-background: var(--temporary-chat-background);
   background: var(--temporary-chat-background);
