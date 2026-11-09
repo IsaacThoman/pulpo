@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { BarChart3, Clock } from 'lucide-react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis, matchByDataKey } from 'recharts'
+import { Link, useHref, useLinkClickHandler, useNavigate, useSearchParams } from 'react-router-dom'
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Text, Tooltip as RTooltip, XAxis, YAxis, matchByDataKey, type TextProps, type XAxisTickContentProps } from 'recharts'
 import { useAuth } from '@/stores/auth'
 import { formatBalance, formatChartNumber, formatUsd } from '@/lib/format'
 import type { Metric, MonitorUser, TimeRange } from '@/lib/types'
@@ -13,7 +13,8 @@ import { apiRequest } from '@/lib/api'
 import { periodDays } from '@/lib/time-range'
 import { toDailyModelUsage, type SettledDailyRow } from '@/lib/leaderboard-usage'
 import { DailyUsageChart } from '@/components/usage/DailyUsageChart'
-import { automaticProfileColor } from '@/lib/profile'
+import { automaticProfileColor, useProfileLinkState, type ProfileLinkState } from '@/lib/profile'
+import { cn } from '@/lib/utils'
 import { flattenUsagePages, usageQueryParams } from '@/lib/usage-query'
 import {
   PublicRecentUsagePanel,
@@ -93,6 +94,7 @@ function displayName(u: MonitorUser): string {
 }
 
 const AXIS_FONT_SIZE = 11
+const AXIS_TICK = { fontSize: AXIS_FONT_SIZE, fill: 'var(--muted-foreground)' }
 const AXIS_LABEL_ANGLE = 35
 const AXIS_LABEL_MAX_CHARS = 20
 const Y_AXIS_WIDTH = 48
@@ -116,6 +118,25 @@ function axisLabelWidth(text: string): number {
     }
   }
   return measureContext?.measureText(text).width ?? text.length * AXIS_FONT_SIZE * 0.6
+}
+
+/** A ranked person's axis name as a link to their profile, rotated and ellipsized like the plain labels. */
+function ProfileAxisTick({ person, linkState, ...tick }: XAxisTickContentProps & {
+  person: { name: string; username: string }
+  linkState: ProfileLinkState | undefined
+}) {
+  const to = `/${person.username}`
+  const href = useHref(to)
+  const onClick = useLinkClickHandler(to, { state: linkState })
+  return <a href={href} onClick={onClick} aria-label={person.name} className="group/axis-name focus-visible:outline-2 focus-visible:outline-ring">
+    <Text
+      {...tick as TextProps}
+      {...AXIS_TICK}
+      className={cn(tick.className, 'group-hover/axis-name:fill-foreground group-hover/axis-name:underline group-focus-visible/axis-name:fill-foreground group-focus-visible/axis-name:underline')}
+    >
+      {axisLabel(person.name)}
+    </Text>
+  </a>
 }
 
 function barColor(u: MonitorUser): string {
@@ -203,6 +224,12 @@ export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
   const animationSpeed = useSettings((state) => state.animationSpeed)
   const animationDuration = scaledAnimationDuration(DEFAULT_CHART_ANIMATION_DURATION_MS, animationSpeed)
   const instanceMode = scope === 'instance'
+  // Friends and Pool rankings lead to each person's profile; the admin instance ranking doesn't.
+  const linkProfiles = !instanceMode
+  const navigate = useNavigate()
+  const profileLinkState = useProfileLinkState()
+  // A tap on a bar reads its tooltip; only mouse and pen clicks open the profile (touch users have the name links).
+  const barPointer = useRef('mouse')
   const queryKey = scope === 'pool' ? 'pool-usage' : instanceMode ? 'instance-usage' : 'friends-usage'
   const leaderboardEndpoint = instanceMode ? '/api/admin/usage/leaderboard' : '/api/usage/leaderboard'
 
@@ -288,6 +315,7 @@ export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
       rows.map((r, i) => ({
         userId: r.user.id,
         name: displayName(r.user),
+        username: r.user.username,
         value: rowValue(r, metric),
         fill: barColor(r.user),
         rank: i + 1,
@@ -358,13 +386,16 @@ export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
             {!instanceMode && <Button asChild size="sm" variant="outline"><Link to="/friends">{scope === 'pool' ? ui("Manage Pool") : ui("Find friends")}</Link></Button>}
           </div>
         ) : (
-          <div style={{ height: 220 + axisSpace.height }}>
+          <div style={{ height: 220 + axisSpace.height }} onPointerDownCapture={(event) => { barPointer.current = event.pointerType }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 4, right: 4, left: axisSpace.left, bottom: 0 }}>
                 <CartesianGrid vertical={false} stroke="var(--border)" />
                 <XAxis
                   dataKey="name"
-                  tick={{ fontSize: AXIS_FONT_SIZE, fill: 'var(--muted-foreground)' }}
+                  tick={linkProfiles ? (tick: XAxisTickContentProps) => {
+                    const person = chartData[tick.payload.index]
+                    return person && <ProfileAxisTick {...tick} person={person} linkState={profileLinkState} />
+                  } : AXIS_TICK}
                   tickLine={false}
                   axisLine={{ stroke: 'var(--border)' }}
                   interval={0}
@@ -387,9 +418,19 @@ export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
                   }
                 />
                 <RTooltip cursor={{ fill: 'var(--muted)', fillOpacity: 0.5 }} content={<LeaderboardTip metric={metric} />} />
-                <Bar dataKey="value" radius={[3, 3, 0, 0]} maxBarSize={48} animationDuration={animationDuration} animationMatchBy={MATCH_BY_USER}>
+                <Bar
+                  dataKey="value"
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={48}
+                  animationDuration={animationDuration}
+                  animationMatchBy={MATCH_BY_USER}
+                  onClick={linkProfiles ? (_bar, index) => {
+                    const person = chartData[index]
+                    if (person && barPointer.current !== 'touch') navigate(`/${person.username}`, { state: profileLinkState })
+                  } : undefined}
+                >
                   {chartData.map((d) => (
-                    <Cell key={d.rank} fill={d.fill} />
+                    <Cell key={d.rank} fill={d.fill} cursor={linkProfiles ? 'pointer' : undefined} />
                   ))}
                 </Bar>
               </BarChart>
@@ -418,6 +459,7 @@ export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
             <div className="min-w-0 lg:col-span-2">
               <PublicRecentUsagePanel
                 records={records}
+                linkParticipants={linkProfiles}
                 nextCursor={nextCursor}
                 loadingMore={recordsQuery.isFetchingNextPage}
                 error={recordsQuery.isFetchNextPageError ? (recordsQuery.error instanceof Error ? recordsQuery.error.message : 'Unable to load more usage records') : null}

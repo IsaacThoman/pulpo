@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { FriendProfileDetail, UsageVisibility } from '@pulpo/contracts'
-import { ArrowLeft, ArrowRight, Check, Globe, Lock, UserRoundPlus, UsersRound, X } from 'lucide-react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Check, Globe, Lock, UserRoundPlus, UsersRound, X } from 'lucide-react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ProfileIdentity } from '@/components/FriendIdentity'
 import { ProfileHeaderRow, ProfileHeading } from '@/components/ProfileHeader'
 import { PersonalUsage } from '@/components/usage/PersonalUsage'
@@ -17,7 +17,7 @@ import { profileUsageQueryKey } from '@/lib/usage-query'
 import { profileUsageVisibilitySummary, resolvedUsageVisibility, usageVisibilitySummary } from '@/lib/usage-visibility'
 import { useAuth } from '@/stores/auth'
 import { ui } from '@/i18n/ui'
-import { PeopleHeader } from './PeopleLayout'
+import { PeopleHeader, PersonHeader } from './PeopleLayout'
 
 const VISIBILITY_ICONS = { pool: Lock, friends: UsersRound, public: Globe }
 const VISIBILITY_ICON_CLASS = 'inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
@@ -73,6 +73,7 @@ function OwnProfileHeading() {
 export function ProfilePage() {
   const { username = '' } = useParams()
   const navigate = useNavigate()
+  const { state: locationState } = useLocation()
   const ownUsername = useAuth((state) => state.user?.username)
   const viewerId = useAuth((state) => state.user?.id)
   const normalizedUsername = username.trim().toLowerCase()
@@ -104,10 +105,11 @@ export function ProfilePage() {
   const usageVisible = detail?.usageVisible
   const usageHidden = profileGone || usageVisible === false
 
+  // The canonical URL keeps the history state that says which People tab the profile was opened from.
   useEffect(() => {
     const canonicalUsername = viewingOwnUsername ? ownUsername : detail?.profile.username
-    if (canonicalUsername && canonicalUsername !== username) navigate(`/${canonicalUsername}`, { replace: true })
-  }, [navigate, detail?.profile.username, ownUsername, username, viewingOwnUsername])
+    if (canonicalUsername && canonicalUsername !== username) navigate(`/${canonicalUsername}`, { replace: true, state: locationState })
+  }, [navigate, detail?.profile.username, locationState, ownUsername, username, viewingOwnUsername])
 
   // Usage someone stopped sharing must not linger in the cache for a later visit.
   useEffect(() => {
@@ -150,17 +152,12 @@ export function ProfilePage() {
   }
 
   return <div className="flex h-full flex-col">
-    {/* Your profile is People's Profile tab; its Leaderboard tab is where you compare with friends. */}
-    {self ? <PeopleHeader /> : <header className="flex h-12 shrink-0 items-center justify-between gap-4 border-b px-5">
-      <Button asChild size="sm" variant="ghost" className="-ml-2 text-muted-foreground">
-        {/* Phones keep "Compare with friends" readable by collapsing this link to its arrow. */}
-        <Link to="/friends"><ArrowLeft /><span className="sr-only sm:not-sr-only">{ui('Back to friends')}</span></Link>
-      </Button>
-      {/* The friends leaderboard lists only friends, so it can't compare a non-friend whose usage is public or shared through a Pool. */}
-      {usageVisible === true && detail?.relationship === 'friends' && <Button asChild size="sm" variant="ghost" className="text-muted-foreground">
-        <Link to="/friends/leaderboard">{ui("Compare with friends")}<ArrowRight /></Link>
-      </Button>}
-    </header>}
+    {/* Your profile is People's Profile tab; anyone else's drills down from the tab you opened it from.
+        The friends leaderboard lists only friends, so it can't compare a non-friend whose usage is public or shared through a Pool. */}
+    {self ? <PeopleHeader /> : <PersonHeader
+      name={detail?.profile.displayName ?? `@${normalizedUsername}`}
+      compare={usageVisible === true && detail?.relationship === 'friends'}
+    />}
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto w-full min-w-0 max-w-5xl px-5 py-6">
         {self ? <PersonalUsage identity={<OwnProfileHeading />} /> : <div className="space-y-6">

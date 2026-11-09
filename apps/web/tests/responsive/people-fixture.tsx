@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import '../../src/index.css'
 import i18n from '../../src/i18n'
-import { PeopleHeader } from '../../src/pages/PeopleLayout'
+import { PeopleHeader, PersonHeader } from '../../src/pages/PeopleLayout'
 import { useAuth } from '../../src/stores/auth'
 
 const params = new URLSearchParams(location.search)
@@ -16,9 +16,15 @@ useAuth.setState({
   },
 })
 
+// `?origin=` renders someone else's profile header as opened from that People tab, with Compare showing.
+const origin = params.get('origin')
+const entry = origin ? { pathname: '/jordan', state: { peopleOrigin: origin } } : params.get('path') ?? '/friends'
+
 // The page root sits directly under `.app-main`, so phones apply the drawer button's header padding as in the app.
 createRoot(document.getElementById('root')!).render(<QueryClientProvider client={new QueryClient()}>
-  <MemoryRouter initialEntries={[params.get('path') ?? '/friends']}>
-    <main className="app-main"><div className="flex h-full flex-col"><PeopleHeader /></div></main>
+  <MemoryRouter initialEntries={[entry]}>
+    <main className="app-main"><div className="flex h-full flex-col">
+      {origin ? <PersonHeader name="Jordan Castellanos-Whitfield" compare /> : <PeopleHeader />}
+    </div></main>
   </MemoryRouter>
 </QueryClientProvider>)

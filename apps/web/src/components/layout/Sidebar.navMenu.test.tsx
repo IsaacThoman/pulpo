@@ -188,15 +188,16 @@ describe('sidebar nav button menus', () => {
     expect(screen.getByRole('menuitem', { name: 'People' })).toBeTruthy()
   })
 
-  it.each(['/octo', '/Octo', '/friends', '/friends/leaderboard'])('opens your profile from People and keeps it current on %s', (path) => {
+  // Someone else's profile is a drill-down inside People, so People stays current there too.
+  it.each(['/octo', '/Octo', '/friends', '/friends/leaderboard', '/jordan', '/Jordan'])('opens your profile from People and keeps it current on %s', (path) => {
     mount(path)
     const people = screen.getByRole('link', { name: 'People' })
     expect(people.getAttribute('href')).toBe('/octo')
     expect(people.getAttribute('aria-current')).toBe('page')
   })
 
-  it("doesn't mark People current on someone else's profile", () => {
-    mount('/alice')
+  it.each(['/', '/files', '/Files', '/api-keys', '/usage', '/admin/users', '/c/chat-1'])("doesn't mark People current on %s", (path) => {
+    mount(path)
     expect(screen.getByRole('link', { name: 'People' }).getAttribute('aria-current')).toBeNull()
   })
 

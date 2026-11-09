@@ -36,11 +36,11 @@ function LocationProbe() {
   return null
 }
 
-function mount(path = '/alice') {
+function mount(path = '/alice', state?: unknown) {
   return render(<QueryClientProvider client={queryClient}>
     <SettingsDialogProvider controller={{ openSettings: mocks.openSettings }}>
       <TooltipProvider>
-        <MemoryRouter initialEntries={[path]}>
+        <MemoryRouter initialEntries={[{ pathname: path, state }]}>
           <Routes><Route path="/:username" element={<ProfilePage />} /></Routes>
           <LocationProbe />
         </MemoryRouter>
@@ -66,6 +66,7 @@ const publicRecords = {
   nextCursor: null,
 }
 
+const breadcrumb = () => within(screen.getByRole('navigation', { name: 'Breadcrumb' }))
 const usageRequests = () => mocks.request.mock.calls.map(([path]) => String(path)).filter((path) => path.includes('usage'))
 
 beforeEach(() => {
@@ -97,6 +98,7 @@ beforeEach(() => {
     if (path === '/api/friends/pending-count') return { count: mocks.pendingFriendRequests }
     if (path === '/api/pools/pending-count') return { count: 0 }
     if (path === '/api/profiles/alice') return structuredClone(detail)
+    if (path === '/api/profiles/bob') return { ...structuredClone(detail), profile: detail.mutualFriends[0], mutualFriends: [], usageVisible: false }
     if (path.startsWith('/api/profiles/alice/usage/activity?')) return activity()
     if (path.startsWith('/api/profiles/alice/usage/records?')) return structuredClone(publicRecords)
     if (path.startsWith('/api/usage/activity?')) return activity({ balanceMicros: 12_340_000, balanceKind: 'pool' })
@@ -123,11 +125,8 @@ describe('profile page', () => {
     expect(screen.getByText('@alice')).toBeTruthy()
     expect(screen.getByText(/^Joined /)).toBeTruthy()
     expect(screen.queryByText(/Friends since/)).toBeNull()
-    expect(screen.getByText('Friends')).toBeTruthy()
+    expect(screen.getByText('Friends', { selector: 'span' })).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Bob' }).getAttribute('href')).toBe('/bob')
-    expect(screen.getByRole('link', { name: 'Back to friends' }).getAttribute('href')).toBe('/friends')
-    // Phones collapse the back link to its arrow so the header fits beside "Compare with friends".
-    expect(screen.getByText('Back to friends').className).toBe('sr-only sm:not-sr-only')
   })
 
   it("shows someone else's usage visibility as an icon beside their handle", async () => {
@@ -159,6 +158,8 @@ describe('profile page', () => {
     expect(screen.getByText('3 calls')).toBeTruthy()
     expect(container.textContent).not.toMatch(/Balance|Add credits/)
     expect(screen.getByRole('link', { name: 'Compare with friends' }).getAttribute('href')).toBe('/friends/leaderboard')
+    // Phones collapse Compare to its icon so the breadcrumb's origin stays readable beside it.
+    expect(screen.getByText('Compare with friends').className).toBe('max-sm:sr-only')
     expect(screen.queryByRole('button', { name: /Usage visible/ })).toBeNull()
   })
 
@@ -181,7 +182,7 @@ describe('profile page', () => {
     await screen.findByRole('heading', { name: 'Top models' })
     expect(within(screen.getByRole('region', { name: 'Recent usage' })).getByText(model.name)).toBeTruthy()
     expect(screen.queryByText("Alice hasn't shared their usage with you.")).toBeNull()
-    expect(screen.getByRole('link', { name: 'Back to friends' })).toBeTruthy()
+    expect(breadcrumb().getByRole('link', { name: 'Friends' })).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'Compare with friends' })).toBeNull()
   })
 
@@ -262,6 +263,67 @@ describe('profile page', () => {
   })
 })
 
+describe("someone else's profile breadcrumb", () => {
+  it('leads back to Friends by default and names the person as the current page, by handle until they load', async () => {
+    let respond!: () => void
+    const fallback = mocks.request.getMockImplementation()!
+    mocks.request.mockImplementation((path: string, options?: { method?: string }) => path === '/api/profiles/alice'
+      ? new Promise((resolve) => { respond = () => resolve(structuredClone(detail)) })
+      : fallback(path, options))
+    mount()
+
+    const back = breadcrumb().getByRole('link', { name: 'Friends' })
+    expect(back.getAttribute('href')).toBe('/friends')
+    // Phones show where you came from, not just an arrow.
+    expect(back.textContent).toBe('Friends')
+    expect(back.querySelector('.sr-only')).toBeNull()
+    expect(breadcrumb().getByText('@alice').getAttribute('aria-current')).toBe('page')
+
+    respond()
+    const current = await breadcrumb().findByText('Alice')
+    expect(current.getAttribute('aria-current')).toBe('page')
+    // The profile heading right below names them on phones.
+    expect(current.closest('li')!.className).toContain('max-sm:hidden')
+    expect(breadcrumb().getAllByRole('listitem')).toHaveLength(2)
+  })
+
+  it('leads back to the leaderboard it was opened from, keeping its scope', async () => {
+    mount('/alice', { peopleOrigin: '/friends/leaderboard?scope=pool' })
+
+    await screen.findByRole('heading', { name: 'Alice' })
+    expect(breadcrumb().getByRole('link', { name: 'Leaderboard' }).getAttribute('href')).toBe('/friends/leaderboard?scope=pool')
+    expect(breadcrumb().queryByRole('link', { name: 'Friends' })).toBeNull()
+  })
+
+  it.each([
+    { peopleOrigin: '/billing' }, { peopleOrigin: 'https://example.com/friends' }, { peopleOrigin: ['/friends/leaderboard'] }, '/friends/leaderboard',
+  ])('falls back to Friends for untrusted history state %j', async (state) => {
+    mount('/alice', state)
+
+    await screen.findByRole('heading', { name: 'Alice' })
+    expect(breadcrumb().getByRole('link', { name: 'Friends' }).getAttribute('href')).toBe('/friends')
+  })
+
+  it('passes its origin on to mutual friends, so their profile leads back to the same tab', async () => {
+    mount('/alice', { peopleOrigin: '/friends/leaderboard?scope=pool' })
+
+    fireEvent.click(await screen.findByRole('link', { name: 'Bob' }))
+
+    expect(location.pathname).toBe('/bob')
+    expect(location.state).toEqual({ peopleOrigin: '/friends/leaderboard?scope=pool' })
+    expect(await breadcrumb().findByText('Bob')).toBeTruthy()
+    expect(breadcrumb().getByRole('link', { name: 'Leaderboard' }).getAttribute('href')).toBe('/friends/leaderboard?scope=pool')
+  })
+
+  it('keeps its origin when moving to the canonical handle', async () => {
+    mount('/Alice', { peopleOrigin: '/friends/leaderboard' })
+
+    await waitFor(() => expect(location.pathname).toBe('/alice'))
+    expect(location.state).toEqual({ peopleOrigin: '/friends/leaderboard' })
+    expect(breadcrumb().getByRole('link', { name: 'Leaderboard' }).getAttribute('href')).toBe('/friends/leaderboard')
+  })
+})
+
 describe('own profile', () => {
   it('shows the former usage page with the avatar beside the name', async () => {
     const { container } = mount('/morgan')
@@ -272,7 +334,7 @@ describe('own profile', () => {
     expect(avatar.className).toContain('rounded-full')
     expect(screen.getByText('@morgan')).toBeTruthy()
     expect(screen.getByText(/morgan@example\.com · Joined/)).toBeTruthy()
-    expect(screen.queryByRole('link', { name: 'Back to friends' })).toBeNull()
+    expect(screen.queryByRole('navigation', { name: 'Breadcrumb' })).toBeNull()
 
     await screen.findByRole('heading', { name: 'Top models' })
     expect(screen.getByText('Balance (pooled)').nextElementSibling?.textContent).toBe('$12.34')
@@ -324,7 +386,7 @@ describe('own profile', () => {
     fireEvent.click(screen.getByRole('button', { name: '7d' }))
     const sawOtherProfile = vi.fn()
     const observer = new MutationObserver(() => {
-      if (screen.queryByText('Loading profile…') || screen.queryByRole('link', { name: 'Back to friends' })) sawOtherProfile()
+      if (screen.queryByText('Loading profile…') || screen.queryByRole('navigation', { name: 'Breadcrumb' })) sawOtherProfile()
     })
     observer.observe(document.body, { childList: true, subtree: true, characterData: true })
 

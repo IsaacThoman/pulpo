@@ -1,7 +1,9 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { ArrowLeft, ArrowRight, BarChart3, ChevronRight } from 'lucide-react'
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { usePendingSocialCount } from '@/lib/pending-social'
-import { ownProfilePath } from '@/lib/profile'
+import { ownProfilePath, profileOrigin } from '@/lib/profile'
 import { useAuth } from '@/stores/auth'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { ui, uit } from '@/i18n/ui'
@@ -46,6 +48,41 @@ export function PeopleHeader() {
           </NavLink>
         ))}
       </nav>
+    </header>
+  )
+}
+
+/**
+ * Someone else's profile drills down from the People tab it was opened from: `← Friends › Jordan`.
+ * `compare` offers the friends leaderboard, which only ranks friends.
+ */
+export function PersonHeader({ name, compare }: { name: string; compare: boolean }) {
+  const { t } = useTranslation()
+  const origin = profileOrigin(useLocation().state)
+  return (
+    <header className="flex h-12 shrink-0 items-center justify-between gap-4 border-b px-5">
+      <nav aria-label={ui("Breadcrumb")} className="min-w-0">
+        <ol className="flex min-w-0 items-center gap-1 text-sm">
+          <li className="shrink-0">
+            <Button asChild size="sm" variant="ghost" className="-ml-2 text-muted-foreground">
+              <Link to={origin}><ArrowLeft />{origin.startsWith('/friends/leaderboard') ? t('people.leaderboardTab') : ui("Friends")}</Link>
+            </Button>
+          </li>
+          {/* Phones leave the name to the profile heading right below. */}
+          <li className="flex min-w-0 items-center gap-1 max-sm:hidden">
+            <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+            <span aria-current="page" className="truncate font-medium">{name}</span>
+          </li>
+        </ol>
+      </nav>
+      {/* Phones keep the origin's name readable by collapsing Compare to a ranking icon. */}
+      {compare && <Button asChild size="sm" variant="ghost" className="text-muted-foreground max-sm:w-8">
+        <Link to="/friends/leaderboard">
+          <BarChart3 className="sm:hidden" aria-hidden />
+          <span className="max-sm:sr-only">{ui("Compare with friends")}</span>
+          <ArrowRight className="max-sm:hidden" aria-hidden />
+        </Link>
+      </Button>}
     </header>
   )
 }

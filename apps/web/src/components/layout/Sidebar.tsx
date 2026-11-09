@@ -1515,8 +1515,8 @@ export function Sidebar({
   const networkReady = !isDesktopRuntime() || instanceReady
   const pendingSocialCount = usePendingSocialCount()
   const { pathname } = useLocation()
-  // People opens your profile but covers every one of its tabs, so it stays current across them.
-  const peopleCurrent = isPeoplePath(pathname, user?.username)
+  // People opens your profile but covers its tabs and everyone's profiles, so it stays current across them.
+  const peopleCurrent = isPeoplePath(pathname)
   const apiKeysEnabled = useAuth((s) => s.apiKeysEnabled)
   const filesEnabled = useAuth((s) => s.filesEnabled)
   const billingEnabled = useAuth((s) => s.billingEnabled)
