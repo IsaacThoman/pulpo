@@ -1,13 +1,15 @@
 import { and, desc, eq, gte, inArray, lt, or, sql, type SQL } from 'drizzle-orm'
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { requireAdmin, requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { creditLedger, modelPresetChoices, modelPresets, models, usageEvents, users } from '../database/schema.js'
 import { canonicalUsageModels, decodeUsageCursor, encodeUsageCursor, publicModel, resolveUsageModelAlias, type UsageModelIdentity } from './public.js'
-import { friendUserIds } from '../friends/routes.js'
+import { findProfileTarget, friendUserIds, profileParamsSchema } from '../friends/routes.js'
+import { AppError } from '../lib/errors.js'
 import { profileAvatarUrl } from '../profile/service.js'
 import { activePoolMembers, activePoolMembership, poolBalanceMicros } from '../pools/service.js'
+import { usageAccess, visibleFriendUsageCircle } from './visibility.js'
 
 async function displayedBalance(userId: string, accountBalanceMicros: number) {
   return db.transaction(async (tx) => {
@@ -43,7 +45,7 @@ const usageCircleQuerySchema = usageQuerySchema.extend({ scope: usageCircleSchem
 const usageCircleRecordsQuerySchema = usageRecordsQuerySchema.extend({ scope: usageCircleSchema.default('friends') })
 
 async function usageCircleUserIds(userId: string, scope: z.infer<typeof usageCircleSchema>): Promise<string[]> {
-  if (scope === 'friends') return friendUserIds(userId)
+  if (scope === 'friends') return visibleFriendUsageCircle(userId, await friendUserIds(userId))
   return db.transaction(async (tx) => {
     const membership = await activePoolMembership(tx, userId)
     return membership ? (await activePoolMembers(tx, membership.pool.id)).map((row) => row.user.id) : []
@@ -195,7 +197,8 @@ export async function loadUsageActivity(input: {
     const current = topByModel.get(modelId) ?? {
       modelId,
       name: displayedModel?.name ?? resolved.modelName,
-      logo: displayedModel?.logo ?? resolved.modelLogo,
+      // A hidden model's public identity has no logo; falling back would reveal the real one.
+      logo: displayedModel ? displayedModel.logo : resolved.modelLogo,
       calls: 0,
       inputTokens: 0,
       cacheWriteTokens: 0,
@@ -222,6 +225,71 @@ export async function loadUsageActivity(input: {
     contribution: contribution.map((row) => ({ ...row, calls: Number(row.calls), inputTokens: Number(row.inputTokens), cacheWriteTokens: Number(row.cacheWriteTokens), outputTokens: Number(row.outputTokens), costMicros: Number(row.costMicros) })),
     topModels: [...topByModel.values()].sort((a, b) => b.costMicros - a.costMicros).slice(0, 10),
   }
+}
+
+/**
+ * Usage records safe to show other people: participant and public model identity only,
+ * never balances, API keys, or response ids.
+ */
+export async function loadPublicUsageRecords(userIds: string[], query: z.infer<typeof usageRecordsQuerySchema>) {
+  const since = usageSince(query.range)
+  const cursor = query.cursor ? decodeUsageCursor(query.cursor) : null
+  const cursorFilter = cursor ? or(
+    lt(usageEvents.createdAt, cursor.createdAt),
+    and(eq(usageEvents.createdAt, cursor.createdAt), lt(usageEvents.id, cursor.id)),
+  ) : undefined
+  const [rows, aliases] = await Promise.all([db.select({
+    usage: usageEvents,
+    userId: users.id,
+    userName: users.name,
+    userUsername: users.username,
+    userAvatarObjectKey: users.avatarObjectKey,
+    userAvatarVersion: users.avatarVersion,
+    userProfileColor: users.profileColor,
+    modelId: models.id,
+    modelName: models.name,
+    modelLogo: models.logo,
+    modelVisible: models.visible,
+  }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).innerJoin(models, eq(models.id, usageEvents.requestedModelId))
+    .where(and(...eligibleUsageFilters(since, userIds), cursorFilter)).orderBy(desc(usageEvents.createdAt), desc(usageEvents.id)).limit(query.limit + 1), loadUsageModelAliases()])
+  const page = rows.slice(0, query.limit)
+  const last = page.at(-1)?.usage
+  return {
+    data: page.map((row) => {
+      const model = resolveUsageModelAlias({
+        modelId: row.modelId, modelName: row.modelName, modelLogo: row.modelLogo,
+        modelVisible: row.modelVisible, calls: 1, costMicros: Number(row.usage.costMicros),
+      }, aliases)
+      return {
+        id: row.usage.id,
+        createdAt: row.usage.createdAt.toISOString(),
+        participant: {
+          id: row.userId,
+          displayName: row.userName,
+          username: row.userUsername,
+          avatarUrl: profileAvatarUrl({ id: row.userId, avatarObjectKey: row.userAvatarObjectKey, avatarVersion: row.userAvatarVersion }),
+          profileColor: row.userProfileColor,
+        },
+        model: publicModel({ visible: model.modelVisible, id: model.modelId, name: model.modelName, logo: model.modelLogo }),
+        inputTokens: row.usage.inputTokens,
+        cacheWriteTokens: row.usage.cacheWriteTokens,
+        outputTokens: row.usage.outputTokens,
+        costMicros: Number(row.usage.costMicros),
+        inferenceReferenceCostMicros: Number(row.usage.inferenceReferenceCostMicros),
+        subscriptionCoveredMicros: Number(row.usage.weeklyCostMicros) + Number(row.usage.sharedCostMicros) + Number(row.usage.customCostMicros),
+        costBreakdown: row.usage.costBreakdown,
+      }
+    }),
+    nextCursor: rows.length > query.limit && last ? encodeUsageCursor({ createdAt: last.createdAt, id: last.id }) : null,
+  }
+}
+
+/** The profile owner whose usage the viewer asked for: 404 under the profile rules, 403 when it is not shared with them. */
+async function visibleUsageProfile(request: FastifyRequest) {
+  const user = requireUser(request)
+  const target = await findProfileTarget(user.id, profileParamsSchema.parse(request.params).username)
+  if (!await usageAccess(user.id, target)) throw new AppError(403, 'usage_private', 'This profile\'s usage is private', 'permission_error')
+  return target
 }
 
 export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
@@ -336,7 +404,6 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       avatarObjectKey: users.avatarObjectKey,
       avatarVersion: users.avatarVersion,
       profileColor: users.profileColor,
-      balanceMicros: users.balanceMicros,
       calls: sql<number>`count(${usageEvents.id})::int`,
       tokens: sql<number>`coalesce(sum(${usageEvents.inputTokens} + ${usageEvents.outputTokens}), 0)::bigint`,
       costMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
@@ -354,7 +421,6 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
         username: row.username,
         avatarUrl: profileAvatarUrl({ id: row.userId, avatarObjectKey: row.avatarObjectKey, avatarVersion: row.avatarVersion }),
         profileColor: row.profileColor,
-        balanceMicros: Number(row.balanceMicros),
         calls: Number(row.calls),
         tokens: Number(row.tokens),
         costMicros: Number(row.costMicros),
@@ -376,56 +442,25 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/usage/leaderboard/records', async (request) => {
     const user = requireUser(request)
     const query = usageCircleRecordsQuerySchema.parse(request.query)
-    const circle = await usageCircleUserIds(user.id, query.scope)
-    const since = usageSince(query.range)
-    const cursor = query.cursor ? decodeUsageCursor(query.cursor) : null
-    const cursorFilter = cursor ? or(
-      lt(usageEvents.createdAt, cursor.createdAt),
-      and(eq(usageEvents.createdAt, cursor.createdAt), lt(usageEvents.id, cursor.id)),
-    ) : undefined
-    const [rows, aliases] = await Promise.all([db.select({
-      usage: usageEvents,
-      userId: users.id,
-      userName: users.name,
-      userUsername: users.username,
-      userAvatarObjectKey: users.avatarObjectKey,
-      userAvatarVersion: users.avatarVersion,
-      userProfileColor: users.profileColor,
-      modelId: models.id,
-      modelName: models.name,
-      modelLogo: models.logo,
-      modelVisible: models.visible,
-    }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).innerJoin(models, eq(models.id, usageEvents.requestedModelId))
-      .where(and(...eligibleUsageFilters(since, circle), cursorFilter)).orderBy(desc(usageEvents.createdAt), desc(usageEvents.id)).limit(query.limit + 1), loadUsageModelAliases()])
-    const page = rows.slice(0, query.limit)
-    const last = page.at(-1)?.usage
-    return {
-      data: page.map((row) => {
-        const model = resolveUsageModelAlias({
-          modelId: row.modelId, modelName: row.modelName, modelLogo: row.modelLogo,
-          modelVisible: row.modelVisible, calls: 1, costMicros: Number(row.usage.costMicros),
-        }, aliases)
-        return {
-        id: row.usage.id,
-        createdAt: row.usage.createdAt.toISOString(),
-        participant: {
-          id: row.userId,
-          displayName: row.userName,
-          username: row.userUsername,
-          avatarUrl: profileAvatarUrl({ id: row.userId, avatarObjectKey: row.userAvatarObjectKey, avatarVersion: row.userAvatarVersion }),
-          profileColor: row.userProfileColor,
-        },
-        model: publicModel({ visible: model.modelVisible, id: model.modelId, name: model.modelName, logo: model.modelLogo }),
-        inputTokens: row.usage.inputTokens,
-        cacheWriteTokens: row.usage.cacheWriteTokens,
-        outputTokens: row.usage.outputTokens,
-        costMicros: Number(row.usage.costMicros),
-        inferenceReferenceCostMicros: Number(row.usage.inferenceReferenceCostMicros),
-        subscriptionCoveredMicros: Number(row.usage.weeklyCostMicros) + Number(row.usage.sharedCostMicros) + Number(row.usage.customCostMicros),
-        costBreakdown: row.usage.costBreakdown,
-      }}),
-      nextCursor: rows.length > query.limit && last ? encodeUsageCursor({ createdAt: last.createdAt, id: last.id }) : null,
-    }
+    return loadPublicUsageRecords(await usageCircleUserIds(user.id, query.scope), query)
+  })
+
+  const profileUsageRoute = { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }
+
+  app.get('/api/profiles/:username/usage/activity', profileUsageRoute, async (request) => {
+    const target = await visibleUsageProfile(request)
+    const query = usageQuerySchema.parse(request.query)
+    return loadUsageActivity({
+      userIds: [target.id],
+      since: usageSince(query.range),
+      timeZone: query.timeZone,
+      hidePrivateModels: true,
+    })
+  })
+
+  app.get('/api/profiles/:username/usage/records', profileUsageRoute, async (request) => {
+    const target = await visibleUsageProfile(request)
+    return loadPublicUsageRecords([target.id], usageRecordsQuerySchema.parse(request.query))
   })
 
   app.get('/api/admin/usage', async (request) => {

@@ -17,7 +17,7 @@ const persistedKeys = [
   'imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'language', 'sendWithEnter', 'doubleShiftSearch', 'streamResponses', 'showPromptSuggestions', 'showModelWarnings', 'modelWarningDismissals', 'showReasoning', 'showResponseCost',
   'agentCostLimitEnabled', 'agentCostLimitMicros',
   'chatWidth', 'animationSpeed', 'customInstructions', 'instructionPresetSelections', 'nickname', 'memoryEnabled', 'agentModes',
-  'leaderboardVisible', 'leaderboardColor', 'generation',
+  'leaderboardColor', 'generation',
   'localChatLimit',
   'localAttachmentCacheMb',
   'trashRetention',

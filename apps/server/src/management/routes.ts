@@ -21,7 +21,7 @@ import { createRedis } from '../redis.js'
 import { registerSpeechAssetRoutes } from '../speech/assets.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
 import { authenticateManagementToken, requireInteractiveSession, requireManagementScope } from './auth.js'
-import { applyManagementSettings, loadManagementSettings, planManagementSettings } from './settings.js'
+import { applyManagementSettings, loadManagementSettings, planManagementSettings, withStoredUsageVisibility } from './settings.js'
 import { readCatalogIconUpload } from '../catalog/icon-routes.js'
 import { createCatalogIcon, deleteCatalogIcon, listCatalogIcons, updateCatalogIcon } from '../catalog/icon-service.js'
 import { getBlobStore } from '../storage/index.js'
@@ -202,7 +202,8 @@ export async function registerManagementRoutes(app: FastifyInstance): Promise<vo
       const body = request.body as { document?: unknown }
       const document = managementAccountSettingsDocumentSchema.parse(body.document)
       const current = await loadManagementSettings(user.id)
-      const plan = await planManagementSettings(user.id, { ...current, revision: document.revision, account: document.account }, {}, 'account')
+      const account = withStoredUsageVisibility(document.account, current)
+      const plan = await planManagementSettings(user.id, { ...current, revision: document.revision, account }, {}, 'account')
       return {
         revision: plan.revision,
         changes: plan.changes,
@@ -238,8 +239,9 @@ export async function registerManagementRoutes(app: FastifyInstance): Promise<vo
       if (typeof body.revision !== 'string') throw new AppError(400, 'revision_required', 'A planned settings revision is required')
       const document = managementAccountSettingsDocumentSchema.parse(body.document)
       const current = await loadManagementSettings(user.id)
+      const account = withStoredUsageVisibility(document.account, current)
       const applied = await applyManagementSettings(
-        user.id, user.id, { ...current, revision: document.revision, account: document.account }, body.revision, {}, 'account',
+        user.id, user.id, { ...current, revision: document.revision, account }, body.revision, {}, 'account',
       )
       return { apiVersion: document.apiVersion, kind: document.kind, revision: applied.revision, account: applied.account }
     })

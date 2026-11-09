@@ -1,8 +1,10 @@
-import { useEffect, useRef, type UIEvent } from 'react'
+import { useEffect, useRef, type ReactNode, type UIEvent } from 'react'
 import type { UsageCostItem } from '@pulpo/contracts'
 import { BarChart3, Zap } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { UsageModelIcon } from './UsageModelIcon'
 import { formatUsd } from '@/lib/format'
+import { useProfileLinkState } from '@/lib/profile'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { UsageCostBreakdown } from './UsageCostBreakdown'
 import { ui, activeLocale } from '@/i18n/ui'
@@ -28,14 +30,42 @@ export interface PublicTopModel {
   costMicros: number
 }
 
+const PARTICIPANT_CLASS = 'flex min-w-0 max-w-48 items-center gap-1.5'
+
+/** A record's participant. Leaderboards link them to their profile, which keeps the leaderboard as its origin. */
+function Participant({ participant, link }: { participant: PublicUsageRecord['participant']; link: boolean }) {
+  const content = <>
+    <ProfileAvatar name={participant.displayName} avatarUrl={participant.avatarUrl} className="size-5" fallbackClassName="text-[8px]" />
+    <span className={link ? 'truncate group-hover/participant:underline' : 'truncate'}>{participant.displayName}</span>
+  </>
+  return link ? <ParticipantLink participant={participant}>{content}</ParticipantLink> : <span className={PARTICIPANT_CLASS}>{content}</span>
+}
+
+// Its own component so only linked participants need a router.
+function ParticipantLink({ participant, children }: { participant: PublicUsageRecord['participant']; children: ReactNode }) {
+  const linkState = useProfileLinkState()
+  return <Link
+    to={`/${participant.username}`}
+    state={linkState}
+    aria-label={participant.displayName}
+    className={`group/participant rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${PARTICIPANT_CLASS}`}
+  >{children}</Link>
+}
+
 export function PublicRecentUsagePanel({
   records,
+  showParticipant = true,
+  linkParticipants = false,
   nextCursor,
   loadingMore,
   error,
   onLoadMore,
 }: {
   records: PublicUsageRecord[]
+  /** Off on a profile, where every record is the profile owner's. */
+  showParticipant?: boolean
+  /** Link each participant to their profile, as the friends and Pool leaderboards do. */
+  linkParticipants?: boolean
   nextCursor: string | null
   loadingMore: boolean
   error?: string | null
@@ -71,7 +101,7 @@ export function PublicRecentUsagePanel({
           <thead>
             <tr className="text-left text-muted-foreground">
               <th className="px-3 py-2 font-normal">{ui("Time")}</th>
-              <th className="px-3 py-2 font-normal">{ui("User")}</th>
+              {showParticipant && <th className="px-3 py-2 font-normal">{ui("User")}</th>}
               <th className="px-3 py-2 font-normal">{ui("Model")}</th>
               <th className="px-3 py-2 text-right font-normal">{ui("Tokens")}</th>
               <th className="px-3 py-2 text-right font-normal">{ui("Cost")}</th>
@@ -79,7 +109,7 @@ export function PublicRecentUsagePanel({
           </thead>
           <tbody className="divide-y">{records.map((record) => <tr key={record.id}>
             <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{new Date(record.createdAt).toLocaleString(activeLocale())}</td>
-            <td className="px-3 py-2"><span className="flex min-w-0 max-w-48 items-center gap-1.5"><ProfileAvatar name={record.participant.displayName} avatarUrl={record.participant.avatarUrl} className="size-5" fallbackClassName="text-[8px]" /><span className="truncate">{record.participant.displayName}</span></span></td>
+            {showParticipant && <td className="px-3 py-2"><Participant participant={record.participant} link={linkParticipants} /></td>}
             <td className="px-3 py-2"><span className="flex min-w-0 max-w-48 items-center gap-1.5"><UsageModelIcon modelId={record.model.id} logo={record.model.logo} /><span className="truncate">{record.model.name}</span></span></td>
             <td className="px-3 py-2 text-right tabular-nums">{(record.inputTokens + record.outputTokens).toLocaleString(activeLocale())}</td>
             <td className="px-3 py-2 text-right tabular-nums">

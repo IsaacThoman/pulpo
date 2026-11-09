@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { and, eq, sql } from 'drizzle-orm'
 import {
+  DEFAULT_USAGE_VISIBILITY,
   agentSettingsSchema,
   authSettingsSchema,
   instanceOcrSettingsSchema,
@@ -13,6 +14,7 @@ import {
   webToolsSettingsSchema,
   type ManagementSettingsChange,
   type ManagementSettingsDocument,
+  type UsageVisibility,
 } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { applicationSettings, auditEvents, models, userPreferences, users } from '../database/schema.js'
@@ -35,6 +37,7 @@ import { preferencesWithModelDefaults } from '../settings/model-preferences.js'
 import { firstUnavailableModelReference, newAccountModelReferenceIds } from '../settings/new-account-defaults.js'
 import { reconcileDetailedPayloadRetention } from '../logging/detailed-payload-retention.js'
 import { getConfig } from '../config.js'
+import { poolPeerIds } from '../pools/service.js'
 import {
   bumpAccountRevisions,
   friendPeerIds,
@@ -72,6 +75,7 @@ export async function loadManagementSettings(userId: string, database: typeof db
     database.select({
       username: users.username,
       profileColor: users.profileColor,
+      usageVisibility: users.usageVisibility,
     }).from(users).where(eq(users.id, userId)).limit(1),
     database.select().from(applicationSettings),
   ])
@@ -81,6 +85,7 @@ export async function loadManagementSettings(userId: string, database: typeof db
     ...rawAccount,
     username: profile?.username,
     profileColor: profile?.profileColor ?? null,
+    usageVisibility: profile?.usageVisibility ?? DEFAULT_USAGE_VISIBILITY,
   })
   const storedWebTools = parseWebToolsSettings(byKey.get('webTools'))
   const instance = {
@@ -108,6 +113,17 @@ export async function loadManagementSettings(userId: string, database: typeof db
     account,
     instance,
   })
+}
+
+/**
+ * Older clients strip account fields they don't know, so a document without
+ * usageVisibility keeps the stored level instead of resetting who can see usage.
+ */
+export function withStoredUsageVisibility<T extends { usageVisibility?: UsageVisibility }>(
+  account: T,
+  current: { account: { usageVisibility?: UsageVisibility } },
+): T & { usageVisibility: UsageVisibility } {
+  return { ...account, usageVisibility: account.usageVisibility ?? current.account.usageVisibility ?? DEFAULT_USAGE_VISIBILITY }
 }
 
 function changesBetween(before: unknown, after: unknown, path = ''): ManagementSettingsChange[] {
@@ -148,7 +164,8 @@ export async function planManagementSettings(
   mode: ManagementSettingsMode = 'all',
 ) {
   const current = await loadManagementSettings(userId)
-  const document = managementSettingsDocumentSchema.parse(input)
+  const parsed = managementSettingsDocumentSchema.parse(input)
+  const document = { ...parsed, account: withStoredUsageVisibility(parsed.account, current) }
   await validateModelReferences(document, mode)
   const changes = changesBetween(
     { account: current.account, instance: current.instance },
@@ -182,7 +199,7 @@ export async function applyManagementSettings(
     throw new AppError(409, 'settings_conflict', 'Settings changed after this plan was created')
   }
   await validateModelReferences(document, mode)
-  const account = managementAccountSettingsSchema.parse(document.account)
+  const account = withStoredUsageVisibility(managementAccountSettingsSchema.parse(document.account), current)
   const auth = authSettingsSchema.parse(document.instance.auth)
   const iface = interfaceSettingsSchema.parse(document.instance.interface)
   const personalization = personalizationSettingsSchema.parse(document.instance.personalization)
@@ -196,14 +213,16 @@ export async function applyManagementSettings(
     await assertSafeProviderUrl(webTools.firecrawl.baseUrl)
   }
   const previousTrashRetention = current.account.trashRetention
-  const changedPaths = (await planManagementSettings(userId, document, secrets, mode)).changes.map((change) => change.path)
+  const changedPaths = (await planManagementSettings(userId, { ...document, account }, secrets, mode)).changes.map((change) => change.path)
   if (!changedPaths.length) return current
   const loggingChanged = changedPaths.some((path) => path === 'instance.logging' || path.startsWith('instance.logging.'))
-  const publicProfileChanged = changedPaths.some((path) => (
+  const usageVisibilityChanged = changedPaths.includes('account.usageVisibility')
+  const publicProfileChanged = usageVisibilityChanged || changedPaths.some((path) => (
     path === 'account.username' || path === 'account.profileColor'
   ))
   let publishedRevision: number | undefined
   let friendChanges: AccountRevisionChange[] = []
+  let poolChanges: AccountRevisionChange[] = []
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
     const lockedCurrent = await loadManagementSettings(userId, tx as unknown as typeof db)
@@ -216,6 +235,7 @@ export async function applyManagementSettings(
       const [revision] = await tx.update(users).set({
         username: account.username,
         profileColor: account.profileColor,
+        usageVisibility: account.usageVisibility,
         stateRevision: sql`${users.stateRevision} + 1`,
         updatedAt: new Date(),
       }).where(eq(users.id, userId)).returning({ revision: users.stateRevision })
@@ -224,6 +244,7 @@ export async function applyManagementSettings(
         const peers = await friendPeerIds(tx, userId)
         friendChanges = await bumpAccountRevisions(tx, peers)
       }
+      if (usageVisibilityChanged) poolChanges = await bumpAccountRevisions(tx, await poolPeerIds(tx, userId))
     }
     if (mode !== 'account') {
       const [existingWebTools] = await tx.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1)
@@ -258,6 +279,7 @@ export async function applyManagementSettings(
   })
   if (publishedRevision !== undefined) await publishStateChange({ userId, revision: publishedRevision })
   await publishScopedStateChanges(friendChanges, ['friends'])
+  await publishScopedStateChanges(poolChanges, ['pool'])
   if (mode !== 'instance' && previousTrashRetention !== account.trashRetention) {
     await queueTrashPurge(userId, 'management-settings')
   }

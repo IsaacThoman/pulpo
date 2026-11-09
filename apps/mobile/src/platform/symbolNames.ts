@@ -93,6 +93,7 @@ export const materialSymbolNames: Record<string, string> = {
   "person.crop.circle": "account_circle",
   "person.crop.circle.badge.clock": "pending_actions",
   "person.badge.key": "passkey",
+  "person.badge.plus": "person_add",
   "lock": "lock",
   "lock.fill": "lock",
   "lock.rotation": "password",
