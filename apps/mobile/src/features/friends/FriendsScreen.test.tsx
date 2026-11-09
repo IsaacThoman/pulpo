@@ -263,6 +263,21 @@ describe.each(['ios', 'android'])('Friends on %s', (platform) => {
     expect(mocks.push).toHaveBeenCalledWith('FriendProfile', { username: 'bob' })
   })
 
+  it('opens a Pool member’s profile from their row', async () => {
+    mount()
+    await screen.findByText(/2 of 6 members/)
+    fireEvent.click(screen.getByText('Alice').closest('button')!)
+    expect(mocks.push).toHaveBeenCalledWith('FriendProfile', { username: 'alice' })
+  })
+
+  it('opens the profile of whoever sent a Pool invitation', async () => {
+    summary = { accountBalanceMicros: 0, pool: null, incomingInvitations: [{ id: 'invite', poolId: 'pool', inviter: profile('Zed'), invitee: profile('me'), memberCount: 3, createdAt: '2026-09-01T00:00:00.000Z' }] }
+    mount()
+    const zed = await screen.findByText('Zed')
+    fireEvent.click(zed.closest('button')!)
+    expect(mocks.push).toHaveBeenCalledWith('FriendProfile', { username: 'zed' })
+  })
+
   it('cancels a sent request from the collapsed list', async () => {
     mount()
     fireEvent.click(await screen.findByText(/Sent requests/))
