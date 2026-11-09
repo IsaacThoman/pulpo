@@ -14,7 +14,7 @@ vi.mock('./useAppStoreOffer', () => ({ useAppStoreOffer: () => mocks.offer }))
 import { AppStoreSubscriptionSection } from './AppStoreSubscriptionSection'
 
 const subscription = { provider: 'stripe' as const, plan: 'eight' as const, pendingPlan: null, status: 'active' as const, cancelAtPeriodEnd: false, currentPeriodEnd: '2026-12-01T12:00:00.000Z' }
-const limits: UsageLimits = { plan: 'eight', subscription, plans: null, weekly: null, fiveHour: null, custom: [] }
+const limits: UsageLimits = { plan: 'eight', subscription, plans: null, appStoreFreeTrial: false, weekly: null, fiveHour: null, custom: [] }
 
 afterEach(() => { cleanup(); mocks.offer = { eight: 'pulpoEight', fat: 'pulpoFat' } })
 

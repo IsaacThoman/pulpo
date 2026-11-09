@@ -225,6 +225,7 @@ describe('usage limits for native apps', () => {
       plan: 'eight',
       subscription: null,
       plans: null,
+      appStoreFreeTrial: false,
       weekly: { remainingPercentage: 60, availableBarPercentage: 60, pendingBarPercentage: 10, resetsAt: '2026-11-09T00:00:00.000Z' },
       fiveHour: { remainingPercentage: 50, availableBarPercentage: 50, pendingBarPercentage: 25, resetsAt: '2026-11-02T15:00:00.000Z' },
       custom: [{
@@ -237,7 +238,12 @@ describe('usage limits for native apps', () => {
 
   it('omits limits the plan does not have', () => {
     expect(usageLimitsResponse({ ...entitlements, plan: 'baby', weeklyRemainingPercentage: null, fiveHourRemainingPercentage: null, fiveHourResetAt: null }, []))
-      .toEqual({ plan: 'baby', subscription: null, plans: null, weekly: null, fiveHour: null, custom: [] })
+      .toEqual({ plan: 'baby', subscription: null, plans: null, appStoreFreeTrial: false, weekly: null, fiveHour: null, custom: [] })
+  })
+
+  it('tells the iOS app when to sell the free-trial Eight product', () => {
+    const baby = { ...entitlements, plan: 'baby' as const, weeklyRemainingPercentage: null, fiveHourRemainingPercentage: null, fiveHourResetAt: null }
+    expect(usageLimitsResponse(baby, [], { appStoreFreeTrial: true }).appStoreFreeTrial).toBe(true)
   })
 
   it('describes plan storage and the Fat Pool share without prices', () => {

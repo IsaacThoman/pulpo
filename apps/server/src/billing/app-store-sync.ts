@@ -20,6 +20,7 @@ import {
   appStoreVerificationError,
   claimedAppStoreEnvironment,
   getAppStoreGateway,
+  isAppStoreFreeTrial,
   isRefundedTransaction,
   statusFromTransaction,
   type AppStoreRenewalInfo,
@@ -134,6 +135,7 @@ export async function recordAppStoreTransaction(tx: Transaction, input: {
     netAmountCents: amounts.netCents,
     totalAmountCents: amounts.netCents,
     processingFeeAmountCents: amounts.feeCents,
+    freeTrial: isAppStoreFreeTrial(transaction),
     paidAt,
     createdAt: paidAt,
   }).onConflictDoNothing({ target: billingOrders.providerPaymentId })

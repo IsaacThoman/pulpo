@@ -151,6 +151,11 @@ describe('mobile App Store billing capability', () => {
       APP_STORE_FAT_PRODUCT_ID: 'pulpoFat',
     }
     expect((await capabilities()).appStoreBilling).toEqual({ environments: ['sandbox'], products: { eight: 'pulpoEight', fat: 'pulpoFat' } })
+    mocks.config = { ...mocks.config, APP_STORE_EIGHT_TRIAL_PRODUCT_ID: 'pulpoEightTrial' }
+    expect((await capabilities()).appStoreBilling).toEqual({
+      environments: ['sandbox'],
+      products: { eight: 'pulpoEight', fat: 'pulpoFat', eightTrial: 'pulpoEightTrial' },
+    })
   })
 
   it('offers no purchases without App Store configuration or billing', async () => {

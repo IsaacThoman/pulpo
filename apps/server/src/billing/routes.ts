@@ -13,6 +13,7 @@ import {
 } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { parseBillingSettings } from '../settings/application-settings.js'
+import { appStoreFreeTrialOffered } from './app-store-trials.js'
 import { getBillingEntitlements, type BillingEntitlements } from './entitlements.js'
 import { loadDailySpend, type DailySpend } from './usage-tiers.js'
 import { customLimitModelNames, loadCustomAllowances, type CustomAllowance } from './custom-limits.js'
@@ -210,7 +211,7 @@ export function fiveHourLimitSummary(entitlements: FiveHourLimitInput) {
 export function usageLimitsResponse(
   entitlements: WeeklyLimitInput & FiveHourLimitInput & Pick<BillingEntitlements, 'plan'>,
   customLimits: ReturnType<typeof customLimitSummary>[],
-  { subscription = null, plans = null }: Partial<Pick<UsageLimits, 'subscription' | 'plans'>> = {},
+  { subscription = null, plans = null, appStoreFreeTrial = false }: Partial<Pick<UsageLimits, 'subscription' | 'plans' | 'appStoreFreeTrial'>> = {},
 ): UsageLimits {
   const bar = <T extends { remainingPercentage: number; availableBarPercentage: number; pendingBarPercentage: number; resetsAt: string | null }>(limit: T) => ({
     remainingPercentage: limit.remainingPercentage,
@@ -224,6 +225,7 @@ export function usageLimitsResponse(
     plan: entitlements.plan,
     subscription,
     plans,
+    appStoreFreeTrial,
     weekly: weekly ? bar(weekly) : null,
     fiveHour: fiveHour ? bar(fiveHour) : null,
     custom: customLimits.map((limit) => ({
@@ -352,12 +354,17 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
       db.select({ value: applicationSettings.value }).from(applicationSettings)
         .where(eq(applicationSettings.key, 'billing')).limit(1),
     ])
+    const settings = parseBillingSettings(billingSetting?.value)
     return usageLimitsResponse(
       entitlements,
       await loadCustomLimitSummaries(user.id, entitlements.plan),
       {
         subscription: usageLimitsSubscription(subscriptions, entitlements.subscriptionPlan),
-        plans: usageLimitsPlans(parseBillingSettings(billingSetting?.value)),
+        plans: usageLimitsPlans(settings),
+        appStoreFreeTrial: await appStoreFreeTrialOffered({
+          trialsPerDay: settings.appStoreTrialsPerDay,
+          hasSubscriptionHistory: subscriptions.length > 0,
+        }),
       },
     )
   })

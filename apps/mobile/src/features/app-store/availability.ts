@@ -10,6 +10,8 @@ export const APP_STORE_SUBSCRIPTIONS_URL = 'https://apps.apple.com/account/subsc
 export interface AppStoreProductIds {
   eight: string
   fat: string
+  /** Eight with a free-trial introductory offer, sold in its place when the server allows it. */
+  eightTrial?: string
 }
 
 export function appStoreHostAllowed(instanceUrl: string): boolean {

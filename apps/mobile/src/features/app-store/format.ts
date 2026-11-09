@@ -13,6 +13,17 @@ export function priceLabel(product: Pick<StoreKitProduct, 'displayPrice' | 'peri
     : `${product.displayPrice}/${unit}`
 }
 
+/** "1 week" or "7 days": how long a free trial lasts. */
+export function freeTrialLabel(trial: NonNullable<StoreKitProduct['freeTrial']>): string {
+  const unit = trial.periodUnit ? UNIT_NAMES[trial.periodUnit] : 'period'
+  return `${trial.periodValue} ${unit}${trial.periodValue === 1 ? '' : 's'}`
+}
+
+/** "1 week free, then $9.99/month": the trial line under a product's price. */
+export function freeTrialTermsLabel(product: Pick<StoreKitProduct, 'displayPrice' | 'periodUnit' | 'periodValue' | 'freeTrial'>): string | null {
+  return product.freeTrial ? `${freeTrialLabel(product.freeTrial)} free, then ${priceLabel(product)}` : null
+}
+
 /** One line about where an App Store subscription stands. */
 export function subscriptionStatusLabel(subscription: UsageLimitsSubscription, locale?: string): string {
   if (subscription.status === 'past_due') return 'The App Store couldn’t renew your subscription. Update your payment method in your Apple Account to keep your plan.'
@@ -25,6 +36,9 @@ export function subscriptionStatusLabel(subscription: UsageLimitsSubscription, l
 }
 
 export const SUBSCRIPTION_TERMS = 'Payment is charged to your Apple Account. Subscriptions renew automatically each month unless canceled at least 24 hours before the end of the current period. Manage or cancel them in your Apple Account settings.'
+
+/** Added to the terms while a plan is offered with a free trial. */
+export const FREE_TRIAL_TERMS = 'A free trial becomes a paid subscription when it ends unless canceled at least 24 hours before then.'
 
 /** The web's plan colors: Eight is teal and Fat is pink (Tailwind 700 in light mode, 300 in dark). */
 export function planTitleColor(plan: 'eight' | 'fat', dark: boolean): string {

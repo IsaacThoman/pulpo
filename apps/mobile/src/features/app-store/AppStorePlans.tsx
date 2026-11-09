@@ -6,7 +6,8 @@ import { useAppTheme, type AppTheme } from '../../mockup5/src/theme'
 import { UsageLimitCard } from '../usage-limits/UsageLimitsSettings'
 import { usageLimitRows } from '../usage-limits/format'
 import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL, type AppStoreProductIds } from './availability'
-import { periodLabel, planBenefits, planButtonColors, planFillColor, planTintColor, planTitleColor, priceLabel, SUBSCRIPTION_TERMS, subscriptionStatusLabel } from './format'
+import { FREE_TRIAL_TERMS, freeTrialLabel, freeTrialTermsLabel, periodLabel, planBenefits, planButtonColors, planFillColor, planTintColor, planTitleColor, priceLabel, SUBSCRIPTION_TERMS, subscriptionStatusLabel } from './format'
+import type { StoreKitProduct } from './storeKit'
 import { useAppStoreActions, useAppStoreProducts, type PaidPlan, type StoreKit } from './useAppStoreActions'
 
 const PLANS = ['eight', 'fat'] as const
@@ -27,13 +28,14 @@ export function AppStorePlans({ kit, offer, limits, onChanged }: {
   const theme = useAppTheme()
   const insets = useSafeAreaInsets()
   const subscription = limits.subscription
-  const { products, product } = useAppStoreProducts(kit, offer)
+  const { products, product } = useAppStoreProducts(kit, offer, { freeTrial: limits.appStoreFreeTrial })
   const { busy, buy, restore, manage } = useAppStoreActions({ kit, offer, current: subscription?.plan ?? null, onChanged })
   const [choosing, setChoosing] = useState<PaidPlan | null>(null)
-  const choose = async (plan: PaidPlan) => {
+  const choose = async (plan: PaidPlan, item: StoreKitProduct) => {
     setChoosing(plan)
-    try { await buy(plan) } finally { setChoosing(null) }
+    try { await buy(plan, item) } finally { setChoosing(null) }
   }
+  const trialOffered = PLANS.some((plan) => product(plan)?.freeTrial)
   const rows = subscription ? usageLimitRows(limits) : []
   const surface = theme.isDark ? theme.elevated : '#FFFFFF'
 
@@ -43,6 +45,7 @@ export function AppStorePlans({ kit, offer, limits, onChanged }: {
     const fill = planFillColor(plan, theme.isDark)
     const title = planTitleColor(plan, theme.isDark)
     const period = periodLabel(item)
+    const trialTerms = freeTrialTermsLabel(item)
     const current = subscription?.plan === plan
     // A canceled subscription keeps the product it would have renewed as, but nothing starts at renewal.
     const pending = subscription?.pendingPlan === plan && !subscription.cancelAtPeriodEnd
@@ -52,7 +55,8 @@ export function AppStorePlans({ kit, offer, limits, onChanged }: {
       : planButtonColors(plan, theme.isDark)
     const label = current ? 'Manage Subscription'
       : pending ? 'Starts at renewal'
-        : `${subscription ? 'Switch to' : 'Choose'} ${SHORT_NAMES[plan]}`
+        : item.freeTrial ? `Try ${freeTrialLabel(item.freeTrial)} free`
+          : `${subscription ? 'Switch to' : 'Choose'} ${SHORT_NAMES[plan]}`
     const disabled = busy || pending
     return <View key={plan} style={[styles.card, { backgroundColor: surface, borderColor: theme.separator }]}>
       <View style={styles.titleLine}>
@@ -63,6 +67,7 @@ export function AppStorePlans({ kit, offer, limits, onChanged }: {
         <Text style={[styles.price, { color: theme.text }]}>{item.displayPrice}</Text>
         {period ? <Text style={[styles.period, { color: theme.secondary }]}> {period}</Text> : null}
       </View>
+      {trialTerms ? <Text style={[styles.status, { color: theme.secondary }]}>{trialTerms}</Text> : null}
       {current && subscription ? <Text style={[styles.status, { color: subscription.status === 'past_due' ? theme.red : theme.secondary }]}>{subscriptionStatusLabel(subscription)}</Text> : null}
       <View style={styles.benefits}>
         {planBenefits(plan, limits.plans).map((benefit) => <Check key={benefit} color={fill} theme={theme}>{benefit}</Check>)}
@@ -70,9 +75,9 @@ export function AppStorePlans({ kit, offer, limits, onChanged }: {
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ disabled, busy: choosing === plan }}
-        accessibilityHint={current ? 'Opens your App Store subscription' : pending ? undefined : `Subscribes to ${item.displayName} for ${priceLabel(item)}`}
+        accessibilityHint={current ? 'Opens your App Store subscription' : pending ? undefined : `Subscribes to ${item.displayName} for ${trialTerms ?? priceLabel(item)}`}
         disabled={disabled}
-        onPress={() => void (current ? manage() : choose(plan))}
+        onPress={() => void (current ? manage() : choose(plan, item))}
         style={({ pressed }) => [styles.button, { backgroundColor: button.background, opacity: (busy && choosing !== plan) || pending ? 0.5 : pressed ? 0.8 : 1 }]}
       >
         {choosing === plan
@@ -102,7 +107,7 @@ export function AppStorePlans({ kit, offer, limits, onChanged }: {
     </Pressable> : null}
     {PLANS.map(card)}
     <View style={styles.legal}>
-      <Text style={[styles.terms, { color: theme.secondary }]}>{SUBSCRIPTION_TERMS}</Text>
+      <Text style={[styles.terms, { color: theme.secondary }]}>{trialOffered ? `${SUBSCRIPTION_TERMS} ${FREE_TRIAL_TERMS}` : SUBSCRIPTION_TERMS}</Text>
       <View style={styles.links}>
         <Pressable accessibilityRole="button" accessibilityState={{ disabled: busy, busy }} disabled={busy} onPress={() => void restore()} style={[styles.linkTarget, busy && styles.linkDisabled]}>
           <Text style={[styles.link, { color: theme.blue }]}>Restore Purchases</Text>

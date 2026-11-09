@@ -7,8 +7,9 @@ The iOS app sells Eight and Fat as App Store auto-renewable subscriptions. Pulpo
 1. Join the App Store Small Business Program. Pulpo books App Store revenue after a 15% commission.
 2. Create one subscription group with two monthly auto-renewable subscriptions, Eight and Fat, priced at $9.99 and $29.99 in the US. Rank Fat above Eight so moving between them is an upgrade or downgrade. Save their product IDs as `APP_STORE_EIGHT_PRODUCT_ID` and `APP_STORE_FAT_PRODUCT_ID`. Product IDs cannot be changed or reused after they are created.
 3. Leave Family Sharing off for both products. Shared purchases never create payments.
-4. Under **Users and Access → Integrations → In-App Purchase**, create a key. Save the downloaded `.p8` file's contents as `APP_STORE_PRIVATE_KEY`, its key ID as `APP_STORE_KEY_ID`, and the issuer ID as `APP_STORE_ISSUER_ID`. The key may be multi-line, use escaped `\n`, or have its line breaks flattened to spaces; the server refuses to start if it does not parse. The `.p8` can be downloaded only once.
-5. Save the bundle ID (`com.isaacthoman.pulpo`) as `APP_STORE_BUNDLE_ID` and the app's Apple ID from **App Information** as `APP_STORE_APP_APPLE_ID`.
+4. Optional, for free trials: add a third subscription to the same group, a second Eight priced the same as Eight, with an **Introductory Offer** of type **Free** for one week. Put it at the same level as Eight, give it the same display name, and save its product ID as `APP_STORE_EIGHT_TRIAL_PRODUCT_ID`. Submit it for review with the app version, like the other two. See [Free trials](#free-trials).
+5. Under **Users and Access → Integrations → In-App Purchase**, create a key. Save the downloaded `.p8` file's contents as `APP_STORE_PRIVATE_KEY`, its key ID as `APP_STORE_KEY_ID`, and the issuer ID as `APP_STORE_ISSUER_ID`. The key may be multi-line, use escaped `\n`, or have its line breaks flattened to spaces; the server refuses to start if it does not parse. The `.p8` can be downloaded only once.
+6. Save the bundle ID (`com.isaacthoman.pulpo`) as `APP_STORE_BUNDLE_ID` and the app's Apple ID from **App Information** as `APP_STORE_APP_APPLE_ID`.
 
 ## Server notifications
 
@@ -50,6 +51,18 @@ The app reports every transaction it sees to `POST /api/billing/app-store/transa
 
 Plan limit errors in the native apps never show balances or dollar amounts: the app rewords `insufficient_balance` and `daily_spend_limit_reached` as reaching the plan's or today's usage limit.
 
+## Free trials
+
+The free trial is a separate Eight product because Apple applies an introductory offer to every purchase an eligible Apple Account makes, so the only way to stop offering a trial is to sell a product without one. With `APP_STORE_EIGHT_TRIAL_PRODUCT_ID` set, `/api/mobile/config` lists it as `products.eightTrial`, and `/api/billing/limits` sets `appStoreFreeTrial` when the app should sell it instead of the regular Eight product. That holds when all of these do:
+
+- **Admin → Billing → Plan defaults → App Store free trials** is above 0. It is 0, trials off, until an admin sets it. Setting it back to 0 stops new trials immediately, without an app update or a change in App Store Connect.
+- Fewer trials than that started in the last 24 hours. Sandbox trials count too, so TestFlight can exercise the limit, and the panel shows how many started.
+- The account has never had a subscription. Apple also grants a trial to someone who subscribed before but never had a trial, so the server keeps lapsed subscribers on the regular product.
+
+The app shows the trial only when StoreKit also says this Apple Account is eligible for it. Otherwise it sells the regular Eight product. The Eight card then reads "1 week free, then $9.99/month", its button reads **Try 1 week free**, and the renewal terms add that the trial becomes a paid subscription unless canceled at least 24 hours before it ends.
+
+The limit is approximate. A paywall loaded while the limit had room still sells the trial product, and a purchase is never refused once Apple has granted the trial. Each trial is recorded as a $0 payment marked `free_trial`, and the renewal that ends it is an ordinary paid renewal. Promotional offers and offer codes are not counted.
+
 ## How purchases map to plans
 
 - The app gets a per-account token from `GET /api/billing/app-store/account-token` and attaches it to every purchase as `appAccountToken`. The first account to report a subscription keeps it; another account reporting the same subscription, or a purchase made with another account's token, is refused with `409 app_store_subscription_other_account`.
@@ -76,9 +89,11 @@ APP_STORE_KEY_ID=...
 APP_STORE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
 APP_STORE_EIGHT_PRODUCT_ID=...
 APP_STORE_FAT_PRODUCT_ID=...
+# Optional: the free-trial Eight product.
+APP_STORE_EIGHT_TRIAL_PRODUCT_ID=...
 APP_STORE_ENVIRONMENTS=production,sandbox
 ```
 
 Coolify's environment editor keeps only the first line of a multi-line value, so paste the key on one line with spaces between its lines (`tr '\n' ' ' < AuthKey_XXXXXXXXXX.p8`). The server rebuilds the line breaks and names a key cut off after its first line in its startup error.
 
-App Store billing turns on only when billing is enabled and every value is set; the server refuses to start with some but not all of them. After deploying, use **Admin → Billing → Send App Store test notification** (`POST /api/admin/billing/app-store/test-notification`) for each environment the server's notification URL covers, and confirm a processed `TEST` event appears in `billing_webhook_events`. Apple sends the test to the URL configured for that environment. The admin button tests the first listed environment (production on pulpo.baby); send `{"environment":"sandbox"}` to the endpoint to test the sandbox URL.
+App Store billing turns on only when billing is enabled and every value is set; the server refuses to start with some but not all of them. `APP_STORE_EIGHT_TRIAL_PRODUCT_ID` is the exception: it is optional, but the server refuses to start with it and without the rest. After deploying, use **Admin → Billing → Send App Store test notification** (`POST /api/admin/billing/app-store/test-notification`) for each environment the server's notification URL covers, and confirm a processed `TEST` event appears in `billing_webhook_events`. Apple sends the test to the URL configured for that environment. The admin button tests the first listed environment (production on pulpo.baby); send `{"environment":"sandbox"}` to the endpoint to test the sandbox URL.

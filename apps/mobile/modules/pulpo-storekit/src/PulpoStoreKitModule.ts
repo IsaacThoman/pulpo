@@ -8,6 +8,8 @@ export interface StoreKitProduct {
   displayPrice: string
   periodUnit: 'day' | 'week' | 'month' | 'year' | null
   periodValue: number | null
+  /** The product's free-trial introductory offer, when this Apple Account is eligible for it. */
+  freeTrial: { periodUnit: 'day' | 'week' | 'month' | 'year' | null; periodValue: number } | null
 }
 
 /** A transaction StoreKit verified on the device. The server verifies `signedTransaction` again. */

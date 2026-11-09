@@ -36,7 +36,11 @@ const RANGES: { id: Range; label: string }[] = [
 interface Dashboard {
   stripe: { mode: StripeMode }
   /** Null when this server does not take App Store purchases. Older servers omit it. */
-  appStore?: { environments: Array<'production' | 'sandbox'> } | null
+  appStore?: {
+    environments: Array<'production' | 'sandbox'>
+    /** Older servers omit it. */
+    freeTrials?: { productConfigured: boolean; perDay: number; startedLast24Hours: number }
+  } | null
   totals: {
     grossCollectedCents: number
     salesBeforeTaxCents: number
@@ -110,6 +114,7 @@ interface BillingSettings {
   babyStorageLimitBytes: number
   eightStorageLimitBytes: number
   fatStorageLimitBytes: number
+  appStoreTrialsPerDay?: number
   usageTiers: UsageTier[]
   lastReconciledAt: string | null
   lastReconcileError: string | null
@@ -128,6 +133,7 @@ export function AdminBillingPage() {
   const [babyStorage, setBabyStorage] = useState('5')
   const [eightStorage, setEightStorage] = useState('25')
   const [fatStorage, setFatStorage] = useState('100')
+  const [trialsPerDay, setTrialsPerDay] = useState('0')
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [message, setMessage] = useState('')
@@ -151,6 +157,7 @@ export function AdminBillingPage() {
     setBabyStorage(String(settingsQuery.data.babyStorageLimitBytes / (1024 ** 3)))
     setEightStorage(String(settingsQuery.data.eightStorageLimitBytes / (1024 ** 3)))
     setFatStorage(String(settingsQuery.data.fatStorageLimitBytes / (1024 ** 3)))
+    setTrialsPerDay(String(settingsQuery.data.appStoreTrialsPerDay ?? 0))
   }, [settingsQuery.data])
 
   const saveDefaults = async () => {
@@ -169,6 +176,7 @@ export function AdminBillingPage() {
           babyStorageLimitBytes: Math.round(Number(babyStorage) * 1024 ** 3),
           eightStorageLimitBytes: Math.round(Number(eightStorage) * 1024 ** 3),
           fatStorageLimitBytes: Math.round(Number(fatStorage) * 1024 ** 3),
+          ...(freeTrials ? { appStoreTrialsPerDay: Math.round(Number(trialsPerDay)) } : {}),
         },
       })
       setMessage(ui("Plan defaults saved."))
@@ -221,11 +229,13 @@ export function AdminBillingPage() {
 
   const data = dashboardQuery.data
   const totals = data?.totals
+  const freeTrials = data?.appStore?.freeTrials
   const stripeMode = data?.stripe?.mode
   const chart = data?.trend.map((row) => ({ date: row.day.slice(0, 10), day: row.day.slice(5, 10), collected: row.totalCents / 100 })) ?? []
   const limitsAreValid = [eightLimit, fatLimit, eightFiveHourLimit, fatFiveHourLimit, sharedFiveHourLimit, babyStorage, eightStorage, fatStorage]
     .every((value) => Number.isFinite(Number(value)) && Number(value) >= 0)
     && Number.isInteger(Number(sharedPercent)) && Number(sharedPercent) >= 0 && Number(sharedPercent) <= 100
+    && (!freeTrials || (Number.isInteger(Number(trialsPerDay)) && Number(trialsPerDay) >= 0 && Number(trialsPerDay) <= 10_000))
   const attention = (totals?.holds ?? 0) + (totals?.pastDue ?? 0) + (totals?.failedWebhooks ?? 0)
   const stats = [
     { label: ui("Collected"), value: formatBalance((totals?.grossCollectedCents ?? 0) / 100) },
@@ -355,6 +365,18 @@ export function AdminBillingPage() {
               <StorageInput label={ui("Pulpo Eight")} value={eightStorage} onChange={setEightStorage} />
               <StorageInput label={ui("Pulpo Fat")} value={fatStorage} onChange={setFatStorage} />
             </div>
+            {freeTrials && <>
+              <p className="pt-1 text-xs font-medium">{ui("App Store free trials")}</p>
+              <p className="text-xs text-muted-foreground">
+                {freeTrials.productConfigured
+                  ? ui("New iOS subscribers can start a free trial of Pulpo Eight until this many trials start in 24 hours. 0 turns trials off.")
+                  : ui("Set APP_STORE_EIGHT_TRIAL_PRODUCT_ID to offer a free trial of Pulpo Eight in the iOS app.")}
+              </p>
+              {freeTrials.productConfigured && <div className="flex flex-wrap items-end gap-3">
+                <CountInput label={ui("Trials per 24 hours")} value={trialsPerDay} onChange={setTrialsPerDay} />
+                <span className="pb-2 text-xs text-muted-foreground tabular-nums">{ui("{{count}} started in the last 24 hours", { count: freeTrials.startedLast24Hours.toLocaleString(activeLocale()) })}</span>
+              </div>}
+            </>}
           </div>
         </Panel>
       </div>
@@ -1049,6 +1071,15 @@ function PercentInput({ label, value, onChange }: { label: string; value: string
         <Input className="h-8 w-28 pr-7 text-xs tabular-nums" type="number" min="0" max="100" step="1" value={value} onChange={(event) => onChange(event.target.value)} />
         <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
       </div>
+    </label>
+  )
+}
+
+function CountInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="space-y-1">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <Input className="h-8 w-28 text-xs tabular-nums" type="number" min="0" max="10000" step="1" value={value} onChange={(event) => onChange(event.target.value)} />
     </label>
   )
 }

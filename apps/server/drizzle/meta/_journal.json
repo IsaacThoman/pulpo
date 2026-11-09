@@ -785,6 +785,13 @@
       "when": 1794117000000,
       "tag": "0111_reserved_profile_usernames",
       "breakpoints": true
+    },
+    {
+      "idx": 112,
+      "version": "7",
+      "when": 1794202849842,
+      "tag": "0112_app_store_free_trials",
+      "breakpoints": true
     }
   ]
 }

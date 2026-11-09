@@ -62,6 +62,9 @@ const configSchema = z.object({
     }))),
   APP_STORE_EIGHT_PRODUCT_ID: optionalEnvironmentValue(z.string().trim().min(1)),
   APP_STORE_FAT_PRODUCT_ID: optionalEnvironmentValue(z.string().trim().min(1)),
+  // Optional second Eight product with a free-trial introductory offer, in the same subscription
+  // group. The server offers it instead of the Eight product while the daily trial limit has room.
+  APP_STORE_EIGHT_TRIAL_PRODUCT_ID: optionalEnvironmentValue(z.string().trim().min(1)),
   // Environments whose purchases this server accepts. Staging takes only sandbox purchases so a
   // real purchase is never granted on a server the production notifications do not reach.
   APP_STORE_ENVIRONMENTS: z.string().default('production,sandbox').transform((value, context) => {
@@ -172,6 +175,12 @@ export function parseConfig(environment: NodeJS.ProcessEnv): Config {
   }
   if (config.APP_STORE_EIGHT_PRODUCT_ID && config.APP_STORE_EIGHT_PRODUCT_ID === config.APP_STORE_FAT_PRODUCT_ID) {
     throw new Error('APP_STORE_EIGHT_PRODUCT_ID and APP_STORE_FAT_PRODUCT_ID must differ')
+  }
+  if (config.APP_STORE_EIGHT_TRIAL_PRODUCT_ID) {
+    if (appStoreMissing.length > 0) throw new Error('APP_STORE_EIGHT_TRIAL_PRODUCT_ID needs the rest of the App Store settings')
+    if (config.APP_STORE_EIGHT_TRIAL_PRODUCT_ID === config.APP_STORE_EIGHT_PRODUCT_ID || config.APP_STORE_EIGHT_TRIAL_PRODUCT_ID === config.APP_STORE_FAT_PRODUCT_ID) {
+      throw new Error('APP_STORE_EIGHT_TRIAL_PRODUCT_ID must differ from the Eight and Fat product IDs')
+    }
   }
   if (config.PULPO_CLIENT_IP_MODE !== 'direct' && !config.PULPO_TRUSTED_PROXY_CIDRS.trim()) {
     throw new Error('PULPO_TRUSTED_PROXY_CIDRS is required when forwarded or Cloudflare client IP detection is enabled')
