@@ -42,9 +42,9 @@ const RANGES: { id: TimeRange; label: string }[] = [
   { id: 'all', label: "All" },
 ]
 const METRICS: { id: LBMetric; label: string }[] = [
-  { id: 'tokens', label: "Tokens" },
-  { id: 'cost', label: "USD" },
   { id: 'calls', label: "Calls" },
+  { id: 'cost', label: "USD" },
+  { id: 'tokens', label: "Tokens" },
   // Friends and Pool leaderboards never see other people's balances.
   { id: 'balance', label: "Balance" },
 ]
@@ -233,7 +233,7 @@ export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
   onScopeChange?: (scope: CircleScope) => void
 }) {
   const [range, setRange] = useState<TimeRange>('30d')
-  const [metric, setMetric] = useState<LBMetric>('tokens')
+  const [metric, setMetric] = useState<LBMetric>('calls')
   const animationSpeed = useSettings((state) => state.animationSpeed)
   const animationDuration = scaledAnimationDuration(DEFAULT_CHART_ANIMATION_DURATION_MS, animationSpeed)
   const instanceMode = scope === 'instance'
