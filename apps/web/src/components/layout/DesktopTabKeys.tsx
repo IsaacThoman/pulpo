@@ -10,6 +10,12 @@ import { useAuth } from '@/stores/auth'
 
 const PANEL = '[data-side-panel]'
 
+/** The side panel, when its tabs are on screen; a panel without room beside the main view stays hidden, with its tabs. */
+function panelWithTabs(): Element | null {
+  const { content, tabs } = useSidePanel.getState()
+  return content !== null && tabs.length > 0 ? document.querySelector(PANEL) : null
+}
+
 /**
  * Which view's tabs a key or menu command acts on: the side panel's when it has tabs showing and
  * is where the user is (focus is in it, or, with focus nowhere in particular, it was clicked
@@ -17,9 +23,7 @@ const PANEL = '[data-side-panel]'
  * view's.
  */
 function targetView(mainShowsTabs: boolean): 'main' | 'panel' | null {
-  const { content, tabs } = useSidePanel.getState()
-  // A panel without room beside the main view stays hidden, with its tabs.
-  const panel = content !== null && tabs.length > 0 ? document.querySelector(PANEL) : null
+  const panel = panelWithTabs()
   if (!panel) return mainShowsTabs ? 'main' : null
   // Where two views never fit, the panel is shown in place of the main view (which stays mounted).
   if (!mainShowsTabs || panel.hasAttribute('data-full')) return 'panel'
@@ -70,9 +74,11 @@ export function DesktopTabKeys({ panelFull = false }: { panelFull?: boolean }) {
       const activeId = useFilesTabs.getState().activeId
       if (view === 'main' && command === 'files-new-tab') tabs.newTab()
       else if (view === 'main' && command === 'files-reopen-tab') tabs.reopen()
-      else if (view === 'main' && canCloseTab(filesTabsData(), activeId)) tabs.close(activeId)
-      // The main view's last tab closes too, leaving Files for a new chat. With no tab to close (a
-      // panel hidden for lack of room), Cmd/Ctrl+W closes the window, as in browsers.
+      else if (view === 'main' && canCloseTab(filesTabsData(), activeId, true)) tabs.close(activeId)
+      // Closing the main view's last tab goes back to My files, so a lone My files tab has nothing
+      // to close: the side panel's tabs close next, then the window, which browsers close with
+      // their last tab. A panel hidden for lack of room keeps its tabs.
+      else if (view === 'main' && command === 'files-close-tab' && panelWithTabs()) panelTabActions.close(useSidePanel.getState().activeId)
       else if (command === 'files-close-tab') void desktop.windowControls.close()
     })
     return () => {

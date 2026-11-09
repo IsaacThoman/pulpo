@@ -13,6 +13,7 @@ import {
   cycleTab,
   duplicateTab,
   followLocation,
+  keepOneTab,
   moveTab,
   openTab,
   reopenClosed,
@@ -100,12 +101,6 @@ export function useFilesTabActions() {
       if (before.activeId === after.activeId && shown && sameLocation(shown, tab.location)) return
       show(tab, replace)
     }
-    /** Takes the main view to a new chat, in place of the Files entry, keeping the side panel. */
-    const leaveFiles = () => {
-      const params = new URLSearchParams(locationRef.current.search)
-      params.delete(SIDE_PANEL_PARAM)
-      navigateRef.current({ pathname: '/', search: params.toString() ? `?${params}` : '' }, { replace: true })
-    }
     const change = (apply: (data: FilesTabsData) => FilesTabsData, replace = false) => {
       const before = filesTabsData()
       const after = updateFilesTabs(apply)
@@ -148,13 +143,9 @@ export function useFilesTabActions() {
       },
       /**
        * Closing the tab that shows replaces its history entry, so Back does not reopen it. Closing
-       * the last tab leaves Files for a new chat.
+       * the last tab goes back to My files, in a new tab.
        */
-      close: (id: string) => {
-        const after = change((data) => closeTab(data, id), true)
-        if (!after.tabs.length) leaveFiles()
-        return after
-      },
+      close: (id: string) => change((data) => keepOneTab(closeTab(data, id)), true),
       closeOthers: (id: string) => change((data) => closeOtherTabs(data, id)),
       closeToRight: (id: string) => change((data) => closeTabsToRight(data, id), true),
       reopen: (at?: number) => change((data) => reopenClosed(data, at)),

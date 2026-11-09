@@ -136,6 +136,8 @@ export interface TabStripProps<L extends TabLocation> extends FilesTabsData<L> {
   trailing?: ReactNode
   /** Whether the page title is the active tab's; only the main view's strip names the page. */
   titlesPage?: boolean
+  /** Whether one tab always stays, as in the main view, where closing the last tab opens My files. */
+  keepsOne?: boolean
 }
 
 function PageTitle({ title }: { title: string | null }) {
@@ -163,6 +165,7 @@ export function TabStrip<L extends TabLocation>({
   elsewhereItem,
   trailing,
   titlesPage = false,
+  keepsOne = false,
 }: TabStripProps<L>) {
   const ops = useFileOperations()
   const queryClient = useQueryClient()
@@ -202,7 +205,7 @@ export function TabStrip<L extends TabLocation>({
   const lastPointerType = useRef('mouse')
 
   const focusable = focusId && tabs.some((tab) => tab.id === focusId) ? focusId : activeId
-  const closable = (tab: FilesTab<L>) => canCloseTab({ tabs, activeId, closed }, tab.id)
+  const closable = (tab: FilesTab<L>) => canCloseTab({ tabs, activeId, closed }, tab.id, keepsOne)
   // The tab to give focus back to when a menu opened from the keyboard closes (see `closeMenu`).
   const menuReturn = useRef<{ id: string; index: number } | null>(null)
 

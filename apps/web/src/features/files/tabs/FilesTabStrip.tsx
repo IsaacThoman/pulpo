@@ -15,7 +15,7 @@ function saveSnapshots(nodes: ReadonlyMap<string, TabSnapshot>): void {
 /**
  * The main view's Files tabs: each tab keeps its own place in Files, and the view below shows
  * the active tab's (see TabStrip). The tab menu's "Open to the right" shows a tab's place in the
- * side panel.
+ * side panel. Closing the last tab goes back to My files in a new one.
  */
 export function FilesTabStrip({ actions }: { actions: FilesTabActions }) {
   const tabs = useFilesTabs((state) => state.tabs)
@@ -44,6 +44,7 @@ export function FilesTabStrip({ actions }: { actions: FilesTabActions }) {
       panelId={FILES_TAB_PANEL_ID}
       elsewhereItem={elsewhereItem}
       titlesPage
+      keepsOne
     />
   )
 }

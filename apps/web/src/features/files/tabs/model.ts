@@ -29,7 +29,7 @@ export interface ClosedTabs<L extends TabLocation = FilesLocation> {
 
 export interface FilesTabsData<L extends TabLocation = FilesLocation> {
   tabs: FilesTab<L>[]
-  /** Empty only while there are no tabs: the side panel is hidden then, and the main view has left Files (see `closeTabs`). */
+  /** Empty only while there are no tabs: the side panel is hidden then. The main view keeps one (see `keepOneTab`), and gets one when Files shows if none were stored. */
   activeId: string
   /** Most recently closed last. */
   closed: ClosedTabs<L>[]
@@ -159,9 +159,14 @@ export function openTab<L extends TabLocation>(
   return { data: { ...base, tabs, activeId: options.activate === false ? base.activeId : tab.id }, tab }
 }
 
-/** Whether there is such a tab to close. Every tab can close, the last one too (see `closeTabs`). */
-export function canCloseTab<L extends TabLocation>(data: FilesTabsData<L>, id: string): boolean {
-  return data.tabs.some((tab) => tab.id === id)
+/**
+ * Whether closing a tab would change anything. Every tab can close, the last one too; where one
+ * tab always stays (`keepsOne`, the main view), a lone My files tab would only be replaced by another.
+ */
+export function canCloseTab<L extends TabLocation>(data: FilesTabsData<L>, id: string, keepsOne = false): boolean {
+  const tab = data.tabs.find((candidate) => candidate.id === id)
+  if (!tab) return false
+  return !(keepsOne && data.tabs.length === 1 && !tab.pinned && sameLocation(tab.location, ROOT_LOCATION))
 }
 
 /** The tab that shows once `ids` are gone, if the active tab is among them: the next one to the right, else to the left. */
@@ -174,9 +179,8 @@ function successor(tabs: FilesTab<TabLocation>[], activeId: string, removed: Set
 }
 
 /**
- * Closes `ids`. Closing every tab leaves none, as closing a browser window's last tab closes the
- * window: the main view then leaves Files for a new chat (and Files opens a new tab when it comes
- * back), and the side panel hides.
+ * Closes `ids`. Closing every tab leaves none: the side panel then hides, and the main view goes
+ * back to My files in a new tab (see `keepOneTab`).
  */
 export function closeTabs<L extends TabLocation>(data: FilesTabsData<L>, ids: Iterable<string>): FilesTabsData<L> {
   const removed = new Set(ids)
@@ -190,6 +194,11 @@ export function closeTabs<L extends TabLocation>(data: FilesTabsData<L>, ids: It
 
 export function closeTab<L extends TabLocation>(data: FilesTabsData<L>, id: string): FilesTabsData<L> {
   return closeTabs(data, [id])
+}
+
+/** The main view always has a tab: with none left, My files opens in a new one, keeping what can be reopened. */
+export function keepOneTab(data: FilesTabsData): FilesTabsData {
+  return data.tabs.length ? data : openTab(data, ROOT_LOCATION).data
 }
 
 /** Closes every other tab except pinned ones, and shows the one kept. */

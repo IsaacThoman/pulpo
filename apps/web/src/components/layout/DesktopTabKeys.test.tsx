@@ -138,12 +138,30 @@ describe('desktop tab keys', () => {
     expect(closeWindow).not.toHaveBeenCalled()
   })
 
-  it('close the main view’s last tab, leaving Files for a new chat', async () => {
-    useSidePanel.getState().close()
+  it('close the panel’s tabs from a lone My files tab, then the window', () => {
     show('/files')
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Main button' }))
     act(() => command!('files-close-tab'))
-    await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/'))
-    expect(mainCount()).toBe(0)
+    expect(panelPlaces()).toEqual([{ kind: 'folder', id: FOLDER }])
+    act(() => command!('files-close-tab'))
+    expect(useSidePanel.getState().content).toBeNull()
     expect(closeWindow).not.toHaveBeenCalled()
+    act(() => command!('files-close-tab'))
+    expect(closeWindow).toHaveBeenCalledTimes(1)
+    expect(mainCount()).toBe(1)
+  })
+
+  it('close the main view’s last tab, going back to My files, then the window from a lone My files tab', async () => {
+    useSidePanel.getState().close()
+    useFilesTabs.setState({ tabs: [createTab({ kind: 'folder', id: FOLDER }, { id: 'folder' })], activeId: 'folder' })
+    show(`/files/f/${FOLDER}`)
+    act(() => command!('files-close-tab'))
+    await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/files'))
+    expect(useFilesTabs.getState().tabs.map((tab) => tab.location)).toEqual([{ kind: 'folder', id: null }])
+    expect(closeWindow).not.toHaveBeenCalled()
+
+    act(() => command!('files-close-tab'))
+    expect(closeWindow).toHaveBeenCalledTimes(1)
+    expect(mainCount()).toBe(1)
   })
 })
