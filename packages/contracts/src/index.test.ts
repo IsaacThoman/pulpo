@@ -1031,9 +1031,11 @@ describe('response snapshot accumulation', () => {
     expect(() => updateProfileInputSchema.parse({ usageVisibility: null })).toThrow()
 
     const profile = { id: user.id, displayName: 'Isaac', username: 'isaac', avatarUrl: null, profileColor: null }
-    const detail = { profile, relationship: 'self', requestId: null, friendsSince: null, mutualFriends: [], usageVisible: true }
+    const detail = { profile, relationship: 'self', requestId: null, friendsSince: null, mutualFriends: [], usageVisible: true, usageVisibility: 'friends', joinedAt: '2026-07-31T00:00:00.000Z' }
     expect(friendProfileDetailSchema.parse(detail).usageVisible).toBe(true)
     expect(friendProfileDetailSchema.safeParse({ ...detail, usageVisible: undefined }).success).toBe(false)
+    expect(friendProfileDetailSchema.safeParse({ ...detail, usageVisibility: 'everyone' }).success).toBe(false)
+    expect(friendProfileDetailSchema.safeParse({ ...detail, joinedAt: undefined }).success).toBe(false)
     expect(friendProfileDetailSchema.parse({ ...detail, profile: { ...profile, usageVisibility: 'pool' } }).profile)
       .not.toHaveProperty('usageVisibility')
 

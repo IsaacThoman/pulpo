@@ -25,3 +25,12 @@ export function usageVisibilitySummary(value: UsageVisibility): string {
     case 'public': return ui("Usage visible to everyone")
   }
 }
+
+/** Who can see someone else's usage, for the icon on their profile. */
+export function profileUsageVisibilitySummary(value: UsageVisibility): string {
+  switch (value) {
+    case 'pool': return ui("Usage visible to their Pool")
+    case 'friends': return ui("Usage visible to their friends")
+    case 'public': return ui("Usage visible to everyone")
+  }
+}

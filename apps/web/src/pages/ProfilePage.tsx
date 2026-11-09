@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { FriendProfileDetail } from '@pulpo/contracts'
+import type { FriendProfileDetail, UsageVisibility } from '@pulpo/contracts'
 import { ArrowLeft, ArrowRight, Check, Globe, Lock, UserRoundPlus, UsersRound, X } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ProfileIdentity } from '@/components/FriendIdentity'
@@ -14,39 +14,53 @@ import { ApiError, apiRequest } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { queryClient } from '@/lib/query-client'
 import { profileUsageQueryKey } from '@/lib/usage-query'
-import { resolvedUsageVisibility, usageVisibilitySummary } from '@/lib/usage-visibility'
+import { profileUsageVisibilitySummary, resolvedUsageVisibility, usageVisibilitySummary } from '@/lib/usage-visibility'
 import { useAuth } from '@/stores/auth'
 import { ui } from '@/i18n/ui'
 
 const VISIBILITY_ICONS = { pool: Lock, friends: UsersRound, public: Globe }
+const VISIBILITY_ICON_CLASS = '-my-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-md text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
 
-/** The signed-in user's identity, with an icon after the handle showing who can see their usage. */
+/** Who can see a profile's usage, as an icon beside the handle that names the level on hover. */
+function UsageVisibilityIcon({ visibility, label, onClick }: { visibility: UsageVisibility; label: string; onClick?: () => void }) {
+  const Icon = VISIBILITY_ICONS[visibility]
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          {onClick
+            ? <button
+                type="button"
+                aria-haspopup="dialog"
+                aria-label={label}
+                className={`${VISIBILITY_ICON_CLASS} cursor-pointer transition-colors hover:bg-accent hover:text-foreground`}
+                onClick={onClick}
+              >
+                <Icon className="size-3" aria-hidden />
+              </button>
+            : <span role="img" tabIndex={0} aria-label={label} className={`${VISIBILITY_ICON_CLASS} cursor-default`}>
+                <Icon className="size-3" aria-hidden />
+              </span>}
+        </TooltipTrigger>
+        <TooltipContent side="right">{label}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
+/** The signed-in user's identity; the visibility icon opens Profile settings to change it. */
 function OwnProfileHeading() {
   const user = useAuth((state) => state.user)
   const { openSettings } = useSettingsDialog()
   if (!user) return null
   const visibility = resolvedUsageVisibility(user.usageVisibility)
-  const VisibilityIcon = VISIBILITY_ICONS[visibility]
-  const visibilityIcon = (
-    <TooltipProvider delayDuration={200}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            aria-haspopup="dialog"
-            aria-label={usageVisibilitySummary(visibility)}
-            className="-my-0.5 inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => openSettings('profile')}
-          >
-            <VisibilityIcon className="size-3" aria-hidden />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="right">{usageVisibilitySummary(visibility)}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  )
   return (
-    <ProfileHeading name={user.name} avatarUrl={user.avatarUrl} username={user.username} handleAccessory={visibilityIcon}>
+    <ProfileHeading
+      name={user.name}
+      avatarUrl={user.avatarUrl}
+      username={user.username}
+      handleAccessory={<UsageVisibilityIcon visibility={visibility} label={usageVisibilitySummary(visibility)} onClick={() => openSettings('profile')} />}
+    >
       <p className="mt-0.5 text-xs text-muted-foreground wrap-anywhere">
         {user.email} {ui("· Joined")} {formatDate(Date.parse(user.createdAt))}
       </p>
@@ -158,9 +172,14 @@ export function ProfilePage() {
 
           {detail && <>
             <ProfileHeaderRow
-              identity={<ProfileHeading name={detail.profile.displayName} avatarUrl={detail.profile.avatarUrl} username={detail.profile.username}>
-                {detail.relationship === 'friends' && detail.friendsSince &&
-                  <p className="mt-0.5 text-xs text-muted-foreground">{ui('Friends since')} {formatDate(Date.parse(detail.friendsSince))}</p>}
+              identity={<ProfileHeading
+                name={detail.profile.displayName}
+                avatarUrl={detail.profile.avatarUrl}
+                username={detail.profile.username}
+                // Profiles cached before these fields existed lack them until the refetch lands.
+                handleAccessory={detail.usageVisibility && <UsageVisibilityIcon visibility={detail.usageVisibility} label={profileUsageVisibilitySummary(detail.usageVisibility)} />}
+              >
+                {detail.joinedAt && <p className="mt-0.5 text-xs text-muted-foreground">{ui('Joined')} {formatDate(Date.parse(detail.joinedAt))}</p>}
               </ProfileHeading>}
               aside={<div className="flex flex-col items-start gap-2 sm:items-end">
                 {relationshipAction(detail)}

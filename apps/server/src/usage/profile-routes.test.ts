@@ -98,7 +98,7 @@ describe('GET /api/profiles/:username usageVisible', () => {
     mocks.tables.set(friendships, [acceptedFriendship])
     const response = await app.inject('/api/profiles/Target')
     expect(response.statusCode).toBe(200)
-    expect(response.json()).toMatchObject({ relationship: 'friends', usageVisible: true })
+    expect(response.json()).toMatchObject({ relationship: 'friends', usageVisible: true, usageVisibility: 'friends', joinedAt: now.toISOString() })
     expect(response.json().profile).not.toHaveProperty('usageVisibility')
   })
 
@@ -106,7 +106,8 @@ describe('GET /api/profiles/:username usageVisible', () => {
     mocks.tables.set(users, [targetRow('pool')])
     mocks.tables.set(friendships, [acceptedFriendship])
     pools({ [targetId]: 'pool-1' })
-    expect((await app.inject('/api/profiles/target')).json()).toMatchObject({ relationship: 'friends', usageVisible: false })
+    // The level is shown on the profile even when the usage itself is hidden from this viewer.
+    expect((await app.inject('/api/profiles/target')).json()).toMatchObject({ relationship: 'friends', usageVisible: false, usageVisibility: 'pool' })
   })
 
   it('is true for the viewer\'s own profile', async () => {

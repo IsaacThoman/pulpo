@@ -509,6 +509,10 @@ export const friendProfileDetailSchema = z.object({
   mutualFriends: z.array(friendProfileSchema),
   /** Whether the viewer may see this profile's usage; always true for the viewer's own profile. */
   usageVisible: z.boolean(),
+  /** Who this profile shares its usage with, shown as an icon beside the handle. */
+  usageVisibility: usageVisibilitySchema,
+  /** When the account was created. */
+  joinedAt: isoDateSchema,
 })
 export type FriendProfileDetail = z.infer<typeof friendProfileDetailSchema>
 

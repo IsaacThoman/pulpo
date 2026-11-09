@@ -1013,7 +1013,6 @@ const esUi: Record<string, string> = {
   "{{0}} won't be suggested for at least 30 days, and only if you gain mutual friends.": "No te sugeriremos a {{0}} durante al menos 30 días, y solo si tenéis más amigos en común.",
   "Friend search results": "Resultados de búsqueda de amigos",
   "Friends": "Amigos",
-  "Friends since": "Amigos desde",
   "People you may know": "Personas que quizá conozcas",
   "Mutual friend:": "Amigo en común:",
   "Mutual friends:": "Amigos en común:",
@@ -2747,6 +2746,8 @@ const esUi: Record<string, string> = {
   "Usage visible to friends": "Uso visible para amigos",
   "Usage visible to your Pool": "Uso visible para tu Pool",
   "Usage visible to everyone": "Uso visible para todos",
+  "Usage visible to their Pool": "Uso visible para su Pool",
+  "Usage visible to their friends": "Uso visible para sus amigos",
   "{{name}} hasn't shared their usage with you.": "{{name}} no ha compartido su uso contigo.",
   "Who can see your usage stats and requests on your profile. Pool members can always see your usage.": "Quién puede ver tus estadísticas de uso y solicitudes en tu perfil. Los miembros de tu Pool siempre pueden ver tu uso.",
 }

@@ -85,6 +85,8 @@ beforeEach(() => {
     friendsSince: '2026-09-01T12:00:00.000Z',
     mutualFriends: [{ id: '00000000-0000-4000-8000-000000000002', displayName: 'Bob', username: 'bob', avatarUrl: null, profileColor: null }],
     usageVisible: true,
+    usageVisibility: 'friends',
+    joinedAt: '2026-08-15T12:00:00.000Z',
   }
   queryClient.clear()
   queryClient.setDefaultOptions({ queries: { retry: false, gcTime: Infinity } })
@@ -114,12 +116,29 @@ describe('profile page', () => {
     await screen.findByRole('heading', { name: 'Alice' })
     expect(mocks.request).toHaveBeenCalledWith('/api/profiles/alice')
     expect(screen.getByText('@alice')).toBeTruthy()
-    expect(screen.getByText(/Friends since/)).toBeTruthy()
+    expect(screen.getByText(/^Joined /)).toBeTruthy()
+    expect(screen.queryByText(/Friends since/)).toBeNull()
     expect(screen.getByText('Friends')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Bob' }).getAttribute('href')).toBe('/bob')
     expect(screen.getByRole('link', { name: 'Back to friends' }).getAttribute('href')).toBe('/friends')
     // Phones collapse the back link to its arrow so the header fits beside "Compare with friends".
     expect(screen.getByText('Back to friends').className).toBe('sr-only sm:not-sr-only')
+  })
+
+  it("shows someone else's usage visibility as an icon beside their handle", async () => {
+    detail = { ...detail, relationship: 'none', requestId: null, friendsSince: null, usageVisible: false, usageVisibility: 'pool' }
+    mount()
+
+    const icon = await screen.findByRole('img', { name: 'Usage visible to their Pool' })
+    const handle = screen.getByText('@alice')
+    expect(icon.parentElement).toBe(handle.parentElement)
+    expect(handle.compareDocumentPosition(icon) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    fireEvent.focus(icon)
+    expect((await screen.findByRole('tooltip')).textContent).toContain('Usage visible to their Pool')
+    // Someone else's setting is read-only here.
+    fireEvent.click(icon)
+    expect(mocks.openSettings).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: /Usage visible/ })).toBeNull()
   })
 
   it('shows shared usage from the profile endpoints without balances or a user column', async () => {
@@ -162,7 +181,7 @@ describe('profile page', () => {
   })
 
   it('waits for a fresh profile when the cached one predates usage visibility', async () => {
-    const { usageVisible: _, ...cached } = detail
+    const { usageVisible: _, usageVisibility: _level, joinedAt: _joined, ...cached } = detail
     queryClient.setQueryData(['friend-profile', 'alice'], cached)
     let respond!: () => void
     const fallback = mocks.request.getMockImplementation()!
@@ -173,6 +192,8 @@ describe('profile page', () => {
 
     await screen.findByRole('heading', { name: 'Alice' })
     await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/api/profiles/alice'))
+    expect(screen.queryByRole('img', { name: /Usage visible/ })).toBeNull()
+    expect(screen.queryByText(/^Joined /)).toBeNull()
     expect(screen.queryByText("Alice hasn't shared their usage with you.")).toBeNull()
     expect(screen.queryByRole('heading', { name: 'Top models' })).toBeNull()
     expect(screen.queryByRole('link', { name: 'Compare with friends' })).toBeNull()
@@ -181,6 +202,7 @@ describe('profile page', () => {
     respond()
 
     await screen.findByRole('heading', { name: 'Top models' })
+    expect(screen.getByRole('img', { name: 'Usage visible to their friends' })).toBeTruthy()
     expect(screen.queryByText("Alice hasn't shared their usage with you.")).toBeNull()
     expect(screen.getByRole('link', { name: 'Compare with friends' })).toBeTruthy()
   })

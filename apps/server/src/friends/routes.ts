@@ -296,6 +296,8 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
         .map(publicFriendProfile)
         .sort((left, right) => left.displayName.localeCompare(right.displayName) || left.username.localeCompare(right.username)),
       usageVisible,
+      usageVisibility: target.usageVisibility,
+      joinedAt: target.createdAt.toISOString(),
     }
   })
 
