@@ -149,7 +149,7 @@ function NativeFriends({ model }: { model: FriendsScreenModel }) {
     </SwiftUISection> : null}
 
     {poolInvitations.length > 0 ? <SwiftUISection title="Pool invitations" footer={currentPool ? <SwiftUIText modifiers={[foregroundStyle('secondary')]}>{LEAVE_CURRENT_FIRST}</SwiftUIText> : undefined}>
-      {poolInvitations.map((invitation) => <NativePersonRow key={invitation.id} profile={invitation.inviter} detail={invitationMembersLabel(invitation.memberCount)} trailing={<SwiftUIHStack spacing={8}>
+      {poolInvitations.map((invitation) => <NativePersonRow key={invitation.id} profile={invitation.inviter} detail={invitationMembersLabel(invitation.memberCount)} onOpen={() => model.openProfile(invitation.inviter)} trailing={<SwiftUIHStack spacing={8}>
         <NativeRowButton prominent label="Join" isDisabled={busy || Boolean(currentPool) || !pool.isSuccess} onPress={() => actions.joinPool(invitation)} />
         <NativeMenu name={invitation.inviter.displayName} actions={model.poolInvitationMenu(invitation)} />
       </SwiftUIHStack>} />)}
@@ -162,11 +162,11 @@ function NativeFriends({ model }: { model: FriendsScreenModel }) {
         {currentPool.members.map((member) => {
           const self = member.profile.id === viewerId
           const menu = self ? [] : model.memberMenu(member)
-          return <NativePersonRow key={member.profile.id} profile={member.profile} owner={member.owner} detail={self ? 'You' : undefined} trailing={menu.length ? <NativeMenu name={member.profile.displayName} actions={menu} /> : undefined} />
+          return <NativePersonRow key={member.profile.id} profile={member.profile} owner={member.owner} detail={self ? 'You' : undefined} onOpen={() => model.openProfile(member.profile)} trailing={menu.length ? <NativeMenu name={member.profile.displayName} actions={menu} /> : undefined} />
         })}
       </SwiftUISection>
       {overview.isOwner && currentPool.pendingInvitations.length > 0 ? <SwiftUISection title="Pending invitations" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>{POOL_SEATS_FOOTER}</SwiftUIText>}>
-        {currentPool.pendingInvitations.map((invitation) => <NativePersonRow key={invitation.id} profile={invitation.invitee} trailing={<NativeRowButton label="Cancel" isDisabled={busy} onPress={() => actions.cancelPoolInvitation(invitation)} />} />)}
+        {currentPool.pendingInvitations.map((invitation) => <NativePersonRow key={invitation.id} profile={invitation.invitee} onOpen={() => model.openProfile(invitation.invitee)} trailing={<NativeRowButton label="Cancel" isDisabled={busy} onPress={() => actions.cancelPoolInvitation(invitation)} />} />)}
       </SwiftUISection> : null}
       <SwiftUISection footer={overview.mustTransfer ? <SwiftUIText modifiers={[foregroundStyle('secondary')]}>{TRANSFER_FIRST}</SwiftUIText> : undefined}>
         {/* A disabled form button keeps its colors; dim it like the rest of the app does. */}
@@ -275,7 +275,7 @@ function MaterialFriends({ model, onBack }: { model: FriendsScreenModel; onBack:
 
     {poolInvitations.length > 0 ? <>
       <SectionTitle>Pool invitations</SectionTitle>
-      <Card>{poolInvitations.map((invitation, index) => <MaterialPersonRow key={invitation.id} profile={invitation.inviter} detail={invitationMembersLabel(invitation.memberCount)} last={index === poolInvitations.length - 1}>
+      <Card>{poolInvitations.map((invitation, index) => <MaterialPersonRow key={invitation.id} profile={invitation.inviter} detail={invitationMembersLabel(invitation.memberCount)} last={index === poolInvitations.length - 1} onOpen={() => model.openProfile(invitation.inviter)}>
         <MaterialButton compact label="Join" disabled={busy || Boolean(currentPool) || !pool.isSuccess} onPress={() => actions.joinPool(invitation)} />
         <MaterialMenuButton name={invitation.inviter.displayName} actions={model.poolInvitationMenu(invitation)} />
       </MaterialPersonRow>)}</Card>
@@ -288,13 +288,13 @@ function MaterialFriends({ model, onBack }: { model: FriendsScreenModel; onBack:
       {usageRows.length ? <Card style={styles.usage}>{usageRows.map((row, index) => <UsageLimitCard key={row.key} row={row} last={index === usageRows.length - 1} />)}</Card> : null}
       <Card>{currentPool.members.map((member, index) => {
         const self = member.profile.id === viewerId
-        return <MaterialPersonRow key={member.profile.id} profile={member.profile} owner={member.owner} detail={self ? 'You' : undefined} last={index === currentPool.members.length - 1}>
+        return <MaterialPersonRow key={member.profile.id} profile={member.profile} owner={member.owner} detail={self ? 'You' : undefined} last={index === currentPool.members.length - 1} onOpen={() => model.openProfile(member.profile)}>
           {self ? null : <MaterialMenuButton name={member.profile.displayName} actions={model.memberMenu(member)} />}
         </MaterialPersonRow>
       })}</Card>
       {overview.isOwner && currentPool.pendingInvitations.length > 0 ? <>
         <SectionTitle>Pending invitations</SectionTitle>
-        <Card>{currentPool.pendingInvitations.map((invitation, index) => <MaterialPersonRow key={invitation.id} profile={invitation.invitee} last={index === currentPool.pendingInvitations.length - 1}>
+        <Card>{currentPool.pendingInvitations.map((invitation, index) => <MaterialPersonRow key={invitation.id} profile={invitation.invitee} last={index === currentPool.pendingInvitations.length - 1} onOpen={() => model.openProfile(invitation.invitee)}>
           <MaterialButton compact variant="plain" label="Cancel" disabled={busy} onPress={() => actions.cancelPoolInvitation(invitation)} />
         </MaterialPersonRow>)}</Card>
         <Text style={[styles.helper, styles.footer, { color: theme.secondary }]}>{POOL_SEATS_FOOTER}</Text>
