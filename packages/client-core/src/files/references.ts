@@ -38,3 +38,9 @@ export function composerMessageText(draft: string): string {
   const { text, references } = composerReferences(draft)
   return appendFileReferences(text.trim(), references).trim()
 }
+
+/** A one-line preview of a draft or queued message: what was typed, else the items it mentions. */
+export function referencePreviewText(content: string): string {
+  const { text, references } = composerReferences(content)
+  return text.trim() || references.map((reference) => reference.name).join(', ')
+}

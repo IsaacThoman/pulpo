@@ -2769,6 +2769,10 @@ const esUi: Record<string, string> = {
   "No items from Files are mentioned in this chat yet.": "Aún no se ha mencionado ningún elemento de Archivos en este chat.",
   "The agent can look through all of your Files in this chat.": "El agente puede revisar todos tus Archivos en este chat.",
   "Your settings let the agent look through all of your Files without asking.": "Tus ajustes permiten que el agente revise todos tus Archivos sin preguntar.",
+  "No longer in Files": "Ya no está en Archivos",
+  "In Files · {{0}}": "En Archivos · {{0}}",
+  "Open {{0}} in Files": "Abrir {{0}} en Archivos",
+  "{{0}}, no longer in Files": "{{0}}, ya no está en Archivos",
 }
 
 export default esUi

@@ -65,8 +65,9 @@ it('shows a draft’s references as chips and keeps them while typing and removi
   const view = renderComposer()
   const input = view.getByRole('textbox') as HTMLTextAreaElement
   expect(input.value).toBe('Compare these ')
-  expect(await view.findByRole('button', { name: 'Plan.md' })).toBeTruthy()
-  expect(await view.findByRole('button', { name: 'Notes' })).toBeTruthy()
+  expect(await view.findByRole('button', { name: 'Open Plan.md in Files' })).toBeTruthy()
+  expect(await view.findByRole('button', { name: 'Open Notes in Files' })).toBeTruthy()
+  expect(view.getAllByText('In Files · My files')).toHaveLength(2)
 
   fireEvent.change(input, { target: { value: 'Compare these two' } })
   await waitFor(() => expect(runtimeComposerDraft('account', chatId)?.content)
@@ -81,7 +82,7 @@ it('adds items sent from Files to the message', async () => {
   useChatTarget.setState({ target: { kind: 'chat', id: chatId } })
   const view = renderComposer()
   await act(async () => { addToChat([plan.id, 'root']) })
-  expect(await view.findByRole('button', { name: 'Plan.md' })).toBeTruthy()
+  expect(await view.findByRole('button', { name: 'Open Plan.md in Files' })).toBeTruthy()
   await waitFor(() => expect(runtimeComposerDraft('account', chatId)?.content).toBe(`\n\n[Plan.md](/files/d/${plan.id})`))
   expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('')
   expect(usePendingReferences.getState().ids).toEqual([])

@@ -28,7 +28,7 @@ import {
   Pause,
   StepForward,
 } from 'lucide-react'
-import { findCostLimitItem, findFilesPermissionItems, workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem, type CostLimitItem, type RecallItem } from '@pulpo/contracts'
+import { findCostLimitItem, findFilesPermissionItems, splitFileReferences, workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem, type CostLimitItem, type RecallItem } from '@pulpo/contracts'
 import { FilesPermissionIcon, FilesPermissionPrompt, FilesPermissionStepRow } from './FilesPermissionPrompt'
 import { filesPermissionStepLabel, useFilesPermissionPending } from './files-permission'
 import type { Chat, Message } from '@/lib/types'
@@ -65,6 +65,7 @@ import { ui, activeLocale } from '@/i18n/ui'
 import { toolActivityPresentation } from './tool-activity-presentation'
 import { UsageCostBreakdown } from '@/components/usage/UsageCostBreakdown'
 import { FileChangesBar } from '@/features/files/FileChangesBar'
+import { FileReferenceCard } from '@/features/files/FileReferenceCard'
 import { fileChangesItem } from '@/features/files/file-changes'
 
 function CopyButton({ text }: { text: string }) {
@@ -773,25 +774,36 @@ export const MessageItem = memo(function MessageItem({
 
   if (message.role === 'user') {
     const pendingDelivery = message.deliveryStatus === 'uploading' && Boolean(message.pendingSubmissionId)
+    // Files items mentioned in the message show with its attachments; the text is what was typed.
+    const { text: messageText, references } = splitFileReferences(message.content)
     return (
       <article aria-labelledby={headingId} className="group flex min-w-0 max-w-full flex-col items-end gap-1">
         <h2 id={headingId} className="sr-only">{ui('You said')}</h2>
         <div className={cn(
           'min-w-0 max-w-[85%] text-[15px] leading-7 [overflow-wrap:anywhere]',
-          message.content
+          messageText
             ? 'rounded-[1.25rem] rounded-br-md border border-foreground/[0.04] bg-secondary/85 px-4 py-2.5 shadow-sm'
             : 'w-full',
         )}>
           {message.attachments && message.attachments.length > 0 && (
-            <div className={cn(message.content ? 'mb-2' : undefined)}>
+            <div className={cn(messageText || references.length ? 'mb-2' : undefined)}>
               <MessageAttachmentList attachments={message.attachments} />
             </div>
           )}
-          {message.content ? <Markdown content={message.content} breaks /> : null}
+          {references.length > 0 && (
+            <div role="list" aria-label={ui("Mentioned from Files")} className={cn('flex max-w-full flex-wrap justify-end gap-2', messageText && 'mb-2')}>
+              {references.map((reference) => (
+                <div key={reference.id} role="listitem" className="max-w-full">
+                  <FileReferenceCard reference={reference} variant="message" />
+                </div>
+              ))}
+            </div>
+          )}
+          {messageText ? <Markdown content={messageText} breaks /> : null}
         </div>
         <div className="flex items-center gap-1">
             <div className={cn("flex items-center gap-0.5 transition-opacity group-hover:opacity-100 focus-within:opacity-100", speechActive ? "opacity-100" : "opacity-0")}>
-              {message.content ? <><CopyButton text={message.content} /><SpeechButton messageKey={`${chat.id}:${message.id}`} text={message.content} /></> : null}
+              {messageText ? <><CopyButton text={messageText} /><SpeechButton messageKey={`${chat.id}:${message.id}`} text={messageText} /></> : null}
               {!chat.expired && (
                 <>
                   <ActionButton
@@ -819,7 +831,7 @@ export const MessageItem = memo(function MessageItem({
             </div>
             {!chat.expired && !pendingDelivery && <BranchControls chatId={chat.id} branch={message.branch} disabled={composerEditActive} />}
           </div>
-          {message.content ? <SpeechPlayer messageKey={`${chat.id}:${message.id}`} /> : null}
+          {messageText ? <SpeechPlayer messageKey={`${chat.id}:${message.id}`} /> : null}
         </article>
     )
   }

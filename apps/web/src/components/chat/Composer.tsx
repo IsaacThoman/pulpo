@@ -65,8 +65,9 @@ import { composerPrimaryAction } from '@/components/chat/composer-queue'
 import { canSubmitComposerDraft } from '@/components/chat/composer-upload-policy'
 import type { Attachment } from '@/lib/types'
 import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
-import { FileScopeChip, FileScopePicker, FilesAccessDialog } from '@/features/files/FileScope'
-import { addComposerReferences, composerMessageText, composerReferences, removeComposerReference, withComposerReferences } from '@pulpo/client-core/files'
+import { FileScopePicker, FilesAccessDialog } from '@/features/files/FileScope'
+import { FileReferenceCard } from '@/features/files/FileReferenceCard'
+import { addComposerReferences, composerMessageText, composerReferences, referencePreviewText, removeComposerReference, withComposerReferences } from '@pulpo/client-core/files'
 import { takePendingReferences, usePendingReferences } from '@/features/side-panel/agent'
 import { fetchFileNode, fileNodeQueryKey } from '@/features/files/api'
 import { queryClient } from '@/lib/query-client'
@@ -1161,7 +1162,7 @@ export function Composer({
                     <p className={cn('truncate text-foreground/90', editing && 'italic text-muted-foreground')}>
                       {editing
                         ? ui("Editing queued message…")
-                        : uit`${message.content}${message.status === 'editing' ? ' · Editing on another session' : ''}`}
+                        : uit`${referencePreviewText(message.content)}${message.status === 'editing' ? ' · Editing on another session' : ''}`}
                     </p>
                   )}
                   {message.attachments.length > 0 && !editing && (
@@ -1234,25 +1235,6 @@ export function Composer({
             ref.current?.focus()
           })}
         />
-        {filesEnabled && references.length > 0 && (
-          <div className="space-y-1.5 px-3 pt-3">
-            <div role="list" aria-label={ui("Mentioned from Files")} className="flex flex-wrap gap-2">
-              {references.map((reference) => (
-                <span key={reference.id} role="listitem" className="contents">
-                  <FileScopeChip
-                    id={reference.id}
-                    removeLabel={uit`Remove ${reference.name}`}
-                    onRemove={() => {
-                      setValue((current) => removeComposerReference(current, reference.id))
-                      requestAnimationFrame(autosize)
-                    }}
-                  />
-                </span>
-              ))}
-            </div>
-            {!(activeAgentMode && canUseAgent) && <p className="px-1 text-xs text-muted-foreground">{ui("Turn on agent mode so the model can use these files.")}</p>}
-          </div>
-        )}
         {attachments.length > 0 && (
           <div className="space-y-2 px-3 pt-3">
             <AttachmentWindow items={attachments}>{(visible) => <div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto">
@@ -1279,6 +1261,25 @@ export function Composer({
           </div>
         )}
 
+        {filesEnabled && references.length > 0 && (
+          <div className="space-y-1.5 px-3 pt-3">
+            <div role="list" aria-label={ui("Mentioned from Files")} className="flex max-h-48 flex-wrap gap-2 overflow-y-auto">
+              {references.map((reference) => (
+                <div key={reference.id} role="listitem" className="max-w-full">
+                  <FileReferenceCard
+                    reference={reference}
+                    variant="composer"
+                    onRemove={() => {
+                      setValue((current) => removeComposerReference(current, reference.id))
+                      requestAnimationFrame(autosize)
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+            {!(activeAgentMode && canUseAgent) && <p className="px-1 text-xs text-muted-foreground">{ui("Turn on agent mode so the model can use these files.")}</p>}
+          </div>
+        )}
         <div className="flex items-end pr-2.5">
           <textarea
             ref={ref}
