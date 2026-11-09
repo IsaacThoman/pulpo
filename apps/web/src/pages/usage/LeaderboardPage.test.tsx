@@ -171,3 +171,30 @@ it('leaves the admin instance ranking unlinked', async () => {
   expect(within(records).getByText('Alice')).toBeTruthy()
   expect(within(records).queryByRole('link')).toBeNull()
 })
+
+it('keeps people who share a display name apart in the ranking', async () => {
+  const twins = [
+    { ...row, userId: 'sam-1', username: 'sam', displayName: 'Sam', tokens: 300 },
+    { ...row, userId: 'sam-2', username: 'sam2', displayName: 'Sam', tokens: 100 },
+  ]
+  mocks.request.mockImplementation(async (path: string) => {
+    if (path.includes('/records?')) return { data: [], nextCursor: null }
+    if (path.includes('/activity?')) return { summary: { calls: 2, inputTokens: 20, outputTokens: 10, costMicros: 1_000, firstUsedAt: null }, daily: [], contribution: [], topModels: [] }
+    return { data: twins }
+  })
+  const { container } = mount('friends')
+  await screen.findByText('Friends ranking')
+  const axis = await waitFor(() => container.querySelector<HTMLElement>('.recharts-xAxis-tick-labels')!)
+  expect([...axis.querySelectorAll('text')].map((el) => el.textContent)).toEqual(['Sam', 'Sam'])
+  // Each name links to its own person, and screen readers hear which Sam is which.
+  expect(within(axis).getByRole('link', { name: 'Sam (@sam)' }).getAttribute('href')).toBe('/sam')
+  expect(within(axis).getByRole('link', { name: 'Sam (@sam2)' }).getAttribute('href')).toBe('/sam2')
+
+  // Stepping through the ranking describes each Sam, not the first one found by name.
+  const chart = container.querySelector<HTMLElement>('.recharts-wrapper')!
+  fireEvent.focusIn(chart)
+  const tip = () => container.querySelector<HTMLElement>('.recharts-tooltip-wrapper')?.textContent
+  await waitFor(() => expect(tip()).toBe('#1 Sam (@sam)Tokens300'))
+  fireEvent.keyDown(chart, { key: 'ArrowRight' })
+  await waitFor(() => expect(tip()).toBe('#2 Sam (@sam2)Tokens100'))
+})
