@@ -258,14 +258,14 @@ describe('own profile', () => {
     expect(screen.queryByText('Mutual friends')).toBeNull()
   })
 
-  it('shows who can see your usage as an icon after your name, with details on hover', async () => {
+  it('shows who can see your usage as an icon after your handle, with details on hover', async () => {
     useAuth.setState((state) => ({ user: state.user && { ...state.user, usageVisibility: 'public' } }))
     mount('/morgan')
 
     const icon = await screen.findByRole('button', { name: 'Usage visible to everyone' })
-    const name = screen.getByRole('heading', { name: 'Morgan Viewer' })
-    expect(icon.parentElement).toBe(name.parentElement)
-    expect(name.compareDocumentPosition(icon) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const handle = screen.getByText('@morgan')
+    expect(icon.parentElement).toBe(handle.parentElement)
+    expect(handle.compareDocumentPosition(icon) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(icon.textContent).toBe('')
     expect(screen.queryByText('Usage visible to everyone')).toBeNull()
 

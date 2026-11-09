@@ -20,7 +20,7 @@ import { ui } from '@/i18n/ui'
 
 const VISIBILITY_ICONS = { pool: Lock, friends: UsersRound, public: Globe }
 
-/** The signed-in user's identity, with an icon after the name showing who can see their usage. */
+/** The signed-in user's identity, with an icon after the handle showing who can see their usage. */
 function OwnProfileHeading() {
   const user = useAuth((state) => state.user)
   const { openSettings } = useSettingsDialog()
@@ -35,13 +35,13 @@ function OwnProfileHeading() {
             type="button"
             aria-haspopup="dialog"
             aria-label={usageVisibilitySummary(visibility)}
-            className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="-my-0.5 inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => openSettings('profile')}
           >
-            <VisibilityIcon className="size-3.5" aria-hidden />
+            <VisibilityIcon className="size-3" aria-hidden />
           </button>
         </TooltipTrigger>
-        <TooltipContent className="max-w-64">
+        <TooltipContent side="right" className="max-w-64">
           <p className="font-medium">{usageVisibilitySummary(visibility)}</p>
           <p className="mt-0.5 opacity-80">{usageVisibilityDetail(visibility)} {ui("Click to change.")}</p>
         </TooltipContent>
@@ -49,7 +49,7 @@ function OwnProfileHeading() {
     </TooltipProvider>
   )
   return (
-    <ProfileHeading name={user.name} avatarUrl={user.avatarUrl} username={user.username} nameAccessory={visibilityIcon}>
+    <ProfileHeading name={user.name} avatarUrl={user.avatarUrl} username={user.username} handleAccessory={visibilityIcon}>
       <p className="mt-0.5 text-xs text-muted-foreground wrap-anywhere">
         {user.email} {ui("· Joined")} {formatDate(Date.parse(user.createdAt))}
       </p>

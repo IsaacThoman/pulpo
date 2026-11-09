@@ -1,23 +1,23 @@
 import type { ReactNode } from 'react'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
 
-/** A profile's picture beside its name and handle; `nameAccessory` sits after the name, `children` add lines under the handle. */
-export function ProfileHeading({ name, avatarUrl, username, nameAccessory, children }: {
+/** A profile's picture beside its name and handle; `handleAccessory` sits after the handle, `children` add lines under it. */
+export function ProfileHeading({ name, avatarUrl, username, handleAccessory, children }: {
   name: string
   avatarUrl: string | null | undefined
   username: string
-  nameAccessory?: ReactNode
+  handleAccessory?: ReactNode
   children?: ReactNode
 }) {
   return (
     <div className="flex min-w-0 items-center gap-4">
       <ProfileAvatar name={name} avatarUrl={avatarUrl} shape="circle" className="size-14" fallbackClassName="text-lg" />
       <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-1.5">
-          <h2 className="min-w-0 text-lg font-medium wrap-anywhere">{name}</h2>
-          {nameAccessory}
+        <h2 className="text-lg font-medium wrap-anywhere">{name}</h2>
+        <div className="flex min-w-0 items-center gap-1">
+          <p className="min-w-0 text-xs text-muted-foreground wrap-anywhere">@{username}</p>
+          {handleAccessory}
         </div>
-        <p className="text-xs text-muted-foreground wrap-anywhere">@{username}</p>
         {children}
       </div>
     </div>
