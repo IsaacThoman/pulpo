@@ -1,13 +1,32 @@
-import { parsePanelContent, serializePanelContent } from '@/features/side-panel/store'
+import { parsePanelContent, serializePanelContent, type PanelContent } from '@/features/side-panel/content'
 import { isDesktopRuntime } from '@/lib/runtime'
-import { MAX_CLOSED, MAX_TABS, type ClosedTabs, type FilesLocation, type FilesTab, type FilesTabsData, type TabSnapshot } from './model'
+import { MAX_CLOSED, MAX_TABS, type ClosedTabs, type FilesLocation, type FilesTab, type FilesTabsData, type TabLocation, type TabSnapshot } from './model'
 
-const STORAGE_PREFIX = 'pulpo.files.tabs:'
 const VERSION = 1
+
+/** How one set of tabs is stored: the main view's, or the side panel's. */
+interface TabsFormat<L extends TabLocation> {
+  prefix: string
+  /** The places these tabs may show. */
+  location: (content: PanelContent) => L | null
+}
+
+const MAIN: TabsFormat<FilesLocation> = {
+  prefix: 'pulpo.files.tabs:',
+  // Attachments are not part of Files; only the side panel shows them.
+  location: (content) => content.kind === 'attachment' ? null : content,
+}
+
+const PANEL: TabsFormat<TabLocation> = { prefix: 'pulpo.files.panelTabs:', location: (content) => content }
 
 /** The storage key of one account's tabs (the desktop app keys accounts by instance too). */
 export function tabsStorageKey(owner: string): string {
-  return `${STORAGE_PREFIX}${owner}`
+  return `${MAIN.prefix}${owner}`
+}
+
+/** The storage key of one account's side panel tabs. */
+export function panelTabsStorageKey(owner: string): string {
+  return `${PANEL.prefix}${owner}`
 }
 
 interface StoredTab {
@@ -25,7 +44,7 @@ interface StoredTabs {
   closed?: { tabs: { tab: StoredTab; index: number }[] }[]
 }
 
-function storeTab(tab: FilesTab): StoredTab {
+function storeTab(tab: FilesTab<TabLocation>): StoredTab {
   return {
     id: tab.id,
     location: serializePanelContent(tab.location)!,
@@ -35,7 +54,7 @@ function storeTab(tab: FilesTab): StoredTab {
   }
 }
 
-export function serializeTabs(data: FilesTabsData): string {
+export function serializeTabs(data: FilesTabsData<TabLocation>): string {
   const stored: StoredTabs = {
     v: VERSION,
     tabs: data.tabs.map(storeTab),
@@ -62,15 +81,11 @@ function readSnapshot(value: unknown): TabSnapshot | null {
   }
 }
 
-function readLocation(value: unknown): FilesLocation | null {
-  const content = typeof value === 'string' ? parsePanelContent(value) : null
-  return content && content.kind !== 'attachment' ? content : null
-}
-
-function readTab(value: unknown, seen: Set<string>): FilesTab | null {
+function readTab<L extends TabLocation>(format: TabsFormat<L>, value: unknown, seen: Set<string>): FilesTab<L> | null {
   if (!value || typeof value !== 'object') return null
   const candidate = value as Record<string, unknown>
-  const location = readLocation(candidate.location)
+  const content = typeof candidate.location === 'string' ? parsePanelContent(candidate.location) : null
+  const location = content && format.location(content)
   if (typeof candidate.id !== 'string' || !candidate.id || candidate.id.length > 64 || seen.has(candidate.id) || !location) return null
   seen.add(candidate.id)
   return {
@@ -82,8 +97,7 @@ function readTab(value: unknown, seen: Set<string>): FilesTab | null {
   }
 }
 
-/** Reads stored tabs, dropping anything malformed; null when nothing usable is stored. */
-export function parseTabs(raw: string | null): FilesTabsData | null {
+function readTabs<L extends TabLocation>(format: TabsFormat<L>, raw: string | null): FilesTabsData<L> | null {
   if (!raw) return null
   let parsed: unknown
   try { parsed = JSON.parse(raw) } catch { return null }
@@ -91,14 +105,14 @@ export function parseTabs(raw: string | null): FilesTabsData | null {
   const stored = parsed as Partial<StoredTabs>
   if (stored.v !== VERSION || !Array.isArray(stored.tabs)) return null
   const seen = new Set<string>()
-  const read = stored.tabs.slice(0, MAX_TABS).map((tab) => readTab(tab, seen)).filter((tab): tab is FilesTab => Boolean(tab))
+  const read = stored.tabs.slice(0, MAX_TABS).map((tab) => readTab(format, tab, seen)).filter((tab): tab is FilesTab<L> => Boolean(tab))
   // Pinned tabs always lead.
   const tabs = [...read.filter((tab) => tab.pinned), ...read.filter((tab) => !tab.pinned)]
-  const closed: ClosedTabs[] = (Array.isArray(stored.closed) ? stored.closed : []).slice(-MAX_CLOSED).flatMap((entry) => {
+  const closed: ClosedTabs<L>[] = (Array.isArray(stored.closed) ? stored.closed : []).slice(-MAX_CLOSED).flatMap((entry) => {
     if (!entry || !Array.isArray(entry.tabs)) return []
     const entryIds = new Set<string>()
     const restored = entry.tabs.flatMap((item) => {
-      const tab = item && typeof item.index === 'number' && Number.isInteger(item.index) && item.index >= 0 ? readTab(item.tab, entryIds) : null
+      const tab = item && typeof item.index === 'number' && Number.isInteger(item.index) && item.index >= 0 ? readTab(format, item.tab, entryIds) : null
       return tab ? [{ tab, index: item.index }] : []
     })
     return restored.length ? [{ tabs: restored }] : []
@@ -107,6 +121,16 @@ export function parseTabs(raw: string | null): FilesTabsData | null {
   if (!tabs.length && !closed.length) return null
   const activeId = typeof stored.activeId === 'string' && tabs.some((tab) => tab.id === stored.activeId) ? stored.activeId : tabs[0]?.id ?? ''
   return { tabs, activeId, closed }
+}
+
+/** Reads stored tabs, dropping anything malformed; null when nothing usable is stored. */
+export function parseTabs(raw: string | null): FilesTabsData | null {
+  return readTabs(MAIN, raw)
+}
+
+/** Reads stored side panel tabs, like `parseTabs`; they may be only closed ones. */
+export function parsePanelTabs(raw: string | null): FilesTabsData<TabLocation> | null {
+  return readTabs(PANEL, raw)
 }
 
 function sessionStore(): Storage | null {
@@ -122,17 +146,16 @@ function localStore(): Storage | null {
  * through reloads and session restore, and a new browser tab starts with one. The desktop app has
  * a single window whose session storage is lost when it closes, so it keeps them across launches.
  */
-export function loadTabs(owner: string): FilesTabsData | null {
-  const key = tabsStorageKey(owner)
+function load<L extends TabLocation>(format: TabsFormat<L>, owner: string): FilesTabsData<L> | null {
+  const key = `${format.prefix}${owner}`
   let session: string | null = null
   try { session = sessionStore()?.getItem(key) ?? null } catch { /* storage is optional */ }
-  const fromSession = parseTabs(session)
+  const fromSession = readTabs(format, session)
   if (fromSession || !isDesktopRuntime()) return fromSession
-  try { return parseTabs(localStore()?.getItem(key) ?? null) } catch { return null }
+  try { return readTabs(format, localStore()?.getItem(key) ?? null) } catch { return null }
 }
 
-export function saveTabs(owner: string, data: FilesTabsData): void {
-  const key = tabsStorageKey(owner)
+function save(key: string, data: FilesTabsData<TabLocation>): void {
   const value = serializeTabs(data)
   try { sessionStore()?.setItem(key, value) } catch { /* storage is optional */ }
   if (isDesktopRuntime()) {
@@ -140,9 +163,33 @@ export function saveTabs(owner: string, data: FilesTabsData): void {
   }
 }
 
-/** Forgets an account's tabs, which name its files, when it signs out. */
-export function clearStoredTabs(owner: string): void {
-  const key = tabsStorageKey(owner)
+function clear(key: string): void {
   try { sessionStore()?.removeItem(key) } catch { /* storage is optional */ }
   try { localStore()?.removeItem(key) } catch { /* storage is optional */ }
+}
+
+export function loadTabs(owner: string): FilesTabsData | null {
+  return load(MAIN, owner)
+}
+
+export function saveTabs(owner: string, data: FilesTabsData): void {
+  save(tabsStorageKey(owner), data)
+}
+
+/** Forgets an account's tabs, which name its files, when it signs out. */
+export function clearStoredTabs(owner: string): void {
+  clear(tabsStorageKey(owner))
+}
+
+/** The side panel's tabs, kept like the main view's (see `loadTabs`). */
+export function loadPanelTabs(owner: string): FilesTabsData<TabLocation> | null {
+  return load(PANEL, owner)
+}
+
+export function savePanelTabs(owner: string, data: FilesTabsData<TabLocation>): void {
+  save(panelTabsStorageKey(owner), data)
+}
+
+export function clearStoredPanelTabs(owner: string): void {
+  clear(panelTabsStorageKey(owner))
 }

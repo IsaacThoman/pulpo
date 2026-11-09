@@ -2751,6 +2751,7 @@ const esUi: Record<string, string> = {
   "Recently closed": "Cerradas recientemente",
   "{{0}} and {{1}} more": "{{0}} y {{1}} más",
   "Open in new browser tab": "Abrir en una pestaña nueva del navegador",
+  "Side panel tabs": "Pestañas del panel lateral",
 }
 
 export default esUi

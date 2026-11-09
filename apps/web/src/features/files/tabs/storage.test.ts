@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createTab, type FilesTabsData } from './model'
-import { clearStoredTabs, loadTabs, parseTabs, saveTabs, serializeTabs, tabsStorageKey } from './storage'
+import { clearStoredPanelTabs, clearStoredTabs, loadPanelTabs, loadTabs, panelTabsStorageKey, parsePanelTabs, parseTabs, saveTabs, savePanelTabs, serializeTabs, tabsStorageKey } from './storage'
 
 const FOLDER = '0193a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b'
 const DOC = '0193a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5c'
@@ -83,5 +83,36 @@ describe('stored Files tabs', () => {
     const data = { tabs: [], activeId: '', closed: sample().closed }
     expect(parseTabs(serializeTabs(data))).toEqual(data)
     expect(parseTabs(serializeTabs({ tabs: [], activeId: '', closed: [] }))).toBeNull()
+  })
+})
+
+describe('stored side panel tabs', () => {
+  const attachment = createTab({ kind: 'attachment', id: DOC }, { id: 'photo-tab', snapshot: { kind: 'blob', name: 'photo.png', mimeType: 'image/png' } })
+
+  it('keeps attachments, apart from the main view’s tabs', () => {
+    const data = { tabs: [...sample().tabs, attachment], activeId: 'photo-tab', closed: [] }
+    savePanelTabs('one', data)
+    expect(loadPanelTabs('one')).toEqual(data)
+    expect(sessionStorage.getItem(panelTabsStorageKey('one'))).not.toBeNull()
+    expect(loadTabs('one')).toBeNull()
+    // The main view never reads an attachment.
+    expect(parseTabs(serializeTabs(data))?.tabs.map((tab) => tab.id)).toEqual(['root-tab', 'folder-tab', 'doc-tab'])
+  })
+
+  it('keeps closed attachments, with no tabs open, only for the side panel', () => {
+    const data = { tabs: [], activeId: '', closed: [{ tabs: [{ tab: attachment, index: 0 }] }] }
+    expect(parsePanelTabs(serializeTabs(data))).toEqual(data)
+    // The main view keeps closed tabs with none open too, but not attachments, which it never shows.
+    expect(parseTabs(serializeTabs(data))).toBeNull()
+    expect(parsePanelTabs(serializeTabs({ tabs: [], activeId: '', closed: [] }))).toBeNull()
+  })
+
+  it('forgets an account’s panel tabs', () => {
+    (window as { pulpoDesktop?: unknown }).pulpoDesktop = { platform: 'desktop' }
+    savePanelTabs('one', { tabs: [attachment], activeId: 'photo-tab', closed: [] })
+    sessionStorage.clear()
+    expect(loadPanelTabs('one')?.tabs).toHaveLength(1)
+    clearStoredPanelTabs('one')
+    expect(loadPanelTabs('one')).toBeNull()
   })
 })

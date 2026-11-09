@@ -5,11 +5,13 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Link, MemoryRouter, Route, Routes, useLocation, useNavigate, type NavigateFunction } from 'react-router-dom'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { DesktopTabKeys } from '@/components/layout/DesktopTabKeys'
 import { fileNodeQueryKey, folderQueryKey } from '@/features/files/api'
 import { useFilesPageRequest } from '@/features/files/files-page-request'
 import { useFilesNavTarget } from '@/features/files/tabs/routing'
 import { useFilesTabs } from '@/features/files/tabs/store'
 import { tabsStorageKey } from '@/features/files/tabs/storage'
+import { useSidePanel } from '@/features/side-panel/store'
 import { FilesLayout } from './FilesLayout'
 
 vi.hoisted(() => {
@@ -69,6 +71,7 @@ function show(path = '/files', client = seededClient(), browserHistory = false) 
       <Router>
         <TooltipProvider>
           <FilesButton />
+          <DesktopTabKeys />
           <Routes>
             <Route element={<FilesLayout />}>
               <Route path="files" element={<View name="My files view" />} />
@@ -111,6 +114,7 @@ beforeEach(() => {
   sessionStorage.clear()
   localStorage.clear()
   useFilesTabs.setState({ owner: null, tabs: [], activeId: '', closed: [] })
+  useSidePanel.setState({ content: null, tabs: [], activeId: '', closed: [], owner: null, splitAvailable: true })
   useFilesPageRequest.setState({ request: null })
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
 })
@@ -278,7 +282,7 @@ describe('Files tabs', () => {
 
     const upload = new File(['hello'], 'hello.txt', { type: 'text/plain' })
     fireEvent.drop(tab('Projects'), { dataTransfer: { types: ['Files'], files: [upload], getData: () => '' } })
-    expect(useFilesPageRequest.getState().request).toEqual({ kind: 'upload', files: [upload], folderId: PROJECTS })
+    expect(useFilesPageRequest.getState().request).toEqual({ kind: 'upload', files: [upload], folderId: PROJECTS, layout: 'page' })
     await waitFor(() => expect(location()).toBe(`/files/f/${PROJECTS}`))
   })
 
@@ -495,6 +499,24 @@ describe('Files tabs', () => {
     })
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(tabNames()).toEqual(['Archive 2026', 'My files'])
+  })
+
+  it('opens a tab’s place to the right in a side panel tab, or shows the one already there', async () => {
+    show(`/files/f/${PROJECTS}`)
+    fireEvent.click(await screen.findByRole('button', { name: 'New tab' }))
+    await waitFor(() => expect(tabNames()).toEqual(['Projects', 'My files']))
+    fireEvent.contextMenu(tab('Projects'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Open to the right' }))
+    expect(useSidePanel.getState().content).toEqual({ kind: 'folder', id: PROJECTS })
+    expect(useSidePanel.getState().tabs[0]!.snapshot?.name).toBe('Projects')
+
+    act(() => useSidePanel.getState().open({ kind: 'folder', id: null }))
+    fireEvent.contextMenu(tab('Projects'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Open to the right' }))
+    expect(useSidePanel.getState().tabs.map((panelTab) => panelTab.location)).toEqual([{ kind: 'folder', id: PROJECTS }, { kind: 'folder', id: null }])
+    expect(useSidePanel.getState().content).toEqual({ kind: 'folder', id: PROJECTS })
+    // The main view's tabs stay as they were.
+    expect(tabNames()).toEqual(['Projects', 'My files'])
   })
 
   it('does not open a tab for double-clicks inside its menus', async () => {

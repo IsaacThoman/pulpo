@@ -217,8 +217,9 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
     display: flex;
   }
 
-  /* A side panel shown as the only view clears the drawer button like page headers do. */
-  html:not([data-desktop="true"]) .app-side-panel[data-full] .side-panel-header {
+  /* A side panel shown as the only view clears the drawer button like page headers do; its tabs,
+     when it has them, clear it themselves. */
+  html:not([data-desktop="true"]) .app-side-panel[data-full]:not(:has(.files-tab-bar)) .side-panel-header {
     padding-left: 3rem;
   }
 
@@ -663,8 +664,9 @@ html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-side-panel {
   margin-top: 0;
 }
 
-/* On Windows the caption buttons sit over the right edge, which the panel now occupies. */
-html[data-desktop-os="win32"] .app-side-panel .side-panel-header {
+/* On Windows the caption buttons sit over the right edge, which the panel now occupies; its tabs,
+   when it has them, make room instead (see .files-tab-bar). */
+html[data-desktop-os="win32"] .app-side-panel:not(:has(.files-tab-bar)) .side-panel-header {
   padding-right: 138px;
 }
 
@@ -878,8 +880,9 @@ html[data-desktop="true"]:not([data-desktop-os="win32"]) .desktop-sidebar-collap
   top: 16px;
 }
 
-/* The Files tabs. In the desktop app they sit in the title bar (beside the open sidebar) and,
-   like a browser's, the space between them moves the window. */
+/* The Files tabs, of the main view and of the side panel. In the desktop app they sit in the
+   title bar (beside the open sidebar) and, like a browser's, the space between them moves the
+   window. */
 .files-tab-bar {
   height: 2.5rem;
 }
@@ -899,8 +902,10 @@ html[data-desktop="true"] .files-tab-bar {
 }
 
 @media (width >= 750px) {
-  /* Windows' caption buttons sit over the top right corner of the main view. */
-  html[data-desktop-os="win32"] .files-tab-bar {
+  /* Windows' caption buttons sit over the top right corner: of the main view, or of the side
+     panel while it shows. */
+  html[data-desktop-os="win32"] .app-layout-frame:not(:has(.app-side-panel)) .app-main .files-tab-bar,
+  html[data-desktop-os="win32"] .app-side-panel .files-tab-bar {
     padding-right: 138px;
   }
 }

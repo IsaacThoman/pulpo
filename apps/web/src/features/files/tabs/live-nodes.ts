@@ -3,8 +3,11 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/stores/auth'
 import { toSnapshot, type TabSnapshot } from './model'
 
-/** Query roots that hold Files items: listings, single items, the trash, and sidebar folders. */
-const ROOTS = new Set(['files', 'trash', 'folders'])
+/**
+ * Query roots that hold Files items (listings, single items, the trash, and sidebar folders), and
+ * chat attachments (see `attachmentQueryKey`), which side panel tabs show.
+ */
+const ROOTS = new Set(['files', 'trash', 'folders', 'attachment'])
 const NODE_KINDS = new Set(['folder', 'doc', 'blob'])
 const SINGLE_FIELDS = ['node', 'folder'] as const
 const LIST_FIELDS = ['ancestors', 'children', 'items', 'pinnedItems'] as const
@@ -40,6 +43,14 @@ function isNode(value: unknown): value is NodeLike {
   return typeof candidate.id === 'string' && typeof candidate.name === 'string' && typeof candidate.kind === 'string' && NODE_KINDS.has(candidate.kind)
 }
 
+/** A cached chat attachment, which looks like a file from the computer. */
+function attachmentIn(data: unknown): NodeLike[] {
+  if (!data || typeof data !== 'object') return []
+  const { id, name, mimeType } = data as Record<string, unknown>
+  if (typeof id !== 'string' || typeof name !== 'string') return []
+  return [{ id, kind: 'blob', name, mimeType: typeof mimeType === 'string' ? mimeType : null }]
+}
+
 /** The Files items a cached query holds, in any of the shapes Files queries use. */
 export function nodesIn(data: unknown): NodeLike[] {
   if (Array.isArray(data)) return data.filter(isNode)
@@ -67,9 +78,9 @@ function sameSnapshots(left: ReadonlyMap<string, TabSnapshot>, right: ReadonlyMa
 }
 
 /**
- * The latest known look (name, kind, color, icon) of the given folders and files, from whatever
- * Files data is cached: a tab that is not showing still follows a rename seen in any listing.
- * It never fetches; the showing tab's own view keeps its item fresh.
+ * The latest known look (name, kind, color, icon) of the given folders, files and attachments,
+ * from whatever data is cached: a tab that is not showing still follows a rename seen in any
+ * listing. It never fetches; the showing tab's own view keeps its item fresh.
  */
 export function useLiveTabNodes(ids: readonly string[]): ReadonlyMap<string, TabSnapshot> {
   const queryClient = useQueryClient()
@@ -93,7 +104,7 @@ export function useLiveTabNodes(ids: readonly string[]): ReadonlyMap<string, Tab
         if (owner !== userId || typeof root !== 'string' || !ROOTS.has(root) || query.state.data === undefined) continue
         const at = query.state.dataUpdatedAt
         const watched = query.getObserversCount() > 0 && !query.state.isInvalidated ? 1 : 0
-        for (const node of nodesIn(query.state.data)) {
+        for (const node of root === 'attachment' ? attachmentIn(query.state.data) : nodesIn(query.state.data)) {
           if (!wanted.has(node.id)) continue
           const copy: Copy = {
             node,

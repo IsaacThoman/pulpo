@@ -89,6 +89,19 @@ describe('closing tabs', () => {
     expect(reopenClosed(back).tabs.map((tab) => tab.id)).toEqual(['a', back.tabs[0]!.id])
   })
 
+  it('can leave no tab, as the side panel does, and reopen from there', () => {
+    const data = closeTab(tabs(['a']), 'a')
+    expect(data.tabs).toEqual([])
+    expect(data.activeId).toBe('')
+    expect(data.closed).toHaveLength(1)
+    const reopened = reopenClosed(data)
+    expect(order(reopened)).toEqual(['a'])
+    expect(reopened.activeId).toBe('a')
+    const opened = openTab(data, folder('b'))
+    expect(opened.data.tabs).toEqual([opened.tab])
+    expect(opened.data.activeId).toBe(opened.tab.id)
+  })
+
   it('closes other tabs but keeps pinned ones, showing the one kept', () => {
     const data = closeOtherTabs(tabs(['p', 'a', 'b', 'c'], 'a', ['p']), 'b')
     expect(order(data)).toEqual(['p', 'b'])
@@ -209,6 +222,7 @@ describe('tab snapshots', () => {
     expect(locationNodeId(folder('trash'))).toBeNull()
     expect(locationNodeId(folder('trash:abc'))).toBe('abc')
     expect(locationNodeId(file('doc'))).toBe('doc')
+    expect(locationNodeId({ kind: 'attachment', id: 'photo' })).toBe('photo')
   })
 
   it('records changed looks and leaves unchanged data alone', () => {

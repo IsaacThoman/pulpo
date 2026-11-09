@@ -7,12 +7,15 @@ import type { FileNode } from '@pulpo/contracts'
  */
 export type FilesLocation = { kind: 'folder'; id: string | null } | { kind: 'file'; id: string }
 
+/** What any tab can show. The side panel's tabs also hold chat attachments; the main view's never do. */
+export type TabLocation = FilesLocation | { kind: 'attachment'; id: string }
+
 /** The last name and look a tab's folder or file was seen with, so a tab reads right before its view loads. */
 export type TabSnapshot = Pick<FileNode, 'kind' | 'name' | 'mimeType'> & Partial<Pick<FileNode, 'systemRole' | 'color' | 'icon'>>
 
-export interface FilesTab {
+export interface FilesTab<L extends TabLocation = FilesLocation> {
   id: string
-  location: FilesLocation
+  location: L
   pinned: boolean
   snapshot: TabSnapshot | null
   /** The tab this one was opened from, so tabs opened from one place line up after it, as in browsers. */
@@ -20,15 +23,16 @@ export interface FilesTab {
 }
 
 /** Tabs closed together (one tab, or "Close other tabs"), reopened together at their old places. */
-export interface ClosedTabs {
-  tabs: { tab: FilesTab; index: number }[]
+export interface ClosedTabs<L extends TabLocation = FilesLocation> {
+  tabs: { tab: FilesTab<L>; index: number }[]
 }
 
-export interface FilesTabsData {
-  tabs: FilesTab[]
+export interface FilesTabsData<L extends TabLocation = FilesLocation> {
+  tabs: FilesTab<L>[]
+  /** Empty only while there are no tabs: the side panel is hidden then, and the main view has left Files (see `closeTabs`). */
   activeId: string
   /** Most recently closed last. */
-  closed: ClosedTabs[]
+  closed: ClosedTabs<L>[]
 }
 
 /**
@@ -47,18 +51,18 @@ export function newTabId(): string {
     : `tab-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`
 }
 
-export function sameLocation(left: FilesLocation, right: FilesLocation): boolean {
+export function sameLocation(left: TabLocation, right: TabLocation): boolean {
   return left.kind === right.kind && left.id === right.id
 }
 
-/** The stored folder or file a location shows, if any: not My files or the trash itself. */
-export function locationNodeId(location: FilesLocation): string | null {
-  if (location.kind === 'file') return location.id
+/** The stored folder, file or attachment a location shows, if any: not My files or the trash itself. */
+export function locationNodeId(location: TabLocation): string | null {
+  if (location.kind !== 'folder') return location.id
   if (location.id === null || location.id === 'trash') return null
   return location.id.startsWith('trash:') ? location.id.slice('trash:'.length) : location.id
 }
 
-export function createTab(location: FilesLocation, options: { pinned?: boolean; snapshot?: TabSnapshot | null; openerId?: string; id?: string } = {}): FilesTab {
+export function createTab<L extends TabLocation>(location: L, options: { pinned?: boolean; snapshot?: TabSnapshot | null; openerId?: string; id?: string } = {}): FilesTab<L> {
   return {
     id: options.id ?? newTabId(),
     location,
@@ -73,14 +77,14 @@ export function initialTabs(location: FilesLocation = ROOT_LOCATION): FilesTabsD
   return { tabs: [tab], activeId: tab.id, closed: [] }
 }
 
-export function pinnedCount(tabs: FilesTab[]): number {
+export function pinnedCount(tabs: FilesTab<TabLocation>[]): number {
   let count = 0
   while (count < tabs.length && tabs[count]!.pinned) count++
   return count
 }
 
 /** Where a tab may sit: pinned tabs stay together at the start, the rest follow them. */
-export function groupRange(tabs: FilesTab[], pinned: boolean): { start: number; end: number } {
+export function groupRange(tabs: FilesTab<TabLocation>[], pinned: boolean): { start: number; end: number } {
   const pins = pinnedCount(tabs)
   return pinned ? { start: 0, end: Math.max(0, pins - 1) } : { start: pins, end: Math.max(pins, tabs.length - 1) }
 }
@@ -89,11 +93,11 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
-export function activeTab(data: FilesTabsData): FilesTab | undefined {
+export function activeTab<L extends TabLocation>(data: FilesTabsData<L>): FilesTab<L> | undefined {
   return data.tabs.find((tab) => tab.id === data.activeId) ?? data.tabs[0]
 }
 
-export function activate(data: FilesTabsData, id: string): FilesTabsData {
+export function activate<L extends TabLocation>(data: FilesTabsData<L>, id: string): FilesTabsData<L> {
   if (data.activeId === id || !data.tabs.some((tab) => tab.id === id)) return data
   return { ...data, activeId: id }
 }
@@ -102,7 +106,7 @@ export function activate(data: FilesTabsData, id: string): FilesTabsData {
  * Where a new tab goes. Without an index it follows the active tab and any tabs already opened
  * from it, the way links opened in new tabs line up in a browser; `end` puts it last.
  */
-function insertionIndex(data: FilesTabsData, tab: FilesTab, index: number | 'end' | undefined): number {
+function insertionIndex<L extends TabLocation>(data: FilesTabsData<L>, tab: FilesTab<L>, index: number | 'end' | undefined): number {
   const { start } = groupRange(data.tabs, tab.pinned)
   const pins = pinnedCount(data.tabs)
   const end = tab.pinned ? pins : data.tabs.length
@@ -115,7 +119,7 @@ function insertionIndex(data: FilesTabsData, tab: FilesTab, index: number | 'end
   return clamp(at, start, end)
 }
 
-function pushClosed(closed: ClosedTabs[], entry: ClosedTabs): ClosedTabs[] {
+function pushClosed<L extends TabLocation>(closed: ClosedTabs<L>[], entry: ClosedTabs<L>): ClosedTabs<L>[] {
   return entry.tabs.length ? [...closed, entry].slice(-MAX_CLOSED) : closed
 }
 
@@ -123,7 +127,7 @@ function pushClosed(closed: ClosedTabs[], entry: ClosedTabs): ClosedTabs[] {
  * Keeps the window within `MAX_TABS`: the leftmost unpinned tab that is not showing (and not in
  * `keep`) closes, and can be reopened like any closed tab.
  */
-function makeRoom(data: FilesTabsData, extra: number, keep: ReadonlySet<string> = new Set()): FilesTabsData {
+function makeRoom<L extends TabLocation>(data: FilesTabsData<L>, extra: number, keep: ReadonlySet<string> = new Set()): FilesTabsData<L> {
   if (data.tabs.length + extra <= MAX_TABS) return data
   const tabs = [...data.tabs]
   let closed = data.closed
@@ -136,11 +140,11 @@ function makeRoom(data: FilesTabsData, extra: number, keep: ReadonlySet<string> 
   return { ...data, tabs, closed }
 }
 
-export function openTab(
-  data: FilesTabsData,
-  location: FilesLocation,
+export function openTab<L extends TabLocation>(
+  data: FilesTabsData<L>,
+  location: L,
   options: { index?: number | 'end'; activate?: boolean; snapshot?: TabSnapshot | null; fromActive?: boolean; pinned?: boolean } = {},
-): { data: FilesTabsData; tab: FilesTab } {
+): { data: FilesTabsData<L>; tab: FilesTab<L> } {
   const tab = createTab(location, {
     snapshot: options.snapshot ?? null,
     pinned: options.pinned ?? false,
@@ -153,12 +157,12 @@ export function openTab(
 }
 
 /** Whether there is such a tab to close. Every tab can close, the last one too (see `closeTabs`). */
-export function canCloseTab(data: FilesTabsData, id: string): boolean {
+export function canCloseTab<L extends TabLocation>(data: FilesTabsData<L>, id: string): boolean {
   return data.tabs.some((tab) => tab.id === id)
 }
 
 /** The tab that shows once `ids` are gone, if the active tab is among them: the next one to the right, else to the left. */
-function successor(tabs: FilesTab[], activeId: string, removed: Set<string>): string | null {
+function successor(tabs: FilesTab<TabLocation>[], activeId: string, removed: Set<string>): string | null {
   if (!removed.has(activeId)) return activeId
   const index = tabs.findIndex((tab) => tab.id === activeId)
   for (let at = index + 1; at < tabs.length; at++) if (!removed.has(tabs[at]!.id)) return tabs[at]!.id
@@ -168,9 +172,10 @@ function successor(tabs: FilesTab[], activeId: string, removed: Set<string>): st
 
 /**
  * Closes `ids`. Closing every tab leaves none, as closing a browser window's last tab closes the
- * window: the main view then leaves Files for a new chat, and Files opens a new tab when it comes back.
+ * window: the main view then leaves Files for a new chat (and Files opens a new tab when it comes
+ * back), and the side panel hides.
  */
-export function closeTabs(data: FilesTabsData, ids: Iterable<string>): FilesTabsData {
+export function closeTabs<L extends TabLocation>(data: FilesTabsData<L>, ids: Iterable<string>): FilesTabsData<L> {
   const removed = new Set(ids)
   const closing = data.tabs.flatMap((tab, index) => removed.has(tab.id) ? [{ tab, index }] : [])
   if (!closing.length) return data
@@ -180,19 +185,19 @@ export function closeTabs(data: FilesTabsData, ids: Iterable<string>): FilesTabs
   return { tabs, activeId: successor(data.tabs, data.activeId, removed) ?? tabs[0]!.id, closed }
 }
 
-export function closeTab(data: FilesTabsData, id: string): FilesTabsData {
+export function closeTab<L extends TabLocation>(data: FilesTabsData<L>, id: string): FilesTabsData<L> {
   return closeTabs(data, [id])
 }
 
 /** Closes every other tab except pinned ones, and shows the one kept. */
-export function closeOtherTabs(data: FilesTabsData, id: string): FilesTabsData {
+export function closeOtherTabs<L extends TabLocation>(data: FilesTabsData<L>, id: string): FilesTabsData<L> {
   if (!data.tabs.some((tab) => tab.id === id)) return data
   const next = closeTabs(data, data.tabs.filter((tab) => tab.id !== id && !tab.pinned).map((tab) => tab.id))
   return activate(next, id)
 }
 
 /** Closes the unpinned tabs after `id`; if the active tab was among them, `id` shows. */
-export function closeTabsToRight(data: FilesTabsData, id: string): FilesTabsData {
+export function closeTabsToRight<L extends TabLocation>(data: FilesTabsData<L>, id: string): FilesTabsData<L> {
   const index = data.tabs.findIndex((tab) => tab.id === id)
   if (index < 0) return data
   const ids = data.tabs.slice(index + 1).filter((tab) => !tab.pinned).map((tab) => tab.id)
@@ -202,7 +207,7 @@ export function closeTabsToRight(data: FilesTabsData, id: string): FilesTabsData
 }
 
 /** Reopens the most recently closed tabs (or the closed group at `at`) where they were, showing the last of them. */
-export function reopenClosed(data: FilesTabsData, at = data.closed.length - 1): FilesTabsData {
+export function reopenClosed<L extends TabLocation>(data: FilesTabsData<L>, at = data.closed.length - 1): FilesTabsData<L> {
   const entry = data.closed[at]
   if (!entry) return data
   const closed = data.closed.filter((_, index) => index !== at)
@@ -225,7 +230,7 @@ export function reopenClosed(data: FilesTabsData, at = data.closed.length - 1): 
 }
 
 /** Moves a tab to `index`, kept within its group (pinned or not). */
-export function moveTab(data: FilesTabsData, id: string, index: number): FilesTabsData {
+export function moveTab<L extends TabLocation>(data: FilesTabsData<L>, id: string, index: number): FilesTabsData<L> {
   const from = data.tabs.findIndex((tab) => tab.id === id)
   if (from < 0) return data
   const tab = data.tabs[from]!
@@ -238,7 +243,7 @@ export function moveTab(data: FilesTabsData, id: string, index: number): FilesTa
 }
 
 /** Pins a tab (it joins the end of the pinned tabs) or unpins it (it leads the unpinned ones). */
-export function setPinned(data: FilesTabsData, id: string, pinned: boolean): FilesTabsData {
+export function setPinned<L extends TabLocation>(data: FilesTabsData<L>, id: string, pinned: boolean): FilesTabsData<L> {
   const tab = data.tabs.find((candidate) => candidate.id === id)
   if (!tab || tab.pinned === pinned) return data
   const rest = data.tabs.filter((candidate) => candidate.id !== id)
@@ -248,7 +253,7 @@ export function setPinned(data: FilesTabsData, id: string, pinned: boolean): Fil
 }
 
 /** A copy of a tab right after it, shown, as a browser's Duplicate does. */
-export function duplicateTab(data: FilesTabsData, id: string): FilesTabsData {
+export function duplicateTab<L extends TabLocation>(data: FilesTabsData<L>, id: string): FilesTabsData<L> {
   const source = data.tabs.find((tab) => tab.id === id)
   if (!source) return data
   // Room is made first, so the copy still lands right after its source.
@@ -257,11 +262,11 @@ export function duplicateTab(data: FilesTabsData, id: string): FilesTabsData {
   return openTab(base, source.location, { index: index + 1, snapshot: source.snapshot, pinned: source.pinned }).data
 }
 
-/** Shows `location` in the active tab, as following a link does. */
-export function navigateActive(data: FilesTabsData, location: FilesLocation, snapshot?: TabSnapshot | null): FilesTabsData {
+/** Shows `location` in the active tab, as following a link does; without tabs it opens one. */
+export function navigateActive<L extends TabLocation>(data: FilesTabsData<L>, location: L, snapshot?: TabSnapshot | null): FilesTabsData<L> {
   const current = activeTab(data)
-  // With every tab closed, Files starts again with one, keeping what can be reopened.
-  if (!current) return { ...initialTabs(location), closed: data.closed }
+  // With every tab closed, a new one opens, keeping what can be reopened.
+  if (!current) return openTab(data, location, { snapshot }).data
   if (sameLocation(current.location, location)) return data
   return {
     ...data,
@@ -294,7 +299,7 @@ export function followLocation(data: FilesTabsData, location: FilesLocation, mod
 }
 
 /** The tab `delta` places from the active one, wrapping around, as Ctrl+Tab does. */
-export function cycleTab(data: FilesTabsData, delta: number): FilesTab | undefined {
+export function cycleTab<L extends TabLocation>(data: FilesTabsData<L>, delta: number): FilesTab<L> | undefined {
   if (!data.tabs.length) return undefined
   const index = Math.max(0, data.tabs.findIndex((tab) => tab.id === data.activeId))
   const next = ((index + delta) % data.tabs.length + data.tabs.length) % data.tabs.length
@@ -302,7 +307,7 @@ export function cycleTab(data: FilesTabsData, delta: number): FilesTab | undefin
 }
 
 /** Cmd/Ctrl+1–8 show those tabs; 9 shows the last, as in browsers. */
-export function tabForDigit(data: FilesTabsData, digit: number): FilesTab | undefined {
+export function tabForDigit<L extends TabLocation>(data: FilesTabsData<L>, digit: number): FilesTab<L> | undefined {
   if (digit === 9) return data.tabs.at(-1)
   return data.tabs[digit - 1]
 }
@@ -328,8 +333,8 @@ export function toSnapshot(node: TabSnapshot): TabSnapshot {
   }
 }
 
-/** Records what the tabs' folders and files look like now (by node id); unchanged data is returned as is. */
-export function updateSnapshots(data: FilesTabsData, nodes: ReadonlyMap<string, TabSnapshot>): FilesTabsData {
+/** Records what the tabs' folders, files and attachments look like now (by id); unchanged data is returned as is. */
+export function updateSnapshots<L extends TabLocation>(data: FilesTabsData<L>, nodes: ReadonlyMap<string, TabSnapshot>): FilesTabsData<L> {
   let changed = false
   const tabs = data.tabs.map((tab) => {
     const id = locationNodeId(tab.location)

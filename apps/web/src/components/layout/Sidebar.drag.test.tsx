@@ -191,7 +191,7 @@ afterEach(() => {
   cleanup()
   restoreLayout()
   vi.clearAllMocks()
-  useSidePanel.setState({ content: null, lastContent: null })
+  useSidePanel.setState({ content: null, tabs: [], activeId: '', closed: [] })
 })
 
 const fileRow = () => screen.getByRole('button', { name: 'Notes.md' }).parentElement!

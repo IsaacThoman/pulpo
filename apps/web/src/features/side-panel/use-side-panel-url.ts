@@ -1,18 +1,31 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { parsePanelContent, serializePanelContent, SIDE_PANEL_PARAM, useSidePanel } from './store'
+import { runtimeAccountKey } from '@/lib/runtime'
+import { useAuth } from '@/stores/auth'
+import { ensurePanelTabs, parsePanelContent, serializePanelContent, setPanelTabsEnabled, SIDE_PANEL_PARAM, useSidePanel } from './store'
+import { mainViewShows } from './content'
 import { locationIsCurrent } from './use-panel-actions'
 
 /**
  * Mirrors the side panel into the URL so reloads and shared links reopen it. The panel belongs
  * to the window, not the page: navigating the main view carries the parameter along, while a URL
- * that arrives with a different panel (a link, back/forward) opens that content instead.
+ * that arrives with a different panel (a link, back/forward) shows that content, in a panel tab
+ * already showing it or a new one. Only the active tab is in the URL; the panel's tabs are kept
+ * per window and account, and load here first, so a reload restores them around the URL's tab.
  */
 export function useSidePanelUrl(): void {
   const location = useLocation()
   const navigate = useNavigate()
   const content = useSidePanel((state) => state.content)
+  const userId = useAuth((state) => state.user?.id)
+  const filesEnabled = useAuth((state) => state.filesEnabled)
   const lastApplied = useRef<string | null>(null)
+
+  // Layout effects run before the effect below, so the URL's tab joins the account's tabs.
+  useLayoutEffect(() => {
+    if (userId) ensurePanelTabs(runtimeAccountKey(userId))
+  }, [userId])
+  useLayoutEffect(() => setPanelTabsEnabled(filesEnabled), [filesEnabled])
 
   useEffect(() => {
     // Writing against a stale location would replace the pending entry; wait for the router.
@@ -24,11 +37,14 @@ export function useSidePanelUrl(): void {
     const desired = serializePanelContent(useSidePanel.getState().content)
     if (current && current !== desired && current !== lastApplied.current) {
       const incoming = parsePanelContent(current)
-      if (incoming) {
+      // The main view's own file or attachment is not opened beside it again (one view at a time);
+      // the parameter is then rewritten from what the panel shows.
+      if (incoming && !mainViewShows(incoming, location.pathname)) {
         lastApplied.current = current
         useSidePanel.getState().open(incoming)
         return
       }
+      if (incoming) lastApplied.current = current
     }
     if (current === desired) {
       lastApplied.current = desired
