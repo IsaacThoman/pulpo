@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { FILE_SCOPE_ROOT, MAX_MESSAGE_FILE_REFERENCES, type FileNode } from '@pulpo/contracts'
 import { Check, ChevronRight, FolderSearch, HardDrive, Loader2, X } from 'lucide-react'
@@ -208,9 +208,11 @@ export function FilesAccessDialog({ chatId, open, onOpenChange }: {
   const browseAllowed = useChat((state) => state.chats.find((chat) => chat.id === chatId)?.filesBrowseAllowed ?? false)
   const askBeforeBrowsing = useSettings((state) => state.agentFilesAskBeforeBrowsing)
   const remove = (id: string) => useChat.getState().setChatFileScope(chatId, scopeIds.filter((item) => item !== id))
+  const doneRef = useRef<HTMLButtonElement>(null)
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      {/* Opening on Done keeps Enter from removing the first item. */}
+      <DialogContent className="sm:max-w-md" onOpenAutoFocus={(event) => { event.preventDefault(); doneRef.current?.focus() }}>
         <DialogHeader>
           <DialogTitle>{ui("Files access")}</DialogTitle>
           <DialogDescription>{ui("What the agent can use from your Files in this chat. Mentioning items in a message adds them here.")}</DialogDescription>
@@ -238,7 +240,7 @@ export function FilesAccessDialog({ chatId, open, onOpenChange }: {
           )}
         </div>
         <DialogFooter>
-          <Button type="button" onClick={() => onOpenChange(false)}>{ui("Done")}</Button>
+          <Button ref={doneRef} type="button" onClick={() => onOpenChange(false)}>{ui("Done")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

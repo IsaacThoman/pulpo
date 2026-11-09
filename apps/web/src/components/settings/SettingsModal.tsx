@@ -1109,7 +1109,7 @@ export function SettingsModal({
                       <Row label={ui("Changes to Files in new chats")} hint={ui("Each chat can change this in the Pulpo Agent menu.")}>
                         {(control) => (
                           <Select value={s.agentFileChangeMode} onValueChange={(v) => s.set('agentFileChangeMode', v as FileAccessMode)}>
-                            <SelectTrigger {...control} className="w-40">
+                            <SelectTrigger {...control} className="w-44">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
