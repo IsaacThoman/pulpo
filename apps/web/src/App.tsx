@@ -24,6 +24,7 @@ const PeopleLayout = lazy(() => import('@/pages/PeopleLayout').then((module) => 
 const FriendsPage = lazy(() => import('@/pages/FriendsPage').then((module) => ({ default: module.FriendsPage })))
 const ProfilePage = lazy(() => import('@/pages/ProfilePage').then((module) => ({ default: module.ProfilePage })))
 const ApiKeysPage = lazy(() => import('@/pages/ApiKeysPage').then((module) => ({ default: module.ApiKeysPage })))
+const FilesLayout = lazy(() => import('@/pages/files/FilesLayout').then((module) => ({ default: module.FilesLayout })))
 const FilesPage = lazy(() => import('@/pages/files/FilesPage').then((module) => ({ default: module.FilesPage })))
 const FileDocPage = lazy(() => import('@/pages/files/FileDocPage').then((module) => ({ default: module.FileDocPage })))
 const AttachmentPage = lazy(() => import('@/pages/AttachmentPage').then((module) => ({ default: module.AttachmentPage })))
@@ -144,11 +145,14 @@ export default function App() {
               <Route path="pool" element={<Navigate to="/friends/leaderboard?scope=pool" replace />} />
               <Route path="leaderboard" element={<Navigate to="/friends/leaderboard" replace />} />
             </Route>
-            <Route path="files" element={<LocalizedRoute><FilesPage /></LocalizedRoute>} />
-            <Route path="files/f/:folderId" element={<LocalizedRoute><FilesPage /></LocalizedRoute>} />
-            <Route path="files/trash" element={<LocalizedRoute><TrashFolderPage /></LocalizedRoute>} />
-            <Route path="files/trash/f/:folderId" element={<LocalizedRoute><TrashFolderPage /></LocalizedRoute>} />
-            <Route path="files/d/:docId" element={<LocalizedRoute><FileDocPage /></LocalizedRoute>} />
+            {/* Files views share a strip of tabs, which stays mounted while moving between them. */}
+            <Route element={<LocalizedRoute><FilesLayout /></LocalizedRoute>}>
+              <Route path="files" element={<LocalizedRoute><FilesPage /></LocalizedRoute>} />
+              <Route path="files/f/:folderId" element={<LocalizedRoute><FilesPage /></LocalizedRoute>} />
+              <Route path="files/trash" element={<LocalizedRoute><TrashFolderPage /></LocalizedRoute>} />
+              <Route path="files/trash/f/:folderId" element={<LocalizedRoute><TrashFolderPage /></LocalizedRoute>} />
+              <Route path="files/d/:docId" element={<LocalizedRoute><FileDocPage /></LocalizedRoute>} />
+            </Route>
             <Route path="attachments/:attachmentId" element={<LocalizedRoute><AttachmentPage /></LocalizedRoute>} />
             <Route path="friends" element={<LocalizedRoute><PeopleLayout /></LocalizedRoute>}>
               <Route index element={<LocalizedRoute><FriendsPage /></LocalizedRoute>} />

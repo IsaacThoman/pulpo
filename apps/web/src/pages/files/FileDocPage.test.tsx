@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { createTab } from '@/features/files/tabs/model'
 import { useSidePanel } from '@/features/side-panel/store'
 import { FileDocPage, FilePanelView } from './FileDocPage'
 
@@ -61,7 +62,8 @@ beforeEach(() => {
   sessions.session = null
   downloadDocMarkdown.mockClear()
   window.history.replaceState(null, '')
-  useSidePanel.setState({ content: null, lastContent: { kind: 'file', id: 'plan' } })
+  // The panel is hidden, with a tab for the document, as after closing it.
+  useSidePanel.setState({ content: null, tabs: [createTab({ kind: 'file', id: 'plan' }, { id: 'plan-tab' })], activeId: 'plan-tab', closed: [] })
 })
 afterEach(cleanup)
 
@@ -116,6 +118,15 @@ describe('one document session per main and panel layout', () => {
     })
     expect(useSidePanel.getState().content).toEqual({ kind: 'file', id: 'plan' })
     expect(sessions.maximum).toBe(1)
+  })
+
+  it('closes every panel tab of a document the main view opens, shown or not', async () => {
+    useSidePanel.getState().open({ kind: 'file', id: 'other' })
+    expect(useSidePanel.getState().tabs.map((tab) => tab.location.id)).toEqual(['plan', 'other'])
+    mount('/files/d/plan')
+    await waitFor(() => expect(useSidePanel.getState().tabs.map((tab) => tab.location.id)).toEqual(['other']))
+    expect(useSidePanel.getState().content).toEqual({ kind: 'file', id: 'other' })
+    expect(useSidePanel.getState().closed.at(-1)?.tabs[0]?.tab.location).toEqual({ kind: 'file', id: 'plan' })
   })
 
   it('opens the panel normally alongside a chat or a different main document', async () => {

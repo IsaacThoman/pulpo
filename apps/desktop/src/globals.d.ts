@@ -16,7 +16,7 @@ export interface DesktopSignedInAccounts {
   accounts: DesktopSignedInAccount[]
 }
 
-export type DesktopCommand = 'new-chat' | 'settings'
+export type DesktopCommand = 'new-chat' | 'settings' | 'files-new-tab' | 'files-close-tab' | 'files-reopen-tab'
 export type DesktopOperatingSystem = 'darwin' | 'win32' | 'linux'
 
 export interface PulpoDesktopApi {
@@ -34,6 +34,8 @@ export interface PulpoDesktopApi {
   openExternal: (url: string) => Promise<void>
   onProtocolUrl: (listener: (url: string) => void) => () => void
   onCommand: (listener: (command: DesktopCommand) => void) => () => void
+  /** Shows the Files tab items in the File menu while the page shows Files tabs. */
+  setFilesTabsMenu: (shown: boolean) => Promise<void>
   appInfo: () => Promise<{ name: string; version: string; packaged: boolean }>
   windowControls: {
     minimize: () => Promise<void>

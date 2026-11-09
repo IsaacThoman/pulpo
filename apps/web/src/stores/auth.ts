@@ -1,4 +1,6 @@
-import { desktopDevice } from '@/lib/runtime'
+import { desktopDevice, runtimeAccountKey } from '@/lib/runtime'
+import { forgetFilesTabs } from '@/features/files/tabs/store'
+import { forgetPanelTabs } from '@/features/side-panel/store'
 import { clearWebShelves } from '@/lib/local-first/shelf-registry'
 import { clearWebComposerSync } from '@/lib/local-first/composer-sync'
 import { create } from 'zustand'
@@ -473,6 +475,8 @@ export const useAuth = create<AuthState>()((set, get) => ({
       clearWebShelves()
       clearWebComposerSync()
       await clearLocalUserData(userId)
+      forgetFilesTabs(runtimeAccountKey(userId))
+      forgetPanelTabs(runtimeAccountKey(userId))
     }
   },
 
@@ -534,6 +538,8 @@ export const useAuth = create<AuthState>()((set, get) => ({
       clearWebShelves()
       clearWebComposerSync()
     await clearLocalUserData(userId)
+    forgetFilesTabs(runtimeAccountKey(userId))
+    forgetPanelTabs(runtimeAccountKey(userId))
     set({ user: null, checkingSession: false })
   },
 
@@ -575,6 +581,8 @@ export const useAuth = create<AuthState>()((set, get) => ({
     await signOutSignedInAccount(userId)
     clearRuntimeComposerDrafts(userId)
     await clearLocalUserData(userId)
+    forgetFilesTabs(runtimeAccountKey(userId))
+    forgetPanelTabs(runtimeAccountKey(userId))
     set({ signedInAccounts: get().signedInAccounts.filter((account) => account.id !== userId) })
   },
 
@@ -590,6 +598,8 @@ export const useAuth = create<AuthState>()((set, get) => ({
     for (const userId of await signOutOtherAccounts()) {
       clearRuntimeComposerDrafts(userId)
       await clearLocalUserData(userId)
+      forgetFilesTabs(runtimeAccountKey(userId))
+      forgetPanelTabs(runtimeAccountKey(userId))
     }
     set({ signedInAccounts: [] })
     await get().logout()

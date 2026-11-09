@@ -12,6 +12,9 @@ export interface DesktopSignedInAccounts {
   accounts: Array<{ userId: string; token: string; expiresAt: string }>
 }
 
+/** Commands the desktop app's menu sends to the page. */
+export type DesktopCommand = 'new-chat' | 'settings' | 'files-new-tab' | 'files-close-tab' | 'files-reopen-tab'
+
 interface DesktopApi {
   platform: 'desktop'
   os: 'darwin' | 'win32' | 'linux'
@@ -26,7 +29,9 @@ interface DesktopApi {
   }
   openExternal(url: string): Promise<void>
   onProtocolUrl(listener: (url: string) => void): () => void
-  onCommand(listener: (command: 'new-chat' | 'settings') => void): () => void
+  onCommand(listener: (command: DesktopCommand) => void): () => void
+  /** Shows Files tab items (New Tab, Close Tab, Reopen Closed Tab) in the menu; missing in older apps. */
+  setFilesTabsMenu?(shown: boolean): Promise<void>
   appInfo(): Promise<{ name: string; version: string; packaged: boolean }>
   windowControls: {
     minimize(): Promise<void>
