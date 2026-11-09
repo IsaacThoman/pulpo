@@ -65,7 +65,8 @@ export function PersonHeader({ name, compare }: { name: string; compare: boolean
         <ol className="flex min-w-0 items-center gap-1 text-sm">
           <li className="shrink-0">
             <Button asChild size="sm" variant="ghost" className="-ml-2 text-muted-foreground">
-              <Link to={origin}><ArrowLeft />{origin.startsWith('/friends/leaderboard') ? t('people.leaderboardTab') : ui("Friends")}</Link>
+              {/* The chevron and name show it's a breadcrumb; phones hide them, so the arrow marks it as a way back. */}
+              <Link to={origin}><ArrowLeft className="sm:hidden" aria-hidden />{origin.startsWith('/friends/leaderboard') ? t('people.leaderboardTab') : ui("Friends")}</Link>
             </Button>
           </li>
           {/* Phones leave the name to the profile heading right below. */}
