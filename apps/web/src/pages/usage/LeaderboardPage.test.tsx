@@ -132,7 +132,7 @@ it('shortens and rotates linked axis names like the plain instance labels once m
   // jsdom has no canvas, so label widths fall back to an estimate.
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
   const long = 'Bartholomew Montgomery-Fitzwilliam'
-  const people = Array.from({ length: 9 }, (_, i) => ({ ...row, userId: `u${i}`, username: `u${i}`, displayName: i === 0 ? long : `P${i}`, tokens: 100 - i, balanceMicros: 0 }))
+  const people = Array.from({ length: 9 }, (_, i) => ({ ...row, userId: `u${i}`, username: `u${i}`, displayName: i === 0 ? long : `P${i}`, calls: 100 - i, balanceMicros: 0 }))
   mocks.request.mockImplementation(async (path: string) => {
     if (path.includes('/records?')) return { data: [], nextCursor: null }
     if (path.includes('/activity?')) return { summary: { calls: 2, inputTokens: 20, outputTokens: 10, costMicros: 1_000, firstUsedAt: null }, daily: [], contribution: [], topModels: [] }
@@ -174,8 +174,8 @@ it('leaves the admin instance ranking unlinked', async () => {
 
 it('keeps people who share a display name apart in the ranking', async () => {
   const twins = [
-    { ...row, userId: 'sam-1', username: 'sam', displayName: 'Sam', tokens: 300 },
-    { ...row, userId: 'sam-2', username: 'sam2', displayName: 'Sam', tokens: 100 },
+    { ...row, userId: 'sam-1', username: 'sam', displayName: 'Sam', calls: 300 },
+    { ...row, userId: 'sam-2', username: 'sam2', displayName: 'Sam', calls: 100 },
   ]
   mocks.request.mockImplementation(async (path: string) => {
     if (path.includes('/records?')) return { data: [], nextCursor: null }
@@ -194,7 +194,7 @@ it('keeps people who share a display name apart in the ranking', async () => {
   const chart = container.querySelector<HTMLElement>('.recharts-wrapper')!
   fireEvent.focusIn(chart)
   const tip = () => container.querySelector<HTMLElement>('.recharts-tooltip-wrapper')?.textContent
-  await waitFor(() => expect(tip()).toBe('#1 Sam (@sam)Tokens300'))
+  await waitFor(() => expect(tip()).toBe('#1 Sam (@sam)Calls300'))
   fireEvent.keyDown(chart, { key: 'ArrowRight' })
-  await waitFor(() => expect(tip()).toBe('#2 Sam (@sam2)Tokens100'))
+  await waitFor(() => expect(tip()).toBe('#2 Sam (@sam2)Calls100'))
 })

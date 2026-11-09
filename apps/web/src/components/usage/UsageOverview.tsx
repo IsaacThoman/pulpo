@@ -18,9 +18,9 @@ const RANGES: { id: TimeRange; label: string }[] = [
   { id: 'all', label: "All" },
 ]
 const METRICS: { id: Metric; label: string }[] = [
-  { id: 'tokens', label: "Tokens" },
-  { id: 'cost', label: "USD" },
   { id: 'calls', label: "Calls" },
+  { id: 'cost', label: "USD" },
+  { id: 'tokens', label: "Tokens" },
 ]
 
 /** One person's settled usage, as `/api/usage/activity` and the profile usage endpoint return it. */
@@ -56,7 +56,7 @@ export function UsageOverview({
   /** The recent usage panel, shown beside top models. */
   records: ReactNode
 }) {
-  const [metric, setMetric] = useState<Metric>('tokens')
+  const [metric, setMetric] = useState<Metric>('calls')
   const totals = {
     calls: activity?.summary.calls ?? 0,
     tokens: (activity?.summary.inputTokens ?? 0) + (activity?.summary.outputTokens ?? 0),
