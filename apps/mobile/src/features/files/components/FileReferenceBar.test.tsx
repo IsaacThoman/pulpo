@@ -8,15 +8,12 @@ type PickerProps = { limit: number; pickedIds: string[]; onConfirm: (items: Arra
 const picker = vi.hoisted(() => ({ props: null as PickerProps | null }))
 vi.mock('../../../theme', () => ({ useAppTheme: () => ({ text: '#111', secondary: '#666', tertiary: '#999', blue: '#00f', orange: '#f80', fillStrong: '#eee' }) }))
 vi.mock('expo-haptics', () => ({ selectionAsync: vi.fn(), notificationAsync: vi.fn(), NotificationFeedbackType: { Success: 'success' } }))
-vi.mock('../../../platform/SymbolView', () => ({ SymbolView: ({ name }: { name: string }) => createElement('i', { 'data-symbol': name }) }))
-vi.mock('@tanstack/react-query', () => ({ useQueries: ({ queries }: { queries: unknown[] }) => queries.map(() => ({ data: undefined, isError: false })) }))
-vi.mock('../queries', () => ({ fileNodeQuery: (namespace: string, id: string) => ({ queryKey: [namespace, id] }) }))
 vi.mock('./FolderPickerSheet', () => ({ FolderPickerSheet: (props: PickerProps) => { picker.props = props; return null } }))
 vi.mock('react-native', () => {
   const container = ({ children }: { children?: ReactNode }) => createElement('div', null, children)
   return {
     Platform: { OS: 'ios' },
-    ScrollView: container, View: container, Text: container,
+    View: container, Text: container,
     StyleSheet: { create: (value: unknown) => value },
     Pressable: ({ children, onPress, accessibilityLabel }: { children: ReactNode; onPress: () => void; accessibilityLabel?: string }) => (
       createElement('button', { onClick: onPress, 'aria-label': accessibilityLabel }, children)
@@ -29,8 +26,6 @@ const { useFileReferencePicker } = await import('../scopePicker')
 
 const plan: FileReference = { id: 'plan-id', name: 'Plan.md', folder: false }
 const onAdd = vi.fn()
-const onRemove = vi.fn()
-const onOpen = vi.fn()
 const onTurnOnAgent = vi.fn()
 let root: Root
 let host: HTMLDivElement
@@ -48,19 +43,14 @@ afterEach(() => { act(() => root.unmount()); host.remove() })
 const render = (references: FileReference[], options: { available?: boolean; agentActive?: boolean } = {}) => act(() => root.render(
   <FileReferenceBar
     namespace="account" references={references} available={options.available ?? true} agentActive={options.agentActive ?? false} canUseAgent
-    onTurnOnAgent={onTurnOnAgent} onAdd={onAdd} onRemove={onRemove} onOpen={onOpen}
+    onTurnOnAgent={onTurnOnAgent} onAdd={onAdd}
   />,
 ))
-const click = (label: string) => act(() => host.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click())
 
 describe('FileReferenceBar', () => {
-  it('shows each reference as a chip that opens its item or leaves the message', () => {
+  it('leaves the references themselves to the attachment strip', () => {
     render([plan], { agentActive: true })
-    expect(host.textContent).toContain('Plan.md')
-    click('Open Plan.md')
-    expect(onOpen).toHaveBeenCalledWith(plan)
-    click('Remove Plan.md')
-    expect(onRemove).toHaveBeenCalledWith('plan-id')
+    expect(host.textContent).toBe('')
   })
 
   it('asks for agent mode while it is off', () => {

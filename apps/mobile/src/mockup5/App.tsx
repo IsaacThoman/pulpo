@@ -247,10 +247,12 @@ import { FILE_ACCESS_MODES, FILE_CHANGE_MODE_LABELS, useChatFilesAccess } from '
 import { FileChangesCard } from '../features/files/components/FileChangesCard';
 import { ChatFilesAccessSheet } from '../features/files/components/ChatFilesAccessSheet';
 import { FileReferenceBar } from '../features/files/components/FileReferenceBar';
+import { FileReferenceCard, type FileReferenceCardAppearance } from '../features/files/components/FileReferenceCard';
+import { sentMessageParts, sentMessageReadableText } from '../features/files/messageReferences';
 import { useFileReferencePicker } from '../features/files/scopePicker';
 import { addComposerReferences, composerMessageText, composerReferences, removeComposerReference } from '@pulpo/client-core/files';
 import { appendComposerText, composerTextEnd, draftPreviewText, draftReferenceNames, withComposerText } from '../features/files/composerDraft';
-import { fileReferenceHref } from '@pulpo/contracts';
+import { fileReferenceHref, type FileReference } from '@pulpo/contracts';
 import { useOpenFileItem } from '../features/files/open';
 import { fileOpenTarget } from '../features/files/itemActions';
 import { FilesToastHost } from '../features/files/components/FilesToastHost';
@@ -932,14 +934,37 @@ function attachmentTint(kind: AttachmentVisualKind): string {
   return colors[kind];
 }
 
-function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove, onRetry }: {
+/** Opens a mentioned Files item in the app's Files screens. */
+function openFileReference(reference: FileReference) {
+  openFilesLinkInApp(fileReferenceHref(reference), useSessionStore.getState().instanceUrl);
+}
+
+const NO_FILE_REFERENCES: readonly FileReference[] = [];
+
+function AttachmentStrip({ attachments, references = NO_FILE_REFERENCES, filesNamespace, onPreviewFile, onPreviewImage, onRemove, onRetry, onRemoveReference }: {
   attachments: ComposerAttachment[];
+  /** Files items the draft mentions; shown after the attachments as cards of the same shape. */
+  references?: readonly FileReference[];
+  filesNamespace?: string;
   onPreviewFile: (attachment: ComposerAttachment) => void;
   onPreviewImage: (index: number, origin?: AttachmentImageTransitionOrigin) => void;
   onRemove: (localId: string) => void;
   onRetry: (localId: string) => void;
+  onRemoveReference?: (id: string) => void;
 }) {
-  const { styles } = useChatStyles();
+  const { styles, COLORS } = useChatStyles();
+  const referenceAppearance = useMemo((): FileReferenceCardAppearance => ({
+    card: styles.fileAttachment,
+    tile: styles.fileAttachmentIcon,
+    copy: styles.fileAttachmentCopy,
+    name: styles.fileAttachmentName,
+    meta: styles.fileAttachmentMeta,
+    pressed: styles.attachmentPressed,
+    badge: styles.fileReferenceBadge,
+    badgeColor: '#ffffff',
+    mutedColor: COLORS.muted,
+    tileIconSize: 22,
+  }), [COLORS.muted, styles]);
   const imageRefs = useRef(new Map<string, View>());
   const imageSources = useRef(new Map<string, { height: number; uri: string; width: number }>());
   const previewImage = useCallback((index: number, attachment: ComposerAttachment) => {
@@ -977,16 +1002,41 @@ function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove,
       });
     });
   }, [onPreviewImage]);
-  if (attachments.length === 0) return null;
+  if (attachments.length === 0 && references.length === 0) return null;
   return (
     <FlatList
-      accessibilityLabel={`${attachments.length} of ${MAX_COMPOSER_ATTACHMENTS} attachments`}
+      accessibilityLabel={[
+        attachments.length ? `${attachments.length} of ${MAX_COMPOSER_ATTACHMENTS} attachments` : '',
+        references.length ? `${references.length} ${references.length === 1 ? 'item' : 'items'} from Files` : '',
+      ].filter(Boolean).join(', ')}
       keyboardShouldPersistTaps="handled"
       horizontal
       contentContainerStyle={styles.attachmentStripContent}
       showsHorizontalScrollIndicator={false}
       style={styles.attachmentStrip}
       data={attachments}
+      ListFooterComponentStyle={styles.fileReferenceStripFooter}
+      ListFooterComponent={references.length ? <>
+        {references.map((reference) => (
+          <View key={reference.id} style={styles.attachmentFrame}>
+            <FileReferenceCard namespace={filesNamespace} reference={reference} appearance={referenceAppearance} onOpen={openFileReference} />
+            <Pressable
+              accessibilityLabel={`Remove ${reference.name}`}
+              accessibilityRole="button"
+              onPress={(event) => {
+                event.stopPropagation();
+                Haptics.selectionAsync();
+                onRemoveReference?.(reference.id);
+              }}
+              style={styles.removeAttachmentHitTarget}
+            >
+              <View style={styles.removeAttachmentButton}>
+                <Icon name="xmark" size={9} color="#ffffff" weight="bold" />
+              </View>
+            </Pressable>
+          </View>
+        ))}
+      </> : null}
       initialNumToRender={4}
       maxToRenderPerBatch={4}
       windowSize={3}
@@ -1080,7 +1130,13 @@ function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove,
   );
 }
 
-function SentAttachmentWindow({ attachments, children, assistant = false }: { attachments: Attachment[]; assistant?: boolean; children: (visible: Attachment[]) => ReactNode }) {
+function SentAttachmentWindow({ attachments, children, after, assistant = false }: {
+  attachments: Attachment[];
+  assistant?: boolean;
+  children: (visible: Attachment[]) => ReactNode;
+  /** Shown after the last page's attachments, in the same row: the Files items a message mentions. */
+  after?: ReactNode;
+}) {
   const { styles, COLORS } = useChatStyles();
   const [page, setPage] = useState(0);
   const size = 12;
@@ -1092,7 +1148,10 @@ function SentAttachmentWindow({ attachments, children, assistant = false }: { at
       <Text style={{ color: COLORS.muted, fontSize: 12 }}>{current * size + 1}–{Math.min(attachments.length, (current + 1) * size)} of {attachments.length}</Text>
       <Pressable accessibilityRole="button" accessibilityLabel="Next attachment page" hitSlop={TEXT_BUTTON_HIT_SLOP} disabled={current === last} onPress={() => setPage(current + 1)}><Text style={{ color: current === last ? COLORS.muted : COLORS.link }}>Next</Text></Pressable>
     </View>}
-    <View style={[styles.sentAttachments, assistant && styles.assistantAttachments]}>{children(attachments.slice(current * size, (current + 1) * size))}</View>
+    <View style={[styles.sentAttachments, assistant && styles.assistantAttachments]}>
+      {children(attachments.slice(current * size, (current + 1) * size))}
+      {current === last ? after : null}
+    </View>
   </View>;
 }
 
@@ -1197,6 +1256,37 @@ function SentAttachmentPreview({ attachment, group, onPreviewFile, onPreviewImag
           : <Icon name="chevron.right" size={13} color={COLORS.muted} />}
     </Pressable>
   );
+}
+
+/** The Files items a sent message mentions, as cards like its file attachments that open them. */
+function SentFileReferences({ references }: { references: readonly FileReference[] }) {
+  const { styles, COLORS } = useChatStyles();
+  const filesNamespace = useFilesNamespace();
+  const filesEnabled = useFilesEnabled();
+  const appearance = useMemo((): FileReferenceCardAppearance => ({
+    card: styles.sentFileAttachment,
+    tile: styles.sentFileIcon,
+    copy: styles.sentFileCopy,
+    name: styles.sentFileName,
+    meta: styles.sentFileMeta,
+    pressed: styles.attachmentPressed,
+    badge: styles.fileReferenceBadge,
+    badgeColor: '#ffffff',
+    mutedColor: COLORS.muted,
+    tileIconSize: 20,
+    chevron: true,
+  }), [COLORS.muted, styles]);
+  return <>
+    {references.map((reference) => (
+      <FileReferenceCard
+        key={reference.id}
+        namespace={filesEnabled ? filesNamespace : null}
+        reference={reference}
+        appearance={appearance}
+        onOpen={openFileReference}
+      />
+    ))}
+  </>;
 }
 
 const PULPO_MARK_SOURCE = require('./assets/pulpo-smiley.png') as ImageSourcePropType;
@@ -3173,12 +3263,14 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
 
   return useCallback(function runAction(action: MessageAction): void {
     if (['edit', 'delete', 'regenerate'].includes(action)) speechPlayback.stop();
+    // Copies, shares, and quotes leave out the links to the Files items a message mentions; edits keep them.
+    const readable = sentMessageReadableText(message.role, message.text);
     if (action === 'copy') {
-      void copyText(message.text, 'Message copied');
+      void copyText(readable, 'Message copied');
       return;
     }
     if (action === 'share') {
-      void Share.share({ message: message.text });
+      void Share.share({ message: readable });
       return;
     }
     if (action === 'share-options') {
@@ -3238,7 +3330,7 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
       return;
     }
     if (action === 'reply') {
-      void copyText(`> ${message.text.split('\n')[0]}\n\n`, 'Reply quote copied');
+      void copyText(`> ${readable.split('\n')[0]}\n\n`, 'Reply quote copied');
       return;
     }
     if (action === 'report') {
@@ -3266,7 +3358,7 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
       edit: 'Edit message',
       regenerate: 'Regenerate response',
     } as const;
-    Alert.alert(labels[action], message.text.slice(0, 120));
+    Alert.alert(labels[action], readable.slice(0, 120));
   }, [instanceUrl, message, onEdit, onRegenerate, queryClient, refresh, userId]);
 }
 
@@ -3280,15 +3372,16 @@ function useMessageMenu({ message, onEdit, onRegenerate }: {
   const speechKey = `${message.chatId ?? ''}:${message.id}`;
   // An ended message keeps its player open; the menu reads it again from the start.
   const speaking = speechState.key === speechKey && speechState.phase !== 'ended';
-  const canSpeak = Boolean(speechText(message.text)) && (message.role === 'user' || !message.status || ['completed', 'complete', 'failed', 'stopped'].includes(message.status));
-  const speak = () => { void readAloud(speechKey, message.text).then(() => { const error = speechPlayback.getSnapshot().error; if (error) Alert.alert('Read aloud', error); }).catch(error => Alert.alert('Read aloud', error.message)); };
+  const readable = sentMessageReadableText(message.role, message.text);
+  const canSpeak = Boolean(speechText(readable)) && (message.role === 'user' || !message.status || ['completed', 'complete', 'failed', 'stopped'].includes(message.status));
+  const speak = () => { void readAloud(speechKey, readable).then(() => { const error = speechPlayback.getSnapshot().error; if (error) Alert.alert('Read aloud', error); }).catch(error => Alert.alert('Read aloud', error.message)); };
   const speechLabel = speaking ? (speechState.phase === 'loading' ? 'Stop preparing speech' : 'Stop reading') : 'Read aloud';
   const runAction = useMessageActionRunner({ message, onEdit, onRegenerate });
   const canReport = useCanReportMessage(message);
   // A response can only be deleted as one of several versions; the user message owns the last one.
   const canDelete = message.role === 'user' || (message.branches?.length ?? 0) > 1;
   const deleteLabel = message.role === 'user' ? 'Delete message' : 'Delete version';
-  return { canDelete, canReport, canSpeak, deleteLabel, runAction, speak, speaking, speechKey, speechLabel };
+  return { canDelete, canReport, canSpeak, deleteLabel, readable, runAction, speak, speaking, speechKey, speechLabel };
 }
 
 /**
@@ -3328,18 +3421,18 @@ function MessageContextMenu({
   children: ReactNode;
 }) {
   const { styles } = useChatStyles();
-  const { canDelete, canReport, canSpeak, deleteLabel, runAction, speak, speaking, speechKey, speechLabel } = useMessageMenu({ message, onEdit, onRegenerate });
+  const { canDelete, canReport, canSpeak, deleteLabel, readable, runAction, speak, speaking, speechKey, speechLabel } = useMessageMenu({ message, onEdit, onRegenerate });
   useEffect(() => () => { if (speechPlayback.getSnapshot().key === speechKey) speechPlayback.stop(); }, [speechKey, message.text]);
-  const previewText = message.text.length > 2_000
-    ? `${message.text.slice(0, 1_999)}…`
-    : message.text;
+  const previewText = readable.length > 2_000
+    ? `${readable.slice(0, 1_999)}…`
+    : readable;
 
   return (
     <NativeObjectContextMenu
       fillWidth={message.role === 'assistant'}
       androidActions={[
         { label: 'Copy', icon: 'doc.on.doc', onPress: () => runAction('copy') },
-        { label: 'Select text', icon: 'doc.text', onPress: () => selectText(message.text) },
+        { label: 'Select text', icon: 'doc.text', onPress: () => selectText(readable) },
         { label: 'Share as text', icon: 'square.and.arrow.up', onPress: () => runAction('share') },
         ...(message.chatId ? [{ label: 'Share chat link', icon: 'square.and.arrow.up', onPress: () => runAction('share-chat') }] : []),
         { label: 'Reply', icon: 'arrowshape.turn.up.left', onPress: () => runAction('reply') },
@@ -3517,8 +3610,9 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onOpen, onRege
 }) {
   const { styles } = useChatStyles();
   const runMessageAction = useMessageActionRunner({ message, onEdit, onRegenerate });
-  const canReport = useCanReportMessage(message) && message.role === 'user' && !message.text;
-  const attachmentOnly = message.role === 'user' && !message.text;
+  // Mentioned Files items show beside the attachments, not as text.
+  const attachmentOnly = message.role === 'user' && !sentMessageParts(message.role, message.text).text;
+  const canReport = useCanReportMessage(message) && attachmentOnly;
   // Message attachments carry their server id; optimistic ones are uploading until `ready`.
   const uploaded = !attachment.state || attachment.state === 'ready';
   return (
@@ -4123,6 +4217,8 @@ const MessageRow = memo(function MessageRow({
   const { styles, COLORS } = useChatStyles();
   const { showReasoning } = useAppPreferences();
   const showResponseCost = usePrototypeStore((state) => state.preferences.showResponseCost);
+  // A user message's last paragraph of links to Files items shows as cards beside its attachments.
+  const sent = useMemo(() => sentMessageParts(message.role, message.text), [message.role, message.text]);
   const headerActions = useMessageAccessibilityActions(message, onEdit, onRegenerate, message.role === 'user'
     ? message.text.length > 0
     : Boolean(message.text || message.error || message.outputItems?.length || message.status === 'stopped'));
@@ -4210,8 +4306,8 @@ const MessageRow = memo(function MessageRow({
     <View style={message.role === 'user' ? styles.userRow : styles.assistantRow}>
       {message.role === 'user' ? (
         <View style={styles.userMessageContent}>
-          {message.attachments && message.attachments.length > 0 && (
-            <SentAttachmentWindow attachments={message.attachments}>{(visible) => <>
+          {(message.attachments?.length ?? 0) > 0 ? (
+            <SentAttachmentWindow attachments={message.attachments ?? []} after={sent.references.length ? <SentFileReferences references={sent.references} /> : null}>{(visible) => <>
               {visible.map((attachment) => (
                 <SentAttachmentContextMenu
                   attachment={attachment}
@@ -4230,14 +4326,21 @@ const MessageRow = memo(function MessageRow({
                 </SentAttachmentContextMenu>
               ))}
             </>}</SentAttachmentWindow>
-          )}
+          ) : sent.references.length > 0 ? (
+            // With no attachments or text, the cards carry the message's long-press actions.
+            sent.text ? <View style={styles.sentAttachments}><SentFileReferences references={sent.references} /></View> : (
+              <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
+                <View style={[styles.userMessageContextContent, styles.sentAttachments]}><SentFileReferences references={sent.references} /></View>
+              </MessageContextMenu>
+            )
+          ) : null}
           {/* Starts each sent message for screen readers, which also find its actions here. */}
           <View accessible accessibilityLabel="You" accessibilityRole="header" {...headerActions} style={styles.userMessageHeader} />
-          {message.text.length > 0 && (
+          {sent.text.length > 0 && (
             <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
               <View style={styles.userMessageContextContent}>
                 <View style={styles.userBubble}>
-                  <SafeMarkdown selectable={Platform.OS !== 'android'} containerStyle={styles.userMessageMarkdown}>{message.text}</SafeMarkdown>
+                  <SafeMarkdown selectable={Platform.OS !== 'android'} containerStyle={styles.userMessageMarkdown}>{sent.text}</SafeMarkdown>
                 </View>
               </View>
             </MessageContextMenu>
@@ -6850,6 +6953,19 @@ function ChatView({
                   </Pressable>
                 </View>
               ) : null}
+              <AttachmentStrip
+                attachments={attachments}
+                references={filesAccess.available ? composerDraft.references : undefined}
+                filesNamespace={filesNamespace}
+                onRemoveReference={(id) => updateComposerDraft(removeComposerReference(inputRef.current, id))}
+                onPreviewFile={openFilePreview}
+                onPreviewImage={(index, origin) => {
+                  const selected = attachments[index];
+                  if (selected) openImageViewer(attachments, selected, origin);
+                }}
+                onRetry={retryAttachment}
+                onRemove={removeComposerAttachment}
+              />
               <FileReferenceBar
                 namespace={filesNamespace}
                 references={composerDraft.references}
@@ -6858,18 +6974,6 @@ function ChatView({
                 canUseAgent={canUseAgent}
                 onTurnOnAgent={() => setAgentEnabled(true)}
                 onAdd={(added) => updateComposerDraft(addComposerReferences(inputRef.current, added))}
-                onRemove={(id) => updateComposerDraft(removeComposerReference(inputRef.current, id))}
-                onOpen={(reference) => { openFilesLinkInApp(fileReferenceHref(reference), useSessionStore.getState().instanceUrl); }}
-              />
-              <AttachmentStrip
-                attachments={attachments}
-                onPreviewFile={openFilePreview}
-                onPreviewImage={(index, origin) => {
-                  const selected = attachments[index];
-                  if (selected) openImageViewer(attachments, selected, origin);
-                }}
-                onRetry={retryAttachment}
-                onRemove={removeComposerAttachment}
               />
               {attachmentUploadError ? (
                 <Text accessibilityRole="alert" style={styles.attachmentErrorText}>
@@ -7967,6 +8071,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   fileAttachmentCopy: { flex: 1 },
   fileAttachmentName: { color: COLORS.text, fontSize: 12.5, fontWeight: '600' },
   fileAttachmentMeta: { color: COLORS.muted, fontSize: 10.5, marginTop: 3 },
+  fileReferenceStripFooter: { flexDirection: 'row', gap: 6 },
+  fileReferenceBadge: { position: 'absolute', right: -4, bottom: -4, width: 15, height: 15, borderRadius: 7.5, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.accent, borderWidth: 1.5, borderColor: COLORS.elevated },
   removeAttachmentHitTarget: { position: 'absolute', top: 0, right: 0, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   removeAttachmentButton: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#3a3a3c', borderWidth: 2, borderColor: COLORS.elevated },
   attachmentRetryOverlay: { position: 'absolute', left: 6, right: 6, bottom: 4, minHeight: 24, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: 'rgba(196,43,37,0.92)', paddingHorizontal: 7 },
