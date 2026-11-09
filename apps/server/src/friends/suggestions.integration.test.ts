@@ -7,7 +7,7 @@ import type { FriendsList } from '@pulpo/contracts'
 import type { AuthenticatedUser } from '../auth/service.js'
 import { db, queryClient } from '../database/client.js'
 import { friendSuggestionDismissals, friendships, users } from '../database/schema.js'
-import { orderedPair, registerFriendRoutes } from './routes.js'
+import { orderedPair, registerFriendRoutes, SUGGESTION_DISMISSAL_DAYS } from './routes.js'
 
 const publish = vi.hoisted(() => vi.fn())
 vi.mock('../responses/events.js', () => ({ publishStateChange: publish }))
@@ -34,6 +34,9 @@ describe.skipIf(!enabled)('friend suggestion dismissals', () => {
     expect(response.statusCode).toBe(200)
     return (response.json() as FriendsList).suggestions?.map((suggestion) => suggestion.profile.id) ?? []
   }
+  const backdateDismissal = (days: number) => db.update(friendSuggestionDismissals)
+    .set({ createdAt: new Date(Date.now() - days * 24 * 60 * 60 * 1_000 - 60_000) })
+    .where(eq(friendSuggestionDismissals.userId, viewer.id))
   const dismiss = (userId: string) => app.inject({ method: 'POST', url: '/api/friends/suggestions/dismissals', payload: { userId } })
 
   beforeAll(async () => {
@@ -79,19 +82,30 @@ describe.skipIf(!enabled)('friend suggestion dismissals', () => {
     expect(rows).toEqual([expect.objectContaining({ dismissedUserId: suggested.id, mutualFriendCount: 1 })])
   })
 
-  it('suggests them again once they share more friends, and a new dismissal resets that', async () => {
+  it('suggests them again only after 30 days and more mutual friends, and a new dismissal restarts both', async () => {
     await dismiss(suggested.id)
 
+    // A new mutual friend within the waiting period does not bring them back.
     const second = await createUser()
     await befriend(viewer.id, second.id)
-    expect(await suggestionIds()).toEqual([])
     await befriend(second.id, suggested.id)
+    await backdateDismissal(SUGGESTION_DISMISSAL_DAYS - 1)
+    expect(await suggestionIds()).toEqual([])
+
+    await backdateDismissal(SUGGESTION_DISMISSAL_DAYS)
     expect(await suggestionIds()).toEqual([suggested.id])
 
     await dismiss(suggested.id)
     expect(await suggestionIds()).toEqual([])
     const [row] = await db.select().from(friendSuggestionDismissals).where(eq(friendSuggestionDismissals.userId, viewer.id))
     expect(row?.mutualFriendCount).toBe(2)
+    expect(Date.now() - row!.createdAt.getTime()).toBeLessThan(60_000)
+  })
+
+  it('keeps them hidden after 30 days when no mutual friends were gained', async () => {
+    await dismiss(suggested.id)
+    await backdateDismissal(SUGGESTION_DISMISSAL_DAYS + 30)
+    expect(await suggestionIds()).toEqual([])
   })
 
   it('does not count mutual friends the viewer has blocked toward the baseline', async () => {

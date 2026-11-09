@@ -117,6 +117,9 @@ async function visibleFriendIds(userId: string): Promise<string[]> {
   return rows.map((row) => row.id)
 }
 
+/** How long a dismissed suggestion stays hidden even if the two people gain mutual friends. */
+export const SUGGESTION_DISMISSAL_DAYS = 30
+
 async function friendSuggestionCandidates(viewerId: string, currentFriendIds: string[], excludedUserIds: string[]) {
   if (!currentFriendIds.length) return []
   const suggestionConnections = alias(friendships, 'suggestion_connections')
@@ -148,9 +151,14 @@ async function friendSuggestionCandidates(viewerId: string, currentFriendIds: st
       eq(users.blocked, false),
       ne(users.role, 'pending'),
     ))
-    .groupBy(users.id, friendSuggestionDismissals.mutualFriendCount)
-    // Someone dismissed comes back only once they share more friends with the viewer than then.
-    .having(sql`${friendSuggestionDismissals.mutualFriendCount} is null or ${mutualCount} > ${friendSuggestionDismissals.mutualFriendCount}`)
+    .groupBy(users.id, friendSuggestionDismissals.mutualFriendCount, friendSuggestionDismissals.createdAt)
+    // Someone dismissed comes back only after the waiting period, and only once they share more
+    // friends with the viewer than when they were dismissed. Hours, not days, so the wait is the
+    // same length whatever the database's time zone and daylight saving.
+    .having(sql`${friendSuggestionDismissals.mutualFriendCount} is null or (
+      ${mutualCount} > ${friendSuggestionDismissals.mutualFriendCount}
+      and ${friendSuggestionDismissals.createdAt} <= now() - make_interval(hours => ${SUGGESTION_DISMISSAL_DAYS * 24})
+    )`)
     .orderBy(desc(mutualCount), asc(sql`lower(${users.username})`))
     .limit(6)
 }
@@ -466,8 +474,8 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
     reply.code(204).send()
   })
 
-  // Hides someone from the viewer's suggestions until they share more mutual friends than they do
-  // now; dismissing again resets that baseline. They are not told, and search and friend requests
+  // Hides someone from the viewer's suggestions for at least SUGGESTION_DISMISSAL_DAYS, and after
+  // that until they share more mutual friends than they do now; dismissing again restarts both. They are not told, and search and friend requests
   // still work in both directions.
   app.post('/api/friends/suggestions/dismissals', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (request, reply) => {
     const user = requireUser(request)
