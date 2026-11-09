@@ -80,7 +80,7 @@ export function FriendProfilePage() {
       </div>}
 
       {detail && <>
-        <section className="rounded-xl border px-6 py-8 text-center">
+        <section className="px-6 py-4 text-center">
           <ProfileAvatar
             name={detail.profile.displayName}
             avatarUrl={detail.profile.avatarUrl}
