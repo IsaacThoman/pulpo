@@ -1,5 +1,5 @@
 {
-  "id": "f8caff2b-b433-4fa5-9de9-7181f822b592",
+  "id": "d55ead6a-c7c4-4e19-9123-2fb15ccfbe5a",
   "prevId": "cfd803aa-98ce-4bbc-acb0-11d99124584a",
   "version": "7",
   "dialect": "postgresql",
@@ -6443,6 +6443,13 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
+        },
+        "mutual_friend_count": {
+          "name": "mutual_friend_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "created_at": {
           "name": "created_at",

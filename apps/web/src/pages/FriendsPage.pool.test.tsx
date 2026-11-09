@@ -107,7 +107,7 @@ describe('combined Friends and Pool page', () => {
     fireEvent.click(within(suggestionRegion).getByRole('button', { name: 'Dismiss Carol' }))
     await waitFor(() => expect(within(suggestionRegion).queryByText('Carol')).toBeNull())
     expect(within(suggestionRegion).getByText('Dana')).toBeTruthy()
-    expect(screen.getByRole('status').textContent).toBe("You won't see Carol in suggestions again.")
+    expect(screen.getByRole('status').textContent).toBe("Carol won't be suggested again unless you gain mutual friends.")
     expect(writes()).toEqual([['/api/friends/suggestions/dismissals', { method: 'POST', body: { userId: 'Carol' } }]])
   })
 

@@ -150,10 +150,14 @@ export const userBlocks = pgTable('user_blocks', {
   check('user_blocks_not_self_check', sql`${table.blockerUserId} <> ${table.blockedUserId}`),
 ])
 
-/** People the user chose not to see under "People you may know". Only the dismisser sees this. */
+/**
+ * People the user chose not to see under "People you may know". Only the dismisser sees this.
+ * Someone comes back once they share more mutual friends with the user than when dismissed.
+ */
 export const friendSuggestionDismissals = pgTable('friend_suggestion_dismissals', {
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   dismissedUserId: uuid('dismissed_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  mutualFriendCount: integer('mutual_friend_count').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   primaryKey({ columns: [table.userId, table.dismissedUserId] }),

@@ -76,7 +76,34 @@ describe.skipIf(!enabled)('friend suggestion dismissals', () => {
     // Dismissing again is harmless.
     expect((await dismiss(suggested.id)).statusCode).toBe(204)
     const rows = await db.select().from(friendSuggestionDismissals).where(eq(friendSuggestionDismissals.userId, viewer.id))
-    expect(rows).toHaveLength(1)
+    expect(rows).toEqual([expect.objectContaining({ dismissedUserId: suggested.id, mutualFriendCount: 1 })])
+  })
+
+  it('suggests them again once they share more friends, and a new dismissal resets that', async () => {
+    await dismiss(suggested.id)
+
+    const second = await createUser()
+    await befriend(viewer.id, second.id)
+    expect(await suggestionIds()).toEqual([])
+    await befriend(second.id, suggested.id)
+    expect(await suggestionIds()).toEqual([suggested.id])
+
+    await dismiss(suggested.id)
+    expect(await suggestionIds()).toEqual([])
+    const [row] = await db.select().from(friendSuggestionDismissals).where(eq(friendSuggestionDismissals.userId, viewer.id))
+    expect(row?.mutualFriendCount).toBe(2)
+  })
+
+  it('does not count mutual friends the viewer has blocked toward the baseline', async () => {
+    const blocked = await createUser()
+    await befriend(viewer.id, blocked.id)
+    await befriend(blocked.id, suggested.id)
+    await app.inject({ method: 'POST', url: '/api/friends/blocks', payload: { userId: blocked.id } })
+
+    await dismiss(suggested.id)
+    const [row] = await db.select().from(friendSuggestionDismissals).where(eq(friendSuggestionDismissals.userId, viewer.id))
+    expect(row?.mutualFriendCount).toBe(1)
+    expect(await suggestionIds()).toEqual([])
   })
 
   it('is one-sided and leaves friend requests working', async () => {

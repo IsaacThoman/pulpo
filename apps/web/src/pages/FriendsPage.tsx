@@ -261,7 +261,7 @@ export function FriendsPage() {
     void act(
       `dismiss:${suggestion.profile.id}`,
       () => apiRequest('/api/friends/suggestions/dismissals', { method: 'POST', body: { userId: suggestion.profile.id } }),
-      uit`You won't see ${suggestion.profile.displayName} in suggestions again.`,
+      uit`${suggestion.profile.displayName} won't be suggested again unless you gain mutual friends.`,
     )
   }
 

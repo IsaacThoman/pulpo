@@ -1,6 +1,7 @@
 CREATE TABLE "friend_suggestion_dismissals" (
 	"user_id" uuid NOT NULL,
 	"dismissed_user_id" uuid NOT NULL,
+	"mutual_friend_count" integer DEFAULT 0 NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "friend_suggestion_dismissals_user_id_dismissed_user_id_pk" PRIMARY KEY("user_id","dismissed_user_id"),
 	CONSTRAINT "friend_suggestion_dismissals_not_self_check" CHECK ("friend_suggestion_dismissals"."user_id" <> "friend_suggestion_dismissals"."dismissed_user_id")
