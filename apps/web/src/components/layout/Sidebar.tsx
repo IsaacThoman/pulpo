@@ -88,6 +88,7 @@ import { useFileOperations } from '@/features/files/browser/use-file-operations'
 import { useSidePanel } from '@/features/side-panel/store'
 import { openBeside, useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import { OpenChatToLeftItem } from '@/features/side-panel/AgentActions'
+import { ownProfilePath } from '@/lib/profile'
 import { copyChatShareLink, duplicateChats } from '@/features/chat/chat-actions'
 import { ChatExpiryMenuItem } from '@/features/chat/ChatExpiryMenuItem'
 import { sidebarChatGroups } from '@/features/sidebar/chat-groups'
@@ -2038,7 +2039,7 @@ export function Sidebar({
             event.preventDefault()
             setFilesMenuPoint({ x: event.clientX, y: event.clientY })
           })}
-          {sidebarPins.usage && iconBtn(t('sidebar.usage'), '/usage', <BarChart3 className="size-4" />, undefined, openNavMenu('usage'))}
+          {sidebarPins.usage && iconBtn(t('sidebar.usage'), ownProfilePath(user?.username), <BarChart3 className="size-4" />, undefined, openNavMenu('usage'))}
           {billingEnabled && sidebarPins.billing && iconBtn(t('sidebar.billing'), '/billing', <CreditCard className="size-4" />, undefined, openNavMenu('billing'))}
           {sidebarPins.friends && iconBtn(t('sidebar.friends'), '/friends', <UsersRound className="size-4" />, pendingSocialCount, openNavMenu('friends'))}
           {apiKeysEnabled && sidebarPins.apiKeys && iconBtn(t('sidebar.apiKeys'), '/api-keys', <KeyRound className="size-4" />, undefined, openNavMenu('apiKeys'))}
@@ -2180,7 +2181,7 @@ export function Sidebar({
             <AccountSwitcherMenuItems open={accountMenuOpen} />
             {accountNavItem('searchChats', t('sidebar.searchChats'), onOpenSearch, <Search />)}
             {filesEnabled && accountNavItem('files', t('sidebar.files'), '/files', <FolderIcon />)}
-            {accountNavItem('usage', t('sidebar.usage'), '/usage', <BarChart3 />)}
+            {accountNavItem('usage', t('sidebar.usage'), ownProfilePath(user?.username), <BarChart3 />)}
             {accountNavItem('friends', t('sidebar.friends'), '/friends', <UsersRound />, pendingSocialCount)}
             {apiKeysEnabled && accountNavItem('apiKeys', t('sidebar.apiKeys'), '/api-keys', <KeyRound />)}
             {billingEnabled && accountNavItem('billing', t('sidebar.billing'), '/billing', <CreditCard />)}

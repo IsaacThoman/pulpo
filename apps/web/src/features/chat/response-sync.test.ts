@@ -47,6 +47,17 @@ describe('response sync planning', () => {
       ['friends-pending-count', 'user-1'],
       ['friends-usage', 'user-1'],
       ['friend-profile'],
+      ['profile-usage', 'user-1'],
+    ])
+  })
+
+  it('refreshes open profiles and their usage when Pool state changes', () => {
+    expect(stateInvalidationQueryKeys('pool', 'user-1')).toEqual([
+      ['pool', 'user-1'],
+      ['pool-pending-count', 'user-1'],
+      ['pool-usage', 'user-1'],
+      ['friend-profile'],
+      ['profile-usage', 'user-1'],
     ])
   })
 

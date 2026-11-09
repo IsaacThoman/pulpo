@@ -43,6 +43,7 @@ function serializeUser(row: typeof users.$inferSelect): AuthenticatedUser {
     username: row.username,
     avatarUrl: profileAvatarUrl(row),
     profileColor: row.profileColor,
+    usageVisibility: row.usageVisibility,
     role: row.role,
     balanceMicros: row.balanceMicros,
     storageLimitBytes: row.storageLimitBytes,

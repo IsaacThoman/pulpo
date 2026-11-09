@@ -16,11 +16,12 @@ export function syncInvalidationScopes(result: SyncResult): SyncResult['invalida
 }
 
 export function stateInvalidationQueryKeys(scope: StateInvalidationScope, userId: string): string[][] {
+  // Friendship, Pool membership, and usage visibility all decide whose profile usage the user may see.
   if (scope === 'friends') {
-    return [['friends', userId], ['friends-pending-count', userId], ['friends-usage', userId], ['friend-profile']]
+    return [['friends', userId], ['friends-pending-count', userId], ['friends-usage', userId], ['friend-profile'], ['profile-usage', userId]]
   }
   if (scope === 'pool') {
-    return [['pool', userId], ['pool-pending-count', userId], ['pool-usage', userId]]
+    return [['pool', userId], ['pool-pending-count', userId], ['pool-usage', userId], ['friend-profile'], ['profile-usage', userId]]
   }
   // The sidebar's folders and shortcuts are part of Files, and trashed Files items are listed in the trash.
   if (scope === 'files') return [['files', userId], ['folders', userId], ['trash', userId]]

@@ -44,6 +44,7 @@ const METRICS: { id: LBMetric; label: string }[] = [
   { id: 'tokens', label: "Tokens" },
   { id: 'cost', label: "USD" },
   { id: 'calls', label: "Calls" },
+  // Friends and Pool leaderboards never see other people's balances.
   { id: 'balance', label: "Balance" },
 ]
 function metricLabel(m: LBMetric): string {
@@ -145,7 +146,8 @@ interface LeaderboardResponse {
     username: string
     avatarUrl: string | null
     profileColor: string | null
-    balanceMicros: number
+    /** Only the admin instance leaderboard reports balances. */
+    balanceMicros?: number
     calls: number
     tokens: number
     costMicros: number
@@ -242,7 +244,7 @@ export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
     profileColor: row.profileColor,
     email: '',
     role: 'user',
-    balance: row.balanceMicros / 1_000_000,
+    balance: (row.balanceMicros ?? 0) / 1_000_000,
     joinedAt: 0,
     blocked: false,
     usageCalls: row.calls,
@@ -335,7 +337,7 @@ export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
             <span className="flex items-center gap-2 text-xs font-medium">
               <Clock className="size-3" /> {ui("Usage overview")} </span>
             <div className="h-4 w-px bg-border" />
-            <ToggleGroup options={METRICS.map((option) => ({ ...option, label: ui(option.label) }))} value={metric} onChange={setMetric} />
+            <ToggleGroup options={METRICS.filter((option) => instanceMode || option.id !== 'balance').map((option) => ({ ...option, label: ui(option.label) }))} value={metric} onChange={setMetric} />
           </div>
           <ToggleGroup options={RANGES.map((option) => ({ ...option, label: ui(option.label) }))} value={range} onChange={setRange} />
         </div>

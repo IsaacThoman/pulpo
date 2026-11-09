@@ -64,7 +64,7 @@ function LocationProbe() {
 function mount() {
   render(<QueryClientProvider client={new QueryClient()}>
     <TooltipProvider>
-      <MemoryRouter initialEntries={['/usage']}>
+      <MemoryRouter initialEntries={['/octo']}>
         <Sidebar collapsed={false} mobile={false} mobileOpen={false} onToggle={vi.fn()} onNavigate={vi.fn()} onOpenSearch={onOpenSearch} onOpenSettings={vi.fn()} />
         <LocationProbe />
       </MemoryRouter>
@@ -161,7 +161,8 @@ describe('sidebar nav button menus', () => {
     const usage = screen.getByRole('link', { name: 'Usage' })
     expect(nav.contains(usage)).toBe(true)
     expect(usage.getAttribute('aria-current')).toBe('page')
-    expect(usage.getAttribute('href')).toBe('/usage')
+    // Usage lives on your own profile.
+    expect(usage.getAttribute('href')).toBe('/octo')
     expect(screen.getByRole('link', { name: 'Billing' }).getAttribute('aria-current')).toBeNull()
     fireEvent.click(screen.getByRole('link', { name: 'Billing' }))
     expect(location.pathname).toBe('/billing')
@@ -190,7 +191,7 @@ describe('sidebar nav button menus', () => {
     expect(settings.set).toHaveBeenCalledExactlyOnceWith('sidebarPins', expect.objectContaining({ usage: !pinned }))
     expect(document.activeElement).toBe(pin)
     expect(screen.getByRole('menu')).toBeTruthy()
-    expect(location.pathname).toBe('/usage')
+    expect(location.pathname).toBe('/octo')
     expect(onOpenSearch).not.toHaveBeenCalled()
     expect(screen.queryByRole('menuitem', { name: 'Show in sidebar' })).toBeNull()
 
@@ -204,7 +205,7 @@ describe('sidebar nav button menus', () => {
     fireEvent.contextMenu(screen.getByRole('button', { name: /Octo/ }))
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Unpin Billing from sidebar' }))
     expect(settings.set).toHaveBeenCalledExactlyOnceWith('sidebarPins', expect.objectContaining({ billing: false }))
-    expect(location.pathname).toBe('/usage')
+    expect(location.pathname).toBe('/octo')
     expect(screen.getByRole('menu')).toBeTruthy()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Billing' }))
     expect(location.pathname).toBe('/billing')

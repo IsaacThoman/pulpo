@@ -2739,6 +2739,16 @@ const esUi: Record<string, string> = {
   "Search models": "Buscar modelos",
   "Filter models": "Filtrar modelos",
   "Search API keys": "Buscar claves de API",
+  "Unable to load usage": "No se pudo cargar el uso",
+  "Public": "Público",
+  "Usage visibility": "Visibilidad del uso",
+  "Private (Pool only)": "Privado (solo Pool)",
+  "Could not save usage visibility": "No se pudo guardar la visibilidad del uso",
+  "Usage visible to friends": "Uso visible para amigos",
+  "Usage visible to your Pool": "Uso visible para tu Pool",
+  "Usage visible to everyone": "Uso visible para todos",
+  "{{name}} hasn't shared their usage with you.": "{{name}} no ha compartido su uso contigo.",
+  "Who can see your usage stats and requests on your profile. Pool members can always see your usage.": "Quién puede ver tus estadísticas de uso y solicitudes en tu perfil. Los miembros de tu Pool siempre pueden ver tu uso.",
 }
 
 export default esUi

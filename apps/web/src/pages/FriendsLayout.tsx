@@ -2,6 +2,8 @@ import { Link, NavLink, Outlet, useMatch } from 'react-router-dom'
 import { ArrowRight, BarChart3 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { ownProfilePath } from '@/lib/profile'
+import { useAuth } from '@/stores/auth'
 import { ui } from '@/i18n/ui'
 
 const TABS = [
@@ -12,6 +14,7 @@ const TABS = [
 /** Friends hub: managing people and comparing usage with them share one header. */
 export function FriendsLayout() {
   const onLeaderboard = useMatch('/friends/leaderboard')
+  const username = useAuth((state) => state.user?.username)
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-12 shrink-0 items-center gap-4 border-b px-5">
@@ -37,7 +40,7 @@ export function FriendsLayout() {
         </nav>
         {onLeaderboard && <Button asChild size="sm" variant="ghost" className="shrink-0 text-muted-foreground">
           {/* Phones keep the tabs readable by collapsing this link to the sidebar's Usage icon. */}
-          <Link to="/usage"><BarChart3 className="sm:hidden" /><span className="sr-only sm:not-sr-only">{ui("Personal usage")}</span><ArrowRight className="max-sm:hidden" /></Link>
+          <Link to={ownProfilePath(username)}><BarChart3 className="sm:hidden" /><span className="sr-only sm:not-sr-only">{ui("Personal usage")}</span><ArrowRight className="max-sm:hidden" /></Link>
         </Button>}
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">

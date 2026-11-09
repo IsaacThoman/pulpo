@@ -71,6 +71,7 @@ export function applyFullBackupCompatibilityDefaults(database: Record<string, Ar
   }
   for (const user of database.users ?? []) {
     user.profile_color ??= null
+    user.usage_visibility ??= 'friends'
     user.avatar_object_key ??= null
     user.avatar_version ??= 0
   }

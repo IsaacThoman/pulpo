@@ -30,12 +30,15 @@ export interface PublicTopModel {
 
 export function PublicRecentUsagePanel({
   records,
+  showParticipant = true,
   nextCursor,
   loadingMore,
   error,
   onLoadMore,
 }: {
   records: PublicUsageRecord[]
+  /** Off on a profile, where every record is the profile owner's. */
+  showParticipant?: boolean
   nextCursor: string | null
   loadingMore: boolean
   error?: string | null
@@ -71,7 +74,7 @@ export function PublicRecentUsagePanel({
           <thead>
             <tr className="text-left text-muted-foreground">
               <th className="px-3 py-2 font-normal">{ui("Time")}</th>
-              <th className="px-3 py-2 font-normal">{ui("User")}</th>
+              {showParticipant && <th className="px-3 py-2 font-normal">{ui("User")}</th>}
               <th className="px-3 py-2 font-normal">{ui("Model")}</th>
               <th className="px-3 py-2 text-right font-normal">{ui("Tokens")}</th>
               <th className="px-3 py-2 text-right font-normal">{ui("Cost")}</th>
@@ -79,7 +82,7 @@ export function PublicRecentUsagePanel({
           </thead>
           <tbody className="divide-y">{records.map((record) => <tr key={record.id}>
             <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{new Date(record.createdAt).toLocaleString(activeLocale())}</td>
-            <td className="px-3 py-2"><span className="flex min-w-0 max-w-48 items-center gap-1.5"><ProfileAvatar name={record.participant.displayName} avatarUrl={record.participant.avatarUrl} className="size-5" fallbackClassName="text-[8px]" /><span className="truncate">{record.participant.displayName}</span></span></td>
+            {showParticipant && <td className="px-3 py-2"><span className="flex min-w-0 max-w-48 items-center gap-1.5"><ProfileAvatar name={record.participant.displayName} avatarUrl={record.participant.avatarUrl} className="size-5" fallbackClassName="text-[8px]" /><span className="truncate">{record.participant.displayName}</span></span></td>}
             <td className="px-3 py-2"><span className="flex min-w-0 max-w-48 items-center gap-1.5"><UsageModelIcon modelId={record.model.id} logo={record.model.logo} /><span className="truncate">{record.model.name}</span></span></td>
             <td className="px-3 py-2 text-right tabular-nums">{(record.inputTokens + record.outputTokens).toLocaleString(activeLocale())}</td>
             <td className="px-3 py-2 text-right tabular-nums">

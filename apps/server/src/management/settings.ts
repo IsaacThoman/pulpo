@@ -35,6 +35,7 @@ import { preferencesWithModelDefaults } from '../settings/model-preferences.js'
 import { firstUnavailableModelReference, newAccountModelReferenceIds } from '../settings/new-account-defaults.js'
 import { reconcileDetailedPayloadRetention } from '../logging/detailed-payload-retention.js'
 import { getConfig } from '../config.js'
+import { poolPeerIds } from '../pools/service.js'
 import {
   bumpAccountRevisions,
   friendPeerIds,
@@ -72,6 +73,7 @@ export async function loadManagementSettings(userId: string, database: typeof db
     database.select({
       username: users.username,
       profileColor: users.profileColor,
+      usageVisibility: users.usageVisibility,
     }).from(users).where(eq(users.id, userId)).limit(1),
     database.select().from(applicationSettings),
   ])
@@ -81,6 +83,7 @@ export async function loadManagementSettings(userId: string, database: typeof db
     ...rawAccount,
     username: profile?.username,
     profileColor: profile?.profileColor ?? null,
+    usageVisibility: profile?.usageVisibility,
   })
   const storedWebTools = parseWebToolsSettings(byKey.get('webTools'))
   const instance = {
@@ -199,11 +202,13 @@ export async function applyManagementSettings(
   const changedPaths = (await planManagementSettings(userId, document, secrets, mode)).changes.map((change) => change.path)
   if (!changedPaths.length) return current
   const loggingChanged = changedPaths.some((path) => path === 'instance.logging' || path.startsWith('instance.logging.'))
-  const publicProfileChanged = changedPaths.some((path) => (
+  const usageVisibilityChanged = changedPaths.includes('account.usageVisibility')
+  const publicProfileChanged = usageVisibilityChanged || changedPaths.some((path) => (
     path === 'account.username' || path === 'account.profileColor'
   ))
   let publishedRevision: number | undefined
   let friendChanges: AccountRevisionChange[] = []
+  let poolChanges: AccountRevisionChange[] = []
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
     const lockedCurrent = await loadManagementSettings(userId, tx as unknown as typeof db)
@@ -216,6 +221,7 @@ export async function applyManagementSettings(
       const [revision] = await tx.update(users).set({
         username: account.username,
         profileColor: account.profileColor,
+        usageVisibility: account.usageVisibility,
         stateRevision: sql`${users.stateRevision} + 1`,
         updatedAt: new Date(),
       }).where(eq(users.id, userId)).returning({ revision: users.stateRevision })
@@ -224,6 +230,7 @@ export async function applyManagementSettings(
         const peers = await friendPeerIds(tx, userId)
         friendChanges = await bumpAccountRevisions(tx, peers)
       }
+      if (usageVisibilityChanged) poolChanges = await bumpAccountRevisions(tx, await poolPeerIds(tx, userId))
     }
     if (mode !== 'account') {
       const [existingWebTools] = await tx.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1)
@@ -258,6 +265,7 @@ export async function applyManagementSettings(
   })
   if (publishedRevision !== undefined) await publishStateChange({ userId, revision: publishedRevision })
   await publishScopedStateChanges(friendChanges, ['friends'])
+  await publishScopedStateChanges(poolChanges, ['pool'])
   if (mode !== 'instance' && previousTrashRetention !== account.trashRetention) {
     await queueTrashPurge(userId, 'management-settings')
   }

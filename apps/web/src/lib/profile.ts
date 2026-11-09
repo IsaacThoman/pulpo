@@ -9,3 +9,8 @@ export function automaticProfileColor(id: string): string {
   for (const character of id) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0
   return PROFILE_COLORS[Math.abs(hash) % PROFILE_COLORS.length]!
 }
+
+/** The signed-in user's own profile, which holds their usage; `/usage` redirects there. */
+export function ownProfilePath(username: string | null | undefined): string {
+  return username ? `/${username}` : '/usage'
+}

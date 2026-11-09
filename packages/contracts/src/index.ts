@@ -87,6 +87,10 @@ export const usernameSchema = z.string().trim().toLowerCase()
   .regex(/^[a-z0-9][a-z0-9_]{1,28}[a-z0-9]$/, 'Use 3–30 letters, numbers, or underscores; begin and end with a letter or number')
   .refine((username) => !reservedProfileUsernames.has(username), 'That username is reserved by Pulpo')
 export const profileColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/)
+/** Who may see a user's usage on their profile; each level includes the ones before it. */
+export const usageVisibilitySchema = z.enum(['pool', 'friends', 'public'])
+export type UsageVisibility = z.infer<typeof usageVisibilitySchema>
+export const DEFAULT_USAGE_VISIBILITY: UsageVisibility = 'friends'
 
 export const userSchema = z.object({
   id: idSchema,
@@ -95,6 +99,7 @@ export const userSchema = z.object({
   username: usernameSchema,
   avatarUrl: z.string().nullable(),
   profileColor: profileColorSchema.nullable(),
+  usageVisibility: usageVisibilitySchema,
   role: roleSchema,
   balanceMicros: z.number().int(),
   storageLimitBytes: z.number().int().nonnegative(),
@@ -444,6 +449,7 @@ export const updateProfileInputSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   username: usernameSchema.optional(),
   profileColor: profileColorSchema.nullable().optional(),
+  usageVisibility: usageVisibilitySchema.optional(),
 }).refine((value) => Object.keys(value).length > 0, 'At least one profile field is required')
 
 export const friendProfileSchema = z.object({
@@ -501,6 +507,8 @@ export const friendProfileDetailSchema = z.object({
   requestId: idSchema.nullable(),
   friendsSince: isoDateSchema.nullable(),
   mutualFriends: z.array(friendProfileSchema),
+  /** Whether the viewer may see this profile's usage; always true for the viewer's own profile. */
+  usageVisible: z.boolean(),
 })
 export type FriendProfileDetail = z.infer<typeof friendProfileDetailSchema>
 
@@ -1765,13 +1773,15 @@ export const managementAccountSettingsSchema = z.object({
   nickname: z.string().max(80).default(''),
   username: usernameSchema,
   profileColor: profileColorSchema.nullable().default(null),
+  usageVisibility: usageVisibilitySchema.default(DEFAULT_USAGE_VISIBILITY),
   memoryEnabled: z.boolean().default(false),
   instructionPresetSelections: instructionPresetSelectionsSchema.default({}),
   /** Per-model composer Agent mode selections. Missing model ids default on in clients. */
   agentModes: agentModesSchema.default({}),
   /** @deprecated Retained so older management documents remain readable. */
   agentModeEnabled: z.boolean().optional(),
-  leaderboardVisible: z.boolean().default(false),
+  /** @deprecated Retained so older management documents remain readable. */
+  leaderboardVisible: z.boolean().optional(),
   leaderboardColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#10b981'),
   localChatLimit: z.number().int().min(0).max(500).default(50),
   localAttachmentCacheMb: z.number().int().min(0).max(2_048).default(50),
