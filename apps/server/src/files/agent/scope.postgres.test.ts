@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, queryClient } from '../../database/client.js'
 import { chats, fileChanges, fileNodes, fileVersions } from '../../database/schema.js'
-import { mergedFileAccessSql } from '../../chats/file-scope.js'
+import { mergedFileAccessSql, scopeWithMessageReferences } from '../../chats/file-scope.js'
 import { filesFixture, requireDisposableDatabase, type FilesFixture } from './test-fixtures.js'
 
 const objects = vi.hoisted(() => new Map<string, Buffer>())
@@ -30,6 +30,23 @@ describe.skipIf(!enabled)('chat Files scope', () => {
     files = await filesFixture()
   })
   afterAll(async () => { await queryClient.end() })
+
+  it('adds the live items a message links to, skipping others and keeping the newest past the limit', async () => {
+    const plan = await files.doc('Plan.md', null, 'x')
+    const notes = await files.folder('Notes')
+    const trashed = await files.folder('Old')
+    await db.update(fileNodes).set({ trashedAt: new Date() }).where(eq(fileNodes.id, trashed))
+    const text = `Look at [Plan](/files/d/${plan}) and https://pulpo.baby/files/f/${notes}, /files/f/${trashed}, /files/d/${crypto.randomUUID()}`
+    expect(await scopeWithMessageReferences(db, files.userId, [], text)).toEqual([plan, notes])
+    expect(await scopeWithMessageReferences(db, files.userId, [plan, notes], text)).toBeUndefined()
+    expect(await scopeWithMessageReferences(db, crypto.randomUUID(), [], text)).toBeUndefined()
+    const full = ['root', ...Array.from({ length: 49 }, () => crypto.randomUUID())]
+    const next = (await scopeWithMessageReferences(db, files.userId, full, `/files/d/${plan}`))!
+    expect(next).toHaveLength(50)
+    expect(next[0]).toBe('root')
+    expect(next.at(-1)).toBe(plan)
+    expect(next).not.toContain(full[1])
+  })
 
   it('merges two close changes to access modes without losing either', async () => {
     const a = await files.folder('A')

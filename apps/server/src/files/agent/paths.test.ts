@@ -32,7 +32,7 @@ describe('access modes', () => {
   it('turns read only and out-of-scope items into explanations', () => {
     expect(changeMode('suggest', 'a')).toBe('suggest')
     expect(() => changeMode('read', 'Notes.md')).toThrow(/"Notes.md" is read only/)
-    expect(() => changeMode(null, 'x')).toThrow(/not attached/)
+    expect(() => changeMode(null, 'x')).toThrow(/needs the user's permission/)
   })
 })
 

@@ -938,6 +938,9 @@ function applyAgentEventOutput(output: unknown[], event: ResponseEvent): unknown
   if (event.type === 'pulpo.agent.cost_limit' && typeof payload.id === 'string') {
     return upsertOutputItem(output, (item) => item.type === 'pulpo_cost_limit' && item.id === payload.id, payload)
   }
+  if (event.type === 'pulpo.agent.files_permission' && typeof payload.id === 'string') {
+    return upsertOutputItem(output, (item) => item.type === 'pulpo_files_permission' && item.id === payload.id, payload)
+  }
   if (event.type === 'pulpo.agent.files.changed') {
     return upsertOutputItem(output, (item) => item.type === 'pulpo_file_changes', payload)
   }
@@ -1759,6 +1762,10 @@ export const managementAccountSettingsSchema = z.object({
   showResponseCost: z.boolean().default(false),
   agentCostLimitEnabled: z.boolean().default(true),
   agentCostLimitMicros: agentCostLimitMicrosSchema,
+  /** Ask before an Agent reply browses Files beyond the items mentioned in its chat. */
+  agentFilesAskBeforeBrowsing: z.boolean().default(true),
+  /** What the agent may change in Files in new chats. */
+  agentFileChangeMode: fileAccessModeSchema.default('suggest'),
   chatWidth: z.enum(['full', 'narrow']).default('narrow'),
   animationSpeed: animationSpeedSchema,
   customInstructions: z.string().max(CUSTOM_INSTRUCTIONS_MAX_LENGTH).default(''),
@@ -2002,7 +2009,7 @@ export const updateApiKeySchema = z.object({
  * ones the user pointed out.
  */
 export const FILE_SCOPE_ROOT = 'root'
-export const MAX_CHAT_FILE_SCOPES = 20
+export const MAX_CHAT_FILE_SCOPES = 50
 export const fileScopeIdsSchema = z.array(z.union([z.literal(FILE_SCOPE_ROOT), idSchema])).max(MAX_CHAT_FILE_SCOPES)
   .transform((ids) => [...new Set(ids.map((id) => id.toLowerCase()))])
 /**
@@ -2026,6 +2033,10 @@ export const chatSummarySchema = z.object({
   temporary: z.boolean(),
   fileScopeIds: z.array(z.string()).default([]),
   fileScopeAccess: z.record(z.string(), fileAccessModeSchema).default({}),
+  /** What the agent may change in Files in this chat; items it only browsed to get at most BROWSED_FILES_MODE_LIMIT. */
+  fileChangeMode: fileAccessModeSchema.default('suggest'),
+  /** The user let the agent browse all of their Files in this chat. */
+  filesBrowseAllowed: z.boolean().default(false),
   expiresAt: isoDateSchema.nullable().optional(),
   updatedAt: isoDateSchema,
   activeResponseId: idSchema.nullable(),
@@ -2056,6 +2067,8 @@ export const createChatSchema = z.object({
   /** Files items the agent may work with in this chat. */
   fileScopeIds: fileScopeIdsSchema.default([]),
   fileScopeAccess: fileScopeAccessSchema.default({}),
+  /** Defaults to the account's `agentFileChangeMode`. */
+  fileChangeMode: fileAccessModeSchema.optional(),
 })
 
 export const updateChatSchema = z.object({
@@ -2067,6 +2080,10 @@ export const updateChatSchema = z.object({
   autoExpire: z.boolean().optional(),
   fileScopeIds: fileScopeIdsSchema.optional(),
   fileScopeAccess: fileScopeAccessSchema.optional(),
+  /** Applies to every item in the chat's scope: it clears modes older clients set per item. */
+  fileChangeMode: fileAccessModeSchema.optional(),
+  /** Only revoking: browsing is allowed from the agent's permission request. */
+  filesBrowseAllowed: z.literal(false).optional(),
 })
 export type UpdateChatInput = z.infer<typeof updateChatSchema>
 

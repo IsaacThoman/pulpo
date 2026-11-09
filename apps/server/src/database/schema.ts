@@ -474,6 +474,11 @@ export const chats = pgTable('chats', {
   fileScopeIds: jsonb('file_scope_ids').$type<string[]>().notNull().default([]),
   // What the agent may do with each scope entry ('read' | 'suggest' | 'write'), keyed like file_scope_ids.
   fileScopeAccess: jsonb('file_scope_access').$type<Record<string, string>>().notNull().default({}),
+  // What the agent may change in Files ('read' | 'suggest' | 'write'); file_scope_access entries, set
+  // by older clients, override it for their items. Items reached only by browsing take at most 'suggest'.
+  fileChangeMode: text('file_change_mode').notNull().default('suggest'),
+  // The user let Agent replies in this chat browse all of their Files.
+  filesBrowseAllowed: boolean('files_browse_allowed').notNull().default(false),
   activeBranchLeafId: uuid('active_branch_leaf_id'),
   activeResponseId: uuid('active_response_id'),
   expiresAt: timestamp('expires_at', { withTimezone: true }),

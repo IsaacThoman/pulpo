@@ -404,6 +404,114 @@ export const FILE_ACCESS_MODES = ['read', 'suggest', 'write'] as const
 export const fileAccessModeSchema = z.enum(FILE_ACCESS_MODES)
 export type FileAccessMode = z.infer<typeof fileAccessModeSchema>
 export const DEFAULT_FILE_ACCESS_MODE: FileAccessMode = 'suggest'
+/** Items the agent reached only by browsing, not ones mentioned in the chat, take at most suggestions. */
+export const BROWSED_FILES_MODE_LIMIT: FileAccessMode = 'suggest'
+
+/**
+ * A Files item mentioned in a message. Messages carry their references as Markdown links to the
+ * item's page (`/files/d/<id>` for files and documents, `/files/f/<id>` for folders), so they read
+ * well everywhere; sending one lets the agent work with that item in the chat.
+ */
+export interface FileReference {
+  id: string
+  name: string
+  folder: boolean
+}
+
+const UUID = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+/** At most this many referenced items are taken from one message. */
+export const MAX_MESSAGE_FILE_REFERENCES = 50
+
+export function fileReferenceHref(reference: Pick<FileReference, 'id' | 'folder'>): string {
+  return `/files/${reference.folder ? 'f' : 'd'}/${reference.id}`
+}
+
+function escapeLinkText(text: string): string {
+  return text.replace(/[\\[\]]/g, (char) => `\\${char}`).replace(/\s+/g, ' ')
+}
+
+export function fileReferenceMarkdown(reference: FileReference): string {
+  return `[${escapeLinkText(reference.name)}](${fileReferenceHref(reference)})`
+}
+
+/** The message text with its references as a last paragraph of links. */
+export function appendFileReferences(text: string, references: readonly FileReference[]): string {
+  const unique = references.filter((reference, index) => references.findIndex((other) => other.id === reference.id) === index)
+  if (!unique.length) return text
+  const links = unique.map(fileReferenceMarkdown).join(' ')
+  const body = text.trimEnd()
+  return body ? `${body}\n\n${links}` : links
+}
+
+const REFERENCE_LINK = new RegExp(`^\\[((?:\\\\.|[^\\]\\\\])*)\\]\\(/files/([df])/(${UUID})\\)$`)
+
+/**
+ * Splits a message written by appendFileReferences back into its text and references, for editing
+ * it again. Only a last paragraph made of nothing but reference links counts.
+ */
+export function splitFileReferences(text: string): { text: string; references: FileReference[] } {
+  const trimmed = text.trimEnd()
+  const breakAt = trimmed.lastIndexOf('\n\n')
+  const paragraph = trimmed.slice(breakAt + 1).trim()
+  const tokens = paragraph ? paragraph.split(/ (?=\[)/) : []
+  const references: FileReference[] = []
+  for (const token of tokens) {
+    const match = REFERENCE_LINK.exec(token)
+    if (!match) return { text, references: [] }
+    references.push({ id: match[3]!.toLowerCase(), name: match[1]!.replace(/\\(.)/g, '$1'), folder: match[2] === 'f' })
+  }
+  if (!references.length) return { text, references }
+  return { text: breakAt < 0 ? '' : trimmed.slice(0, breakAt).trimEnd(), references }
+}
+
+const REFERENCE_PATH = new RegExp(`/files/[df]/(${UUID})(?![0-9a-zA-Z-])`, 'g')
+
+/** Ids of Files items a message links to, in order, at most MAX_MESSAGE_FILE_REFERENCES. */
+export function fileReferenceIds(text: string): string[] {
+  const ids = new Set<string>()
+  for (const match of text.matchAll(REFERENCE_PATH)) {
+    ids.add(match[1]!.toLowerCase())
+    if (ids.size >= MAX_MESSAGE_FILE_REFERENCES) break
+  }
+  return [...ids]
+}
+
+/**
+ * An Agent reply waiting for the user to let it browse their Files beyond the items mentioned in
+ * the chat. `allowed`: for this chat. `always_allowed`: the user stopped being asked. `expired`:
+ * nobody answered within FILES_PERMISSION_TIMEOUT_MS, so the agent carried on without.
+ */
+export const filesPermissionItemSchema = z.object({
+  id: z.string().min(1),
+  type: z.literal('pulpo_files_permission'),
+  status: z.enum(['awaiting_decision', 'allowed', 'always_allowed', 'denied', 'expired']),
+  /** The `pulpo files` command that asked, e.g. `ls`. */
+  command: z.string().max(40),
+  /** The path it named; empty for the top of My files. */
+  path: z.string().max(4_096),
+  requested_at: z.string(),
+  expires_at: z.string(),
+  decided_at: z.string().optional(),
+  /** The Agent turn whose tool call asked; the item is shown after that turn. */
+  agent_turn: z.number().int().positive().optional(),
+})
+export type FilesPermissionItem = z.infer<typeof filesPermissionItemSchema>
+export const FILES_PERMISSION_TIMEOUT_MS = 180_000
+
+export const filesPermissionDecisionSchema = z.enum(['allow_chat', 'allow_always', 'deny'])
+export type FilesPermissionDecision = z.infer<typeof filesPermissionDecisionSchema>
+export const filesPermissionAnswerSchema = z.object({
+  itemId: z.string().min(1).max(200),
+  decision: filesPermissionDecisionSchema,
+})
+
+export function findFilesPermissionItems(output: readonly unknown[] | undefined): FilesPermissionItem[] {
+  return (output ?? []).flatMap((item) => {
+    if ((item as { type?: unknown } | null)?.type !== 'pulpo_files_permission') return []
+    const parsed = filesPermissionItemSchema.safeParse(item)
+    return parsed.success ? [parsed.data] : []
+  })
+}
 
 /** The kinds of change an agent makes to Files. `update` is new content; `move` includes renames. */
 export const fileChangeKindSchema = z.enum(['create', 'update', 'move', 'trash'])

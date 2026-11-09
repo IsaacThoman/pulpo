@@ -1,7 +1,8 @@
 import { and, eq, inArray, isNull, ne, sql, type SQL } from 'drizzle-orm'
-import { FILE_SCOPE_ROOT, type FileAccessMode } from '@pulpo/contracts'
+import { DEFAULT_FILE_ACCESS_MODE, FILE_SCOPE_ROOT, fileAccessModeSchema, fileReferenceIds, MAX_CHAT_FILE_SCOPES, type FileAccessMode } from '@pulpo/contracts'
+import type { FileExecutor } from '../files/access.js'
 import { db } from '../database/client.js'
-import { chats, fileNodes } from '../database/schema.js'
+import { chats, fileNodes, userPreferences } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 
 /**
@@ -44,4 +45,35 @@ export function mergedFileAccessSql(scopeIds: readonly string[] | undefined, pat
     from jsonb_each(${chats.fileScopeAccess} || ${JSON.stringify(patch)}::jsonb) as entry
     where entry.key in (select jsonb_array_elements_text(${ids}))
   )`
+}
+
+/** What the agent may change in Files in a new chat: the account's choice, else suggestions. */
+export async function defaultFileChangeMode(userId: string): Promise<FileAccessMode> {
+  const [row] = await db.select({ values: userPreferences.values }).from(userPreferences).where(eq(userPreferences.userId, userId)).limit(1)
+  return fileAccessModeSchema.safeParse((row?.values as Record<string, unknown> | undefined)?.agentFileChangeMode).data ?? DEFAULT_FILE_ACCESS_MODE
+}
+
+/**
+ * The chat's scope after a message that links to Files items: the owner's live items it links to
+ * are added, so the agent may work with them in this chat. Past the limit, the oldest entries make
+ * room. Undefined when nothing changes.
+ */
+export async function scopeWithMessageReferences(executor: FileExecutor, userId: string, scopeIds: readonly string[], text: string): Promise<string[] | undefined> {
+  const linked = fileReferenceIds(text).filter((id) => !scopeIds.includes(id))
+  if (!linked.length) return undefined
+  const found = new Set((await executor.select({ id: fileNodes.id }).from(fileNodes).where(and(
+    inArray(fileNodes.id, linked),
+    eq(fileNodes.ownerUserId, userId),
+    eq(fileNodes.status, 'ready'),
+    isNull(fileNodes.trashedAt),
+    ne(fileNodes.kind, 'shortcut'),
+  ))).map((row) => row.id))
+  const added = linked.filter((id) => found.has(id))
+  if (!added.length) return undefined
+  const next = [...scopeIds, ...added]
+  while (next.length > MAX_CHAT_FILE_SCOPES) {
+    const oldest = next.findIndex((id) => id !== FILE_SCOPE_ROOT)
+    next.splice(oldest, 1)
+  }
+  return next
 }

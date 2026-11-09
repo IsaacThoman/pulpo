@@ -8,7 +8,7 @@ import { failureMessage } from './failures.js'
 import { pullCommand } from './pull.js'
 import { pushCommand } from './push.js'
 import { catCommand, grepCommand, listCommand, treeCommand } from './read-commands.js'
-import { loadChatFileScope } from './scope.js'
+import { loadChatFileScope, needsPermission, type FileScope } from './scope.js'
 
 export type { FilesWorkspace } from './command-context.js'
 
@@ -49,6 +49,33 @@ const handlers: { [Command in RelayCommand]: (ctx: CommandContext, args: z.outpu
   rm: rmCommand,
 }
 
+/** The Files paths each command names, so a path needing permission is asked about before anything runs. */
+const commandPaths: { [Command in RelayCommand]: (args: z.output<typeof relayCommandArgs[Command]>) => string[] } = {
+  ls: (args) => [args.path ?? ''],
+  tree: (args) => [args.path ?? ''],
+  cat: (args) => [args.path],
+  grep: (args) => [args.path ?? ''],
+  pull: (args) => [args.path],
+  push: (args) => args.items.map((item) => item.remote),
+  mkdir: (args) => [args.path],
+  mv: (args) => [args.from, args.to],
+  rm: (args) => [args.path],
+}
+
+/** What came of asking the user to let this reply browse their Files. */
+export type FilesPermissionOutcome = 'allowed' | 'denied' | 'expired' | 'stopped'
+
+const REFUSED_MESSAGES: Record<Exclude<FilesPermissionOutcome, 'allowed'>, string> = {
+  denied: 'The user declined to let you browse their Files. Work with the items they mentioned in this chat, or ask them to mention what you need.',
+  expired: 'The user did not answer your request to browse their Files in time. Carry on with what you have, and ask them in your reply if you need more from their Files.',
+  stopped: 'The command was stopped',
+}
+
+async function firstBlockedPath(scope: FileScope, paths: string[]): Promise<string | undefined> {
+  for (const path of paths) if (await needsPermission(scope, path)) return path
+  return undefined
+}
+
 function isRelayCommand(command: string): command is RelayCommand {
   return Object.hasOwn(relayCommandArgs, command)
 }
@@ -71,7 +98,24 @@ export function createFilesRelay(input: {
   maxOutputBytes: number
   /** After a command changed Files, with how many items the reply has changed. */
   onChanged?: (count: number) => void | Promise<void>
+  /**
+   * Asks the user to let this reply browse all of their Files, and waits for the answer. Without
+   * it, such commands fail. A refusal stands for the rest of the reply, so the agent asks once.
+   */
+  requestPermission?: (request: { command: string; path: string }, signal?: AbortSignal) => Promise<FilesPermissionOutcome>
 }): (operationId: string, request: RelayRequest, signal?: AbortSignal) => Promise<RelayResult> {
+  let refused: 'denied' | 'expired' | undefined
+  // Commands arriving while the user is being asked wait for the same answer.
+  let asking: Promise<FilesPermissionOutcome> | undefined
+  const askPermission = (command: string, path: string, signal?: AbortSignal): Promise<FilesPermissionOutcome> => {
+    if (refused) return Promise.resolve(refused)
+    if (!input.requestPermission) return Promise.resolve('denied')
+    asking ??= input.requestPermission({ command, path }, signal).then((outcome) => {
+      if (outcome === 'denied' || outcome === 'expired') refused = outcome
+      return outcome
+    }).finally(() => { asking = undefined })
+    return asking
+  }
   return async (_operationId, request, signal) => {
     const { command } = request
     if (typeof command !== 'string' || !isRelayCommand(command)) return { ok: false, error: `Unknown command "${String(command).slice(0, 40)}"; run pulpo files --help` }
@@ -79,9 +123,16 @@ export function createFilesRelay(input: {
     if (!parsed.success) return { ok: false, error: `Invalid arguments for ${command}: ${z.prettifyError(parsed.error).slice(0, 1_000)}` }
     let ctx: CommandContext | undefined
     try {
-      const scope = await loadChatFileScope(input.userId, input.chatId)
+      let scope = await loadChatFileScope(input.userId, input.chatId)
       if (!scope) return { ok: false, error: 'Files are not available in this chat' }
-      if (!scope.roots.length) return { ok: false, error: 'Nothing from Files is attached to this chat. The user can attach items with "Add from Files…" in the composer\'s + menu' }
+      const paths = (commandPaths[command] as (args: unknown) => string[])(parsed.data)
+      const blocked = await firstBlockedPath(scope, paths)
+      if (blocked !== undefined) {
+        const outcome = await askPermission(command, blocked, signal)
+        if (outcome !== 'allowed') return { ok: false, error: REFUSED_MESSAGES[outcome] }
+        scope = await loadChatFileScope(input.userId, input.chatId)
+        if (!scope) return { ok: false, error: 'Files are not available in this chat' }
+      }
       ctx = { userId: input.userId, chatId: input.chatId, responseId: input.responseId, scope, workspace: input.workspace, signal, changed: false }
       const handler = handlers[command] as (ctx: CommandContext, args: unknown) => Promise<CommandOutput>
       const result = await handler(ctx, parsed.data)
