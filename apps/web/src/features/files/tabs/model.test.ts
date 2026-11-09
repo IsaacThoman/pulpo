@@ -254,6 +254,19 @@ describe('the tab limit', () => {
     expect(data.activeId).toBe('tab-98')
   })
 
+  it('closes a pinned tab when every other tab is pinned, keeping within the limit', () => {
+    const ids = Array.from({ length: MAX_TABS }, (_, index) => `tab-${index}`)
+    // Every tab pinned, or every tab but the one showing.
+    for (const pinned of [ids, ids.slice(0, -1)]) {
+      const { data, tab } = openTab(tabs(ids, 'tab-99', pinned), ROOT_LOCATION, { index: 'end' })
+      expect(data.tabs).toHaveLength(MAX_TABS)
+      expect(data.tabs.some((candidate) => candidate.id === 'tab-0')).toBe(false)
+      expect(data.closed.at(-1)!.tabs[0]!.tab.id).toBe('tab-0')
+      expect(data.tabs.some((candidate) => candidate.id === 'tab-99')).toBe(true)
+      expect(data.activeId).toBe(tab.id)
+    }
+  })
+
   it('puts a duplicate right after its source at the limit', () => {
     const data = duplicateTab(full('tab-50'), 'tab-50')
     const index = data.tabs.findIndex((tab) => tab.id === 'tab-50')

@@ -125,14 +125,17 @@ function pushClosed<L extends TabLocation>(closed: ClosedTabs<L>[], entry: Close
 
 /**
  * Keeps the window within `MAX_TABS`: the leftmost unpinned tab that is not showing (and not in
- * `keep`) closes, and can be reopened like any closed tab.
+ * `keep`) closes, and can be reopened like any closed tab. When every such tab is pinned, the
+ * leftmost pinned one closes instead, so the limit always holds and a reload keeps every tab.
  */
 function makeRoom<L extends TabLocation>(data: FilesTabsData<L>, extra: number, keep: ReadonlySet<string> = new Set()): FilesTabsData<L> {
   if (data.tabs.length + extra <= MAX_TABS) return data
   const tabs = [...data.tabs]
   let closed = data.closed
   while (tabs.length + extra > MAX_TABS) {
-    const index = tabs.findIndex((tab) => !tab.pinned && tab.id !== data.activeId && !keep.has(tab.id))
+    const closable = (tab: FilesTab<L>) => tab.id !== data.activeId && !keep.has(tab.id)
+    let index = tabs.findIndex((tab) => !tab.pinned && closable(tab))
+    if (index < 0) index = tabs.findIndex(closable)
     if (index < 0) break
     const [tab] = tabs.splice(index, 1)
     closed = pushClosed(closed, { tabs: [{ tab: tab!, index }] })
