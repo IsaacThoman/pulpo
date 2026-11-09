@@ -90,4 +90,45 @@ describe('usage visibility setting', () => {
     expect(name.value).toBe('Ada Draft')
     expect((screen.getByRole('button', { name: 'Save profile' }) as HTMLButtonElement).disabled).toBe(false)
   })
+
+  // Each profile write replies with the whole user, so an overlapping reply could undo the other change.
+  it('holds the other profile writes while a visibility save is pending', async () => {
+    useAuth.setState({ user: { ...user, avatarUrl: '/avatars/ada.png' } })
+    let finish!: () => void
+    mocks.request.mockImplementation((path: string, init?: { method?: string; body?: Record<string, unknown> }) => {
+      if (path === '/api/me' && init?.method === 'PATCH') return new Promise((resolve) => { finish = () => resolve({ user: { ...user, avatarUrl: '/avatars/ada.png', ...init.body } }) })
+      return Promise.resolve({})
+    })
+    open()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Ada Draft' } })
+    const button = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement
+
+    await chooseVisibility('Public')
+
+    await waitFor(() => expect(button('Save profile').disabled).toBe(true))
+    expect(button('Change profile picture').disabled).toBe(true)
+    expect(button('Remove').disabled).toBe(true)
+    finish()
+    await waitFor(() => expect(button('Save profile').disabled).toBe(false))
+    expect(button('Change profile picture').disabled).toBe(false)
+    expect(button('Remove').disabled).toBe(false)
+    expect(mocks.request).toHaveBeenCalledTimes(1)
+  })
+
+  it('holds the visibility select while the profile saves', async () => {
+    let finish!: () => void
+    mocks.request.mockImplementation((path: string, init?: { method?: string; body?: Record<string, unknown> }) => {
+      if (path === '/api/me' && init?.method === 'PATCH') return new Promise((resolve) => { finish = () => resolve({ user: { ...user, ...init.body } }) })
+      return Promise.resolve({})
+    })
+    open()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Display name' }), { target: { value: 'Ada Renamed' } })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save profile' }))
+
+    await waitFor(() => expect((visibilitySelect() as HTMLButtonElement).disabled).toBe(true))
+    finish()
+    await waitFor(() => expect((visibilitySelect() as HTMLButtonElement).disabled).toBe(false))
+    expect(useAuth.getState().user?.name).toBe('Ada Renamed')
+  })
 })

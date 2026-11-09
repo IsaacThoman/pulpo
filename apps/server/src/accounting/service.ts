@@ -25,9 +25,9 @@ import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import {
   bumpAccountRevisions,
-  friendPeerIds,
   publishScopedStateChanges,
 } from '../friends/sync.js'
+import { usageNotificationFriendIds } from '../usage/visibility.js'
 import {
   calculateCostMicros,
   budgetOutputReservation,
@@ -356,7 +356,7 @@ export async function chargeMeteredUsage(input: {
       const [updated] = await tx.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` }).where(eq(users.id, caller.id)).returning({ userId: users.id, revision: users.stateRevision })
       if (updated) ownChanges.push(updated)
     }
-    const peers = await friendPeerIds(tx, caller.id, { acceptedOnly: true })
+    const peers = await usageNotificationFriendIds(tx, caller)
     const poolIds = membership ? poolRows.map((row) => row.user.id).filter((id) => !ownChanges.some((change) => change.userId === id)) : []
     return {
       ownChanges,
@@ -574,7 +574,7 @@ export async function settleBudget(input: {
       fiveHourPeriodStart: reservation.fiveHourPeriodStart,
       latencyMs: input.latencyMs,
     }).onConflictDoNothing()
-    const peers = await friendPeerIds(tx, user.id, { acceptedOnly: true })
+    const peers = await usageNotificationFriendIds(tx, user)
     const poolMemberIds = reservation.poolId ? (await activePoolMembers(tx, reservation.poolId)).map((row) => row.user.id) : []
     // Owners who left the pool mid-request still see their shared usage change.
     const poolChanges = [...new Set([...poolMemberIds, ...allowanceFunders.map((row) => row.ownerUserId), ...customFunders.map((row) => row.ownerUserId)])]

@@ -6,7 +6,7 @@ import type { User } from '@pulpo/contracts'
 
 const mocks = vi.hoisted(() => ({
   platform: 'ios',
-  poolsEnabled: true,
+  billingEnabled: true,
   user: null as unknown as User,
   setUser: vi.fn(),
   updateProfile: vi.fn(),
@@ -48,7 +48,7 @@ vi.mock('../../platform/NativeMenuPicker', () => ({
 }))
 vi.mock('../../api/client', () => ({ mobileApi: { updateProfile: mocks.updateProfile, uploadAvatar: mocks.uploadAvatar, removeAvatar: mocks.removeAvatar } }))
 vi.mock('../../store/session', () => {
-  const state = () => ({ user: mocks.user, setUser: mocks.setUser, instanceUrl: 'https://pulpo.test', config: { capabilities: { usageLimits: mocks.poolsEnabled }, auth: { inviteCodesEnabled: false } } })
+  const state = () => ({ user: mocks.user, setUser: mocks.setUser, instanceUrl: 'https://pulpo.test', config: { capabilities: { usageLimits: mocks.billingEnabled }, auth: { inviteCodesEnabled: false } } })
   return { useSessionStore: Object.assign((selector: (value: unknown) => unknown) => selector(state()), { getState: state }) }
 })
 vi.mock('../../platform/materialActions', () => ({ showActions: mocks.showActions }))
@@ -75,7 +75,7 @@ navigation.setOptions.mockImplementation((options: typeof header) => { header = 
 const mount = () => render(<EditProfileScreen navigation={navigation as never} route={{ key: 'EditProfile', name: 'EditProfile' } as never} />)
 const doneButton = () => render(header.headerRight!()).getByRole('button', { name: 'Done' })
 
-beforeEach(() => { mocks.user = account; mocks.platform = 'ios'; mocks.poolsEnabled = true; header = {} })
+beforeEach(() => { mocks.user = account; mocks.platform = 'ios'; mocks.billingEnabled = true; header = {} })
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 it('saves a changed username from Done on iOS', async () => {
@@ -189,13 +189,14 @@ it('saves the usage visibility from Done on iOS', async () => {
   expect(mocks.setUser).toHaveBeenCalledWith({ ...account, usageVisibility: 'public' })
 })
 
-it('drops the Pool wording where the instance has no Pools on iOS', () => {
-  mocks.poolsEnabled = false
+// Pools work without billing, and Pool members can always see usage.
+it('keeps the Pool wording where the instance does not bill usage on iOS', () => {
+  mocks.billingEnabled = false
   mocks.user = { ...account, usageVisibility: 'pool' }
   mount()
-  expect(optionLabels(visibilityPicker())).toEqual(['Private', 'Friends', 'Public'])
+  expect(optionLabels(visibilityPicker())).toEqual(['Private (Pool only)', 'Friends', 'Public'])
   expect(visibilityPicker().value).toBe('pool')
-  expect(screen.getByRole('region', { name: 'Privacy' }).textContent).not.toMatch(/Pool/)
+  expect(screen.getByRole('region', { name: 'Privacy' }).textContent).toContain('Pool members can always see your usage.')
 })
 
 it('sends nothing when the usage visibility goes back to the saved level', () => {
@@ -227,16 +228,15 @@ it('picks the usage visibility from a Material sheet and saves it on Android', a
   expect(mocks.updateProfile).toHaveBeenCalledWith({ usageVisibility: 'pool' })
 })
 
-it('labels the narrowest level Private without Pools on Android', () => {
+it('keeps the Pool wording where the instance does not bill usage on Android', () => {
   mocks.platform = 'android'
-  mocks.poolsEnabled = false
+  mocks.billingEnabled = false
   mount()
   const row = screen.getByRole('button', { name: /^Usage visibility/ })
-  expect(row.textContent).toContain('Who can see your usage stats and requests on your profile.')
-  expect(row.textContent).not.toMatch(/Pool/)
+  expect(row.textContent).toContain('Who can see your usage stats and requests on your profile. Pool members can always see your usage.')
   fireEvent.click(row)
   const [, actions] = mocks.showActions.mock.calls[0] as [string, { label: string }[]]
-  expect(actions.map((action) => action.label)).toEqual(['Private', 'Friends', 'Public'])
+  expect(actions.map((action) => action.label)).toEqual(['Private (Pool only)', 'Friends', 'Public'])
 })
 
 it.each(['ios', 'android'])('never shows balances, credits, or prices on %s', (platform) => {

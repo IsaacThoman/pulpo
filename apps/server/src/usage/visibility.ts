@@ -2,7 +2,8 @@ import { and, eq, inArray, or } from 'drizzle-orm'
 import type { UsageVisibility } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { friendships, users } from '../database/schema.js'
-import { activePoolMembership, poolPeerIds } from '../pools/service.js'
+import { friendPeerIds } from '../friends/sync.js'
+import { activePoolMembership, poolPeerIds, type Transaction } from '../pools/service.js'
 
 export interface UsageViewerRelation {
   self: boolean
@@ -69,4 +70,20 @@ export async function visibleFriendUsageCircle(viewerId: string, friendIds: stri
     .filter((row) => !canViewUsage(row.usageVisibility, { self: false, friends: true, sharesPool: peers.has(row.id) }))
     .map((row) => row.id))
   return friendIds.filter((id) => !hidden.has(id))
+}
+
+/**
+ * Accepted friends to notify when the user's usage changes. Friends who can't see that
+ * usage get no realtime 'friends' bump, because its timing alone would reveal when the
+ * user made requests. Pool-only users still notify friends in their current Pool.
+ */
+export async function usageNotificationFriendIds(
+  tx: Transaction,
+  user: Pick<typeof users.$inferSelect, 'id' | 'usageVisibility'>,
+): Promise<string[]> {
+  const friendIds = await friendPeerIds(tx, user.id, { acceptedOnly: true })
+  const asFriend: UsageViewerRelation = { self: false, friends: true, sharesPool: false }
+  if (!friendIds.length || canViewUsage(user.usageVisibility, asFriend)) return friendIds
+  const peers = new Set(await poolPeerIds(tx, user.id))
+  return friendIds.filter((id) => canViewUsage(user.usageVisibility, { ...asFriend, sharesPool: peers.has(id) }))
 }

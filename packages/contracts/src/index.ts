@@ -1773,7 +1773,11 @@ export const managementAccountSettingsSchema = z.object({
   nickname: z.string().max(80).default(''),
   username: usernameSchema,
   profileColor: profileColorSchema.nullable().default(null),
-  usageVisibility: usageVisibilitySchema.default(DEFAULT_USAGE_VISIBILITY),
+  /**
+   * Reads always include the stored level. Writes that omit it keep that level, because
+   * older clients strip fields they don't know and a default here would change who can see usage.
+   */
+  usageVisibility: usageVisibilitySchema.optional(),
   memoryEnabled: z.boolean().default(false),
   instructionPresetSelections: instructionPresetSelectionsSchema.default({}),
   /** Per-model composer Agent mode selections. Missing model ids default on in clients. */

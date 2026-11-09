@@ -117,6 +117,8 @@ describe('profile page', () => {
     expect(screen.getByText('Friends')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Bob' }).getAttribute('href')).toBe('/bob')
     expect(screen.getByRole('link', { name: 'Back to friends' }).getAttribute('href')).toBe('/friends')
+    // Phones collapse the back link to its arrow so the header fits beside "Compare with friends".
+    expect(screen.getByText('Back to friends').className).toBe('sr-only sm:not-sr-only')
   })
 
   it('shows shared usage from the profile endpoints without balances or a user column', async () => {
@@ -145,6 +147,41 @@ describe('profile page', () => {
     expect(screen.queryByText(/pool|public/i)).toBeNull()
     expect(screen.queryByRole('link', { name: 'Compare with friends' })).toBeNull()
     expect(screen.getByText('Mutual friends')).toBeTruthy()
+  })
+
+  it("shows a public non-friend's usage without offering a friends comparison they aren't in", async () => {
+    detail = { ...detail, relationship: 'none', requestId: null, friendsSince: null, usageVisible: true }
+    mount()
+
+    await screen.findByRole('heading', { name: 'Top models' })
+    expect(within(screen.getByRole('region', { name: 'Recent usage' })).getByText(model.name)).toBeTruthy()
+    expect(screen.queryByText("Alice hasn't shared their usage with you.")).toBeNull()
+    expect(screen.getByRole('link', { name: 'Back to friends' })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Compare with friends' })).toBeNull()
+  })
+
+  it('waits for a fresh profile when the cached one predates usage visibility', async () => {
+    const { usageVisible: _, ...cached } = detail
+    queryClient.setQueryData(['friend-profile', 'alice'], cached)
+    let respond!: () => void
+    const fallback = mocks.request.getMockImplementation()!
+    mocks.request.mockImplementation((path: string, options?: { method?: string }) => path === '/api/profiles/alice'
+      ? new Promise((resolve) => { respond = () => resolve(structuredClone(detail)) })
+      : fallback(path, options))
+    mount()
+
+    await screen.findByRole('heading', { name: 'Alice' })
+    await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/api/profiles/alice'))
+    expect(screen.queryByText("Alice hasn't shared their usage with you.")).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Top models' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Compare with friends' })).toBeNull()
+    expect(usageRequests()).toEqual([])
+
+    respond()
+
+    await screen.findByRole('heading', { name: 'Top models' })
+    expect(screen.queryByText("Alice hasn't shared their usage with you.")).toBeNull()
+    expect(screen.getByRole('link', { name: 'Compare with friends' })).toBeTruthy()
   })
 
   it('hides cached usage once the profile stops sharing it', async () => {

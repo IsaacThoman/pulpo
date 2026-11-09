@@ -7,16 +7,17 @@ export const USERNAME_HINT = 'Friends can search by your username or display nam
 export const usageVisibilityOf = (user: { usageVisibility?: UsageVisibility } | null | undefined): UsageVisibility =>
   user?.usageVisibility ?? DEFAULT_USAGE_VISIBILITY
 
-/** The same choices as web. Without Pools the narrowest level hides usage from everyone else. */
-export const usageVisibilityOptions = (poolsEnabled: boolean): readonly { value: UsageVisibility; label: string }[] => [
-  { value: 'pool', label: poolsEnabled ? 'Private (Pool only)' : 'Private' },
+/**
+ * The same choices as web. Pool members can always see usage, on every instance, so the narrowest
+ * level is Pool-only rather than private.
+ */
+export const USAGE_VISIBILITY_OPTIONS: readonly { value: UsageVisibility; label: string }[] = [
+  { value: 'pool', label: 'Private (Pool only)' },
   { value: 'friends', label: 'Friends' },
   { value: 'public', label: 'Public' },
 ]
 
-export const usageVisibilityHint = (poolsEnabled: boolean) => poolsEnabled
-  ? 'Who can see your usage stats and requests on your profile. Pool members can always see your usage.'
-  : 'Who can see your usage stats and requests on your profile.'
+export const USAGE_VISIBILITY_HINT = 'Who can see your usage stats and requests on your profile. Pool members can always see your usage.'
 
 export interface ProfileDraft {
   /** What changed, ready for `PATCH /api/me`; empty when nothing did. */

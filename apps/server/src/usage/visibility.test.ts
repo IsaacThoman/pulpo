@@ -5,12 +5,14 @@ const mocks = vi.hoisted(() => ({
   select: vi.fn(),
   membership: vi.fn(),
   poolPeers: vi.fn(),
+  friendPeers: vi.fn(),
 }))
 vi.mock('../database/client.js', () => ({
   db: { select: mocks.select, transaction: async (callback: (tx: unknown) => unknown) => callback({}) },
 }))
 vi.mock('../pools/service.js', () => ({ activePoolMembership: mocks.membership, poolPeerIds: mocks.poolPeers }))
-import { canViewUsage, usageAccess, visibleFriendUsageCircle } from './visibility.js'
+vi.mock('../friends/sync.js', () => ({ friendPeerIds: mocks.friendPeers }))
+import { canViewUsage, usageAccess, usageNotificationFriendIds, visibleFriendUsageCircle } from './visibility.js'
 
 function result(rows: unknown[]) {
   const query = {
@@ -30,6 +32,7 @@ beforeEach(() => {
   vi.resetAllMocks()
   pools({})
   mocks.poolPeers.mockResolvedValue([])
+  mocks.friendPeers.mockResolvedValue([])
 })
 
 describe('canViewUsage', () => {
@@ -124,5 +127,31 @@ describe('visibleFriendUsageCircle', () => {
     mocks.poolPeers.mockResolvedValueOnce(['c', 'stranger'])
     await expect(visibleFriendUsageCircle('me', ['me', 'a', 'b', 'c'])).resolves.toEqual(['me', 'a', 'c'])
     expect(mocks.poolPeers).toHaveBeenCalledWith({}, 'me')
+  })
+})
+
+describe('usageNotificationFriendIds', () => {
+  const tx = {} as Parameters<typeof usageNotificationFriendIds>[0]
+
+  it.each(['friends', 'public'] as const)('notifies every accepted friend at the %s level', async (usageVisibility) => {
+    mocks.friendPeers.mockResolvedValueOnce(['a', 'b'])
+    await expect(usageNotificationFriendIds(tx, { id: 'me', usageVisibility })).resolves.toEqual(['a', 'b'])
+    expect(mocks.friendPeers).toHaveBeenCalledWith(tx, 'me', { acceptedOnly: true })
+    expect(mocks.poolPeers).not.toHaveBeenCalled()
+  })
+
+  it('notifies only friends in the current Pool at the pool level', async () => {
+    mocks.friendPeers.mockResolvedValueOnce(['outside', 'inside'])
+    mocks.poolPeers.mockResolvedValueOnce(['inside', 'non-friend-member'])
+    await expect(usageNotificationFriendIds(tx, { id: 'me', usageVisibility: 'pool' })).resolves.toEqual(['inside'])
+    expect(mocks.poolPeers).toHaveBeenCalledWith(tx, 'me')
+  })
+
+  it('notifies no friends at the pool level without a Pool, and skips the Pool lookup without friends', async () => {
+    mocks.friendPeers.mockResolvedValueOnce(['a'])
+    await expect(usageNotificationFriendIds(tx, { id: 'me', usageVisibility: 'pool' })).resolves.toEqual([])
+    mocks.poolPeers.mockClear()
+    await expect(usageNotificationFriendIds(tx, { id: 'me', usageVisibility: 'pool' })).resolves.toEqual([])
+    expect(mocks.poolPeers).not.toHaveBeenCalled()
   })
 })

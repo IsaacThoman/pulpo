@@ -27,9 +27,8 @@ import { ProfileAvatar } from '../../mockup5/src/components/ProfileAvatar';
 import { usePrototypeStore } from '../../mockup5/src/store/prototypeStore';
 import { useAppTheme } from '../../mockup5/src/theme';
 import type { RootStackParamList } from '../../mockup5/src/navigation';
-import { useFriendsContext } from '../friends/hooks';
 import { AvatarCameraPermissionError, avatarSizeError, avatarUploadBody, pickAvatar, type AvatarSource } from './avatar';
-import { profileDraft, USERNAME_HINT, usageVisibilityHint, usageVisibilityOf, usageVisibilityOptions } from './profileDraft';
+import { profileDraft, USAGE_VISIBILITY_HINT, USAGE_VISIBILITY_OPTIONS, USERNAME_HINT, usageVisibilityOf } from './profileDraft';
 
 const NAME_HINT = 'This is the name shown on your Pulpo account.';
 const AVATAR_SIZE = 96;
@@ -121,9 +120,6 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
   const [name, setName] = useState(user?.name ?? '');
   const [username, setUsername] = useState(user?.username ?? '');
   const [usageVisibility, setUsageVisibility] = useState(() => usageVisibilityOf(user));
-  const { poolsEnabled } = useFriendsContext();
-  const visibilityOptions = usageVisibilityOptions(poolsEnabled);
-  const visibilityHint = usageVisibilityHint(poolsEnabled);
   const [saving, setSaving] = useState(false);
   const avatar = useAvatarActions();
   // A save and a photo change each reply with the whole profile, so they never overlap: the later
@@ -172,8 +168,8 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
     <SwiftUISection title="Username" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>{USERNAME_HINT}</SwiftUIText>}>
       <NativeUsernameRow value={username} onChange={changeUsername} error={draft.usernameError} errorColor={theme.red} />
     </SwiftUISection>
-    <SwiftUISection title="Privacy" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>{visibilityHint}</SwiftUIText>}>
-      <NativeChoiceRow title="Usage visibility" value={usageVisibility} options={visibilityOptions} onChange={setUsageVisibility} />
+    <SwiftUISection title="Privacy" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>{USAGE_VISIBILITY_HINT}</SwiftUIText>}>
+      <NativeChoiceRow title="Usage visibility" value={usageVisibility} options={USAGE_VISIBILITY_OPTIONS} onChange={setUsageVisibility} />
     </SwiftUISection>
   </SwiftUIForm></SwiftUIHost>;
 
@@ -182,7 +178,7 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
     { label: 'Take photo', icon: 'camera', onPress: () => void avatar.choose('camera') },
     ...(user?.avatarUrl ? [{ label: 'Remove photo', icon: 'trash', destructive: true, onPress: () => void avatar.remove() }] : []),
   ]);
-  const openVisibilityActions = () => showActions('Usage visibility', visibilityOptions.map((option) => ({ label: option.label, selected: option.value === usageVisibility, onPress: () => setUsageVisibility(option.value) })));
+  const openVisibilityActions = () => showActions('Usage visibility', USAGE_VISIBILITY_OPTIONS.map((option) => ({ label: option.label, selected: option.value === usageVisibility, onPress: () => setUsageVisibility(option.value) })));
 
   return <Screen><PageHeader title="Edit Profile" onBack={() => navigation.goBack()} />
     <View style={styles.avatarSection}>
@@ -194,7 +190,7 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
     <Field label="Username" autoComplete="username" autoCapitalize="none" autoCorrect={false} maxLength={30} value={username} onChangeText={changeUsername} error={draft.usernameError ?? undefined} />
     <Text style={[styles.helper, { color: theme.secondary, marginBottom: 16 }]}>{USERNAME_HINT}</Text>
     <Card style={{ marginBottom: 16 }}><ListRow title="Email" value={user?.email ?? ''} last /></Card>
-    <Card style={{ marginBottom: 24 }}><ListRow title="Usage visibility" detail={visibilityHint} value={visibilityOptions.find((option) => option.value === usageVisibility)?.label} last onPress={openVisibilityActions} /></Card>
+    <Card style={{ marginBottom: 24 }}><ListRow title="Usage visibility" detail={USAGE_VISIBILITY_HINT} value={USAGE_VISIBILITY_OPTIONS.find((option) => option.value === usageVisibility)?.label} last onPress={openVisibilityActions} /></Card>
     <PrimaryButton label="Save" loading={saving} disabled={!draft.canSave || avatar.busy} onPress={save} />
   </Screen>;
 }

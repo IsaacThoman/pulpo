@@ -64,7 +64,10 @@ export function ProfilePage() {
   const profileGone = profileQuery.error instanceof ApiError && profileQuery.error.status === 404
   const detail = viewingOwnUsername || profileGone ? undefined : profileQuery.data
   const self = viewingOwnUsername || detail?.relationship === 'self'
-  const usageHidden = profileGone || (detail ? !detail.usageVisible : false)
+  // A profile cached before usage visibility existed has no flag. Show neither the usage
+  // nor the not-shared notice until the fresh profile says which applies.
+  const usageVisible = detail?.usageVisible
+  const usageHidden = profileGone || usageVisible === false
 
   useEffect(() => {
     const canonicalUsername = viewingOwnUsername ? ownUsername : detail?.profile.username
@@ -124,9 +127,11 @@ export function ProfilePage() {
       {self
         ? <h1 className="shrink-0 text-sm font-semibold">{ui("Profile")}</h1>
         : <Button asChild size="sm" variant="ghost" className="-ml-2 text-muted-foreground">
-          <Link to="/friends"><ArrowLeft />{ui('Back to friends')}</Link>
+          {/* Phones keep "Compare with friends" readable by collapsing this link to its arrow. */}
+          <Link to="/friends"><ArrowLeft /><span className="sr-only sm:not-sr-only">{ui('Back to friends')}</span></Link>
         </Button>}
-      {(self || detail?.usageVisible) && <Button asChild size="sm" variant="ghost" className="text-muted-foreground">
+      {/* The friends leaderboard lists only friends, so it can't compare a non-friend whose usage is public or shared through a Pool. */}
+      {(self || (usageVisible === true && detail?.relationship === 'friends')) && <Button asChild size="sm" variant="ghost" className="text-muted-foreground">
         <Link to="/friends/leaderboard">{ui("Compare with friends")}<ArrowRight /></Link>
       </Button>}
     </header>
@@ -151,9 +156,8 @@ export function ProfilePage() {
               </div>}
             />
 
-            {detail.usageVisible
-              ? <ProfileUsage username={normalizedUsername} name={detail.profile.displayName} />
-              : <UsagePrivateNotice name={detail.profile.displayName} />}
+            {usageVisible === true && <ProfileUsage username={normalizedUsername} name={detail.profile.displayName} />}
+            {usageVisible === false && <UsagePrivateNotice name={detail.profile.displayName} />}
 
             <section className="overflow-hidden rounded-xl border">
               <div className="flex items-center justify-between border-b px-4 py-3">

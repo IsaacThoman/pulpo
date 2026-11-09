@@ -1012,7 +1012,7 @@ describe('response snapshot accumulation', () => {
   it('validates usage visibility on users, profile updates, profile details, and management settings', async () => {
     const {
       DEFAULT_USAGE_VISIBILITY, friendProfileDetailSchema, managementAccountSettingsSchema: accountSettings,
-      updateProfileInputSchema, usageVisibilitySchema, userSchema,
+      managementAccountSettingsDocumentSchema, updateProfileInputSchema, usageVisibilitySchema, userSchema,
     } = await import('./index.js')
     expect(usageVisibilitySchema.options).toEqual(['pool', 'friends', 'public'])
     expect(DEFAULT_USAGE_VISIBILITY).toBe('friends')
@@ -1037,7 +1037,11 @@ describe('response snapshot accumulation', () => {
     expect(friendProfileDetailSchema.parse({ ...detail, profile: { ...profile, usageVisibility: 'pool' } }).profile)
       .not.toHaveProperty('usageVisibility')
 
-    expect(accountSettings.parse({ username: 'pulpo_user' })).toMatchObject({ usageVisibility: 'friends' })
+    // Omitted means "keep the stored level", so the schema must not fill in a default.
+    expect(accountSettings.parse({ username: 'pulpo_user' })).not.toHaveProperty('usageVisibility')
+    expect(managementAccountSettingsDocumentSchema.parse({
+      apiVersion: 'pulpo.dev/management/v1', kind: 'AccountSettings', revision: 'r1', account: { username: 'pulpo_user' },
+    }).account).not.toHaveProperty('usageVisibility')
     expect(accountSettings.parse({ username: 'pulpo_user' })).not.toHaveProperty('leaderboardVisible')
     expect(accountSettings.parse({ username: 'pulpo_user', usageVisibility: 'public' }).usageVisibility).toBe('public')
     expect(accountSettings.safeParse({ username: 'pulpo_user', usageVisibility: 'everyone' }).success).toBe(false)

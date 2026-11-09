@@ -437,8 +437,12 @@ export function SettingsModal({
     || profileColor !== (user!.profileColor ?? automaticProfileColor(user!.id))
   )
   const profileColorIsPreset = PROFILE_COLORS.some((color) => color === profileColor)
+  // Every profile write replies with the whole user, so overlapping writes could
+  // let a stale reply undo a newer change. Run them one at a time.
+  const profileBusy = profileSaving || pendingUsageVisibility !== null
 
   const saveProfile = async () => {
+    if (profileBusy) return
     setProfileSaving(true)
     setProfileError('')
     setProfileMessage('')
@@ -458,7 +462,7 @@ export function SettingsModal({
 
   const usageVisibility = pendingUsageVisibility ?? resolvedUsageVisibility(user?.usageVisibility)
   const updateUsageVisibility = async (value: UsageVisibility) => {
-    if (value === usageVisibility) return
+    if (value === usageVisibility || profileBusy) return
     setPendingUsageVisibility(value)
     setUsageVisibilityError('')
     try {
@@ -467,7 +471,8 @@ export function SettingsModal({
         body: { usageVisibility: value },
       })
       replaceUser(result.user)
-      await Promise.all(['friends-usage', 'pool-usage', 'friend-profile'].map((key) => queryClient.invalidateQueries({ queryKey: [key] })))
+      // Refetch in the background so other profile writes don't wait on it.
+      for (const key of ['friends-usage', 'pool-usage', 'friend-profile']) void queryClient.invalidateQueries({ queryKey: [key] })
     } catch (cause) {
       setUsageVisibilityError(cause instanceof Error ? cause.message : ui("Could not save usage visibility"))
     } finally {
@@ -476,7 +481,7 @@ export function SettingsModal({
   }
 
   const uploadAvatar = async () => {
-    if (!avatarCandidate) return
+    if (!avatarCandidate || profileBusy) return
     setProfileSaving(true)
     setProfileError('')
     setProfileMessage('')
@@ -494,6 +499,7 @@ export function SettingsModal({
   }
 
   const removeAvatar = async () => {
+    if (profileBusy) return
     setProfileSaving(true)
     setProfileError('')
     setProfileMessage('')
@@ -776,7 +782,7 @@ export function SettingsModal({
                       <button
                         type="button"
                         aria-label={ui("Change profile picture")}
-                        disabled={profileSaving}
+                        disabled={profileBusy}
                         className="group relative size-14 cursor-pointer rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => avatarInputRef.current?.click()}
                       >
@@ -788,7 +794,7 @@ export function SettingsModal({
                       </button>
                       {user?.avatarUrl && <button
                         type="button"
-                        disabled={profileSaving}
+                        disabled={profileBusy}
                         className="mt-1 cursor-pointer text-xs leading-none text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => void removeAvatar()}
                       >{ui("Remove")}</button>}
@@ -819,7 +825,7 @@ export function SettingsModal({
                   </div>
                   {avatarCandidate && <div className="mb-3 rounded-lg border bg-muted/20 p-3">
                     <AvatarCropEditor key={avatarCandidate.url} imageUrl={avatarCandidate.url} settings={avatarCrop} onChange={setAvatarCrop} />
-                    <div className="mt-3 flex justify-end gap-2"><Button size="sm" disabled={profileSaving} onClick={() => void uploadAvatar()}>{ui("Use picture")}</Button><Button size="sm" variant="outline" disabled={profileSaving} onClick={() => setAvatarCandidate(null)}>{ui("Cancel")}</Button></div>
+                    <div className="mt-3 flex justify-end gap-2"><Button size="sm" disabled={profileBusy} onClick={() => void uploadAvatar()}>{ui("Use picture")}</Button><Button size="sm" variant="outline" disabled={profileBusy} onClick={() => setAvatarCandidate(null)}>{ui("Cancel")}</Button></div>
                   </div>}
                   <Row label={ui("Display name")}>{(control) => <Input {...control} autoComplete="name" value={profileName} onChange={(event) => { setProfileMessage(''); setProfileName(event.target.value) }} maxLength={120} className="w-52" />}</Row>
                   <Row label={ui("Friends chart color")} hint="Used on accepted friends’ usage charts." group>{(control) => <div role="group" aria-labelledby={control.labelId} aria-describedby={control['aria-describedby']} className="flex flex-wrap items-center justify-end gap-2">
@@ -861,12 +867,12 @@ export function SettingsModal({
                   <div className="flex min-h-10 items-center justify-end gap-3 py-2">
                     {profileError && <span role="alert" className="mr-auto text-sm text-destructive">{profileError}</span>}
                     <span role="status" className={cn('mr-auto text-sm text-muted-foreground', (profileError || !profileMessage) && 'sr-only')}>{profileError ? '' : profileMessage}</span>
-                    <Button size="sm" disabled={!profileDirty || profileSaving || !profileName.trim()} onClick={() => void saveProfile()}>{profileSaving ? ui("Saving…") : ui("Save profile")}</Button>
+                    <Button size="sm" disabled={!profileDirty || profileBusy || !profileName.trim()} onClick={() => void saveProfile()}>{profileSaving ? ui("Saving…") : ui("Save profile")}</Button>
                   </div>
                   <Separator className="my-3" />
                   <Row label={ui("Usage visibility")} hint={ui("Who can see your usage stats and requests on your profile. Pool members can always see your usage.")}>
                     {(control) => (
-                      <Select value={usageVisibility} disabled={pendingUsageVisibility !== null} onValueChange={(value) => void updateUsageVisibility(value as UsageVisibility)}>
+                      <Select value={usageVisibility} disabled={profileBusy} onValueChange={(value) => void updateUsageVisibility(value as UsageVisibility)}>
                         <SelectTrigger {...control} aria-invalid={usageVisibilityError ? true : undefined} className="w-44"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {USAGE_VISIBILITY_VALUES.map((value) => (

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { and, eq, sql } from 'drizzle-orm'
 import {
+  DEFAULT_USAGE_VISIBILITY,
   agentSettingsSchema,
   authSettingsSchema,
   instanceOcrSettingsSchema,
@@ -13,6 +14,7 @@ import {
   webToolsSettingsSchema,
   type ManagementSettingsChange,
   type ManagementSettingsDocument,
+  type UsageVisibility,
 } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { applicationSettings, auditEvents, models, userPreferences, users } from '../database/schema.js'
@@ -83,7 +85,7 @@ export async function loadManagementSettings(userId: string, database: typeof db
     ...rawAccount,
     username: profile?.username,
     profileColor: profile?.profileColor ?? null,
-    usageVisibility: profile?.usageVisibility,
+    usageVisibility: profile?.usageVisibility ?? DEFAULT_USAGE_VISIBILITY,
   })
   const storedWebTools = parseWebToolsSettings(byKey.get('webTools'))
   const instance = {
@@ -111,6 +113,17 @@ export async function loadManagementSettings(userId: string, database: typeof db
     account,
     instance,
   })
+}
+
+/**
+ * Older clients strip account fields they don't know, so a document without
+ * usageVisibility keeps the stored level instead of resetting who can see usage.
+ */
+export function withStoredUsageVisibility<T extends { usageVisibility?: UsageVisibility }>(
+  account: T,
+  current: { account: { usageVisibility?: UsageVisibility } },
+): T & { usageVisibility: UsageVisibility } {
+  return { ...account, usageVisibility: account.usageVisibility ?? current.account.usageVisibility ?? DEFAULT_USAGE_VISIBILITY }
 }
 
 function changesBetween(before: unknown, after: unknown, path = ''): ManagementSettingsChange[] {
@@ -151,7 +164,8 @@ export async function planManagementSettings(
   mode: ManagementSettingsMode = 'all',
 ) {
   const current = await loadManagementSettings(userId)
-  const document = managementSettingsDocumentSchema.parse(input)
+  const parsed = managementSettingsDocumentSchema.parse(input)
+  const document = { ...parsed, account: withStoredUsageVisibility(parsed.account, current) }
   await validateModelReferences(document, mode)
   const changes = changesBetween(
     { account: current.account, instance: current.instance },
@@ -185,7 +199,7 @@ export async function applyManagementSettings(
     throw new AppError(409, 'settings_conflict', 'Settings changed after this plan was created')
   }
   await validateModelReferences(document, mode)
-  const account = managementAccountSettingsSchema.parse(document.account)
+  const account = withStoredUsageVisibility(managementAccountSettingsSchema.parse(document.account), current)
   const auth = authSettingsSchema.parse(document.instance.auth)
   const iface = interfaceSettingsSchema.parse(document.instance.interface)
   const personalization = personalizationSettingsSchema.parse(document.instance.personalization)
@@ -199,7 +213,7 @@ export async function applyManagementSettings(
     await assertSafeProviderUrl(webTools.firecrawl.baseUrl)
   }
   const previousTrashRetention = current.account.trashRetention
-  const changedPaths = (await planManagementSettings(userId, document, secrets, mode)).changes.map((change) => change.path)
+  const changedPaths = (await planManagementSettings(userId, { ...document, account }, secrets, mode)).changes.map((change) => change.path)
   if (!changedPaths.length) return current
   const loggingChanged = changedPaths.some((path) => path === 'instance.logging' || path.startsWith('instance.logging.'))
   const usageVisibilityChanged = changedPaths.includes('account.usageVisibility')
