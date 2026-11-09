@@ -265,6 +265,9 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     let poolChanges: Awaited<ReturnType<typeof bumpAccountRevisions>> = []
     try {
       ;({ updated, friendChanges, poolChanges } = await db.transaction(async (tx) => {
+        // Share the management-settings lock so a stale full-document apply can never overwrite
+        // a concurrent profile PATCH (username, color, or usage visibility).
+        await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
         const [updated] = await tx.update(users).set({
           ...(input.name !== undefined ? { name: input.name } : {}),
           ...(input.username !== undefined ? { username: input.username } : {}),

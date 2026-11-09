@@ -383,6 +383,7 @@ export function SettingsModal({
   const [profileName, setProfileName] = useState(user?.name ?? '')
   const [profileColor, setProfileColor] = useState(() => user?.profileColor ?? automaticProfileColor(user?.id ?? 'pulpo-user'))
   const [profileSaving, setProfileSaving] = useState(false)
+  const [usernameSaving, setUsernameSaving] = useState(false)
   const [profileError, setProfileError] = useState('')
   const [profileMessage, setProfileMessage] = useState('')
   const [avatarCandidate, setAvatarCandidate] = useState<{ file: File; url: string } | null>(null)
@@ -439,7 +440,7 @@ export function SettingsModal({
   const profileColorIsPreset = PROFILE_COLORS.some((color) => color === profileColor)
   // Every profile write replies with the whole user, so overlapping writes could
   // let a stale reply undo a newer change. Run them one at a time.
-  const profileBusy = profileSaving || pendingUsageVisibility !== null
+  const profileBusy = profileSaving || pendingUsageVisibility !== null || usernameSaving
 
   const saveProfile = async () => {
     if (profileBusy) return
@@ -820,7 +821,7 @@ export function SettingsModal({
                     </div>
                     <div className="flex-1" />
                     <div className="flex h-14 items-center">
-                      <UsernameSettings buttonOnly />
+                      <UsernameSettings buttonOnly disabled={profileBusy} onPendingChange={setUsernameSaving} />
                     </div>
                   </div>
                   {avatarCandidate && <div className="mb-3 rounded-lg border bg-muted/20 p-3">

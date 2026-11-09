@@ -108,10 +108,12 @@ describe('usage visibility setting', () => {
     await waitFor(() => expect(button('Save profile').disabled).toBe(true))
     expect(button('Change profile picture').disabled).toBe(true)
     expect(button('Remove').disabled).toBe(true)
+    expect(button('Change username').disabled).toBe(true)
     finish()
     await waitFor(() => expect(button('Save profile').disabled).toBe(false))
     expect(button('Change profile picture').disabled).toBe(false)
     expect(button('Remove').disabled).toBe(false)
+    expect(button('Change username').disabled).toBe(false)
     expect(mocks.request).toHaveBeenCalledTimes(1)
   })
 
@@ -130,5 +132,24 @@ describe('usage visibility setting', () => {
     finish()
     await waitFor(() => expect((visibilitySelect() as HTMLButtonElement).disabled).toBe(false))
     expect(useAuth.getState().user?.name).toBe('Ada Renamed')
+  })
+
+  it('holds the visibility select while a username change is pending, even after its dialog closes', async () => {
+    let finish!: () => void
+    mocks.request.mockImplementation((path: string, init?: { method?: string; body?: Record<string, unknown> }) => {
+      if (path === '/api/me' && init?.method === 'PATCH') return new Promise((resolve) => { finish = () => resolve({ user: { ...user, ...init.body } }) })
+      return Promise.resolve({})
+    })
+    open()
+    fireEvent.click(screen.getByRole('button', { name: 'Change username' }))
+    fireEvent.change(await screen.findByLabelText('New username'), { target: { value: 'ada_new' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Update username' }))
+    await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/api/me', expect.objectContaining({ method: 'PATCH' })))
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await waitFor(() => expect((visibilitySelect() as HTMLButtonElement).disabled).toBe(true))
+    finish()
+    await waitFor(() => expect((visibilitySelect() as HTMLButtonElement).disabled).toBe(false))
+    expect(useAuth.getState().user?.username).toBe('ada_new')
   })
 })

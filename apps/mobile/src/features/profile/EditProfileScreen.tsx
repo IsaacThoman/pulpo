@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, Button as RNButton, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { UsageVisibility } from '@pulpo/contracts';
 import {
   Button as SwiftUIButton,
   Form as SwiftUIForm,
@@ -119,7 +120,10 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
   const updatePrototypeProfile = usePrototypeStore((state) => state.updateProfile);
   const [name, setName] = useState(user?.name ?? '');
   const [username, setUsername] = useState(user?.username ?? '');
-  const [usageVisibility, setUsageVisibility] = useState(() => usageVisibilityOf(user));
+  // Null until the user picks a level, so a session refresh that updates `user` is followed
+  // instead of being overwritten with the level cached when the screen opened.
+  const [pickedVisibility, setPickedVisibility] = useState<UsageVisibility | null>(null);
+  const usageVisibility = pickedVisibility ?? usageVisibilityOf(user);
   const [saving, setSaving] = useState(false);
   const avatar = useAvatarActions();
   // A save and a photo change each reply with the whole profile, so they never overlap: the later
@@ -169,7 +173,7 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
       <NativeUsernameRow value={username} onChange={changeUsername} error={draft.usernameError} errorColor={theme.red} />
     </SwiftUISection>
     <SwiftUISection title="Privacy" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>{USAGE_VISIBILITY_HINT}</SwiftUIText>}>
-      <NativeChoiceRow title="Usage visibility" value={usageVisibility} options={USAGE_VISIBILITY_OPTIONS} onChange={setUsageVisibility} />
+      <NativeChoiceRow title="Usage visibility" value={usageVisibility} options={USAGE_VISIBILITY_OPTIONS} onChange={setPickedVisibility} />
     </SwiftUISection>
   </SwiftUIForm></SwiftUIHost>;
 
@@ -178,7 +182,7 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
     { label: 'Take photo', icon: 'camera', onPress: () => void avatar.choose('camera') },
     ...(user?.avatarUrl ? [{ label: 'Remove photo', icon: 'trash', destructive: true, onPress: () => void avatar.remove() }] : []),
   ]);
-  const openVisibilityActions = () => showActions('Usage visibility', USAGE_VISIBILITY_OPTIONS.map((option) => ({ label: option.label, selected: option.value === usageVisibility, onPress: () => setUsageVisibility(option.value) })));
+  const openVisibilityActions = () => showActions('Usage visibility', USAGE_VISIBILITY_OPTIONS.map((option) => ({ label: option.label, selected: option.value === usageVisibility, onPress: () => setPickedVisibility(option.value) })));
 
   return <Screen><PageHeader title="Edit Profile" onBack={() => navigation.goBack()} />
     <View style={styles.avatarSection}>

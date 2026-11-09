@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   updates: [] as Record<string, unknown>[],
+  executed: [] as unknown[],
   friendPeerIds: vi.fn(),
   poolPeerIds: vi.fn(),
   bumpAccountRevisions: vi.fn(),
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../database/client.js', () => ({
   db: {
     transaction: async (callback: (tx: unknown) => unknown) => callback({
+      execute: async (query: unknown) => { mocks.executed.push(query) },
       update: () => ({
         set: (values: Record<string, unknown>) => {
           mocks.updates.push(values)
@@ -62,6 +64,7 @@ describe('PATCH /api/me usage visibility', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.updates.length = 0
+    mocks.executed.length = 0
     mocks.friendPeerIds.mockResolvedValue(['friend'])
     mocks.poolPeerIds.mockResolvedValue(['pool-peer', 'friend'])
     mocks.bumpAccountRevisions.mockImplementation(async (_tx: unknown, ids: string[]) => ids.map((userId) => ({ userId, revision: 1 })))
@@ -69,6 +72,9 @@ describe('PATCH /api/me usage visibility', () => {
 
   it('stores the new visibility and refreshes friends and Pool members', async () => {
     const result = await patchProfile({ usageVisibility: 'public' })
+    // The management-settings lock comes first so a stale management apply can't undo this write.
+    expect(mocks.executed).toHaveLength(1)
+    expect(JSON.stringify(mocks.executed[0])).toContain('pg_advisory_xact_lock(1886747744)')
     expect(mocks.updates[0]).toMatchObject({ usageVisibility: 'public' })
     expect(result).toMatchObject({ user: { usageVisibility: 'public' } })
     expect(mocks.poolPeerIds).toHaveBeenCalledWith(expect.anything(), 'me')

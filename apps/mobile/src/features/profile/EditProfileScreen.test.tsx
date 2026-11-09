@@ -209,6 +209,18 @@ it('sends nothing when the usage visibility goes back to the saved level', () =>
   expect(navigation.goBack).toHaveBeenCalled()
 })
 
+// A cold start shows the cached account first; the server's copy must not be written back over.
+it('follows a session refresh instead of saving the cached usage visibility', () => {
+  mocks.user = { ...account, usageVisibility: 'friends' }
+  const view = mount()
+  mocks.user = { ...account, usageVisibility: 'pool' }
+  view.rerender(<EditProfileScreen navigation={navigation as never} route={{ key: 'EditProfile', name: 'EditProfile' } as never} />)
+  expect(visibilityPicker().value).toBe('pool')
+  fireEvent.click(doneButton())
+  expect(mocks.updateProfile).not.toHaveBeenCalled()
+  expect(navigation.goBack).toHaveBeenCalled()
+})
+
 it('picks the usage visibility from a Material sheet and saves it on Android', async () => {
   mocks.platform = 'android'
   mocks.updateProfile.mockResolvedValue({ user: { ...account, usageVisibility: 'pool' } })
