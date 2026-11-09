@@ -77,6 +77,7 @@ function show(path = '/files', client = seededClient(), browserHistory = false) 
               <Route path="files/d/:docId" element={<View name="Document view" />} />
             </Route>
             <Route path="c/:chatId" element={<p>{'Chat view'}</p>} />
+            <Route index element={<p>{'New chat view'}</p>} />
           </Routes>
           <Probe />
         </TooltipProvider>
@@ -176,8 +177,18 @@ describe('Files tabs', () => {
     await waitFor(() => expect(tabNames()).toEqual(['My files']))
     expect(location()).toBe('/files')
 
-    // A lone My files tab has nothing to close.
-    expect(selectedTab().querySelector('[data-tab-close]')).toBeNull()
+    // The last tab closes too, leaving Files for a new chat.
+    fireEvent.click(selectedTab().querySelector('[data-tab-close]')!)
+    await waitFor(() => expect(location()).toBe('/'))
+    expect(screen.getByText('New chat view')).toBeTruthy()
+    expect(useFilesTabs.getState().tabs).toHaveLength(0)
+
+    // Files comes back with a new tab, and the closed ones can be reopened.
+    fireEvent.click(screen.getByRole('link', { name: 'Files button' }))
+    await waitFor(() => expect(tabNames()).toEqual(['My files']))
+    fireEvent.contextMenu(selectedTab())
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Reopen closed tab' }))
+    await waitFor(() => expect(tabNames()).toEqual(['My files', 'My files']))
   })
 
   it('moves focus with the arrow keys, shows tabs with Enter, closes with Delete, and moves tabs with Alt+arrows', async () => {
@@ -392,7 +403,7 @@ describe('Files tabs', () => {
     expect(selectedTab()).toBe(screen.getAllByRole('tab')[0])
   })
 
-  it('keeps the desktop menu while moving around Files, and closes the window when there is no tab to close', async () => {
+  it('keeps the desktop menu while moving around Files, and leaves Files when its last tab closes', async () => {
     let command: ((name: string) => void) | null = null
     const setFilesTabsMenu = vi.fn(async () => undefined)
     const closeWindow = vi.fn(async () => undefined)
@@ -414,9 +425,12 @@ describe('Files tabs', () => {
     await waitFor(() => expect(location()).toBe('/files'))
     expect(setFilesTabsMenu.mock.calls).toEqual([[true]])
 
+    // Cmd/Ctrl+W on the last tab goes to a new chat, as closing it does.
     act(() => command!('files-close-tab'))
-    expect(closeWindow).toHaveBeenCalledTimes(1)
-    expect(useFilesTabs.getState().closed).toHaveLength(0)
+    await waitFor(() => expect(location()).toBe('/'))
+    expect(closeWindow).not.toHaveBeenCalled()
+    expect(useFilesTabs.getState().closed).toHaveLength(1)
+    expect(setFilesTabsMenu).toHaveBeenLastCalledWith(false)
   })
 
   it('names every tab, even pinned and crowded ones that show only an icon', async () => {
@@ -488,5 +502,15 @@ describe('Files tabs', () => {
     fireEvent.contextMenu(await screen.findByRole('tab', { name: 'Projects' }))
     fireEvent.doubleClick(await screen.findByRole('menuitem', { name: 'Reopen closed tab' }))
     expect(tabNames()).toEqual(['Projects'])
+  })
+
+  it('keeps the strip while the view shows, even with no tabs left, so the view does not jump', async () => {
+    show(`/files/f/${PROJECTS}`)
+    await screen.findByRole('tablist', { name: 'Files tabs' })
+    // The moment between the last tab closing and the new chat replacing the view.
+    act(() => useFilesTabs.setState({ tabs: [], activeId: '' }))
+    expect(screen.getByText('Folder view')).toBeTruthy()
+    expect(screen.getByRole('tablist', { name: 'Files tabs' })).toBeTruthy()
+    expect(screen.getByRole('tabpanel').hasAttribute('aria-labelledby')).toBe(false)
   })
 })

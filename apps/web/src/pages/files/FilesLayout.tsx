@@ -85,7 +85,9 @@ export function FilesLayout() {
   // With Files turned off only the trash is left here, which needs no tabs.
   const filesEnabled = useAuth((state) => state.filesEnabled)
   const owner = useFilesTabsOwner(filesLocationOf(location.pathname))
-  const ready = useFilesTabs((state) => Boolean(owner) && state.owner === owner && state.tabs.length > 0)
+  // The strip stays while the view does, even with no tabs: closing the last one leaves Files, and
+  // the view below must not jump up for the moment before the new chat takes its place.
+  const ready = useFilesTabs((state) => Boolean(owner) && state.owner === owner)
   const activeId = useFilesTabs((state) => state.activeId)
   const actions = useFilesTabActions()
   useFollowFilesLocation(filesEnabled ? owner : null)
@@ -98,7 +100,7 @@ export function FilesLayout() {
       <div
         id={FILES_TAB_PANEL_ID}
         role="tabpanel"
-        aria-labelledby={ready ? filesTabElementId(activeId) : undefined}
+        aria-labelledby={ready && activeId ? filesTabElementId(activeId) : undefined}
         className="min-h-0 flex-1"
       >
         <Outlet />

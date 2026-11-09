@@ -78,4 +78,10 @@ describe('stored Files tabs', () => {
     expect(loadTabs('one')).toBeNull()
     expect(localStorage.getItem(tabsStorageKey('one'))).toBeNull()
   })
+
+  it('keeps closed tabs after every tab was closed, so they can be reopened', () => {
+    const data = { tabs: [], activeId: '', closed: sample().closed }
+    expect(parseTabs(serializeTabs(data))).toEqual(data)
+    expect(parseTabs(serializeTabs({ tabs: [], activeId: '', closed: [] }))).toBeNull()
+  })
 })

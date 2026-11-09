@@ -152,11 +152,9 @@ export function openTab(
   return { data: { ...base, tabs, activeId: options.activate === false ? base.activeId : tab.id }, tab }
 }
 
-/** Whether closing a tab would change anything: a lone My files tab would only be replaced by another. */
+/** Whether there is such a tab to close. Every tab can close, the last one too (see `closeTabs`). */
 export function canCloseTab(data: FilesTabsData, id: string): boolean {
-  const tab = data.tabs.find((candidate) => candidate.id === id)
-  if (!tab) return false
-  return !(data.tabs.length === 1 && !tab.pinned && sameLocation(tab.location, ROOT_LOCATION))
+  return data.tabs.some((tab) => tab.id === id)
 }
 
 /** The tab that shows once `ids` are gone, if the active tab is among them: the next one to the right, else to the left. */
@@ -168,17 +166,17 @@ function successor(tabs: FilesTab[], activeId: string, removed: Set<string>): st
   return null
 }
 
-/** Closes `ids`; closing every tab leaves a new My files tab, as a browser window keeps one tab. */
+/**
+ * Closes `ids`. Closing every tab leaves none, as closing a browser window's last tab closes the
+ * window: the main view then leaves Files for a new chat, and Files opens a new tab when it comes back.
+ */
 export function closeTabs(data: FilesTabsData, ids: Iterable<string>): FilesTabsData {
   const removed = new Set(ids)
   const closing = data.tabs.flatMap((tab, index) => removed.has(tab.id) ? [{ tab, index }] : [])
   if (!closing.length) return data
   const closed = pushClosed(data.closed, { tabs: closing })
   const tabs = data.tabs.filter((tab) => !removed.has(tab.id))
-  if (!tabs.length) {
-    const fresh = createTab(ROOT_LOCATION)
-    return { tabs: [fresh], activeId: fresh.id, closed }
-  }
+  if (!tabs.length) return { tabs: [], activeId: '', closed }
   return { tabs, activeId: successor(data.tabs, data.activeId, removed) ?? tabs[0]!.id, closed }
 }
 
@@ -262,7 +260,8 @@ export function duplicateTab(data: FilesTabsData, id: string): FilesTabsData {
 /** Shows `location` in the active tab, as following a link does. */
 export function navigateActive(data: FilesTabsData, location: FilesLocation, snapshot?: TabSnapshot | null): FilesTabsData {
   const current = activeTab(data)
-  if (!current) return initialTabs(location)
+  // With every tab closed, Files starts again with one, keeping what can be reopened.
+  if (!current) return { ...initialTabs(location), closed: data.closed }
   if (sameLocation(current.location, location)) return data
   return {
     ...data,

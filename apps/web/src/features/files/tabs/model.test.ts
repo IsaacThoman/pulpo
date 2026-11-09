@@ -78,11 +78,15 @@ describe('closing tabs', () => {
     expect(data.activeId).toBe('a')
   })
 
-  it('replaces the last tab with a new My files tab', () => {
+  it('closes the last tab too, and starts again with one when Files is next shown', () => {
     const data = closeTab(tabs(['a']), 'a')
-    expect(data.tabs).toHaveLength(1)
-    expect(data.tabs[0]!.location).toEqual(ROOT_LOCATION)
+    expect(data.tabs).toHaveLength(0)
     expect(data.closed).toHaveLength(1)
+    const back = followLocation(data, ROOT_LOCATION, 'enter')
+    expect(back.tabs.map((tab) => tab.location)).toEqual([ROOT_LOCATION])
+    expect(back.activeId).toBe(back.tabs[0]!.id)
+    // What was closed can still be reopened, where it was.
+    expect(reopenClosed(back).tabs.map((tab) => tab.id)).toEqual(['a', back.tabs[0]!.id])
   })
 
   it('closes other tabs but keeps pinned ones, showing the one kept', () => {
@@ -245,10 +249,9 @@ describe('the tab limit', () => {
 })
 
 describe('closing what can be closed', () => {
-  it('has nothing to close in a lone My files tab', () => {
+  it('can close any tab, a lone My files tab too', () => {
     const lone = initialTabs()
-    expect(canCloseTab(lone, lone.activeId)).toBe(false)
-    expect(canCloseTab(tabs(['a']), 'a')).toBe(true)
+    expect(canCloseTab(lone, lone.activeId)).toBe(true)
     expect(canCloseTab(tabs(['a', 'b']), 'missing')).toBe(false)
   })
 })

@@ -94,7 +94,6 @@ export function parseTabs(raw: string | null): FilesTabsData | null {
   const read = stored.tabs.slice(0, MAX_TABS).map((tab) => readTab(tab, seen)).filter((tab): tab is FilesTab => Boolean(tab))
   // Pinned tabs always lead.
   const tabs = [...read.filter((tab) => tab.pinned), ...read.filter((tab) => !tab.pinned)]
-  if (!tabs.length) return null
   const closed: ClosedTabs[] = (Array.isArray(stored.closed) ? stored.closed : []).slice(-MAX_CLOSED).flatMap((entry) => {
     if (!entry || !Array.isArray(entry.tabs)) return []
     const entryIds = new Set<string>()
@@ -104,7 +103,9 @@ export function parseTabs(raw: string | null): FilesTabsData | null {
     })
     return restored.length ? [{ tabs: restored }] : []
   })
-  const activeId = typeof stored.activeId === 'string' && tabs.some((tab) => tab.id === stored.activeId) ? stored.activeId : tabs[0]!.id
+  // Every tab may have been closed, and what was closed can still be reopened.
+  if (!tabs.length && !closed.length) return null
+  const activeId = typeof stored.activeId === 'string' && tabs.some((tab) => tab.id === stored.activeId) ? stored.activeId : tabs[0]?.id ?? ''
   return { tabs, activeId, closed }
 }
 
