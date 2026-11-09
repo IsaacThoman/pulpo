@@ -225,7 +225,7 @@ function FileHeader({ node, ancestors, view, onDownload, children }: {
   usePublishFilesView(place ?? { layout: view.layout, view: { kind: 'folder', id: null } }, item)
   const goMain = useMainNavigate()
   return (
-    <header className={cn('flex items-center gap-1.5 border-b px-4 py-1.5', view.layout === 'panel' ? 'side-panel-header' : 'mobile-page-content')}>
+    <header className={cn('flex items-center gap-1.5 border-b px-4 py-1.5', view.layout === 'panel' && 'side-panel-header')}>
       <div className="min-w-0 flex-1">
         <FilePath ancestors={ancestors} inPanel={view.layout === 'panel'} />
         {node ? <DocTitle node={node} /> : <div className="h-8" />}

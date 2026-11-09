@@ -19,12 +19,12 @@ function IconButton({ label, shortcut, onClick, children }: { label: string; sho
   )
 }
 
-/** Open in a new tab, open in the main view, and close, at the end of every panel header. */
+/** Open in a new browser tab, open in the main view, and close, at the end of every panel header. */
 export function PanelWindowButtons({ content }: { content: PanelContent }) {
   const actions = usePanelActions(content)
   return (
     <>
-      {actions.openInNewTab && <IconButton label={ui("Open in new tab")} onClick={actions.openInNewTab}><ExternalLink /></IconButton>}
+      {actions.openInNewTab && <IconButton label={ui("Open in new browser tab")} onClick={actions.openInNewTab}><ExternalLink /></IconButton>}
       <IconButton label={ui("Open in main view")} shortcut={isApplePlatform ? '⌘⇧↵' : 'Ctrl+Shift+Enter'} onClick={actions.openInMain}>
         <Maximize2 />
       </IconButton>

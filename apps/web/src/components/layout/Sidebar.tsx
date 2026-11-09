@@ -37,6 +37,7 @@ import {
   PanelLeftOpen,
   PanelRight,
   SquareArrowOutUpRight,
+  AppWindow,
   ExternalLink,
 } from 'lucide-react'
 import type { FileNode, SidebarFolder, SidebarState } from '@pulpo/contracts'
@@ -71,6 +72,8 @@ import { billingPlanTier, fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
 import { FilesNavMenu } from '@/features/files/FilesNavMenu'
+import { filesLocationOf, useFilesNavTarget, useFilesTabActions } from '@/features/files/tabs/routing'
+import { toSnapshot } from '@/features/files/tabs/model'
 import { NavItemMenu, type NavItemMenuKey, type NavItemMenuState } from '@/features/sidebar/NavItemMenu'
 import { FileNodeIcon } from '@/features/files/FileNodeIcon'
 import { SuggestedBadge } from '@/features/files/FileSuggestion'
@@ -459,7 +462,7 @@ function ChatMenu({ chat, onRename, atPointer = false }: { chat: Chat; onRename:
       {!isDesktopRuntime() && (
         <DropdownMenuItem onClick={() => { window.open(`/c/${chat.id}`, '_blank', 'noopener') }}>
           <ExternalLink />
-          {ui("Open in new tab")}
+          {ui("Open in new browser tab")}
         </DropdownMenuItem>
       )}
       <OpenChatToLeftItem chatId={chat.id} />
@@ -963,6 +966,9 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
   const path = itemPath(node)
   const opens = path && (filesEnabled || !path.startsWith('/files')) ? path : null
   const besideId = fileTargetId(node)
+  // Folders and files (or shortcuts to them) can also open in a Files tab of their own.
+  const opensInTab = opens ? filesLocationOf(opens) : null
+  const tabActions = useFilesTabActions()
   const chatTarget = node.kind === 'shortcut' && node.target?.available && node.target.kind === 'chat' ? node.target.id : null
   const parentId = node.parentId === sidebar.chatsFolderId ? null : node.parentId
   return (
@@ -992,11 +998,17 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
           {folder ? ui("Open in Files") : ui("Open")}
         </DropdownMenuItem>
       )}
-      {/* The desktop app has no tabs. */}
+      {opensInTab && (
+        <DropdownMenuItem onClick={() => { tabActions.openInNewTab(opensInTab, node.kind === 'shortcut' ? null : toSnapshot(node)) }}>
+          <AppWindow />
+          {ui("Open in new tab")}
+        </DropdownMenuItem>
+      )}
+      {/* The desktop app has no browser tabs. */}
       {opens && !isDesktopRuntime() && (
         <DropdownMenuItem onClick={() => { window.open(opens, '_blank', 'noopener') }}>
           <ExternalLink />
-          {ui("Open in new tab")}
+          {ui("Open in new browser tab")}
         </DropdownMenuItem>
       )}
       {besideId && splitAvailable && (
@@ -1739,6 +1751,8 @@ export function Sidebar({
     navigate(path)
     onNavigate()
   }
+  // Files reopens as it was left, in its active tab; from inside Files it goes to My files.
+  const filesTarget = useFilesNavTarget()
 
   // Right-clicking empty space: rows and folders open their own menus first (preventing this).
   const [spaceMenu, setSpaceMenu] = useState<SpaceMenu | null>(null)
@@ -2034,7 +2048,7 @@ export function Sidebar({
         <nav aria-label={ui("Primary")} className="space-y-0.5 px-2" data-sidebar-nav>
           {iconBtn(t('chat.newChat'), () => startNewChat(), <SquarePen className="size-4" />, undefined, openNavMenu('newChat'))}
           {sidebarPins.searchChats && iconBtn(t('sidebar.searchChats'), onOpenSearch, <Search className="size-4" />, undefined, openNavMenu('searchChats'))}
-          {filesEnabled && sidebarPins.files && iconBtn(t('sidebar.files'), '/files', <FolderIcon className="size-4" />, undefined, (event) => {
+          {filesEnabled && sidebarPins.files && iconBtn(t('sidebar.files'), filesTarget, <FolderIcon className="size-4" />, undefined, (event) => {
             event.preventDefault()
             setFilesMenuPoint({ x: event.clientX, y: event.clientY })
           })}
@@ -2179,7 +2193,7 @@ export function Sidebar({
           <DropdownMenuContent side="top" align="start" className="w-56">
             <AccountSwitcherMenuItems open={accountMenuOpen} />
             {accountNavItem('searchChats', t('sidebar.searchChats'), onOpenSearch, <Search />)}
-            {filesEnabled && accountNavItem('files', t('sidebar.files'), '/files', <FolderIcon />)}
+            {filesEnabled && accountNavItem('files', t('sidebar.files'), filesTarget, <FolderIcon />)}
             {accountNavItem('usage', t('sidebar.usage'), '/usage', <BarChart3 />)}
             {accountNavItem('friends', t('sidebar.friends'), '/friends', <UsersRound />, pendingSocialCount)}
             {apiKeysEnabled && accountNavItem('apiKeys', t('sidebar.apiKeys'), '/api-keys', <KeyRound />)}

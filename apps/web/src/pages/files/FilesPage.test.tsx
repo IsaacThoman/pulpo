@@ -9,6 +9,8 @@ import { useSidePanel } from '@/features/side-panel/store'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useFileClipboard } from '@/features/files/browser/clipboard'
 import { ApiError } from '@/lib/api'
+import { useFilesTabs } from '@/features/files/tabs/store'
+import { createTab } from '@/features/files/tabs/model'
 
 vi.hoisted(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -71,11 +73,11 @@ function Location() {
   return <output data-testid="location">{useLocation().pathname}</output>
 }
 
-function showFiles(panel = false, folderId: string | null = null) {
+function showFiles(panel = false, folderId: string | null = null, path = '/files') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/files']}>
+      <MemoryRouter initialEntries={[path]}>
         <TooltipProvider>
           {panel ? <FolderPanelView folderId={folderId} /> : <FilesPage />}
         </TooltipProvider>
@@ -434,5 +436,57 @@ describe('keyboard', () => {
     const name = screen.getByRole('button', { name: /^Name/ })
     expect(name.hasAttribute('aria-sort')).toBe(false)
     expect(name.getAttribute('aria-label')).toMatch(/^Name, sorted (ascending|descending)$/)
+  })
+})
+
+describe('Files tabs from the browser', () => {
+  beforeEach(() => {
+    sessionStorage.clear()
+    useFilesTabs.setState({ owner: 'user', tabs: [createTab({ kind: 'folder', id: null }, { id: 'home' })], activeId: 'home', closed: [] })
+  })
+  afterEach(() => useFilesTabs.setState({ owner: null, tabs: [], activeId: '', closed: [] }))
+
+  it('opens items in new tabs behind the current one, from the menu or a middle-click', async () => {
+    showFiles()
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Projects/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Open in new tab' }))
+    fireEvent(screen.getByRole('option', { name: /Notes\.md/ }), new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }))
+
+    const { tabs, activeId } = useFilesTabs.getState()
+    // In the order they were opened, after the tab they came from.
+    expect(tabs.map((tab) => tab.location)).toEqual([
+      { kind: 'folder', id: null },
+      { kind: 'folder', id: 'folder' },
+      { kind: 'file', id: 'document' },
+    ])
+    expect(tabs[1]!.snapshot?.name).toBe('Projects')
+    expect(activeId).toBe('home')
+    expect(screen.getByTestId('location').textContent).toBe('/files')
+  })
+
+  it('has no tab for a chat', async () => {
+    showFiles()
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Trip/ }))
+    await screen.findByRole('menuitem', { name: /Copy share link/ })
+    expect(screen.queryByRole('menuitem', { name: 'Open in new tab' })).toBeNull()
+  })
+
+  it('opens tabs from the side panel only beside Files tabs in view, behind the current one', async () => {
+    showFiles(true)
+    fireEvent(await screen.findByRole('option', { name: /Projects/ }), new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }))
+    const { tabs, activeId } = useFilesTabs.getState()
+    expect(tabs.map((tab) => tab.location)).toEqual([{ kind: 'folder', id: null }, { kind: 'folder', id: 'folder' }])
+    expect(activeId).toBe('home')
+    expect(screen.getByTestId('location').textContent).toBe('/files')
+  })
+
+  it('offers no tab from the side panel beside a chat, which it would replace', async () => {
+    showFiles(true, null, '/c/chat')
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Projects/ }))
+    await screen.findByRole('menuitem', { name: /^Open in main view/ })
+    expect(screen.queryByRole('menuitem', { name: 'Open in new tab' })).toBeNull()
+    fireEvent(screen.getByRole('option', { name: /Notes\.md/ }), new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }))
+    expect(useFilesTabs.getState().tabs).toHaveLength(1)
+    expect(screen.getByTestId('location').textContent).toBe('/c/chat')
   })
 })

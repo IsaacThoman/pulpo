@@ -878,6 +878,33 @@ html[data-desktop="true"]:not([data-desktop-os="win32"]) .desktop-sidebar-collap
   top: 16px;
 }
 
+/* The Files tabs. In the desktop app they sit in the title bar (beside the open sidebar) and,
+   like a browser's, the space between them moves the window. */
+.files-tab-bar {
+  height: 2.5rem;
+}
+
+html[data-desktop="true"] .files-tab-bar {
+  height: 38px;
+  -webkit-app-region: drag;
+}
+
+@media (width < 750px) {
+  /* The drawer button sits over the start of the strip. */
+  .files-tab-bar,
+  html[data-desktop="true"] .files-tab-bar {
+    height: 3rem;
+    padding-left: 3rem;
+  }
+}
+
+@media (width >= 750px) {
+  /* Windows' caption buttons sit over the top right corner of the main view. */
+  html[data-desktop-os="win32"] .files-tab-bar {
+    padding-right: 138px;
+  }
+}
+
 html[data-desktop="true"] .desktop-no-drag,
 html[data-desktop="true"] button,
 html[data-desktop="true"] input,

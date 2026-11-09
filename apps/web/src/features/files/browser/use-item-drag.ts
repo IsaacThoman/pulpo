@@ -47,6 +47,19 @@ export function registerItemDropZone(zone: ItemDropZone): () => void {
   }
 }
 
+/**
+ * The drop target under the pointer, marked `data-drop-hover` for targets outside the browser the
+ * drag started in (Files tabs), which cannot see its state.
+ */
+let hoveredTarget: HTMLElement | null = null
+
+function markHovered(element: HTMLElement | null): void {
+  if (hoveredTarget === element) return
+  hoveredTarget?.removeAttribute('data-drop-hover')
+  hoveredTarget = element
+  element?.setAttribute('data-drop-hover', '')
+}
+
 const IDLE: ItemDragState = { phase: 'idle', nodes: [], origins: [], start: { x: 0, y: 0 }, releasedAt: null, homes: [], tile: false }
 
 /**
@@ -130,6 +143,7 @@ export function useItemDrag(options: {
     }
     const target = activeTargetRef.current
     setTarget(null)
+    markHovered(null)
     const releasedAt = chipRef.current?.firstElementChild?.getBoundingClientRect() ?? null
     const canvas = optionsRef.current.canvas
     const canvasElement = canvas?.element()
@@ -170,6 +184,8 @@ export function useItemDrag(options: {
     const autoscroll = () => {
       frame = requestAnimationFrame(autoscroll)
       if (!viewport) return
+      // Over a target outside the list (a breadcrumb, a Files tab), the list holds still.
+      if (hoveredTarget && !viewport.contains(hoveredTarget)) return
       const bounds = viewport.getBoundingClientRect()
       const { x, y } = pointer.current
       const edgeSpeed = (position: number, start: number, end: number) => position < start + AUTOSCROLL_EDGE_PX
@@ -190,14 +206,17 @@ export function useItemDrag(options: {
       overZone.current = Boolean(itemDropZone?.hover(pointer.current.x, pointer.current.y, session.current?.nodes ?? []))
       if (overZone.current) {
         if (activeTargetRef.current !== null) setTarget(null)
+        markHovered(null)
         return
       }
       itemDropZone?.leave()
       const element = document.elementFromPoint(pointer.current.x, pointer.current.y)
-      const target = element?.closest<HTMLElement>('[data-drop-target]')?.dataset.dropTarget ?? null
+      const targetElement = element?.closest<HTMLElement>('[data-drop-target]') ?? null
+      const target = targetElement?.dataset.dropTarget ?? null
       const nodes = session.current?.nodes ?? []
       const allowed = target !== null && optionsRef.current.canDrop(target === 'root' ? null : target, nodes)
       const next = allowed ? target : null
+      markHovered(allowed ? targetElement : null)
       if (next !== activeTargetRef.current) setTarget(next)
     }
 
@@ -246,6 +265,7 @@ export function useItemDrag(options: {
       window.removeEventListener('keydown', key, true)
       cancelAnimationFrame(frame)
       document.body.style.userSelect = ''
+      markHovered(null)
     }
     cleanup.current = detach
     window.addEventListener('pointermove', move)
