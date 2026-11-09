@@ -26,6 +26,15 @@ describe('production preference mapping', () => {
     expect(preferencePatchForServer('agentCostLimitEnabled', false)).toEqual({ agentCostLimitEnabled: false })
     expect(preferencePatchForServer('agentCostLimitMicros', 500_000)).toEqual({ agentCostLimitMicros: 500_000 })
   })
+  it('shares the agent’s Files permissions with server defaults', () => {
+    expect(preferencesFromServer({})).toMatchObject({ agentFilesAskBeforeBrowsing: true, agentFileChangeMode: 'suggest' })
+    expect(preferencesFromServer({ agentFilesAskBeforeBrowsing: false, agentFileChangeMode: 'write' }))
+      .toMatchObject({ agentFilesAskBeforeBrowsing: false, agentFileChangeMode: 'write' })
+    expect(preferencesFromServer({ agentFilesAskBeforeBrowsing: 'no', agentFileChangeMode: 'everything' }))
+      .toMatchObject({ agentFilesAskBeforeBrowsing: true, agentFileChangeMode: 'suggest' })
+    expect(preferencePatchForServer('agentFilesAskBeforeBrowsing', false)).toEqual({ agentFilesAskBeforeBrowsing: false })
+    expect(preferencePatchForServer('agentFileChangeMode', 'read')).toEqual({ agentFileChangeMode: 'read' })
+  })
   it('shares composer sync as an account preference with enabled defaults', () => {
     expect(preferencesFromServer({ composerSyncEnabled: false }).composerSyncEnabled).toBe(false)
     expect(preferencesFromServer({}).composerSyncEnabled).toBe(true)
@@ -54,6 +63,7 @@ describe('production preference mapping', () => {
       imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} },
       composerSyncEnabled: true, showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {},
       showResponseCost: false, agentCostLimitEnabled: true, agentCostLimitMicros: 1_000_000,
+      agentFilesAskBeforeBrowsing: true, agentFileChangeMode: 'suggest',
       theme: 'dark', attachmentCacheMb: 96, localChatLimit: 50,
       trashRetention: '7d', automaticChatExpiration: '24h', newChatAutoExpire: false, memoryEnabled: true,
       favoriteModelIds: ['model-b', 'model-a'], providerOrder: ['lab-b', 'lab-a'],
@@ -93,7 +103,7 @@ describe('production preference mapping', () => {
   })
 
   it('clears synchronized model preferences when older servers omit them', () => {
-    expect(preferencesFromServer({})).toEqual({ imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, composerSyncEnabled: true, showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {}, showResponseCost: false, agentCostLimitEnabled: true, agentCostLimitMicros: 1_000_000, favoriteModelIds: [], providerOrder: [], generation: {}, agentModes: {}, instructionPresetSelections: {} })
+    expect(preferencesFromServer({})).toEqual({ imageGeneration: { enabled: false, modelId: null }, speech: { modelId: null, models: {} }, composerSyncEnabled: true, showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {}, showResponseCost: false, agentCostLimitEnabled: true, agentCostLimitMicros: 1_000_000, agentFilesAskBeforeBrowsing: true, agentFileChangeMode: 'suggest', favoriteModelIds: [], providerOrder: [], generation: {}, agentModes: {}, instructionPresetSelections: {} })
   })
 
   it('filters malformed generation preferences from server settings', () => {

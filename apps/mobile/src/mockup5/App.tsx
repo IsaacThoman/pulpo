@@ -154,10 +154,14 @@ import { PulsingIcon, SpinningLoader } from '../components/SpinningLoader';
 import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer, useIsFocused, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackNavigationProp, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
-import { findCostLimitItem, workspaceContinueWithoutAgentAvailableAtMs, type CostLimitItem, type DataRetentionTag } from '@pulpo/contracts';
+import { findCostLimitItem, workspaceContinueWithoutAgentAvailableAtMs, type CostLimitItem, type DataRetentionTag, type FilesPermissionDecision, type FilesPermissionItem } from '@pulpo/contracts';
 import { DataRetentionBadge } from '../components/DataRetentionBadge';
 import {
   Brain,
+  FolderCheck,
+  FolderClock,
+  FolderSearch,
+  FolderX,
   Ghost,
   History,
   Hourglass,
@@ -222,7 +226,7 @@ import { activateOptimisticBranch } from './src/production/optimisticBranches';
 import { cacheNamespace, cacheOpenedChat, deleteResponseCursor, loadDraft, saveDraft } from '../data/database';
 import { queryKeys } from '../data/queries';
 import { enqueueCacheWrite } from '../data/writeBehind';
-import { activateBranch as activateServerBranch, cancelResponse, continuePastCostLimit, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, reportMessage as reportServerMessage, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
+import { activateBranch as activateServerBranch, answerFilesPermission, cancelResponse, continuePastCostLimit, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, reportMessage as reportServerMessage, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
 import { attachmentUploadErrorMessage } from '../features/chat/attachmentUploadError';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
@@ -232,17 +236,21 @@ import { FAVORITES_SECTION, resolveModelMenu } from '../features/chat/modelMenu'
 import { aiIconSource, useCatalogIconCacheRevision } from './src/production/AiIconAssets';
 import { SafeMarkdown } from '../components/SafeMarkdown';
 import { AssistantMarkdown } from '../features/quiz/AssistantMarkdown';
-import { appendDraftText, QuizComposerContext } from '../features/quiz/composer';
+import { QuizComposerContext } from '../features/quiz/composer';
 import { isQuizFileName } from '@pulpo/client-core/quiz';
 import { ModelWarningBanner } from './src/components/ModelWarningBanner';
 import { AttachmentImageViewer, type AttachmentImagePreviewItem, type AttachmentImageTransitionOrigin } from '../components/AttachmentImageViewer';
 import { useFilesCapabilityRefresh, useFilesEnabled } from '../features/files/availability';
-import { parseFilesLink, useFilesLinkInbox } from '../features/files/links';
+import { openFilesLinkInApp, parseFilesLink, useFilesLinkInbox } from '../features/files/links';
 import { trashFolderRef } from '../features/trash/folder';
-import { clearNewChatFileScope, liveFileScope, newChatFileScope, useChatFileScope } from '../features/files/chatScope';
+import { FILE_ACCESS_MODES, FILE_CHANGE_MODE_LABELS, useChatFilesAccess } from '../features/files/chatScope';
 import { FileChangesCard } from '../features/files/components/FileChangesCard';
-import { FileScopeBar } from '../features/files/components/FileScopeBar';
-import { useFileScopePicker } from '../features/files/scopePicker';
+import { ChatFilesAccessSheet } from '../features/files/components/ChatFilesAccessSheet';
+import { FileReferenceBar } from '../features/files/components/FileReferenceBar';
+import { useFileReferencePicker } from '../features/files/scopePicker';
+import { addComposerReferences, composerMessageText, composerReferences, removeComposerReference } from '@pulpo/client-core/files';
+import { appendComposerText, composerTextEnd, draftPreviewText, draftReferenceNames, withComposerText } from '../features/files/composerDraft';
+import { fileReferenceHref } from '@pulpo/contracts';
 import { useOpenFileItem } from '../features/files/open';
 import { fileOpenTarget } from '../features/files/itemActions';
 import { FilesToastHost } from '../features/files/components/FilesToastHost';
@@ -318,7 +326,7 @@ import {
   type HistoryChatExpiryMenuAction,
   type HistoryChatSummary,
 } from '../features/chat/history';
-import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, type TimelineSegment, type TimelineStep } from '../features/chat/timeline';
+import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, filesPermissionLabel, filesPermissionPlace, pendingFilesPermission, timelineActivityIsActive, workspaceIsActive, type TimelineSegment, type TimelineStep } from '../features/chat/timeline';
 import { toolActivityPresentation } from '../features/chat/toolActivityPresentation';
 import { CHAT_RESUME_FOLLOW_THRESHOLD, CHAT_SCROLL_TO_BOTTOM_THRESHOLD, type ChatViewportMetrics, chatBottomDistance, chatLandingKeyboardTranslation, chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent, shouldResumeChatFollow } from '../features/chat/viewport';
 import {
@@ -2682,11 +2690,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     const initialSortOrder = activePrototypeChat?.sortOrder ?? (options?.temporary ? 0 : topChatSortOrder(
       visibleHistoryChats(currentChats), null, { floor: productionNamespace ? sidebarItemsFloor(queryClient, productionNamespace, null) : undefined },
     ));
-    // A new chat starts with the Files items picked for it (temporary chats get no Files), minus any
-    // known to be gone since: the server refuses a scope naming them.
-    const startingFileScope = startsChat && !options?.temporary && productionNamespace
-      ? liveFileScope(queryClient, productionNamespace, newChatFileScope(productionNamespace))
-      : null;
     if (!activeChat) {
       upsertChat({
         id: key,
@@ -2702,8 +2705,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         deletedAt: null,
         purgeAt: null,
         messages: [],
-        fileScopeIds: startingFileScope?.ids ?? [],
-        fileScopeAccess: startingFileScope?.access ?? {},
       });
       setActiveChatId(key);
     }
@@ -2765,8 +2766,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             sizeBytes: attachment.size ?? 0,
           })),
           createdAt: timestamp,
-          fileScopeIds: startingFileScope?.ids,
-          fileScopeAccess: startingFileScope?.access,
         });
       }
       let serverChatId = startsChat ? undefined : activeChat?.id;
@@ -2784,8 +2783,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           attachmentIds: prepared.map((attachment) => attachment.serverId),
           agentMode,
           usedDictation: options?.usedDictation,
-          fileScopeIds: startingFileScope?.ids,
-          fileScopeAccess: startingFileScope?.access,
         });
         if (options?.temporary) pendingTemporaryStart.current = { chatId: key, promise: startPromise };
         let started: Awaited<typeof startPromise>;
@@ -2797,8 +2794,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         serverChatId = started.chat.id;
         response = started.response;
         serverChatCreated = true;
-        // The draft's items now belong to the chat (the start request carried them, or is queued with them).
-        if (startingFileScope?.ids.length && productionNamespace) clearNewChatFileScope(productionNamespace);
         setActiveChatId(serverChatId);
       } else {
         response = await sendServerMessage({
@@ -3669,6 +3664,25 @@ function pausedCostLimit(steps: TimelineStep[], active: boolean): CostLimitItem 
   return active && last?.kind === 'cost_limit' && last.costLimit.status === 'awaiting_confirmation' ? last.costLimit : undefined;
 }
 
+/** The Files permission request a work block is waiting on, while the reply can still take an answer. */
+function waitingFilesPermission(steps: TimelineStep[], active: boolean): FilesPermissionItem | undefined {
+  // The request comes before the turn's tool calls, whose command waits on the answer.
+  const step = steps.findLast((candidate) => candidate.kind === 'files_permission' && filesPermissionIsLive(candidate.filesPermission, active));
+  return step?.kind === 'files_permission' ? step.filesPermission : undefined;
+}
+
+function filesPermissionIsLive(item: FilesPermissionItem, active: boolean): boolean {
+  return active && item.status === 'awaiting_decision' && Date.parse(item.expires_at) > Date.now();
+}
+
+function FilesPermissionIcon({ item, live, size }: { item: FilesPermissionItem; live: boolean; size: number }) {
+  const { COLORS } = useChatStyles();
+  const Glyph = item.status === 'allowed' || item.status === 'always_allowed' ? FolderCheck
+    : item.status === 'denied' ? FolderX
+      : live ? FolderSearch : FolderClock;
+  return <Glyph color={COLORS.muted} size={size} />;
+}
+
 function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boolean }) {
   const { COLORS } = useChatStyles();
   const { reduceMotion } = useAccessibilityPreferences();
@@ -3684,6 +3698,8 @@ function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boo
     if (workspaceIsActive(workspace.workspace.state)) return <PulsingIcon reduceMotion={reduceMotion}><Server color={COLORS.muted} size={14} /></PulsingIcon>;
   }
   if (pausedCostLimit(steps, active)) return <Pause color={COLORS.muted} size={14} />;
+  const filesPermission = waitingFilesPermission(steps, active);
+  if (filesPermission) return <FilesPermissionIcon item={filesPermission} live size={14} />;
   const tools = steps.filter((step) => step.kind === 'tool');
   const runningTool = tools.find((step) => step.tool.status === 'running');
   if (runningTool?.kind === 'tool') {
@@ -3747,6 +3763,8 @@ function workLabel(steps: TimelineStep[], active: boolean, durationMs?: number):
   }
   const paused = pausedCostLimit(steps, active);
   if (paused) return costLimitLabel(paused, true);
+  const filesPermission = waitingFilesPermission(steps, active);
+  if (filesPermission) return filesPermissionLabel(filesPermission, true);
   const runningTool = steps.find((step) => step.kind === 'tool' && step.tool.status === 'running');
   if (runningTool?.kind === 'tool') return toolActivityPresentation(runningTool.tool.tool, runningTool.tool.arguments).label;
   if (active) return steps.some((step) => step.kind === 'tool') ? 'Working…' : 'Thinking…';
@@ -3921,6 +3939,10 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
               const CostLimitIcon = step.costLimit.status === 'continued' ? StepForward : Pause;
               return <View key={step.costLimit.id} style={styles.workRow}><CostLimitIcon color={COLORS.muted} size={13} /><Text style={styles.costLimitRowText}>{costLimitLabel(step.costLimit, active)}</Text></View>;
             }
+            if (step.kind === 'files_permission') {
+              const live = filesPermissionIsLive(step.filesPermission, active);
+              return <View key={step.filesPermission.id} style={styles.workRow}><FilesPermissionIcon item={step.filesPermission} live={live} size={13} /><Text style={styles.costLimitRowText}>{filesPermissionLabel(step.filesPermission, live)}</Text></View>;
+            }
             return <ToolStepRow key={step.tool.id ?? `tool:${index}`} step={step} />;
           })}
         </View>
@@ -3929,8 +3951,51 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
   );
 }
 
+const FILES_PERMISSION_FAILURE = 'Couldn’t answer';
+
+/**
+ * An Agent reply asking to look through the user's Files beyond the items mentioned in the chat.
+ * The reply waits for the answer (or until the request expires) and then carries on.
+ */
+function FilesPermissionPrompt({ responseId, item }: { responseId: string; item: FilesPermissionItem }) {
+  const { styles, COLORS } = useChatStyles();
+  const [pending, setPending] = useState<FilesPermissionDecision | null>(null);
+  const answer = (decision: FilesPermissionDecision) => {
+    if (pending) return;
+    setPending(decision);
+    Haptics.selectionAsync();
+    void answerFilesPermission(responseId, item.id, decision).catch((error) => {
+      setPending(null);
+      Alert.alert(FILES_PERMISSION_FAILURE, error instanceof Error ? error.message : undefined);
+    });
+  };
+  const place = filesPermissionPlace(item);
+  return (
+    <View style={styles.filesPermission}>
+      <View style={styles.workRow}>
+        <FolderSearch color={COLORS.muted} size={14} />
+        <Text accessibilityRole="header" style={styles.workRowTitle}>Pulpo Agent wants to look through your Files</Text>
+      </View>
+      <Text style={styles.filesPermissionDetail}>
+        {`It asked to look in ${place}, beyond the items mentioned in this chat. Changes to items you didn’t mention still wait for your review.`}
+      </Text>
+      <View style={styles.costLimitActions}>
+        <Pressable accessibilityRole="button" disabled={Boolean(pending)} onPress={() => answer('deny')} style={({ pressed }) => [styles.costLimitButton, pressed && styles.navRowPressed]}>
+          <Text style={styles.continueButtonText}>{pending === 'deny' ? 'Denying…' : 'Deny'}</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" disabled={Boolean(pending)} onPress={() => answer('allow_chat')} style={({ pressed }) => [styles.costLimitButton, pressed && styles.navRowPressed]}>
+          <Text style={styles.continueButtonText}>{pending === 'allow_chat' ? 'Allowing…' : 'Allow for this chat'}</Text>
+        </Pressable>
+      </View>
+      <Pressable accessibilityRole="button" accessibilityHint="Stops asking in every chat. You can change this in Settings." disabled={Boolean(pending)} onPress={() => answer('allow_always')} style={({ pressed }) => [styles.continueButton, pressed && styles.navRowPressed]}>
+        <Text style={styles.continueButtonText}>{pending === 'allow_always' ? 'Allowing…' : 'Always allow reading Files'}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function otherOutputItems(outputItems?: unknown[]): Array<Record<string, unknown>> {
-  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit', 'pulpo_file_changes']);
+  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit', 'pulpo_files_permission', 'pulpo_file_changes']);
   return (outputItems ?? []).filter((item): item is Record<string, unknown> => {
     const type = (item as { type?: unknown }).type;
     return typeof type === 'string' && !known.has(type);
@@ -4078,6 +4143,9 @@ const MessageRow = memo(function MessageRow({
   const [costLimitPending, setCostLimitPending] = useState(false);
   const costLimitKey = costLimit ? `${costLimit.limit_micros}:${costLimit.status}` : undefined;
   useEffect(() => setCostLimitPending(false), [costLimitKey]);
+  // An Agent reply waiting to look through the user's Files asks under the reply until it expires.
+  const filesPermission = useMemo(() => pendingFilesPermission(message.outputItems, streaming), [message.outputItems, streaming]);
+  const filesPermissionExpired = useDeadlineReached(filesPermission ? Date.parse(filesPermission.expires_at) : undefined, Boolean(filesPermission));
   const capacityWorkspace = useMemo(() => (message.outputItems ?? []).find((item) => (
     (item as { type?: string }).type === 'pulpo_workspace'
   )) as { state?: string; startedAt?: string; continueWithoutAgentAvailableAt?: string } | undefined, [message.outputItems]);
@@ -4266,6 +4334,7 @@ const MessageRow = memo(function MessageRow({
                 </Pressable>
               </View>
             )}
+            {filesPermission && !filesPermissionExpired ? <FilesPermissionPrompt key={filesPermission.id} responseId={message.id} item={filesPermission} /> : null}
             {message.error && timeline.length > 0 && <ResponseErrorNotice message={message} onRetry={onRegenerate} />}
             {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" hitSlop={TEXT_BUTTON_HIT_SLOP} onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
             {message.agentMode && streaming && capacityWorkspace?.state === 'waiting' && canContinueWithoutAgent && (
@@ -4946,11 +5015,12 @@ function ChatView({
     setAgentSelection((current) => current.enabled === enabled ? current : { ...current, enabled });
   }, []);
   const activeAgentEnabled = canUseAgent && agentEnabled;
-  // The Files items this chat's agent works with (the unsent chat keeps a draft of them).
+  // What the agent may do with Files here; the message's own Files references live in its draft.
   const filesNamespace = useFilesNamespace();
-  const fileScope = useChatFileScope(filesNamespace, chatId, temporary);
-  const showFileScopePicker = useFileScopePicker((state) => state.show);
-  const openFileItem = useOpenFileItem();
+  const filesAccess = useChatFilesAccess(chatId, temporary);
+  const showFileReferencePicker = useFileReferencePicker((state) => state.show);
+  const [filesAccessOpen, setFilesAccessOpen] = useState(false);
+  useEffect(() => { setFilesAccessOpen(false); }, [chatId]);
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
   const attachmentsRequireAgent = attachments.some((attachment) => attachment.kind === 'file')
@@ -5044,6 +5114,12 @@ function ChatView({
     syncError,
   });
   inputRef.current = input;
+  // The draft keeps its Files references as a last paragraph of links (see composerReferences).
+  const composerDraft = useMemo(() => composerReferences(input), [input]);
+  const updateComposerDraft = useCallback((next: string) => {
+    inputRef.current = next;
+    onChangeInput(next);
+  }, [onChangeInput]);
   const composerScreenFocused = useIsFocused();
   const dictationEnabled = useSessionStore((state) => state.status === 'authenticated' && state.config?.capabilities.dictation === true);
   const dictationToken = useSessionStore((state) => state.token);
@@ -5053,12 +5129,18 @@ function ChatView({
     enabled: dictationEnabled && !expired && composerScreenFocused,
     canStart: !networkOffline && !sending && !queueBusy && !shelfBusy && !composerFocusSuppressed
       && hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${localComposerDraftId(chatId, temporary)}`,
-    read: () => ({ text: inputRef.current, selection: inputSelectionRef.current }),
+    // Dictation edits the typed text; the draft's Files references stay after it.
+    read: () => {
+      const { text } = composerReferences(inputRef.current);
+      const selection = inputSelectionRef.current;
+      return { text, selection: { start: Math.min(selection.start, text.length), end: Math.min(selection.end, text.length) } };
+    },
     apply: (value, cursor) => {
       usedDictationRef.current = true;
-      inputRef.current = value;
+      const next = withComposerText(inputRef.current, value);
+      inputRef.current = next;
       setComposerSelection(setInputSelection, inputSelectionRef, { start: cursor, end: cursor });
-      onChangeInput(value);
+      onChangeInput(next);
     },
   });
   const { busy: dictationBusy, isBusy: isDictationBusy } = dictation;
@@ -5075,12 +5157,13 @@ function ChatView({
   // Draft hydration owns the selection only. Navigation intent owns focus so
   // a new chat becoming persisted cannot reopen the keyboard after sending.
   const placeComposerCursorAtEnd = useCallback((body: string) => {
-    const end = body.length;
+    // The end of what the field shows: the draft's Files references follow it as chips.
+    const end = composerTextEnd(body);
     setComposerSelection(setInputSelection, inputSelectionRef, { start: end, end });
   }, []);
   // A quiz's "Send results" leaves its message in the draft for the user to edit and send.
   const appendToComposer = useCallback((text: string) => {
-    const next = appendDraftText(inputRef.current, text);
+    const next = appendComposerText(inputRef.current, text);
     inputRef.current = next;
     onChangeInput(next);
     placeComposerCursorAtEnd(next);
@@ -5358,9 +5441,10 @@ function ChatView({
         preservedComposerRef.current = { input: remote.content, attachments: next, agentEnabled: remote.agentMode };
       } else {
         const previousSelection = inputSelectionRef.current;
+        const remoteEnd = composerTextEnd(remote.content);
         const selection = composerInputRef.current?.isFocused()
-          ? { start: Math.min(previousSelection.start, remote.content.length), end: Math.min(previousSelection.end, remote.content.length) }
-          : { start: remote.content.length, end: remote.content.length };
+          ? { start: Math.min(previousSelection.start, remoteEnd), end: Math.min(previousSelection.end, remoteEnd) }
+          : { start: remoteEnd, end: remoteEnd };
         setComposerSelection(setInputSelection, inputSelectionRef, selection);
         inputRef.current = remote.content;
         onChangeInput(remote.content);
@@ -6040,7 +6124,7 @@ function ChatView({
         const queueEdit = queueEditRef.current;
         if (queueEdit) {
           await mutateQueuedMessage(queueClient, queueEdit.namespace, queueEdit.chatId, queueEdit.id, {
-            action: 'save_edit', input: submittedDraft.input.trim(), modelId: model.id, presetSelections,
+            action: 'save_edit', input: composerMessageText(submittedDraft.input), modelId: model.id, presetSelections,
             agentMode: activeAgentEnabled, attachmentIds: (prepared as PreparedAttachment[]).map((item) => item.serverId),
           }, (prepared as PreparedAttachment[]).map((item) => ({ id: item.serverId, name: item.name, mimeType: item.mimeType, sizeBytes: item.size ?? 0 })));
           if (queueEditRef.current === queueEdit && messageEditChatIdRef.current === queueEdit.chatId) restoreComposer();
@@ -6048,7 +6132,7 @@ function ChatView({
         }
         const accepted = await onEdit(
           messageEdit.message,
-          submittedDraft.input.trim(),
+          composerMessageText(submittedDraft.input),
           prepared as PreparedAttachment[],
           activeAgentEnabled,
         );
@@ -6068,7 +6152,7 @@ function ChatView({
           if (!shouldQueueMessage(assistantStatus !== 'idle', queuedMessages.length)) followSnapshot = armSubmittedTurnFollow();
           startToken = beginStart(starting);
           return onSend(
-            submittedDraft.input,
+            composerMessageText(submittedDraft.input),
             submittedDraft.attachments,
             { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire, usedDictation: submittedDraft.usedDictation, onStartDiscarded: () => discardStart(startToken) },
             async () => {
@@ -6693,8 +6777,8 @@ function ChatView({
                 onToggle={() => setShelfCollapsed((value) => !value)}
               >
                 <QueuedMessagesView maxHeight={Math.min(200, windowHeight * 0.25)} style={styles.composerQueueRows}
-                  rows={shelfRows.map((row) => ({ id: row.id, kind: 'shelf', content: row.content.slice(0, 200) || 'Attachments',
-                    detail: [row.attachments.map((a) => a.name).join(', '), row.error || (row.status === 'uploading' ? 'Uploading…' : row.showPendingStatus ? 'Waiting to sync' : '')].filter(Boolean).join(' · '),
+                  rows={shelfRows.map((row) => ({ id: row.id, kind: 'shelf', content: draftPreviewText(row.content).slice(0, 200),
+                    detail: [[...row.attachments.map((a) => a.name), ...draftReferenceNames(row.content)].join(', '), row.error || (row.status === 'uploading' ? 'Uploading…' : row.showPendingStatus ? 'Waiting to sync' : '')].filter(Boolean).join(' · '),
                     status: row.status ?? '', isEditing: false, canEdit: !shelfBusy && !sending && !dictationBusy, canDelete: !shelfBusy && !sending && !dictationBusy, canReorder: !shelfBusy && !sending && !dictationBusy,
                     canRetry: row.status === 'failed' && !shelfBusy && !sending && !dictationBusy,
                   }))}
@@ -6720,9 +6804,9 @@ function ChatView({
                         const locked = dictationBusy || queueBusy || sending || item.status === 'dispatching' || Boolean(item.pendingSubmissionId && !item.localFailure) || expired;
                         return {
                           id: item.id,
-                          content: isEditing ? 'Editing queued message…' : item.content || 'Attachments',
+                          content: isEditing ? 'Editing queued message…' : draftPreviewText(item.content),
                           isEditing,
-                          detail: [item.pendingSubmissionId && !item.localFailure ? 'Waiting to sync' : item.status === 'dispatching' ? 'Sending…' : item.status === 'editing' && !isEditing ? 'Editing on another device' : item.status === 'failed' && !item.error ? 'Couldn’t send. Edit to retry.' : '', item.attachments.map((attachment) => attachment.name).join(', '), item.error].filter(Boolean).join(' · '),
+                          detail: [item.pendingSubmissionId && !item.localFailure ? 'Waiting to sync' : item.status === 'dispatching' ? 'Sending…' : item.status === 'editing' && !isEditing ? 'Editing on another device' : item.status === 'failed' && !item.error ? 'Couldn’t send. Edit to retry.' : '', [...item.attachments.map((attachment) => attachment.name), ...draftReferenceNames(item.content)].join(', '), item.error].filter(Boolean).join(' · '),
                           status: item.pendingSubmissionId && !item.localFailure ? 'Waiting to sync' : item.status,
                           canEdit: !locked && (!messageEdit || isEditing) && !queuedMessages.some((candidate) => candidate.status === 'editing' && candidate.id !== item.id),
                           canDelete: !locked && !messageEdit,
@@ -6766,13 +6850,16 @@ function ChatView({
                   </Pressable>
                 </View>
               ) : null}
-              <FileScopeBar
+              <FileReferenceBar
                 namespace={filesNamespace}
-                scope={fileScope}
+                references={composerDraft.references}
+                available={filesAccess.available}
                 agentActive={activeAgentEnabled}
                 canUseAgent={canUseAgent}
                 onTurnOnAgent={() => setAgentEnabled(true)}
-                onOpenItem={(node) => { void openFileItem(node); }}
+                onAdd={(added) => updateComposerDraft(addComposerReferences(inputRef.current, added))}
+                onRemove={(id) => updateComposerDraft(removeComposerReference(inputRef.current, id))}
+                onOpen={(reference) => { openFilesLinkInApp(fileReferenceHref(reference), useSessionStore.getState().instanceUrl); }}
               />
               <AttachmentStrip
                 attachments={attachments}
@@ -6800,7 +6887,7 @@ function ChatView({
                   <TextInput
                     ref={composerInputRef}
                     // iOS reads the placeholder after the label ("Message, Message…"); while it shows, it names the field.
-                    accessibilityLabel={Platform.OS === 'ios' && !input ? undefined : 'Message'}
+                    accessibilityLabel={Platform.OS === 'ios' && !composerDraft.text ? undefined : 'Message'}
                     disableFullscreenUI
                     // Toggling editable off resigns focus and dismisses the keyboard, so stay editable during
                     // shelf actions and temporary handoffs. transferShelf checks for edits before replacing content;
@@ -6811,17 +6898,18 @@ function ChatView({
                     maxLength={1_000_000}
                     onFocus={() => { setQueueCollapsed(true); setShelfCollapsed(true); }}
                     onBlur={() => { setQueueCollapsed(false); setShelfCollapsed(false); }}
-                    onChangeText={(value) => { inputRef.current = value; onChangeInput(value); }}
-                    selection={{ start: Math.min(inputSelection.start, input.length), end: Math.min(inputSelection.end, input.length) }}
+                    // The field shows the typed text; the draft's Files references follow it as chips.
+                    onChangeText={(value) => { updateComposerDraft(withComposerText(inputRef.current, value)); }}
+                    selection={{ start: Math.min(inputSelection.start, composerDraft.text.length), end: Math.min(inputSelection.end, composerDraft.text.length) }}
                     onSelectionChange={(event) => { setComposerSelection(setInputSelection, inputSelectionRef, event.nativeEvent.selection); }}
                     placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
                     placeholderTextColor={COLORS.muted}
                     // iOS multiline measurement can retain the previous draft's height after a clear.
                     // Derive the reset from the controlled value so synced clears work too, without remounting.
-                    style={[styles.input, styles.composerTextInput, Platform.OS === 'ios' && input.length === 0 && {
+                    style={[styles.input, styles.composerTextInput, Platform.OS === 'ios' && composerDraft.text.length === 0 && {
                       height: Math.max(styles.input.minHeight, Math.ceil(styles.input.lineHeight * Math.min(fontScale, COMPOSER_MAX_FONT_SIZE_MULTIPLIER))),
                     }]}
-                    value={input}
+                    value={composerDraft.text}
                   />
                 </ComposerPasteView>
                 {showShelf && (Platform.OS === 'ios'
@@ -6836,13 +6924,13 @@ function ChatView({
                   style={[styles.composerToolbar, composerToolbarStyle]}
                 >
                 {Platform.OS === 'ios' ? (
-                  <NativeAttachmentMenu onTakePhoto={takePhoto} onPickFiles={pickFiles} onPickPhotos={pickPhotos} onAddFromFiles={fileScope.available ? showFileScopePicker : undefined} />
+                  <NativeAttachmentMenu onTakePhoto={takePhoto} onPickFiles={pickFiles} onPickPhotos={pickPhotos} onAddFromFiles={filesAccess.available ? showFileReferencePicker : undefined} />
                 ) : (
                   <MaterialMenu label="Add attachment" icon="plus" actions={[
                     { label: 'Take photo', icon: 'camera', onPress: takePhoto },
                     { label: 'Photos', icon: 'photo.on.rectangle', onPress: pickPhotos },
                     { label: 'Choose files', icon: 'doc', onPress: pickFiles },
-                    ...(fileScope.available ? [{ label: 'Add from Files', icon: 'folder', onPress: showFileScopePicker }] : []),
+                    ...(filesAccess.available ? [{ label: 'Add from Files', icon: 'folder', onPress: showFileReferencePicker }] : []),
                   ]} />
                 )}
                 {hasGenerationPresets && (Platform.OS === 'ios' ? (
@@ -6890,11 +6978,23 @@ function ChatView({
                     available={canUseAgent}
                     hint={!agentAvailable ? 'Unavailable on this Pulpo instance.' : !model.agentEnabled ? 'Unavailable for this model.' : 'Opens agent choices'}
                     onSelectionChange={setAgentSelection}
+                    files={filesAccess.available ? {
+                      changeMode: filesAccess.changeMode,
+                      onChangeMode: filesAccess.setChangeMode,
+                      onOpenAccess: filesAccess.saved ? () => setFilesAccessOpen(true) : undefined,
+                    } : undefined}
                   />
                 ) : (
-                  <MaterialMenu label={`Agent options, ${agentLabel}`} icon={activeAgentEnabled ? 'bot' : 'bot-off'} color={activeAgentEnabled ? nativeAgentTint : undefined} disabled={!canUseAgent} actions={[
-                    { label: 'Pulpo Agent', icon: 'bot', selected: activeAgentEnabled, onPress: () => selectAgent(true) },
-                    { label: 'Disabled', icon: 'bot-off', selected: !activeAgentEnabled, onPress: () => selectAgent(false) },
+                  <MaterialMenu label={`Agent options, ${agentLabel}`} icon={activeAgentEnabled ? 'bot' : 'bot-off'} color={activeAgentEnabled ? nativeAgentTint : undefined} disabled={!canUseAgent} sections={[
+                    { id: 'agent', actions: [
+                      { label: 'Pulpo Agent', icon: 'bot', selected: activeAgentEnabled, onPress: () => selectAgent(true) },
+                      { label: 'Disabled', icon: 'bot-off', selected: !activeAgentEnabled, onPress: () => selectAgent(false) },
+                    ] },
+                    ...(filesAccess.available ? [{
+                      id: 'file-changes', title: 'Changes to Files',
+                      actions: FILE_ACCESS_MODES.map((mode) => ({ id: mode, label: FILE_CHANGE_MODE_LABELS[mode].title, selected: filesAccess.changeMode === mode, onPress: () => filesAccess.setChangeMode(mode) })),
+                    }] : []),
+                    ...(filesAccess.available && filesAccess.saved ? [{ id: 'files-access', actions: [{ label: 'Files access', icon: 'folder', onPress: () => setFilesAccessOpen(true) }] }] : []),
                   ]} />
                 )}
                 <View style={styles.flex} />
@@ -6934,6 +7034,17 @@ function ChatView({
       </KeyboardStickyView>
       </View>
 
+      {filesAccessOpen && filesAccess.available && filesAccess.saved ? (
+        <ChatFilesAccessSheet
+          namespace={filesNamespace}
+          access={filesAccess}
+          onClose={() => setFilesAccessOpen(false)}
+          onOpen={(href) => {
+            setFilesAccessOpen(false);
+            openFilesLinkInApp(href, useSessionStore.getState().instanceUrl);
+          }}
+        />
+      ) : null}
       <AttachmentImageViewer
         initialIndex={imageViewer?.initialIndex ?? 0}
         items={imageViewer?.attachments ?? []}
@@ -7795,6 +7906,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   continueButton: { alignSelf: 'stretch', minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: COLORS.fillStrong, marginTop: 8 },
   continueButtonText: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
   costLimitActions: { flexDirection: 'row', gap: 8, marginTop: 8 },
+  filesPermission: { borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line, borderRadius: 14, padding: 12, marginTop: 8 },
+  filesPermissionDetail: { color: COLORS.muted, fontSize: 12.5, lineHeight: 18, marginTop: 2 },
   costLimitButton: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: COLORS.fillStrong },
   branchControls: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 5 },
   branchLabel: { color: COLORS.muted, fontSize: 11, fontVariant: ['tabular-nums'] },

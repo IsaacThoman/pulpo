@@ -24,6 +24,7 @@ export function createInitialState(): PersistedPrototypeState {
       streamResponses: true,
       showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {}, showReasoning: true,
       showResponseCost: false, agentCostLimitEnabled: true, agentCostLimitMicros: DEFAULT_AGENT_COST_LIMIT_MICROS,
+      agentFilesAskBeforeBrowsing: true, agentFileChangeMode: 'suggest',
       memoryEnabled: false,
       customInstructions: '',
       instructionPresetSelections: {},

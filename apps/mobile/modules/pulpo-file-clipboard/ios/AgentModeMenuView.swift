@@ -7,24 +7,44 @@ struct AgentModeMenuConfiguration: Record {
   @Field var enabled: Bool = false
   @Field var available: Bool = false
   @Field var hint: String = ""
+  @Field var filesVisible: Bool = false
+  @Field var fileChangeMode: String = "suggest"
+  @Field var filesAccessVisible: Bool = false
 }
 
 public final class AgentModeMenuView: ExpoView {
   let onSelectionChange = EventDispatcher()
+  let onFilesAction = EventDispatcher()
   private let model = AgentModeMenuModel()
   private var hostingController: UIViewController?
 
   public required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
     clipsToBounds = false
-    let host = UIHostingController(rootView: AgentModeMenuContent(model: model) { [weak self] selection in
-      UISelectionFeedbackGenerator().selectionChanged()
-      self?.onSelectionChange([
-        "enabled": selection.enabled,
-        "revision": selection.revision,
-        "scope": selection.scope
-      ])
-    })
+    let model = model
+    let host = UIHostingController(rootView: AgentModeMenuContent(
+      model: model,
+      onSelection: { [weak self] selection in
+        UISelectionFeedbackGenerator().selectionChanged()
+        self?.onSelectionChange([
+          "enabled": selection.enabled,
+          "revision": selection.revision,
+          "scope": selection.scope
+        ])
+      },
+      onFilesAction: { [weak self] action in
+        var payload: [String: Any] = ["scope": model.selection.scope]
+        switch action {
+        case .changeMode(let mode):
+          UISelectionFeedbackGenerator().selectionChanged()
+          payload["action"] = "mode"
+          payload["mode"] = mode
+        case .openAccess:
+          payload["action"] = "access"
+        }
+        self?.onFilesAction(payload)
+      }
+    ))
     host.safeAreaRegions = []
     host.view.backgroundColor = .clear
     host.view.translatesAutoresizingMaskIntoConstraints = false
@@ -44,5 +64,8 @@ public final class AgentModeMenuView: ExpoView {
     if selection != model.selection { model.selection = selection }
     if model.available != value.available { model.available = value.available }
     if model.hint != value.hint { model.hint = value.hint }
+    if model.filesVisible != value.filesVisible { model.filesVisible = value.filesVisible }
+    if model.fileChangeMode != value.fileChangeMode { model.fileChangeMode = value.fileChangeMode }
+    if model.filesAccessVisible != value.filesAccessVisible { model.filesAccessVisible = value.filesAccessVisible }
   }
 }

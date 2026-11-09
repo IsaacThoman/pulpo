@@ -40,6 +40,8 @@ type Props = BaseProps & (
     confirmLabel: string
     /** How many items may be picked in all. */
     limit: number
+    /** What the alert at the limit says. */
+    limitMessage?: string
     /** Already attached; shown as picked and not counted again. */
     pickedIds?: readonly string[]
     onConfirm: (items: Array<{ id: string; name: string; kind: FileNode['kind'] }>, folder: Crumb) => void
@@ -93,7 +95,7 @@ export function FolderPickerSheet(props: Props) {
       const next = new Map(current)
       if (next.has(node.id)) next.delete(node.id)
       else if (next.size + alreadyPicked.size < props.limit) next.set(node.id, { id: node.id, name: node.name, kind: node.kind })
-      else Alert.alert('That’s the limit', `A chat can work with up to ${props.limit} items.`)
+      else Alert.alert('That’s the limit', props.limitMessage ?? `You can pick up to ${props.limit} items.`)
       return next
     })
   }
@@ -109,13 +111,12 @@ export function FolderPickerSheet(props: Props) {
     if (props.mode === 'destination') props.onConfirm(current.id, current.name)
     else props.onConfirm([...picked.values()], current)
   }
-  const destinationBlocked = props.mode === 'destination' && (
+  const destinationBlocked = props.mode === 'destination' ? (
     (current.id !== null && excluded.has(current.id))
     || Boolean(props.sourceFolderIds?.length && props.sourceFolderIds.every((id) => id === current.id))
-  )
-  const confirmLabel = props.mode === 'items' && picked.size === 0
-    ? (current.id === null ? 'Add All Files' : 'Add This Folder')
-    : props.confirmLabel
+  // Nothing picked adds the open folder; My files as a whole is not offered.
+  ) : picked.size === 0 && current.id === null
+  const confirmLabel = props.mode === 'items' && picked.size === 0 && current.id !== null ? 'Add This Folder' : props.confirmLabel
 
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={props.onCancel}>
