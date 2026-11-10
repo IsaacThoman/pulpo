@@ -37,6 +37,7 @@ export const FULL_BACKUP_TEMPORARY_DATA_POLICY = {
   users: 'preserve',
   friendships: 'preserve',
   user_blocks: 'preserve',
+  friend_suggestion_dismissals: 'preserve',
   pools: 'preserve', pool_members: 'preserve', pool_invitations: 'preserve', invite_codes: 'preserve',
   password_credentials: 'preserve',
   user_passkey_credentials: 'preserve', user_provider_credentials: 'preserve',

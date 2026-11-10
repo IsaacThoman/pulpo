@@ -1,8 +1,9 @@
-import { Copy, CreditCard, ExternalLink, Ghost, KeyRound, PinOff, Plus, Search, SquarePen, UsersRound, Wallet } from 'lucide-react'
+import { Copy, CreditCard, ExternalLink, Ghost, KeyRound, PinOff, Plus, Search, SquarePen, UserRound, UsersRound, Wallet } from 'lucide-react'
 import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { ui } from '@/i18n/ui'
 import { openBillingPortal } from '@/lib/billing'
+import { ownProfilePath } from '@/lib/profile'
 import { toggleSidebarPin, type SidebarPinKey } from '@/lib/sidebar-pins'
 import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
@@ -10,8 +11,8 @@ import { FileContextMenu, type ContextMenuPoint } from '@/features/files/browser
 import { useFileToasts } from '@/features/files/browser/toasts'
 import { OpenChatToLeftItem } from '@/features/side-panel/AgentActions'
 
-/** The sidebar's nav buttons with a right-click menu (Files has its own, FilesNavMenu). */
-export type NavItemMenuKey = 'newChat' | Extract<SidebarPinKey, 'searchChats' | 'usage' | 'billing' | 'friends' | 'apiKeys'>
+/** The sidebar's nav buttons with a right-click menu (Files has its own, FilesNavMenu); `friends` is People. */
+export type NavItemMenuKey = 'newChat' | Extract<SidebarPinKey, 'searchChats' | 'billing' | 'friends' | 'apiKeys'>
 
 export interface NavItemMenuState extends ContextMenuPoint {
   key: NavItemMenuKey
@@ -68,7 +69,7 @@ export function NavItemMenu({ menu, onClose, onNewChat, onSearch, subscribed, go
           {unpin}
         </>
       )}
-      {(key === 'usage' || key === 'billing') && (
+      {key === 'billing' && (
         <>
           {billingEnabled && (
             <>
@@ -83,6 +84,7 @@ export function NavItemMenu({ menu, onClose, onNewChat, onSearch, subscribed, go
       )}
       {key === 'friends' && (
         <>
+          <DropdownMenuItem onSelect={() => go(ownProfilePath(username))}><UserRound /> {ui("Your profile")}</DropdownMenuItem>
           <DropdownMenuItem onSelect={() => go('/friends')}><UsersRound /> {ui("View friends")}</DropdownMenuItem>
           {username && <DropdownMenuItem onSelect={() => void copyHandle()}><Copy /> {ui("Copy handle")}</DropdownMenuItem>}
           <DropdownMenuSeparator />

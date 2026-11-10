@@ -64,6 +64,7 @@ export const users = pgTable('users', {
   stateRevision: bigint('state_revision', { mode: 'number' }).notNull().default(0),
   username: text('username').notNull(),
   profileColor: text('profile_color'),
+  usageVisibility: text('usage_visibility', { enum: ['pool', 'friends', 'public'] }).notNull().default('friends'),
   avatarObjectKey: text('avatar_object_key'),
   avatarVersion: integer('avatar_version').notNull().default(0),
   inviteCodeQuota: integer('invite_code_quota').notNull().default(0),
@@ -74,6 +75,7 @@ export const users = pgTable('users', {
   index('users_username_trgm_idx').using('gin', sql`lower(${table.username}) gin_trgm_ops`),
   index('users_name_trgm_idx').using('gin', sql`lower(${table.name}) gin_trgm_ops`),
   check('users_invite_code_quota_check', sql`${table.inviteCodeQuota} >= 0`),
+  check('users_usage_visibility_check', sql`${table.usageVisibility} in ('pool', 'friends', 'public')`),
 ])
 
 export const friendships = pgTable('friendships', {
@@ -148,6 +150,21 @@ export const userBlocks = pgTable('user_blocks', {
   primaryKey({ columns: [table.blockerUserId, table.blockedUserId] }),
   index('user_blocks_blocked_idx').on(table.blockedUserId),
   check('user_blocks_not_self_check', sql`${table.blockerUserId} <> ${table.blockedUserId}`),
+])
+
+/**
+ * People the user chose not to see under "People you may know". Only the dismisser sees this.
+ * Someone comes back once they share more mutual friends with the user than when dismissed.
+ */
+export const friendSuggestionDismissals = pgTable('friend_suggestion_dismissals', {
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  dismissedUserId: uuid('dismissed_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  mutualFriendCount: integer('mutual_friend_count').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.dismissedUserId] }),
+  index('friend_suggestion_dismissals_dismissed_idx').on(table.dismissedUserId),
+  check('friend_suggestion_dismissals_not_self_check', sql`${table.userId} <> ${table.dismissedUserId}`),
 ])
 
 export const passwordCredentials = pgTable('password_credentials', {

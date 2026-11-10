@@ -15,7 +15,8 @@ import { useAuth } from '@/stores/auth'
 import { useChat } from '@/stores/chat'
 import { SplitViewButton } from '@/features/side-panel/AgentActions'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
-import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
+import { usePanelStripShown } from '@/features/side-panel/panel-strip'
+import { panelTabActions, type PanelContent } from '@/features/side-panel/store'
 
 /** The chat an attachment was sent in, when it is one of this account's chats. */
 function ChatLink({ chatId }: { chatId: string | null | undefined }) {
@@ -33,6 +34,8 @@ function AttachmentView({ attachment, inPanel }: { attachment: ChatAttachment; i
   const kind = attachmentPreviewKind(attachment.name, attachment.mimeType)
   const content = usePreviewContent(attachment, kind, true)
   const view = useMemo<PanelContent>(() => ({ kind: 'attachment', id: attachment.id }), [attachment.id])
+  // The panel's tab strip carries its window buttons, when it shows.
+  const stripShown = usePanelStripShown()
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className={cn('flex items-center gap-1.5 border-b px-4 py-1.5', inPanel ? 'side-panel-header' : 'mobile-page-content')}>
@@ -50,7 +53,7 @@ function AttachmentView({ attachment, inPanel }: { attachment: ChatAttachment; i
           onDownload={() => downloadChatAttachment(attachment)}
           className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         />
-        {inPanel ? <PanelWindowButtons content={view} /> : <SplitViewButton view={view} />}
+        {inPanel ? !stripShown && <PanelWindowButtons content={view} /> : <SplitViewButton view={view} />}
       </header>
       <div className="min-h-0 flex-1 overflow-hidden bg-muted/25">
         {kind
@@ -76,7 +79,7 @@ function AttachmentRoute({ attachmentId, inPanel }: { attachmentId: string; inPa
         <TriangleAlert className="mx-auto size-8 text-amber-500" />
         <p className="mt-3 text-sm text-muted-foreground">{ui("This attachment could not be found. It may have been deleted with its chat.")}</p>
         {inPanel
-          ? <Button variant="outline" size="sm" className="mt-4" onClick={() => useSidePanel.getState().close()}>{ui("Close")}</Button>
+          ? <Button variant="outline" size="sm" className="mt-4" onClick={() => panelTabActions.closeShowing({ kind: 'attachment', id: attachmentId })}>{ui("Close")}</Button>
           : <Button asChild variant="outline" size="sm" className="mt-4"><Link to="/">{ui("New chat")}</Link></Button>}
       </div>
     </div>
@@ -85,10 +88,9 @@ function AttachmentRoute({ attachmentId, inPanel }: { attachmentId: string; inPa
 
 export function AttachmentPage() {
   const { attachmentId } = useParams()
-  // Opening the side panel's attachment full page moves it here instead of showing it twice.
+  // Opening an attachment the side panel's tabs show moves it here instead of showing it twice.
   useEffect(() => {
-    const shown = useSidePanel.getState().content
-    if (attachmentId && shown?.kind === 'attachment' && shown.id === attachmentId) useSidePanel.getState().close()
+    if (attachmentId) panelTabActions.remove({ kind: 'attachment', id: attachmentId })
   }, [attachmentId])
   if (!attachmentId) return null
   return <AttachmentRoute key={attachmentId} attachmentId={attachmentId} inPanel={false} />

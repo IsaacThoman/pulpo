@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { FriendProfile } from '@pulpo/contracts'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation, type InitialEntry } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MutualFriends, ProfileIdentity } from './FriendIdentity'
 
@@ -21,6 +21,12 @@ const profile = (displayName: string): FriendProfile => ({
 })
 
 afterEach(cleanup)
+
+let location: ReturnType<typeof useLocation>
+function LocationProbe() {
+  location = useLocation()
+  return null
+}
 
 async function expectProfileCard(trigger: HTMLElement, displayName: string, username: string, interaction: 'focus' | 'hover') {
   if (interaction === 'focus') fireEvent.focus(trigger)
@@ -51,5 +57,45 @@ describe('friend profile hover cards', () => {
     const group = screen.getByRole('group', { name: 'Mutual friends: Ada, Ben, Cy, Dee, Eve' })
     expect(within(group).getAllByRole('link')).toHaveLength(3)
     expect(within(group).getByText('5 mutuals')).toBeTruthy()
+  })
+})
+
+describe('profile links', () => {
+  const mount = (entry: InitialEntry) => render(<MemoryRouter initialEntries={[entry]}>
+    <ProfileIdentity profile={profile('Avery Chen')} href="/avery_chen" />
+    <MutualFriends friends={[profile('Maya Ortiz')]} />
+    <LocationProbe />
+  </MemoryRouter>)
+
+  it('carry the People tab they were opened from, for the breadcrumb back', async () => {
+    mount('/friends')
+    fireEvent.click(screen.getByRole('link', { name: 'Avery Chen' }))
+    expect(location.pathname).toBe('/avery_chen')
+    expect(location.state).toEqual({ peopleOrigin: '/friends' })
+
+    cleanup()
+    mount('/friends')
+    fireEvent.click(screen.getByRole('link', { name: 'Maya Ortiz' }))
+    expect(location.pathname).toBe('/maya_ortiz')
+    expect(location.state).toEqual({ peopleOrigin: '/friends' })
+
+    cleanup()
+    mount('/friends/leaderboard?scope=pool')
+    fireEvent.focus(screen.getByRole('link', { name: 'Avery Chen' }))
+    fireEvent.click(within(await screen.findByRole('tooltip', {}, { timeout: 1_500 })).getByRole('link', { name: 'Avery Chen' }))
+    expect(location.pathname).toBe('/avery_chen')
+    expect(location.state).toEqual({ peopleOrigin: '/friends/leaderboard?scope=pool' })
+  })
+
+  it("pass a profile's origin on to the profiles it links, and add none elsewhere", () => {
+    mount({ pathname: '/jordan', state: { peopleOrigin: '/friends/leaderboard' } })
+    fireEvent.click(screen.getByRole('link', { name: 'Maya Ortiz' }))
+    expect(location.state).toEqual({ peopleOrigin: '/friends/leaderboard' })
+
+    cleanup()
+    mount('/c/chat-1')
+    fireEvent.click(screen.getByRole('link', { name: 'Avery Chen' }))
+    expect(location.pathname).toBe('/avery_chen')
+    expect(location.state).toBeNull()
   })
 })

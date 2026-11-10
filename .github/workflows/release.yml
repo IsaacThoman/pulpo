@@ -208,6 +208,15 @@ jobs:
         run: |
           npm run db:migrate -w @pulpo/server
           npm run test -w @pulpo/server -- src/message-reports
+      - name: Create disposable friends database
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_friends_test"); await sql.end();'
+      - name: Verify friend suggestions against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_friends_test
+          PULPO_FRIENDS_TESTS: 'true'
+        run: |
+          npm run db:migrate -w @pulpo/server
+          npm run test -w @pulpo/server -- src/friends
       - name: Create disposable account switching database
         run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_account_switching_test"); await sql.end();'
       - name: Verify browser account switching against PostgreSQL
@@ -361,12 +370,52 @@ jobs:
           "${smoke_dir}/node_modules/.bin/pulpo" --version
           "${smoke_dir}/node_modules/.bin/pulpo" --json settings schema >/dev/null
 
+  keyboard-changes:
+    name: Keyboard / Detect changes
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action != 'closed'
+    runs-on: ubuntu-24.04
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    env:
+      PULL_REQUEST_SHA: ${{ github.event.pull_request.head.sha }}
+      PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check for keyboard changes
+        id: diff
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "${PULL_REQUEST_BASE_SHA}" "${PULL_REQUEST_SHA}"
+          if git diff --quiet "${PULL_REQUEST_BASE_SHA}" "${PULL_REQUEST_SHA}" -- \
+            apps/keyboard-ios \
+            apps/mobile/assets/PulpoKeyboard.icon \
+            package.json \
+            .github/scripts/setup-xcodegen.sh \
+            .github/workflows/release.yml; then
+            echo 'changed=false' >> "${GITHUB_OUTPUT}"
+            echo '::notice::Keyboard / iOS will be skipped because this PR does not touch the keyboard.'
+          else
+            echo 'changed=true' >> "${GITHUB_OUTPUT}"
+          fi
+
   keyboard:
     name: Keyboard / iOS
+    # Pushes to dev and main always run this job, since keyboard-testflight needs it.
+    # Pull requests only run it when they touch the keyboard. If change detection
+    # fails, the output is empty and the job still runs.
+    needs: keyboard-changes
     if: >-
-      github.event_name != 'pull_request' ||
-      github.event.action != 'closed'
-    runs-on: macos-26
+      !cancelled() && (
+        github.event_name != 'pull_request' ||
+        (github.event.action != 'closed' && needs.keyboard-changes.outputs.changed != 'false')
+      )
+    # Matches keyboard-testflight, so pull requests build the keyboard with the
+    # Xcode that ships it.
+    runs-on: xcode-27
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1267,7 +1316,10 @@ jobs:
       github.ref == 'refs/heads/main' &&
       needs.release.outputs.version != ''
     needs: release
-    runs-on: macos-26
+    # The iOS 27.1 SDK or later is required. iOS runs apps linked against older
+    # SDKs in compatibility mode on iPhone Duo, which hides the vertical bar and
+    # hinge layout.
+    runs-on: xcode-27
     environment: testflight
     permissions:
       contents: read
@@ -1343,7 +1395,8 @@ jobs:
       github.ref == 'refs/heads/main' &&
       needs.release.outputs.version != ''
     needs: [release, keyboard]
-    runs-on: macos-26
+    # Built with the iOS 27.1 SDK or later for the same reason as testflight.
+    runs-on: xcode-27
     environment: testflight
     permissions:
       contents: read

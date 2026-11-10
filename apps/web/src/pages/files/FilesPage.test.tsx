@@ -6,9 +6,12 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import { FilesPage, FolderPanelView } from './FilesPage'
 import { useSettings, type FileDoubleClickAction } from '@/stores/settings'
 import { useSidePanel } from '@/features/side-panel/store'
+import { PanelStripContext } from '@/features/side-panel/panel-strip'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useFileClipboard } from '@/features/files/browser/clipboard'
 import { ApiError } from '@/lib/api'
+import { useFilesTabs } from '@/features/files/tabs/store'
+import { createTab } from '@/features/files/tabs/model'
 
 vi.hoisted(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -71,13 +74,15 @@ function Location() {
   return <output data-testid="location">{useLocation().pathname}</output>
 }
 
-function showFiles(panel = false, folderId: string | null = null) {
+function showFiles(panel = false, folderId: string | null = null, path = '/files', panelStrip = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/files']}>
+      <MemoryRouter initialEntries={[path]}>
         <TooltipProvider>
-          {panel ? <FolderPanelView folderId={folderId} /> : <FilesPage />}
+          <PanelStripContext.Provider value={panelStrip}>
+            {panel ? <FolderPanelView folderId={folderId} /> : <FilesPage />}
+          </PanelStripContext.Provider>
         </TooltipProvider>
         <Location />
       </MemoryRouter>
@@ -93,7 +98,7 @@ beforeEach(() => {
     disconnect() {}
   })
   useSettings.setState({ fileDoubleClickAction: 'open' })
-  useSidePanel.setState({ content: null, lastContent: null, splitAvailable: true })
+  useSidePanel.setState({ content: null, tabs: [], activeId: '', closed: [], splitAvailable: true })
 })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks(); authState.urlImportEnabled = false })
 
@@ -137,10 +142,22 @@ describe.each(['list', 'grid'])('file double-click in %s view', (view) => {
   it.each(cases)('setting %s with Ctrl=%s keeps panel behavior', async (action, modifier) => {
     localStorage.setItem('pulpo.files.view', view)
     useSettings.setState({ fileDoubleClickAction: action })
-    useSidePanel.setState({ content: { kind: 'folder', id: null } })
+    useSidePanel.getState().open({ kind: 'folder', id: null })
+    showFiles(true, null, '/files', true)
+    await doubleClick('Notes.md', modifier)
+    expect(screen.getByTestId('location').textContent).toBe(modifier ? '/files/d/document' : '/files')
+    // Opened in the main view, the file leaves the panel's tab showing its folder.
+    expect(useSidePanel.getState().content).toEqual(modifier ? { kind: 'folder', id: null } : { kind: 'file', id: 'document' })
+  })
+
+  it.each(cases)('setting %s with Ctrl=%s keeps panel behavior without tabs (Files turned off)', async (action, modifier) => {
+    localStorage.setItem('pulpo.files.view', view)
+    useSettings.setState({ fileDoubleClickAction: action })
+    useSidePanel.getState().open({ kind: 'folder', id: null })
     showFiles(true)
     await doubleClick('Notes.md', modifier)
     expect(screen.getByTestId('location').textContent).toBe(modifier ? '/files/d/document' : '/files')
+    // A panel without tabs holds one thing: opened in the main view, the file takes over, as before.
     expect(useSidePanel.getState().content).toEqual(modifier ? null : { kind: 'file', id: 'document' })
   })
 
@@ -434,5 +451,78 @@ describe('keyboard', () => {
     const name = screen.getByRole('button', { name: /^Name/ })
     expect(name.hasAttribute('aria-sort')).toBe(false)
     expect(name.getAttribute('aria-label')).toMatch(/^Name, sorted (ascending|descending)$/)
+  })
+})
+
+describe('Files tabs from the browser', () => {
+  beforeEach(() => {
+    sessionStorage.clear()
+    useFilesTabs.setState({ owner: 'user', tabs: [createTab({ kind: 'folder', id: null }, { id: 'home' })], activeId: 'home', closed: [] })
+  })
+  afterEach(() => useFilesTabs.setState({ owner: null, tabs: [], activeId: '', closed: [] }))
+
+  it('opens items in new tabs behind the current one, from the menu or a middle-click', async () => {
+    showFiles()
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Projects/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Open in new tab' }))
+    fireEvent(screen.getByRole('option', { name: /Notes\.md/ }), new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }))
+
+    const { tabs, activeId } = useFilesTabs.getState()
+    // In the order they were opened, after the tab they came from.
+    expect(tabs.map((tab) => tab.location)).toEqual([
+      { kind: 'folder', id: null },
+      { kind: 'folder', id: 'folder' },
+      { kind: 'file', id: 'document' },
+    ])
+    expect(tabs[1]!.snapshot?.name).toBe('Projects')
+    expect(activeId).toBe('home')
+    expect(screen.getByTestId('location').textContent).toBe('/files')
+  })
+
+  it('has no tab for a chat', async () => {
+    showFiles()
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Trip/ }))
+    await screen.findByRole('menuitem', { name: /Copy share link/ })
+    expect(screen.queryByRole('menuitem', { name: 'Open in new tab' })).toBeNull()
+  })
+
+  it('opens tabs from the side panel in its own tabs, behind the one showing, beside any main view', async () => {
+    useSidePanel.getState().open({ kind: 'folder', id: null })
+    showFiles(true, null, '/c/chat', true)
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Projects/ }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Open in new tab' }))
+    fireEvent(screen.getByRole('option', { name: /Notes\.md/ }), new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 }))
+    const { tabs, activeId, content } = useSidePanel.getState()
+    expect(tabs.map((tab) => tab.location)).toEqual([{ kind: 'folder', id: null }, { kind: 'folder', id: 'folder' }, { kind: 'file', id: 'document' }])
+    expect(tabs[1]!.snapshot?.name).toBe('Projects')
+    expect(activeId).toBe(tabs[0]!.id)
+    expect(content).toEqual({ kind: 'folder', id: null })
+    // The main view and its tabs stay as they were.
+    expect(useFilesTabs.getState().tabs).toHaveLength(1)
+    expect(screen.getByTestId('location').textContent).toBe('/c/chat')
+  })
+
+  it('opens items from the side panel in the main view, and moves the panel’s own folder there', async () => {
+    useSidePanel.getState().open({ kind: 'file', id: 'document' })
+    useSidePanel.getState().open({ kind: 'folder', id: null })
+    showFiles(true, null, '/c/chat', true)
+    fireEvent.click(await screen.findByRole('option', { name: /Projects/ }), { altKey: true })
+    expect(screen.getByTestId('location').textContent).toBe('/files/f/folder')
+    // The panel keeps its tabs and what it shows.
+    expect(useSidePanel.getState().tabs).toHaveLength(2)
+    expect(useSidePanel.getState().content).toEqual({ kind: 'folder', id: null })
+
+    fireEvent.contextMenu(screen.getByRole('listbox'))
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Open in main view' }))
+    expect(screen.getByTestId('location').textContent).toBe('/files')
+    expect(useSidePanel.getState().tabs.map((tab) => tab.location)).toEqual([{ kind: 'file', id: 'document' }])
+    expect(useSidePanel.getState().content).toEqual({ kind: 'file', id: 'document' })
+  })
+
+  it('offers no tab from a side panel without tabs (Files turned off)', async () => {
+    showFiles(true, null, '/c/chat')
+    fireEvent.contextMenu(await screen.findByRole('option', { name: /Projects/ }))
+    await screen.findByRole('menuitem', { name: /^Open in main view/ })
+    expect(screen.queryByRole('menuitem', { name: 'Open in new tab' })).toBeNull()
   })
 })

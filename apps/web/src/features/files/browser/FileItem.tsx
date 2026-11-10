@@ -40,6 +40,8 @@ export interface FileItemProps {
   onClick: (event: MouseEvent) => void
   onDoubleClick: (event: MouseEvent) => void
   onContextMenu: (event: MouseEvent) => void
+  /** A middle-click, which opens the item in a new tab. */
+  onAuxClick?: (event: MouseEvent) => void
   onMenuButton: (event: MouseEvent<HTMLElement>) => void
   /** Accepts files dropped in from the operating system (folders only). */
   dropHandlers?: FileDropHandlers
@@ -96,6 +98,9 @@ export function FileItem(props: FileItemProps) {
     onClick: props.onClick,
     onDoubleClick: props.onDoubleClick,
     onContextMenu: props.onContextMenu,
+    onAuxClick: props.onAuxClick,
+    // A middle press would otherwise start the browser's autoscroll.
+    onMouseDown: (event: MouseEvent) => { if (event.button === 1 && props.onAuxClick) event.preventDefault() },
     ...props.dropHandlers,
   }
 

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 import { FILE_SCOPE_ROOT, MAX_CHAT_FILE_SCOPES, type FileFolderLayout, type FileGridPosition, type FileListing, type FileNode, type TrashItem } from '@pulpo/contracts'
 import {
+  AppWindow,
   Archive,
   ArrowDown,
   ArrowUp,
@@ -53,6 +54,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ui, uit } from '@/i18n/ui'
+import { lastPointerDownInPanel } from '@/lib/last-pointer-down'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
@@ -60,6 +62,7 @@ import { createDoc, createFolder, fetchFolder, fetchFolderLayout, folderLayoutQu
 import { arrangeGrid, GRID_CELL, moveInGrid, readingOrder } from '@/features/files/browser/grid-layout'
 import { dropFolderOf, filesErrorMessage } from '@/features/files/file-display'
 import { FileMoveDialog } from '@/features/files/FileMoveDialog'
+import { movesIntoItself } from '@/features/files/ancestry'
 import { ImportUrlDialog } from '@/features/files/ImportUrlDialog'
 import { FileSuggestionBanner } from '@/features/files/FileSuggestion'
 import { useResolveFileSuggestion } from '@/features/files/use-file-suggestion'
@@ -85,11 +88,12 @@ import {
 } from '@/features/files/browser/selection'
 import { readFileSort, sortFileNodes, toggleFileSort, TRASH_SORT, uniqueChildName, writeFileSort, type FileSort, type FileSortKey } from '@/features/files/browser/sort'
 import { hasPrimaryModifier, isAppleShortcut, isEditableTarget, isInteractiveTarget, shortcutLabel } from '@/features/files/browser/shortcuts'
-import { useSidePanel, type PanelContent } from '@/features/side-panel/store'
+import { panelTabActions, samePanelContent, useSidePanel, type PanelContent } from '@/features/side-panel/store'
 import { AgentMenuItems, OpenChatToLeftItem, SplitViewButton } from '@/features/side-panel/AgentActions'
 import { splitView, usePublishFilesView, type FilesViewPlace } from '@/features/side-panel/agent'
 import { PanelWindowButtons } from '@/features/side-panel/PanelControls'
-import { openBeside, panelContentPath, useMainNavigate } from '@/features/side-panel/use-panel-actions'
+import { usePanelStripShown } from '@/features/side-panel/panel-strip'
+import { mainViewShows, moveToMain, openBeside, showInMain, useMainNavigate } from '@/features/side-panel/use-panel-actions'
 import { SelectionAction } from '@/features/files/browser/SelectionAction'
 import { useFileOperations } from '@/features/files/browser/use-file-operations'
 import { useItemDrag } from '@/features/files/browser/use-item-drag'
@@ -102,6 +106,8 @@ import { TrashBanner } from '@/features/trash/TrashBanner'
 import { TrashDeleteDialog, type PendingTrashDeletion } from '@/features/trash/TrashDeleteDialog'
 import { useTrashOperations } from '@/features/trash/use-trash-operations'
 import { useTrashView } from '@/features/trash/use-trash-view'
+import { toSnapshot, type FilesLocation } from '@/features/files/tabs/model'
+import { useFilesTabActions, useFilesTabsOwner } from '@/features/files/tabs/routing'
 
 const VIEW_STORAGE_KEY = 'pulpo.files.view'
 const UPLOAD_CONCURRENCY = 3
@@ -166,16 +172,12 @@ function SortHeader({ label, sortKey, sort, onSort, className }: {
  * Which files view keys go to: the one last clicked. Before any click only the page listens,
  * so a browser in the side panel never takes arrow keys meant for a chat beside it.
  */
-let lastPointerDown: Element | null = null
-if (typeof window !== 'undefined') {
-  window.addEventListener('pointerdown', (event) => { lastPointerDown = event.target instanceof Element ? event.target : null }, true)
-}
-
 function ownsKeys(layout: FilesViewPlace['layout'], root: HTMLElement | null, target: EventTarget | null): boolean {
   // Keys go where focus is, when it is anywhere in particular (the list, a toolbar, a chat beside).
   if (target instanceof Element && target !== document.body && target !== document.documentElement) return Boolean(root?.contains(target))
-  if (layout === 'panel') return Boolean(root && lastPointerDown && root.contains(lastPointerDown))
-  return !lastPointerDown?.closest('[data-side-panel]')
+  // Decided as the pointer went down, since what was clicked may be gone (an opened folder's rows).
+  const inPanel = lastPointerDownInPanel()
+  return layout === 'panel' ? inPanel : !inPanel
 }
 
 export function FilesPage() {
@@ -345,22 +347,46 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   }
 
   const goMain = useMainNavigate()
+  // The panel has tabs of its own while its strip shows (with Files on).
+  const panelTabs = usePanelStripShown()
   /**
    * Shows a folder or file in the other view: the panel when browsing on the page, the main view
    * when browsing in the panel. Alt/Option-click, and "Open to the right" or "Open in main view".
    */
   const openElsewhere = (content: PanelContent) => {
-    // From the panel it becomes the only view, as with the header's maximize button.
-    if (panel) {
-      useSidePanel.getState().close()
-      goMain(panelContentPath(content))
-    } else {
-      openBeside(content, goMain)
-    }
+    if (!panel) openBeside(content, goMain)
+    // The panel's own folder moves to the main view, as with the maximize button; an item in it
+    // opens there and the panel stays as it is.
+    else if (samePanelContent(content, place.view)) moveToMain(content, goMain)
+    // Without tabs (Files turned off) it becomes the only view, as with the maximize button.
+    else showInMain(content, goMain, panelTabs)
   }
   const nodeContent = (node: FileNode): PanelContent => node.kind === 'folder'
     ? { kind: 'folder', id: inTrash ? trashFolderRef(node.id) : node.id }
     : { kind: 'file', id: node.id }
+  const tabActions = useFilesTabActions()
+  // The main view's tabs, which items on the page open new ones in.
+  useFilesTabsOwner()
+  /** A folder or file that can have a tab of its own: not chats, and in the trash only folders. */
+  const tabContent = (node: FileNode): FilesLocation | null => {
+    if (!filesEnabled || (panel && !panelTabs)) return null
+    const opens = resolveShortcut(node)
+    if (opens.kind === 'chat' || opens.kind === 'shortcut' || (inTrash && opens.kind !== 'folder')) return null
+    const content = nodeContent(opens)
+    return content.kind === 'attachment' ? null : content
+  }
+  /**
+   * Opens an item in a new tab of this view: behind the panel's tab in the panel, and on the page
+   * behind the current one (see `openInNewTab`).
+   */
+  const openInNewTab = (node: FileNode) => {
+    const location = tabContent(node)
+    if (!location) return
+    const opens = resolveShortcut(node)
+    const snapshot = isTrashFolder(opens) ? null : toSnapshot(opens)
+    if (panel) panelTabActions.openInBackground(location, snapshot)
+    else tabActions.openInNewTab(location, snapshot)
+  }
   const elsewhereLabel = panel ? ui("Open in main view") : ui("Open to the right")
   // Without room for a split there is no "side"; Open already shows it in the main view.
   const splitAvailable = useSidePanel((state) => state.splitAvailable)
@@ -368,9 +394,9 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   const ElsewhereIcon = panel ? Maximize2 : PanelRight
   const elsewhereShortcut = isAppleShortcut() ? '⌥ Click' : 'Alt+Click'
 
-  /** Shows a folder (or a trash reference) here: the page follows the route, the panel keeps its own place. */
+  /** Shows a folder (or a trash reference) here: the page follows the route, the panel's tab keeps its own place. */
   const showFolder = (id: string | null) => {
-    if (panel) useSidePanel.getState().open({ kind: 'folder', id })
+    if (panel) useSidePanel.getState().navigate({ kind: 'folder', id })
     else navigate(folderPath(id))
   }
 
@@ -392,7 +418,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
     if (node.kind === 'chat') goMain(`/c/${node.id}`)
     else if (node.kind === 'folder') showFolder(node.id)
     // The panel shows every file in place, with a way back to its folder.
-    else if (panel) useSidePanel.getState().open({ kind: 'file', id: node.id })
+    // A file the main view shows stays there alone; the panel tab keeps its place.
+    else if (panel) { if (!mainViewShows({ kind: 'file', id: node.id })) useSidePanel.getState().navigate({ kind: 'file', id: node.id }, toSnapshot(node)) }
     else navigate(`/files/d/${node.id}`)
   }
 
@@ -475,7 +502,11 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
 
   // Requests from the sidebar's Files menu, carried out by the page once My files has loaded.
   const pageRequest = useFilesPageRequest((state) => state.request)
-  const requestStatus = panel || folderId !== null ? 'pending' : listing.status
+  // Requests are for My files on the page, except uploads, which name their folder and view (one
+  // dropped on a tab, in the main view or the panel).
+  const requestFolder = pageRequest?.kind === 'upload' ? pageRequest.folderId ?? null : null
+  const requestLayout = pageRequest?.kind === 'upload' ? pageRequest.layout ?? 'page' : 'page'
+  const requestStatus = layout !== requestLayout || folderId !== requestFolder ? 'pending' : listing.status
   useEffect(() => {
     // Read from the store, not the render, so a request runs only once.
     const request = useFilesPageRequest.getState().request
@@ -750,6 +781,8 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       if (inTrash) return !intoTrash
       if (intoTrash) return !dragged.some(isBuiltInFolder)
       return !dragged.some((node) => node.id === targetId) && !dragged.every((node) => node.parentId === targetId)
+        // A folder tab can show a folder inside the dragged ones.
+        && !movesIntoItself(queryClient, userId, targetId, dragged)
     },
     onDrop: (dragged, targetId) => {
       if (inTrash) void restoreSelection(dragged, { parentId: targetId })
@@ -839,6 +872,11 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       setSelection(clickSelect(selection, order, node.id, { toggle: hasPrimaryModifier(event), range: event.shiftKey }))
     },
     onDoubleClick: (event: MouseEvent) => { if (renamingId !== node.id) openFromDoubleClick(node, event) },
+    onAuxClick: tabContent(node) ? (event: MouseEvent) => {
+      if (event.button !== 1 || renamingId === node.id) return
+      event.preventDefault()
+      openInNewTab(node)
+    } : undefined,
     onContextMenu: (event: MouseEvent) => {
       event.preventDefault()
       event.stopPropagation()
@@ -918,6 +956,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
           <ElsewhereIcon /> {elsewhereLabel}<DropdownMenuShortcut>{elsewhereShortcut}</DropdownMenuShortcut>
         </DropdownMenuItem>
       )}
+      {single && tabContent(single) && <DropdownMenuItem onSelect={() => openInNewTab(single)}><AppWindow /> {ui("Open in new tab")}</DropdownMenuItem>}
       {/* In the panel, Open already shows a chat beside it. */}
       {single && resolveShortcut(single).kind === 'chat' && !panel && <OpenChatToLeftItem chatId={resolveShortcut(single).id} shortcut={elsewhereShortcut} />}
       {suggestionRootItem && (
@@ -981,6 +1020,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       {single?.kind === 'folder' && canOpenElsewhere && (
         <DropdownMenuItem onSelect={() => openElsewhere(nodeContent(single))}><ElsewhereIcon /> {elsewhereLabel}<DropdownMenuShortcut>{elsewhereShortcut}</DropdownMenuShortcut></DropdownMenuItem>
       )}
+      {single?.kind === 'folder' && tabContent(single) && <DropdownMenuItem onSelect={() => openInNewTab(single)}><AppWindow /> {ui("Open in new tab")}</DropdownMenuItem>}
       {single?.kind === 'folder' && <DropdownMenuSeparator />}
       <DropdownMenuItem onSelect={() => void restoreSelection()}><RotateCcw /> {ui("Restore")}</DropdownMenuItem>
       {restoreTo && <DropdownMenuItem onSelect={restoreTo}><FolderInput /> {ui("Restore to…")}</DropdownMenuItem>}
@@ -1298,7 +1338,9 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         '@container flex min-w-0 items-center gap-1 border-b',
         // The same padding in both, so the path, title, and buttons line up between the views.
         'px-4 py-1.5',
-        panel ? 'side-panel-header' : 'mobile-page-content',
+        // On the page, the tabs above clear the narrow layout's sidebar button.
+        // Without Files only the trash shows, with no tabs; then it clears the button itself.
+        panel ? 'side-panel-header' : !filesEnabled && 'mobile-page-content',
       )}>
         <div className="min-w-0 flex-1 pr-1">
           {path}
@@ -1307,17 +1349,18 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
         {selectionBar}
         {/* With room the controls stay beside the selection bar; in a narrow header the bar takes their place. */}
         <div className={cn('flex shrink-0 items-center gap-0.5', selectedNodes.length > 0 && '@max-[40rem]:hidden')}>{toolbar}</div>
-        {panel ? <PanelWindowButtons content={place.view} /> : <SplitViewButton view={place.view} />}
+        {/* The panel's tab strip carries its window buttons, when it shows. */}
+        {panel ? !panelTabs && <PanelWindowButtons content={place.view} /> : <SplitViewButton view={place.view} />}
         {fileInputElement}
       </header>
-      {trashView && <TrashBanner view={trashView} now={now} onRestoreFolder={() => void restoreShownFolder()} className={cn(!panel && 'mobile-page-content')} />}
+      {trashView && <TrashBanner view={trashView} now={now} onRestoreFolder={() => void restoreShownFolder()} className={cn(!panel && !filesEnabled && 'mobile-page-content')} />}
       {!inTrash && listing.data?.folder?.suggestion && (
         <FileSuggestionBanner
           node={listing.data.folder}
           ancestors={listing.data.ancestors}
           onRejected={(root) => {
             // The suggested folder is gone with everything in it; show the folder that held it.
-            if (panel) useSidePanel.getState().open({ kind: 'folder', id: root.parentId })
+            if (panel) useSidePanel.getState().navigate({ kind: 'folder', id: root.parentId })
             else navigate(root.parentId ? `/files/f/${root.parentId}` : '/files', { replace: true })
           }}
         />

@@ -68,7 +68,7 @@ beforeEach(() => {
   useSettings.setState({ trashRetention: '30d' })
   queryClient.clear()
   useAuth.setState({ user: {
-    id: userId, name: 'Test', email: 'test@example.com', username: 'test_user', avatarUrl: null, profileColor: null, role: 'user', initials: 'T',
+    id: userId, name: 'Test', email: 'test@example.com', username: 'test_user', avatarUrl: null, profileColor: null, usageVisibility: 'friends', role: 'user', initials: 'T',
     balanceMicros: 1_000, storageLimitBytes: 1_000, blocked: false, stateRevision: 0, createdAt: '2026-09-01T00:00:00.000Z',
   } })
   useChat.setState({ chats: [chat('pinned-chat', { pinned: true, sortOrder: 3 }), chat('loose', { sortOrder: 0 })] })

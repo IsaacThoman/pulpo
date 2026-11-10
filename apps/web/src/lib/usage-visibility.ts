@@ -1,0 +1,36 @@
+import { DEFAULT_USAGE_VISIBILITY, usageVisibilitySchema, type UsageVisibility } from '@pulpo/contracts'
+import { ui } from '@/i18n/ui'
+
+export const USAGE_VISIBILITY_VALUES = usageVisibilitySchema.options
+
+/** Profiles cached before the setting existed lack it; the server default applies to them. */
+export function resolvedUsageVisibility(value: UsageVisibility | null | undefined): UsageVisibility {
+  return value ?? DEFAULT_USAGE_VISIBILITY
+}
+
+/** The Settings choice. Pool members always see usage, so the narrowest level is Pool-only. */
+export function usageVisibilityLabel(value: UsageVisibility): string {
+  switch (value) {
+    case 'pool': return ui("Private (Pool only)")
+    case 'friends': return ui("Friends")
+    case 'public': return ui("Public")
+  }
+}
+
+/** Who can see the signed-in user's usage, for their own profile. */
+export function usageVisibilitySummary(value: UsageVisibility): string {
+  switch (value) {
+    case 'pool': return ui("Usage visible to your Pool")
+    case 'friends': return ui("Usage visible to friends")
+    case 'public': return ui("Usage visible to everyone")
+  }
+}
+
+/** Who can see someone else's usage, for the icon on their profile. */
+export function profileUsageVisibilitySummary(value: UsageVisibility): string {
+  switch (value) {
+    case 'pool': return ui("Usage visible to their Pool")
+    case 'friends': return ui("Usage visible to their friends")
+    case 'public': return ui("Usage visible to everyone")
+  }
+}

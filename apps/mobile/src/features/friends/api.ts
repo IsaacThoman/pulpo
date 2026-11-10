@@ -67,6 +67,8 @@ export const friendsApi = {
   /** Declines an incoming request or cancels an outgoing one. */
   deleteRequest: (requestId: string) => apiRequest(`/api/friends/requests/${requestId}`, { method: 'DELETE' }),
   removeFriend: (userId: string) => apiRequest(`/api/friends/${userId}`, { method: 'DELETE' }),
+  /** Stops suggesting someone under "People you may know". They are not told. */
+  dismissSuggestion: (userId: string) => apiRequest('/api/friends/suggestions/dismissals', { method: 'POST', body: { userId } }),
   block: (userId: string) => apiRequest('/api/friends/blocks', { method: 'POST', body: { userId } }),
   unblock: (userId: string) => apiRequest(`/api/friends/blocks/${userId}`, { method: 'DELETE' }),
   createInviteCode: () => apiRequest('/api/invite-codes', { method: 'POST' }),

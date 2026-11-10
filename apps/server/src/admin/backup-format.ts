@@ -1,5 +1,5 @@
 export const FULL_BACKUP_TABLES = [
-  'users', 'friendships', 'user_blocks', 'pools', 'pool_members', 'pool_invitations', 'invite_codes',
+  'users', 'friendships', 'user_blocks', 'friend_suggestion_dismissals', 'pools', 'pool_members', 'pool_invitations', 'invite_codes',
   'password_credentials', 'user_passkey_credentials', 'user_totp_credentials', 'two_factor_recovery_codes', 'user_preferences', 'user_provider_credentials', 'audit_events',
   'catalog_icons', 'labs', 'provider_connections', 'image_models', 'speech_models', 'speech_requests', 'speech_resource_cleanup',
   // Chats are filed in Files folders, so the Files tree is restored before them.
@@ -51,6 +51,7 @@ export const OPTIONAL_TABLES_IN_LEGACY_BACKUPS: readonly FullBackupTable[] = [
   'weekly_usage_periods', 'daily_usage_periods', 'five_hour_usage_periods', 'shared_allowance_periods', 'shared_five_hour_usage_periods',
   'request_analytics', 'request_analytics_tools', 'analytics_hourly_rollups', 'idempotency_records',
   'message_reports',
+  'friend_suggestion_dismissals',
 ]
 
 /**
@@ -70,6 +71,7 @@ export function applyFullBackupCompatibilityDefaults(database: Record<string, Ar
   }
   for (const user of database.users ?? []) {
     user.profile_color ??= null
+    user.usage_visibility ??= 'friends'
     user.avatar_object_key ??= null
     user.avatar_version ??= 0
   }

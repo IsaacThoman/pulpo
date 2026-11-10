@@ -5,12 +5,13 @@ import { z } from 'zod'
 import type { FriendRelationship } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { friendships, userBlocks, users } from '../database/schema.js'
+import { friendSuggestionDismissals, friendships, userBlocks, users } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { publicFriendProfile } from '../profile/service.js'
 import { bumpAccountRevisions, friendNetworkIds, publishScopedStateChanges } from './sync.js'
 import { publishPoolChanges, separatePoolOnBlock } from '../pools/service.js'
+import { usageAccess } from '../usage/visibility.js'
 
 export function orderedPair(left: string, right: string): [string, string] {
   return left < right ? [left, right] : [right, left]
@@ -48,6 +49,19 @@ async function blockedBetween(left: string, right: string): Promise<boolean> {
     and(eq(userBlocks.blockerUserId, right), eq(userBlocks.blockedUserId, left)),
   )).limit(1)
   return Boolean(row)
+}
+
+export const profileParamsSchema = z.object({ username: z.string().trim().toLowerCase().min(3).max(30) })
+
+/** Resolves a profile the viewer may open, as a 404 when it is missing, blocked, pending, or blocked between the two. */
+export async function findProfileTarget(viewerId: string, username: string) {
+  const [target] = await db.select().from(users).where(and(
+    sql<boolean>`lower(${users.username}) = ${username}`,
+    eq(users.blocked, false),
+    ne(users.role, 'pending'),
+  )).limit(1)
+  if (!target || (target.id !== viewerId && await blockedBetween(viewerId, target.id))) throw notFound('Profile')
+  return target
 }
 
 async function requireAvailableTarget(id: string, currentUserId: string) {
@@ -94,7 +108,33 @@ async function mutualFriendIdsByTarget(targetUserIds: string[], currentFriendIds
   return mutualFriendIdsForTargets(rows, targets, currentFriends)
 }
 
-async function friendSuggestionCandidates(currentFriendIds: string[], excludedUserIds: string[]) {
+/**
+ * The viewer's accepted friends, minus anyone blocked either way or whose account is suspended
+ * or pending: the friends that suggestions and their mutual counts are built from.
+ */
+async function visibleFriendIds(userId: string): Promise<string[]> {
+  const friendId = sql<string>`case when ${friendships.userAId} = ${userId} then ${friendships.userBId} else ${friendships.userAId} end`
+  const rows = await db.select({ id: users.id })
+    .from(friendships)
+    .innerJoin(users, eq(users.id, friendId))
+    .where(and(
+      eq(friendships.status, 'accepted'),
+      or(eq(friendships.userAId, userId), eq(friendships.userBId, userId)),
+      eq(users.blocked, false),
+      ne(users.role, 'pending'),
+      sql`not exists (
+        select 1 from ${userBlocks}
+        where (${userBlocks.blockerUserId} = ${userId} and ${userBlocks.blockedUserId} = ${users.id})
+           or (${userBlocks.blockedUserId} = ${userId} and ${userBlocks.blockerUserId} = ${users.id})
+      )`,
+    ))
+  return rows.map((row) => row.id)
+}
+
+/** How long a dismissed suggestion stays hidden even if the two people gain mutual friends. */
+export const SUGGESTION_DISMISSAL_DAYS = 30
+
+async function friendSuggestionCandidates(viewerId: string, currentFriendIds: string[], excludedUserIds: string[]) {
   if (!currentFriendIds.length) return []
   const suggestionConnections = alias(friendships, 'suggestion_connections')
   const userAIsFriend = inArray(suggestionConnections.userAId, currentFriendIds)
@@ -111,6 +151,10 @@ async function friendSuggestionCandidates(currentFriendIds: string[], excludedUs
   return db.select({ target: users, mutualCount })
     .from(suggestionConnections)
     .innerJoin(users, eq(users.id, candidateUserId))
+    .leftJoin(friendSuggestionDismissals, and(
+      eq(friendSuggestionDismissals.userId, viewerId),
+      eq(friendSuggestionDismissals.dismissedUserId, users.id),
+    ))
     .where(and(
       eq(suggestionConnections.status, 'accepted'),
       or(
@@ -121,7 +165,14 @@ async function friendSuggestionCandidates(currentFriendIds: string[], excludedUs
       eq(users.blocked, false),
       ne(users.role, 'pending'),
     ))
-    .groupBy(users.id)
+    .groupBy(users.id, friendSuggestionDismissals.mutualFriendCount, friendSuggestionDismissals.createdAt)
+    // Someone dismissed comes back only after the waiting period, and only once they share more
+    // friends with the viewer than when they were dismissed. Hours, not days, so the wait is the
+    // same length whatever the database's time zone and daylight saving.
+    .having(sql`${friendSuggestionDismissals.mutualFriendCount} is null or (
+      ${mutualCount} > ${friendSuggestionDismissals.mutualFriendCount}
+      and ${friendSuggestionDismissals.createdAt} <= now() - make_interval(hours => ${SUGGESTION_DISMISSAL_DAYS * 24})
+    )`)
     .orderBy(desc(mutualCount), asc(sql`lower(${users.username})`))
     .limit(6)
 }
@@ -172,7 +223,7 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
       ...connectionRows.map((row) => row.userAId === user.id ? row.userBId : row.userAId),
       ...blockedIds,
     ])]
-    const suggestionRows = await friendSuggestionCandidates(currentFriendIds, excludedUserIds)
+    const suggestionRows = await friendSuggestionCandidates(user.id, currentFriendIds, excludedUserIds)
     const pendingUserIds = visibleConnections
       .filter((row) => row.status === 'pending')
       .map((row) => row.userAId === user.id ? row.userBId : row.userAId)
@@ -210,13 +261,7 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
 
   app.get('/api/profiles/:username', async (request) => {
     const user = requireUser(request)
-    const { username } = z.object({ username: z.string().trim().toLowerCase().min(3).max(30) }).parse(request.params)
-    const [target] = await db.select().from(users).where(and(
-      sql<boolean>`lower(${users.username}) = ${username}`,
-      eq(users.blocked, false),
-      ne(users.role, 'pending'),
-    )).limit(1)
-    if (!target || (target.id !== user.id && await blockedBetween(user.id, target.id))) throw notFound('Profile')
+    const target = await findProfileTarget(user.id, profileParamsSchema.parse(request.params).username)
 
     const [relationshipRows, currentFriendRows] = await Promise.all([
       target.id === user.id
@@ -228,6 +273,7 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
       )),
     ])
     const friendship = relationshipRows[0]
+    const usageVisible = await usageAccess(user.id, target, { friends: friendship?.status === 'accepted' })
     const currentFriendIds = currentFriendRows.map((row) => row.userAId === user.id ? row.userBId : row.userAId)
     const mutualIds = target.id === user.id
       ? []
@@ -249,6 +295,9 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
       mutualFriends: mutualRows
         .map(publicFriendProfile)
         .sort((left, right) => left.displayName.localeCompare(right.displayName) || left.username.localeCompare(right.username)),
+      usageVisible,
+      usageVisibility: target.usageVisibility,
+      joinedAt: target.createdAt.toISOString(),
     }
   })
 
@@ -432,6 +481,29 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
       const deleted = await tx.delete(friendships).where(and(pairWhere(user.id, userId), eq(friendships.status, 'accepted'))).returning({ id: friendships.id })
       if (!deleted.length) throw notFound('Friendship')
       return bumpAccountRevisions(tx, await friendNetworkIds(tx, [userAId, userBId]))
+    })
+    await publishScopedStateChanges(changes, ['friends'])
+    reply.code(204).send()
+  })
+
+  // Hides someone from the viewer's suggestions for at least SUGGESTION_DISMISSAL_DAYS, and after
+  // that until they share more mutual friends than they do now; dismissing again restarts both. They are not told, and search and friend requests
+  // still work in both directions.
+  app.post('/api/friends/suggestions/dismissals', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (request, reply) => {
+    const user = requireUser(request)
+    const { userId } = z.object({ userId: z.uuid() }).parse(request.body)
+    if (userId === user.id) throw new AppError(409, 'cannot_dismiss_self', 'You cannot dismiss yourself')
+    const [target] = await db.select({ id: users.id }).from(users).where(eq(users.id, userId)).limit(1)
+    if (!target) throw notFound('User')
+    const mutualFriendCount = (await mutualFriendIdsByTarget([userId], await visibleFriendIds(user.id))).get(userId)?.length ?? 0
+    const changes = await db.transaction(async (tx) => {
+      await tx.insert(friendSuggestionDismissals)
+        .values({ userId: user.id, dismissedUserId: userId, mutualFriendCount })
+        .onConflictDoUpdate({
+          target: [friendSuggestionDismissals.userId, friendSuggestionDismissals.dismissedUserId],
+          set: { mutualFriendCount, createdAt: new Date() },
+        })
+      return bumpAccountRevisions(tx, [user.id])
     })
     await publishScopedStateChanges(changes, ['friends'])
     reply.code(204).send()

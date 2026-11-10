@@ -53,6 +53,11 @@ const POOL_SEATS_FOOTER = 'Pending invitations reserve a Pool seat.'
 const TRANSFER_FIRST = 'Transfer ownership before leaving this Pool.'
 const LEAVE_CURRENT_FIRST = 'Leave your current Pool before joining another.'
 
+/** Adding and dismissing the same suggestion exclude each other. */
+function suggestionBusy(pending: ReadonlySet<string>, profileId: string): boolean {
+  return pending.has(`request:${profileId}`) || pending.has(`dismiss:${profileId}`)
+}
+
 function searchStatus(model: FriendsScreenModel): string | null {
   const { search, searchInput } = model
   if (search.state === 'loading') return 'Searching people…'
@@ -187,13 +192,19 @@ function NativeFriends({ model }: { model: FriendsScreenModel }) {
       </SwiftUIVStack>}
     </SwiftUISection> : null}
 
-    {model.suggestions.length > 0 ? <SwiftUISection header={<NativeCountHeader title="People you may know" count={model.suggestions.length} />}>
+    {model.suggestions.length > 0 || model.dismissedNotice ? <SwiftUISection
+      header={model.suggestions.length > 0 ? <NativeCountHeader title="People you may know" count={model.suggestions.length} /> : undefined}
+      footer={model.dismissedNotice ? <SwiftUIText modifiers={[foregroundStyle('secondary')]}>{model.dismissedNotice}</SwiftUIText> : undefined}
+    >
       {model.suggestions.map((suggestion) => <NativePersonRow
         key={suggestion.profile.id}
         profile={suggestion.profile}
         detail={mutualFriendsLabel(suggestion.mutualFriends.length)}
         onOpen={() => model.openProfile(suggestion.profile)}
-        trailing={<NativeRowButton prominent label={pending.has(`request:${suggestion.profile.id}`) ? 'Sending…' : 'Add'} isDisabled={pending.has(`request:${suggestion.profile.id}`)} onPress={() => actions.sendSuggestion(suggestion)} />}
+        trailing={<SwiftUIHStack spacing={10}>
+          <SwiftUIButton label="Dismiss" systemImage="xmark" onPress={() => actions.dismissSuggestion(suggestion)} modifiers={[labelStyle('iconOnly'), buttonStyle('borderless'), foregroundStyle('secondary'), accessibilityLabel(`Dismiss ${suggestion.profile.displayName}`), disabled(suggestionBusy(pending, suggestion.profile.id))]} />
+          <NativeRowButton prominent label={pending.has(`request:${suggestion.profile.id}`) ? 'Sending…' : 'Add'} isDisabled={suggestionBusy(pending, suggestion.profile.id)} onPress={() => actions.sendSuggestion(suggestion)} />
+        </SwiftUIHStack>}
       />)}
     </SwiftUISection> : null}
 
@@ -309,11 +320,13 @@ function MaterialFriends({ model, onBack }: { model: FriendsScreenModel; onBack:
       </MaterialPersonRow>)}</Card>
         : data.friends.length ? <Card><Text style={[styles.status, { color: theme.secondary }]}>{ALL_IN_POOL}</Text></Card>
           : <EmptyState icon="person.2" title={EMPTY_TITLE} detail={EMPTY_DETAIL} />}
-      {model.suggestions.length > 0 ? <>
-        <SectionTitle trailing={<Text style={[styles.helper, { color: theme.secondary }]}>{model.suggestions.length}</Text>}>People you may know</SectionTitle>
-        <Card>{model.suggestions.map((suggestion, index) => <MaterialPersonRow key={suggestion.profile.id} profile={suggestion.profile} detail={mutualFriendsLabel(suggestion.mutualFriends.length)} last={index === model.suggestions.length - 1} onOpen={() => model.openProfile(suggestion.profile)}>
-          <MaterialButton compact label="Add" icon="person.badge.plus" loading={pending.has(`request:${suggestion.profile.id}`)} onPress={() => actions.sendSuggestion(suggestion)} />
-        </MaterialPersonRow>)}</Card>
+      {model.suggestions.length > 0 || model.dismissedNotice ? <>
+        {model.suggestions.length > 0 ? <SectionTitle trailing={<Text style={[styles.helper, { color: theme.secondary }]}>{model.suggestions.length}</Text>}>People you may know</SectionTitle> : null}
+        {model.suggestions.length > 0 ? <Card>{model.suggestions.map((suggestion, index) => <MaterialPersonRow key={suggestion.profile.id} profile={suggestion.profile} detail={mutualFriendsLabel(suggestion.mutualFriends.length)} last={index === model.suggestions.length - 1} onOpen={() => model.openProfile(suggestion.profile)}>
+          <MaterialIconButton icon="xmark" label={`Dismiss ${suggestion.profile.displayName}`} disabled={suggestionBusy(pending, suggestion.profile.id)} onPress={() => actions.dismissSuggestion(suggestion)} />
+          <MaterialButton compact label="Add" icon="person.badge.plus" loading={pending.has(`request:${suggestion.profile.id}`)} disabled={pending.has(`dismiss:${suggestion.profile.id}`)} onPress={() => actions.sendSuggestion(suggestion)} />
+        </MaterialPersonRow>)}</Card> : null}
+        {model.dismissedNotice ? <Text style={[styles.helper, styles.footer, { color: theme.secondary }]}>{model.dismissedNotice}</Text> : null}
       </> : null}
       {data.outgoing.length > 0 ? <MaterialCollapsible title="Sent requests" count={data.outgoing.length} open={sentOpen} onToggle={() => setSentOpen((open) => !open)}>
         {data.outgoing.map((connection, index) => <MaterialPersonRow key={connection.requestId} profile={connection.profile} detail={model.requestDetail('Sent', connection)} last={index === data.outgoing.length - 1} onOpen={() => model.openProfile(connection.profile)}>

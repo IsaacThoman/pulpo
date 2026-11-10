@@ -59,7 +59,6 @@ export interface SettingsState {
   memoryEnabled: boolean
   /** Per-model composer Agent mode selections. Missing model ids default on. */
   agentModes: Record<string, boolean>
-  leaderboardVisible: boolean
   leaderboardColor: string
   localChatLimit: number
   localAttachmentCacheMb: number
@@ -106,7 +105,6 @@ export const DEFAULT_SETTINGS = {
   nickname: '',
   memoryEnabled: false,
   agentModes: {},
-  leaderboardVisible: false,
   leaderboardColor: '#10b981',
   localChatLimit: 50,
   localAttachmentCacheMb: 50,

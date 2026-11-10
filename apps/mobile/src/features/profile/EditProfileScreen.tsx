@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, Pressable, Button as RNButton, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { UsageVisibility } from '@pulpo/contracts';
 import {
   Button as SwiftUIButton,
   Form as SwiftUIForm,
@@ -21,13 +22,14 @@ import { normalizeUsername } from '@pulpo/client-core';
 import { mobileApi } from '../../api/client';
 import { useSessionStore } from '../../store/session';
 import { showActions } from '../../platform/materialActions';
+import { NativeChoiceRow } from '../../platform/NativeChoiceRow';
 import { Card, Field, ListRow, PageHeader, PrimaryButton, Screen } from '../../mockup5/src/components/PrototypeUI';
 import { ProfileAvatar } from '../../mockup5/src/components/ProfileAvatar';
 import { usePrototypeStore } from '../../mockup5/src/store/prototypeStore';
 import { useAppTheme } from '../../mockup5/src/theme';
 import type { RootStackParamList } from '../../mockup5/src/navigation';
 import { AvatarCameraPermissionError, avatarSizeError, avatarUploadBody, pickAvatar, type AvatarSource } from './avatar';
-import { profileDraft, USERNAME_HINT } from './profileDraft';
+import { profileDraft, USAGE_VISIBILITY_HINT, USAGE_VISIBILITY_OPTIONS, USERNAME_HINT, usageVisibilityOf } from './profileDraft';
 
 const NAME_HINT = 'This is the name shown on your Pulpo account.';
 const AVATAR_SIZE = 96;
@@ -118,17 +120,21 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
   const updatePrototypeProfile = usePrototypeStore((state) => state.updateProfile);
   const [name, setName] = useState(user?.name ?? '');
   const [username, setUsername] = useState(user?.username ?? '');
+  // Null until the user picks a level, so a session refresh that updates `user` is followed
+  // instead of being overwritten with the level cached when the screen opened.
+  const [pickedVisibility, setPickedVisibility] = useState<UsageVisibility | null>(null);
+  const usageVisibility = pickedVisibility ?? usageVisibilityOf(user);
   const [saving, setSaving] = useState(false);
   const avatar = useAvatarActions();
   // A save and a photo change each reply with the whole profile, so they never overlap: the later
   // reply could otherwise put back what the other just changed.
   const photoLocked = avatar.busy || saving;
-  const draft = profileDraft(user, name, username);
+  const draft = profileDraft(user, name, username, usageVisibility);
   const changeUsername = (value: string) => setUsername(normalizeUsername(value));
 
   const save = useCallback(() => {
     if (!draft.canSave || saving || avatar.busy) return;
-    if (!draft.patch.name && !draft.patch.username) { navigation.goBack(); return; }
+    if (Object.keys(draft.patch).length === 0) { navigation.goBack(); return; }
     setSaving(true);
     void mobileApi.updateProfile(draft.patch).then(async ({ user: next }) => {
       await setUser(next);
@@ -166,6 +172,9 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
     <SwiftUISection title="Username" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>{USERNAME_HINT}</SwiftUIText>}>
       <NativeUsernameRow value={username} onChange={changeUsername} error={draft.usernameError} errorColor={theme.red} />
     </SwiftUISection>
+    <SwiftUISection title="Privacy" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>{USAGE_VISIBILITY_HINT}</SwiftUIText>}>
+      <NativeChoiceRow title="Usage visibility" value={usageVisibility} options={USAGE_VISIBILITY_OPTIONS} onChange={setPickedVisibility} />
+    </SwiftUISection>
   </SwiftUIForm></SwiftUIHost>;
 
   const openPhotoActions = () => showActions('Profile picture', [
@@ -173,6 +182,7 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
     { label: 'Take photo', icon: 'camera', onPress: () => void avatar.choose('camera') },
     ...(user?.avatarUrl ? [{ label: 'Remove photo', icon: 'trash', destructive: true, onPress: () => void avatar.remove() }] : []),
   ]);
+  const openVisibilityActions = () => showActions('Usage visibility', USAGE_VISIBILITY_OPTIONS.map((option) => ({ label: option.label, selected: option.value === usageVisibility, onPress: () => setPickedVisibility(option.value) })));
 
   return <Screen><PageHeader title="Edit Profile" onBack={() => navigation.goBack()} />
     <View style={styles.avatarSection}>
@@ -183,7 +193,8 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
     <Text style={[styles.helper, { color: theme.secondary, marginBottom: 16 }]}>{NAME_HINT}</Text>
     <Field label="Username" autoComplete="username" autoCapitalize="none" autoCorrect={false} maxLength={30} value={username} onChangeText={changeUsername} error={draft.usernameError ?? undefined} />
     <Text style={[styles.helper, { color: theme.secondary, marginBottom: 16 }]}>{USERNAME_HINT}</Text>
-    <Card style={{ marginBottom: 24 }}><ListRow title="Email" value={user?.email ?? ''} last /></Card>
+    <Card style={{ marginBottom: 16 }}><ListRow title="Email" value={user?.email ?? ''} last /></Card>
+    <Card style={{ marginBottom: 24 }}><ListRow title="Usage visibility" detail={USAGE_VISIBILITY_HINT} value={USAGE_VISIBILITY_OPTIONS.find((option) => option.value === usageVisibility)?.label} last onPress={openVisibilityActions} /></Card>
     <PrimaryButton label="Save" loading={saving} disabled={!draft.canSave || avatar.busy} onPress={save} />
   </Screen>;
 }

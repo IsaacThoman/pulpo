@@ -12,17 +12,20 @@ export const useFileReveal = create<{
   target: { folderId: string | null; nodeId: string; layout: FilesViewPlace['layout'] } | null
 }>()(() => ({ target: null }))
 
-/** Shows a file in its folder, beside the main view when there is room, with the file selected. */
+/**
+ * Shows a file in its folder, beside the main view when there is room (in a panel tab already
+ * showing the folder, or a new one), with the file selected.
+ */
 export function revealFile(node: Pick<FileNode, 'id' | 'parentId'>, go: (pathname: string) => void): void {
   const layout = useSidePanel.getState().splitAvailable ? 'panel' : 'page'
   useFileReveal.setState({ target: { folderId: node.parentId, nodeId: node.id, layout } })
   openBeside({ kind: 'folder', id: node.parentId }, go)
 }
 
-/** Shows a file in its folder in place of the view showing the file, with the file selected. */
+/** Shows a file in its folder in place of the view showing the file (in the panel, its tab), with the file selected. */
 export function revealFileInPlace(node: Pick<FileNode, 'id' | 'parentId'>, inPanel: boolean, go: (pathname: string) => void): void {
   useFileReveal.setState({ target: { folderId: node.parentId, nodeId: node.id, layout: inPanel ? 'panel' : 'page' } })
   const folder = { kind: 'folder' as const, id: node.parentId }
-  if (inPanel) useSidePanel.getState().open(folder)
+  if (inPanel) useSidePanel.getState().navigate(folder)
   else go(panelContentPath(folder))
 }

@@ -1,5 +1,5 @@
 {
-  "id": "09f99e63-d5b0-478f-8101-f8193c29e746",
+  "id": "d55ead6a-c7c4-4e19-9123-2fb15ccfbe5a",
   "prevId": "cfd803aa-98ce-4bbc-acb0-11d99124584a",
   "version": "7",
   "dialect": "postgresql",
@@ -3768,20 +3768,6 @@
           "notNull": true,
           "default": "'{}'::jsonb"
         },
-        "file_change_mode": {
-          "name": "file_change_mode",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'suggest'"
-        },
-        "files_browse_allowed": {
-          "name": "files_browse_allowed",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "active_branch_leaf_id": {
           "name": "active_branch_leaf_id",
           "type": "uuid",
@@ -6438,6 +6424,101 @@
         "five_hour_usage_periods_spent_check": {
           "name": "five_hour_usage_periods_spent_check",
           "value": "\"five_hour_usage_periods\".\"spent_micros\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.friend_suggestion_dismissals": {
+      "name": "friend_suggestion_dismissals",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dismissed_user_id": {
+          "name": "dismissed_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mutual_friend_count": {
+          "name": "mutual_friend_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "friend_suggestion_dismissals_dismissed_idx": {
+          "name": "friend_suggestion_dismissals_dismissed_idx",
+          "columns": [
+            {
+              "expression": "dismissed_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "friend_suggestion_dismissals_user_id_users_id_fk": {
+          "name": "friend_suggestion_dismissals_user_id_users_id_fk",
+          "tableFrom": "friend_suggestion_dismissals",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "friend_suggestion_dismissals_dismissed_user_id_users_id_fk": {
+          "name": "friend_suggestion_dismissals_dismissed_user_id_users_id_fk",
+          "tableFrom": "friend_suggestion_dismissals",
+          "tableTo": "users",
+          "columnsFrom": [
+            "dismissed_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "friend_suggestion_dismissals_user_id_dismissed_user_id_pk": {
+          "name": "friend_suggestion_dismissals_user_id_dismissed_user_id_pk",
+          "columns": [
+            "user_id",
+            "dismissed_user_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "friend_suggestion_dismissals_not_self_check": {
+          "name": "friend_suggestion_dismissals_not_self_check",
+          "value": "\"friend_suggestion_dismissals\".\"user_id\" <> \"friend_suggestion_dismissals\".\"dismissed_user_id\""
         }
       },
       "isRLSEnabled": false

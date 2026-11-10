@@ -825,7 +825,6 @@ export const MessageItem = memo(function MessageItem({
                       <Trash2 className="size-3.5" />
                     </ActionButton>
                   )}
-                  {!pendingDelivery && <ReportMessageButton messageId={message.id} />}
                 </>
               )}
             </div>

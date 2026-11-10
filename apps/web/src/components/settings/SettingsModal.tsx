@@ -8,7 +8,7 @@ import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { FILE_ACCESS_MODES, TRASH_RETENTION_VALUES, type FileAccessMode, type InstructionPreset } from '@pulpo/contracts'
+import { FILE_ACCESS_MODES, TRASH_RETENTION_VALUES, type FileAccessMode, type InstructionPreset, type UsageVisibility } from '@pulpo/contracts'
 import { accessModeCopy } from '@/features/files/access-modes'
 import {
   Database,
@@ -66,6 +66,7 @@ import { formatBytes } from '@/lib/attachments'
 import { formatDateTime, timeAgo } from '@/lib/format'
 import { clearLocalChats } from '@/lib/local-first/chat-cache'
 import { automaticProfileColor, PROFILE_COLORS } from '@/lib/profile'
+import { resolvedUsageVisibility, USAGE_VISIBILITY_VALUES, usageVisibilityLabel } from '@/lib/usage-visibility'
 import { PasswordSettings } from './PasswordSettings'
 import { PasskeySettings } from './PasskeySettings'
 import { TwoFactorSettings } from './TwoFactorSettings'
@@ -384,10 +385,14 @@ export function SettingsModal({
   const [profileName, setProfileName] = useState(user?.name ?? '')
   const [profileColor, setProfileColor] = useState(() => user?.profileColor ?? automaticProfileColor(user?.id ?? 'pulpo-user'))
   const [profileSaving, setProfileSaving] = useState(false)
+  const [usernameSaving, setUsernameSaving] = useState(false)
   const [profileError, setProfileError] = useState('')
   const [profileMessage, setProfileMessage] = useState('')
   const [avatarCandidate, setAvatarCandidate] = useState<{ file: File; url: string } | null>(null)
   const [avatarCrop, setAvatarCrop] = useState(DEFAULT_AVATAR_CROP)
+  /** The visibility being saved, shown until the server confirms it. */
+  const [pendingUsageVisibility, setPendingUsageVisibility] = useState<UsageVisibility | null>(null)
+  const [usageVisibilityError, setUsageVisibilityError] = useState('')
   const [customColorSelected, setCustomColorSelected] = useState(() => Boolean(
     user?.profileColor && !PROFILE_COLORS.some((color) => color === user.profileColor),
   ))
@@ -409,15 +414,20 @@ export function SettingsModal({
     if (open) setSection(initialSection === 'billing' && !billingEnabled ? 'general' : initialSection)
   }, [billingEnabled, initialSection, open])
 
+  // Reset drafts only when the saved name or color changes, so saving another
+  // profile setting (usage visibility) keeps unsaved edits.
+  const userId = user?.id
+  const userName = user?.name
+  const userProfileColor = user?.profileColor
   useEffect(() => {
-    if (!open || !user) return
-    setProfileName(user.name)
-    setProfileColor(user.profileColor ?? automaticProfileColor(user.id))
-    setCustomColorSelected(Boolean(user.profileColor && !PROFILE_COLORS.some((color) => color === user.profileColor)))
+    if (!open || !userId) return
+    setProfileName(userName ?? '')
+    setProfileColor(userProfileColor ?? automaticProfileColor(userId))
+    setCustomColorSelected(Boolean(userProfileColor && !PROFILE_COLORS.some((color) => color === userProfileColor)))
     setProfileError('')
-  }, [open, user])
+  }, [open, userId, userName, userProfileColor])
 
-  useEffect(() => { if (!open) setProfileMessage('') }, [open])
+  useEffect(() => { if (!open) { setProfileMessage(''); setUsageVisibilityError('') } }, [open])
   useEffect(() => { if (open) void refreshInstanceFeatures() }, [open])
   useEffect(() => {
     if (!codexEnabled && section === 'connections') setSection('general')
@@ -430,8 +440,12 @@ export function SettingsModal({
     || profileColor !== (user!.profileColor ?? automaticProfileColor(user!.id))
   )
   const profileColorIsPreset = PROFILE_COLORS.some((color) => color === profileColor)
+  // Every profile write replies with the whole user, so overlapping writes could
+  // let a stale reply undo a newer change. Run them one at a time.
+  const profileBusy = profileSaving || pendingUsageVisibility !== null || usernameSaving
 
   const saveProfile = async () => {
+    if (profileBusy) return
     setProfileSaving(true)
     setProfileError('')
     setProfileMessage('')
@@ -449,8 +463,28 @@ export function SettingsModal({
     }
   }
 
+  const usageVisibility = pendingUsageVisibility ?? resolvedUsageVisibility(user?.usageVisibility)
+  const updateUsageVisibility = async (value: UsageVisibility) => {
+    if (value === usageVisibility || profileBusy) return
+    setPendingUsageVisibility(value)
+    setUsageVisibilityError('')
+    try {
+      const result = await apiRequest<{ user: Omit<AuthUser, 'initials'> }>('/api/me', {
+        method: 'PATCH',
+        body: { usageVisibility: value },
+      })
+      replaceUser(result.user)
+      // Refetch in the background so other profile writes don't wait on it.
+      for (const key of ['friends-usage', 'pool-usage', 'friend-profile']) void queryClient.invalidateQueries({ queryKey: [key] })
+    } catch (cause) {
+      setUsageVisibilityError(cause instanceof Error ? cause.message : ui("Could not save usage visibility"))
+    } finally {
+      setPendingUsageVisibility(null)
+    }
+  }
+
   const uploadAvatar = async () => {
-    if (!avatarCandidate) return
+    if (!avatarCandidate || profileBusy) return
     setProfileSaving(true)
     setProfileError('')
     setProfileMessage('')
@@ -468,6 +502,7 @@ export function SettingsModal({
   }
 
   const removeAvatar = async () => {
+    if (profileBusy) return
     setProfileSaving(true)
     setProfileError('')
     setProfileMessage('')
@@ -750,7 +785,7 @@ export function SettingsModal({
                       <button
                         type="button"
                         aria-label={ui("Change profile picture")}
-                        disabled={profileSaving}
+                        disabled={profileBusy}
                         className="group relative size-14 cursor-pointer rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => avatarInputRef.current?.click()}
                       >
@@ -762,7 +797,7 @@ export function SettingsModal({
                       </button>
                       {user?.avatarUrl && <button
                         type="button"
-                        disabled={profileSaving}
+                        disabled={profileBusy}
                         className="mt-1 cursor-pointer text-xs leading-none text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => void removeAvatar()}
                       >{ui("Remove")}</button>}
@@ -788,12 +823,12 @@ export function SettingsModal({
                     </div>
                     <div className="flex-1" />
                     <div className="flex h-14 items-center">
-                      <UsernameSettings buttonOnly />
+                      <UsernameSettings buttonOnly disabled={profileBusy} onPendingChange={setUsernameSaving} />
                     </div>
                   </div>
                   {avatarCandidate && <div className="mb-3 rounded-lg border bg-muted/20 p-3">
                     <AvatarCropEditor key={avatarCandidate.url} imageUrl={avatarCandidate.url} settings={avatarCrop} onChange={setAvatarCrop} />
-                    <div className="mt-3 flex justify-end gap-2"><Button size="sm" disabled={profileSaving} onClick={() => void uploadAvatar()}>{ui("Use picture")}</Button><Button size="sm" variant="outline" disabled={profileSaving} onClick={() => setAvatarCandidate(null)}>{ui("Cancel")}</Button></div>
+                    <div className="mt-3 flex justify-end gap-2"><Button size="sm" disabled={profileBusy} onClick={() => void uploadAvatar()}>{ui("Use picture")}</Button><Button size="sm" variant="outline" disabled={profileBusy} onClick={() => setAvatarCandidate(null)}>{ui("Cancel")}</Button></div>
                   </div>}
                   <Row label={ui("Display name")}>{(control) => <Input {...control} autoComplete="name" value={profileName} onChange={(event) => { setProfileMessage(''); setProfileName(event.target.value) }} maxLength={120} className="w-52" />}</Row>
                   <Row label={ui("Friends chart color")} hint="Used on accepted friends’ usage charts." group>{(control) => <div role="group" aria-labelledby={control.labelId} aria-describedby={control['aria-describedby']} className="flex flex-wrap items-center justify-end gap-2">
@@ -835,8 +870,22 @@ export function SettingsModal({
                   <div className="flex min-h-10 items-center justify-end gap-3 py-2">
                     {profileError && <span role="alert" className="mr-auto text-sm text-destructive">{profileError}</span>}
                     <span role="status" className={cn('mr-auto text-sm text-muted-foreground', (profileError || !profileMessage) && 'sr-only')}>{profileError ? '' : profileMessage}</span>
-                    <Button size="sm" disabled={!profileDirty || profileSaving || !profileName.trim()} onClick={() => void saveProfile()}>{profileSaving ? ui("Saving…") : ui("Save profile")}</Button>
+                    <Button size="sm" disabled={!profileDirty || profileBusy || !profileName.trim()} onClick={() => void saveProfile()}>{profileSaving ? ui("Saving…") : ui("Save profile")}</Button>
                   </div>
+                  <Separator className="my-3" />
+                  <Row label={ui("Usage visibility")} hint={ui("Who can see your usage stats and requests on your profile. Pool members can always see your usage.")}>
+                    {(control) => (
+                      <Select value={usageVisibility} disabled={profileBusy} onValueChange={(value) => void updateUsageVisibility(value as UsageVisibility)}>
+                        <SelectTrigger {...control} aria-invalid={usageVisibilityError ? true : undefined} className="w-44"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {USAGE_VISIBILITY_VALUES.map((value) => (
+                            <SelectItem key={value} value={value}>{usageVisibilityLabel(value)}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </Row>
+                  {usageVisibilityError && <p role="alert" className="text-right text-xs text-destructive">{usageVisibilityError}</p>}
                 </div>
               )}
 

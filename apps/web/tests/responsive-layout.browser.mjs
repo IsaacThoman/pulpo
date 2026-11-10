@@ -96,8 +96,80 @@ try {
   await page.getByRole('button', { name: 'Open wide popover' }).click()
   const popover = await page.locator('[data-slot="popover-content"]').boundingBox()
   assert.ok(popover.x >= 0 && popover.x + popover.width <= 320, 'Wide pickers must fit phone screens')
+  // People's tabs share a phone header with the drawer button, and their nav hides its scrollbar, so
+  // a tab that doesn't fit is silently cut off. 60 friend + 60 Pool requests badge Friends "99+".
+  await page.route('**/api/*/pending-count', (route) => route.fulfill({ json: { count: 60 } }))
+  let peopleCases = 0
+  for (const viewport of [320, 360, 375, 390, 640]) {
+    for (const locale of ['en-US', 'es-ES']) {
+      for (const path of ['/alexandria', '/friends', '/friends/leaderboard']) {
+        await page.setViewportSize({ width: viewport, height: 720 })
+        await page.goto(`${origin}tests/responsive/people.html?locale=${locale}&path=${path}`)
+        await page.getByText('99+').waitFor()
+        const header = await page.evaluate(async () => {
+          // Measure with the app's font (Google Fonts' Inter), not a wider fallback.
+          const faces = await Promise.all(['400 14px Inter', '500 14px Inter', '400 9px Inter'].map((font) => document.fonts.load(font, 'Clasificación 99+')))
+          await new Promise(requestAnimationFrame)
+          const nav = document.querySelector('nav')
+          const last = nav.lastElementChild.getBoundingClientRect()
+          return {
+            inter: faces.every((loaded) => loaded.length > 0),
+            drawerPadding: getComputedStyle(nav.parentElement).paddingLeft,
+            slack: Math.round((nav.getBoundingClientRect().right - last.right) * 10) / 10,
+            fits: nav.scrollWidth <= nav.clientWidth,
+            pageOverflow: document.documentElement.scrollWidth > innerWidth,
+          }
+        })
+        assert.ok(header.inter, 'Inter must load from Google Fonts to measure the People header')
+        assert.deepEqual({ ...header, slack: header.slack >= 0 }, { inter: true, drawerPadding: '48px', slack: true, fits: true, pageOverflow: false }, `${viewport}px ${locale} ${path} People header (slack ${header.slack}px)`)
+        peopleCases++
+      }
+    }
+  }
+  // Someone else's profile swaps the tabs for a breadcrumb back to the tab it was opened from, beside
+  // "Compare with friends". Phones keep the origin's name visible but drop the person's (their profile
+  // heading follows) and collapse Compare to its icon: uncollapsed it overflows 320px by up to 74px.
+  for (const viewport of [320, 360, 375, 390, 640]) {
+    for (const locale of ['en-US', 'es-ES']) {
+      for (const from of ['/friends', '/friends/leaderboard?scope=pool']) {
+        await page.setViewportSize({ width: viewport, height: 720 })
+        await page.goto(`${origin}tests/responsive/people.html?locale=${locale}&origin=${encodeURIComponent(from)}`)
+        await page.locator('header a').first().waitFor()
+        const header = await page.evaluate(async () => {
+          const faces = await Promise.all(['400 14px Inter', '500 14px Inter'].map((font) => document.fonts.load(font, 'Clasificación Comparar')))
+          await new Promise(requestAnimationFrame)
+          const header = document.querySelector('header')
+          const [back, compare] = header.querySelectorAll('a')
+          const name = header.querySelector('[aria-current="page"]')
+          const nameShown = name.getClientRects().length > 0
+          const label = document.createRange()
+          label.selectNodeContents([...back.childNodes].find((node) => node.nodeType === Node.TEXT_NODE))
+          const backLabel = label.getBoundingClientRect()
+          const lastCrumb = (nameShown ? name : back).getBoundingClientRect()
+          return {
+            inter: faces.every((loaded) => loaded.length > 0),
+            drawerPadding: getComputedStyle(header).paddingLeft,
+            slack: Math.round((compare.getBoundingClientRect().left - lastCrumb.right - 16) * 10) / 10,
+            fits: [header, header.querySelector('nav'), back, compare].every((element) => element.scrollWidth <= element.clientWidth),
+            backLabel: backLabel.width > 0 && backLabel.right <= back.getBoundingClientRect().right,
+            nameShown,
+            compareCollapsed: getComputedStyle(compare.querySelector('span')).position === 'absolute',
+            pageOverflow: document.documentElement.scrollWidth > innerWidth,
+          }
+        })
+        assert.ok(header.inter, 'Inter must load from Google Fonts to measure the profile breadcrumb')
+        const phone = viewport < 640
+        assert.deepEqual(
+          { ...header, slack: header.slack >= 0 },
+          { inter: true, drawerPadding: '48px', slack: true, fits: true, backLabel: true, nameShown: !phone, compareCollapsed: phone, pageOverflow: false },
+          `${viewport}px ${locale} ${from} profile breadcrumb (slack ${header.slack}px)`,
+        )
+        peopleCases++
+      }
+    }
+  }
   assert.deepEqual(errors, [])
-  console.log(`Passed ${cases} responsive table/stat/form cases, scrolling pagination, desktop visual parity, short dialog, and phone popover checks.`)
+  console.log(`Passed ${cases} responsive table/stat/form cases, scrolling pagination, desktop visual parity, short dialog, phone popover, and ${peopleCases} People header and profile breadcrumb checks.`)
 } finally {
   await browser?.close()
   await server.close()
