@@ -1,4 +1,4 @@
-import { CLIENT_PLATFORM_HEADER, type NativeDevice } from '@pulpo/contracts'
+import { CLIENT_FEATURES_HEADER, CLIENT_FEATURES_HEADER_VALUE, CLIENT_PLATFORM_HEADER, type NativeDevice } from '@pulpo/contracts'
 import { normalizeInstanceUrl } from '@pulpo/client-core'
 
 export interface DesktopStoredSession {
@@ -145,7 +145,7 @@ export function runtimeClientHeaders(url: string): Record<string, string> {
   } catch {
     return {}
   }
-  return { [CLIENT_PLATFORM_HEADER]: runtimeClientPlatform() }
+  return { [CLIENT_PLATFORM_HEADER]: runtimeClientPlatform(), [CLIENT_FEATURES_HEADER]: CLIENT_FEATURES_HEADER_VALUE }
 }
 
 /** Test hook: forgets the cached desktop version. */

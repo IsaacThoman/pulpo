@@ -44,7 +44,7 @@ import { pinnedItemsCeiling, sidebarItemsFloor } from '@/features/sidebar/cache'
 import { useFileToasts } from '@/features/files/browser/toasts'
 import { filesErrorMessage } from '@/features/files/file-display'
 import { adminChatAccessActive, adminChatAccountKey } from '@/features/admin-chat/access'
-import { scopedFileAccess } from '@pulpo/client-core/files'
+import { referencePreviewText, scopedFileAccess } from '@pulpo/client-core/files'
 
 function applySortOrders(ids: string[]): Map<string, number> {
   return new Map(ids.map((id, index) => [id, index]))
@@ -1448,7 +1448,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     }
     set((state) => {
       const existing = state.chats.find((chat) => chat.id === id)
-      const titleSource = input.content || (input.attachments[0]?.name ?? 'Message')
+      const titleSource = referencePreviewText(input.content) || (input.attachments[0]?.name ?? 'Message')
       const title = titleSource.length > 42 ? `${titleSource.slice(0, 42)}…` : titleSource
       const updated: Chat = existing
         ? {
@@ -1472,6 +1472,8 @@ export const useChat = create<ChatState>()((set, get) => ({
             temporary: input.temporary,
             fileScopeIds: input.fileScopeIds ?? [],
             fileScopeAccess: scopedFileAccess(input.fileScopeIds ?? [], input.fileScopeAccess ?? {}),
+            // The mode chosen in the new-chat composer; the request that creates the chat sends it.
+            fileChangeMode: useSettings.getState().agentFileChangeMode,
             expiresAt: input.temporary ? timestamp + 48 * 60 * 60 * 1_000 : newChatExpiresAt,
             expired: false,
             provisional: true,
@@ -1569,7 +1571,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     }
     set((state) => {
       const existing = state.chats.find((chat) => chat.id === id)
-      const titleSource = content || (attachments[0]?.name ?? 'Image')
+      const titleSource = referencePreviewText(content) || (attachments[0]?.name ?? 'Image')
       const title = titleSource.length > 42 ? `${titleSource.slice(0, 42)}…` : titleSource
       const updated: Chat = existing
         ? {
@@ -1594,6 +1596,7 @@ export const useChat = create<ChatState>()((set, get) => ({
           tags: [],
           temporary,
           fileScopeIds: [],
+          fileChangeMode: useSettings.getState().agentFileChangeMode,
           expiresAt: temporary ? timestamp + 48 * 60 * 60 * 1_000 : newChatExpiresAt,
           expired: false,
           // Request completion enables follow-up responses. List visibility has
@@ -1616,7 +1619,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       content,
       modelId: generation.effectiveModelId || modelId,
       displayModelId: modelId,
-      title: truncateChatTitle(content || attachments[0]?.name || '') || 'Image',
+      title: truncateChatTitle(referencePreviewText(content) || attachments[0]?.name || '') || 'Image',
       temporary,
       expiresAt: newChatExpiresAt === null ? null : new Date(newChatExpiresAt).toISOString(),
       attachments,
@@ -1642,12 +1645,14 @@ export const useChat = create<ChatState>()((set, get) => ({
         chat: {
           clientId: id,
           modelId,
-          title: truncateChatTitle(content || attachments[0]?.name || '') || 'Image',
+          title: truncateChatTitle(referencePreviewText(content) || attachments[0]?.name || '') || 'Image',
           temporary,
           autoExpire,
           // Staging put the scope on the provisional chat.
           fileScopeIds: currentChat?.fileScopeIds ?? [],
           fileScopeAccess: currentChat?.fileScopeAccess ?? {},
+          // Sent here, not left to the account setting: that syncs on its own and may still be behind.
+          fileChangeMode: currentChat?.fileChangeMode ?? useSettings.getState().agentFileChangeMode,
         },
         response: responseBody,
       }
@@ -2009,7 +2014,10 @@ export const useChat = create<ChatState>()((set, get) => ({
         : `/api/messages/${messageId}`
       const body = rejectedSend
         ? startChat ? {
-          chat: { ...startChat, clientId: chatId, modelId, title: truncateChatTitle(content || editedAttachments[0]?.name || '') || 'Image' },
+          chat: {
+            ...startChat, clientId: chatId, modelId, title: truncateChatTitle(referencePreviewText(content) || editedAttachments[0]?.name || '') || 'Image',
+            fileChangeMode: get().chats.find((chat) => chat.id === chatId)?.fileChangeMode ?? useSettings.getState().agentFileChangeMode,
+          },
           response: responseBody,
         } : responseBody
         : { ...selection, content }

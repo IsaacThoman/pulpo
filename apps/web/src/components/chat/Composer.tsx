@@ -350,8 +350,10 @@ export function Composer({
   const attachmentUploadError = attachments.find((a) => a.status === 'error')?.error
   const maxInlineImages = useAuth((state) => state.maxInlineImages)
   const hasNonImage = attachmentBatchRequiresAgent(attachments, maxInlineImages)
+  // The agent reaches Files only from its workspace, so mentioned items need Agent mode, as files do.
+  const mentionsFiles = filesEnabled && references.length > 0
   const attachmentRestriction = nonImageAttachmentRestriction({
-    hasNonImage,
+    hasNonImage: hasNonImage || mentionsFiles,
     agentModeEnabled: activeAgentMode,
     agentAvailable,
     agentCapable,
@@ -1050,9 +1052,19 @@ export function Composer({
         <div role="status" className="flex items-center gap-2 px-3 pb-2 text-xs text-amber-700 dark:text-amber-300">
           <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
           <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
-            {attachmentRestriction === 'enable_agent' && 'These attachments require Agent mode (file type, image count, or image size).'}
-            {attachmentRestriction === 'model_not_capable' && 'Switch to an Agent-capable model or reduce these attachments.'}
-            {attachmentRestriction === 'agent_unavailable' && 'Agent mode is unavailable. Reduce these attachments to send.'}
+            {hasNonImage ? (
+              <>
+                {attachmentRestriction === 'enable_agent' && 'These attachments require Agent mode (file type, image count, or image size).'}
+                {attachmentRestriction === 'model_not_capable' && 'Switch to an Agent-capable model or reduce these attachments.'}
+                {attachmentRestriction === 'agent_unavailable' && 'Agent mode is unavailable. Reduce these attachments to send.'}
+              </>
+            ) : (
+              <>
+                {attachmentRestriction === 'enable_agent' && ui("Files items require Agent mode.")}
+                {attachmentRestriction === 'model_not_capable' && ui("Switch to an Agent-capable model or remove the Files items.")}
+                {attachmentRestriction === 'agent_unavailable' && ui("Agent mode is unavailable. Remove the Files items to send.")}
+              </>
+            )}
           </span>
           {attachmentRestriction === 'enable_agent' && (
             <button
@@ -1277,7 +1289,6 @@ export function Composer({
                 </div>
               ))}
             </div>
-            {!(activeAgentMode && canUseAgent) && <p className="px-1 text-xs text-muted-foreground">{ui("Turn on agent mode so the model can use these files.")}</p>}
           </div>
         )}
         <div className="flex items-end pr-2.5">
