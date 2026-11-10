@@ -6,7 +6,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ProfileIdentity } from '@/components/FriendIdentity'
 import { ProfileHeaderRow, ProfileHeading } from '@/components/ProfileHeader'
 import { PersonalUsage } from '@/components/usage/PersonalUsage'
-import { ProfileUsage } from '@/components/usage/ProfileUsage'
+import { ProfileUsage, UsagePrivateNotice } from '@/components/usage/ProfileUsage'
 import { useSettingsDialog } from '@/components/settings/settings-dialog'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -184,7 +184,8 @@ export function ProfilePage() {
               </div>}
             />
 
-            {usageVisible === true && <ProfileUsage username={normalizedUsername} />}
+            {usageVisible === true && <ProfileUsage username={normalizedUsername} name={detail.profile.displayName} />}
+            {usageVisible === false && <UsagePrivateNotice name={detail.profile.displayName} />}
 
             <section className="overflow-hidden rounded-xl border">
               <div className="flex items-center justify-between border-b px-4 py-3">
