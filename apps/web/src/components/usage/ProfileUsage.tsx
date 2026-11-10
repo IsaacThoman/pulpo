@@ -25,7 +25,7 @@ function retryUnlessDenied(failures: number, error: Error): boolean {
 /** Shown in place of usage that the profile owner hasn't shared with the viewer, without naming their setting. */
 export function UsagePrivateNotice({ name }: { name: string }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-lg border px-6 py-12 text-center text-sm text-muted-foreground">
+    <div className="flex flex-col items-center justify-center gap-2 px-6 py-12 text-center text-sm text-muted-foreground">
       <Lock className="size-5" aria-hidden />
       <p>{ui("{{name}} hasn't shared their usage with you.", { name })}</p>
     </div>
