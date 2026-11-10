@@ -1,6 +1,6 @@
 import { protectTranscriptRequest } from '../data/transcriptResidency'
 import { nativeUsageErrorMessage } from '../features/usage-limits/errors'
-import { CLIENT_PLATFORM_HEADER, usageLimitsSchema } from '@pulpo/contracts'
+import { CLIENT_FEATURES_HEADER, CLIENT_FEATURES_HEADER_VALUE, CLIENT_PLATFORM_HEADER, usageLimitsSchema } from '@pulpo/contracts'
 import type { NativeDevice, DeviceSessionList, MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, UsageVisibility, User } from '@pulpo/contracts'
 import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 
@@ -31,7 +31,7 @@ export function configureApi(input: {
   unauthorizedHandler = input.onUnauthorized
 }
 
-/** Sets the `x-pulpo-client` value (`ios/<version>` etc.) sent with instance requests. */
+/** Sets the `x-pulpo-client` value (`ios/<version>` etc.) sent with instance requests, alongside `x-pulpo-client-features`. */
 export function configureClientPlatform(value: string | null): void {
   clientPlatform = value
 }
@@ -75,7 +75,11 @@ async function performApiRequest<T>(path: string, options: RequestOptions): Prom
   else if (options.body !== undefined) headers.set('content-type', 'application/json')
   if (options.idempotencyKey) headers.set('idempotency-key', options.idempotencyKey)
   if (options.auth !== false && sessionToken) headers.set('authorization', `Bearer ${sessionToken}`)
-  if (clientPlatform) headers.set(CLIENT_PLATFORM_HEADER, clientPlatform)
+  if (clientPlatform) {
+    headers.set(CLIENT_PLATFORM_HEADER, clientPlatform)
+    // Lets the server ask this app before an Agent reply browses Files.
+    headers.set(CLIENT_FEATURES_HEADER, CLIENT_FEATURES_HEADER_VALUE)
+  }
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000)
   const abort = () => controller.abort()

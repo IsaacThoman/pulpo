@@ -6,7 +6,7 @@ import { Directory, File, Paths } from 'expo-file-system'
 import * as Crypto from 'expo-crypto'
 import * as Sharing from 'expo-sharing'
 import { attachmentValidationError, createUploadQueue, retryBusyUpload } from '@pulpo/client-core'
-import { MESSAGE_REPORT_CONTEXT_MAX_LENGTH, type FilesPermissionDecision, type ResponseSnapshot } from '@pulpo/contracts'
+import { MESSAGE_REPORT_CONTEXT_MAX_LENGTH, type FileAccessMode, type FilesPermissionDecision, type ResponseSnapshot } from '@pulpo/contracts'
 import { apiOrigin, apiRequest, apiUrl, isNetworkError, nativeAuthorizationHeaders } from '../../api/client'
 import { cacheNamespace, cachedAttachmentUri, recordCachedAttachment, removeCachedAttachment } from '../../data/database'
 import { queueOfflineMutation } from '../../data/mutations'
@@ -152,6 +152,8 @@ export async function startChat(input: {
   attachmentIds?: string[]
   agentMode?: boolean
   usedDictation?: boolean
+  /** "Changes to Files" as the composer showed it; the account preference it may have just changed syncs later. */
+  fileChangeMode?: FileAccessMode
 }): Promise<{ chat: ServerChat; response: ResponseSnapshot }> {
   const session = useSessionStore.getState()
   if (session.user) mobileChatStarted.ignoreLocal(cacheNamespace(session.instanceUrl, session.user.id), input.chatId)
@@ -173,6 +175,7 @@ export async function startChat(input: {
       title: input.title,
       temporary: input.temporary ?? false,
       autoExpire: input.autoExpire ?? false,
+      ...(input.fileChangeMode ? { fileChangeMode: input.fileChangeMode } : {}),
     },
     response: {
       timeZone: deviceTimeZone(),

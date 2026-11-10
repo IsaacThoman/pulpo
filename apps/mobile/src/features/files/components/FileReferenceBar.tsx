@@ -1,7 +1,5 @@
 import { MAX_MESSAGE_FILE_REFERENCES, type FileNode, type FileReference } from '@pulpo/contracts'
 import * as Haptics from 'expo-haptics'
-import { Pressable, StyleSheet, Text, View } from 'react-native'
-import { useAppTheme } from '../../../theme'
 import { useFileReferencePicker } from '../scopePicker'
 import { FolderPickerSheet } from './FolderPickerSheet'
 
@@ -19,13 +17,12 @@ interface Props {
 }
 
 /**
- * Adding Files items to the message being written, and what they need. The draft keeps them as its
- * last paragraph of links (sending one lets the agent work with that item in the chat); the
- * composer's attachment strip shows them as cards (see FileReferenceCard). This adds picked items
- * and, while agent mode is off, says the agent can't use them yet.
+ * Adding Files items to the message being written. The draft keeps them as its last paragraph of
+ * links (sending one lets the agent work with that item in the chat); the composer's attachment
+ * strip shows them as cards (see FileReferenceCard). Like attachments that need the agent, a draft
+ * with them can't be sent until Agent mode is on (see agentModeRestriction).
  */
 export function FileReferenceBar({ namespace, references, available, agentActive, canUseAgent, onTurnOnAgent, onAdd }: Props) {
-  const theme = useAppTheme()
   const picker = useFileReferencePicker()
 
   const add = (items: Array<{ id: string; name: string; kind: FileNode['kind'] }>, folder: { id: string | null; name: string }) => {
@@ -41,36 +38,18 @@ export function FileReferenceBar({ namespace, references, available, agentActive
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
   }
 
-  const showHint = references.length > 0 && !agentActive
-  if (!available || (!showHint && !picker.open)) return null
+  if (!available || !picker.open) return null
   return (
-    <View style={styles.root}>
-      {showHint ? (
-        <Pressable accessibilityRole="button" disabled={!canUseAgent} onPress={onTurnOnAgent} style={styles.hint}>
-          <Text style={[styles.hintText, { color: theme.orange }]}>
-            {canUseAgent ? 'Turn on agent mode so the agent can use these files.' : 'Choose an agent-capable model to use these files.'}
-          </Text>
-        </Pressable>
-      ) : null}
-      {picker.open ? (
-        <FolderPickerSheet
-          namespace={namespace}
-          mode="items"
-          title="Add from Files"
-          confirmLabel="Add"
-          limit={MAX_MESSAGE_FILE_REFERENCES}
-          limitMessage={`A message can mention up to ${MAX_MESSAGE_FILE_REFERENCES} items.`}
-          pickedIds={references.map((reference) => reference.id)}
-          onCancel={picker.hide}
-          onConfirm={add}
-        />
-      ) : null}
-    </View>
+    <FolderPickerSheet
+      namespace={namespace}
+      mode="items"
+      title="Add from Files"
+      confirmLabel="Add"
+      limit={MAX_MESSAGE_FILE_REFERENCES}
+      limitMessage={`A message can mention up to ${MAX_MESSAGE_FILE_REFERENCES} items.`}
+      pickedIds={references.map((reference) => reference.id)}
+      onCancel={picker.hide}
+      onConfirm={add}
+    />
   )
 }
-
-const styles = StyleSheet.create({
-  root: { gap: 4, marginBottom: 6 },
-  hint: { paddingHorizontal: 4 },
-  hintText: { fontSize: 12 },
-})

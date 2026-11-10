@@ -35,6 +35,15 @@ describe('optimistic attachment sends', () => {
     })
   })
 
+  it('titles a chat by what was typed, or the Files items it mentions, without their links', () => {
+    expect(createOptimisticSendIdentity({
+      content: 'Summarize this\n\n[Plan.md](/files/d/00000000-0000-4000-8000-000000000001)', createId: () => 'response',
+    }).title).toBe('Summarize this')
+    expect(createOptimisticSendIdentity({
+      content: '[Plan.md](/files/d/00000000-0000-4000-8000-000000000001) [Research](/files/f/00000000-0000-4000-8000-000000000002)', firstAttachmentName: 'photo.heic', createId: () => 'response',
+    }).title).toBe('Plan.md, Research')
+  })
+
   it.each([
     ['a long URL', `Explain this meme to me https://example.com/meme?share=${'a'.repeat(250)}`, 'photo.heic'],
     ['unbroken text', '界'.repeat(201), 'photo.heic'],

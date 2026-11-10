@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type PickerProps = { limit: number; pickedIds: string[]; onConfirm: (items: Array<{ id: string; name: string; kind: string }>, folder: { id: string | null; name: string }) => void }
 const picker = vi.hoisted(() => ({ props: null as PickerProps | null }))
-vi.mock('../../../theme', () => ({ useAppTheme: () => ({ text: '#111', secondary: '#666', tertiary: '#999', blue: '#00f', orange: '#f80', fillStrong: '#eee' }) }))
 vi.mock('expo-haptics', () => ({ selectionAsync: vi.fn(), notificationAsync: vi.fn(), NotificationFeedbackType: { Success: 'success' } }))
 vi.mock('./FolderPickerSheet', () => ({ FolderPickerSheet: (props: PickerProps) => { picker.props = props; return null } }))
 vi.mock('react-native', () => {
@@ -53,9 +52,9 @@ describe('FileReferenceBar', () => {
     expect(host.textContent).toBe('')
   })
 
-  it('asks for agent mode while it is off', () => {
+  it('leaves asking for Agent mode to the composer’s send restriction', () => {
     render([plan])
-    expect(host.textContent).toContain('Turn on agent mode so the agent can use these files.')
+    expect(host.textContent).toBe('')
   })
 
   it('shows nothing where Files can’t be used', () => {

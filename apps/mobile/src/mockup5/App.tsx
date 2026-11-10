@@ -1,4 +1,4 @@
-import { imageBatchNeedsWorkspace, DEFAULT_MAX_INLINE_IMAGES } from '@pulpo/contracts';
+import { imageBatchNeedsWorkspace, DEFAULT_FILE_ACCESS_MODE, DEFAULT_MAX_INLINE_IMAGES } from '@pulpo/contracts';
 import { speechPlayback, readAloud } from '../features/speech/playback';
 import { saveSpeechToFiles, shareSpeechAudio } from '../features/speech/save';
 import { SPEECH_SEEK_SECONDS, nextSpeechRate, speechRateLabel, speechText, speechTimeLabel, type SpeechProgress } from '@pulpo/client-core';
@@ -302,6 +302,7 @@ import {
   type CoordinatedUpload,
   type CoordinatedUploadState,
 } from '../features/chat/attachmentUploadCoordinator';
+import { agentModeRestriction } from '../features/chat/agentRequirement';
 import { imagePreviewGroup, initialNativeImageSource, previewFallbackMessage, previewSource } from '../features/chat/attachmentPreviewPolicy';
 import {
   createOptimisticSendIdentity,
@@ -2876,6 +2877,11 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           attachmentIds: prepared.map((attachment) => attachment.serverId),
           agentMode,
           usedDictation: options?.usedDictation,
+          // "Changes to Files" as the composer shows it (see useChatFilesAccess). A change made just
+          // before sending is saved as the account preference, which reaches the server later.
+          fileChangeMode: activePrototypeChat?.fileChangeMode
+            ?? usePrototypeStore.getState().preferences.agentFileChangeMode
+            ?? DEFAULT_FILE_ACCESS_MODE,
         });
         if (options?.temporary) pendingTemporaryStart.current = { chatId: key, promise: startPromise };
         let started: Awaited<typeof startPromise>;
@@ -5219,6 +5225,14 @@ function ChatView({
   inputRef.current = input;
   // The draft keeps its Files references as a last paragraph of links (see composerReferences).
   const composerDraft = useMemo(() => composerReferences(input), [input]);
+  // Mentioned Files items, like attachments the model can't take inline, reach it through the agent.
+  const agentRestriction = agentModeRestriction({
+    attachmentsNeedAgent: attachmentsRequireAgent,
+    hasFileReferences: filesAccess.available && composerDraft.references.length > 0,
+    agentEnabled: activeAgentEnabled,
+    agentAvailable,
+    modelAgentCapable: Boolean(model.agentEnabled),
+  });
   const updateComposerDraft = useCallback((next: string) => {
     inputRef.current = next;
     onChangeInput(next);
@@ -6187,8 +6201,8 @@ function ChatView({
 
   const submitMessage = async () => {
     if ((chatId && !chatLoaded) || handoffBusyRef.current || sendingRef.current || isDictationBusy()) return;
-    if (attachmentsRequireAgent && !activeAgentEnabled) {
-      Alert.alert('Agent mode required', 'Enable Agent mode or reduce these attachments before sending.');
+    if (agentRestriction) {
+      Alert.alert('Agent mode required', agentRestriction.message);
       return;
     }
     const sendPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
@@ -6567,7 +6581,7 @@ function ChatView({
     && !dictationBusy
     && !queueBusy
     && !expired
-    && !(attachmentsRequireAgent && (!activeAgentEnabled || !canUseAgent))
+    && !agentRestriction
     && attachmentPolicy.allowed;
   const composerAction = composerGenerationAction(assistantStatus, Boolean(messageEdit), Boolean(input.trim() || attachments.length));
   // iOS ignores alert roles and live regions, so the status and errors shown here are spoken explicitly.
@@ -6575,7 +6589,7 @@ function ChatView({
   useAccessibilityAnnouncement(showConnectionBanner && (syncError ?? (connectionState === 'offline' ? 'Offline. Messages will send when Pulpo reconnects.' : 'Reconnecting to Pulpo')));
   useAccessibilityAnnouncement(expired && 'This temporary chat expired and is now read-only.');
   useAccessibilityAnnouncement(attachmentUploadError);
-  useAccessibilityAnnouncement(attachmentsRequireAgent && (!activeAgentEnabled || !canUseAgent) && (!canUseAgent ? 'Choose an Agent-capable model or reduce these attachments.' : 'Turn on Agent mode to use these attachments (file type, image count, or image size).'));
+  useAccessibilityAnnouncement(agentRestriction?.message);
   useAccessibilityAnnouncement(dictation.error);
   useAccessibilityAnnouncement(showShelf && shelfError);
 
@@ -6980,10 +6994,15 @@ function ChatView({
                   {attachmentUploadError}
                 </Text>
               ) : null}
-              {attachmentsRequireAgent && (!activeAgentEnabled || !canUseAgent) ? (
-                <Text accessibilityRole="alert" style={styles.attachmentRestrictionText}>
-                  {!canUseAgent ? 'Choose an Agent-capable model or reduce these attachments.' : 'Turn on Agent mode to use these attachments (file type, image count, or image size).'}
-                </Text>
+              {agentRestriction ? (
+                <View style={styles.attachmentRestriction}>
+                  <Text accessibilityRole="alert" style={styles.attachmentRestrictionText}>{agentRestriction.message}</Text>
+                  {agentRestriction.state === 'enable_agent' ? (
+                    <Pressable accessibilityRole="button" accessibilityLabel="Enable Agent" hitSlop={TEXT_BUTTON_HIT_SLOP} onPress={() => selectAgent(true)}>
+                      <Text style={styles.attachmentRestrictionAction}>Enable Agent</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
               ) : null}
               {dictation.error && <Text accessibilityRole="alert" style={styles.attachmentErrorText}>{dictation.error}</Text>}
               <View style={[styles.composerInputRow, showShelf && styles.composerShelfInputRow]}>
@@ -7675,9 +7694,10 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     }
     const item = row.chat;
     const source = previewChatsById.get(item.id);
+    const lastMessage = source?.messages.at(-1);
     const previewText = source?.detailLoaded === false
       ? 'Loading preview…'
-      : source?.messages.at(-1)?.text || DEFAULT_HISTORY_PREVIEW;
+      : (lastMessage && sentMessageReadableText(lastMessage.role, lastMessage.text)) || DEFAULT_HISTORY_PREVIEW;
     const previewModel = models.find((model) => (
       model.id === item.modelId || model.redirectTargetModelIds?.includes(item.modelId)
     ));
@@ -8061,7 +8081,9 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   speechPlayerThumb: { position: 'absolute', top: 3, width: 12, height: 12, marginLeft: -6, borderRadius: 6, backgroundColor: COLORS.text },
   messageEditBannerText: { flex: 1, color: COLORS.text, fontSize: 12, fontWeight: '600' },
   messageEditCancel: { color: COLORS.muted, fontSize: 12, fontWeight: '600', paddingHorizontal: 4, paddingVertical: 2 },
-  attachmentRestrictionText: { color: COLORS.warning, fontSize: 11, lineHeight: 15, paddingHorizontal: 6, paddingBottom: 6 },
+  attachmentRestriction: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingHorizontal: 6, paddingBottom: 6 },
+  attachmentRestrictionText: { flex: 1, color: COLORS.warning, fontSize: 11, lineHeight: 15 },
+  attachmentRestrictionAction: { color: COLORS.warning, fontSize: 11, lineHeight: 15, fontWeight: '600', textDecorationLine: 'underline' },
   attachmentErrorText: { color: COLORS.critical, fontSize: 11, lineHeight: 15, paddingHorizontal: 6, paddingBottom: 6 },
   attachmentStrip: { height: 78, marginBottom: 3 },
   attachmentStripContent: { gap: 6, paddingHorizontal: 2 },
