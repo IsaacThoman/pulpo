@@ -265,9 +265,9 @@ describe.each(['ios', 'android'])('Friends on %s', (platform) => {
     friends.suggestions = []
     fireEvent.click(dismiss)
     await waitFor(() => expect(writes()).toEqual([['/api/friends/suggestions/dismissals', { method: 'POST', body: { userId: 'Gus' } }]]))
-    // The row goes away with the last suggestion, and a note says what dismissing did.
-    await screen.findByText("Gus won't be suggested for at least 30 days, and only if you gain mutual friends.")
-    expect(screen.queryByText('People you may know')).toBeNull()
+    // The row goes away with the last suggestion, without a note.
+    await waitFor(() => expect(screen.queryByText('People you may know')).toBeNull())
+    expect(screen.queryByText(/won't be suggested/)).toBeNull()
     expect(screen.queryByRole('button', { name: 'Dismiss Gus' })).toBeNull()
   })
 
