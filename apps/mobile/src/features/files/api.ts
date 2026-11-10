@@ -3,6 +3,7 @@ import type {
   FileConversionPreview,
   FileListing,
   FileNode,
+  FileSearchResults,
   FileUploadReservation,
   MoveFileNodes,
   UpdateFileNode,
@@ -25,6 +26,12 @@ export function fetchFolder(folderId: string | null, signal?: AbortSignal): Prom
 
 export function fetchFileNode(id: string, signal?: AbortSignal): Promise<{ node: FileNode; ancestors: FileNode[] }> {
   return apiRequest<{ node: FileNode; ancestors: FileNode[] }>(`/api/files/${encodeURIComponent(id)}`, { signal })
+}
+
+/** The account's own files, documents, and folders whose names contain `query`; without one, recent ones. */
+export function searchFiles(query: string, limit: number, signal?: AbortSignal): Promise<FileSearchResults> {
+  const q = query ? `&q=${encodeURIComponent(query)}` : ''
+  return apiRequest<FileSearchResults>(`/api/files/search?limit=${limit}${q}`, { signal })
 }
 
 export function createFolder(parentId: string | null, name: string): Promise<FileNode> {
