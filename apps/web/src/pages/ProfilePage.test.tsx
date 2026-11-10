@@ -163,13 +163,12 @@ describe('profile page', () => {
     expect(screen.queryByRole('button', { name: /Usage visible/ })).toBeNull()
   })
 
-  it('omits usage that is not shared without requesting it or naming the setting', async () => {
+  it('explains usage that is not shared without requesting it or naming the setting', async () => {
     detail = { ...detail, relationship: 'none', requestId: null, friendsSince: null, usageVisible: false }
     mount()
 
-    await screen.findByText('Mutual friends')
+    await screen.findByText("Alice hasn't shared their usage with you.")
     expect(usageRequests()).toEqual([])
-    expect(screen.queryByText(/hasn't shared/)).toBeNull()
     expect(screen.queryByText('Usage overview')).toBeNull()
     expect(screen.queryByText(/pool|public/i)).toBeNull()
     expect(screen.queryByRole('link', { name: 'Compare with friends' })).toBeNull()
@@ -182,7 +181,7 @@ describe('profile page', () => {
 
     await screen.findByRole('heading', { name: 'Top models' })
     expect(within(screen.getByRole('region', { name: 'Recent usage' })).getByText(model.name)).toBeTruthy()
-    expect(screen.queryByText(/hasn't shared/)).toBeNull()
+    expect(screen.queryByText("Alice hasn't shared their usage with you.")).toBeNull()
     expect(breadcrumb().getByRole('link', { name: 'Friends' })).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'Compare with friends' })).toBeNull()
   })
@@ -201,7 +200,7 @@ describe('profile page', () => {
     await waitFor(() => expect(mocks.request).toHaveBeenCalledWith('/api/profiles/alice'))
     expect(screen.queryByRole('img', { name: /Usage visible/ })).toBeNull()
     expect(screen.queryByText(/^Joined /)).toBeNull()
-    expect(screen.queryByText(/hasn't shared/)).toBeNull()
+    expect(screen.queryByText("Alice hasn't shared their usage with you.")).toBeNull()
     expect(screen.queryByRole('heading', { name: 'Top models' })).toBeNull()
     expect(screen.queryByRole('link', { name: 'Compare with friends' })).toBeNull()
     expect(usageRequests()).toEqual([])
@@ -210,7 +209,7 @@ describe('profile page', () => {
 
     await screen.findByRole('heading', { name: 'Top models' })
     expect(screen.getByRole('img', { name: 'Usage visible to their friends' })).toBeTruthy()
-    expect(screen.queryByText(/hasn't shared/)).toBeNull()
+    expect(screen.queryByText("Alice hasn't shared their usage with you.")).toBeNull()
     expect(screen.getByRole('link', { name: 'Compare with friends' })).toBeTruthy()
   })
 
@@ -227,8 +226,8 @@ describe('profile page', () => {
     })
     await queryClient.refetchQueries({ queryKey: ['profile-usage', viewerId, 'alice'] })
 
-    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Top models' })).toBeNull())
-    expect(screen.queryByText(/hasn't shared/)).toBeNull()
+    await screen.findByText("Alice hasn't shared their usage with you.")
+    expect(screen.queryByRole('heading', { name: 'Top models' })).toBeNull()
     await waitFor(() => expect(queryClient.getQueryData(['friend-profile', 'alice'])).toMatchObject({ usageVisible: false }))
     await waitFor(() => expect(queryClient.getQueryCache().findAll({ queryKey: ['profile-usage'] })).toHaveLength(0))
     expect(screen.queryByRole('link', { name: 'Compare with friends' })).toBeNull()
