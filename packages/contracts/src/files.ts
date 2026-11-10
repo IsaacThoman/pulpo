@@ -257,6 +257,18 @@ export interface FileListing {
   children: FileNode[]
 }
 
+/**
+ * Files items whose names contain `q` (`GET /api/files/search`): the account's own documents,
+ * uploaded files, and folders, not shortcuts, chats, or trash. Without `q`, the most recently
+ * changed. Each comes with the folder it is in (null: the top of My files).
+ */
+export interface FileSearchResults {
+  items: Array<{ node: FileNode; parent: { id: string; name: string } | null }>
+}
+/** The longest search the route takes, and the most results it gives. */
+export const FILE_SEARCH_QUERY_MAX_LENGTH = 200
+export const FILE_SEARCH_MAX_RESULTS = 50
+
 /** A shortcut to a Files item or a chat, placed in `parentId` (null is My files; omitted, the Chats folder). */
 export const createShortcutSchema = z.object({
   targetKind: z.enum(['file', 'chat']),
