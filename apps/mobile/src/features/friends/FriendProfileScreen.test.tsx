@@ -25,14 +25,28 @@ vi.mock('react-native', () => ({
   ActivityIndicator: () => null,
 }))
 vi.mock('react-native-safe-area-context', () => ({ SafeAreaView: passthrough }))
-vi.mock('@expo/ui/swift-ui', () => ({
-  HStack: passthrough, VStack: passthrough, RNHostView: passthrough, Spacer: () => null, Image: () => null,
-  Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
-  Button: ({ label, onPress, children, modifiers }: { label?: string; onPress?: () => void; children?: ReactNode; modifiers?: Modifier[] }) => createElement('button', { onClick: onPress, disabled: Boolean(modifier(modifiers, 'disabled')) }, label ?? children),
-}))
+vi.mock('@expo/ui/swift-ui', () => {
+  const Container = ({ children }: { children?: ReactNode }) => createElement('div', null, children)
+  return {
+    Host: Container, Form: Container, HStack: Container, VStack: Container, RNHostView: passthrough,
+    Spacer: () => null, Image: () => null, ProgressView: () => null, RoundedRectangle: () => null,
+    Section: ({ title, header, footer, children }: { title?: string; header?: ReactNode; footer?: ReactNode; children?: ReactNode }) => createElement('section', null, title ? createElement('h2', null, title) : header, children, footer),
+    Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+    Label: ({ title }: { title: string }) => createElement('span', null, title),
+    LabeledContent: ({ label, children }: { label: string; children?: ReactNode }) => createElement('div', null, createElement('span', null, label), children),
+    Button: ({ label, onPress, children, modifiers }: { label?: string; onPress?: () => void; children?: ReactNode; modifiers?: Modifier[] }) => createElement('button', { onClick: onPress, disabled: Boolean(modifier(modifiers, 'disabled')), 'aria-label': modifier(modifiers, 'accessibilityLabel') as string | undefined }, label ?? children),
+    // A segmented picker reads as tabs, its options from the tagged texts inside it.
+    Picker: ({ label, selection, onSelectionChange, children }: { label: string; selection: string; onSelectionChange: (value: string) => void; children: Array<{ props: { children: string; modifiers: Modifier[] } }> }) => createElement('div', { role: 'tablist', 'aria-label': label }, children.map((option) => {
+      const value = modifier(option.props.modifiers, 'tag') as string
+      return createElement('button', { key: value, role: 'tab', 'aria-selected': value === selection, onClick: () => onSelectionChange(value) }, option.props.children)
+    })),
+  }
+})
 vi.mock('@expo/ui/swift-ui/modifiers', () => ({ shapes: { rectangle: () => ({}) }, ...Object.fromEntries([
-  'accessibilityLabel', 'buttonStyle', 'contentShape', 'controlSize', 'disabled', 'font', 'foregroundStyle', 'lineLimit',
-].map((type) => [type, (value: unknown) => ({ type, value })])) }))
+  'accessibilityElement', 'accessibilityHidden', 'accessibilityHint', 'accessibilityLabel', 'buttonStyle', 'contentShape', 'controlSize', 'disabled', 'font', 'foregroundStyle',
+  'frame', 'lineLimit', 'minimumScaleFactor', 'monospacedDigit', 'opacity', 'padding', 'pickerStyle', 'refreshable', 'tag', 'tint',
+].map((type) => [type, (value: unknown = true) => ({ type, value })])) }))
+vi.mock('../../platform/MaterialUI', () => ({ MaterialButton: ({ label, onPress, loading }: { label: string; onPress: () => void; loading?: boolean }) => createElement('button', { onClick: onPress, disabled: loading }, label) }))
 vi.mock('../../platform/SymbolView', () => ({ SymbolView: () => null }))
 vi.mock('../../mockup5/src/components/ProfileAvatar', () => ({ ProfileAvatar: () => null }))
 vi.mock('../../mockup5/src/theme', () => ({ useAppTheme: () => ({ secondary: 'gray', tertiary: 'gray', text: 'black', green: 'green', orange: 'orange', blue: '#0000ff', red: 'red', fill: 'gray', fillStrong: 'gray', separator: 'gray', background: 'white' }) }))

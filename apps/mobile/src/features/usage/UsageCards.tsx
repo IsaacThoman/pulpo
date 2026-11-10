@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { ActivityIndicator, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, type GestureResponderEvent } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { Card, ListRow, PageHeader, SectionTitle, Segmented } from '../../mockup5/src/components/PrototypeUI'
+import { Card, ListRow, PageHeader, PrimaryButton, SectionTitle, Segmented } from '../../mockup5/src/components/PrototypeUI'
 import { ProfileAvatar } from '../../mockup5/src/components/ProfileAvatar'
 import { SymbolView } from '../../platform/SymbolView'
 import { useAppTheme } from '../../mockup5/src/theme'
@@ -10,9 +10,7 @@ import {
   USAGE_METRICS,
   USAGE_RANGES,
   averageLabel,
-  chartBars,
   compactCount,
-  contributionYear,
   metricLabel,
   niceCeiling,
   rankedModels,
@@ -21,12 +19,14 @@ import {
   usageTotals,
   type ChartBar,
   type ContributionCell,
+  type ContributionYear,
   type UsageActivity,
   type UsageMetric,
   type UsageRange,
   type UsageRecord,
 } from './format'
 import type { UsageRecordsModel } from './hooks'
+import { heatLevels, useRecordPaging, useUsageChart, useUsageYear } from './usageViews'
 
 const CHART_HEIGHT = 148
 /** Room beside the bars for the scale's values. */
@@ -37,15 +37,14 @@ const HEAT_CELL = 12
 const HEAT_GAP = 3
 const HEAT_STEP = HEAT_CELL + HEAT_GAP
 const HEAT_HEADER = 16
-/** Records shown before "Show more", and how many each press adds. */
-const RECORDS_FIRST = 8
-const RECORDS_MORE = 20
-const MODELS_SHOWN = 8
+/** What the bars, their scale and their dates take up, for hosting the chart in a SwiftUI form. */
+export const BAR_CHART_HEIGHT = CHART_HEIGHT + 8 + AXIS_LINE
+/** The year grid's height, month labels included. */
+export const YEAR_GRID_HEIGHT = HEAT_HEADER + 7 * HEAT_STEP - HEAT_GAP
+export const NO_USAGE = 'No usage in this period.'
+export const MODELS_SHOWN = 8
 
-/**
- * A scrolling page for usage: under the navigation bar on iOS, with its own header on Android.
- * Pulling down reloads what the page shows.
- */
+/** A scrolling page for usage with its own header, for Android. Pulling down reloads what the page shows. */
 export function UsagePage({ title, onBack, onRefresh, children }: { title: string; onBack: () => void; onRefresh: () => Promise<unknown>; children: ReactNode }) {
   const theme = useAppTheme()
   const [refreshing, setRefreshing] = useState(false)
@@ -53,16 +52,8 @@ export function UsagePage({ title, onBack, onRefresh, children }: { title: strin
     setRefreshing(true)
     void onRefresh().catch(() => undefined).finally(() => setRefreshing(false))
   }
-  const refreshControl = <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.secondary} />
-  if (Platform.OS === 'ios') return <ScrollView
-    contentInsetAdjustmentBehavior="automatic"
-    showsVerticalScrollIndicator={false}
-    style={[styles.flex, { backgroundColor: theme.background }]}
-    contentContainerStyle={[styles.page, styles.pageTop]}
-    refreshControl={refreshControl}
-  >{children}</ScrollView>
   return <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={[styles.flex, { backgroundColor: theme.background }]}>
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.page} refreshControl={refreshControl}>
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.page} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.secondary} />}>
       <PageHeader title={title} onBack={onBack} />
       {children}
     </ScrollView>
@@ -91,7 +82,8 @@ export function UsageNotice({ icon, children }: { icon?: string; children: strin
   </View>
 }
 
-function BarChart({ bars, metric, selected, onSelect }: { bars: ChartBar[]; metric: UsageMetric; selected: number | null; onSelect: (index: number | null) => void }) {
+/** Bars a day (or a few days) wide against a scale; tapping one selects it. */
+export function BarChart({ bars, metric, selected, onSelect }: { bars: ChartBar[]; metric: UsageMetric; selected: number | null; onSelect: (index: number | null) => void }) {
   const theme = useAppTheme()
   const ceiling = niceCeiling(Math.max(0, ...bars.map((bar) => bar.value)))
   const half = ceiling / 2
@@ -143,22 +135,15 @@ function BarChart({ bars, metric, selected, onSelect }: { bars: ChartBar[]; metr
 /** The period's total over its days; tapping a bar reads that day instead. */
 export function UsageChartCard({ activity, range, metric }: { activity: UsageActivity | undefined; range: UsageRange; metric: UsageMetric }) {
   const theme = useAppTheme()
-  const bars = useMemo(() => chartBars(activity?.daily ?? [], range, metric), [activity?.daily, metric, range])
-  // A chosen bar belongs to the bars it was chosen from.
-  const [selection, setSelection] = useState<{ bars: ChartBar[]; index: number } | null>(null)
-  const selected = selection?.bars === bars ? selection.index : null
-  const totals = usageTotals(activity, range)
-  const total = metric === 'tokens' ? totals.tokens : totals.calls
-  const chosen = selected === null ? undefined : bars[selected]
-  const title = metric === 'tokens' ? 'Tokens' : 'Calls'
+  const chart = useUsageChart(activity, range, metric)
   return <Card style={styles.padded}>
-    <View accessible accessibilityLabel={chosen ? `${chosen.label}, ${metricLabel(chosen.value, metric)}` : `${title}, ${metricLabel(total, metric)}`}>
-      <Text style={[styles.caption, { color: theme.secondary }]}>{chosen ? chosen.label : title}</Text>
-      <Text style={[styles.hero, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>{compactCount(chosen ? chosen.value : total)}</Text>
+    <View accessible accessibilityLabel={chart.accessibilityLabel}>
+      <Text style={[styles.caption, { color: theme.secondary }]}>{chart.caption}</Text>
+      <Text style={[styles.hero, { color: theme.text }]} numberOfLines={1} adjustsFontSizeToFit>{chart.value}</Text>
     </View>
-    {total > 0
-      ? <BarChart bars={bars} metric={metric} selected={selected} onSelect={(index) => setSelection(index === null ? null : { bars, index })} />
-      : <View style={styles.chartEmpty}><Text style={[styles.noticeText, { color: theme.secondary }]}>No usage in this period.</Text></View>}
+    {chart.total > 0
+      ? <BarChart bars={chart.bars} metric={metric} selected={chart.selected} onSelect={chart.select} />
+      : <View style={styles.chartEmpty}><Text style={[styles.noticeText, { color: theme.secondary }]}>{NO_USAGE}</Text></View>}
   </Card>
 }
 
@@ -180,53 +165,52 @@ export function UsageTotalsCard({ activity, range }: { activity: UsageActivity |
   </Card>
 }
 
-/** The past year, a square a day, darker the more it was used. Opens on the most recent weeks. */
-export function UsageYearCard({ activity, metric }: { activity: UsageActivity | undefined; metric: UsageMetric }) {
+/** A square a day, darker the more it was used, scrolled to the most recent weeks. */
+export function YearGrid({ year, picked, onPick, summary }: { year: ContributionYear; picked: ContributionCell | null; onPick: (cell: ContributionCell | null) => void; summary: string }) {
   const theme = useAppTheme()
-  const year = useMemo(() => contributionYear(activity?.contribution ?? [], metric), [activity?.contribution, metric])
-  const [picked, setPicked] = useState<ContributionCell | null>(null)
   const scroll = useRef<ScrollView>(null)
-  // One hue, light to dark: the same blue as the bars.
-  const levels = [theme.fillStrong, `${theme.blue}66`, `${theme.blue}99`, `${theme.blue}CC`, theme.blue]
+  const levels = heatLevels(theme)
   const width = year.weeks.length * HEAT_STEP - HEAT_GAP
   const pick = (event: GestureResponderEvent) => {
     const column = Math.floor(event.nativeEvent.locationX / HEAT_STEP)
     const row = Math.floor((event.nativeEvent.locationY - HEAT_HEADER) / HEAT_STEP)
-    const cell = year.weeks[column]?.[row]
-    setPicked(cell && !cell.placeholder && cell.key !== picked?.key ? cell : null)
+    onPick(year.weeks[column]?.[row] ?? null)
   }
-  const summary = `${year.activeDays} active ${year.activeDays === 1 ? 'day' : 'days'} in the last year`
+  return <ScrollView
+    ref={scroll}
+    horizontal
+    showsHorizontalScrollIndicator={false}
+    onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}
+  >
+    <Pressable accessibilityRole="image" accessibilityLabel={`Activity over the last year. ${summary}.`} onPress={pick}>
+      <View pointerEvents="none" style={{ width, height: YEAR_GRID_HEIGHT }}>
+        {year.months.map((month) => <Text key={`${month.label}-${month.column}`} style={[styles.heatMonth, { left: month.column * HEAT_STEP, color: theme.secondary }]}>{month.label}</Text>)}
+        <View style={styles.heatWeeks}>
+          {year.weeks.map((week) => <View key={week[0]!.key} style={styles.heatWeek}>
+            {week.map((cell) => <View key={cell.key} style={[
+              styles.heatCell,
+              cell.placeholder ? null : { backgroundColor: levels[cell.level] },
+              picked?.key === cell.key ? { borderWidth: 1.5, borderColor: theme.text } : null,
+            ]} />)}
+          </View>)}
+        </View>
+      </View>
+    </Pressable>
+  </ScrollView>
+}
+
+/** The past year, a square a day, darker the more it was used. Opens on the most recent weeks. */
+export function UsageYearCard({ activity, metric }: { activity: UsageActivity | undefined; metric: UsageMetric }) {
+  const theme = useAppTheme()
+  const { year, picked, pick, summary, detail } = useUsageYear(activity, metric)
   return <Card style={styles.padded}>
     <Text style={[styles.caption, { color: theme.secondary }]}>{summary}</Text>
-    <ScrollView
-      ref={scroll}
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={styles.heatScroll}
-      onContentSizeChange={() => scroll.current?.scrollToEnd({ animated: false })}
-    >
-      <Pressable accessibilityRole="image" accessibilityLabel={`Activity over the last year. ${summary}.`} onPress={pick}>
-        <View pointerEvents="none" style={{ width, height: HEAT_HEADER + 7 * HEAT_STEP - HEAT_GAP }}>
-          {year.months.map((month) => <Text key={`${month.label}-${month.column}`} style={[styles.heatMonth, { left: month.column * HEAT_STEP, color: theme.secondary }]}>{month.label}</Text>)}
-          <View style={styles.heatWeeks}>
-            {year.weeks.map((week) => <View key={week[0]!.key} style={styles.heatWeek}>
-              {week.map((cell) => <View key={cell.key} style={[
-                styles.heatCell,
-                cell.placeholder ? null : { backgroundColor: levels[cell.level] },
-                picked?.key === cell.key ? { borderWidth: 1.5, borderColor: theme.text } : null,
-              ]} />)}
-            </View>)}
-          </View>
-        </View>
-      </Pressable>
-    </ScrollView>
+    <View style={styles.heatScroll}><YearGrid year={year} picked={picked} onPick={pick} summary={summary} /></View>
     <View style={styles.heatFooter}>
-      <Text style={[styles.axisText, styles.flexShrink, { color: theme.secondary }]} numberOfLines={2}>
-        {picked ? (picked.value > 0 ? `${metricLabel(picked.value, metric)} on ${picked.label}` : `No ${metric} on ${picked.label}`) : 'Tap a day to see its usage.'}
-      </Text>
+      <Text style={[styles.axisText, styles.flexShrink, { color: theme.secondary }]} numberOfLines={2}>{detail}</Text>
       <View style={styles.heatLegend} importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
         <Text style={[styles.axisText, { color: theme.secondary }]}>Less</Text>
-        {levels.map((color, index) => <View key={index} style={[styles.heatLegendCell, { backgroundColor: color }]} />)}
+        {heatLevels(theme).map((color, index) => <View key={index} style={[styles.heatLegendCell, { backgroundColor: color }]} />)}
         <Text style={[styles.axisText, { color: theme.secondary }]}>More</Text>
       </View>
     </View>
@@ -237,7 +221,7 @@ export function UsageYearCard({ activity, metric }: { activity: UsageActivity | 
 export function TopModelsCard({ activity, metric }: { activity: UsageActivity | undefined; metric: UsageMetric }) {
   const theme = useAppTheme()
   const models = rankedModels(activity, metric).slice(0, MODELS_SHOWN)
-  if (!models.length) return <Card><UsageNotice>No usage in this period.</UsageNotice></Card>
+  if (!models.length) return <Card><UsageNotice>{NO_USAGE}</UsageNotice></Card>
   return <Card>
     {models.map((model, index) => <View
       key={model.modelId}
@@ -275,24 +259,15 @@ function RecordRow({ record, last, showParticipant, onOpenProfile }: { record: U
   return <View accessible accessibilityLabel={label} style={style}>{body}</View>
 }
 
-/** The latest settled calls, a few at first; "Show more" reveals and then loads older ones. */
+/** The latest settled calls, a few at first; "Show More" reveals and then loads older ones. */
 export function RecentUsageCard({ records, showParticipant = false, onOpenProfile }: { records: UsageRecordsModel; showParticipant?: boolean; onOpenProfile?: (username: string) => void }) {
   const theme = useAppTheme()
-  const [shown, setShown] = useState(RECORDS_FIRST)
-  const visible = records.items.slice(0, shown)
-  const more = records.items.length > shown || records.hasMore
-  const showMore = () => {
-    const next = shown + RECORDS_MORE
-    setShown(next)
-    if (next > records.items.length && records.hasMore && !records.loadingMore) records.loadMore()
-  }
-  if (!records.items.length) return <Card><UsageNotice>No usage in this period.</UsageNotice></Card>
+  const { visible, more, showMore, moreLabel } = useRecordPaging(records)
+  if (!records.items.length) return <Card><UsageNotice>{NO_USAGE}</UsageNotice></Card>
   return <Card>
     {visible.map((record, index) => <RecordRow key={record.id} record={record} last={!more && index === visible.length - 1} showParticipant={showParticipant} onOpenProfile={onOpenProfile} />)}
     {records.loadMoreError ? <Text accessibilityRole="alert" style={[styles.loadError, { color: theme.red }]}>{records.loadMoreError}</Text> : null}
-    {more ? <Pressable accessibilityRole="button" accessibilityState={{ busy: records.loadingMore }} disabled={records.loadingMore} onPress={showMore} style={({ pressed }) => [styles.more, pressed && { backgroundColor: theme.fill }]}>
-      {records.loadingMore ? <ActivityIndicator color={theme.secondary} /> : <Text style={[styles.moreText, { color: theme.blue }]}>{records.loadMoreError ? 'Try Again' : 'Show More'}</Text>}
-    </Pressable> : null}
+    {more ? <View style={styles.more}><PrimaryButton label={moreLabel} variant="plain" loading={records.loadingMore} onPress={showMore} /></View> : null}
   </Card>
 }
 
@@ -342,7 +317,6 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   flexShrink: { flexShrink: 1 },
   page: { width: '100%', maxWidth: SETTINGS_CONTENT_MAX, alignSelf: 'center', paddingHorizontal: 18, paddingBottom: 32 },
-  pageTop: { paddingTop: 12 },
   controls: { gap: 10, marginBottom: 14 },
   padded: { padding: 16 },
   caption: { fontSize: android ? 14 : 13, lineHeight: 18 },
@@ -377,8 +351,7 @@ const styles = StyleSheet.create({
   rowTitle: { fontSize: android ? 16 : 15, fontWeight: android ? '500' : '600' },
   rowDetail: { fontSize: android ? 14 : 12, lineHeight: android ? 20 : 16, marginTop: 2 },
   rowValue: { fontSize: 14, fontVariant: ['tabular-nums'] },
-  more: { minHeight: 48, alignItems: 'center', justifyContent: 'center' },
-  moreText: { fontSize: 15, fontWeight: '600' },
+  more: { paddingHorizontal: 8, paddingVertical: 4 },
   loadError: { fontSize: 12, lineHeight: 18, paddingHorizontal: 16, paddingTop: 10, textAlign: 'center' },
   notice: { alignItems: 'center', gap: 8, paddingHorizontal: 24, paddingVertical: 28 },
   noticeText: { fontSize: 14, lineHeight: 20, textAlign: 'center' },

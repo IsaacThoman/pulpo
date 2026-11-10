@@ -23,7 +23,6 @@ import {
   accessibilityLabel,
   autocorrectionDisabled,
   buttonStyle,
-  contentShape,
   controlSize,
   disabled,
   font,
@@ -31,7 +30,6 @@ import {
   frame,
   labelStyle,
   scrollDismissesKeyboard,
-  shapes,
   textFieldStyle,
   textInputAutocapitalization,
   tint,
@@ -44,6 +42,7 @@ import { useAppTheme } from '../../mockup5/src/theme'
 import type { RootStackParamList } from '../../mockup5/src/navigation'
 import { NativeUsageLimit, UsageLimitCard } from '../usage-limits/UsageLimitsSettings'
 import { invitationMembersLabel, mutualFriendsLabel, poolMembersLabel, poolUsageRows } from './format'
+import { NativeLinkRow } from './NativeLinkRow'
 import { MaterialPersonRow, NativeCountHeader, NativePersonRow, NativeRowButton } from './FriendRows'
 import { useFriendsScreen, type FriendMenuAction, type FriendsScreenModel } from './useFriendsScreen'
 
@@ -186,14 +185,7 @@ function NativeFriends({ model }: { model: FriendsScreenModel }) {
     </> : null}
 
     {data ? <SwiftUISection footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>{LEADERBOARD_DETAIL}</SwiftUIText>}>
-      <SwiftUIButton onPress={model.openLeaderboard} modifiers={[buttonStyle('plain'), foregroundStyle('primary')]}>
-        <SwiftUIHStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}>
-          <SwiftUIImage systemName="chart.bar.fill" size={17} modifiers={[frame({ width: 22, height: 22 })]} />
-          <SwiftUIText>Leaderboard</SwiftUIText>
-          <SwiftUISpacer />
-          <SwiftUIImage systemName="chevron.right" size={11} color={theme.tertiary} />
-        </SwiftUIHStack>
-      </SwiftUIButton>
+      <NativeLinkRow icon="chart.bar.fill" title="Leaderboard" onPress={model.openLeaderboard} />
     </SwiftUISection> : null}
 
     {data ? <SwiftUISection header={<NativeCountHeader title="Friends" count={overview.friends.length} />}>

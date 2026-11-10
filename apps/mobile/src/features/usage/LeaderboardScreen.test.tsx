@@ -4,9 +4,13 @@ import { createElement, type ComponentProps, type ReactNode } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
+type Modifier = { type: string; value?: unknown }
 type PressableProps = { children?: ReactNode; onPress?: (event: unknown) => void; accessibilityLabel?: string; disabled?: boolean }
 const mocks = vi.hoisted(() => ({ platform: 'ios', apiRequest: vi.fn(), push: vi.fn(), navigate: vi.fn(), usageLimits: true }))
-const { passthrough } = vi.hoisted(() => ({ passthrough: ({ children }: { children?: unknown }) => children }))
+const { passthrough, modifier } = vi.hoisted(() => ({
+  passthrough: ({ children }: { children?: unknown }) => children,
+  modifier: (modifiers: unknown, type: string) => (modifiers as Modifier[] | undefined)?.find((item) => item?.type === type)?.value,
+}))
 
 vi.mock('react-native', () => ({
   Platform: { get OS() { return mocks.platform } },
@@ -20,6 +24,28 @@ vi.mock('react-native', () => ({
   ActivityIndicator: () => null,
 }))
 vi.mock('react-native-safe-area-context', () => ({ SafeAreaView: passthrough }))
+vi.mock('@expo/ui/swift-ui', () => {
+  const Container = ({ children }: { children?: ReactNode }) => createElement('div', null, children)
+  return {
+    Host: Container, Form: Container, HStack: Container, VStack: Container, RNHostView: passthrough,
+    Spacer: () => null, Image: () => null, ProgressView: () => null, RoundedRectangle: () => null,
+    Section: ({ title, header, footer, children }: { title?: string; header?: ReactNode; footer?: ReactNode; children?: ReactNode }) => createElement('section', null, title ? createElement('h2', null, title) : header, children, footer),
+    Text: ({ children }: { children?: ReactNode }) => createElement('span', null, children),
+    Label: ({ title }: { title: string }) => createElement('span', null, title),
+    LabeledContent: ({ label, children }: { label: string; children?: ReactNode }) => createElement('div', null, createElement('span', null, label), children),
+    Button: ({ label, onPress, children, modifiers }: { label?: string; onPress?: () => void; children?: ReactNode; modifiers?: Modifier[] }) => createElement('button', { onClick: onPress, disabled: Boolean(modifier(modifiers, 'disabled')), 'aria-label': modifier(modifiers, 'accessibilityLabel') as string | undefined }, label ?? children),
+    // A segmented picker reads as tabs, its options from the tagged texts inside it.
+    Picker: ({ label, selection, onSelectionChange, children }: { label: string; selection: string; onSelectionChange: (value: string) => void; children: Array<{ props: { children: string; modifiers: Modifier[] } }> }) => createElement('div', { role: 'tablist', 'aria-label': label }, children.map((option) => {
+      const value = modifier(option.props.modifiers, 'tag') as string
+      return createElement('button', { key: value, role: 'tab', 'aria-selected': value === selection, onClick: () => onSelectionChange(value) }, option.props.children)
+    })),
+  }
+})
+vi.mock('@expo/ui/swift-ui/modifiers', () => ({ shapes: { rectangle: () => ({}) }, ...Object.fromEntries([
+  'accessibilityElement', 'accessibilityHidden', 'accessibilityHint', 'accessibilityLabel', 'buttonStyle', 'contentShape', 'controlSize', 'disabled', 'font', 'foregroundStyle',
+  'frame', 'lineLimit', 'minimumScaleFactor', 'monospacedDigit', 'opacity', 'padding', 'pickerStyle', 'refreshable', 'tag', 'tint',
+].map((type) => [type, (value: unknown = true) => ({ type, value })])) }))
+vi.mock('../../platform/MaterialUI', () => ({ MaterialButton: ({ label, onPress, loading }: { label: string; onPress: () => void; loading?: boolean }) => createElement('button', { onClick: onPress, disabled: loading }, label) }))
 vi.mock('../../platform/SymbolView', () => ({ SymbolView: () => null }))
 vi.mock('../../mockup5/src/components/ProfileAvatar', () => ({ ProfileAvatar: () => null }))
 vi.mock('../../mockup5/src/theme', () => ({ useAppTheme: () => ({ secondary: 'gray', tertiary: 'gray', text: 'black', green: 'green', blue: '#0000ff', red: 'red', fill: 'gray', fillStrong: 'gray', separator: 'gray', background: 'white' }) }))
@@ -131,7 +157,7 @@ describe.each(['ios', 'android'])('Leaderboard on %s', (platform) => {
   it('offers to retry when the ranking cannot be loaded', async () => {
     mocks.apiRequest.mockRejectedValueOnce(new Error('Server unavailable.'))
     mount()
-    fireEvent.click(await screen.findByText('Usage could not be loaded'))
+    fireEvent.click(await screen.findByText(platform === 'ios' ? 'Try Again' : 'Usage could not be loaded'))
     await waitFor(() => expect(ranking()).toHaveLength(3))
   })
 })
