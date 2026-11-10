@@ -11,6 +11,7 @@ import {
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
+import { queryClient } from '@/lib/query-client'
 import { useAuth } from '@/stores/auth'
 import { fileSearchQueryKey, searchFiles } from './api'
 import { FileNodeIcon } from './FileNodeIcon'
@@ -61,13 +62,16 @@ export function useFileMention({ enabled, text, references, anchorRef, onChoose 
   const query = useDebounced(typed, SEARCH_DELAY_MS)
   const limit = fileMentionRequestLimit(references)
   // Results are kept per query, so a slow answer for an earlier one never replaces a newer one.
+  // They leave the cache soon after, so a search per keystroke isn't saved for offline use. The
+  // app's client is passed in: nothing else in the composer needs a provider, and its tests have none.
   const results = useQuery({
     queryKey: fileSearchQueryKey(userId, query, limit),
     queryFn: ({ signal }) => searchFiles(query, limit, signal),
     enabled: Boolean(userId && searching && query === typed),
     staleTime: 15_000,
+    gcTime: 60_000,
     retry: false,
-  })
+  }, queryClient)
   // While the next answer is on its way the last list for this word stays up, but never another word's.
   const current = searching && query === typed ? results.data : undefined
   const [last, setLast] = useState<{ key: string; data: FileSearchResults } | null>(null)

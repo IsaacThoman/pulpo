@@ -35,7 +35,8 @@ const notes = node('notes-id', 'Notes', 'folder')
 const work = { id: 'work-id', name: 'Work' }
 
 const chosen = vi.fn()
-function Harness({ text, focused = true, references = [] }: { text: string; focused?: boolean; references?: FileReference[] }) {
+const NO_REFERENCES: FileReference[] = []
+function Harness({ text, focused = true, references = NO_REFERENCES }: { text: string; focused?: boolean; references?: FileReference[] }) {
   const { query, suggestions } = useFileMentionSuggestions({
     namespace: 'account', enabled: focused, text, selection: { start: text.length, end: text.length }, references,
   })

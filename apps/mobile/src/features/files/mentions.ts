@@ -43,6 +43,8 @@ export function useFileMentionSuggestions({ namespace, enabled, text, selection,
     queryFn: ({ signal }) => searchFiles(query, limit, signal),
     enabled: Boolean(namespace && token && query === typed),
     staleTime: 15_000,
+    // A search per keystroke isn't worth keeping around.
+    gcTime: 60_000,
     retry: false,
   })
   const current = token && query === typed ? results.data : undefined
