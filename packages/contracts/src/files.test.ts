@@ -73,6 +73,9 @@ describe('file references', () => {
     expect(fileReferenceIds(`\`[a](/files/d/${plan.id})\` and [Work](/files/f/${work.id})`)).toEqual([work.id.toLowerCase()])
     expect(fileReferenceIds(`\`\`\`md\n[a](/files/d/${plan.id})\n\`\`\`\n\n[Work](/files/f/${work.id})`)).toEqual([work.id.toLowerCase()])
     expect(fileReferenceIds(`Text\n\n~~~\n[a](/files/d/${plan.id})`)).toEqual([])
+    // An escaped bracket, or a link's tail on its own, is shown as text too.
+    expect(fileReferenceIds(`\\[a](/files/d/${plan.id}) ](/files/f/${work.id}) a](/files/d/${plan.id})`)).toEqual([])
+    expect(fileReferenceIds(`[a](/files/d/${plan.id})[Work](/files/f/${work.id})`)).toEqual([plan.id, work.id.toLowerCase()])
     expect(fileReferenceIds(appendFileReferences('Hi', [plan, work]))).toEqual([plan.id, work.id.toLowerCase()])
   })
 })
