@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
 import type { FastifyRequest } from 'fastify'
-import { CLIENT_PLATFORM_HEADER, parseClientPlatformHeader, type ClientPlatform } from '@pulpo/contracts'
+import { CLIENT_FEATURES_HEADER, CLIENT_PLATFORM_HEADER, parseClientFeaturesHeader, parseClientPlatformHeader, type ClientFeature, type ClientPlatform } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { applicationSettings, billingAccounts, billingSubscriptions, requestAnalytics, responses, userPreferences } from '../database/schema.js'
 import { getConfig } from '../config.js'
@@ -11,18 +11,22 @@ import { newId } from '../lib/ids.js'
 export interface ClientAttribution {
   platform: ClientPlatform
   version: string | null
+  /** What the client said it can do; older apps say nothing. */
+  features?: ClientFeature[]
 }
 
 /** Which app surface sent a request: the client header, else a user-agent guess. */
 export function clientAttributionForRequest(request: Pick<FastifyRequest, 'headers' | 'apiKeyId'>): ClientAttribution {
   if (request.apiKeyId) return { platform: 'api', version: null }
   const header = request.headers[CLIENT_PLATFORM_HEADER]
+  const listed = request.headers[CLIENT_FEATURES_HEADER]
+  const features = parseClientFeaturesHeader(Array.isArray(listed) ? listed.join(',') : listed)
   const parsed = parseClientPlatformHeader(Array.isArray(header) ? header[0] : header)
-  if (parsed) return parsed
+  if (parsed) return { ...parsed, features }
   const userAgent = request.headers['user-agent'] ?? ''
-  if (/\bElectron\//.test(userAgent)) return { platform: 'desktop', version: null }
-  if (/^Mozilla\//.test(userAgent)) return { platform: 'web', version: null }
-  return { platform: 'unknown', version: null }
+  if (/\bElectron\//.test(userAgent)) return { platform: 'desktop', version: null, features }
+  if (/^Mozilla\//.test(userAgent)) return { platform: 'web', version: null, features }
+  return { platform: 'unknown', version: null, features }
 }
 
 export function attachmentKind(mimeType: string): string {

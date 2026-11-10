@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { analyticsRangeQuerySchema, parseClientPlatformHeader } from './admin-analytics.js'
+import { analyticsRangeQuerySchema, CLIENT_FEATURES_HEADER_VALUE, parseClientFeaturesHeader, parseClientPlatformHeader } from './admin-analytics.js'
 
 describe('client platform header', () => {
   it('parses platforms with optional versions', () => {
@@ -12,6 +12,15 @@ describe('client platform header', () => {
     expect(parseClientPlatformHeader('toaster')).toBeNull()
     expect(parseClientPlatformHeader('api')).toBeNull()
     expect(parseClientPlatformHeader(undefined)).toBeNull()
+  })
+})
+
+describe('client features header', () => {
+  it('keeps the features this server knows', () => {
+    expect(parseClientFeaturesHeader(CLIENT_FEATURES_HEADER_VALUE)).toEqual(['files-permission'])
+    expect(parseClientFeaturesHeader(' Files-Permission ,future-thing')).toEqual(['files-permission'])
+    expect(parseClientFeaturesHeader('future-thing')).toEqual([])
+    expect(parseClientFeaturesHeader(undefined)).toEqual([])
   })
 })
 

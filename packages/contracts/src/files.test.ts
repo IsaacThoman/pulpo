@@ -62,8 +62,17 @@ describe('file references', () => {
   })
 
   it('finds every Files item a message links to, once each', () => {
-    const text = `[a](/files/d/${plan.id}) https://pulpo.baby/files/f/${work.id} again /files/d/${plan.id} /files/d/not-an-id /files/d/${plan.id}x`
+    const text = `[a](/files/d/${plan.id}) see [Work](/files/f/${work.id}) again [a](/files/d/${plan.id}) [bad](/files/d/not-an-id) [long](/files/d/${plan.id}x)`
     expect(fileReferenceIds(text)).toEqual([plan.id, work.id.toLowerCase()])
     expect(fileReferenceHref(work)).toBe(`/files/f/${work.id}`)
+  })
+
+  it('takes only links the app shows as Files items', () => {
+    // A bare path or URL is text, and so is anything in code.
+    expect(fileReferenceIds(`/files/d/${plan.id} https://pulpo.baby/files/f/${work.id}`)).toEqual([])
+    expect(fileReferenceIds(`\`[a](/files/d/${plan.id})\` and [Work](/files/f/${work.id})`)).toEqual([work.id.toLowerCase()])
+    expect(fileReferenceIds(`\`\`\`md\n[a](/files/d/${plan.id})\n\`\`\`\n\n[Work](/files/f/${work.id})`)).toEqual([work.id.toLowerCase()])
+    expect(fileReferenceIds(`Text\n\n~~~\n[a](/files/d/${plan.id})`)).toEqual([])
+    expect(fileReferenceIds(appendFileReferences('Hi', [plan, work]))).toEqual([plan.id, work.id.toLowerCase()])
   })
 })

@@ -65,10 +65,14 @@ const commandPaths: { [Command in RelayCommand]: (args: z.output<typeof relayCom
 /** What came of asking the user to let this reply browse their Files. */
 export type FilesPermissionOutcome = 'allowed' | 'denied' | 'expired' | 'stopped'
 
-const REFUSED_MESSAGES: Record<Exclude<FilesPermissionOutcome, 'allowed'>, string> = {
+/** Why a command that needed permission did not get it; `unavailable`: the user cannot be asked in this reply. */
+type FilesPermissionRefusal = Exclude<FilesPermissionOutcome, 'allowed'> | 'unavailable'
+
+const REFUSED_MESSAGES: Record<FilesPermissionRefusal, string> = {
   denied: 'The user declined to let you browse their Files. Work with the items they mentioned in this chat, or ask them to mention what you need.',
   expired: 'The user did not answer your request to browse their Files in time. Carry on with what you have, and ask them in your reply if you need more from their Files.',
   stopped: 'The command was stopped',
+  unavailable: 'You can only use the Files items the user mentioned in this chat: their app cannot show a request to browse the rest. If you need more, ask them in your reply to mention it.',
 }
 
 async function firstBlockedPath(scope: FileScope, paths: string[]): Promise<string | undefined> {
@@ -100,16 +104,17 @@ export function createFilesRelay(input: {
   onChanged?: (count: number) => void | Promise<void>
   /**
    * Asks the user to let this reply browse all of their Files, and waits for the answer. Without
-   * it, such commands fail. A refusal stands for the rest of the reply, so the agent asks once.
+   * it (the app that sent the message cannot show the request), such commands fail at once. A
+   * refusal stands for the rest of the reply, so the agent asks once.
    */
   requestPermission?: (request: { command: string; path: string }, signal?: AbortSignal) => Promise<FilesPermissionOutcome>
 }): (operationId: string, request: RelayRequest, signal?: AbortSignal) => Promise<RelayResult> {
   let refused: 'denied' | 'expired' | undefined
   // Commands arriving while the user is being asked wait for the same answer.
   let asking: Promise<FilesPermissionOutcome> | undefined
-  const askPermission = (command: string, path: string, signal?: AbortSignal): Promise<FilesPermissionOutcome> => {
+  const askPermission = (command: string, path: string, signal?: AbortSignal): Promise<FilesPermissionOutcome | 'unavailable'> => {
     if (refused) return Promise.resolve(refused)
-    if (!input.requestPermission) return Promise.resolve('denied')
+    if (!input.requestPermission) return Promise.resolve('unavailable')
     asking ??= input.requestPermission({ command, path }, signal).then((outcome) => {
       if (outcome === 'denied' || outcome === 'expired') refused = outcome
       return outcome

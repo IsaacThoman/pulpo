@@ -464,12 +464,18 @@ export function splitFileReferences(text: string): { text: string; references: F
   return { text: breakAt < 0 ? '' : trimmed.slice(0, breakAt).trimEnd(), references }
 }
 
-const REFERENCE_PATH = new RegExp(`/files/[df]/(${UUID})(?![0-9a-zA-Z-])`, 'g')
+const LINKED_REFERENCE = new RegExp(`\\]\\(/files/[df]/(${UUID})\\)`, 'g')
+// Fenced blocks (closed or running to the end) and inline code: links in them are shown as text.
+const CODE = /(?:^|\n) {0,3}(```|~~~)[\s\S]*?(?:\n {0,3}\1[^\n]*|$)|`[^`\n]*`/g
 
-/** Ids of Files items a message links to, in order, at most MAX_MESSAGE_FILE_REFERENCES. */
+/**
+ * Ids of the Files items a message links to, in order, at most MAX_MESSAGE_FILE_REFERENCES. Only
+ * Markdown links count (`[name](/files/d/<id>)`), the ones the app shows as cards or chips; a bare
+ * path or a link inside code is text, so pasting one gives the agent nothing.
+ */
 export function fileReferenceIds(text: string): string[] {
   const ids = new Set<string>()
-  for (const match of text.matchAll(REFERENCE_PATH)) {
+  for (const match of text.replace(CODE, '\n').matchAll(LINKED_REFERENCE)) {
     ids.add(match[1]!.toLowerCase())
     if (ids.size >= MAX_MESSAGE_FILE_REFERENCES) break
   }

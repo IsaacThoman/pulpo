@@ -279,6 +279,7 @@ export async function createResponse(options: CreateResponseOptions) {
       idempotencyScope,
       idempotencyFingerprint: options.idempotencyFingerprint,
       origin,
+      clientFeatures: origin === 'web' ? options.client?.features ?? [] : [],
     }).onConflictDoNothing().returning({ id: responses.id })
     if (!inserted) {
       const [existing] = await tx.select().from(responses).where(or(

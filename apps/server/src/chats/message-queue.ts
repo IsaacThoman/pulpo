@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, max, ne, sql } from 'drizzle-orm'
 import type { CreateQueuedMessageInput, QueuedMessage, ReorderQueuedMessageInput, UpdateQueuedMessageInput } from '@pulpo/contracts'
-import { clientPlatformSchema } from '@pulpo/contracts'
+import { clientPlatformSchema, parseClientFeaturesHeader } from '@pulpo/contracts'
 import type { ClientAttribution } from '../analytics/capture.js'
 import { db } from '../database/client.js'
 import { applicationSettings, attachments, chats, models, queuedMessages, responses, users } from '../database/schema.js'
@@ -151,6 +151,7 @@ export async function createQueuedMessage(
       attachmentIds: [...new Set(input.attachmentIds)],
       clientPlatform: attribution.client?.platform ?? null,
       clientVersion: attribution.client?.version ?? null,
+      clientFeatures: attribution.client?.features ?? [],
       usedDictation: input.usedDictation ?? null,
       position: nextQueuePosition(positionRow?.value),
       dispatchResponseId: input.clientId ?? newId(),
@@ -316,7 +317,7 @@ export async function advanceMessageQueue(chatId: string): Promise<void> {
         chatId,
         parentResponseId: chat?.activeBranchLeafId ?? chat?.activeResponseId ?? null,
         client: claim.clientPlatform && clientPlatformSchema.safeParse(claim.clientPlatform).success
-          ? { platform: clientPlatformSchema.parse(claim.clientPlatform), version: claim.clientVersion }
+          ? { platform: clientPlatformSchema.parse(claim.clientPlatform), version: claim.clientVersion, features: parseClientFeaturesHeader(claim.clientFeatures.join(',')) }
           : null,
         input: {
           clientId: claim.dispatchResponseId,

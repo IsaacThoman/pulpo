@@ -13,11 +13,14 @@ function describeKind(node: FileNodeRow): string {
   return node.kind === 'doc' ? 'Markdown document' : 'uploaded file'
 }
 
-function describeBrowsing(scope: FileScope): string {
+function describeBrowsing(scope: FileScope, canAsk: boolean): string {
   // With all of their files attached, there is nothing further to reach.
   if (scope.modes.has(FILE_SCOPE_ROOT)) return ''
   const browsedMode = MODE_LABELS[stricterMode(scope.changeMode, BROWSED_FILES_MODE_LIMIT)!]
   if (scope.browse) return `You may also look through the rest of their Files (${browsedMode}).`
+  if (!canAsk) {
+    return 'Nothing else in their Files can be reached in this reply, not even by listing or searching My files as a whole: their app cannot show a request to browse. If you need more, ask them in your reply to mention it.'
+  }
   return [
     'Anything else in their Files, including listing or searching My files as a whole, needs their permission:',
     'the first command that reaches further asks them and waits up to 3 minutes for the answer (do not give such commands a shorter timeout).',
@@ -27,7 +30,7 @@ function describeBrowsing(scope: FileScope): string {
 }
 
 /** The system prompt section that tells the agent what the user mentioned from Files and how to reach it. */
-export function describeFileScope(scope: FileScope): string {
+export function describeFileScope(scope: FileScope, options: { canAskToBrowse?: boolean } = {}): string {
   const lines = scope.attached.map((item) => {
     if (!item.node) return `- All of their files (${MODE_LABELS[item.mode]})`
     const folder = item.node.kind === 'folder' ? '/' : ''
@@ -39,7 +42,7 @@ export function describeFileScope(scope: FileScope): string {
     ...lines.length
       ? ['They mentioned these items in this chat (messages link to them as `/files/d/<id>` or `/files/f/<id>`):', ...lines]
       : ['They have not mentioned any items from Files in this chat.'],
-    ...[describeBrowsing(scope)].filter(Boolean),
+    ...[describeBrowsing(scope, options.canAskToBrowse ?? true)].filter(Boolean),
     'Paths start at the top of My files, e.g. `Projects/Plan.md`; inside a mentioned folder the nearest mentioned item above decides the access.',
     'Work with Files through the `pulpo files` command in bash; run `pulpo files --help` for details:',
     '  pulpo files ls|tree [path]         list items          pulpo files cat <path>    print a document or text file',

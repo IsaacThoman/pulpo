@@ -520,6 +520,8 @@ export const responses = pgTable('responses', {
   modelId: text('model_id').notNull().references(() => models.id),
   actualModelId: text('actual_model_id').references(() => models.id),
   origin: text('origin').notNull().default('web'),
+  // What the app that sent the message can do (CLIENT_FEATURES), e.g. answer a Files permission request.
+  clientFeatures: jsonb('client_features').$type<string[]>().notNull().default([]),
   pricingVersionId: uuid('pricing_version_id').references(() => modelPricingVersions.id),
   openaiResponseId: text('openai_response_id'),
   previousResponseId: uuid('previous_response_id'),
@@ -571,6 +573,7 @@ export const queuedMessages = pgTable('queued_messages', {
   // Analytics attribution captured when the message was queued, applied when it dispatches.
   clientPlatform: text('client_platform'),
   clientVersion: text('client_version'),
+  clientFeatures: jsonb('client_features').$type<string[]>().notNull().default([]),
   usedDictation: boolean('used_dictation'),
   position: integer('position').notNull(),
   status: text('status').notNull().default('pending'),

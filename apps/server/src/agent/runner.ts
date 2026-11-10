@@ -11,7 +11,7 @@ import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messag
 import { mistralConversationsApi } from '@earendil-works/pi-ai/api/mistral-conversations.lazy'
 import { anthropicAgentReasoning, chatCompletionsSamplingParameters, explicitReasoningEffort, mistralAgentPayload, piModelForProvider } from '../upstream/pi-model.js'
 import type { Api, AssistantMessage, Context, Message, Model, SimpleStreamOptions, ThinkingLevel, ToolChoice } from '@earendil-works/pi-ai'
-import { agentCostLimitMicros, findCostLimitItem, findCostLimitItems, findFilesPermissionItems, toolImagePreviewSchema, type FilesPermissionItem, type ToolImagePreview, type CompactionItem, type CostLimitItem, type FileChangesItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
+import { agentCostLimitMicros, findCostLimitItem, findCostLimitItems, findFilesPermissionItems, toolImagePreviewSchema, type ClientFeature, type FilesPermissionItem, type ToolImagePreview, type CompactionItem, type CostLimitItem, type FileChangesItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
@@ -181,7 +181,9 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   // on. Turns sent through admin chat access never reach the owner's Files; temporary chats have none.
   const filesAllowed = parseAuthSettings(attachmentSettingsRow?.value).filesEnabled && record.response.origin !== 'admin_chat' && !chatState?.temporary
   const fileScope = filesAllowed ? await loadChatFileScope(record.response.userId, record.response.chatId) : null
-  const fileScopeContext = fileScope ? describeFileScope(fileScope) : ''
+  // Only an app that said it can show the request is asked; otherwise the reply would wait for nobody.
+  const canAskToBrowseFiles = record.response.clientFeatures.includes('files-permission' satisfies ClientFeature)
+  const fileScopeContext = fileScope ? describeFileScope(fileScope, { canAskToBrowse: canAskToBrowseFiles }) : ''
   const memory = await loadGenerationMemory({
     chat: chatState,
     memoryEnabled: preferenceValues.memoryEnabled,
@@ -812,7 +814,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       await snapshotIfDue()
     },
     // Holds the command while the user decides; the answer route records the grant itself.
-    requestPermission: async ({ command, path }, signal) => {
+    requestPermission: !canAskToBrowseFiles ? undefined : async ({ command, path }, signal) => {
       const setItem = (item: FilesPermissionItem) => {
         const index = filesPermissionItems.findIndex((candidate) => candidate.id === item.id)
         if (index >= 0) filesPermissionItems[index] = item

@@ -36,12 +36,14 @@ describe.skipIf(!enabled)('chat Files scope', () => {
     const notes = await files.folder('Notes')
     const trashed = await files.folder('Old')
     await db.update(fileNodes).set({ trashedAt: new Date() }).where(eq(fileNodes.id, trashed))
-    const text = `Look at [Plan](/files/d/${plan}) and https://pulpo.baby/files/f/${notes}, /files/f/${trashed}, /files/d/${crypto.randomUUID()}`
+    const text = `Look at [Plan](/files/d/${plan}) and [Notes](/files/f/${notes}), [Old](/files/f/${trashed}), [gone](/files/d/${crypto.randomUUID()})`
     expect(await scopeWithMessageReferences(db, files.userId, [], text)).toEqual([plan, notes])
+    // Only links grant: a pasted path, or a link shown as code, is text.
+    expect(await scopeWithMessageReferences(db, files.userId, [], `https://pulpo.baby/files/f/${notes} /files/d/${plan} \`[Plan](/files/d/${plan})\``)).toBeUndefined()
     expect(await scopeWithMessageReferences(db, files.userId, [plan, notes], text)).toBeUndefined()
     expect(await scopeWithMessageReferences(db, crypto.randomUUID(), [], text)).toBeUndefined()
     const full = ['root', ...Array.from({ length: 49 }, () => crypto.randomUUID())]
-    const next = (await scopeWithMessageReferences(db, files.userId, full, `/files/d/${plan}`))!
+    const next = (await scopeWithMessageReferences(db, files.userId, full, `[Plan](/files/d/${plan})`))!
     expect(next).toHaveLength(50)
     expect(next[0]).toBe('root')
     expect(next.at(-1)).toBe(plan)

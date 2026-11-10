@@ -120,6 +120,20 @@ describe.skipIf(!enabled)('pulpo files relay', () => {
     expect(files.permissionRequests).toHaveLength(2)
   })
 
+  it('refuses at once when the app that sent the message cannot show the request', async () => {
+    const projects = await files.folder('Projects')
+    await files.blob('notes.txt', projects, 'in scope')
+    await files.attach({ [projects]: undefined })
+    files.canAskPermission = false
+    await files.newReply()
+    expect(await files.error('ls', {})).toMatch(/their app cannot show a request to browse/)
+    expect(await files.error('cat', { path: 'Nope.md' })).toMatch(/cannot show a request/)
+    expect(files.permissionRequests).toEqual([])
+    // Mentioned items still work.
+    expect((await files.ok('cat', { path: 'Projects/notes.txt' })).output).toContain('in scope')
+    files.canAskPermission = true
+  })
+
   it('browses everything once allowed, changing browsed items only by suggestion', async () => {
     const projects = await files.folder('Projects')
     const secret = await files.folder('Secret')

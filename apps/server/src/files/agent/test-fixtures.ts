@@ -81,6 +81,8 @@ export async function filesFixture(options: { storageLimitBytes?: number } = {})
     permissionRequests: [] as Array<{ command: string; path: string }>,
     /** How the user answers a permission request; unset, nobody is asked and the request is refused. */
     answerPermission: undefined as undefined | ((request: { command: string; path: string }) => Promise<FilesPermissionOutcome>),
+    /** False for a reply whose app cannot show permission requests. Read when a reply's first command runs. */
+    canAskPermission: true,
     /** Starts another chat with a reply; `relay` and `attach` work on it from then on. */
     async newChat() {
       fixture.chatId = randomUUID()
@@ -103,7 +105,7 @@ export async function filesFixture(options: { storageLimitBytes?: number } = {})
       handler ??= createFilesRelay({
         userId, chatId: fixture.chatId, responseId: fixture.responseId, workspace, maxOutputBytes: 50_000,
         onChanged: (count) => { changes.push(count) },
-        requestPermission: async (request) => {
+        requestPermission: !fixture.canAskPermission ? undefined : async (request) => {
           fixture.permissionRequests.push(request)
           return fixture.answerPermission ? fixture.answerPermission(request) : 'denied'
         },
