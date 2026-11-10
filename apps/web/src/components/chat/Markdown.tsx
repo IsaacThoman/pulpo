@@ -1,9 +1,10 @@
-import { memo, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import ReactMarkdown, { type Components, type Options, type UrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
-import { Check, Copy, Download, ImageIcon, Play } from 'lucide-react'
+import { Check, Copy, Download, FileText, Folder, ImageIcon, Play } from 'lucide-react'
+import { Link, useInRouterContext } from 'react-router-dom'
 import { normalizeMathDelimiters, unwrapBoxedMinipages } from '@pulpo/client-core'
 import { QUIZ_LANGUAGE } from '@pulpo/client-core/quiz'
 import 'katex/dist/katex.min.css'
@@ -18,6 +19,31 @@ import { rehypeDisplayMathFallback, rehypeMarkDisplayMath } from '@/lib/display-
 import { remarkSoftBreaks } from '@/lib/soft-breaks'
 import { rehypeStreamCaret, STREAM_CARET_CLASS } from '@/lib/stream-caret'
 import { useCodePreview } from '@/stores/codePreview'
+
+const FILES_ITEM_PATH = /^\/files\/(d|f)\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** The in-app path of a link to an item in this instance's Files, as messages mention them. */
+function filesItemPath(href: string | undefined): string | null {
+  if (!href) return null
+  try {
+    const url = new URL(href, window.location.origin)
+    if (url.origin !== window.location.origin || url.search || url.hash) return null
+    return FILES_ITEM_PATH.test(url.pathname) ? url.pathname : null
+  } catch {
+    return null
+  }
+}
+
+/** A Files item mentioned in a message: a chip that opens it in the app. */
+function FilesItemLink({ path, children }: { path: string; children: ReactNode }) {
+  const inRouter = useInRouterContext()
+  const Icon = path.startsWith('/files/f/') ? Folder : FileText
+  const className = 'mx-0.5 inline-flex max-w-full items-baseline gap-1 rounded-md bg-muted px-1.5 font-medium no-underline [overflow-wrap:anywhere] hover:bg-accent'
+  const content = <><Icon className="size-3.5 shrink-0 translate-y-0.5 text-muted-foreground" aria-hidden="true" />{children}</>
+  return inRouter
+    ? <Link to={path} className={className}>{content}</Link>
+    : <a href={path} className={className}>{content}</a>
+}
 
 function CodeBlock({ language, code, caret }: { language: string; code: string; caret: boolean }) {
   const [copied, setCopied] = useState(false)
@@ -145,8 +171,10 @@ const markdownComponents: Components = {
       {children}
     </blockquote>
   ),
-  a: ({ children, href }) => (
-    <a
+  a: ({ children, href }) => {
+    const filesPath = filesItemPath(href)
+    if (filesPath) return <FilesItemLink path={filesPath}>{children}</FilesItemLink>
+    return <a
       href={href}
       target="_blank"
       rel="noreferrer"
@@ -154,7 +182,7 @@ const markdownComponents: Components = {
     >
       {children}
     </a>
-  ),
+  },
   table: ({ children }) => (
     <div tabIndex={0} role="region" aria-label={ui("Table")} className="my-3 max-w-full overflow-x-auto rounded-lg border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
       <table className="min-w-full text-sm">{children}</table>

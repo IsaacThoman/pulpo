@@ -196,6 +196,8 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
       showResponseCost: defaults.showResponseCost,
       agentCostLimitEnabled: defaults.agentCostLimitEnabled,
       agentCostLimitMicros: defaults.agentCostLimitMicros,
+      agentFilesAskBeforeBrowsing: defaults.agentFilesAskBeforeBrowsing,
+      agentFileChangeMode: defaults.agentFileChangeMode,
       customInstructions: defaults.customInstructions,
       instructionPresetSelections: {},
       favoriteModelIds: [],

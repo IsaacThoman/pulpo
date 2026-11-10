@@ -115,6 +115,10 @@ export interface Chat {
   fileScopeIds?: string[]
   /** What the agent may do with each of them; missing entries use the default mode. */
   fileScopeAccess?: Record<string, FileAccessMode>
+  /** What the agent may change in Files in this chat. */
+  fileChangeMode?: FileAccessMode
+  /** The user let the agent browse all of their Files in this chat. */
+  filesBrowseAllowed?: boolean
   expiresAt: number | null
   expired: boolean
   shareId?: string

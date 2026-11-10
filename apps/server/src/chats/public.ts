@@ -128,6 +128,8 @@ export function toPublicChat(chat: ChatRow) {
     temporary: chat.temporary,
     fileScopeIds: chat.fileScopeIds,
     fileScopeAccess: chat.fileScopeAccess,
+    fileChangeMode: chat.fileChangeMode,
+    filesBrowseAllowed: chat.filesBrowseAllowed,
     activeResponseId: chat.activeResponseId,
     activeBranchLeafId: chat.activeBranchLeafId,
     expiresAt: chat.expiresAt?.toISOString() ?? null,

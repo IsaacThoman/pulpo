@@ -3,7 +3,8 @@ type AsyncAction = (...args: any[]) => Promise<unknown>
 type ProductionActions = {
   renameChat: AsyncAction
   setChatFileScope: AsyncAction
-  setChatFileAccess: AsyncAction
+  setChatFileChangeMode: AsyncAction
+  revokeChatFilesBrowse: AsyncAction
   togglePin: AsyncAction
   moveChat: AsyncAction
   archiveChat: AsyncAction
@@ -25,7 +26,7 @@ type ProductionActions = {
 const noop: AsyncAction = async () => undefined
 
 export const productionActions: ProductionActions = {
-  renameChat: noop, setChatFileScope: noop, setChatFileAccess: noop, togglePin: noop, moveChat: noop, archiveChat: noop, setChatAutoExpiration: noop, trashChat: noop, trashAllChats: noop, restoreChat: noop,
+  renameChat: noop, setChatFileScope: noop, setChatFileChangeMode: noop, revokeChatFilesBrowse: noop, togglePin: noop, moveChat: noop, archiveChat: noop, setChatAutoExpiration: noop, trashChat: noop, trashAllChats: noop, restoreChat: noop,
   permanentlyDeleteChat: noop, duplicateChat: noop, shareChat: noop, createFolder: noop,
   renameFolder: noop, deleteFolder: noop, emptyTrash: noop, setPreference: noop, toggleFavoriteModel: noop,
 }

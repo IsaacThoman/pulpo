@@ -1,3 +1,4 @@
+import { scopeWithMessageReferences } from '../chats/file-scope.js'
 import { canContinueWorkspaceScope } from '../agent/workspace-scope.js'
 import { MAX_MESSAGE_ATTACHMENTS } from '@pulpo/contracts'
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm'
@@ -278,6 +279,7 @@ export async function createResponse(options: CreateResponseOptions) {
       idempotencyScope,
       idempotencyFingerprint: options.idempotencyFingerprint,
       origin,
+      clientFeatures: origin === 'web' ? options.client?.features ?? [] : [],
     }).onConflictDoNothing().returning({ id: responses.id })
     if (!inserted) {
       const [existing] = await tx.select().from(responses).where(or(
@@ -288,7 +290,12 @@ export async function createResponse(options: CreateResponseOptions) {
       if (options.idempotencyFingerprint && existing.idempotencyFingerprint && options.idempotencyFingerprint !== existing.idempotencyFingerprint) throw new AppError(409, 'idempotency_conflict', 'The idempotency key was already used with a different request')
       return { existing }
     }
+    // Files items the user linked in a new or edited message become available to the agent here.
+    const fileScopeIds = options.branchReason !== 'regenerate' && origin === 'web' && !current.temporary
+      ? await scopeWithMessageReferences(tx, options.ownerUserId, current.fileScopeIds, options.input.input)
+      : undefined
     const [updatedChat] = await tx.update(chats).set({
+      fileScopeIds,
       activeResponseId: id, activeBranchLeafId: id, workspaceScopeId,
       updatedAt: acceptedAt, expiresAt: temporaryChatExpiryValue(temporaryChatExpiresAt(acceptedAt)),
     }).where(eq(chats.id, chat.id)).returning({ temporary: chats.temporary, expiresAt: chats.expiresAt })

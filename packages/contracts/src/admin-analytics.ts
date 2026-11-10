@@ -16,6 +16,24 @@ export function parseClientPlatformHeader(value: string | null | undefined): { p
   return { platform: platform.data, version }
 }
 
+/**
+ * Header listing what this client build can do (comma separated), sent with the platform header.
+ * The server reads it so a reply never waits on a prompt the app that sent the message cannot show.
+ */
+export const CLIENT_FEATURES_HEADER = 'x-pulpo-client-features'
+/** `files-permission`: shows and answers an Agent reply's request to browse Files. */
+export const CLIENT_FEATURES = ['files-permission'] as const
+export type ClientFeature = typeof CLIENT_FEATURES[number]
+/** The header value for a client built from this code. */
+export const CLIENT_FEATURES_HEADER_VALUE = CLIENT_FEATURES.join(',')
+
+/** The known features a client listed; unknown ones (from a newer client) are dropped. */
+export function parseClientFeaturesHeader(value: string | null | undefined): ClientFeature[] {
+  if (!value) return []
+  const listed = new Set(value.toLowerCase().split(',').map((feature) => feature.trim()))
+  return CLIENT_FEATURES.filter((feature) => listed.has(feature))
+}
+
 export const analyticsRangeSchema = z.enum(['1h', '24h', '7d', '30d', '90d', 'all', 'custom'])
 export type AnalyticsRange = z.infer<typeof analyticsRangeSchema>
 export const analyticsBucketSchema = z.enum(['hour', 'day'])

@@ -8,6 +8,7 @@ import { CodePreviewPanel } from '@/components/chat/CodePreviewPanel'
 import { timeAgo } from '@/lib/format'
 import { ui } from '@/i18n/ui'
 import { useDocumentTitle } from '@/lib/document-title'
+import { referencePreviewText } from '@pulpo/client-core/files'
 
 interface SharedModel {
   id: string
@@ -48,7 +49,8 @@ function responseText(response: SharedResponse): string {
 
 function SharedResponseView({ response }: { response: SharedResponse }) {
   const user = [...response.input].reverse().find((item) => item.role === 'user')
-  const prompt = contentText(user?.content)
+  // Files items the sender mentioned are theirs alone: show what they typed (else the items' names), not links.
+  const prompt = referencePreviewText(contentText(user?.content))
   const answer = responseText(response)
   const modelName = response.model?.name ?? response.modelId
 

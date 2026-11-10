@@ -10,7 +10,7 @@ import { formatSize, joinPath, type CommandContext, type CommandOutput } from '.
 import { readProposedMarkdown } from './docs.js'
 import { createLineMatcher } from './matcher.js'
 import { MODE_LABELS } from './prompt.js'
-import { FilesCommandError, isAllFiles, locateExisting, modeFor, scopePathOf, type Located } from './scope.js'
+import { FilesCommandError, locateExisting, modeFor, scopePathOf } from './scope.js'
 import { agentBlobView, readsAsText } from './versions.js'
 import { walkTree, type WalkedNode } from './walk.js'
 
@@ -38,7 +38,7 @@ async function pendingNotes(ctx: CommandContext, nodes: FileNodeRow[]): Promise<
     if (row.kind === 'move') {
       const { parentId, name } = parsePlace(row.after) ?? { parentId: null, name: '?' }
       const folder = await scopePathOf(ctx.scope, parentId)
-      add(row.nodeId, `you suggested moving it to ${folder === null ? `"${name}" outside the attached items` : `"${joinPath(folder, name)}"`}`)
+      add(row.nodeId, `you suggested moving it to ${folder === null ? `"${name}" outside what you can see` : `"${joinPath(folder, name)}"`}`)
     }
   }
   return notes
@@ -58,15 +58,9 @@ function itemLine(ctx: CommandContext, item: { node: FileNodeRow; path: string }
   return `${item.path}${item.node.kind === 'folder' ? '/' : ''}  (${describeNode(ctx, item.node, notes)})`
 }
 
-/** `ls [path] [-R]`: the attached items, or what a folder holds. */
+/** `ls [path] [-R]`: what a folder (by default, My files) holds. */
 export async function listCommand(ctx: CommandContext, args: { path?: string; recursive?: boolean }): Promise<CommandOutput> {
-  const path = args.path ?? ''
-  if (!path.replace(/\//g, '').trim() && !isAllFiles(ctx.scope)) {
-    const roots = ctx.scope.roots.map((root) => ({ node: root.node!, path: root.label }))
-    const notes = await pendingNotes(ctx, roots.map((root) => root.node))
-    return { output: roots.map((root) => itemLine(ctx, root, notes)).join('\n') }
-  }
-  const located = await locateExisting(ctx.scope, path)
+  const located = await locateExisting(ctx.scope, args.path ?? '')
   if (located.node && located.node.kind !== 'folder') {
     return { output: itemLine(ctx, { node: located.node, path: located.path }, await pendingNotes(ctx, [located.node])) }
   }
@@ -82,9 +76,7 @@ export async function listCommand(ctx: CommandContext, args: { path?: string; re
 
 /** `tree [path] [--depth N]`: an indented outline of a folder. */
 export async function treeCommand(ctx: CommandContext, args: { path?: string; depth?: number }): Promise<CommandOutput> {
-  const starts: Located[] = !(args.path ?? '').replace(/\//g, '').trim() && !isAllFiles(ctx.scope)
-    ? ctx.scope.roots.map((root) => ({ node: root.node, path: root.label }))
-    : [await locateExisting(ctx.scope, args.path ?? '')]
+  const starts = [await locateExisting(ctx.scope, args.path ?? '')]
   const lines: string[] = []
   let truncated = false
   for (const start of starts) {
@@ -133,11 +125,9 @@ export async function catCommand(ctx: CommandContext, args: { path: string }): P
   return { output: text }
 }
 
-/** The files a search covers: everything under `path`, or under every attached item. */
+/** The files a search covers: everything under `path` (by default, My files). */
 async function searchedFiles(ctx: CommandContext, path: string | undefined): Promise<{ files: WalkedNode[]; truncated: boolean }> {
-  const starts: Located[] = path?.replace(/\//g, '').trim() || isAllFiles(ctx.scope)
-    ? [await locateExisting(ctx.scope, path ?? '')]
-    : ctx.scope.roots.map((root) => ({ node: root.node, path: root.label }))
+  const starts = [await locateExisting(ctx.scope, path ?? '')]
   const files: WalkedNode[] = []
   let truncated = false
   for (const start of starts) {

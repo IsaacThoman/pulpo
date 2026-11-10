@@ -47,6 +47,26 @@ describe('buildAgentOutput', () => {
     expect(output.at(-1)).toEqual(fileChanges)
   })
 
+  it('shows a Files permission request after the turn whose command asked', () => {
+    const request = {
+      id: 'response:files-permission:1', type: 'pulpo_files_permission' as const, status: 'allowed' as const,
+      command: 'ls', path: '', requested_at: '2026-11-09T00:00:00.000Z', expires_at: '2026-11-09T00:03:00.000Z', agent_turn: 1,
+    }
+    const output = buildAgentOutput({
+      messages: [
+        { role: 'assistant', content: [{ type: 'toolCall', id: 't1', name: 'bash', arguments: {} }] } as never,
+        { role: 'toolResult', toolCallId: 't1', toolName: 'bash', content: [{ type: 'text', text: 'ok' }] } as never,
+        { role: 'assistant', content: [{ type: 'text', text: 'Done.' }] } as never,
+      ],
+      skipMessageCount: 0,
+      toolItems: new Map([['t1', { id: 't1', type: 'pulpo_tool', tool: 'bash', arguments: {}, status: 'completed', output: 'ok' }]]),
+      filesPermissionItems: [request, { ...request, id: 'response:files-permission:2', agent_turn: undefined }],
+      terminal: true,
+    }) as Array<{ type?: string; id?: string }>
+    expect(output.map((item) => item.type)).toEqual(['pulpo_tool', 'pulpo_files_permission', 'message', 'pulpo_files_permission'])
+    expect(output[1]!.id).toBe('response:files-permission:1')
+  })
+
   it('places the cost limit pause after the tool calls of the turn it interrupted', () => {
     const costLimit = {
       id: 'response:cost-limit', type: 'pulpo_cost_limit' as const, status: 'continued' as const,

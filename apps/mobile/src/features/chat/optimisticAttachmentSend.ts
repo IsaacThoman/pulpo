@@ -1,3 +1,4 @@
+import { referencePreviewText } from '@pulpo/client-core/files'
 import { truncateChatTitle } from '@pulpo/contracts'
 import type { CoordinatedUploadState } from './attachmentUploadCoordinator'
 
@@ -38,7 +39,8 @@ export function createOptimisticSendIdentity(input: {
   createId: () => string
 }): OptimisticSendIdentity {
   const responseId = input.createId()
-  const trimmed = input.content.trim()
+  // A message's trailing Files links are named, not spelled out (see referencePreviewText).
+  const trimmed = referencePreviewText(input.content.trim()).trim()
   const title = truncateChatTitle(trimmed
     ? trimmed.split(/\s+/).slice(0, 7).join(' ')
     : input.firstAttachmentName ?? '') || 'Attachment chat'

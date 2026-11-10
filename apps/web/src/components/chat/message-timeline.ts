@@ -1,4 +1,4 @@
-import type { CompactionItem, CostLimitItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
+import type { CompactionItem, CostLimitItem, FilesPermissionItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
 
 export type ToolItem = {
   type: 'pulpo_tool'
@@ -60,7 +60,12 @@ export type MessageStep = {
   text: string
 }
 
-export type ActivityStep = ReasoningStep | ToolStep | WorkspaceStep | CompactionStep | RecallStep | CostLimitStep | MessageStep
+export type FilesPermissionStep = {
+  kind: 'files_permission'
+  permission: FilesPermissionItem
+}
+
+export type ActivityStep = ReasoningStep | ToolStep | WorkspaceStep | CompactionStep | RecallStep | CostLimitStep | FilesPermissionStep | MessageStep
 
 export type ActivitySegment = {
   kind: 'activity'
@@ -144,6 +149,11 @@ export function buildTimeline(outputItems: unknown[], showReasoning: boolean): T
     if (type === 'pulpo_cost_limit') {
       if (!activity) activity = { kind: 'activity', steps: [], active: false }
       activity.steps.push({ kind: 'cost_limit', costLimit: item as CostLimitItem })
+      continue
+    }
+    if (type === 'pulpo_files_permission') {
+      if (!activity) activity = { kind: 'activity', steps: [], active: false }
+      activity.steps.push({ kind: 'files_permission', permission: item as FilesPermissionItem })
       continue
     }
     if (type === 'pulpo_compaction') {
