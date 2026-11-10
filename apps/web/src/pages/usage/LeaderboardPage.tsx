@@ -42,9 +42,9 @@ const RANGES: { id: TimeRange; label: string }[] = [
   { id: 'all', label: "All" },
 ]
 const METRICS: { id: LBMetric; label: string }[] = [
-  { id: 'tokens', label: "Tokens" },
-  { id: 'cost', label: "USD" },
   { id: 'calls', label: "Calls" },
+  { id: 'cost', label: "USD" },
+  { id: 'tokens', label: "Tokens" },
   // Friends and Pool leaderboards never see other people's balances.
   { id: 'balance', label: "Balance" },
 ]
@@ -120,15 +120,28 @@ function axisLabelWidth(text: string): number {
   return measureContext?.measureText(text).width ?? text.length * AXIS_FONT_SIZE * 0.6
 }
 
+interface RankedPerson {
+  userId: string
+  name: string
+  username: string
+  /** Someone else in the ranking has the same display name. */
+  sharedName: boolean
+}
+
+/** A display name, with the username added when someone else in the ranking goes by the same name. */
+function distinctName(person: RankedPerson): string {
+  return person.sharedName ? `${person.name} (@${person.username})` : person.name
+}
+
 /** A ranked person's axis name as a link to their profile, rotated and ellipsized like the plain labels. */
 function ProfileAxisTick({ person, linkState, ...tick }: XAxisTickContentProps & {
-  person: { name: string; username: string }
+  person: RankedPerson
   linkState: ProfileLinkState | undefined
 }) {
   const to = `/${person.username}`
   const href = useHref(to)
   const onClick = useLinkClickHandler(to, { state: linkState })
-  return <a href={href} onClick={onClick} aria-label={person.name} className="group/axis-name focus-visible:outline-2 focus-visible:outline-ring">
+  return <a href={href} onClick={onClick} aria-label={distinctName(person)} className="group/axis-name focus-visible:outline-2 focus-visible:outline-ring">
     <Text
       {...tick as TextProps}
       {...AXIS_TICK}
@@ -145,7 +158,7 @@ function barColor(u: MonitorUser): string {
 
 interface TipPayloadItem {
   value?: number | string
-  payload?: { name?: string; rank?: number }
+  payload?: RankedPerson & { rank: number }
 }
 
 interface LeaderboardActivity {
@@ -189,7 +202,7 @@ function LeaderboardTip({
   return (
     <div className="rounded-md border bg-popover px-3 py-2 text-xs shadow-md">
       <div className="font-medium">
-        #{p.payload?.rank} {p.payload?.name}
+        #{p.payload?.rank} {p.payload && distinctName(p.payload)}
       </div>
       <div className="mt-0.5 flex items-center gap-2">
         <span className="text-muted-foreground">{metricLabel(metric)}</span>
@@ -220,7 +233,7 @@ export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
   onScopeChange?: (scope: CircleScope) => void
 }) {
   const [range, setRange] = useState<TimeRange>('30d')
-  const [metric, setMetric] = useState<LBMetric>('tokens')
+  const [metric, setMetric] = useState<LBMetric>('calls')
   const animationSpeed = useSettings((state) => state.animationSpeed)
   const animationDuration = scaledAnimationDuration(DEFAULT_CHART_ANIMATION_DURATION_MS, animationSpeed)
   const instanceMode = scope === 'instance'
@@ -306,22 +319,28 @@ export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
         (a, b) =>
           rowValue(b, metric) - rowValue(a, metric) ||
           b.cost - a.cost ||
-          displayName(a.user).localeCompare(displayName(b.user))
+          displayName(a.user).localeCompare(displayName(b.user)) ||
+          // People can share a display name, so their order still needs a stable tiebreak.
+          (a.user.id < b.user.id ? -1 : a.user.id > b.user.id ? 1 : 0)
       )
   }, [users, metric])
 
-  const chartData = useMemo(
-    () =>
-      rows.map((r, i) => ({
-        userId: r.user.id,
-        name: displayName(r.user),
-        username: r.user.username,
-        value: rowValue(r, metric),
-        fill: barColor(r.user),
-        rank: i + 1,
-      })),
-    [rows, metric]
-  )
+  const chartData = useMemo(() => {
+    const nameCounts = new Map<string, number>()
+    for (const r of rows) nameCounts.set(displayName(r.user), (nameCounts.get(displayName(r.user)) ?? 0) + 1)
+    return rows.map((r, i) => ({
+      userId: r.user.id,
+      name: displayName(r.user),
+      username: r.user.username,
+      sharedName: (nameCounts.get(displayName(r.user)) ?? 0) > 1,
+      value: rowValue(r, metric),
+      fill: barColor(r.user),
+      rank: i + 1,
+    }))
+  }, [rows, metric])
+  // The axis is keyed by user id, since recharts looks up the hovered and focused person by
+  // axis value and two people can share a display name; ticks still show the name.
+  const axisNames = useMemo(() => new Map(chartData.map((d) => [d.userId, axisLabel(d.name)])), [chartData])
   // Rotated labels hang below and to the left of their tick, so reserve room
   // for the longest one and for the first one past the y-axis.
   const angledLabels = chartData.length > 8
@@ -391,7 +410,7 @@ export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
               <BarChart data={chartData} margin={{ top: 4, right: 4, left: axisSpace.left, bottom: 0 }}>
                 <CartesianGrid vertical={false} stroke="var(--border)" />
                 <XAxis
-                  dataKey="name"
+                  dataKey="userId"
                   tick={linkProfiles ? (tick: XAxisTickContentProps) => {
                     const person = chartData[tick.payload.index]
                     return person && <ProfileAxisTick {...tick} person={person} linkState={profileLinkState} />
@@ -399,7 +418,7 @@ export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
                   tickLine={false}
                   axisLine={{ stroke: 'var(--border)' }}
                   interval={0}
-                  tickFormatter={axisLabel}
+                  tickFormatter={(userId: string) => axisNames.get(userId) ?? ''}
                   angle={angledLabels ? -AXIS_LABEL_ANGLE : 0}
                   textAnchor={angledLabels ? 'end' : 'middle'}
                   height={axisSpace.height}
