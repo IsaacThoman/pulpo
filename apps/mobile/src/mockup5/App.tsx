@@ -3142,15 +3142,15 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   );
 }
 
-/** Whether this transcript's messages can be reported; an expired temporary chat is read-only. Off unless a transcript opts in. */
+/** Whether this transcript's responses can be reported; an expired temporary chat is read-only. Off unless a transcript opts in. */
 const MessageReportsContext = createContext(false);
 
 function useCanReportMessage(message: Message): boolean {
   const enabled = useSessionStore((state) => state.config?.capabilities.messageReports === true);
   const transcriptAllows = useContext(MessageReportsContext);
-  // Like on web, a response can be reported once it has finished.
-  const settled = message.role === 'user' || (message.status !== 'queued' && message.status !== 'streaming');
-  return enabled && transcriptAllows && Boolean(message.chatId) && settled;
+  // Like on web, only model responses can be reported, once they have finished.
+  const settled = message.status !== 'queued' && message.status !== 'streaming';
+  return enabled && transcriptAllows && Boolean(message.chatId) && message.role === 'assistant' && settled;
 }
 
 function NativeReportMessageButton({ onPress }: { onPress: () => void }) {
@@ -3525,7 +3525,6 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onOpen, onRege
 }) {
   const { styles } = useChatStyles();
   const runMessageAction = useMessageActionRunner({ message, onEdit, onRegenerate });
-  const canReport = useCanReportMessage(message) && message.role === 'user' && !message.text;
   const attachmentOnly = message.role === 'user' && !message.text;
   // Message attachments carry their server id; optimistic ones are uploading until `ready`.
   const uploaded = !attachment.state || attachment.state === 'ready';
@@ -3540,7 +3539,6 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onOpen, onRege
           { label: 'Edit message', icon: 'pencil', onPress: () => runMessageAction('edit') },
           { label: 'Delete message', icon: 'trash', destructive: true, onPress: () => runMessageAction('delete') },
         ] : []),
-        ...(canReport ? [{ label: 'Report message', icon: 'pulpo.frown', onPress: () => runMessageAction('report') }] : []),
       ]}
       iosItems={(
         <>
@@ -3549,7 +3547,6 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onOpen, onRege
             <SwiftUIButton label="Edit message" systemImage="pencil" onPress={() => runMessageAction('edit')} />
             <SwiftUIButton label="Delete message" role="destructive" systemImage="trash" onPress={() => runMessageAction('delete')} />
           </> : null}
-          {canReport && <NativeReportMessageButton onPress={() => runMessageAction('report')} />}
         </>
       )}
     >
