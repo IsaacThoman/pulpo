@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { Lock } from 'lucide-react'
 import { useAuth } from '@/stores/auth'
 import { ApiError, apiRequest } from '@/lib/api'
 import { queryClient } from '@/lib/query-client'
@@ -21,8 +22,18 @@ function retryUnlessDenied(failures: number, error: Error): boolean {
   return typeof retry === 'function' ? retry(failures, error) : Boolean(retry) && failures < 2
 }
 
+/** Shown in place of usage that the profile owner hasn't shared with the viewer, without naming their setting. */
+export function UsagePrivateNotice({ name }: { name: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-2 px-6 py-12 text-center text-sm text-muted-foreground">
+      <Lock className="size-5" aria-hidden />
+      <p>{ui("{{name}} hasn't shared their usage with you.", { name })}</p>
+    </div>
+  )
+}
+
 /** Another person's settled usage on their profile, without balances. */
-export function ProfileUsage({ username }: { username: string }) {
+export function ProfileUsage({ username, name }: { username: string; name: string }) {
   const viewerId = useAuth((state) => state.user?.id)
   const [range, setRange] = useState<TimeRange>('30d')
   const path = `/api/profiles/${encodeURIComponent(username)}/usage`
@@ -59,7 +70,7 @@ export function ProfileUsage({ username }: { username: string }) {
     if (usagePrivate) void queryClient.invalidateQueries({ queryKey: ['friend-profile', username] })
   }, [usagePrivate, username])
 
-  if (usagePrivate) return null
+  if (usagePrivate) return <UsagePrivateNotice name={name} />
 
   return (
     <UsageOverview
