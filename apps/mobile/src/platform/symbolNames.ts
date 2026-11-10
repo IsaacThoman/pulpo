@@ -158,6 +158,8 @@ export const materialSymbolNames: Record<string, string> = {
   "wallet.bifold.fill": "account_balance_wallet",
   "calendar": "calendar_today",
   "person.2.fill": "group",
+  "person.2": "group",
+  "chart.bar.fill": "leaderboard",
   "paintpalette.fill": "palette",
   "paintpalette": "palette",
   "nosign": "block",

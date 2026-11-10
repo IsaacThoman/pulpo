@@ -23,6 +23,7 @@ import {
   accessibilityLabel,
   autocorrectionDisabled,
   buttonStyle,
+  contentShape,
   controlSize,
   disabled,
   font,
@@ -30,6 +31,7 @@ import {
   frame,
   labelStyle,
   scrollDismissesKeyboard,
+  shapes,
   textFieldStyle,
   textInputAutocapitalization,
   tint,
@@ -52,6 +54,7 @@ const SEARCH_PLACEHOLDER = 'Name or username'
 const POOL_SEATS_FOOTER = 'Pending invitations reserve a Pool seat.'
 const TRANSFER_FIRST = 'Transfer ownership before leaving this Pool.'
 const LEAVE_CURRENT_FIRST = 'Leave your current Pool before joining another.'
+const LEADERBOARD_DETAIL = 'Compare usage with your friends.'
 
 /** Adding and dismissing the same suggestion exclude each other. */
 function suggestionBusy(pending: ReadonlySet<string>, profileId: string): boolean {
@@ -68,7 +71,10 @@ function searchStatus(model: FriendsScreenModel): string | null {
 
 /** Friends, friend requests, and the viewer's Pool, as on the web's Friends page. */
 export function FriendsScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Friends'>) {
-  const model = useFriendsScreen({ openProfile: (profile) => navigation.push('FriendProfile', { username: profile.username }) })
+  const model = useFriendsScreen({
+    openProfile: (profile) => navigation.push('FriendProfile', { username: profile.username }),
+    openLeaderboard: () => navigation.navigate('Leaderboard'),
+  })
   if (Platform.OS === 'ios') return <NativeFriends model={model} />
   return <MaterialFriends model={model} onBack={() => navigation.goBack()} />
 }
@@ -178,6 +184,17 @@ function NativeFriends({ model }: { model: FriendsScreenModel }) {
         <SwiftUIButton label="Leave Pool" systemImage="rectangle.portrait.and.arrow.right" role="destructive" onPress={actions.leavePool} modifiers={[disabled(busy || overview.mustTransfer), foregroundStyle(busy || overview.mustTransfer ? theme.tertiary : theme.red)]} />
       </SwiftUISection>
     </> : null}
+
+    {data ? <SwiftUISection footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>{LEADERBOARD_DETAIL}</SwiftUIText>}>
+      <SwiftUIButton onPress={model.openLeaderboard} modifiers={[buttonStyle('plain'), foregroundStyle('primary')]}>
+        <SwiftUIHStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}>
+          <SwiftUIImage systemName="chart.bar.fill" size={17} modifiers={[frame({ width: 22, height: 22 })]} />
+          <SwiftUIText>Leaderboard</SwiftUIText>
+          <SwiftUISpacer />
+          <SwiftUIImage systemName="chevron.right" size={11} color={theme.tertiary} />
+        </SwiftUIHStack>
+      </SwiftUIButton>
+    </SwiftUISection> : null}
 
     {data ? <SwiftUISection header={<NativeCountHeader title="Friends" count={overview.friends.length} />}>
       {overview.friends.length ? overview.friends.map((connection) => <NativePersonRow
@@ -314,6 +331,7 @@ function MaterialFriends({ model, onBack }: { model: FriendsScreenModel; onBack:
     </> : null}
 
     {data ? <>
+      <Card style={styles.spaced}><ListRow icon="chart.bar.fill" title="Leaderboard" detail={LEADERBOARD_DETAIL} last onPress={model.openLeaderboard} /></Card>
       <SectionTitle trailing={<Text style={[styles.helper, { color: theme.secondary }]}>{overview.friends.length}</Text>}>Friends</SectionTitle>
       {overview.friends.length ? <Card>{overview.friends.map((connection, index) => <MaterialPersonRow key={connection.requestId} profile={connection.profile} detail={overview.invitedIds.has(connection.profile.id) ? 'Invitation sent' : undefined} last={index === overview.friends.length - 1} onOpen={() => model.openProfile(connection.profile)}>
         <MaterialMenuButton name={connection.profile.displayName} actions={model.friendRowMenu(connection.profile)} />

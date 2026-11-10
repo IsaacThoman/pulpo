@@ -4,7 +4,7 @@ import { resetLabel, type UsageLimitRow } from '../usage-limits/format'
 
 type Pool = NonNullable<PoolSummary['pool']>
 
-/** The Settings row's second line: what is waiting, or what the screen holds. */
+/** The Friends row's second line in Settings: what is waiting, or what the screen holds. */
 export function friendsEntryDetail(pendingCount: number, poolsEnabled: boolean): string {
   if (pendingCount > 0) return pendingCount === 1 ? '1 request waiting' : `${pendingCount} requests waiting`
   return poolsEnabled ? 'Friends, requests, and your Pool' : 'Friends and requests'

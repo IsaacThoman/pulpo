@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   alert: vi.fn(),
   showActions: vi.fn(),
   push: vi.fn(),
+  navigate: vi.fn(),
 }))
 const { passthrough, modifier } = vi.hoisted(() => ({
   passthrough: ({ children }: { children?: unknown }) => children,
@@ -116,7 +117,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); mocks.usageLimits = true })
 
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  render(<QueryClientProvider client={client}><FriendsScreen {...({ navigation: { goBack: vi.fn(), push: mocks.push }, route: {} } as unknown as ComponentProps<typeof FriendsScreen>)} /></QueryClientProvider>)
+  render(<QueryClientProvider client={client}><FriendsScreen {...({ navigation: { goBack: vi.fn(), push: mocks.push, navigate: mocks.navigate }, route: {} } as unknown as ComponentProps<typeof FriendsScreen>)} /></QueryClientProvider>)
 }
 
 /** The actions in a person's menu: inline on iOS, a Material menu on Android. */
@@ -276,6 +277,12 @@ describe.each(['ios', 'android'])('Friends on %s', (platform) => {
     const bob = await screen.findByText('Bob')
     fireEvent.click(bob.closest('button')!)
     expect(mocks.push).toHaveBeenCalledWith('FriendProfile', { username: 'bob' })
+  })
+
+  it('leads to the leaderboard', async () => {
+    mount()
+    fireEvent.click((await screen.findByText('Leaderboard')).closest('button')!)
+    expect(mocks.navigate).toHaveBeenCalledWith('Leaderboard')
   })
 
   it('opens a Pool member’s profile from their row', async () => {
