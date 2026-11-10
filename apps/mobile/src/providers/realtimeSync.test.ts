@@ -65,8 +65,8 @@ describe('mobile realtime sync helpers', () => {
     expect(stateInvalidationQueryKeys('files', 'instance|user')).toEqual([['files', 'instance|user']])
   })
 
-  it('refreshes plan usage limits, Pool shared usage, and the viewer\'s own usage when billing changes', () => {
-    expect(stateInvalidationQueryKeys('billing', 'instance|user')).toEqual([['usage-limits', 'instance|user'], ['pool', 'instance|user'], ['usage', 'instance|user']])
+  it('refreshes plan usage limits, Pool shared usage, and the viewer\'s own usage and ranking when billing changes', () => {
+    expect(stateInvalidationQueryKeys('billing', 'instance|user')).toEqual([['usage-limits', 'instance|user'], ['pool', 'instance|user'], ['usage', 'instance|user'], ['friends', 'instance|user', 'leaderboard']])
   })
 
   it('refreshes friends and the Pool, with the Settings badge, when either changes', () => {

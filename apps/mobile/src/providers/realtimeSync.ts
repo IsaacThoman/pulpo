@@ -38,9 +38,9 @@ export function stateInvalidationQueryKeys(
   if (scope === 'files') return [['files', namespace]]
   if (scope === 'folders') return [['folders', namespace], ['files', namespace]]
   if (scope === 'models' || scope === 'settings') return [[scope, namespace]]
-  // Usage settles into billing; refresh the plan usage limits, the Pool's shared usage, and the
-  // viewer's own usage on their profile (features/usage/api.ts).
-  if (scope === 'billing') return [['usage-limits', namespace], ['pool', namespace], ['usage', namespace]]
+  // Usage settles into billing; refresh the plan usage limits, the Pool's shared usage, the
+  // viewer's own usage on their profile, and the leaderboard they appear on (features/usage/api.ts).
+  if (scope === 'billing') return [['usage-limits', namespace], ['pool', namespace], ['usage', namespace], ['friends', namespace, 'leaderboard']]
   // Friend and Pool changes refresh everything under their prefix (features/friends/api.ts).
   if (scope === 'friends') return [['friends', namespace]]
   // Pool membership also decides whose usage the viewer may see, on profiles and the leaderboard.
