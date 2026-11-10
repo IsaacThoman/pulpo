@@ -1,9 +1,21 @@
-import type { ToolImagePreview } from '@pulpo/contracts'
+import { FILES_PERMISSION_TIMEOUT_MS, type ToolImagePreview } from '@pulpo/contracts'
 import { Type } from '@earendil-works/pi-ai'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import type { RelayRequest, RelayResult, WorkspaceManager, WorkspaceOperation } from './controller.js'
 import { savedToolOutput } from './tool-output-budget.js'
 import { boundLegacyReadOutput, isBoundedReadDetails, parseAgentReadArguments, READ_MAX_LINE_LIMIT, READ_MAX_OUTPUT_BYTES } from './bounded-read.js'
+
+/**
+ * How long a bash command may run: what the agent asked for, within the instance's limit. A
+ * `pulpo files` call can wait for the user to answer a request to browse their Files, which is not
+ * a hung command, so such a command gets at least that wait and a little more. Without the extra,
+ * a timeout equal to the wait kills it just as the answer arrives.
+ */
+export function bashTimeoutMs(command: unknown, requested: unknown, commandTimeoutMs: number, mayAskUser: boolean): number {
+  const asked = Number(requested ?? commandTimeoutMs)
+  const floor = mayAskUser && typeof command === 'string' && /\bpulpo\s+files\b/.test(command) ? FILES_PERMISSION_TIMEOUT_MS + 30_000 : 0
+  return Math.min(Math.max(asked, floor), commandTimeoutMs)
+}
 
 const textResult = (output: string, details: unknown = {}) => ({ content: [{ type: 'text' as const, text: output }], details })
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' ? value as Record<string, unknown> : {}
@@ -60,7 +72,7 @@ export function createWorkspaceTools(
     }),
     tool('bash', 'Run a bash command in the disposable Linux workspace. Passwordless sudo is available.', Type.Object({ command: Type.String(), cwd: Type.Optional(Type.String()), timeoutMs: Type.Optional(Type.Number()) }), async (id, args, signal, onUpdate) => {
       const values = record(args)
-      const result = await manager.execute(id, 'bash', { ...values, timeoutMs: Math.min(Number(values.timeoutMs ?? commandTimeoutMs), commandTimeoutMs) }, signal, (output) => onUpdate?.(textResult(output)), async () => {
+      const result = await manager.execute(id, 'bash', { ...values, timeoutMs: bashTimeoutMs(values.command, values.timeoutMs, commandTimeoutMs, Boolean(onRelay)) }, signal, (output) => onUpdate?.(textResult(output)), async () => {
         await onOperationStarted?.(id)
         onUpdate?.(textResult('Command started…'))
       }, onRelay && ((request, relaySignal) => onRelay(id, request, relaySignal)))
