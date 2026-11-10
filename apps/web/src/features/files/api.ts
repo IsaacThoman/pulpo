@@ -4,6 +4,7 @@ import type {
   FileFolderLayout,
   FileListing,
   FileNode,
+  FileSearchResults,
   FileUploadReservation,
   MoveFileNodes,
   UpdateFileFolderLayout,
@@ -31,6 +32,16 @@ export function updateFolderLayout(input: UpdateFileFolderLayout): Promise<FileF
 
 export function fetchFolder(folderId: string | null): Promise<FileListing> {
   return apiRequest<FileListing>(folderId ? `/api/files?parentId=${encodeURIComponent(folderId)}` : '/api/files')
+}
+
+export const fileSearchQueryKey = (userId: string | undefined, query: string, limit: number) =>
+  [...filesQueryKey(userId), 'search', query, limit] as const
+
+/** The account's own files, documents, and folders whose names contain `query`; without one, recent ones. */
+export function searchFiles(query: string, limit: number, signal?: AbortSignal): Promise<FileSearchResults> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (query) params.set('q', query)
+  return apiRequest<FileSearchResults>(`/api/files/search?${params}`, { signal })
 }
 
 export function createFolder(parentId: string | null, name: string): Promise<FileNode> {
