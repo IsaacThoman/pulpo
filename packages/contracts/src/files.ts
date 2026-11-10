@@ -476,7 +476,8 @@ export function splitFileReferences(text: string): { text: string; references: F
   return { text: breakAt < 0 ? '' : trimmed.slice(0, breakAt).trimEnd(), references }
 }
 
-const LINKED_REFERENCE = new RegExp(`\\]\\(/files/[df]/(${UUID})\\)`, 'g')
+// A whole link, `[label](/files/d/<id>)`, whose opening bracket is not escaped.
+const LINKED_REFERENCE = new RegExp(`(?<!\\\\)\\[(?:\\\\.|[^\\]\\\\])*\\]\\(/files/[df]/(${UUID})\\)`, 'g')
 // Fenced blocks (closed or running to the end) and inline code: links in them are shown as text.
 const CODE = /(?:^|\n) {0,3}(```|~~~)[\s\S]*?(?:\n {0,3}\1[^\n]*|$)|`[^`\n]*`/g
 
