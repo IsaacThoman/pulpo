@@ -25,8 +25,36 @@ export function calculateCostMicros(usage: ResponseUsage, pricing: Pricing): num
   )
 }
 
+/**
+ * What one inline image can cost in input tokens. Providers bill images by their pixels, not their
+ * base64 size: high-resolution modes top out near 10k tokens, while a 7 MB photo is 2.4M base64
+ * characters. Counting those characters as text reserved dollars for a cent's worth of input.
+ */
+export const IMAGE_RESERVATION_TOKENS = 10_000
+
+const IMAGE_DATA_URL = /^data:image\/[^;,]*;base64,/i
+const IMAGE_MIME_KEYS = ['mimeType', 'media_type', 'mime_type'] as const
+
+/** An image block carrying its own base64 `data`, in the pi-ai, Anthropic, or Gemini shape. */
+function isInlineImageBlock(value: unknown): value is Record<string, unknown> & { data: string } {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  return typeof record.data === 'string'
+    && IMAGE_MIME_KEYS.some((key) => typeof record[key] === 'string' && (record[key] as string).toLowerCase().startsWith('image/'))
+}
+
 export function estimateInputTokens(input: unknown): number {
-  return Math.max(1, Math.ceil(JSON.stringify(input).length / 4))
+  let imageTokens = 0
+  const countImage = (encoded: string) => {
+    imageTokens += Math.min(IMAGE_RESERVATION_TOKENS, Math.ceil(encoded.length / 4))
+    return ''
+  }
+  const json = JSON.stringify(input, (_key, value: unknown) => {
+    if (typeof value === 'string') return IMAGE_DATA_URL.test(value) ? countImage(value) : value
+    if (isInlineImageBlock(value)) return { ...value, data: countImage(value.data) }
+    return value
+  }) ?? ''
+  return Math.max(1, Math.ceil(json.length / 4) + imageTokens)
 }
 
 export function calculateReservationMicros(
