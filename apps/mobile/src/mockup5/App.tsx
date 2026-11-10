@@ -445,6 +445,9 @@ const COLORS = {
 };
 
 const DRAWER_ACTION_HEIGHT = 46;
+// iPhone Duo gives the top edge no inset, so headers there drop this far to clear the
+// screen's rounded corners, which also lines them up with the vertical bar's clock.
+const HEADER_CORNER_DROP = 6;
 // Extends a small text button's touch target to at least 44 points.
 const TEXT_BUTTON_HIT_SLOP = { top: 13, bottom: 13, left: 8, right: 8 };
 const COMPACT_DRAWER_HEIGHT = 700;
@@ -1529,9 +1532,9 @@ function TemporaryChatHeaderControl({ axis = 'horizontal', ...props }: Temporary
     : <FallbackTemporaryChatHeaderControl {...props} />;
 }
 
-function AppHeader({ children, edgeAligned = false }: { children: ReactNode; edgeAligned?: boolean }) {
+function AppHeader({ children, edgeAligned = false, style }: { children: ReactNode; edgeAligned?: boolean; style?: ComponentProps<typeof View>['style'] }) {
   const { styles } = useChatStyles();
-  return <View pointerEvents="box-none" style={[styles.appHeader, edgeAligned && styles.appHeaderEdgeAligned]}>{children}</View>;
+  return <View pointerEvents="box-none" style={[styles.appHeader, edgeAligned && styles.appHeaderEdgeAligned, style]}>{children}</View>;
 }
 
 const EMPTY_MATERIAL_ACTIONS: MaterialAction[] = [];
@@ -6496,7 +6499,7 @@ function ChatView({
         {/* Screen readers start an open chat at its title; the screen shows no title bar. */}
         {chatId && title ? <Text accessibilityRole="header" style={styles.chatTitleHeading}>{title}</Text> : null}
         {/* Header */}
-        <AppHeader edgeAligned>
+        <AppHeader edgeAligned style={verticalBar && styles.appHeaderBelowCorner}>
           <RoundButton
             icon="line.3.horizontal"
             accessibilityLabel={persistentSidebar
@@ -6505,7 +6508,7 @@ function ChatView({
             onPress={onTogglePanel}
             tinted={temporary}
           />
-          <Reanimated.View pointerEvents="box-none" style={[styles.modelTriggerWrap, modelTriggerAnimatedStyle]}>
+          <Reanimated.View pointerEvents="box-none" style={[styles.modelTriggerWrap, verticalBar && styles.modelTriggerBelowCorner, modelTriggerAnimatedStyle]}>
             {Platform.OS === 'ios' ? (
               <NativeModelMenu model={model} models={models} onSelectModel={onSelectModel} tinted={temporary} />
             ) : (
@@ -7107,6 +7110,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   useFilesCapabilityRefresh();
   const insets = useSafeAreaInsets();
   const { fontScale } = useWindowDimensions();
+  // On iPhone Duo the status bar moves to a side column, leaving no top inset.
+  const verticalBar = useVerticalBar();
   // Opening the drawer hides the chat, and with it the screen reader's focus; start at the drawer's top.
   const drawerHeadingRef = useRef<View>(null);
   const drawerWasOpen = useRef(drawerOpen);
@@ -7521,7 +7526,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   return (
     <View style={styles.panelRoot}>
       <SafeAreaView style={styles.flex} edges={['top']}>
-        <AppHeader>
+        <AppHeader style={verticalBar && [styles.appHeaderBelowCorner, styles.drawerHeaderBelowCorner]}>
           <View ref={drawerHeadingRef} accessible accessibilityLabel="Pulpo" accessibilityRole="header" style={styles.profileChip}>
             <PulpoMark size={38} />
             <Text style={styles.profileName}>Pulpo</Text>
@@ -7648,6 +7653,9 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   chatHeaderOverlay: { position: Platform.OS === 'android' ? 'relative' : 'absolute', zIndex: 2, top: 0, left: 0, right: 0 },
   appHeader: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center', height: 64, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   appHeaderEdgeAligned: { maxWidth: '100%' },
+  appHeaderBelowCorner: { height: 64 + HEADER_CORNER_DROP, paddingTop: HEADER_CORNER_DROP },
+  // The drawer header's mark sits in the corner itself; line it up with the search icon below.
+  drawerHeaderBelowCorner: { paddingStart: 22 },
   headerActionExpanded: { width: Platform.OS === 'android' ? 96 : 88, height: Platform.OS === 'android' ? 48 : 44, alignItems: 'flex-end' },
   // The stacked control hangs below the row from a single item's space.
   headerActionStacked: { width: 44, height: 44 },
@@ -7668,6 +7676,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   // 88-point trailing control. The 22-point transition above then reaches the
   // screen center when temporary mode collapses the trailing control.
   modelTriggerWrap: { position: 'absolute', top: Platform.OS === 'android' ? 8 : 10, left: Platform.OS === 'android' ? 66 : -22, right: Platform.OS === 'android' ? 114 : 22, height: Platform.OS === 'android' ? 48 : 44, alignItems: 'center', justifyContent: 'center' },
+  modelTriggerBelowCorner: { top: 10 + HEADER_CORNER_DROP },
   modelMenuHost: { width: 230, height: 44, justifyContent: 'center' },
   connectionBanner: { alignSelf: 'center', maxWidth: '92%', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, backgroundColor: COLORS.fill, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 3 },
   connectionBannerOffline: { backgroundColor: 'rgba(255,159,63,0.12)' },
