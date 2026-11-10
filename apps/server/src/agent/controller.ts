@@ -13,7 +13,7 @@ import { workspaceContinueWithoutAgentAvailableAt, workspaceQueuePosition } from
 import { workspaceControllerRequest } from './controller-http.js'
 import type { RequestInit } from 'undici'
 import { posix } from 'node:path'
-import { detectImageMime } from './images.js'
+import { detectImageMime, fitViewedImage, type ViewedImage } from './images.js'
 import { attemptWorkspaceLease, ControllerRequestError } from './lease-acquisition.js'
 
 const MAX_VIEW_IMAGE_BYTES = 20 * 1024 * 1024
@@ -45,7 +45,9 @@ export interface WorkspaceOperation {
 export interface WorkspaceImage {
   data: string
   mimeType: string
+  /** The file's size in the workspace, before any resizing. */
   sizeBytes: number
+  resized?: ViewedImage['resized']
 }
 
 export interface WorkspaceFile {
@@ -501,7 +503,8 @@ export class WorkspaceManager {
       const now = new Date()
       await db.update(workspaceLeases).set({ lastUsedAt: now, expiresAt: new Date(now.getTime() + this.idleTimeoutMs), updatedAt: now }).where(eq(workspaceLeases.id, this.localLeaseId))
     }
-    return { data: Buffer.from(bytes).toString('base64'), mimeType, sizeBytes: bytes.byteLength }
+    const viewed = await fitViewedImage(bytes, mimeType)
+    return { data: viewed.data.toString('base64'), mimeType: viewed.mimeType, sizeBytes: bytes.byteLength, ...(viewed.resized ? { resized: viewed.resized } : {}) }
   }
 
   async exportFile(path: string, signal?: AbortSignal, onStarted?: () => void | Promise<void>): Promise<WorkspaceFile> {

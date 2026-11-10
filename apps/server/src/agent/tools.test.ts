@@ -79,6 +79,18 @@ describe('agent workspace tools', () => {
     expect(JSON.stringify(result.details)).not.toContain('base64-pixels')
   })
 
+  it('tells the model when it sees a resized copy of an oversized image', async () => {
+    const resized = { fromWidth: 4032, fromHeight: 3024, width: 2576, height: 1932 }
+    const viewImage = vi.fn().mockResolvedValue({ data: 'smaller-pixels', mimeType: 'image/jpeg', sizeBytes: 7_182_161, resized })
+    const tool = createWorkspaceTools({ viewImage } as unknown as WorkspaceManager, 1_000).find((tool) => tool.name === 'view_image')!
+    const result = await tool.execute('call-1', { path: '/workspace/photo.jpg' })
+    expect(result.content[0]).toEqual({
+      type: 'text',
+      text: 'Viewed /workspace/photo.jpg (image/jpeg, 7182161 bytes); too large to view in full, so you see it resized from 4032×3024 to 2576×1932. Crop the file to inspect fine detail',
+    })
+    expect(result.details).toMatchObject({ resized })
+  })
+
   it('adds durable preview metadata without changing the model image or exporting the file again', async () => {
     const image = { data: 'base64-pixels', mimeType: 'image/png', sizeBytes: 123 }
     const viewImage = vi.fn().mockResolvedValue(image)

@@ -1,7 +1,7 @@
 import { FILES_PERMISSION_TIMEOUT_MS, type ToolImagePreview } from '@pulpo/contracts'
 import { Type } from '@earendil-works/pi-ai'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
-import type { RelayRequest, RelayResult, WorkspaceManager, WorkspaceOperation } from './controller.js'
+import type { RelayRequest, RelayResult, WorkspaceImage, WorkspaceManager, WorkspaceOperation } from './controller.js'
 import { savedToolOutput } from './tool-output-budget.js'
 import { boundLegacyReadOutput, isBoundedReadDetails, parseAgentReadArguments, READ_MAX_LINE_LIMIT, READ_MAX_OUTPUT_BYTES } from './bounded-read.js'
 
@@ -21,6 +21,14 @@ const textResult = (output: string, details: unknown = {}) => ({ content: [{ typ
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' ? value as Record<string, unknown> : {}
 const savedOutputDetails = (details: unknown) => savedToolOutput(details) ?? {}
 const workspaceOutputResult = (operation: WorkspaceOperation) => textResult(operation.output, savedOutputDetails(operation.details))
+/** Tells the model it saw a smaller copy, so it can crop the file for fine detail. */
+function resizedNote(resized: WorkspaceImage['resized']): string {
+  if (!resized) return ''
+  const shrunk = resized.width !== resized.fromWidth || resized.height !== resized.fromHeight
+  return shrunk
+    ? `; too large to view in full, so you see it resized from ${resized.fromWidth}×${resized.fromHeight} to ${resized.width}×${resized.height}. Crop the file to inspect fine detail`
+    : '; re-encoded to fit image size limits'
+}
 
 export function createWorkspaceTools(
   manager: WorkspaceManager,
@@ -64,10 +72,10 @@ export function createWorkspaceTools(
       }
       return {
         content: [
-          { type: 'text' as const, text: `Viewed ${path} (${viewed.mimeType}, ${viewed.sizeBytes} bytes)` },
+          { type: 'text' as const, text: `Viewed ${path} (${viewed.mimeType}, ${viewed.sizeBytes} bytes)${resizedNote(viewed.resized)}` },
           { type: 'image' as const, data: viewed.data, mimeType: viewed.mimeType },
         ],
-        details: { path, mimeType: viewed.mimeType, sizeBytes: viewed.sizeBytes, ...(imagePreview ? { imagePreview } : {}) },
+        details: { path, mimeType: viewed.mimeType, sizeBytes: viewed.sizeBytes, ...(viewed.resized ? { resized: viewed.resized } : {}), ...(imagePreview ? { imagePreview } : {}) },
       }
     }),
     tool('bash', 'Run a bash command in the disposable Linux workspace. Passwordless sudo is available.', Type.Object({ command: Type.String(), cwd: Type.Optional(Type.String()), timeoutMs: Type.Optional(Type.Number()) }), async (id, args, signal, onUpdate) => {
