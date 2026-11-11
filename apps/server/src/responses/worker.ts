@@ -1179,7 +1179,7 @@ export async function processGeneration(responseId: string): Promise<void> {
           continue
         }
         if (!canFallbackAfterGenerationError(error)) { model = undefined; break }
-        attemptLimit = incompleteStreamAttemptLimit(attemptLimit, error instanceof Error ? error.message : undefined)
+        attemptLimit = incompleteStreamAttemptLimit(attemptLimit, error instanceof Error ? error.message : undefined, Boolean(model.fallbackModelId))
         if (attempt + 1 < attemptLimit && retryDelaySeconds > 0) await new Promise((resolve) => setTimeout(resolve, retryDelaySeconds * 1000))
       }
     }
