@@ -144,7 +144,16 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const location = useLocation()
   const navigate = useNavigate()
   const activeTemporaryChatId = useChat((state) => state.activeTemporaryChatId)
-  const chatId = routeChatId ?? activeTemporaryChatId ?? undefined
+  // Saving a temporary chat stops it being the active one before the route reaches /c/:id
+  // (navigation renders as a transition), so keep showing it until the route changes.
+  const [savedTemporaryChatId, setSavedTemporaryChatId] = useState<string | null>(null)
+  // Bumped when the user leaves a temporary chat, so a save still in flight does not navigate back to it.
+  const temporaryViewVersionRef = useRef(0)
+  useEffect(() => {
+    temporaryViewVersionRef.current += 1
+    setSavedTemporaryChatId(null)
+  }, [location.key])
+  const chatId = routeChatId ?? activeTemporaryChatId ?? savedTemporaryChatId ?? undefined
   const chat = useChat(useShallow((state) => {
     const current = chatId ? state.chats.find((item) => item.id === chatId) : undefined
     return current ? {
@@ -275,8 +284,6 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   }, [networkReady])
 
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null)
-  const temporaryViewVersionRef = useRef(0)
-
   useEffect(() => {
     setMessageEdit(null)
     setComposerEditActive(false)
@@ -318,12 +325,17 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     if (!chat.temporary || chat.expired || savingTemporary) return
     const viewVersion = temporaryViewVersionRef.current
     setSavingTemporary(true)
+    setSavedTemporaryChatId(chat.id)
     try {
       await useChat.getState().persistTemporaryChat(chat.id)
-      if (temporaryViewVersionRef.current !== viewVersion) return
+      if (temporaryViewVersionRef.current !== viewVersion) {
+        setSavedTemporaryChatId(null)
+        return
+      }
       setTemporary(false)
       navigate(`/c/${chat.id}`)
     } catch (error) {
+      setSavedTemporaryChatId(null)
       if (temporaryViewVersionRef.current !== viewVersion) return
       setTemporaryError(error instanceof Error ? error.message : t('chat.temporarySaveError'))
     } finally {
@@ -379,10 +391,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
 
   return (
     <div className="flex h-full min-w-0">
-      <div className={cn(
-        'flex h-full min-w-0 flex-1 flex-col transition-colors duration-200',
-        temporaryMode && 'bg-violet-100/50 dark:bg-violet-950/15',
-      )} data-desktop-temporary-chat={temporaryMode ? 'true' : undefined}>
+      <div className="chat-page-surface flex h-full min-w-0 flex-1 flex-col" data-desktop-temporary-chat={temporaryMode ? 'true' : undefined}>
         {/* header */}
         <header className="chat-header relative z-20 flex h-12 min-w-0 shrink-0 items-center gap-1 px-3">
           {chat && <h1 className="sr-only">{chat.title || t('chat.newChat')}</h1>}
