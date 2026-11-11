@@ -136,6 +136,14 @@ describe('input token estimate', () => {
     expect(estimateInputTokens({ data: photo, mimeType: 'application/pdf' })).toBeGreaterThan(photo.length / 4)
   })
 
+  it('counts text that only looks like an image in full', () => {
+    const disguised = `data:image/png;base64,${photo}`
+    expect(estimateInputTokens([{ type: 'input_text', text: disguised }])).toBeGreaterThan(disguised.length / 4)
+    expect(estimateInputTokens({ role: 'user', content: [{ type: 'text', text: disguised }] })).toBeGreaterThan(disguised.length / 4)
+    expect(estimateInputTokens({ type: 'toolCall', arguments: { data: photo, mimeType: 'image/png' } })).toBeGreaterThan(photo.length / 4)
+    expect(estimateInputTokens({ type: 'input_image', note: disguised })).toBeGreaterThan(disguised.length / 4)
+  })
+
   it('reserves an agent turn after viewing two large photos within a small balance', () => {
     const sonnet = { inputPriceMicros: 2_000_000, cachedInputPriceMicros: 200_000, cacheWritePriceMicros: 2_500_000, outputPriceMicros: 10_000_000, perRequestPriceMicros: 0 }
     const messages = [photo, photo].map((data) => ({ role: 'toolResult', toolName: 'view_image', content: [{ type: 'image', data, mimeType: 'image/jpeg' }] }))

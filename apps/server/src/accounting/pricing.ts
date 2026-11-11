@@ -33,26 +33,40 @@ export function calculateCostMicros(usage: ResponseUsage, pricing: Pricing): num
 export const IMAGE_RESERVATION_TOKENS = 10_000
 
 const IMAGE_DATA_URL = /^data:image\/[^;,]*;base64,/i
-const IMAGE_MIME_KEYS = ['mimeType', 'media_type', 'mime_type'] as const
+const GEMINI_INLINE_DATA_KEYS = new Set(['inline_data', 'inlineData'])
 
-/** An image block carrying its own base64 `data`, in the pi-ai, Anthropic, or Gemini shape. */
-function isInlineImageBlock(value: unknown): value is Record<string, unknown> & { data: string } {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
-  const record = value as Record<string, unknown>
-  return typeof record.data === 'string'
-    && IMAGE_MIME_KEYS.some((key) => typeof record[key] === 'string' && (record[key] as string).toLowerCase().startsWith('image/'))
+type JsonRecord = Record<string, unknown>
+const isRecord = (value: unknown): value is JsonRecord => typeof value === 'object' && value !== null && !Array.isArray(value)
+const isImageMime = (value: unknown) => typeof value === 'string' && value.toLowerCase().startsWith('image/')
+const isImageDataUrl = (value: unknown): value is string => typeof value === 'string' && IMAGE_DATA_URL.test(value)
+
+/**
+ * The image an object carries as base64, and the object with that data removed. Only provider image
+ * fields count: text that merely looks like a data URL is billed as text, so it is estimated as text.
+ */
+function inlineImage(key: string, value: JsonRecord): { encoded: string; rest: JsonRecord } | undefined {
+  // pi-ai: { type: 'image', data, mimeType }
+  if (value.type === 'image' && typeof value.data === 'string' && isImageMime(value.mimeType)) return { encoded: value.data, rest: { ...value, data: '' } }
+  // Anthropic: { type: 'image', source: { type: 'base64', media_type, data } }
+  if (value.type === 'base64' && key === 'source' && typeof value.data === 'string' && isImageMime(value.media_type)) return { encoded: value.data, rest: { ...value, data: '' } }
+  // Gemini: { inline_data: { mime_type, data } } or { inlineData: { mimeType, data } }
+  if (GEMINI_INLINE_DATA_KEYS.has(key) && typeof value.data === 'string' && isImageMime(value.mime_type ?? value.mimeType)) return { encoded: value.data, rest: { ...value, data: '' } }
+  // Responses: { type: 'input_image', image_url: 'data:image/...' }
+  if (value.type === 'input_image' && isImageDataUrl(value.image_url)) return { encoded: value.image_url, rest: { ...value, image_url: '' } }
+  // Chat Completions: { type: 'image_url', image_url: { url: 'data:image/...' } }
+  if (value.type === 'image_url' && isRecord(value.image_url) && isImageDataUrl(value.image_url.url)) {
+    return { encoded: value.image_url.url, rest: { ...value, image_url: { ...value.image_url, url: '' } } }
+  }
+  return undefined
 }
 
 export function estimateInputTokens(input: unknown): number {
   let imageTokens = 0
-  const countImage = (encoded: string) => {
-    imageTokens += Math.min(IMAGE_RESERVATION_TOKENS, Math.ceil(encoded.length / 4))
-    return ''
-  }
-  const json = JSON.stringify(input, (_key, value: unknown) => {
-    if (typeof value === 'string') return IMAGE_DATA_URL.test(value) ? countImage(value) : value
-    if (isInlineImageBlock(value)) return { ...value, data: countImage(value.data) }
-    return value
+  const json = JSON.stringify(input, (key, value: unknown) => {
+    const image = isRecord(value) ? inlineImage(key, value) : undefined
+    if (!image) return value
+    imageTokens += Math.min(IMAGE_RESERVATION_TOKENS, Math.ceil(image.encoded.length / 4))
+    return image.rest
   }) ?? ''
   return Math.max(1, Math.ceil(json.length / 4) + imageTokens)
 }
