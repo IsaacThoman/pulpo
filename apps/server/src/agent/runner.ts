@@ -1239,6 +1239,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         maxAttempts: agentModelAttemptLimit(runtimes.map((candidate) => candidate.model), failedRuntime.index),
         outputStarted,
         cancellationRequested,
+        hasFallback: failedRuntime.index + 1 < runtimes.length,
       })
       if (retryAttempt !== undefined && !contextRecovered) {
         const retryPolicy = failedRuntime.index > 0 ? runtimes[failedRuntime.index - 1]!.model : failedRuntime.runtime.model
