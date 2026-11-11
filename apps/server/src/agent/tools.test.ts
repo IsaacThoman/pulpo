@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createWorkspaceTools } from './tools.js'
+import { bashTimeoutMs, createWorkspaceTools } from './tools.js'
 import type { WorkspaceManager } from './controller.js'
 import { READ_MAX_OUTPUT_BYTES } from './bounded-read.js'
 
@@ -131,6 +131,23 @@ describe('agent workspace tools', () => {
     expect(result.content).toEqual([{ type: 'text', text: '{"ok":true,"output":"# Notes"}' }])
     await createWorkspaceTools({ execute } as unknown as WorkspaceManager, 1_000).find((candidate) => candidate.name === 'bash')!.execute('bash-8', { command: 'true' })
     expect(execute.mock.calls.at(-1)?.[6]).toBeUndefined()
+  })
+
+  it('gives pulpo files commands time to outlast a request to browse, within the instance limit', async () => {
+    // The agent asked for exactly the three minutes a request waits: the answer must still get through.
+    expect(bashTimeoutMs('pulpo files grep -i hotel', 180_000, 600_000, true)).toBe(210_000)
+    expect(bashTimeoutMs('cd /workspace && pulpo  files ls', 5_000, 600_000, true)).toBe(210_000)
+    expect(bashTimeoutMs('pulpo files ls', 400_000, 600_000, true)).toBe(400_000)
+    expect(bashTimeoutMs('pulpo files ls', undefined, 600_000, true)).toBe(600_000)
+    // Never past the instance's limit, and other commands keep what was asked.
+    expect(bashTimeoutMs('pulpo files ls', 5_000, 60_000, true)).toBe(60_000)
+    expect(bashTimeoutMs('sleep 999', 5_000, 600_000, true)).toBe(5_000)
+    expect(bashTimeoutMs('pulpo files ls', 5_000, 600_000, false)).toBe(5_000)
+
+    const execute = vi.fn().mockResolvedValue({ output: '', exitCode: 0 })
+    const tools = createWorkspaceTools({ execute } as unknown as WorkspaceManager, 600_000, undefined, undefined, undefined, vi.fn())
+    await tools.find((candidate) => candidate.name === 'bash')!.execute('bash-9', { command: 'pulpo files tree', timeoutMs: 180_000 })
+    expect(execute.mock.calls.at(-1)?.[2]).toEqual({ command: 'pulpo files tree', timeoutMs: 210_000 })
   })
 
   it('passes saved full-output locations from the workspace to the output budget', async () => {

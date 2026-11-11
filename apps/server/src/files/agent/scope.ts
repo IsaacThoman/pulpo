@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
-import { DEFAULT_FILE_ACCESS_MODE, FILE_SCOPE_ROOT, fileAccessModeSchema, fileNameError, nextAvailableName, normalizeFileName, type FileAccessMode } from '@pulpo/contracts'
+import { BROWSED_FILES_MODE_LIMIT, DEFAULT_FILE_ACCESS_MODE, FILE_SCOPE_ROOT, fileAccessModeSchema, fileNameError, normalizeFileName, type FileAccessMode } from '@pulpo/contracts'
 import { db } from '../../database/client.js'
-import { chats, fileNodes } from '../../database/schema.js'
+import { chats, fileNodes, userPreferences } from '../../database/schema.js'
 import type { FileExecutor, FileNodeRow } from '../access.js'
 import { fileNameMessage } from '../names.js'
 import { filesFeatureEnabled } from '../request.js'
@@ -10,39 +10,55 @@ import { chainIds } from '../tree-service.js'
 /** A `pulpo files` failure the agent can act on; its message is what the agent sees. */
 export class FilesCommandError extends Error {}
 
-/** A starting point for paths: an attached item no other attached folder contains, or all files (`node` null). */
-export interface FileScopeRoot {
-  /** First path segment for this root; empty for all files. */
-  label: string
-  node: FileNodeRow | null
+/**
+ * A path the agent may not reach without the user's permission: listing or searching My files, or
+ * naming anything outside the items mentioned in the chat. Raised before anything is revealed, even
+ * whether the item exists.
+ */
+export class FilesPermissionNeeded extends FilesCommandError {
+  constructor(readonly path: string) {
+    super(`Looking at "${path || 'My files'}" needs the user's permission to browse their Files`)
+  }
 }
 
-/** One item the user attached, with the path the agent uses for it. */
+/** One item mentioned in (or attached to) the chat, with its path from the top of My files. */
 export interface AttachedFileItem {
-  /** Agent path; empty for all files. */
+  /** Path from the top of My files; empty for all files. */
   path: string
   node: FileNodeRow | null
-  /** Where a top-level attachment sits in the user's Files, e.g. `Work/Q3`; null at the top. */
-  location: string | null
   mode: FileAccessMode
 }
 
 export interface FileScope {
   userId: string
-  roots: FileScopeRoot[]
   attached: AttachedFileItem[]
   /** The access mode of each attached entry, keyed like `chats.file_scope_ids`. */
   modes: ReadonlyMap<string, FileAccessMode>
+  /** Folders above attached items, which their paths pass through without revealing what else they hold. */
+  passThrough: ReadonlySet<string>
+  /** What the agent may change; items reached only by browsing take at most BROWSED_FILES_MODE_LIMIT. */
+  changeMode: FileAccessMode
+  /** Why the agent may browse all of the user's Files, if it may. */
+  browse: 'chat' | 'account' | null
   /** The chat's stored scope this was loaded from. */
-  source: { ids: readonly string[]; access: Readonly<Record<string, string>> }
+  source: { ids: readonly string[]; access: Readonly<Record<string, string>>; changeMode: string; browseAllowed: boolean }
 }
 
-export function isAllFiles(scope: FileScope): boolean {
-  return scope.roots.length === 1 && !scope.roots[0]!.node
+const MODE_ORDER: FileAccessMode[] = ['read', 'suggest', 'write']
+
+/** The more restrictive of two modes; null (outside the scope) restricts most. */
+export function stricterMode(left: FileAccessMode | null, right: FileAccessMode | null): FileAccessMode | null {
+  if (!left || !right) return null
+  return MODE_ORDER[Math.min(MODE_ORDER.indexOf(left), MODE_ORDER.indexOf(right))]!
 }
 
-function accessMode(value: unknown): FileAccessMode {
-  return fileAccessModeSchema.safeParse(value).data ?? DEFAULT_FILE_ACCESS_MODE
+/** Whether the agent may reach everything: all files attached, or browsing allowed. */
+export function reachesAllFiles(scope: FileScope): boolean {
+  return scope.browse !== null || scope.modes.has(FILE_SCOPE_ROOT)
+}
+
+function accessMode(value: unknown, fallback: FileAccessMode = DEFAULT_FILE_ACCESS_MODE): FileAccessMode {
+  return fileAccessModeSchema.safeParse(value).data ?? fallback
 }
 
 async function nodeNames(executor: FileExecutor, ids: string[]): Promise<Map<string, string>> {
@@ -51,12 +67,20 @@ async function nodeNames(executor: FileExecutor, ids: string[]): Promise<Map<str
   return new Map(rows.map((row) => [row.id, row.name]))
 }
 
+export interface FileScopeOptions {
+  changeMode?: string
+  /** Browsing allowed for this chat. */
+  browseAllowed?: boolean
+  /** Browsing allowed by the account, which stopped asking. */
+  browseByAccount?: boolean
+}
+
 /**
- * Resolves a chat's scope. Items inside another attached folder (or anywhere, with all files
- * attached) stay listed on their own, since the user pointed at them, but are reached through
- * that folder's path; the rest become path roots, with names made unique.
+ * Resolves a chat's scope. Paths always start at the top of My files. Entries without their own
+ * mode (set per item by older clients) follow the chat's change mode.
  */
-export async function loadFileScope(userId: string, scopeIds: readonly string[], access: Readonly<Record<string, string>> = {}): Promise<FileScope> {
+export async function loadFileScope(userId: string, scopeIds: readonly string[], access: Readonly<Record<string, string>> = {}, options: FileScopeOptions = {}): Promise<FileScope> {
+  const changeMode = accessMode(options.changeMode)
   const all = scopeIds.includes(FILE_SCOPE_ROOT)
   const ids = [...new Set(scopeIds.filter((id) => id !== FILE_SCOPE_ROOT))]
   const rows = ids.length ? await db.select().from(fileNodes).where(and(
@@ -74,55 +98,47 @@ export async function loadFileScope(userId: string, scopeIds: readonly string[],
   const nameOf = (id: string) => names.get(id) ?? '?'
 
   const modes = new Map<string, FileAccessMode>()
-  if (all) modes.set(FILE_SCOPE_ROOT, accessMode(access[FILE_SCOPE_ROOT]))
-  for (const row of live) modes.set(row.id, accessMode(access[row.id]))
-
-  const roots: FileScopeRoot[] = all ? [{ label: '', node: null }] : []
-  const rootLabels = new Map<string, string>()
-  if (!all) {
-    const used = new Set<string>()
-    for (const row of live) {
-      if (chains.get(row.id)!.slice(1).some((id) => byId.has(id))) continue
-      const label = nextAvailableName(row.name, used)
-      used.add(label.toLowerCase())
-      rootLabels.set(row.id, label)
-      roots.push({ label, node: row })
-    }
-  }
+  if (all) modes.set(FILE_SCOPE_ROOT, accessMode(access[FILE_SCOPE_ROOT], changeMode))
+  for (const row of live) modes.set(row.id, accessMode(access[row.id], changeMode))
+  const passThrough = new Set<string>()
+  for (const chain of chains.values()) for (const id of chain.slice(1)) passThrough.add(id)
 
   const attached: AttachedFileItem[] = []
   for (const id of scopeIds) {
     if (id === FILE_SCOPE_ROOT) {
-      if (!attached.some((item) => !item.node)) attached.push({ path: '', node: null, location: null, mode: modes.get(FILE_SCOPE_ROOT)! })
+      if (!attached.some((item) => !item.node)) attached.push({ path: '', node: null, mode: modes.get(FILE_SCOPE_ROOT)! })
       continue
     }
     const row = byId.get(id)
     if (!row || attached.some((item) => item.node?.id === id)) continue
-    const chain = chains.get(id)!
-    const mode = modes.get(id)!
-    if (all) {
-      attached.push({ path: [...chain].reverse().map(nameOf).join('/'), node: row, location: null, mode })
-      continue
-    }
-    // The outermost attached folder above the item is the root its path starts from.
-    const rootIndex = chain.findLastIndex((chainId) => rootLabels.has(chainId))
-    const rootId = chain[rootIndex]!
-    const path = [rootLabels.get(rootId)!, ...chain.slice(0, rootIndex).reverse().map(nameOf)].join('/')
-    const location = rootId === id && chain.length > 1 ? chain.slice(1).reverse().map(nameOf).join('/') : null
-    attached.push({ path, node: row, location, mode })
+    attached.push({ path: [...chains.get(id)!].reverse().map(nameOf).join('/'), node: row, mode: modes.get(id)! })
   }
-  return { userId, roots, attached, modes, source: { ids: [...scopeIds], access: { ...access } } }
+  const browse = options.browseAllowed ? 'chat' : options.browseByAccount ? 'account' : null
+  return {
+    userId, attached, modes, passThrough, changeMode, browse,
+    source: { ids: [...scopeIds], access: { ...access }, changeMode: options.changeMode ?? DEFAULT_FILE_ACCESS_MODE, browseAllowed: options.browseAllowed ?? false },
+  }
+}
+
+/** Whether the account lets Agent replies browse Files without asking. */
+export async function accountAllowsBrowsing(userId: string): Promise<boolean> {
+  const [row] = await db.select({ values: userPreferences.values }).from(userPreferences).where(eq(userPreferences.userId, userId)).limit(1)
+  return (row?.values as Record<string, unknown> | undefined)?.agentFilesAskBeforeBrowsing === false
 }
 
 /**
- * The scope an agent reply works with: the chat's attached items, re-read on every request so
- * the user's changes to the scope apply at once. Null while Files is off and for temporary chats.
+ * The scope an agent reply works with: the chat's mentioned items, re-read on every request so
+ * the user's changes apply at once. Null while Files is off and for temporary chats.
  */
 export async function loadChatFileScope(userId: string, chatId: string): Promise<FileScope | null> {
-  const [chat] = await db.select({ temporary: chats.temporary, scopeIds: chats.fileScopeIds, access: chats.fileScopeAccess })
-    .from(chats).where(and(eq(chats.id, chatId), eq(chats.userId, userId), isNull(chats.deletedAt))).limit(1)
+  const [chat] = await db.select({
+    temporary: chats.temporary, scopeIds: chats.fileScopeIds, access: chats.fileScopeAccess,
+    changeMode: chats.fileChangeMode, browseAllowed: chats.filesBrowseAllowed,
+  }).from(chats).where(and(eq(chats.id, chatId), eq(chats.userId, userId), isNull(chats.deletedAt))).limit(1)
   if (!chat || chat.temporary || !await filesFeatureEnabled()) return null
-  return loadFileScope(userId, chat.scopeIds, chat.access)
+  return loadFileScope(userId, chat.scopeIds, chat.access, {
+    changeMode: chat.changeMode, browseAllowed: chat.browseAllowed, browseByAccount: await accountAllowsBrowsing(userId),
+  })
 }
 
 function sameAccess(left: Readonly<Record<string, string>>, right: Readonly<Record<string, string>>): boolean {
@@ -136,16 +152,19 @@ function sameAccess(left: Readonly<Record<string, string>>, right: Readonly<Reco
  * ends, so a change to them made meanwhile waits for this one.
  */
 export async function assertScopeCurrent(executor: FileExecutor, chatId: string, scope: FileScope): Promise<void> {
-  const [chat] = await executor.select({ ids: chats.fileScopeIds, access: chats.fileScopeAccess }).from(chats)
+  const [chat] = await executor.select({ ids: chats.fileScopeIds, access: chats.fileScopeAccess, changeMode: chats.fileChangeMode, browseAllowed: chats.filesBrowseAllowed }).from(chats)
     .where(eq(chats.id, chatId)).for('share')
   const unchanged = chat && chat.ids.length === scope.source.ids.length && chat.ids.every((id, index) => id === scope.source.ids[index])
-    && sameAccess(chat.access, scope.source.access)
-  if (!unchanged) throw new FilesCommandError('The items attached to this chat or their access just changed; run the command again')
+    && sameAccess(chat.access, scope.source.access) && chat.changeMode === scope.source.changeMode
+    // Browsing allowed meanwhile only widens what the agent may reach; revoking it must stop the change.
+    && (chat.browseAllowed || !scope.source.browseAllowed)
+  if (!unchanged) throw new FilesCommandError('The items in this chat or what you may do with them just changed; run the command again')
 }
 
 /**
  * What the agent may do with an item (null: the top of My files): the mode of the nearest
- * attached entry at or above it, else the all-files mode. Null when the item is outside the scope.
+ * attached entry at or above it, else the all-files mode, else, while browsing is allowed, the
+ * change mode limited to suggestions. Null when the agent may not reach the item.
  */
 export async function modeFor(scope: FileScope, nodeId: string | null, executor: FileExecutor = db): Promise<FileAccessMode | null> {
   if (nodeId) {
@@ -154,7 +173,9 @@ export async function modeFor(scope: FileScope, nodeId: string | null, executor:
       if (mode) return mode
     }
   }
-  return scope.modes.get(FILE_SCOPE_ROOT) ?? null
+  const all = scope.modes.get(FILE_SCOPE_ROOT)
+  if (all) return all
+  return scope.browse ? stricterMode(scope.changeMode, BROWSED_FILES_MODE_LIMIT) : null
 }
 
 /** Attached items inside an item (not the item itself): their own modes apply to them. */
@@ -173,10 +194,6 @@ export function splitPath(path: string): string[] {
   return segments
 }
 
-function rootNames(scope: FileScope): string {
-  return scope.roots.map((root) => `"${root.label}"`).join(', ')
-}
-
 export async function childNamed(userId: string, parentId: string | null, name: string, executor: FileExecutor = db): Promise<FileNodeRow | undefined> {
   const [row] = await executor.select().from(fileNodes).where(and(
     eq(fileNodes.ownerUserId, userId),
@@ -191,45 +208,52 @@ export async function childNamed(userId: string, parentId: string | null, name: 
   return row
 }
 
-/** A resolved location; `node` null is the top of the user's Files (all-files scope only). */
+/** A resolved location; `node` null is the top of the user's Files. */
 export interface Located {
   node: FileNodeRow | null
   /** The path with every name as stored. */
   path: string
 }
 
-/** Walks a path from the scope roots one child at a time, so nothing outside the scope can be named. */
-export async function locate(scope: FileScope, path: string): Promise<Located | null> {
+/**
+ * Walks a path from the top of My files one child at a time. Outside the attached items (unless
+ * the agent may browse), only the folders leading to them can be named, and naming anything else,
+ * or any of those folders themselves, raises FilesPermissionNeeded.
+ */
+export async function locate(scope: FileScope, path: string, options: { passThrough?: boolean } = {}): Promise<Located | null> {
   const segments = splitPath(path)
   let node: FileNodeRow | null = null
-  let names: string[] = []
-  let rest = segments
-  if (!isAllFiles(scope)) {
-    if (!segments.length) throw new FilesCommandError(`Give a path that starts with ${rootNames(scope)}`)
-    const root = scope.roots.find((candidate) => candidate.label.toLowerCase() === segments[0]!.toLowerCase())
-    if (!root) throw new FilesCommandError(`"${segments[0]}" is not attached to this chat. Paths start with ${rootNames(scope)}`)
-    node = root.node
-    names = [root.label]
-    rest = segments.slice(1)
-  }
-  for (const segment of rest) {
+  let inside = reachesAllFiles(scope)
+  const names: string[] = []
+  for (const segment of segments) {
     if (node && node.kind !== 'folder') return null
     const next = await childNamed(scope.userId, node?.id ?? null, segment)
+    if (!inside && !(next && (scope.modes.has(next.id) || scope.passThrough.has(next.id)))) {
+      throw new FilesPermissionNeeded([...names, segment].join('/'))
+    }
     if (!next) return null
     node = next
     names.push(next.name)
+    if (scope.modes.has(next.id)) inside = true
   }
+  // A folder on the way to attached items may be named as a step, but not looked into.
+  if (!inside && !(options.passThrough && node)) throw new FilesPermissionNeeded(names.join('/'))
   return { node, path: names.join('/') }
 }
 
-/** Like `locate`, but an unknown top-level name is simply absent, so creating it explains where items go. */
-export async function locateOptional(scope: FileScope, path: string): Promise<Located | null> {
+/** Whether reaching `path` needs the user's permission first. */
+export async function needsPermission(scope: FileScope, path: string): Promise<boolean> {
   try {
-    return await locate(scope, path)
+    await locate(scope, path)
+    return false
   } catch (error) {
-    if (error instanceof FilesCommandError && splitPath(path).length === 1) return null
-    throw error
+    return error instanceof FilesPermissionNeeded
   }
+}
+
+/** Like `locate`, for a path that may not exist yet. */
+export async function locateOptional(scope: FileScope, path: string, options: { passThrough?: boolean } = {}): Promise<Located | null> {
+  return locate(scope, path, options)
 }
 
 /** Resolves a path that must name an existing item. */
@@ -243,14 +267,8 @@ export async function locateExisting(scope: FileScope, path: string): Promise<Lo
 export async function locateParent(scope: FileScope, path: string): Promise<{ parent: Located; name: string; path: string }> {
   const segments = splitPath(path)
   if (!segments.length) throw new FilesCommandError('Give the path of the item')
-  if (!isAllFiles(scope) && segments.length === 1) {
-    const folders = scope.roots.filter((root) => root.node?.kind === 'folder')
-    throw new FilesCommandError(folders.length
-      ? `New items must go inside an attached folder: start the path with ${folders.map((root) => `"${root.label}"`).join(', ')}`
-      : 'No folder is attached to this chat, so nothing new can be added; ask the user to attach one')
-  }
   const parentPath = segments.slice(0, -1).join('/')
-  const parent = segments.length === 1 ? { node: null, path: '' } : await locate(scope, parentPath)
+  const parent = await locate(scope, parentPath)
   if (!parent) throw new FilesCommandError(`The folder "${parentPath}" does not exist; create it first with pulpo files mkdir`)
   if (parent.node && parent.node.kind !== 'folder') throw new FilesCommandError(`"${parent.path}" is a file, not a folder`)
   const name = segments.at(-1)!
@@ -259,16 +277,10 @@ export async function locateParent(scope: FileScope, path: string): Promise<{ pa
   return { parent, name, path: parent.path ? `${parent.path}/${name}` : name }
 }
 
-/** The agent's path for an item (null: the top of My files), or null when it is outside the scope. */
+/** The agent's path for an item (null: the top of My files), or null when it may not reach it. */
 export async function scopePathOf(scope: FileScope, nodeId: string | null, executor: FileExecutor = db): Promise<string | null> {
-  if (!nodeId) return isAllFiles(scope) ? '' : null
-  const chain = await chainIds(executor, scope.userId, nodeId)
-  const names = await nodeNames(executor, chain)
-  if (isAllFiles(scope)) return [...chain].reverse().map((id) => names.get(id)).join('/')
-  const rootIndex = chain.findLastIndex((id) => scope.roots.some((root) => root.node?.id === id))
-  if (rootIndex < 0) return null
-  const root = scope.roots.find((candidate) => candidate.node?.id === chain[rootIndex])!
-  return [root.label, ...chain.slice(0, rootIndex).reverse().map((id) => names.get(id))].join('/')
+  if (await modeFor(scope, nodeId, executor) === null) return null
+  return filesPathOf(executor, scope.userId, nodeId)
 }
 
 /** Where an item sits from the top of My files, e.g. `Work/Plan.md`. */

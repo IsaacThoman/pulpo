@@ -1,9 +1,10 @@
 /** Help is written for the agent model reading it in a bash tool result: short, concrete, example-led. */
 export const FILES_HELP = `Usage: pulpo files <command> [options]
 
-Read and change the user's Pulpo Files that are attached to this chat.
-Files paths look like "Projects/Plan.md" (no leading slash; names are
-case-insensitive). Markdown documents (.md) are live documents in Pulpo; other
+Read and change the user's Pulpo Files. Paths start at the top of My files
+and look like "Projects/Plan.md" (no leading slash; names are
+case-insensitive). Items the user mentioned in this chat work right away;
+reaching anything else asks the user first and waits for their answer. Markdown documents (.md) are live documents in Pulpo; other
 files are stored as uploaded bytes.
 
 Browse:
@@ -30,7 +31,7 @@ Create a file: write it under /workspace/files/<folder>/ and run
 \`pulpo files push\`, or push any workspace file to a chosen path:
   pulpo files push /workspace/report.pdf --to Projects/report.pdf
 
-Each attached item is read only, suggest (your changes wait for the user to
+Each item is read only, suggest (your changes wait for the user to
 accept them) or write (changes apply right away). Commands report which
 happened. Run \`pulpo files <command> --help\` for details.
 `
@@ -38,7 +39,7 @@ happened. Run \`pulpo files <command> --help\` for details.
 export const COMMAND_HELP = {
   ls: `Usage: pulpo files ls [path] [-R]
 
-List a folder in Files; without a path, list everything attached to this chat.
+List a folder in Files; without a path, list the top of My files.
 Pending changes are marked (for example "suggested, not accepted yet").
   -R, -r, --recursive   include subfolders
 
@@ -48,7 +49,7 @@ Examples:
 `,
   tree: `Usage: pulpo files tree [path] [--depth N]
 
-Show the folder tree under path (default: everything attached to this chat).
+Show the folder tree under path (default: the top of My files).
   -L, --depth N   levels to show (default 3, max 8)
 
 Example:
@@ -65,8 +66,8 @@ Example:
 `,
   grep: `Usage: pulpo files grep [-i] [-F] <pattern> [path]
 
-Search the text of documents and text files under path (default: everything
-attached to this chat). Prints "path:line: text" for each match.
+Search the text of documents and text files under path (default: all of
+My files). Prints "path:line: text" for each match.
   -i, --ignore-case     ignore case
   -F, --fixed-strings   match the pattern literally instead of as a JavaScript regex
 Put \`--\` before a pattern that starts with "-".

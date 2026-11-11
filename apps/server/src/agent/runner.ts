@@ -11,7 +11,7 @@ import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messag
 import { mistralConversationsApi } from '@earendil-works/pi-ai/api/mistral-conversations.lazy'
 import { anthropicAgentReasoning, chatCompletionsSamplingParameters, explicitReasoningEffort, mistralAgentPayload, piModelForProvider } from '../upstream/pi-model.js'
 import type { Api, AssistantMessage, Context, Message, Model, SimpleStreamOptions, ThinkingLevel, ToolChoice } from '@earendil-works/pi-ai'
-import { agentCostLimitMicros, findCostLimitItem, findCostLimitItems, toolImagePreviewSchema, type ToolImagePreview, type CompactionItem, type CostLimitItem, type FileChangesItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
+import { agentCostLimitMicros, findCostLimitItem, findCostLimitItems, findFilesPermissionItems, toolImagePreviewSchema, type ClientFeature, type FilesPermissionItem, type ToolImagePreview, type CompactionItem, type CostLimitItem, type FileChangesItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
@@ -57,6 +57,7 @@ import { createGenerationMemoryTools } from './memory-tools.js'
 import { describeFileScope } from '../files/agent/prompt.js'
 import { createFilesRelay } from '../files/agent/relay.js'
 import { loadChatFileScope } from '../files/agent/scope.js'
+import { filesPermissionRequest, redisFilesPermissionAnswers, waitForFilesPermissionDecision } from '../files/agent/permission.js'
 import { readEpisodicMemorySettings } from '../episodic-memory/settings.js'
 import { generationSystemPrompt, loadGenerationMemory } from '../responses/memory-context.js'
 import { withGenerationTimeContext } from '../responses/time-context.js'
@@ -180,7 +181,9 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   // on. Turns sent through admin chat access never reach the owner's Files; temporary chats have none.
   const filesAllowed = parseAuthSettings(attachmentSettingsRow?.value).filesEnabled && record.response.origin !== 'admin_chat' && !chatState?.temporary
   const fileScope = filesAllowed ? await loadChatFileScope(record.response.userId, record.response.chatId) : null
-  const fileScopeContext = fileScope?.roots.length ? describeFileScope(fileScope) : ''
+  // Only an app that said it can show the request is asked; otherwise the reply would wait for nobody.
+  const canAskToBrowseFiles = record.response.clientFeatures.includes('files-permission' satisfies ClientFeature)
+  const fileScopeContext = fileScope ? describeFileScope(fileScope, { canAskToBrowse: canAskToBrowseFiles }) : ''
   const memory = await loadGenerationMemory({
     chat: chatState,
     memoryEnabled: preferenceValues.memoryEnabled,
@@ -389,6 +392,14 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   ))
   const recallItems: RecallItem[] = recallItem ? [recallItem] : []
   const costLimitItems = findCostLimitItems(record.response.output as unknown[])
+  // A request left waiting by an interrupted run can no longer be answered.
+  const staleFilesPermissionItems: FilesPermissionItem[] = []
+  const filesPermissionItems = findFilesPermissionItems(record.response.output as unknown[]).map((item) => {
+    if (item.status !== 'awaiting_decision') return item
+    const expired = { ...item, status: 'expired' as const }
+    staleFilesPermissionItems.push(expired)
+    return expired
+  })
   let fileChangesItem = (record.response.output as unknown[]).find((raw): raw is FileChangesItem => (
     (raw as { type?: string } | null)?.type === 'pulpo_file_changes'
   ))
@@ -418,6 +429,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     emissionQueue = emission
     return emission
   }
+  for (const item of staleFilesPermissionItems) await emit('pulpo.agent.files_permission', item)
   if (recallItem && !memory.reusedRecall) {
     await emit('pulpo.recall.completed', recallItem)
     await db.update(responses).set({
@@ -465,6 +477,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         compactionItems,
         recallItems,
         costLimitItems,
+        filesPermissionItems,
         fileChangesItem,
         turnDurationsMs,
         streaming: false,
@@ -799,6 +812,30 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       fileChangesItem = { type: 'pulpo_file_changes', id: 'file-changes', count }
       await emit('pulpo.agent.files.changed', { ...fileChangesItem })
       await snapshotIfDue()
+    },
+    // Holds the command while the user decides; the answer route records the grant itself.
+    requestPermission: !canAskToBrowseFiles ? undefined : async ({ command, path }, signal) => {
+      const setItem = (item: FilesPermissionItem) => {
+        const index = filesPermissionItems.findIndex((candidate) => candidate.id === item.id)
+        if (index >= 0) filesPermissionItems[index] = item
+        else filesPermissionItems.push(item)
+      }
+      const request = filesPermissionRequest({ responseId, ordinal: filesPermissionItems.length + 1, command, path, agentTurn: modelTurns || undefined })
+      setItem(request)
+      await emit('pulpo.agent.files_permission', request)
+      await snapshot()
+      const decision = await waitForFilesPermissionDecision({
+        answers: redisFilesPermissionAnswers(responseId, request.id),
+        expiresAt: new Date(request.expires_at),
+        signal,
+      })
+      if (decision === 'stopped') return 'stopped'
+      const status = decision === 'allow_chat' ? 'allowed' : decision === 'allow_always' ? 'always_allowed' : decision === 'deny' ? 'denied' : 'expired'
+      const decided: FilesPermissionItem = { ...request, status, decided_at: new Date().toISOString() }
+      setItem(decided)
+      await emit('pulpo.agent.files_permission', decided)
+      await snapshot()
+      return status === 'allowed' || status === 'always_allowed' ? 'allowed' : status
     },
   }) : undefined
   let agentAbortReason: 'response_timeout' | 'cancellation' | 'turn_limit' | undefined
@@ -1202,6 +1239,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         maxAttempts: agentModelAttemptLimit(runtimes.map((candidate) => candidate.model), failedRuntime.index),
         outputStarted,
         cancellationRequested,
+        hasFallback: failedRuntime.index + 1 < runtimes.length,
       })
       if (retryAttempt !== undefined && !contextRecovered) {
         const retryPolicy = failedRuntime.index > 0 ? runtimes[failedRuntime.index - 1]!.model : failedRuntime.runtime.model

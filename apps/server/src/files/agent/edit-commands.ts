@@ -34,7 +34,8 @@ export async function mkdirCommand(ctx: CommandContext, args: { path: string; pa
   const lines: string[] = []
   for (let index = args.parents ? 1 : segments.length; index <= segments.length; index += 1) {
     const prefix = segments.slice(0, index).join('/')
-    const existing = await locateOptional(ctx.scope, prefix)
+    // Folders along the way that lead to attached items exist, even though the agent cannot look into them.
+    const existing = await locateOptional(ctx.scope, prefix, { passThrough: index < segments.length })
     if (existing) {
       if (existing.node && existing.node.kind !== 'folder') throw new FilesCommandError(`"${existing.path}" is a file, not a folder`)
       if (!args.parents) throw new FilesCommandError(`"${existing.path}" already exists`)

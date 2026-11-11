@@ -2,7 +2,7 @@ import { historyPageQuery, loadHistoryPage } from './history-page.js'
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql, type SQL } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, findCostLimitItem, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema, type StateInvalidationScope } from '@pulpo/contracts'
+import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, filesPermissionAnswerSchema, findCostLimitItem, findFilesPermissionItems, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema, type StateInvalidationScope } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { attachments, chatImportSources, chats, models, requestLogs, responses, usageEvents, users, workspaceLeases } from '../database/schema.js'
 import { billingUserForRequest, requireUser } from '../auth/service.js'
@@ -15,7 +15,9 @@ import { queueTrashPurge } from '../jobs.js'
 import { cancelChatWork, getTrashRetention, markChatsForPurge, purgeAtFor, trashedChatValues } from './trash.js'
 import { planDuplicateTree } from './duplicate.js'
 import { toPublicChat, toPublicChatResponses, withoutWorkspaceScope } from './public.js'
-import { assertFileScope, mergedFileAccessSql, scopedFileAccess } from './file-scope.js'
+import { assertFileScope, defaultFileChangeMode, mergedFileAccessSql, scopedFileAccess } from './file-scope.js'
+import { recordFilesPermissionDecision } from '../files/agent/permission.js'
+import { patchAccountPreferences } from '../settings/account-preferences.js'
 import { chatFolderId } from '../files/chat-items.js'
 import { topChatOrder, topSortOrder } from '../files/order.js'
 import { recoverChats, trashChats } from './trash-service.js'
@@ -245,6 +247,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       temporary: input.temporary,
       fileScopeIds: input.fileScopeIds,
       fileScopeAccess: scopedFileAccess(input.fileScopeIds, input.fileScopeAccess),
+      fileChangeMode: input.fileChangeMode ?? await defaultFileChangeMode(user.id),
       sortOrder: input.temporary ? 0 : await topLooseChatSortOrder(user.id),
       expiresAt,
       createdAt,
@@ -292,6 +295,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       temporary: input.chat.temporary,
       fileScopeIds: input.chat.fileScopeIds,
       fileScopeAccess: scopedFileAccess(input.chat.fileScopeIds, input.chat.fileScopeAccess),
+      fileChangeMode: input.chat.fileChangeMode ?? await defaultFileChangeMode(user.id),
       sortOrder: input.chat.temporary ? 0 : await topLooseChatSortOrder(user.id),
       expiresAt,
       createdAt,
@@ -575,11 +579,13 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string }
     const patch = updateChatSchema.parse(request.body)
     let fileScopeAccess: SQL | undefined
-    if (patch.fileScopeIds || patch.fileScopeAccess) {
+    if (patch.fileScopeIds || patch.fileScopeAccess || patch.fileChangeMode || patch.filesBrowseAllowed !== undefined) {
       if (request.adminChatAccess) throw forbidden('Chat file scope cannot be changed during admin chat access')
       if (patch.fileScopeIds) await assertFileScope(user.id, patch.fileScopeIds)
       // Modes follow their entries: removed entries lose theirs, and unchanged ones keep them.
-      fileScopeAccess = mergedFileAccessSql(patch.fileScopeIds, patch.fileScopeAccess ?? {})
+      // The chat's change mode replaces every entry's own mode.
+      if (patch.fileScopeIds || patch.fileScopeAccess) fileScopeAccess = mergedFileAccessSql(patch.fileScopeIds, patch.fileScopeAccess ?? {})
+      if (patch.fileChangeMode) fileScopeAccess = sql`'{}'::jsonb`
     }
     // Any live folder in Files can hold chats; the Chats folder itself means unfiled.
     const folderId = patch.folderId === undefined ? undefined : await chatFolderId(db, user.id, patch.folderId)
@@ -602,6 +608,8 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         : await topChatOrder(db, user.id, folderId),
       fileScopeIds: patch.fileScopeIds,
       fileScopeAccess,
+      fileChangeMode: patch.fileChangeMode,
+      filesBrowseAllowed: patch.filesBrowseAllowed,
       expiresAt,
       updatedAt: now,
     }).where(and(
@@ -799,6 +807,37 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       throw new AppError(409, 'agent_not_paused', 'This response is not paused at your cost limit')
     }
     await requestCostLimitContinue(id, pause.limit_micros)
+    return toSnapshot(response)
+  })
+
+  // Answers an Agent reply's request to browse the owner's Files. The grant is saved here, before
+  // the waiting reply hears the answer, so its next command already sees it.
+  app.post('/api/responses/:id/files-permission', async (request) => {
+    const user = requireUser(request)
+    if (request.adminChatAccess) throw forbidden('Files permissions cannot be answered during admin chat access')
+    const { id } = request.params as { id: string }
+    const answer = filesPermissionAnswerSchema.parse(request.body)
+    const [row] = await db.select({ response: responses }).from(responses)
+      .innerJoin(chats, eq(chats.id, responses.chatId))
+      .where(and(
+        eq(responses.id, id),
+        eq(responses.userId, user.id),
+        isNull(responses.deletedAt),
+        isNull(chats.deletedAt),
+        accessibleChatCondition(),
+      )).limit(1)
+    const response = row?.response
+    if (!response) throw notFound('Response')
+    const item = findFilesPermissionItems(response.output as unknown[]).find((candidate) => candidate.id === answer.itemId)
+    if (!response.agentMode || response.status !== 'in_progress' || item?.status !== 'awaiting_decision' || Date.parse(item.expires_at) <= Date.now()) {
+      throw new AppError(409, 'files_permission_not_pending', 'This reply is no longer waiting for your answer')
+    }
+    if (answer.decision === 'allow_chat') {
+      await db.update(chats).set({ filesBrowseAllowed: true }).where(and(eq(chats.id, response.chatId), eq(chats.userId, user.id)))
+      await bumpRevision(user.id, response.chatId)
+    }
+    if (answer.decision === 'allow_always') await patchAccountPreferences(user.id, { agentFilesAskBeforeBrowsing: false })
+    await recordFilesPermissionDecision(id, item.id, answer.decision)
     return toSnapshot(response)
   })
 }

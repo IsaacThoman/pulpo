@@ -218,6 +218,32 @@ describe('prototype store', () => {
     expect(usePrototypeStore.getState().chats.some((item) => item.id === chat.id)).toBe(false);
   });
 
+  it('sets what the agent may change in Files for the whole chat, and rolls back when refused', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    usePrototypeStore.setState((state) => ({ chats: state.chats.map((chat) => chat.id === 'c-kv' ? { ...chat, fileScopeIds: ['doc'], fileScopeAccess: { doc: 'write' }, fileChangeMode: 'suggest' } : chat) }));
+    const setChatFileChangeMode = vi.fn(async () => undefined);
+    configureProductionActions({ setChatFileChangeMode });
+    usePrototypeStore.getState().setChatFileChangeMode('c-kv', 'read');
+    expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')).toMatchObject({ fileChangeMode: 'read', fileScopeAccess: {} });
+    expect(setChatFileChangeMode).toHaveBeenCalledWith('c-kv', 'read');
+
+    configureProductionActions({ setChatFileChangeMode: async () => { throw new Error('Refused'); } });
+    usePrototypeStore.getState().setChatFileChangeMode('c-kv', 'write');
+    await vi.waitFor(() => expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')?.fileChangeMode).toBe('read'));
+    warning.mockRestore();
+  });
+
+  it('revokes browsing all of the user’s Files only where it was allowed', () => {
+    const revokeChatFilesBrowse = vi.fn(async () => undefined);
+    configureProductionActions({ revokeChatFilesBrowse });
+    usePrototypeStore.getState().revokeChatFilesBrowse('c-kv');
+    expect(revokeChatFilesBrowse).not.toHaveBeenCalled();
+    usePrototypeStore.setState((state) => ({ chats: state.chats.map((chat) => chat.id === 'c-kv' ? { ...chat, filesBrowseAllowed: true } : chat) }));
+    usePrototypeStore.getState().revokeChatFilesBrowse('c-kv');
+    expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')?.filesBrowseAllowed).toBe(false);
+    expect(revokeChatFilesBrowse).toHaveBeenCalledWith('c-kv');
+  });
+
   it('caps renamed titles at the API limit and ignores blank renames', () => {
     const renameChat = vi.fn(async () => undefined);
     configureProductionActions({ renameChat });

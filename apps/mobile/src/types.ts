@@ -52,6 +52,10 @@ export interface ServerChat {
   /** Files items the chat's agent works with (`root` is all of My files), and how. */
   fileScopeIds?: string[]
   fileScopeAccess?: Partial<Record<string, import('@pulpo/contracts').FileAccessMode>>
+  /** What the agent may change in Files in this chat. */
+  fileChangeMode?: import('@pulpo/contracts').FileAccessMode
+  /** The user let the agent look through all of their Files in this chat. */
+  filesBrowseAllowed?: boolean
   /** Filed at the top of My files rather than in a folder. */
   inFilesRoot?: boolean
 }

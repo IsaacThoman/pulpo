@@ -67,8 +67,9 @@ export function nextAgentRetryAttempt(input: {
   maxAttempts: number
   outputStarted: boolean
   cancellationRequested: boolean
+  hasFallback: boolean
 }): number | undefined {
-  if (input.currentAttempt >= incompleteStreamAttemptLimit(input.maxAttempts, input.message.errorMessage)) return undefined
+  if (input.currentAttempt >= incompleteStreamAttemptLimit(input.maxAttempts, input.message.errorMessage, input.hasFallback)) return undefined
   return canFallbackAgentTurn({
     message: input.message,
     outputStarted: input.outputStarted,

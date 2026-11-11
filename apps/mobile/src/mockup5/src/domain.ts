@@ -141,9 +141,14 @@ export interface PrototypeChat {
   messages: PrototypeMessage[];
   deletedAt: number | null;
   purgeAt: number | null;
-  /** Files items the chat's agent works with, and what it may do with each (see FileScopeChips). */
+  /** Files items the chat's agent works with: the ones its messages mentioned (see ChatFilesAccessSheet). */
   fileScopeIds?: string[];
+  /** Per-item modes older clients set; the chat's fileChangeMode replaces them once changed. */
   fileScopeAccess?: Partial<Record<string, import('@pulpo/contracts').FileAccessMode>>;
+  /** What the agent may change in Files in this chat. */
+  fileChangeMode?: import('@pulpo/contracts').FileAccessMode;
+  /** The user let the agent look through all of their Files in this chat. */
+  filesBrowseAllowed?: boolean;
 }
 
 export interface PrototypeFolder {
@@ -166,6 +171,8 @@ export interface AppPreferences {
   showResponseCost: boolean;
   agentCostLimitEnabled: boolean;
   agentCostLimitMicros: number;
+  agentFilesAskBeforeBrowsing: boolean;
+  agentFileChangeMode: import('@pulpo/contracts').FileAccessMode;
   memoryEnabled: boolean;
   customInstructions: string;
   instructionPresetSelections: Record<string, boolean>;
