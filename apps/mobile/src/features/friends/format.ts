@@ -21,11 +21,6 @@ export function mutualFriendsLabel(count: number): string | undefined {
   return count === 1 ? '1 mutual' : `${count} mutuals`
 }
 
-/** What dismissing a suggestion did, as the web words it; the server keeps them out for 30 days. */
-export function suggestionDismissedLabel(displayName: string): string {
-  return `${displayName} won't be suggested for at least 30 days, and only if you gain mutual friends.`
-}
-
 /** "Friends since Sep 1, 2026" on a friend's profile. */
 export function friendsSinceLabel(iso: string, locale?: string): string | undefined {
   const date = new Date(iso)

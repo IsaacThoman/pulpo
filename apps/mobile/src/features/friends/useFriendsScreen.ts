@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { canInviteToPool, friendRequestAge, friendsOverview } from '@pulpo/client-core'
 import type { FriendConnection, FriendProfile, FriendSearchResult, FriendSuggestion, PoolInvitation, PoolMember } from '@pulpo/contracts'
 import { friendsApi, friendsListQuery, inviteCodesQuery, poolQuery } from './api'
-import { mutualFriendsLabel, poolDisclosure, suggestionDismissedLabel } from './format'
+import { mutualFriendsLabel, poolDisclosure } from './format'
 import { useFriendActions, useFriendSearch, useFriendsContext } from './hooks'
 
 /** One entry in a person's actions menu: a SwiftUI menu on iOS, a Material menu on Android. */
@@ -34,8 +34,6 @@ export function useFriendsScreen({ openProfile }: { openProfile: (profile: Frien
   const search = useFriendSearch(searchInput, list.dataUpdatedAt)
   const { run, pending, busy } = useFriendActions(namespace)
   const [copied, setCopied] = useState<string | null>(null)
-  /** Shown under the suggestions after a dismissal, since the row just disappears. */
-  const [dismissedNotice, setDismissedNotice] = useState<string | null>(null)
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => () => clearTimeout(copiedTimer.current), [])
 
@@ -57,9 +55,7 @@ export function useFriendsScreen({ openProfile }: { openProfile: (profile: Frien
     }),
     // The list refresh after sending drops them from suggestions; they show under Sent requests.
     sendSuggestion: (suggestion: FriendSuggestion) => void run(`request:${suggestion.profile.id}`, () => friendsApi.sendRequest(suggestion.profile.id)),
-    dismissSuggestion: (suggestion: FriendSuggestion) => void run(`dismiss:${suggestion.profile.id}`, () => friendsApi.dismissSuggestion(suggestion.profile.id), () => {
-      setDismissedNotice(suggestionDismissedLabel(suggestion.profile.displayName))
-    }),
+    dismissSuggestion: (suggestion: FriendSuggestion) => void run(`dismiss:${suggestion.profile.id}`, () => friendsApi.dismissSuggestion(suggestion.profile.id)),
     acceptSearchResult: (result: FriendSearchResult) => {
       const requestId = result.requestId
       if (!requestId) return
@@ -160,7 +156,6 @@ export function useFriendsScreen({ openProfile }: { openProfile: (profile: Frien
     requestMenu,
     poolInvitationMenu,
     suggestions: list.data?.suggestions ?? [],
-    dismissedNotice,
     openProfile,
     /** "Requested today · 2 mutuals": when a request was made, then the friends shared. */
     requestDetail: (verb: 'Requested' | 'Sent', connection: FriendConnection) => [
