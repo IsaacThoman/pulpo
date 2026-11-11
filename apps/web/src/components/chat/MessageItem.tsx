@@ -782,7 +782,7 @@ export const MessageItem = memo(function MessageItem({
         <div className={cn(
           'min-w-0 max-w-[85%] text-[15px] leading-7 [overflow-wrap:anywhere]',
           messageText
-            ? 'rounded-[1.25rem] rounded-br-md border border-foreground/[0.04] bg-secondary/85 px-4 py-2.5 shadow-sm'
+            ? 'rounded-[1.25rem] border border-foreground/[0.04] bg-secondary/85 px-4 py-2.5 shadow-sm'
             : 'w-full',
         )}>
           {message.attachments && message.attachments.length > 0 && (
