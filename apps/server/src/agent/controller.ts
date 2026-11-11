@@ -23,6 +23,8 @@ const LONG_POLL_WAIT_MS = 10_000
 const POLL_ATTEMPTS = 3
 const POLL_RETRY_MS = 500
 const RELAY_ANSWER_TIMEOUT_MS = 10_000
+/** How often a lease is touched while an answer is being worked out; well under the shortest idle timeout (60 s). */
+const RELAY_KEEPALIVE_MS = 20_000
 
 /** A `pulpo files` call from a bash command, held by the workspace daemon until Pulpo answers. Agent-controlled input. */
 export interface RelayRequest { id: string; command: string; args: unknown }
@@ -377,8 +379,8 @@ export class WorkspaceManager {
       const retry = unsettled.get(request.id)
       if (retry === null || (!retry && signal?.aborted)) continue
       const result = retry ?? (onRelay
-        ? await onRelay({ id: request.id, command: request.command, args: request.args }, signal)
-          .catch((error: unknown): RelayResult => ({ ok: false, error: error instanceof Error ? error.message : String(error) }))
+        ? await this.keepingLease(leaseId, operation.id, onRelay({ id: request.id, command: request.command, args: request.args }, signal)
+          .catch((error: unknown): RelayResult => ({ ok: false, error: error instanceof Error ? error.message : String(error) })))
         : { ok: false, error: 'Files are not available in this chat' })
       if (!retry) answered = true
       unsettled.delete(request.id)
@@ -397,6 +399,19 @@ export class WorkspaceManager {
       }
     }
     return answered
+  }
+
+  /**
+   * Waits for `answer` while touching the lease now and then. An answer can wait minutes for the
+   * user (a request to browse Files), and nothing polls the command meanwhile; the controller would
+   * count the workspace as idle and remove it under the command that is still running.
+   */
+  private async keepingLease<T>(leaseId: string, operationId: string, answer: Promise<T>): Promise<T> {
+    const timer = setInterval(() => {
+      void this.request(`/v1/leases/${leaseId}/v1/operations/${operationId}`, { signal: AbortSignal.timeout(RELAY_ANSWER_TIMEOUT_MS) })
+        .then((response) => response.arrayBuffer()).catch(() => undefined)
+    }, RELAY_KEEPALIVE_MS)
+    try { return await answer } finally { clearInterval(timer) }
   }
 
   /** Retries transient poll failures (network blips, 5xx) a few times; a 4xx or repeated failure is final. */

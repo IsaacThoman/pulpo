@@ -30,6 +30,7 @@ import { sendPasswordReset } from '../lib/mail.js'
 import { parseAuthSettings, parseCodexSettings, parseDictationSettings, parseWebToolsSettings } from '../settings/application-settings.js'
 import { webExtractAvailable } from '../agent/web-tools.js'
 import { newUserStorageLimit } from '../billing/storage-entitlements.js'
+import { poolPeerIds } from '../pools/service.js'
 import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
 import { publishStateChange } from '../responses/events.js'
 import {
@@ -261,17 +262,26 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     const input = updateProfileInputSchema.parse(request.body)
     let updated: typeof users.$inferSelect | undefined
     let friendChanges: Awaited<ReturnType<typeof bumpAccountRevisions>> = []
+    let poolChanges: Awaited<ReturnType<typeof bumpAccountRevisions>> = []
     try {
-      ;({ updated, friendChanges } = await db.transaction(async (tx) => {
+      ;({ updated, friendChanges, poolChanges } = await db.transaction(async (tx) => {
+        // Share the management-settings lock so a stale full-document apply can never overwrite
+        // a concurrent profile PATCH (username, color, or usage visibility).
+        await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
         const [updated] = await tx.update(users).set({
           ...(input.name !== undefined ? { name: input.name } : {}),
           ...(input.username !== undefined ? { username: input.username } : {}),
           ...(input.profileColor !== undefined ? { profileColor: input.profileColor?.toLowerCase() ?? null } : {}),
+          ...(input.usageVisibility !== undefined ? { usageVisibility: input.usageVisibility } : {}),
           stateRevision: sql`${users.stateRevision} + 1`,
           updatedAt: new Date(),
         }).where(eq(users.id, user.id)).returning()
         const peers = await friendPeerIds(tx, user.id)
-        return { updated, friendChanges: await bumpAccountRevisions(tx, peers) }
+        const friendChanges = await bumpAccountRevisions(tx, peers)
+        // Pool members see usage regardless of friendship, so refresh their Pool and profile views too.
+        const visibilityChanged = input.usageVisibility !== undefined && input.usageVisibility !== user.usageVisibility
+        const poolChanges = visibilityChanged ? await bumpAccountRevisions(tx, await poolPeerIds(tx, user.id)) : []
+        return { updated, friendChanges, poolChanges }
       }))
     } catch (cause) {
       if (hasDatabaseErrorCode(cause, '23505')) {
@@ -282,6 +292,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     if (!updated) throw unauthorized()
     await publishStateChange({ userId: user.id, revision: updated.stateRevision })
     await publishScopedStateChanges(friendChanges, ['friends'])
+    await publishScopedStateChanges(poolChanges, ['pool'])
     return { user: serializeUser(updated) }
   })
 

@@ -177,6 +177,7 @@ beforeEach(() => {
       username: 'test_user',
       avatarUrl: null,
       profileColor: null,
+      usageVisibility: 'friends',
       role: 'user',
       initials: 'TU',
       balanceMicros: 1_000_000,

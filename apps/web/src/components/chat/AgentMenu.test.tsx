@@ -89,3 +89,23 @@ it('clears pointer focus suppression when leaving the trigger', async () => {
   fireEvent.blur(trigger)
   expect(trigger.dataset.pointerFocus).toBeUndefined()
 })
+
+it('chooses what the agent may change in Files and opens the chat’s Files access', async () => {
+  const onModeChange = vi.fn()
+  const onOpenAccess = vi.fn()
+  render(<AgentMenu enabled disabled={false} onSelect={vi.fn()} files={{ mode: 'suggest', onModeChange, onOpenAccess }} />)
+  fireEvent.keyDown(screen.getByRole('button'), { key: 'Enter' })
+  const options = await screen.findAllByRole('menuitemradio')
+  expect(options.map((option) => option.textContent)).toEqual([
+    'Pulpo Agent', 'Disabled',
+    'Read onlyThe agent can look but not change anything',
+    'Suggest changesYou accept or reject each change',
+    'Edit directlyChanges apply right away, and you can undo them',
+  ])
+  expect(options[3]!.getAttribute('aria-checked')).toBe('true')
+  fireEvent.click(options[4]!)
+  expect(onModeChange).toHaveBeenCalledExactlyOnceWith('write')
+  fireEvent.keyDown(screen.getByRole('button'), { key: 'Enter' })
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'Files access…' }))
+  expect(onOpenAccess).toHaveBeenCalledOnce()
+})

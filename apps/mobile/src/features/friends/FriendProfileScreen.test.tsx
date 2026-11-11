@@ -61,7 +61,7 @@ let detail: FriendProfileDetail
 const writes = () => mocks.apiRequest.mock.calls.filter(([, options]) => options?.method)
 
 beforeEach(() => {
-  detail = { profile: profile('Alice'), relationship: 'none', requestId: null, friendsSince: null, mutualFriends: [profile('Bob')] }
+  detail = { profile: profile('Alice'), relationship: 'none', requestId: null, friendsSince: null, mutualFriends: [profile('Bob')], usageVisible: true, usageVisibility: 'friends', joinedAt: '2026-08-15T12:00:00.000Z' }
   mocks.apiRequest.mockImplementation(async (path: string, options?: { method?: string }) => {
     if (options?.method === 'POST' && path === '/api/friends/requests') {
       detail = { ...detail, relationship: 'outgoing', requestId: 'request-Alice' }

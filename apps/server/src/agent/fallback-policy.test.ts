@@ -23,8 +23,8 @@ function failed(
 describe('Agent fallback policy', () => {
   it('advances attempts only while the active model attempt budget remains', () => {
     const message = failed([], 'Provider overloaded')
-    expect(nextAgentRetryAttempt({ message, currentAttempt: 1, maxAttempts: 2, outputStarted: false, cancellationRequested: false })).toBe(2)
-    expect(nextAgentRetryAttempt({ message, currentAttempt: 2, maxAttempts: 2, outputStarted: false, cancellationRequested: false })).toBeUndefined()
+    expect(nextAgentRetryAttempt({ message, currentAttempt: 1, maxAttempts: 2, outputStarted: false, cancellationRequested: false, hasFallback: false })).toBe(2)
+    expect(nextAgentRetryAttempt({ message, currentAttempt: 2, maxAttempts: 2, outputStarted: false, cancellationRequested: false, hasFallback: false })).toBeUndefined()
   })
 
   it('assigns attempts to fallback models recursively', () => {
@@ -42,25 +42,33 @@ describe('Agent fallback policy', () => {
   it('retries no-output stream termination and timeout aborts', () => {
     const ended = failed([], 'OpenAI Responses stream ended before a terminal response event')
     const aborted = failed([], 'Request aborted', 'aborted')
-    expect(nextAgentRetryAttempt({ message: ended, currentAttempt: 1, maxAttempts: 2, outputStarted: false, cancellationRequested: false })).toBe(2)
-    expect(nextAgentRetryAttempt({ message: aborted, currentAttempt: 1, maxAttempts: 2, outputStarted: false, cancellationRequested: false })).toBe(2)
+    expect(nextAgentRetryAttempt({ message: ended, currentAttempt: 1, maxAttempts: 2, outputStarted: false, cancellationRequested: false, hasFallback: false })).toBe(2)
+    expect(nextAgentRetryAttempt({ message: aborted, currentAttempt: 1, maxAttempts: 2, outputStarted: false, cancellationRequested: false, hasFallback: false })).toBe(2)
   })
 
   it('resends an incomplete stream once when the model has no configured retries', () => {
     const ended = failed([], 'OpenAI Responses stream ended before a terminal response event')
-    expect(nextAgentRetryAttempt({ message: ended, currentAttempt: 1, maxAttempts: 1, outputStarted: false, cancellationRequested: false })).toBe(2)
-    expect(nextAgentRetryAttempt({ message: ended, currentAttempt: 2, maxAttempts: 1, outputStarted: false, cancellationRequested: false })).toBeUndefined()
-    expect(nextAgentRetryAttempt({ message: ended, currentAttempt: 1, maxAttempts: 1, outputStarted: true, cancellationRequested: false })).toBeUndefined()
-    expect(nextAgentRetryAttempt({ message: failed(), currentAttempt: 1, maxAttempts: 1, outputStarted: false, cancellationRequested: false })).toBeUndefined()
+    expect(nextAgentRetryAttempt({ message: ended, currentAttempt: 1, maxAttempts: 1, outputStarted: false, cancellationRequested: false, hasFallback: false })).toBe(2)
+    expect(nextAgentRetryAttempt({ message: ended, currentAttempt: 2, maxAttempts: 1, outputStarted: false, cancellationRequested: false, hasFallback: false })).toBeUndefined()
+    expect(nextAgentRetryAttempt({ message: ended, currentAttempt: 1, maxAttempts: 1, outputStarted: true, cancellationRequested: false, hasFallback: false })).toBeUndefined()
+    expect(nextAgentRetryAttempt({ message: failed(), currentAttempt: 1, maxAttempts: 1, outputStarted: false, cancellationRequested: false, hasFallback: false })).toBeUndefined()
+  })
+
+  it('sends an incomplete stream to the fallback model before resending it', () => {
+    const ended = failed([], 'OpenAI Responses stream ended before a terminal response event', 'aborted')
+    const chain = [{ fallbackModelId: 'standard', maxRetries: 4 }, { fallbackModelId: null, maxRetries: 0 }]
+    const input = { message: ended, currentAttempt: 1, outputStarted: false, cancellationRequested: false }
+    expect(nextAgentRetryAttempt({ ...input, maxAttempts: agentModelAttemptLimit(chain, 0), hasFallback: true })).toBeUndefined()
+    expect(canFallbackAgentTurn({ ...input, contextRetryAttempted: false })).toBe(true)
   })
 
   it('does not retry after output or cancellation', () => {
     const message = failed([], 'Provider overloaded')
-    expect(nextAgentRetryAttempt({ message, currentAttempt: 1, maxAttempts: 2, outputStarted: true, cancellationRequested: false })).toBeUndefined()
-    expect(nextAgentRetryAttempt({ message, currentAttempt: 1, maxAttempts: 2, outputStarted: false, cancellationRequested: true })).toBeUndefined()
+    expect(nextAgentRetryAttempt({ message, currentAttempt: 1, maxAttempts: 2, outputStarted: true, cancellationRequested: false, hasFallback: false })).toBeUndefined()
+    expect(nextAgentRetryAttempt({ message, currentAttempt: 1, maxAttempts: 2, outputStarted: false, cancellationRequested: true, hasFallback: false })).toBeUndefined()
     const aborted = failed([], 'Request aborted', 'aborted')
-    expect(nextAgentRetryAttempt({ message: aborted, currentAttempt: 1, maxAttempts: 2, outputStarted: true, cancellationRequested: false })).toBeUndefined()
-    expect(nextAgentRetryAttempt({ message: aborted, currentAttempt: 1, maxAttempts: 2, outputStarted: false, cancellationRequested: true })).toBeUndefined()
+    expect(nextAgentRetryAttempt({ message: aborted, currentAttempt: 1, maxAttempts: 2, outputStarted: true, cancellationRequested: false, hasFallback: false })).toBeUndefined()
+    expect(nextAgentRetryAttempt({ message: aborted, currentAttempt: 1, maxAttempts: 2, outputStarted: false, cancellationRequested: true, hasFallback: false })).toBeUndefined()
   })
 
   it('ignores empty stream deltas when deciding whether output started', () => {
@@ -89,9 +97,9 @@ describe('Agent fallback policy', () => {
     const chain = [{ fallbackModelId: 'backup', maxRetries: 3 }, { fallbackModelId: null, maxRetries: 0 }]
     const input = { message, outputStarted: false, cancellationRequested: false, contextRetryAttempted: false }
 
-    expect(nextAgentRetryAttempt({ ...input, currentAttempt: 1, maxAttempts: agentModelAttemptLimit(chain, 0) })).toBeUndefined()
+    expect(nextAgentRetryAttempt({ ...input, currentAttempt: 1, maxAttempts: agentModelAttemptLimit(chain, 0), hasFallback: true })).toBeUndefined()
     expect(canFallbackAgentTurn(input)).toBe(true)
-    expect(nextAgentRetryAttempt({ ...input, currentAttempt: 1, maxAttempts: agentModelAttemptLimit(chain, 1) })).toBe(2)
+    expect(nextAgentRetryAttempt({ ...input, currentAttempt: 1, maxAttempts: agentModelAttemptLimit(chain, 1), hasFallback: false })).toBe(2)
     expect(canFallbackAgentTurn({ ...input, outputStarted: true })).toBe(false)
     expect(canFallbackAgentTurn({ ...input, cancellationRequested: true })).toBe(false)
     expect(canFallbackAgentTurn({ ...input, contextRetryAttempted: true })).toBe(false)

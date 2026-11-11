@@ -3,7 +3,7 @@ import type { FileAccessMode } from '@pulpo/contracts'
 import type { WorkspaceManager } from '../../agent/controller.js'
 import type { FileExecutor } from '../access.js'
 import type { ReplyContext } from './changes.js'
-import { assertScopeCurrent, FilesCommandError, type FileScope } from './scope.js'
+import { assertScopeCurrent, FilesCommandError, FilesPermissionNeeded, type FileScope } from './scope.js'
 
 /** What Pulpo needs from the agent's workspace: files written into it (pull) and read from it (push). */
 export type FilesWorkspace = Pick<WorkspaceManager, 'writeWorkspaceFile' | 'readWorkspaceFile'>
@@ -35,16 +35,10 @@ export function workspacePath(value: string): string {
 }
 
 export function readOnlyMessage(path: string): string {
-  return `"${path || 'My files'}" is read only. If it should change, ask the user; they can allow changes from its chip in the composer.`
+  return `"${path || 'My files'}" is read only. If it should change, ask the user; they can allow changes in the Pulpo Agent menu below the message box.`
 }
 
-const MODE_ORDER: FileAccessMode[] = ['read', 'suggest', 'write']
-
-/** The more restrictive of two modes; null (outside the scope) restricts most. */
-export function stricterMode(left: FileAccessMode | null, right: FileAccessMode | null): FileAccessMode | null {
-  if (!left || !right) return null
-  return MODE_ORDER[Math.min(MODE_ORDER.indexOf(left), MODE_ORDER.indexOf(right))]!
-}
+export { stricterMode } from './scope.js'
 
 /**
  * The reply context for a change decided as `mode`: under the change's locks, the chat's scope
@@ -62,7 +56,7 @@ export function guardedReply(ctx: CommandContext, mode: 'write' | 'suggest', cur
 
 /** The mode a change may use, or a FilesCommandError when the agent may not change `path`. */
 export function changeMode(mode: FileAccessMode | null, path: string): 'write' | 'suggest' {
-  if (!mode) throw new FilesCommandError(`"${path}" is not attached to this chat`)
+  if (!mode) throw new FilesPermissionNeeded(path)
   if (mode === 'read') throw new FilesCommandError(readOnlyMessage(path))
   return mode
 }

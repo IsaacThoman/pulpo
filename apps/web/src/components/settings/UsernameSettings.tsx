@@ -20,7 +20,13 @@ import {
 } from './username-change'
 import { ui } from '@/i18n/ui'
 
-export function UsernameSettings({ buttonOnly = false }: { buttonOnly?: boolean }) {
+export function UsernameSettings({ buttonOnly = false, disabled = false, onPendingChange }: {
+  buttonOnly?: boolean
+  /** Another profile write is in flight; every write replies with the whole user. */
+  disabled?: boolean
+  /** Reports while the username request runs, including after the dialog closes. */
+  onPendingChange?: (pending: boolean) => void
+}) {
   const user = useAuth((state) => state.user)
   const replaceUser = useAuth((state) => state.replaceUser)
   const [open, setOpen] = useState(false)
@@ -48,9 +54,10 @@ export function UsernameSettings({ buttonOnly = false }: { buttonOnly?: boolean 
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (validationError) return
+    if (validationError || disabled) return
     setLoading(true)
     setError('')
+    onPendingChange?.(true)
     try {
       const result = await requestUsernameChange(username)
       replaceUser(result.user)
@@ -63,10 +70,11 @@ export function UsernameSettings({ buttonOnly = false }: { buttonOnly?: boolean 
       setError(cause instanceof Error ? cause.message : 'Could not update username.')
     } finally {
       setLoading(false)
+      onPendingChange?.(false)
     }
   }
 
-  const trigger = <Button variant="outline" size="sm" onClick={() => handleOpenChange(true)}>{ui("Change username")}</Button>
+  const trigger = <Button variant="outline" size="sm" disabled={disabled} onClick={() => handleOpenChange(true)}>{ui("Change username")}</Button>
 
   return <>
     {buttonOnly ? trigger : <div className="flex min-w-0 flex-col items-start gap-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
@@ -125,7 +133,7 @@ export function UsernameSettings({ buttonOnly = false }: { buttonOnly?: boolean 
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>{ui("Cancel")}</Button>
-            <Button type="submit" disabled={Boolean(validationError) || loading}>
+            <Button type="submit" disabled={Boolean(validationError) || loading || disabled}>
               {loading && <Loader2 className="animate-spin" aria-hidden />} {ui("Update username")} </Button>
           </DialogFooter>
         </form>}

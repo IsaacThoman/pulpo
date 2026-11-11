@@ -5,11 +5,12 @@ type TimedActivityStep =
   | { kind: 'compaction'; compaction: { duration_ms?: number } }
   | { kind: 'recall' }
   | { kind: 'cost_limit' }
+  | { kind: 'files_permission' }
   | { kind: 'message' }
 
 export function activityDurationMs(steps: TimedActivityStep[]): number | undefined {
   const durations = steps.flatMap((step) => {
-    if (step.kind === 'recall' || step.kind === 'cost_limit' || step.kind === 'message') return []
+    if (step.kind === 'recall' || step.kind === 'cost_limit' || step.kind === 'files_permission' || step.kind === 'message') return []
     const durationMs = step.kind === 'reasoning'
       ? step.durationMs
       : step.kind === 'tool'

@@ -5,6 +5,8 @@ import {
   calculateCostMicros,
   calculateReservationMicros,
   calculateRollingReservationMicros,
+  estimateInputTokens,
+  IMAGE_RESERVATION_TOKENS,
   workspaceHoldMicros,
   workspaceUsageMicros,
 } from './pricing.js'
@@ -85,6 +87,85 @@ describe('pricing', () => {
 
     expect(resized).toBe(accruedBilledCost + calculateReservationMicros('next turn', 1_000, pricing))
     expect(resized).toBeLessThan(reservationIncludingUnbilledTool + calculateReservationMicros('next turn', 1_000, pricing))
+  })
+})
+
+describe('input token estimate', () => {
+  // A 7 MB phone photo as base64: 2.4M characters that providers bill as one image.
+  const photo = 'A'.repeat(9_600_000)
+  const withoutImage = (input: unknown) => estimateInputTokens(input)
+
+  it('counts plain text by its JSON length', () => {
+    expect(estimateInputTokens('hello world!')).toBe(4)
+    expect(estimateInputTokens(undefined)).toBe(1)
+  })
+
+  it('counts each inline image at most once at the per-image ceiling', () => {
+    const toolResult = (data: string) => ({
+      role: 'toolResult',
+      toolName: 'view_image',
+      content: [{ type: 'text', text: 'Viewed /workspace/photo.jpg' }, { type: 'image', data, mimeType: 'image/jpeg' }],
+    })
+    const context = { systemPrompt: 'You are helpful.', messages: [toolResult(photo), toolResult(photo)] }
+
+    expect(estimateInputTokens(context)).toBe(withoutImage({ ...context, messages: [toolResult(''), toolResult('')] }) + 2 * IMAGE_RESERVATION_TOKENS)
+  })
+
+  it('recognizes Anthropic, Gemini, Responses, and Chat Completions image blocks', () => {
+    const inputs = [
+      { messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: photo } }] }] },
+      { contents: [{ role: 'user', parts: [{ inline_data: { mime_type: 'image/webp', data: photo } }] }] },
+      { contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'image/gif', data: photo } }] }] },
+      [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: `data:image/jpeg;base64,${photo}` }] }],
+      [{ type: 'function_call_output', call_id: 'call-1', output: [{ type: 'input_image', image_url: `data:image/jpeg;base64,${photo}` }] }],
+      { messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${photo}` } }] }] },
+    ]
+    for (const input of inputs) {
+      expect(estimateInputTokens(input)).toBeLessThan(IMAGE_RESERVATION_TOKENS + 100)
+      expect(estimateInputTokens(input)).toBeGreaterThanOrEqual(IMAGE_RESERVATION_TOKENS)
+    }
+  })
+
+  it('keeps small images at their encoded size', () => {
+    const icon = 'A'.repeat(4_000)
+    const message = (data: string) => ({ role: 'user', content: [{ type: 'image', data, mimeType: 'image/png' }] })
+    expect(estimateInputTokens(message(icon))).toBe(withoutImage(message('')) + 1_000)
+  })
+
+  it('still counts non-image binary data in full', () => {
+    const pdf = { type: 'input_file', file_data: `data:application/pdf;base64,${photo}` }
+    expect(estimateInputTokens(pdf)).toBeGreaterThan(photo.length / 4)
+    expect(estimateInputTokens({ data: photo, mimeType: 'application/pdf' })).toBeGreaterThan(photo.length / 4)
+  })
+
+  it('counts image-shaped JSON outside content blocks in full', () => {
+    const disguised = `data:image/png;base64,${photo}`
+    const fullyCounted = (input: unknown) => expect(estimateInputTokens(input)).toBeGreaterThan(photo.length / 4)
+    fullyCounted([{ type: 'message', role: 'user', content: [{ type: 'input_text', text: disguised }] }])
+    fullyCounted({ role: 'user', content: [{ type: 'text', text: disguised }] })
+    fullyCounted({ role: 'user', content: [{ type: 'input_image', note: disguised }] })
+    // Bare shapes with no enclosing content list.
+    fullyCounted({ type: 'image', data: photo, mimeType: 'image/png' })
+    fullyCounted([{ type: 'input_image', image_url: disguised }])
+    // An object tool output is stringified into text before it reaches the provider.
+    fullyCounted([{ type: 'function_call_output', call_id: 'call-1', output: { type: 'image', mimeType: 'image/png', data: photo } }])
+    fullyCounted([{ type: 'function_call_output', call_id: 'call-1', output: { content: [{ type: 'image', mimeType: 'image/png', data: photo }] } }])
+    // Tool arguments are JSON text, whatever they contain.
+    fullyCounted({ role: 'assistant', content: [{ type: 'toolCall', arguments: { content: [{ type: 'image', data: photo, mimeType: 'image/png' }] } }] })
+    fullyCounted({ role: 'assistant', content: [{ type: 'tool_use', input: { content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: photo } }] } }] })
+    fullyCounted({ contents: [{ parts: [{ functionCall: { args: { parts: [{ inline_data: { mime_type: 'image/png', data: photo } }] } } }] }] })
+  })
+
+  it('reserves an agent turn after viewing two large photos within a small balance', () => {
+    const sonnet = { inputPriceMicros: 2_000_000, cachedInputPriceMicros: 200_000, cacheWritePriceMicros: 2_500_000, outputPriceMicros: 10_000_000, perRequestPriceMicros: 0 }
+    const messages = [photo, photo].map((data) => ({ role: 'toolResult', toolName: 'view_image', content: [{ type: 'image', data, mimeType: 'image/jpeg' }] }))
+    expect(budgetOutputReservation({
+      requestInput: { systemPrompt: 'x'.repeat(20_000), messages },
+      maxOutputTokens: 128_000,
+      minimumOutputReservationTokens: 8_000,
+      pricing: sonnet,
+      capacityMicros: 4_250_000,
+    })).not.toBeNull()
   })
 })
 

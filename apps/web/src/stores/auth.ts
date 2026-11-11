@@ -1,4 +1,6 @@
-import { desktopDevice } from '@/lib/runtime'
+import { desktopDevice, runtimeAccountKey } from '@/lib/runtime'
+import { forgetFilesTabs } from '@/features/files/tabs/store'
+import { forgetPanelTabs } from '@/features/side-panel/store'
 import { clearWebShelves } from '@/lib/local-first/shelf-registry'
 import { clearWebComposerSync } from '@/lib/local-first/composer-sync'
 import { create } from 'zustand'
@@ -6,7 +8,7 @@ import { apiRequest, ApiError } from '@/lib/api'
 import { clearLocalUserData, indexedDbPersister } from '@/lib/local-first/database'
 import { clearRuntimeComposerDrafts } from '@/lib/local-first/composer-drafts'
 import { queryClient } from '@/lib/query-client'
-import { DEFAULT_MAX_INLINE_IMAGES, DEFAULT_MAX_ATTACHMENT_BYTES, type MobileConfig, type NativeAuthResponse, type PasskeyCeremony, type SignedInAccount } from '@pulpo/contracts'
+import { DEFAULT_MAX_INLINE_IMAGES, DEFAULT_MAX_ATTACHMENT_BYTES, DEFAULT_USAGE_VISIBILITY, type MobileConfig, type NativeAuthResponse, type PasskeyCeremony, type SignedInAccount, type UsageVisibility } from '@pulpo/contracts'
 import { authenticateWithPasskey, passkeyErrorMessage } from '@/lib/passkeys'
 import { normalizeInstanceUrl } from '@pulpo/client-core'
 import { authenticateDesktopPasskey, DesktopPasskeyCancelledError } from '@/lib/desktop-passkeys'
@@ -38,6 +40,8 @@ export interface AuthUser {
   username: string
   avatarUrl: string | null
   profileColor: string | null
+  /** Who can see this user's usage on their profile. */
+  usageVisibility: UsageVisibility
   role: AuthRole
   initials: string
   balanceMicros: number
@@ -123,13 +127,16 @@ function normalizeUser(user: ServerUser): AuthUser {
     ...user,
     avatarUrl: user.avatarUrl ?? null,
     profileColor: user.profileColor ?? null,
+    // Profiles cached, or served, before the setting existed lack it.
+    usageVisibility: user.usageVisibility ?? DEFAULT_USAGE_VISIBILITY,
     initials: initials(user.name),
   }
 }
 
 function readCachedProfile(): AuthUser | null {
   try {
-    return JSON.parse(localStorage.getItem(runtimeProfileKey()) ?? 'null') as AuthUser | null
+    const user = JSON.parse(localStorage.getItem(runtimeProfileKey()) ?? 'null') as AuthUser | null
+    return user && { ...user, usageVisibility: user.usageVisibility ?? DEFAULT_USAGE_VISIBILITY }
   } catch {
     return null
   }
@@ -468,6 +475,8 @@ export const useAuth = create<AuthState>()((set, get) => ({
       clearWebShelves()
       clearWebComposerSync()
       await clearLocalUserData(userId)
+      forgetFilesTabs(runtimeAccountKey(userId))
+      forgetPanelTabs(runtimeAccountKey(userId))
     }
   },
 
@@ -529,6 +538,8 @@ export const useAuth = create<AuthState>()((set, get) => ({
       clearWebShelves()
       clearWebComposerSync()
     await clearLocalUserData(userId)
+    forgetFilesTabs(runtimeAccountKey(userId))
+    forgetPanelTabs(runtimeAccountKey(userId))
     set({ user: null, checkingSession: false })
   },
 
@@ -570,6 +581,8 @@ export const useAuth = create<AuthState>()((set, get) => ({
     await signOutSignedInAccount(userId)
     clearRuntimeComposerDrafts(userId)
     await clearLocalUserData(userId)
+    forgetFilesTabs(runtimeAccountKey(userId))
+    forgetPanelTabs(runtimeAccountKey(userId))
     set({ signedInAccounts: get().signedInAccounts.filter((account) => account.id !== userId) })
   },
 
@@ -585,6 +598,8 @@ export const useAuth = create<AuthState>()((set, get) => ({
     for (const userId of await signOutOtherAccounts()) {
       clearRuntimeComposerDrafts(userId)
       await clearLocalUserData(userId)
+      forgetFilesTabs(runtimeAccountKey(userId))
+      forgetPanelTabs(runtimeAccountKey(userId))
     }
     set({ signedInAccounts: [] })
     await get().logout()

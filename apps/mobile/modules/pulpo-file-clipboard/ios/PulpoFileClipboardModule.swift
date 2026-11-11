@@ -65,7 +65,7 @@ public final class PulpoFileClipboardModule: Module {
     }
 
     View(AgentModeMenuView.self) {
-      Events("onSelectionChange")
+      Events("onSelectionChange", "onFilesAction")
       Prop("configuration") { (view, value: AgentModeMenuConfiguration) in
         view.configure(value)
       }

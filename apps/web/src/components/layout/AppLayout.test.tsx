@@ -8,6 +8,7 @@ import { useDesktopChrome } from '@/stores/desktopChrome'
 import { useSidePanel } from '@/features/side-panel/store'
 
 vi.mock('@/stores/chat', () => ({ useChat: { getState: () => ({ abandonTemporaryChat: vi.fn() }) } }))
+vi.mock('@/stores/auth', () => ({ useAuth: (select: (state: { user: null; filesEnabled: boolean }) => unknown) => select({ user: null, filesEnabled: true }) }))
 vi.mock('@/stores/settings', () => ({
   useSettings: (select: (state: { doubleShiftSearch: boolean; animationSpeed: number }) => unknown) =>
     select({ doubleShiftSearch: false, animationSpeed: 1 }),

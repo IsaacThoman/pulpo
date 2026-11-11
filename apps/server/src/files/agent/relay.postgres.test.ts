@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, queryClient } from '../../database/client.js'
-import { chats, fileChanges, fileNodes, fileVersions } from '../../database/schema.js'
+import { chats, fileChanges, fileNodes, fileVersions, userPreferences } from '../../database/schema.js'
 import { storageUsedBytes } from '../../attachments/storage-quota.js'
 import { createShortcut } from '../shortcuts.js'
 import { ensureSystemFolders } from '../system-folders.js'
@@ -58,41 +58,109 @@ describe.skipIf(!enabled)('pulpo files relay', () => {
     expect(outside).toMatchObject({ status: 'error', message: expect.stringMatching(/inside \/workspace/) })
   })
 
-  it('reaches only attached items and hides shortcuts', async () => {
+  it('reaches only mentioned items and hides shortcuts', async () => {
     const projects = await files.folder('Projects')
     const secret = await files.folder('Secret')
     await files.doc('Plan.md', projects, '# Plan')
     await files.blob('hidden.txt', secret, 'top secret')
     await createShortcut(files.userId, { parentId: projects, targetKind: 'file', targetId: secret })
     await files.attach({ [projects]: 'suggest' })
-    expect((await files.ok('ls', {})).output).toBe('Projects/  (folder, you can suggest changes)')
     expect((await files.ok('ls', { path: 'projects' })).output).toMatch(/^Projects\/Plan\.md {2}\(Markdown document, /)
     expect((await files.ok('ls', { path: 'Projects' })).output).not.toMatch(/Secret/)
-    expect(await files.error('cat', { path: 'Secret/hidden.txt' })).toMatch(/not attached to this chat/)
     expect(await files.error('cat', { path: 'Projects/Secret/hidden.txt' })).toMatch(/does not exist/)
+    expect(files.permissionRequests).toEqual([])
+    expect(await files.error('cat', { path: 'Secret/hidden.txt' })).toMatch(/declined to let you browse/)
+    expect(files.permissionRequests).toEqual([{ command: 'cat', path: 'Secret/hidden.txt' }])
   })
 
-  it('labels attached items uniquely and reaches nested ones through their folder', async () => {
+  it('reaches mentioned items by their path from the top of My files', async () => {
     const work = await files.folder('Work')
     const notesA = await files.folder('Notes', work)
     const notesB = await files.folder('Notes')
     const notesC = await files.folder('Notes (2)', work)
     const plan = await files.doc('Plan.md', notesA, 'a')
     await files.doc('Plan.md', notesB, 'b')
+    await files.doc('Other.md', work, 'c')
     await files.attach({ [notesA]: 'suggest', [notesB]: 'read', [notesC]: undefined, [plan]: 'write' })
     const scope = (await loadChatFileScope(files.userId, files.chatId))!
-    expect(scope.roots.map((root) => root.label)).toEqual(['Notes', 'Notes (2)', 'Notes (2) (2)'])
-    expect(scope.attached.map((item) => [item.path, item.location, item.mode])).toEqual([
-      ['Notes', 'Work', 'suggest'], ['Notes (2)', null, 'read'], ['Notes (2) (2)', 'Work', 'suggest'], ['Notes/Plan.md', null, 'write'],
+    expect(scope.attached.map((item) => [item.path, item.mode])).toEqual([
+      ['Work/Notes', 'suggest'], ['Notes', 'read'], ['Work/Notes (2)', 'suggest'], ['Work/Notes/Plan.md', 'write'],
     ])
-    expect((await files.ok('cat', { path: 'notes (2)/plan.md' })).output).toBe('b')
+    expect((await files.ok('cat', { path: 'notes/plan.md' })).output).toBe('b')
+    expect((await files.ok('cat', { path: 'Work/Notes/Plan.md' })).output).toBe('a')
     expect(await modeFor(scope, plan)).toBe('write')
     expect(await modeFor(scope, notesB)).toBe('read')
     expect(await modeFor(scope, work)).toBeNull()
+    // The folder leading to mentioned items can be passed through, but not looked into.
+    expect(files.permissionRequests).toEqual([])
+    expect(await files.error('ls', { path: 'Work' })).toMatch(/declined/)
+    expect(files.permissionRequests).toEqual([{ command: 'ls', path: 'Work' }])
     // Temporary chats and turned-off Files get no scope at all.
     await db.update(chats).set({ temporary: true }).where(eq(chats.id, files.chatId))
     expect(await loadChatFileScope(files.userId, files.chatId)).toBeNull()
     expect(await files.error('ls', {})).toMatch(/not available in this chat/)
+  })
+
+  it('asks once before browsing, and a refusal stands for the reply', async () => {
+    const projects = await files.folder('Projects')
+    const secret = await files.folder('Secret')
+    await files.blob('hidden.txt', secret, 'top secret')
+    await files.attach({ [projects]: undefined })
+    files.answerPermission = async () => 'denied'
+    expect(await files.error('ls', {})).toMatch(/declined to let you browse/)
+    // Asking about a name that does not exist would reveal that it does not, so that asks too.
+    expect(await files.error('cat', { path: 'Nope.md' })).toMatch(/declined/)
+    expect(await files.error('mkdir', { path: 'New' })).toMatch(/declined/)
+    expect(files.permissionRequests).toEqual([{ command: 'ls', path: '' }])
+
+    await files.newReply()
+    files.answerPermission = async () => 'expired'
+    expect(await files.error('tree', {})).toMatch(/did not answer/)
+    expect(await files.error('grep', { pattern: 'secret' })).toMatch(/did not answer/)
+    expect(files.permissionRequests).toHaveLength(2)
+  })
+
+  it('refuses at once when the app that sent the message cannot show the request', async () => {
+    const projects = await files.folder('Projects')
+    await files.blob('notes.txt', projects, 'in scope')
+    await files.attach({ [projects]: undefined })
+    files.canAskPermission = false
+    await files.newReply()
+    expect(await files.error('ls', {})).toMatch(/their app cannot show a request to browse/)
+    expect(await files.error('cat', { path: 'Nope.md' })).toMatch(/cannot show a request/)
+    expect(files.permissionRequests).toEqual([])
+    // Mentioned items still work.
+    expect((await files.ok('cat', { path: 'Projects/notes.txt' })).output).toContain('in scope')
+    files.canAskPermission = true
+  })
+
+  it('browses everything once allowed, changing browsed items only by suggestion', async () => {
+    const projects = await files.folder('Projects')
+    const secret = await files.folder('Secret')
+    const hidden = await files.blob('hidden.txt', secret, 'top secret')
+    await files.attach({ [projects]: undefined })
+    await db.update(chats).set({ fileChangeMode: 'write' }).where(eq(chats.id, files.chatId))
+    files.answerPermission = async () => {
+      await db.update(chats).set({ filesBrowseAllowed: true }).where(eq(chats.id, files.chatId))
+      return 'allowed'
+    }
+    expect((await files.ok('ls', {})).output).toBe('Projects/  (folder, you can edit it directly)\nSecret/  (folder)')
+    expect((await files.ok('cat', { path: 'Secret/hidden.txt' })).output).toBe('top secret')
+    expect(files.permissionRequests).toHaveLength(1)
+    const scope = (await loadChatFileScope(files.userId, files.chatId))!
+    expect(scope.browse).toBe('chat')
+    expect(await modeFor(scope, projects)).toBe('write')
+    expect(await modeFor(scope, hidden)).toBe('suggest')
+    expect((await files.ok('mkdir', { path: 'Secret/Drafts' })).output).toMatch(/Suggested the new folder/)
+    expect((await files.ok('mkdir', { path: 'Projects/Drafts' })).output).toMatch(/Created the folder/)
+  })
+
+  it('browses without asking when the account allows it', async () => {
+    await files.folder('Secret')
+    await db.insert(userPreferences).values({ userId: files.userId, values: { agentFilesAskBeforeBrowsing: false } })
+    expect((await files.ok('ls', {})).output).toBe('Secret/  (folder)')
+    expect(files.permissionRequests).toEqual([])
+    expect((await loadChatFileScope(files.userId, files.chatId))!.browse).toBe('account')
   })
 
   it('lists and outlines folders with modes of attached items', async () => {
@@ -119,10 +187,10 @@ describe.skipIf(!enabled)('pulpo files relay', () => {
     expect((await files.ok('cat', { path: 'Notes/todo.txt' })).output).toBe('buy milk\nship it\n')
     expect(await files.error('cat', { path: 'Notes/photo.png' })).toMatch(/not a text file/)
     expect(await files.error('cat', { path: 'Notes' })).toMatch(/is a folder/)
-    expect((await files.ok('grep', { pattern: 'ship' })).output).toBe('Notes/todo.txt:2: ship it')
+    expect((await files.ok('grep', { pattern: 'ship', path: 'Notes' })).output).toBe('Notes/todo.txt:2: ship it')
     expect((await files.ok('grep', { pattern: 'SHIP', ignoreCase: true, path: 'Notes' })).output).toBe('Notes/Plan.md:3: Ship the relay\nNotes/todo.txt:2: ship it')
-    expect((await files.ok('grep', { pattern: 'a.b', fixed: true })).output).toBe('No matches')
-    expect(await files.error('grep', { pattern: '(' })).toMatch(/Invalid pattern/)
+    expect((await files.ok('grep', { pattern: 'a.b', fixed: true, path: 'Notes' })).output).toBe('No matches')
+    expect(await files.error('grep', { pattern: '(', path: 'Notes' })).toMatch(/Invalid pattern/)
     // A pattern that backtracks forever is stopped instead of stalling the worker.
     const started = Date.now()
     expect(await files.error('grep', { pattern: '(a+)+$', path: 'Notes/long.txt' })).toMatch(/took too long/)

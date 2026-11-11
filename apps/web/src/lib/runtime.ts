@@ -1,4 +1,4 @@
-import { CLIENT_PLATFORM_HEADER, type NativeDevice } from '@pulpo/contracts'
+import { CLIENT_FEATURES_HEADER, CLIENT_FEATURES_HEADER_VALUE, CLIENT_PLATFORM_HEADER, type NativeDevice } from '@pulpo/contracts'
 import { normalizeInstanceUrl } from '@pulpo/client-core'
 
 export interface DesktopStoredSession {
@@ -11,6 +11,9 @@ export interface DesktopSignedInAccounts {
   instanceUrl: string
   accounts: Array<{ userId: string; token: string; expiresAt: string }>
 }
+
+/** Commands the desktop app's menu sends to the page. */
+export type DesktopCommand = 'new-chat' | 'settings' | 'files-new-tab' | 'files-close-tab' | 'files-reopen-tab'
 
 interface DesktopApi {
   platform: 'desktop'
@@ -26,7 +29,9 @@ interface DesktopApi {
   }
   openExternal(url: string): Promise<void>
   onProtocolUrl(listener: (url: string) => void): () => void
-  onCommand(listener: (command: 'new-chat' | 'settings') => void): () => void
+  onCommand(listener: (command: DesktopCommand) => void): () => void
+  /** Shows Files tab items (New Tab, Close Tab, Reopen Closed Tab) in the menu; missing in older apps. */
+  setFilesTabsMenu?(shown: boolean): Promise<void>
   appInfo(): Promise<{ name: string; version: string; packaged: boolean }>
   windowControls: {
     minimize(): Promise<void>
@@ -140,7 +145,7 @@ export function runtimeClientHeaders(url: string): Record<string, string> {
   } catch {
     return {}
   }
-  return { [CLIENT_PLATFORM_HEADER]: runtimeClientPlatform() }
+  return { [CLIENT_PLATFORM_HEADER]: runtimeClientPlatform(), [CLIENT_FEATURES_HEADER]: CLIENT_FEATURES_HEADER_VALUE }
 }
 
 /** Test hook: forgets the cached desktop version. */

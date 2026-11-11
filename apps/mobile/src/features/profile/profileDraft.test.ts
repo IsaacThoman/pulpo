@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { profileDraft } from './profileDraft'
+import { profileDraft, USAGE_VISIBILITY_HINT, USAGE_VISIBILITY_OPTIONS, usageVisibilityOf } from './profileDraft'
 
 const user = { name: 'Isaac', username: 'isaac' }
 
@@ -23,5 +23,34 @@ describe('profile draft', () => {
   it('needs a display name and an account', () => {
     expect(profileDraft(user, '  ', 'isaac').canSave).toBe(false)
     expect(profileDraft(null, 'Isaac', 'isaac').canSave).toBe(false)
+    expect(profileDraft(null, 'Isaac', 'isaac', 'public').patch).toEqual({})
+  })
+
+  it('sends the usage visibility only when it changed', () => {
+    const shared = { ...user, usageVisibility: 'public' as const }
+    expect(profileDraft(shared, 'Isaac', 'isaac').patch).toEqual({})
+    expect(profileDraft(shared, 'Isaac', 'isaac', 'public').patch).toEqual({})
+    expect(profileDraft(shared, 'Isaac T', 'isaac', 'pool').patch).toEqual({ name: 'Isaac T', usageVisibility: 'pool' })
+    expect(profileDraft(shared, 'Isaac', '_isaac', 'friends')).toMatchObject({ patch: { usageVisibility: 'friends' }, canSave: false })
+  })
+
+  it('reads a cached account without the setting as visible to friends', () => {
+    expect(usageVisibilityOf({})).toBe('friends')
+    expect(usageVisibilityOf(null)).toBe('friends')
+    expect(profileDraft(user, 'Isaac', 'isaac', 'friends').patch).toEqual({})
+    expect(profileDraft(user, 'Isaac', 'isaac', 'public').patch).toEqual({ usageVisibility: 'public' })
+  })
+})
+
+describe('usage visibility choices', () => {
+  // Pool members can see usage on every instance, whether or not it bills usage.
+  it('match web and always say Pool members can see usage', () => {
+    expect(USAGE_VISIBILITY_OPTIONS).toEqual([{ value: 'pool', label: 'Private (Pool only)' }, { value: 'friends', label: 'Friends' }, { value: 'public', label: 'Public' }])
+    expect(USAGE_VISIBILITY_HINT).toBe('Who can see your usage stats and requests on your profile. Pool members can always see your usage.')
+  })
+
+  it('never mention balances, credits, or prices', () => {
+    const copy = [USAGE_VISIBILITY_HINT, ...USAGE_VISIBILITY_OPTIONS.map((option) => option.label)].join(' ')
+    expect(copy).not.toMatch(/\$|credit|balance|price/i)
   })
 })

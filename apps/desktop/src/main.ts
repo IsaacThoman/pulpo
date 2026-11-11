@@ -33,6 +33,7 @@ import { loadWindowState, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, saveWindowState }
 import { DesktopUpdater, type ManualUpdateCheckResult } from './updater'
 import { desktopUpdatesSupported } from './update-support'
 import { prepareDesktopDownload } from './downloads'
+import { fileMenuItems } from './file-menu'
 
 const WINDOWS_APP_USER_MODEL_ID = 'com.squirrel.Pulpo.Pulpo'
 
@@ -43,6 +44,8 @@ const rendererOrigin = developmentUrl ? new URL(developmentUrl).origin : DESKTOP
 const pendingProtocolUrls: string[] = []
 let mainWindow: BrowserWindow | null = null
 let rendererReady = false
+/** Whether the page shows Files tabs, which take over Cmd/Ctrl+W (see file-menu). */
+let filesTabsShown = false
 let desktopUpdater: DesktopUpdater | null = null
 
 log.initialize({ preload: false })
@@ -90,14 +93,7 @@ function applicationMenu(): Menu {
         { role: 'quit' },
       ],
     },
-    {
-      label: 'File',
-      submenu: [
-        { label: 'New Chat', accelerator: 'CmdOrCtrl+N', click: () => sendCommand('new-chat') },
-        { type: 'separator' },
-        { role: 'close' },
-      ],
-    },
+    { label: 'File', submenu: fileMenuItems(filesTabsShown, sendCommand) },
     { label: 'Edit', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
     {
       label: 'View',
@@ -249,6 +245,13 @@ function registerIpc(): void {
     trustedWindow(event).close()
   })
   ipcMain.handle('desktop:window:is-maximized', (event) => trustedWindow(event).isMaximized())
+  ipcMain.handle('desktop:menu:files-tabs', (event, shown: unknown) => {
+    trustedWindow(event)
+    if (typeof shown !== 'boolean') throw new Error('Invalid menu state.')
+    if (shown === filesTabsShown) return
+    filesTabsShown = shown
+    updateApplicationMenu()
+  })
 }
 
 function deliverProtocolUrl(value: string): void {
@@ -374,6 +377,15 @@ async function createMainWindow(): Promise<void> {
     for (const url of pendingProtocolUrls.splice(0)) window.webContents.send('desktop:protocol-url', url)
   })
   window.webContents.on('did-start-loading', () => { rendererReady = false })
+  // A page that reloads or crashes cannot take the tab items back off the menu; the new page adds them again.
+  const resetFilesTabsMenu = () => {
+    if (!filesTabsShown) return
+    filesTabsShown = false
+    updateApplicationMenu()
+  }
+  window.webContents.on('did-navigate', resetFilesTabsMenu)
+  window.webContents.on('render-process-gone', resetFilesTabsMenu)
+  window.on('closed', resetFilesTabsMenu)
   window.once('ready-to-show', () => window.show())
   window.on('close', () => { void saveWindowState(window) })
   const publishMaximizedState = () => window.webContents.send('desktop:window:maximized-changed', window.isMaximized())

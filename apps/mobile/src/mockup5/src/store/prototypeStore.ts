@@ -28,7 +28,10 @@ type PrototypeActions = {
   renameChat: (id: string, title: string) => void;
   /** Replaces which Files items a saved chat's agent works with; access of items that stay is kept. */
   setChatFileScope: (id: string, ids: string[]) => void;
-  setChatFileAccess: (id: string, itemId: string, mode: import('@pulpo/contracts').FileAccessMode) => void;
+  /** What the agent may change in Files in this chat; it replaces any per-item modes. */
+  setChatFileChangeMode: (id: string, mode: import('@pulpo/contracts').FileAccessMode) => void;
+  /** Takes back the permission to look through all of the user's Files in this chat. */
+  revokeChatFilesBrowse: (id: string) => void;
   /**
    * `pinnedAfter`: the last position among the pinned Files items, which share the pinned list.
    * See `ChatPlacement` for `options`.
@@ -87,7 +90,7 @@ const retentionMs: Record<AppPreferences['trashRetention'], number | null> = {
 };
 
 const initialsFor = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?';
-const productionPreferenceKeys = new Set(['imageGeneration', 'speech', 'theme', 'textSize', 'streamResponses', 'showPromptSuggestions', 'showModelWarnings', 'modelWarningDismissals', 'showReasoning', 'showResponseCost', 'agentCostLimitEnabled', 'agentCostLimitMicros', 'memoryEnabled', 'customInstructions', 'instructionPresetSelections', 'haptics', 'sendWithEnter', 'attachmentCacheMb', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'chatSortMode']);
+const productionPreferenceKeys = new Set(['imageGeneration', 'speech', 'theme', 'textSize', 'streamResponses', 'showPromptSuggestions', 'showModelWarnings', 'modelWarningDismissals', 'showReasoning', 'showResponseCost', 'agentCostLimitEnabled', 'agentCostLimitMicros', 'agentFilesAskBeforeBrowsing', 'agentFileChangeMode', 'memoryEnabled', 'customInstructions', 'instructionPresetSelections', 'haptics', 'sendWithEnter', 'attachmentCacheMb', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'chatSortMode']);
 const actionVersions = new Map<string, number>();
 
 function automaticExpirationDeadline(now = Date.now()): number | null {
@@ -189,12 +192,20 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
       set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, fileScopeIds: previous.fileScopeIds, fileScopeAccess: previous.fileScopeAccess } : chat) }));
     });
   },
-  setChatFileAccess: (chatId, itemId, mode) => {
+  setChatFileChangeMode: (chatId, mode) => {
     const previous = get().chats.find((chat) => chat.id === chatId);
-    if (!previous || !(previous.fileScopeIds ?? []).includes(itemId)) return;
-    set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, fileScopeAccess: { ...chat.fileScopeAccess, [itemId]: mode } } : chat) }));
-    runOptimisticAction(`chat:${chatId}:file-access:${itemId}`, productionActions.setChatFileAccess(chatId, itemId, mode), () => {
-      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, fileScopeAccess: previous.fileScopeAccess } : chat) }));
+    if (!previous) return;
+    set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, fileChangeMode: mode, fileScopeAccess: {} } : chat) }));
+    runOptimisticAction(`chat:${chatId}:file-change-mode`, productionActions.setChatFileChangeMode(chatId, mode), () => {
+      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, fileChangeMode: previous.fileChangeMode, fileScopeAccess: previous.fileScopeAccess } : chat) }));
+    });
+  },
+  revokeChatFilesBrowse: (chatId) => {
+    const previous = get().chats.find((chat) => chat.id === chatId);
+    if (!previous?.filesBrowseAllowed) return;
+    set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, filesBrowseAllowed: false } : chat) }));
+    runOptimisticAction(`chat:${chatId}:files-browse`, productionActions.revokeChatFilesBrowse(chatId), () => {
+      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, filesBrowseAllowed: previous.filesBrowseAllowed } : chat) }));
     });
   },
   togglePin: (chatId, pinnedAfter = -1, { floor, sendSortOrder = false } = {}) => {

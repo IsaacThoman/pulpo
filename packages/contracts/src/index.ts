@@ -87,6 +87,10 @@ export const usernameSchema = z.string().trim().toLowerCase()
   .regex(/^[a-z0-9][a-z0-9_]{1,28}[a-z0-9]$/, 'Use 3–30 letters, numbers, or underscores; begin and end with a letter or number')
   .refine((username) => !reservedProfileUsernames.has(username), 'That username is reserved by Pulpo')
 export const profileColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/)
+/** Who may see a user's usage on their profile; each level includes the ones before it. */
+export const usageVisibilitySchema = z.enum(['pool', 'friends', 'public'])
+export type UsageVisibility = z.infer<typeof usageVisibilitySchema>
+export const DEFAULT_USAGE_VISIBILITY: UsageVisibility = 'friends'
 
 export const userSchema = z.object({
   id: idSchema,
@@ -95,6 +99,7 @@ export const userSchema = z.object({
   username: usernameSchema,
   avatarUrl: z.string().nullable(),
   profileColor: profileColorSchema.nullable(),
+  usageVisibility: usageVisibilitySchema,
   role: roleSchema,
   balanceMicros: z.number().int(),
   storageLimitBytes: z.number().int().nonnegative(),
@@ -444,6 +449,7 @@ export const updateProfileInputSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   username: usernameSchema.optional(),
   profileColor: profileColorSchema.nullable().optional(),
+  usageVisibility: usageVisibilitySchema.optional(),
 }).refine((value) => Object.keys(value).length > 0, 'At least one profile field is required')
 
 export const friendProfileSchema = z.object({
@@ -501,6 +507,12 @@ export const friendProfileDetailSchema = z.object({
   requestId: idSchema.nullable(),
   friendsSince: isoDateSchema.nullable(),
   mutualFriends: z.array(friendProfileSchema),
+  /** Whether the viewer may see this profile's usage; always true for the viewer's own profile. */
+  usageVisible: z.boolean(),
+  /** Who this profile shares its usage with, shown as an icon beside the handle. */
+  usageVisibility: usageVisibilitySchema,
+  /** When the account was created. */
+  joinedAt: isoDateSchema,
 })
 export type FriendProfileDetail = z.infer<typeof friendProfileDetailSchema>
 
@@ -938,6 +950,9 @@ function applyAgentEventOutput(output: unknown[], event: ResponseEvent): unknown
   if (event.type === 'pulpo.agent.cost_limit' && typeof payload.id === 'string') {
     return upsertOutputItem(output, (item) => item.type === 'pulpo_cost_limit' && item.id === payload.id, payload)
   }
+  if (event.type === 'pulpo.agent.files_permission' && typeof payload.id === 'string') {
+    return upsertOutputItem(output, (item) => item.type === 'pulpo_files_permission' && item.id === payload.id, payload)
+  }
   if (event.type === 'pulpo.agent.files.changed') {
     return upsertOutputItem(output, (item) => item.type === 'pulpo_file_changes', payload)
   }
@@ -1086,8 +1101,10 @@ export const sidebarPinsSchema = z.object({
   // Shown by default; saved preferences that predate these keys keep them visible.
   searchChats: z.boolean().default(true),
   files: z.boolean().default(true),
+  /** Deprecated: usage moved into your profile, so no sidebar item reads it; kept so saved pins still parse. */
   usage: z.boolean().default(false),
   billing: z.boolean().default(false),
+  /** The People item, keyed by its former name. */
   friends: z.boolean().default(false),
   apiKeys: z.boolean().default(false),
 })
@@ -1759,19 +1776,29 @@ export const managementAccountSettingsSchema = z.object({
   showResponseCost: z.boolean().default(false),
   agentCostLimitEnabled: z.boolean().default(true),
   agentCostLimitMicros: agentCostLimitMicrosSchema,
+  /** Ask before an Agent reply browses Files beyond the items mentioned in its chat. */
+  agentFilesAskBeforeBrowsing: z.boolean().default(true),
+  /** What the agent may change in Files in new chats. */
+  agentFileChangeMode: fileAccessModeSchema.default('suggest'),
   chatWidth: z.enum(['full', 'narrow']).default('narrow'),
   animationSpeed: animationSpeedSchema,
   customInstructions: z.string().max(CUSTOM_INSTRUCTIONS_MAX_LENGTH).default(''),
   nickname: z.string().max(80).default(''),
   username: usernameSchema,
   profileColor: profileColorSchema.nullable().default(null),
+  /**
+   * Reads always include the stored level. Writes that omit it keep that level, because
+   * older clients strip fields they don't know and a default here would change who can see usage.
+   */
+  usageVisibility: usageVisibilitySchema.optional(),
   memoryEnabled: z.boolean().default(false),
   instructionPresetSelections: instructionPresetSelectionsSchema.default({}),
   /** Per-model composer Agent mode selections. Missing model ids default on in clients. */
   agentModes: agentModesSchema.default({}),
   /** @deprecated Retained so older management documents remain readable. */
   agentModeEnabled: z.boolean().optional(),
-  leaderboardVisible: z.boolean().default(false),
+  /** @deprecated Retained so older management documents remain readable. */
+  leaderboardVisible: z.boolean().optional(),
   leaderboardColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#10b981'),
   localChatLimit: z.number().int().min(0).max(500).default(50),
   localAttachmentCacheMb: z.number().int().min(0).max(2_048).default(50),
@@ -2002,7 +2029,7 @@ export const updateApiKeySchema = z.object({
  * ones the user pointed out.
  */
 export const FILE_SCOPE_ROOT = 'root'
-export const MAX_CHAT_FILE_SCOPES = 20
+export const MAX_CHAT_FILE_SCOPES = 50
 export const fileScopeIdsSchema = z.array(z.union([z.literal(FILE_SCOPE_ROOT), idSchema])).max(MAX_CHAT_FILE_SCOPES)
   .transform((ids) => [...new Set(ids.map((id) => id.toLowerCase()))])
 /**
@@ -2026,6 +2053,10 @@ export const chatSummarySchema = z.object({
   temporary: z.boolean(),
   fileScopeIds: z.array(z.string()).default([]),
   fileScopeAccess: z.record(z.string(), fileAccessModeSchema).default({}),
+  /** What the agent may change in Files in this chat; items it only browsed to get at most BROWSED_FILES_MODE_LIMIT. */
+  fileChangeMode: fileAccessModeSchema.default('suggest'),
+  /** The user let the agent browse all of their Files in this chat. */
+  filesBrowseAllowed: z.boolean().default(false),
   expiresAt: isoDateSchema.nullable().optional(),
   updatedAt: isoDateSchema,
   activeResponseId: idSchema.nullable(),
@@ -2056,6 +2087,8 @@ export const createChatSchema = z.object({
   /** Files items the agent may work with in this chat. */
   fileScopeIds: fileScopeIdsSchema.default([]),
   fileScopeAccess: fileScopeAccessSchema.default({}),
+  /** Defaults to the account's `agentFileChangeMode`. */
+  fileChangeMode: fileAccessModeSchema.optional(),
 })
 
 export const updateChatSchema = z.object({
@@ -2067,6 +2100,10 @@ export const updateChatSchema = z.object({
   autoExpire: z.boolean().optional(),
   fileScopeIds: fileScopeIdsSchema.optional(),
   fileScopeAccess: fileScopeAccessSchema.optional(),
+  /** Applies to every item in the chat's scope: it clears modes older clients set per item. */
+  fileChangeMode: fileAccessModeSchema.optional(),
+  /** Only revoking: browsing is allowed from the agent's permission request. */
+  filesBrowseAllowed: z.literal(false).optional(),
 })
 export type UpdateChatInput = z.infer<typeof updateChatSchema>
 

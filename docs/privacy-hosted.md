@@ -1,6 +1,6 @@
 # Pulpo hosted service privacy policy
 
-**Effective September 3, 2026**
+**Effective November 9, 2026**
 
 This policy describes how Isaac Thoman (**“Pulpo,” “we,” “us,”** or **“our”**) handles information when you use the Pulpo service hosted at [pulpo.baby](https://pulpo.baby) (the **“hosted service”**), whether through the website, the Pulpo mobile app, or another compatible client.
 
@@ -68,6 +68,7 @@ We disclose information only as needed for the hosted service or as required by 
 - **Other infrastructure providers.** Hosting, database, object-storage, email-delivery, backup, and similar vendors may process information while providing infrastructure to us.
 - **Payment processing.** Stripe processes hosted-service checkouts, subscriptions, payments, and refunds. Its handling of payment information is governed by its own privacy policy.
 - **People you choose to share with.** If you create a public sharing link or use a collaborative feature, the information you select may be accessible to the recipients or, for a public link, anyone who obtains that link.
+- **Other Pulpo users.** Signed-in users can open your profile, which shows your name, username, and profile photo. Your usage statistics and request history, including each request’s time, model, token counts, and cost, can also appear on your profile and in usage leaderboards. Your **Usage visibility** setting controls who can see them: members of your active Pool only, your accepted friends and Pool members (the default), or any signed-in user of the hosted service. Members of your active Pool can always see your usage. Your profile does not show other people your conversations or your balance.
 - **Legal and safety disclosures.** We may preserve or disclose information when reasonably necessary to comply with law, legal process, or valid governmental requests; protect users, Pulpo, or the public; or investigate fraud, abuse, or security incidents.
 
 We do not sell personal information or user content. We do not share personal information with third parties for their independent advertising.

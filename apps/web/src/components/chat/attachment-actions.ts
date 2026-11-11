@@ -48,6 +48,7 @@ export function openAttachment(attachment: Attachment, go: (pathname: string) =>
   queryClient.setQueryData(attachmentQueryKey(useAuth.getState().user?.id, attachment.id), attachment)
   const content = { kind: 'attachment' as const, id: attachment.id }
   if (main) go(panelContentPath(content))
-  else openBeside(content, go)
+  // Its tab is named before the view loads.
+  else openBeside(content, go, { kind: 'blob', name: attachment.name, mimeType: attachment.mimeType })
   return true
 }

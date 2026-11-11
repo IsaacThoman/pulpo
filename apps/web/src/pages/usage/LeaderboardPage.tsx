@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { BarChart3, Clock } from 'lucide-react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis, matchByDataKey } from 'recharts'
+import { Link, useHref, useLinkClickHandler, useNavigate, useSearchParams } from 'react-router-dom'
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Text, Tooltip as RTooltip, XAxis, YAxis, matchByDataKey, type TextProps, type XAxisTickContentProps } from 'recharts'
 import { useAuth } from '@/stores/auth'
 import { formatBalance, formatChartNumber, formatUsd } from '@/lib/format'
 import type { Metric, MonitorUser, TimeRange } from '@/lib/types'
@@ -13,7 +13,8 @@ import { apiRequest } from '@/lib/api'
 import { periodDays } from '@/lib/time-range'
 import { toDailyModelUsage, type SettledDailyRow } from '@/lib/leaderboard-usage'
 import { DailyUsageChart } from '@/components/usage/DailyUsageChart'
-import { automaticProfileColor } from '@/lib/profile'
+import { automaticProfileColor, useProfileLinkState, type ProfileLinkState } from '@/lib/profile'
+import { cn } from '@/lib/utils'
 import { flattenUsagePages, usageQueryParams } from '@/lib/usage-query'
 import {
   PublicRecentUsagePanel,
@@ -41,9 +42,10 @@ const RANGES: { id: TimeRange; label: string }[] = [
   { id: 'all', label: "All" },
 ]
 const METRICS: { id: LBMetric; label: string }[] = [
-  { id: 'tokens', label: "Tokens" },
-  { id: 'cost', label: "USD" },
   { id: 'calls', label: "Calls" },
+  { id: 'cost', label: "USD" },
+  { id: 'tokens', label: "Tokens" },
+  // Friends and Pool leaderboards never see other people's balances.
   { id: 'balance', label: "Balance" },
 ]
 function metricLabel(m: LBMetric): string {
@@ -92,6 +94,7 @@ function displayName(u: MonitorUser): string {
 }
 
 const AXIS_FONT_SIZE = 11
+const AXIS_TICK = { fontSize: AXIS_FONT_SIZE, fill: 'var(--muted-foreground)' }
 const AXIS_LABEL_ANGLE = 35
 const AXIS_LABEL_MAX_CHARS = 20
 const Y_AXIS_WIDTH = 48
@@ -117,13 +120,45 @@ function axisLabelWidth(text: string): number {
   return measureContext?.measureText(text).width ?? text.length * AXIS_FONT_SIZE * 0.6
 }
 
+interface RankedPerson {
+  userId: string
+  name: string
+  username: string
+  /** Someone else in the ranking has the same display name. */
+  sharedName: boolean
+}
+
+/** A display name, with the username added when someone else in the ranking goes by the same name. */
+function distinctName(person: RankedPerson): string {
+  return person.sharedName ? `${person.name} (@${person.username})` : person.name
+}
+
+/** A ranked person's axis name as a link to their profile, rotated and ellipsized like the plain labels. */
+function ProfileAxisTick({ person, linkState, ...tick }: XAxisTickContentProps & {
+  person: RankedPerson
+  linkState: ProfileLinkState | undefined
+}) {
+  const to = `/${person.username}`
+  const href = useHref(to)
+  const onClick = useLinkClickHandler(to, { state: linkState })
+  return <a href={href} onClick={onClick} aria-label={distinctName(person)} className="group/axis-name focus-visible:outline-2 focus-visible:outline-ring">
+    <Text
+      {...tick as TextProps}
+      {...AXIS_TICK}
+      className={cn(tick.className, 'group-hover/axis-name:fill-foreground group-hover/axis-name:underline group-focus-visible/axis-name:fill-foreground group-focus-visible/axis-name:underline')}
+    >
+      {axisLabel(person.name)}
+    </Text>
+  </a>
+}
+
 function barColor(u: MonitorUser): string {
   return u.profileColor ?? automaticProfileColor(u.id)
 }
 
 interface TipPayloadItem {
   value?: number | string
-  payload?: { name?: string; rank?: number }
+  payload?: RankedPerson & { rank: number }
 }
 
 interface LeaderboardActivity {
@@ -145,7 +180,8 @@ interface LeaderboardResponse {
     username: string
     avatarUrl: string | null
     profileColor: string | null
-    balanceMicros: number
+    /** Only the admin instance leaderboard reports balances. */
+    balanceMicros?: number
     calls: number
     tokens: number
     costMicros: number
@@ -166,7 +202,7 @@ function LeaderboardTip({
   return (
     <div className="rounded-md border bg-popover px-3 py-2 text-xs shadow-md">
       <div className="font-medium">
-        #{p.payload?.rank} {p.payload?.name}
+        #{p.payload?.rank} {p.payload && distinctName(p.payload)}
       </div>
       <div className="mt-0.5 flex items-center gap-2">
         <span className="text-muted-foreground">{metricLabel(metric)}</span>
@@ -197,10 +233,16 @@ export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
   onScopeChange?: (scope: CircleScope) => void
 }) {
   const [range, setRange] = useState<TimeRange>('30d')
-  const [metric, setMetric] = useState<LBMetric>('tokens')
+  const [metric, setMetric] = useState<LBMetric>('calls')
   const animationSpeed = useSettings((state) => state.animationSpeed)
   const animationDuration = scaledAnimationDuration(DEFAULT_CHART_ANIMATION_DURATION_MS, animationSpeed)
   const instanceMode = scope === 'instance'
+  // Friends and Pool rankings lead to each person's profile; the admin instance ranking doesn't.
+  const linkProfiles = !instanceMode
+  const navigate = useNavigate()
+  const profileLinkState = useProfileLinkState()
+  // A tap on a bar reads its tooltip; only mouse and pen clicks open the profile (touch users have the name links).
+  const barPointer = useRef('mouse')
   const queryKey = scope === 'pool' ? 'pool-usage' : instanceMode ? 'instance-usage' : 'friends-usage'
   const leaderboardEndpoint = instanceMode ? '/api/admin/usage/leaderboard' : '/api/usage/leaderboard'
 
@@ -242,7 +284,7 @@ export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
     profileColor: row.profileColor,
     email: '',
     role: 'user',
-    balance: row.balanceMicros / 1_000_000,
+    balance: (row.balanceMicros ?? 0) / 1_000_000,
     joinedAt: 0,
     blocked: false,
     usageCalls: row.calls,
@@ -277,21 +319,28 @@ export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
         (a, b) =>
           rowValue(b, metric) - rowValue(a, metric) ||
           b.cost - a.cost ||
-          displayName(a.user).localeCompare(displayName(b.user))
+          displayName(a.user).localeCompare(displayName(b.user)) ||
+          // People can share a display name, so their order still needs a stable tiebreak.
+          (a.user.id < b.user.id ? -1 : a.user.id > b.user.id ? 1 : 0)
       )
   }, [users, metric])
 
-  const chartData = useMemo(
-    () =>
-      rows.map((r, i) => ({
-        userId: r.user.id,
-        name: displayName(r.user),
-        value: rowValue(r, metric),
-        fill: barColor(r.user),
-        rank: i + 1,
-      })),
-    [rows, metric]
-  )
+  const chartData = useMemo(() => {
+    const nameCounts = new Map<string, number>()
+    for (const r of rows) nameCounts.set(displayName(r.user), (nameCounts.get(displayName(r.user)) ?? 0) + 1)
+    return rows.map((r, i) => ({
+      userId: r.user.id,
+      name: displayName(r.user),
+      username: r.user.username,
+      sharedName: (nameCounts.get(displayName(r.user)) ?? 0) > 1,
+      value: rowValue(r, metric),
+      fill: barColor(r.user),
+      rank: i + 1,
+    }))
+  }, [rows, metric])
+  // The axis is keyed by user id, since recharts looks up the hovered and focused person by
+  // axis value and two people can share a display name; ticks still show the name.
+  const axisNames = useMemo(() => new Map(chartData.map((d) => [d.userId, axisLabel(d.name)])), [chartData])
   // Rotated labels hang below and to the left of their tick, so reserve room
   // for the longest one and for the first one past the y-axis.
   const angledLabels = chartData.length > 8
@@ -335,7 +384,7 @@ export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
             <span className="flex items-center gap-2 text-xs font-medium">
               <Clock className="size-3" /> {ui("Usage overview")} </span>
             <div className="h-4 w-px bg-border" />
-            <ToggleGroup options={METRICS.map((option) => ({ ...option, label: ui(option.label) }))} value={metric} onChange={setMetric} />
+            <ToggleGroup options={METRICS.filter((option) => instanceMode || option.id !== 'balance').map((option) => ({ ...option, label: ui(option.label) }))} value={metric} onChange={setMetric} />
           </div>
           <ToggleGroup options={RANGES.map((option) => ({ ...option, label: ui(option.label) }))} value={range} onChange={setRange} />
         </div>
@@ -356,17 +405,20 @@ export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
             {!instanceMode && <Button asChild size="sm" variant="outline"><Link to="/friends">{scope === 'pool' ? ui("Manage Pool") : ui("Find friends")}</Link></Button>}
           </div>
         ) : (
-          <div style={{ height: 220 + axisSpace.height }}>
+          <div style={{ height: 220 + axisSpace.height }} onPointerDownCapture={(event) => { barPointer.current = event.pointerType }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 4, right: 4, left: axisSpace.left, bottom: 0 }}>
                 <CartesianGrid vertical={false} stroke="var(--border)" />
                 <XAxis
-                  dataKey="name"
-                  tick={{ fontSize: AXIS_FONT_SIZE, fill: 'var(--muted-foreground)' }}
+                  dataKey="userId"
+                  tick={linkProfiles ? (tick: XAxisTickContentProps) => {
+                    const person = chartData[tick.payload.index]
+                    return person && <ProfileAxisTick {...tick} person={person} linkState={profileLinkState} />
+                  } : AXIS_TICK}
                   tickLine={false}
                   axisLine={{ stroke: 'var(--border)' }}
                   interval={0}
-                  tickFormatter={axisLabel}
+                  tickFormatter={(userId: string) => axisNames.get(userId) ?? ''}
                   angle={angledLabels ? -AXIS_LABEL_ANGLE : 0}
                   textAnchor={angledLabels ? 'end' : 'middle'}
                   height={axisSpace.height}
@@ -385,9 +437,19 @@ export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
                   }
                 />
                 <RTooltip cursor={{ fill: 'var(--muted)', fillOpacity: 0.5 }} content={<LeaderboardTip metric={metric} />} />
-                <Bar dataKey="value" radius={[3, 3, 0, 0]} maxBarSize={48} animationDuration={animationDuration} animationMatchBy={MATCH_BY_USER}>
+                <Bar
+                  dataKey="value"
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={48}
+                  animationDuration={animationDuration}
+                  animationMatchBy={MATCH_BY_USER}
+                  onClick={linkProfiles ? (_bar, index) => {
+                    const person = chartData[index]
+                    if (person && barPointer.current !== 'touch') navigate(`/${person.username}`, { state: profileLinkState })
+                  } : undefined}
+                >
                   {chartData.map((d) => (
-                    <Cell key={d.rank} fill={d.fill} />
+                    <Cell key={d.rank} fill={d.fill} cursor={linkProfiles ? 'pointer' : undefined} />
                   ))}
                 </Bar>
               </BarChart>
@@ -416,6 +478,7 @@ export function LeaderboardPage({ scope = 'friends', onScopeChange }: {
             <div className="min-w-0 lg:col-span-2">
               <PublicRecentUsagePanel
                 records={records}
+                linkParticipants={linkProfiles}
                 nextCursor={nextCursor}
                 loadingMore={recordsQuery.isFetchingNextPage}
                 error={recordsQuery.isFetchNextPageError ? (recordsQuery.error instanceof Error ? recordsQuery.error.message : 'Unable to load more usage records') : null}

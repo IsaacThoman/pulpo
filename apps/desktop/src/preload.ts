@@ -35,6 +35,7 @@ const api: PulpoDesktopApi = {
     ipcRenderer.on('desktop:command', handler)
     return () => ipcRenderer.removeListener('desktop:command', handler)
   },
+  setFilesTabsMenu: (shown) => ipcRenderer.invoke('desktop:menu:files-tabs', shown) as Promise<void>,
   appInfo: () => ipcRenderer.invoke('desktop:app-info') as Promise<{ name: string; version: string; packaged: boolean }>,
   windowControls: {
     minimize: () => ipcRenderer.invoke('desktop:window:minimize') as Promise<void>,

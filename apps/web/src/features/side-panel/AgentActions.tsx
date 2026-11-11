@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { FILE_SCOPE_ROOT } from '@pulpo/contracts'
 import { useLocation } from 'react-router-dom'
 import { Columns2, MessageSquarePlus, PanelLeft, SquarePen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -56,6 +57,8 @@ export function AgentMenuItems({ ids, place }: { ids: string[]; place: FilesView
   const go = useMainNavigate()
   const target = useChatTarget((state) => state.target)
   const inPanel = place.layout === 'panel' && target
+  // Messages mention files and folders; all of My files is reached by asking the agent.
+  if (!ids.some((id) => id !== FILE_SCOPE_ROOT)) return null
   return (
     <>
       {inPanel && (

@@ -1,6 +1,6 @@
 # Pulpo hosted service terms of service
 
-**Effective September 5, 2026**
+**Effective November 9, 2026**
 
 These Terms of Service (the **“Terms”**) are an agreement between you and Isaac Thoman, doing business as Pulpo (**“Pulpo,” “we,” “us,”** or **“our”**), concerning your access to and use of the Pulpo service hosted at [pulpo.baby](https://pulpo.baby), including through the Pulpo website, mobile app, desktop app, command-line client, or another compatible client (collectively, the **“Hosted Service”**).
 
@@ -61,6 +61,8 @@ Subject to these Terms and applicable law, Pulpo does not restrict your use of O
 If you create a public sharing link, anyone who obtains the link may be able to view the content it exposes. You are responsible for checking the shared content and removing confidential, personal, or restricted information before sharing. Disabling a link stops future access through that link but cannot retrieve copies already made by other people.
 
 A Pulpo Pool allows its members to view and spend balances contributed by Pool members. By creating or joining a Pool, you authorize other current Pool members to view and use your available account balance for eligible Hosted Service usage. Usage already reserved may settle against a contributed balance after a member leaves the Pool. Pool membership does not turn Credits into cash or independently transferable property, and you may not sell or broker Pool access or Credits.
+
+Your usage statistics and request history are visible to current Pool members and, depending on your **Usage visibility** setting, to your friends or to any signed-in user of the Hosted Service.
 
 ## 7. Acceptable use
 

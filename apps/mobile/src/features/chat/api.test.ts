@@ -195,6 +195,31 @@ describe('automatic chat expiration', () => {
   })
 })
 
+describe('Changes to Files for a new chat', () => {
+  it('starts the chat with the mode the composer showed', async () => {
+    mocks.apiRequest.mockResolvedValueOnce({
+      chat: { id: 'chat-1', temporary: false },
+      response: { responseId: 'response-1', status: 'queued', sequence: 0, output: [], usage: null, error: null, updatedAt: '2026-11-09T00:00:00.000Z' },
+    })
+
+    await startChat({ chatId: crypto.randomUUID(), responseId: crypto.randomUUID(), content: 'hello', modelId: 'model-1', title: 'Chat', fileChangeMode: 'read' })
+
+    const body = startChatSchema.parse(mocks.apiRequest.mock.calls[0]![1].body)
+    expect(body.chat.fileChangeMode).toBe('read')
+  })
+
+  it('leaves the mode to the server when the composer did not choose one', async () => {
+    mocks.apiRequest.mockResolvedValueOnce({
+      chat: { id: 'chat-1', temporary: false },
+      response: { responseId: 'response-1', status: 'queued', sequence: 0, output: [], usage: null, error: null, updatedAt: '2026-11-09T00:00:00.000Z' },
+    })
+
+    await startChat({ chatId: 'chat-1', responseId: 'response-1', content: 'hello', modelId: 'model-1', title: 'Chat' })
+
+    expect(mocks.apiRequest.mock.calls[0]![1].body.chat).not.toHaveProperty('fileChangeMode')
+  })
+})
+
 describe('message edits', () => {
   it('sends attachment and Agent settings for a user branch edit', async () => {
     const snapshot = {

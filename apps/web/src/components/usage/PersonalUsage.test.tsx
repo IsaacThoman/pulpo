@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, expect, it, vi } from 'vitest'
 import { useCatalog } from '@/stores/catalog'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { PersonalPage } from './PersonalPage'
+import { PersonalUsage } from './PersonalUsage'
 
 const mocks = vi.hoisted(() => {
   vi.stubGlobal('localStorage', { getItem: () => null, setItem: () => undefined, removeItem: () => undefined })
@@ -48,7 +48,7 @@ it('uses friendly usage names and logos throughout the page with an empty select
     throw new Error(`Unexpected API request: ${path}`)
   })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } })
-  const { container } = render(<QueryClientProvider client={client}><MemoryRouter><TooltipProvider><PersonalPage /></TooltipProvider></MemoryRouter></QueryClientProvider>)
+  const { container } = render(<QueryClientProvider client={client}><MemoryRouter><TooltipProvider><PersonalUsage identity={<h2>Me</h2>} /></TooltipProvider></MemoryRouter></QueryClientProvider>)
   try {
     await screen.findByRole('heading', { name: 'Top models' })
     const ranking = screen.getByRole('heading', { name: 'Top models' }).parentElement!.parentElement!

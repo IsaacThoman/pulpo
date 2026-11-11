@@ -2,9 +2,10 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { db, queryClient } from '../database/client.js'
-import { agentRuns, apiKeys, applicationSettings, billingAccounts, billingOrders, dailyUsagePeriods, budgetReservationAllowanceFunders, budgetReservations, fiveHourUsagePeriods, sharedAllowancePeriods, sharedFiveHourUsagePeriods, creditLedger, budgetReservationFunders, chats, generationAttempts, models, modelPricingVersions, pools, poolMembers, providerConnections, requestLogs, responses, toolExecutions, users, usageEvents, weeklyUsagePeriods } from '../database/schema.js'
+import { agentRuns, apiKeys, applicationSettings, billingAccounts, billingOrders, dailyUsagePeriods, budgetReservationAllowanceFunders, budgetReservations, fiveHourUsagePeriods, friendships, sharedAllowancePeriods, sharedFiveHourUsagePeriods, creditLedger, budgetReservationFunders, chats, generationAttempts, models, modelPricingVersions, pools, poolMembers, providerConnections, requestLogs, responses, toolExecutions, users, usageEvents, weeklyUsagePeriods } from '../database/schema.js'
 import { utcDayStart } from '../billing/plans.js'
 import { assertDailySpendAvailable, loadDailySpend } from '../billing/usage-tiers.js'
+import { publishStateChange } from '../responses/events.js'
 import { chargeMeteredUsage, closeAbandonedReservation, extendBudgetReservationFixedCost, releaseBudget, releaseBudgetReservationFixedCost, reserveBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from './service.js'
 
 vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn() }))
@@ -49,6 +50,15 @@ async function key(userId: string, monthlyBudgetMicros: number | null, lifetimeB
 }
 async function reservation(responseId: string) {
   return (await db.select().from(budgetReservations).where(eq(budgetReservations.responseId, responseId)))[0]!
+}
+async function befriend(left: string, right: string) {
+  const [userAId, userBId] = [left, right].sort()
+  await db.insert(friendships).values({ id: randomUUID(), userAId: userAId!, userBId: userBId!, requestedByUserId: left, status: 'accepted', acceptedAt: new Date() })
+}
+/** Users sent a realtime 'friends' change since the publish mock was last cleared. */
+function friendsNotified() {
+  return vi.mocked(publishStateChange).mock.calls.map(([change]) => change)
+    .filter((change) => change.scopes?.includes('friends')).map((change) => change.userId)
 }
 async function pool(members: string[]) {
   const id = randomUUID(); poolIds.push(id)
@@ -588,6 +598,37 @@ describe.skipIf(!enabled)('budget-aware reservations in PostgreSQL', () => {
       expect(await dailySpent(userId)).toBe(TIER_0_CAP)
       await expect(assertDailySpendAvailable(userId)).rejects.toMatchObject({ code: 'daily_spend_limit_reached' })
     })
+  })
+
+  it('notifies only friends who can see a Pool-only user\'s usage when it changes', async () => {
+    const caller = await account(100_000), outside = await account(0), inside = await account(0)
+    await pool([caller, inside])
+    await befriend(caller, outside); await befriend(caller, inside)
+    await db.update(users).set({ usageVisibility: 'pool' }).where(eq(users.id, caller))
+    const settle = async () => {
+      const input = await request(caller, 100)
+      await reserveBudget(input)
+      await settleBudget({ responseId: input.responseId, usage, latencyMs: 1 })
+    }
+
+    vi.mocked(publishStateChange).mockClear()
+    await settle()
+    expect(friendsNotified()).toContain(inside)
+    expect(friendsNotified()).not.toContain(outside)
+
+    vi.mocked(publishStateChange).mockClear()
+    await chargeMeteredUsage({ userId: caller, costMicros: 500, type: 'test_metered' })
+    expect(friendsNotified()).toContain(inside)
+    expect(friendsNotified()).not.toContain(outside)
+
+    // Friends-level usage is visible to every friend, so all of them hear about it.
+    await db.update(users).set({ usageVisibility: 'friends' }).where(eq(users.id, caller))
+    vi.mocked(publishStateChange).mockClear()
+    await settle()
+    expect(friendsNotified()).toEqual(expect.arrayContaining([inside, outside]))
+    vi.mocked(publishStateChange).mockClear()
+    await chargeMeteredUsage({ userId: caller, costMicros: 500, type: 'test_metered' })
+    expect(friendsNotified()).toEqual(expect.arrayContaining([inside, outside]))
   })
 
   it('does not share Eight allowances or allowances outside the pool', async () => {

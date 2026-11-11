@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { recalledChatLabel } from './recall-label'
-import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive } from './timeline'
+import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, filesPermissionLabel, filesPermissionPlace, pendingFilesPermission, timelineActivityIsActive } from './timeline'
 
 describe('buildMessageTimeline', () => {
   it('ignores empty active reasoning while ordinary answer text streams', () => {
@@ -248,5 +248,59 @@ describe('cost limit pauses', () => {
     const activity = timeline[0]
     expect(activity?.kind === 'activity' && activity.steps.map((step) => step.kind)).toEqual(['tool', 'cost_limit'])
     expect(activity?.kind === 'activity' && activityDurationMs(activity.steps)).toBe(20)
+  })
+})
+
+describe('Files permission requests', () => {
+  const request = (status: string, overrides: Record<string, unknown> = {}) => ({
+    id: 'response:files-permission:1', type: 'pulpo_files_permission', status, command: 'ls', path: '',
+    requested_at: '2026-11-09T00:00:00.000Z', expires_at: '2026-11-09T00:03:00.000Z', agent_turn: 1, ...overrides,
+  })
+
+  it('keeps the request in the work block that asked', () => {
+    const timeline = buildMessageTimeline([
+      { type: 'pulpo_tool', id: 'tool-1', tool: 'bash', status: 'completed', output: '', durationMs: 30 },
+      request('allowed'),
+      { type: 'message', content: [{ type: 'output_text', text: 'Found it' }] },
+    ], true)
+
+    expect(timeline).toHaveLength(2)
+    const activity = timeline[0]
+    expect(activity?.kind === 'activity' && activity.steps.map((step) => step.kind)).toEqual(['tool', 'files_permission'])
+    expect(activity?.kind === 'activity' && activityDurationMs(activity.steps)).toBe(30)
+  })
+
+  it('skips malformed requests', () => {
+    expect(buildMessageTimeline([{ type: 'pulpo_files_permission', id: 'x', status: 'nope' }], true)).toEqual([])
+  })
+
+  it('finds the request a reply waits on only while it can be answered', () => {
+    const now = Date.parse('2026-11-09T00:01:00.000Z')
+    const output = [request('denied', { id: 'first' }), request('awaiting_decision')]
+    expect(pendingFilesPermission(output, true, now)?.id).toBe('response:files-permission:1')
+    expect(pendingFilesPermission(output, false, now)).toBeUndefined()
+    expect(pendingFilesPermission(output, true, Date.parse('2026-11-09T00:03:00.000Z'))).toBeUndefined()
+    expect(pendingFilesPermission([request('allowed')], true, now)).toBeUndefined()
+  })
+
+  it('describes each answer', () => {
+    const parse = (status: string) => buildMessageTimeline([request(status)], true)
+    const label = (status: string, live = false) => {
+      const step = parse(status)[0]
+      if (step?.kind !== 'activity' || step.steps[0]?.kind !== 'files_permission') throw new Error('missing step')
+      return filesPermissionLabel(step.steps[0].filesPermission, live)
+    }
+    expect(label('allowed')).toBe('Allowed to look through your Files in this chat')
+    expect(label('always_allowed')).toBe('Allowed to look through your Files')
+    expect(label('denied')).toBe('Not allowed to look through your Files')
+    expect(label('expired')).toBe('Didn’t get an answer about your Files')
+    expect(label('awaiting_decision')).toBe('Didn’t get an answer about your Files')
+    expect(label('awaiting_decision', true)).toBe('Waiting for your answer about Files')
+  })
+
+  it('names the place it asked about', () => {
+    expect(filesPermissionPlace({ path: '' })).toBe('My files')
+    expect(filesPermissionPlace({ path: '/' })).toBe('My files')
+    expect(filesPermissionPlace({ path: 'Projects/Plans/' })).toBe('“Projects/Plans”')
   })
 })

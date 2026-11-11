@@ -175,6 +175,31 @@ describe('workspace relay while a bash command runs', () => {
     warn.mockRestore()
   })
 
+  it('keeps touching the lease while an answer waits, so the workspace is not removed as idle', async () => {
+    vi.useFakeTimers()
+    try {
+      let answer!: (result: RelayResult) => void
+      const onRelay = vi.fn(() => new Promise<RelayResult>((resolve) => { answer = resolve }))
+      const workspace = manager(daemon([running({ version: 1, pending: [ls] }), completed('done')]))
+      const execution = workspace.execute('op', 'bash', { command: 'pulpo files ls Projects' }, undefined, undefined, undefined, onRelay)
+      // The user takes 50 seconds to answer a request to browse their Files.
+      await vi.advanceTimersByTimeAsync(50_000)
+      expect(polls().map((call) => call.path)).toEqual(['/v1/leases/lease-1/v1/operations/op', '/v1/leases/lease-1/v1/operations/op'])
+      expect(relayPosts()).toEqual([])
+
+      answer({ ok: true, output: 'Projects/' })
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect((await execution).output).toBe('done')
+      expect(relayPosts()).toHaveLength(1)
+      // Nothing keeps touching it once the answer is in.
+      const touched = polls().length
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(polls()).toHaveLength(touched)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('retries a transient poll failure', async () => {
     let failures = 1
     const scripted = daemon([running({ version: 1, pending: [] }), completed('ok')])

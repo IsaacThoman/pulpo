@@ -1,7 +1,7 @@
 import { protectTranscriptRequest } from '../data/transcriptResidency'
 import { nativeUsageErrorMessage } from '../features/usage-limits/errors'
-import { CLIENT_PLATFORM_HEADER, usageLimitsSchema } from '@pulpo/contracts'
-import type { NativeDevice, DeviceSessionList, MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, User } from '@pulpo/contracts'
+import { CLIENT_FEATURES_HEADER, CLIENT_FEATURES_HEADER_VALUE, CLIENT_PLATFORM_HEADER, usageLimitsSchema } from '@pulpo/contracts'
+import type { NativeDevice, DeviceSessionList, MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, UsageVisibility, User } from '@pulpo/contracts'
 import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 
 export class ApiError extends Error {
@@ -31,7 +31,7 @@ export function configureApi(input: {
   unauthorizedHandler = input.onUnauthorized
 }
 
-/** Sets the `x-pulpo-client` value (`ios/<version>` etc.) sent with instance requests. */
+/** Sets the `x-pulpo-client` value (`ios/<version>` etc.) sent with instance requests, alongside `x-pulpo-client-features`. */
 export function configureClientPlatform(value: string | null): void {
   clientPlatform = value
 }
@@ -75,7 +75,11 @@ async function performApiRequest<T>(path: string, options: RequestOptions): Prom
   else if (options.body !== undefined) headers.set('content-type', 'application/json')
   if (options.idempotencyKey) headers.set('idempotency-key', options.idempotencyKey)
   if (options.auth !== false && sessionToken) headers.set('authorization', `Bearer ${sessionToken}`)
-  if (clientPlatform) headers.set(CLIENT_PLATFORM_HEADER, clientPlatform)
+  if (clientPlatform) {
+    headers.set(CLIENT_PLATFORM_HEADER, clientPlatform)
+    // Lets the server ask this app before an Agent reply browses Files.
+    headers.set(CLIENT_FEATURES_HEADER, CLIENT_FEATURES_HEADER_VALUE)
+  }
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000)
   const abort = () => controller.abort()
@@ -163,7 +167,7 @@ export const mobileApi = {
   meWithToken: (token: string) => apiRequest<{ user: User }>('/api/mobile/me', { auth: false, headers: { authorization: `Bearer ${token}` } }),
   logoutWithToken: (token: string) => apiRequest<void>('/api/mobile/auth/logout', { method: 'POST', auth: false, headers: { authorization: `Bearer ${token}` } }),
   redeemInviteCode: (code: string) => apiRequest<{ user: User }>('/api/invite-codes/redeem', { method: 'POST', body: { code } }),
-  updateProfile: (patch: { name?: string; username?: string }) => apiRequest<{ user: User }>('/api/me', { method: 'PATCH', body: patch }),
+  updateProfile: (patch: { name?: string; username?: string; usageVisibility?: UsageVisibility }) => apiRequest<{ user: User }>('/api/me', { method: 'PATCH', body: patch }),
   /** `body` holds an optional `crop` field before the image `file` (see features/profile/avatar). */
   uploadAvatar: (body: FormData) => apiRequest<{ user: User }>('/api/me/avatar', { method: 'PUT', body, timeoutMs: 60_000 }),
   removeAvatar: () => apiRequest<{ user: User }>('/api/me/avatar', { method: 'DELETE' }),

@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentCostLimitMicrosSchema, chatSortModeSchema, fileDoubleClickActionSchema, newChatAutoExpireSchema, trashColorSchema } from '@pulpo/contracts'
+import { agentCostLimitMicrosSchema, chatSortModeSchema, fileAccessModeSchema, fileDoubleClickActionSchema, newChatAutoExpireSchema, trashColorSchema } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { applicationSettings, userPreferences, users } from '../database/schema.js'
@@ -95,6 +95,12 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     }
     if ('agentCostLimitMicros' in patch && !agentCostLimitMicrosSchema.safeParse(patch.agentCostLimitMicros).success) {
       throw new AppError(400, 'invalid_agent_cost_limit', 'Choose an Agent cost limit between $0.01 and $1,000')
+    }
+    if ('agentFilesAskBeforeBrowsing' in patch && typeof patch.agentFilesAskBeforeBrowsing !== 'boolean') {
+      throw new AppError(400, 'invalid_agent_files_browsing_setting', 'Choose whether to be asked before the agent browses your Files')
+    }
+    if ('agentFileChangeMode' in patch && !fileAccessModeSchema.safeParse(patch.agentFileChangeMode).success) {
+      throw new AppError(400, 'invalid_agent_file_change_mode', 'Choose what the agent may change in your Files')
     }
     let previousTrashRetention = DEFAULT_TRASH_RETENTION
     let previousMemoryEnabled = false
