@@ -37,9 +37,12 @@ export function isIncompleteStreamError(errorMessage: string | undefined): boole
   return /\bstream ended (?:before|without)\b/i.test(errorMessage ?? '')
 }
 
-/** Incomplete streams get one resend on the same model even when no retries are configured. */
-export function incompleteStreamAttemptLimit(attemptLimit: number, errorMessage: string | undefined): number {
-  return isIncompleteStreamError(errorMessage) ? Math.max(attemptLimit, 2) : attemptLimit
+/**
+ * Incomplete streams get one resend on the same model even when no retries are configured,
+ * unless a fallback model is available: then the fallback serves the next attempt.
+ */
+export function incompleteStreamAttemptLimit(attemptLimit: number, errorMessage: string | undefined, hasFallback: boolean): number {
+  return !hasFallback && isIncompleteStreamError(errorMessage) ? Math.max(attemptLimit, 2) : attemptLimit
 }
 
 type StickyStore = {

@@ -25,8 +25,77 @@ export function calculateCostMicros(usage: ResponseUsage, pricing: Pricing): num
   )
 }
 
+/**
+ * What one inline image can cost in input tokens. Providers bill images by their pixels, not their
+ * base64 size: high-resolution modes top out near 10k tokens, while a 7 MB photo is 2.4M base64
+ * characters. Counting those characters as text reserved dollars for a cent's worth of input.
+ */
+export const IMAGE_RESERVATION_TOKENS = 10_000
+
+const IMAGE_DATA_URL = /^data:image\/[^;,]*;base64,/i
+/** Keys whose array value is a list of content blocks a provider reads as text, images, or files. */
+const CONTENT_ARRAY_KEYS = new Set(['content', 'output', 'parts'])
+/** Blocks whose fields are arbitrary JSON the provider receives as text, never as images. */
+const OPAQUE_BLOCK_TYPES = new Set(['toolCall', 'tool_use', 'server_tool_use', 'function_call', 'custom_tool_call'])
+const OPAQUE_KEYS = new Set(['arguments', 'args', 'functionCall', 'function_call'])
+
+type JsonRecord = Record<string, unknown>
+const isRecord = (value: unknown): value is JsonRecord => typeof value === 'object' && value !== null && !Array.isArray(value)
+const isImageMime = (value: unknown) => typeof value === 'string' && value.toLowerCase().startsWith('image/')
+const isImageDataUrl = (value: unknown): value is string => typeof value === 'string' && IMAGE_DATA_URL.test(value)
+
+/** The image a content block carries as base64, and the block with that data removed. */
+function contentBlockImage(value: JsonRecord): { encoded: string; rest: JsonRecord } | undefined {
+  // pi-ai: { type: 'image', data, mimeType }
+  if (value.type === 'image' && typeof value.data === 'string' && isImageMime(value.mimeType)) return { encoded: value.data, rest: { ...value, data: '' } }
+  // Responses: { type: 'input_image', image_url: 'data:image/...' }
+  if (value.type === 'input_image' && isImageDataUrl(value.image_url)) return { encoded: value.image_url, rest: { ...value, image_url: '' } }
+  // Chat Completions: { type: 'image_url', image_url: { url: 'data:image/...' } }
+  if (value.type === 'image_url' && isRecord(value.image_url) && isImageDataUrl(value.image_url.url)) {
+    return { encoded: value.image_url.url, rest: { ...value, image_url: { ...value.image_url, url: '' } } }
+  }
+  return undefined
+}
+
+/** The image a content block's child carries: Anthropic's `source` or Gemini's `inline_data`. */
+function nestedImage(key: string, value: JsonRecord, block: JsonRecord): { encoded: string; rest: JsonRecord } | undefined {
+  if (typeof value.data !== 'string') return undefined
+  const anthropic = key === 'source' && block.type === 'image' && value.type === 'base64' && isImageMime(value.media_type)
+  const gemini = (key === 'inline_data' || key === 'inlineData') && isImageMime(value.mime_type ?? value.mimeType)
+  return anthropic || gemini ? { encoded: value.data, rest: { ...value, data: '' } } : undefined
+}
+
+/**
+ * Only images in content blocks get the per-image ceiling. Image-shaped JSON anywhere else, such as
+ * tool arguments or an object tool output, reaches the provider as text and is billed as text.
+ */
 export function estimateInputTokens(input: unknown): number {
-  return Math.max(1, Math.ceil(JSON.stringify(input).length / 4))
+  let imageTokens = 0
+  const contentArrays = new WeakSet<object>()
+  const blocks = new WeakSet<object>()
+  const opaque = new WeakSet<object>()
+  const json = JSON.stringify(input, function (this: unknown, key: string, value: unknown) {
+    if (typeof value !== 'object' || value === null) return value
+    const holder = this as object
+    if (opaque.has(holder) || OPAQUE_KEYS.has(key)
+      || (isRecord(holder) && typeof holder.type === 'string' && OPAQUE_BLOCK_TYPES.has(holder.type))
+      || (key === 'output' && isRecord(holder) && holder.type === 'function_call_output' && !Array.isArray(value))) {
+      opaque.add(value)
+      return value
+    }
+    if (Array.isArray(value)) {
+      if (CONTENT_ARRAY_KEYS.has(key)) contentArrays.add(value)
+      return value
+    }
+    const record = value as JsonRecord
+    const isBlock = Array.isArray(holder) && contentArrays.has(holder)
+    if (isBlock) blocks.add(record)
+    const image = isBlock ? contentBlockImage(record) : blocks.has(holder) ? nestedImage(key, record, holder as JsonRecord) : undefined
+    if (!image) return value
+    imageTokens += Math.min(IMAGE_RESERVATION_TOKENS, Math.ceil(image.encoded.length / 4))
+    return image.rest
+  }) ?? ''
+  return Math.max(1, Math.ceil(json.length / 4) + imageTokens)
 }
 
 export function calculateReservationMicros(
