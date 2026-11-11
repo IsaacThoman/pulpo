@@ -90,3 +90,36 @@ it('keeps showing a temporary chat while saving it moves it to its own route', a
   expect(view.queryByTestId('messages')).toBeTruthy()
   expect(surface().getAttribute('data-desktop-temporary-chat')).toBeNull()
 })
+
+it('stays on a new chat started while the save is still finishing', async () => {
+  let finishReload!: () => void
+  const reload = new Promise<void>((resolve) => { finishReload = resolve })
+  const persistTemporaryChat = vi.fn(async (id: string) => {
+    useChat.setState((state) => ({
+      activeTemporaryChatId: null,
+      chats: state.chats.map((chat) => chat.id === id ? { ...chat, temporary: false } : chat),
+    }))
+    await reload
+    return {} as Awaited<ReturnType<ReturnType<typeof useChat.getState>['persistTemporaryChat']>>
+  })
+  useChat.setState({ persistTemporaryChat })
+
+  const view = render(<MemoryRouter initialEntries={[{ pathname: '/', state: { temporary: true } }]}><TooltipProvider>
+    <Routes>
+      <Route path="/" element={<ChatPage />} />
+      <Route path="/c/:chatId" element={<ChatPage />} />
+    </Routes>
+    <Path />
+  </TooltipProvider></MemoryRouter>)
+  await waitFor(() => expect(view.getByTestId('messages')).toBeTruthy())
+
+  fireEvent.click(view.getByRole('button', { name: 'Save chat' }))
+  await waitFor(() => expect(persistTemporaryChat).toHaveBeenCalledWith(chatId))
+  // The chat is already saved in the store, so the header offers an ordinary new chat.
+  fireEvent.click(await view.findByRole('button', { name: 'New chat' }))
+  await waitFor(() => expect(view.queryByTestId('messages')).toBeNull())
+
+  await act(async () => { finishReload() })
+  await act(async () => {})
+  expect(view.getByTestId('path').textContent).toBe('/')
+})

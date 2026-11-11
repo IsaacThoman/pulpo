@@ -149,7 +149,12 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   // Saving a temporary chat stops it being the active one before the route reaches /c/:id
   // (navigation renders as a transition), so keep showing it until the route changes.
   const [savedTemporaryChatId, setSavedTemporaryChatId] = useState<string | null>(null)
-  useEffect(() => setSavedTemporaryChatId(null), [location.key])
+  // Bumped when the user leaves a temporary chat, so a save still in flight does not navigate back to it.
+  const temporaryViewVersionRef = useRef(0)
+  useEffect(() => {
+    temporaryViewVersionRef.current += 1
+    setSavedTemporaryChatId(null)
+  }, [location.key])
   const chatId = routeChatId ?? activeTemporaryChatId ?? savedTemporaryChatId ?? undefined
   const chat = useChat(useShallow((state) => {
     const current = chatId ? state.chats.find((item) => item.id === chatId) : undefined
@@ -293,8 +298,6 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   }, [networkReady])
 
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null)
-  const temporaryViewVersionRef = useRef(0)
-
   useEffect(() => {
     setMessageEdit(null)
     setComposerEditActive(false)
