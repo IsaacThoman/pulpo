@@ -1010,7 +1010,6 @@ const esUi: Record<string, string> = {
   "Fri": "Vie",
   "Friend requests": "Solicitudes de amistad",
   "Friend request sent to {{0}}.": "Solicitud de amistad enviada a {{0}}.",
-  "{{0}} won't be suggested for at least 30 days, and only if you gain mutual friends.": "No te sugeriremos a {{0}} durante al menos 30 días, y solo si tenéis más amigos en común.",
   "Friend search results": "Resultados de búsqueda de amigos",
   "Friends": "Amigos",
   "People you may know": "Personas que quizá conozcas",
