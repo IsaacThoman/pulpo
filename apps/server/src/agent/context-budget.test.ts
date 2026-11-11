@@ -55,7 +55,7 @@ describe('agent context budget', () => {
   it('stops on an overflow that cannot be recovered instead of retrying or falling back', () => {
     // Outside the fallback exclusion pattern, so ordinary retry and fallback would otherwise take it.
     const gemini = overflowMessage('', '400 The input token count (1196265) exceeds the maximum number of tokens allowed (1048575)')
-    expect(nextAgentRetryAttempt({ message: gemini, currentAttempt: 1, maxAttempts: 3, outputStarted: false, cancellationRequested: false })).toBe(2)
+    expect(nextAgentRetryAttempt({ message: gemini, currentAttempt: 1, maxAttempts: 3, outputStarted: false, cancellationRequested: false, hasFallback: false })).toBe(2)
     expect(canFallbackAgentTurn({ message: gemini, outputStarted: false, cancellationRequested: false, contextRetryAttempted: false })).toBe(true)
     // Compaction disabled, or a second overflow before any successful turn.
     expect(contextOverflowOutcome(gemini, { contextWindow: 128_000, outputStarted: false, recoveryAllowed: false })).toBe('stop')

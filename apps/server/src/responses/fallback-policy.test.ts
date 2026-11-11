@@ -60,13 +60,18 @@ describe('shared model fallback policy', () => {
   })
 
   it('grants incomplete streams one resend without lowering configured attempts', () => {
-    expect(incompleteStreamAttemptLimit(1, 'OpenAI Responses stream ended before a terminal response event')).toBe(2)
-    expect(incompleteStreamAttemptLimit(1, 'Anthropic stream ended before message_stop')).toBe(2)
-    expect(incompleteStreamAttemptLimit(1, 'Provider stream ended before the response finished')).toBe(2)
-    expect(incompleteStreamAttemptLimit(1, 'Provider stream ended without a response')).toBe(2)
-    expect(incompleteStreamAttemptLimit(4, 'Provider stream ended without a response')).toBe(4)
-    expect(incompleteStreamAttemptLimit(1, 'Provider overloaded')).toBe(1)
-    expect(incompleteStreamAttemptLimit(1, undefined)).toBe(1)
+    expect(incompleteStreamAttemptLimit(1, 'OpenAI Responses stream ended before a terminal response event', false)).toBe(2)
+    expect(incompleteStreamAttemptLimit(1, 'Anthropic stream ended before message_stop', false)).toBe(2)
+    expect(incompleteStreamAttemptLimit(1, 'Provider stream ended before the response finished', false)).toBe(2)
+    expect(incompleteStreamAttemptLimit(1, 'Provider stream ended without a response', false)).toBe(2)
+    expect(incompleteStreamAttemptLimit(4, 'Provider stream ended without a response', false)).toBe(4)
+    expect(incompleteStreamAttemptLimit(1, 'Provider overloaded', false)).toBe(1)
+    expect(incompleteStreamAttemptLimit(1, undefined, false)).toBe(1)
+  })
+
+  it('leaves the next attempt to the fallback model when one is configured', () => {
+    expect(incompleteStreamAttemptLimit(1, 'OpenAI Responses stream ended before a terminal response event', true)).toBe(1)
+    expect(incompleteStreamAttemptLimit(3, 'Provider stream ended without a response', true)).toBe(3)
   })
 
   it('classifies retryable and non-retryable failures consistently', () => {
