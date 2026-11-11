@@ -33,24 +33,21 @@ export function calculateCostMicros(usage: ResponseUsage, pricing: Pricing): num
 export const IMAGE_RESERVATION_TOKENS = 10_000
 
 const IMAGE_DATA_URL = /^data:image\/[^;,]*;base64,/i
-const GEMINI_INLINE_DATA_KEYS = new Set(['inline_data', 'inlineData'])
+/** Keys whose array value is a list of content blocks a provider reads as text, images, or files. */
+const CONTENT_ARRAY_KEYS = new Set(['content', 'output', 'parts'])
+/** Blocks whose fields are arbitrary JSON the provider receives as text, never as images. */
+const OPAQUE_BLOCK_TYPES = new Set(['toolCall', 'tool_use', 'server_tool_use', 'function_call', 'custom_tool_call'])
+const OPAQUE_KEYS = new Set(['arguments', 'args', 'functionCall', 'function_call'])
 
 type JsonRecord = Record<string, unknown>
 const isRecord = (value: unknown): value is JsonRecord => typeof value === 'object' && value !== null && !Array.isArray(value)
 const isImageMime = (value: unknown) => typeof value === 'string' && value.toLowerCase().startsWith('image/')
 const isImageDataUrl = (value: unknown): value is string => typeof value === 'string' && IMAGE_DATA_URL.test(value)
 
-/**
- * The image an object carries as base64, and the object with that data removed. Only provider image
- * fields count: text that merely looks like a data URL is billed as text, so it is estimated as text.
- */
-function inlineImage(key: string, value: JsonRecord): { encoded: string; rest: JsonRecord } | undefined {
+/** The image a content block carries as base64, and the block with that data removed. */
+function contentBlockImage(value: JsonRecord): { encoded: string; rest: JsonRecord } | undefined {
   // pi-ai: { type: 'image', data, mimeType }
   if (value.type === 'image' && typeof value.data === 'string' && isImageMime(value.mimeType)) return { encoded: value.data, rest: { ...value, data: '' } }
-  // Anthropic: { type: 'image', source: { type: 'base64', media_type, data } }
-  if (value.type === 'base64' && key === 'source' && typeof value.data === 'string' && isImageMime(value.media_type)) return { encoded: value.data, rest: { ...value, data: '' } }
-  // Gemini: { inline_data: { mime_type, data } } or { inlineData: { mimeType, data } }
-  if (GEMINI_INLINE_DATA_KEYS.has(key) && typeof value.data === 'string' && isImageMime(value.mime_type ?? value.mimeType)) return { encoded: value.data, rest: { ...value, data: '' } }
   // Responses: { type: 'input_image', image_url: 'data:image/...' }
   if (value.type === 'input_image' && isImageDataUrl(value.image_url)) return { encoded: value.image_url, rest: { ...value, image_url: '' } }
   // Chat Completions: { type: 'image_url', image_url: { url: 'data:image/...' } }
@@ -60,10 +57,40 @@ function inlineImage(key: string, value: JsonRecord): { encoded: string; rest: J
   return undefined
 }
 
+/** The image a content block's child carries: Anthropic's `source` or Gemini's `inline_data`. */
+function nestedImage(key: string, value: JsonRecord, block: JsonRecord): { encoded: string; rest: JsonRecord } | undefined {
+  if (typeof value.data !== 'string') return undefined
+  const anthropic = key === 'source' && block.type === 'image' && value.type === 'base64' && isImageMime(value.media_type)
+  const gemini = (key === 'inline_data' || key === 'inlineData') && isImageMime(value.mime_type ?? value.mimeType)
+  return anthropic || gemini ? { encoded: value.data, rest: { ...value, data: '' } } : undefined
+}
+
+/**
+ * Only images in content blocks get the per-image ceiling. Image-shaped JSON anywhere else, such as
+ * tool arguments or an object tool output, reaches the provider as text and is billed as text.
+ */
 export function estimateInputTokens(input: unknown): number {
   let imageTokens = 0
-  const json = JSON.stringify(input, (key, value: unknown) => {
-    const image = isRecord(value) ? inlineImage(key, value) : undefined
+  const contentArrays = new WeakSet<object>()
+  const blocks = new WeakSet<object>()
+  const opaque = new WeakSet<object>()
+  const json = JSON.stringify(input, function (this: unknown, key: string, value: unknown) {
+    if (typeof value !== 'object' || value === null) return value
+    const holder = this as object
+    if (opaque.has(holder) || OPAQUE_KEYS.has(key)
+      || (isRecord(holder) && typeof holder.type === 'string' && OPAQUE_BLOCK_TYPES.has(holder.type))
+      || (key === 'output' && isRecord(holder) && holder.type === 'function_call_output' && !Array.isArray(value))) {
+      opaque.add(value)
+      return value
+    }
+    if (Array.isArray(value)) {
+      if (CONTENT_ARRAY_KEYS.has(key)) contentArrays.add(value)
+      return value
+    }
+    const record = value as JsonRecord
+    const isBlock = Array.isArray(holder) && contentArrays.has(holder)
+    if (isBlock) blocks.add(record)
+    const image = isBlock ? contentBlockImage(record) : blocks.has(holder) ? nestedImage(key, record, holder as JsonRecord) : undefined
     if (!image) return value
     imageTokens += Math.min(IMAGE_RESERVATION_TOKENS, Math.ceil(image.encoded.length / 4))
     return image.rest
