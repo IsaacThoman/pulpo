@@ -49,13 +49,20 @@ export function MaterialField({ label, error, icon, trailingAction, ...props }: 
     if (next !== lastNativeText.current) { lastNativeText.current = next; value.set(next); }
   }, [value, props.value]);
   const onValueChange = (next: string) => { lastNativeText.current = next; props.onChangeText?.(next); };
+  // Compose reports focus as a boolean, including an unfocused report on first layout, so blur only follows a real focus.
+  const focused = useRef(false);
+  const onFocusChanged = (next: boolean) => {
+    if (next === focused.current) return;
+    focused.current = next;
+    (next ? props.onFocus : props.onBlur)?.({ nativeEvent: { text: value.get() } } as never);
+  };
   const keyboardType = props.secureTextEntry ? 'password' : props.keyboardType === 'email-address' ? 'email' : props.keyboardType === 'url' ? 'uri' : props.keyboardType === 'number-pad' || props.keyboardType === 'numeric' ? 'number' : props.keyboardType === 'decimal-pad' ? 'decimal' : props.keyboardType === 'phone-pad' ? 'phone' : 'text';
   const submit = () => {
     if (props.onSubmitEditing) props.onSubmitEditing({ nativeEvent: { text: value.get() } } as never);
     else Keyboard.dismiss();
   };
   return <Host matchContents={{ vertical: true }} style={{ width: '100%' }} ignoreSafeAreaKeyboardInsets>
-    <OutlinedTextField value={value} onValueChange={onValueChange} enabled={props.editable !== false} autoFocus={props.autoFocus}
+    <OutlinedTextField value={value} onValueChange={onValueChange} onFocusChanged={onFocusChanged} enabled={props.editable !== false} autoFocus={props.autoFocus}
       singleLine={!props.multiline} minLines={props.multiline ? 4 : 1} maxLines={props.multiline ? 8 : 1} maxLength={props.maxLength}
       isError={Boolean(error)} visualTransformation={props.secureTextEntry ? 'password' : 'none'} modifiers={[fillMaxWidth(), semantics({ contentType: props.autoComplete })]}
       keyboardOptions={{ keyboardType, capitalization: props.autoCapitalize === 'none' ? 'none' : props.autoCapitalize ?? 'sentences', autoCorrectEnabled: props.autoCorrect !== false, imeAction: props.returnKeyType === 'go' ? 'go' : props.returnKeyType === 'search' ? 'search' : props.returnKeyType === 'next' ? 'next' : 'done' }}
