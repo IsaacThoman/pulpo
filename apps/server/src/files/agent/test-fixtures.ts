@@ -6,7 +6,7 @@ import { chats, fileNodes, models, providerConnections, responses, users } from 
 import { getBlobStore } from '../../storage/index.js'
 import { createDoc } from '../doc-store.js'
 import { createFolder } from '../tree-service.js'
-import { createFilesRelay, type FilesWorkspace } from './relay.js'
+import { createFilesRelay, type FilesPermissionOutcome, type FilesWorkspace } from './relay.js'
 
 /**
  * Shared setup for the agent Files PostgreSQL tests. Test files mock `../../storage/index.js`
@@ -67,6 +67,8 @@ export async function filesFixture(options: { storageLimitBytes?: number } = {})
   await db.insert(chats).values({ id: chatId, userId, modelId: model })
   const workspace = memoryWorkspace()
   const changes: number[] = []
+  // One relay per reply, as the runner makes, so what the user answered stands for the reply.
+  let handler: ReturnType<typeof createFilesRelay> | undefined
 
   const fixture = {
     userId,
@@ -75,6 +77,12 @@ export async function filesFixture(options: { storageLimitBytes?: number } = {})
     workspace,
     /** Counts the relay announced after changes, newest last. */
     changes,
+    /** Permission requests the relay made, oldest first. */
+    permissionRequests: [] as Array<{ command: string; path: string }>,
+    /** How the user answers a permission request; unset, nobody is asked and the request is refused. */
+    answerPermission: undefined as undefined | ((request: { command: string; path: string }) => Promise<FilesPermissionOutcome>),
+    /** False for a reply whose app cannot show permission requests. Read when a reply's first command runs. */
+    canAskPermission: true,
     /** Starts another chat with a reply; `relay` and `attach` work on it from then on. */
     async newChat() {
       fixture.chatId = randomUUID()
@@ -86,6 +94,7 @@ export async function filesFixture(options: { storageLimitBytes?: number } = {})
       const responseId = randomUUID()
       await db.insert(responses).values({ id: responseId, chatId: fixture.chatId, userId, modelId: model, input: [], status })
       fixture.responseId = responseId
+      handler = undefined
       return responseId
     },
     async attach(entries: Record<string, FileAccessMode | undefined>) {
@@ -93,9 +102,13 @@ export async function filesFixture(options: { storageLimitBytes?: number } = {})
       await db.update(chats).set({ fileScopeIds: Object.keys(entries), fileScopeAccess: access }).where(eq(chats.id, fixture.chatId))
     },
     async relay(command: string, args: unknown) {
-      const handler = createFilesRelay({
+      handler ??= createFilesRelay({
         userId, chatId: fixture.chatId, responseId: fixture.responseId, workspace, maxOutputBytes: 50_000,
         onChanged: (count) => { changes.push(count) },
+        requestPermission: !fixture.canAskPermission ? undefined : async (request) => {
+          fixture.permissionRequests.push(request)
+          return fixture.answerPermission ? fixture.answerPermission(request) : 'denied'
+        },
       })
       return handler('operation', { id: randomUUID(), command, args })
     },

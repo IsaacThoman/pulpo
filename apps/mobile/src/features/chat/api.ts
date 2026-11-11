@@ -6,7 +6,7 @@ import { Directory, File, Paths } from 'expo-file-system'
 import * as Crypto from 'expo-crypto'
 import * as Sharing from 'expo-sharing'
 import { attachmentValidationError, createUploadQueue, retryBusyUpload } from '@pulpo/client-core'
-import { MESSAGE_REPORT_CONTEXT_MAX_LENGTH, type ResponseSnapshot } from '@pulpo/contracts'
+import { MESSAGE_REPORT_CONTEXT_MAX_LENGTH, type FileAccessMode, type FilesPermissionDecision, type ResponseSnapshot } from '@pulpo/contracts'
 import { apiOrigin, apiRequest, apiUrl, isNetworkError, nativeAuthorizationHeaders } from '../../api/client'
 import { cacheNamespace, cachedAttachmentUri, recordCachedAttachment, removeCachedAttachment } from '../../data/database'
 import { queueOfflineMutation } from '../../data/mutations'
@@ -46,7 +46,7 @@ export async function createChat(input: { clientId?: string; modelId: string; te
   }
 }
 
-export async function updateChat(id: string, patch: Partial<Pick<ServerChat, 'title' | 'pinned' | 'folderId' | 'modelId' | 'sortOrder' | 'fileScopeIds' | 'fileScopeAccess'>> & { autoExpire?: boolean }): Promise<ServerChat> {
+export async function updateChat(id: string, patch: Partial<Pick<ServerChat, 'title' | 'pinned' | 'folderId' | 'modelId' | 'sortOrder' | 'fileScopeIds' | 'fileScopeAccess' | 'fileChangeMode'>> & { autoExpire?: boolean; filesBrowseAllowed?: false }): Promise<ServerChat> {
   return apiRequest(`/api/chats/${id}`, { method: 'PATCH', body: patch })
 }
 
@@ -152,9 +152,8 @@ export async function startChat(input: {
   attachmentIds?: string[]
   agentMode?: boolean
   usedDictation?: boolean
-  /** The Files items the new chat's agent may work with, set on the unsent chat. */
-  fileScopeIds?: string[]
-  fileScopeAccess?: Partial<Record<string, import('@pulpo/contracts').FileAccessMode>>
+  /** "Changes to Files" as the composer showed it; the account preference it may have just changed syncs later. */
+  fileChangeMode?: FileAccessMode
 }): Promise<{ chat: ServerChat; response: ResponseSnapshot }> {
   const session = useSessionStore.getState()
   if (session.user) mobileChatStarted.ignoreLocal(cacheNamespace(session.instanceUrl, session.user.id), input.chatId)
@@ -176,7 +175,7 @@ export async function startChat(input: {
       title: input.title,
       temporary: input.temporary ?? false,
       autoExpire: input.autoExpire ?? false,
-      ...(input.fileScopeIds?.length ? { fileScopeIds: input.fileScopeIds, fileScopeAccess: input.fileScopeAccess ?? {} } : {}),
+      ...(input.fileChangeMode ? { fileChangeMode: input.fileChangeMode } : {}),
     },
     response: {
       timeZone: deviceTimeZone(),
@@ -230,8 +229,6 @@ export async function startChat(input: {
         updatedAt: now,
         responses: [],
         attachments: [],
-        // Queued with the start request, so the chat keeps its Files items while offline.
-        ...(input.fileScopeIds?.length ? { fileScopeIds: input.fileScopeIds, fileScopeAccess: input.fileScopeAccess ?? {} } : {}),
       },
       response: useRealtimeStore.getState().snapshots[input.responseId] ?? queued,
     }
@@ -308,6 +305,11 @@ export async function deleteMessageCascade(id: string): Promise<void> {
 
 export async function continuePastCostLimit(id: string): Promise<ResponseSnapshot> {
   return apiRequest<ResponseSnapshot>(`/api/responses/${id}/continue-past-cost-limit`, { method: 'POST' })
+}
+
+/** Answers an Agent reply that asked to look through the user's Files. */
+export async function answerFilesPermission(id: string, itemId: string, decision: FilesPermissionDecision): Promise<ResponseSnapshot> {
+  return apiRequest<ResponseSnapshot>(`/api/responses/${id}/files-permission`, { method: 'POST', body: { itemId, decision } })
 }
 
 export async function continueWithoutAgent(id: string): Promise<ResponseSnapshot> {

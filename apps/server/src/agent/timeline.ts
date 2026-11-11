@@ -1,5 +1,5 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
-import type { CompactionItem, CostLimitItem, FileChangesItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
+import type { CompactionItem, CostLimitItem, FileChangesItem, FilesPermissionItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
 
 export type ToolTimelineItem = {
   id: string
@@ -116,6 +116,8 @@ export function buildAgentOutput(options: {
   compactionItems?: CompactionItem[]
   recallItems?: RecallItem[]
   costLimitItems?: CostLimitItem[]
+  /** Requests to browse Files, each shown after the turn that asked. */
+  filesPermissionItems?: FilesPermissionItem[]
   fileChangesItem?: FileChangesItem
   /** Model-turn durations keyed by 1-based assistant turn index in this run. */
   turnDurationsMs?: Map<number, number>
@@ -132,6 +134,7 @@ export function buildAgentOutput(options: {
     compactionItems = [],
     recallItems = [],
     costLimitItems = [],
+    filesPermissionItems = [],
     fileChangesItem,
     turnDurationsMs,
     streaming = false,
@@ -162,6 +165,7 @@ export function buildAgentOutput(options: {
       assistantTurn,
     )
     output.push(...costLimitItems.filter((item) => item.agent_turn === assistantTurn))
+    output.push(...filesPermissionItems.filter((item) => item.agent_turn === assistantTurn))
     for (const part of content) {
       if ((part as { type?: string }).type === 'toolCall' && typeof (part as { id?: string }).id === 'string') {
         seenToolIds.add((part as { id: string }).id)
@@ -181,6 +185,7 @@ export function buildAgentOutput(options: {
   }
 
   output.push(...costLimitItems.filter((item) => !output.includes(item)))
+  output.push(...filesPermissionItems.filter((item) => !output.includes(item)))
   if (fileChangesItem) output.push(fileChangesItem)
 
   if (terminal) {

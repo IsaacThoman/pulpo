@@ -127,6 +127,8 @@ function mapChat(chat: ServerChat, messages: PrototypeMessage[] = [], detailLoad
     purgeAt: chat.purgeAt ? Date.parse(chat.purgeAt) : null,
     fileScopeIds: chat.fileScopeIds ?? previous?.fileScopeIds ?? [],
     fileScopeAccess: chat.fileScopeAccess ?? previous?.fileScopeAccess ?? {},
+    fileChangeMode: chat.fileChangeMode ?? previous?.fileChangeMode,
+    filesBrowseAllowed: chat.filesBrowseAllowed ?? previous?.filesBrowseAllowed ?? false,
   }
 }
 
@@ -204,6 +206,8 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
           showResponseCost: preferences.showResponseCost,
           agentCostLimitEnabled: preferences.agentCostLimitEnabled,
           agentCostLimitMicros: preferences.agentCostLimitMicros,
+          agentFilesAskBeforeBrowsing: preferences.agentFilesAskBeforeBrowsing,
+          agentFileChangeMode: preferences.agentFileChangeMode,
           memoryEnabled: preferences.memoryEnabled,
           customInstructions: preferences.customInstructions,
           instructionPresetSelections: preferences.instructionPresetSelections,
@@ -331,6 +335,8 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     showResponseCost: state.showResponseCost,
     agentCostLimitEnabled: state.agentCostLimitEnabled,
     agentCostLimitMicros: state.agentCostLimitMicros,
+    agentFilesAskBeforeBrowsing: state.agentFilesAskBeforeBrowsing,
+    agentFileChangeMode: state.agentFileChangeMode,
     memoryEnabled: state.memoryEnabled,
     customInstructions: state.customInstructions,
     instructionPresetSelections: state.instructionPresetSelections,
@@ -417,7 +423,8 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
       renameChat: (id, title) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: { title }, request: () => updateChat(id, { title }) }),
       // Queued scope changes replay in order; the server merges access per item.
       setChatFileScope: (id, fileScopeIds) => offlineCapableMutation({ namespace, entityKey: `chat:${id}:file-scope`, method: 'PATCH', path: `/api/chats/${id}`, body: { fileScopeIds }, request: () => updateChat(id, { fileScopeIds }) }),
-      setChatFileAccess: (id, itemId, mode) => offlineCapableMutation({ namespace, entityKey: `chat:${id}:file-access:${itemId}`, method: 'PATCH', path: `/api/chats/${id}`, body: { fileScopeAccess: { [itemId]: mode } }, request: () => updateChat(id, { fileScopeAccess: { [itemId]: mode } }) }),
+      setChatFileChangeMode: (id, fileChangeMode) => offlineCapableMutation({ namespace, entityKey: `chat:${id}:file-change-mode`, method: 'PATCH', path: `/api/chats/${id}`, body: { fileChangeMode }, request: () => updateChat(id, { fileChangeMode }) }),
+      revokeChatFilesBrowse: (id) => offlineCapableMutation({ namespace, entityKey: `chat:${id}:files-browse`, method: 'PATCH', path: `/api/chats/${id}`, body: { filesBrowseAllowed: false }, request: () => updateChat(id, { filesBrowseAllowed: false }) }),
       // Unpinned, a chat goes back to its folder and the server places it there, above that folder's
       // Files items too (as on the web).
       togglePin: (id, pinned, sortOrder, folderId: string | null | undefined, sendSortOrder = false) => {
@@ -509,6 +516,8 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
           showResponseCost: preferences.showResponseCost,
           agentCostLimitEnabled: preferences.agentCostLimitEnabled,
           agentCostLimitMicros: preferences.agentCostLimitMicros,
+          agentFilesAskBeforeBrowsing: preferences.agentFilesAskBeforeBrowsing,
+          agentFileChangeMode: preferences.agentFileChangeMode,
           memoryEnabled: preferences.memoryEnabled,
           customInstructions: preferences.customInstructions,
           instructionPresetSelections: preferences.instructionPresetSelections,

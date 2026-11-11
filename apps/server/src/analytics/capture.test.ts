@@ -4,14 +4,22 @@ import { attachmentKind, clientAttributionForRequest } from './capture.js'
 describe('client attribution', () => {
   it('prefers API keys, then the client header, then the user agent', () => {
     expect(clientAttributionForRequest({ apiKeyId: 'key', headers: { 'x-pulpo-client': 'ios/1.0.0' } })).toEqual({ platform: 'api', version: null })
-    expect(clientAttributionForRequest({ apiKeyId: null, headers: { 'x-pulpo-client': 'iOS/1.4.2' } })).toEqual({ platform: 'ios', version: '1.4.2' })
-    expect(clientAttributionForRequest({ apiKeyId: null, headers: { 'user-agent': 'Mozilla/5.0 Electron/38.0.0' } })).toEqual({ platform: 'desktop', version: null })
-    expect(clientAttributionForRequest({ apiKeyId: null, headers: { 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64)' } })).toEqual({ platform: 'web', version: null })
-    expect(clientAttributionForRequest({ apiKeyId: null, headers: { 'user-agent': 'okhttp/4.12' } })).toEqual({ platform: 'unknown', version: null })
+    expect(clientAttributionForRequest({ apiKeyId: null, headers: { 'x-pulpo-client': 'iOS/1.4.2' } })).toEqual({ platform: 'ios', version: '1.4.2', features: [] })
+    expect(clientAttributionForRequest({ apiKeyId: null, headers: { 'user-agent': 'Mozilla/5.0 Electron/38.0.0' } })).toEqual({ platform: 'desktop', version: null, features: [] })
+    expect(clientAttributionForRequest({ apiKeyId: null, headers: { 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64)' } })).toEqual({ platform: 'web', version: null, features: [] })
+    expect(clientAttributionForRequest({ apiKeyId: null, headers: { 'user-agent': 'okhttp/4.12' } })).toEqual({ platform: 'unknown', version: null, features: [] })
+  })
+
+  it('reads what the client says it can do, keeping only features it knows', () => {
+    const headers = { 'x-pulpo-client': 'ios/2.0.0', 'x-pulpo-client-features': 'Files-Permission, something-newer' }
+    expect(clientAttributionForRequest({ apiKeyId: null, headers })).toEqual({ platform: 'ios', version: '2.0.0', features: ['files-permission'] })
+    expect(clientAttributionForRequest({ apiKeyId: null, headers: { 'user-agent': 'Mozilla/5.0', 'x-pulpo-client-features': 'files-permission' } }).features).toEqual(['files-permission'])
+    // API keys never answer prompts.
+    expect(clientAttributionForRequest({ apiKeyId: 'key', headers }).features).toBeUndefined()
   })
 
   it('ignores clients that claim to be the API', () => {
-    expect(clientAttributionForRequest({ apiKeyId: null, headers: { 'x-pulpo-client': 'api', 'user-agent': 'curl/8' } })).toEqual({ platform: 'unknown', version: null })
+    expect(clientAttributionForRequest({ apiKeyId: null, headers: { 'x-pulpo-client': 'api', 'user-agent': 'curl/8' } })).toEqual({ platform: 'unknown', version: null, features: [] })
   })
 })
 

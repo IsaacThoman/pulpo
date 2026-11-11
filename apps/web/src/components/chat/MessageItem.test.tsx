@@ -72,6 +72,21 @@ describe('user message actions', () => {
     expect(markup.indexOf('aria-label="Delete message"')).toBeLessThan(markup.indexOf('aria-label="Previous branch"'))
   })
 
+  it('shows Files items the message mentions with its attachments, not in its text', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const id = '00000000-0000-4000-8000-0000000000a1'
+    const view = render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><TooltipProvider><MessageItem
+      chat={chat}
+      message={user({ content: `Summarize this\n\n[Launch plan.md](/files/d/${id})` })}
+      streaming={false}
+      onRegenerate={() => undefined}
+    /></TooltipProvider></MemoryRouter></QueryClientProvider>)
+
+    expect(view.getByRole('list', { name: 'Mentioned from Files' }).textContent).toContain('Launch plan.md')
+    expect(view.getByText('Summarize this')).toBeTruthy()
+    expect(view.queryByRole('link', { name: /Launch plan/ })).toBeNull()
+  })
+
   it('keeps edit enabled while an assistant response is streaming', async () => {
     const { MessageItem } = await import('./MessageItem')
     const streamingChat: Chat = { ...chat, messages: [user(), assistant({ done: false })] }

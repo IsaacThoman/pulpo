@@ -1,4 +1,4 @@
-import type { CompactionItem, CostLimitItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
+import { filesPermissionItemSchema, type CompactionItem, type CostLimitItem, type FilesPermissionItem, type RecallItem, type ToolImagePreview } from '@pulpo/contracts'
 import { recalledChatLabel } from './recall-label'
 
 export type ToolItem = {
@@ -31,6 +31,7 @@ export type TimelineStep =
   | { kind: 'compaction'; compaction: CompactionItem }
   | { kind: 'recall'; recall: RecallItem }
   | { kind: 'cost_limit'; costLimit: CostLimitItem }
+  | { kind: 'files_permission'; filesPermission: FilesPermissionItem }
   | { kind: 'message'; text: string }
 
 export type TimelineSegment =
@@ -153,6 +154,13 @@ export function buildMessageTimeline(output: unknown[], showReasoning: boolean):
       activity.steps.push({ kind: 'cost_limit', costLimit: item as CostLimitItem })
       continue
     }
+    if (value.type === 'pulpo_files_permission') {
+      const parsed = filesPermissionItemSchema.safeParse(item)
+      if (!parsed.success) continue
+      activity ??= { kind: 'activity', steps: [], active: false }
+      activity.steps.push({ kind: 'files_permission', filesPermission: parsed.data })
+      continue
+    }
     if (value.type === 'pulpo_compaction') {
       flush()
       const compaction = item as CompactionItem
@@ -209,7 +217,7 @@ export function buildMessageTimeline(output: unknown[], showReasoning: boolean):
 
 export function activityDurationMs(steps: TimelineStep[]): number | undefined {
   const durations = steps.flatMap((step) => {
-    if (step.kind === 'recall' || step.kind === 'cost_limit' || step.kind === 'message') return []
+    if (step.kind === 'recall' || step.kind === 'cost_limit' || step.kind === 'files_permission' || step.kind === 'message') return []
     if (step.kind === 'reasoning') return step.durationMs === undefined ? [] : [step.durationMs]
     const duration = step.kind === 'tool'
       ? step.tool.durationMs
@@ -219,4 +227,35 @@ export function activityDurationMs(steps: TimelineStep[]): number | undefined {
     return duration === undefined ? [] : [duration]
   })
   return durations.length ? durations.reduce((sum, value) => sum + value, 0) : undefined
+}
+
+/**
+ * What a Files permission request shows once it is not waiting on the user: `live` is whether the
+ * reply is still waiting for this answer (in progress, before the request expires).
+ */
+export function filesPermissionLabel(item: FilesPermissionItem, live: boolean): string {
+  switch (item.status) {
+    case 'allowed': return 'Allowed to look through your Files in this chat'
+    case 'always_allowed': return 'Allowed to look through your Files'
+    case 'denied': return 'Not allowed to look through your Files'
+    case 'expired': return 'Didn’t get an answer about your Files'
+    case 'awaiting_decision': return live ? 'Waiting for your answer about Files' : 'Didn’t get an answer about your Files'
+  }
+}
+
+/** The request a reply is waiting on, while the user can still answer it. */
+export function pendingFilesPermission(output: readonly unknown[] | undefined, inProgress: boolean, now = Date.now()): FilesPermissionItem | undefined {
+  if (!inProgress) return undefined
+  for (const item of [...output ?? []].reverse()) {
+    if ((item as { type?: unknown } | null)?.type !== 'pulpo_files_permission') continue
+    const parsed = filesPermissionItemSchema.safeParse(item)
+    if (parsed.success && parsed.data.status === 'awaiting_decision' && Date.parse(parsed.data.expires_at) > now) return parsed.data
+  }
+  return undefined
+}
+
+/** Where a Files permission request wanted to look, as its prompt names it. */
+export function filesPermissionPlace(item: Pick<FilesPermissionItem, 'path'>): string {
+  const path = item.path.replace(/^\/+|\/+$/g, '')
+  return path ? `“${path}”` : 'My files'
 }

@@ -12,7 +12,7 @@ import { useFollowStartedChat } from './use-follow-started-chat'
 import { useMenuTriggerFocus } from './use-menu-trigger-focus'
 import { appendToDraft, registerComposerFocus, registerComposerInsert } from './composer-focus'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
-import { MAX_MESSAGE_ATTACHMENTS, type ComposerState, type FileAccessMode } from '@pulpo/contracts'
+import { MAX_MESSAGE_ATTACHMENTS, type ComposerState, type FileNode, type FileReference } from '@pulpo/contracts'
 import { useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore, type Ref, type DragEvent as ReactDragEvent } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
@@ -65,8 +65,12 @@ import { composerPrimaryAction } from '@/components/chat/composer-queue'
 import { canSubmitComposerDraft } from '@/components/chat/composer-upload-policy'
 import type { Attachment } from '@/lib/types'
 import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
-import { FileScopeChip, FileScopePicker } from '@/features/files/FileScope'
-import { addFileScope, fileAccessMode, NO_FILE_ACCESS, scopedFileAccess, type FileScopeAccess } from '@pulpo/client-core/files'
+import { FileScopePicker, FilesAccessDialog } from '@/features/files/FileScope'
+import { FileReferenceCard } from '@/features/files/FileReferenceCard'
+import { addComposerReferences, composerMessageText, composerReferences, referencePreviewText, removeComposerReference, withComposerReferences } from '@pulpo/client-core/files'
+import { takePendingReferences, usePendingReferences } from '@/features/side-panel/agent'
+import { fetchFileNode, fileNodeQueryKey } from '@/features/files/api'
+import { queryClient } from '@/lib/query-client'
 import { insertDictationText } from '@/lib/dictation'
 import { useDictationRecorder } from '@/components/chat/use-dictation-recorder'
 import { DictationBar } from '@/components/chat/DictationBar'
@@ -125,7 +129,9 @@ function downloadComposerAttachment(attachment: UploadRecord): void {
   }, useSettings.getState().localAttachmentCacheMb)
 }
 
-const NO_FILE_SCOPE: readonly string[] = []
+function referenceOf(node: Pick<FileNode, 'id' | 'name' | 'kind'>): FileReference {
+  return { id: node.id, name: node.name, folder: node.kind === 'folder' }
+}
 
 export function Composer({
   chatId,
@@ -144,10 +150,7 @@ export function Composer({
   generationControlRef,
   onTemporaryChange,
   onSelectModel,
-  fileScopeIds = NO_FILE_SCOPE,
-  onFileScopeChange,
-  fileScopeAccess = NO_FILE_ACCESS,
-  onFileAccessChange,
+  canReferenceFiles = false,
 }: {
   chatId: string | null
   modelId: string
@@ -166,14 +169,8 @@ export function Composer({
   onTemporaryChange?: (temporary: boolean) => void
   /** Selects another model, e.g. from a model warning link. */
   onSelectModel?: (modelId: string) => void
-  /** Files items the agent may use in this chat, shown as chips. */
-  fileScopeIds?: readonly string[]
-  /** Lets the user add and remove items; without it the chips are read-only. */
-  onFileScopeChange?: (ids: string[]) => void
-  /** What the agent may do with each item. */
-  fileScopeAccess?: FileScopeAccess
-  /** Changes an item's mode; offered only where the scope itself can change. */
-  onFileAccessChange?: (id: string, mode: FileAccessMode) => void
+  /** Lets the message mention Files items, which the agent may then use in the chat. */
+  canReferenceFiles?: boolean
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -236,7 +233,8 @@ export function Composer({
   const dictationToolbarRef = useRef<HTMLDivElement>(null)
   const dictation = useDictationRecorder((text) => {
     const textarea = ref.current
-    const start = textarea?.selectionStart ?? valueRef.current.length
+    // The textarea shows the typed text; the draft's references come after it.
+    const start = textarea?.selectionStart ?? composerReferences(valueRef.current).text.length
     const end = textarea?.selectionEnd ?? start
     setValue((current) => {
       const inserted = insertDictationText(current, text, start, end)
@@ -252,6 +250,7 @@ export function Composer({
   const { phase: dictationState, stream: dictationStream, startedAt: dictationStartedAt, error: dictationError, stop: stopDictation } = dictation
   valueRef.current = value
   attachmentIdsRef.current = attachmentIds
+  const { text: draftText, references } = composerReferences(value)
 
   const streamingResponseId = useChat((s) => {
     if (!chatId) return null
@@ -318,7 +317,11 @@ export function Composer({
   const dictationEnabled = useAuth((s) => s.dictationEnabled)
   const filesEnabled = useAuth((s) => s.filesEnabled)
   const [folderPickerOpen, setFolderPickerOpen] = useState(false)
-  const canScopeFiles = filesEnabled && Boolean(onFileScopeChange) && !temporary
+  const canScopeFiles = filesEnabled && canReferenceFiles && !temporary
+  const [filesAccessOpen, setFilesAccessOpen] = useState(false)
+  const chatFileChangeMode = useChat((state) => chatId ? state.chats.find((chat) => chat.id === chatId)?.fileChangeMode : undefined)
+  const defaultFileChangeMode = useSettings((state) => state.agentFileChangeMode)
+  const fileChangeMode = chatId ? chatFileChangeMode ?? 'suggest' : defaultFileChangeMode
   const instanceReady = useAuth((s) => s.instanceReady)
   const desktopCanMutate = !isDesktopRuntime() || instanceReady
   uploadsRef.current = uploads
@@ -347,8 +350,10 @@ export function Composer({
   const attachmentUploadError = attachments.find((a) => a.status === 'error')?.error
   const maxInlineImages = useAuth((state) => state.maxInlineImages)
   const hasNonImage = attachmentBatchRequiresAgent(attachments, maxInlineImages)
+  // The agent reaches Files only from its workspace, so mentioned items need Agent mode, as files do.
+  const mentionsFiles = filesEnabled && references.length > 0
   const attachmentRestriction = nonImageAttachmentRestriction({
-    hasNonImage,
+    hasNonImage: hasNonImage || mentionsFiles,
     agentModeEnabled: activeAgentMode,
     agentAvailable,
     agentCapable,
@@ -385,8 +390,33 @@ export function Composer({
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`
   }, [])
+  /** Mentions Files items in the message; the agent reaches them through its tools, so it turns on. */
+  const addReferences = useCallback((added: FileReference[]) => {
+    if (!added.length) return
+    setValue((current) => addComposerReferences(current, added))
+    if (canUseAgent) {
+      if (messageEdit) setEditAgentMode(true)
+      else setDraftAgentMode(true)
+    }
+    requestAnimationFrame(() => autosize())
+  }, [autosize, canUseAgent, messageEdit])
+  // Items sent here from Files ("Add to chat", "Open in new chat").
+  const pendingReferences = usePendingReferences((state) => state.ids)
+  useEffect(() => {
+    if (!canScopeFiles || !pendingReferences.length) return
+    const ids = takePendingReferences(chatId ? { kind: 'chat', id: chatId } : { kind: 'new' })
+    if (!ids.length) return
+    void Promise.all(ids.map((id) => queryClient.fetchQuery({
+      queryKey: fileNodeQueryKey(userId, id),
+      queryFn: () => fetchFileNode(id),
+    }).then((result) => result.node.trashedAt ? null : referenceOf(result.node)).catch(() => null)))
+      .then((found) => addReferences(found.filter((reference): reference is FileReference => reference !== null)))
+  }, [addReferences, canScopeFiles, chatId, pendingReferences, userId])
   useEffect(() => registerComposerInsert((text) => {
-    setValue((current) => appendToDraft(current, text))
+    setValue((current) => {
+      const draft = composerReferences(current)
+      return withComposerReferences(appendToDraft(draft.text, text), draft.references)
+    })
     requestAnimationFrame(() => {
       autosize()
       const textarea = ref.current
@@ -762,13 +792,9 @@ export function Composer({
       ...generationSelection,
       temporary,
       autoExpire,
-      fileScopeIds: chatId ? undefined : [...fileScopeIds],
-      fileScopeAccess: chatId ? undefined : scopedFileAccess(fileScopeIds, fileScopeAccess),
       attachmentIds: ids,
       ...(usedDictation ? { usedDictation: true } : {}),
     })
-    // The new chat took the scope; the next one starts without it.
-    if (!chatId && fileScopeIds.length) onFileScopeChange?.([])
     if (!chatId && staged.chatId && !temporary) navigate(`/c/${staged.chatId}`)
   }
 
@@ -786,7 +812,8 @@ export function Composer({
   }))
 
   const submit = async () => {
-    const text = value.trim()
+    // Mentioned Files items travel as links at the end of the message.
+    const text = composerMessageText(value)
     if (!canSend) return
     if (!text && attachments.length === 0) return
     const payload = queuePayload()
@@ -1025,9 +1052,19 @@ export function Composer({
         <div role="status" className="flex items-center gap-2 px-3 pb-2 text-xs text-amber-700 dark:text-amber-300">
           <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
           <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
-            {attachmentRestriction === 'enable_agent' && 'These attachments require Agent mode (file type, image count, or image size).'}
-            {attachmentRestriction === 'model_not_capable' && 'Switch to an Agent-capable model or reduce these attachments.'}
-            {attachmentRestriction === 'agent_unavailable' && 'Agent mode is unavailable. Reduce these attachments to send.'}
+            {hasNonImage ? (
+              <>
+                {attachmentRestriction === 'enable_agent' && 'These attachments require Agent mode (file type, image count, or image size).'}
+                {attachmentRestriction === 'model_not_capable' && 'Switch to an Agent-capable model or reduce these attachments.'}
+                {attachmentRestriction === 'agent_unavailable' && 'Agent mode is unavailable. Reduce these attachments to send.'}
+              </>
+            ) : (
+              <>
+                {attachmentRestriction === 'enable_agent' && ui("Files items require Agent mode.")}
+                {attachmentRestriction === 'model_not_capable' && ui("Switch to an Agent-capable model or remove the Files items.")}
+                {attachmentRestriction === 'agent_unavailable' && ui("Agent mode is unavailable. Remove the Files items to send.")}
+              </>
+            )}
           </span>
           {attachmentRestriction === 'enable_agent' && (
             <button
@@ -1137,7 +1174,7 @@ export function Composer({
                     <p className={cn('truncate text-foreground/90', editing && 'italic text-muted-foreground')}>
                       {editing
                         ? ui("Editing queued message…")
-                        : uit`${message.content}${message.status === 'editing' ? ' · Editing on another session' : ''}`}
+                        : uit`${referencePreviewText(message.content)}${message.status === 'editing' ? ' · Editing on another session' : ''}`}
                     </p>
                   )}
                   {message.attachments.length > 0 && !editing && (
@@ -1210,22 +1247,6 @@ export function Composer({
             ref.current?.focus()
           })}
         />
-        {filesEnabled && fileScopeIds.length > 0 && (
-          <div className="space-y-1.5 px-3 pt-3">
-            <div className="flex flex-wrap gap-2">
-              {fileScopeIds.map((id) => (
-                <FileScopeChip
-                  key={id}
-                  id={id}
-                  mode={fileAccessMode(fileScopeAccess, id)}
-                  onModeChange={onFileScopeChange && onFileAccessChange ? (mode) => onFileAccessChange(id, mode) : undefined}
-                  onRemove={onFileScopeChange ? () => onFileScopeChange(fileScopeIds.filter((item) => item !== id)) : undefined}
-                />
-              ))}
-            </div>
-            {!(activeAgentMode && canUseAgent) && <p className="px-1 text-xs text-muted-foreground">{ui("Turn on agent mode so the model can use these files.")}</p>}
-          </div>
-        )}
         {attachments.length > 0 && (
           <div className="space-y-2 px-3 pt-3">
             <AttachmentWindow items={attachments}>{(visible) => <div className="flex max-h-48 flex-wrap gap-2 overflow-y-auto">
@@ -1252,15 +1273,33 @@ export function Composer({
           </div>
         )}
 
+        {filesEnabled && references.length > 0 && (
+          <div className="space-y-1.5 px-3 pt-3">
+            <div role="list" aria-label={ui("Mentioned from Files")} className="flex max-h-48 flex-wrap gap-2 overflow-y-auto">
+              {references.map((reference) => (
+                <div key={reference.id} role="listitem" className="max-w-full">
+                  <FileReferenceCard
+                    reference={reference}
+                    variant="composer"
+                    onRemove={() => {
+                      setValue((current) => removeComposerReference(current, reference.id))
+                      requestAnimationFrame(autosize)
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="flex items-end pr-2.5">
           <textarea
             ref={ref}
             data-composer-input
             aria-label={ui('Message')}
             readOnly={handoffBusy || shelfBusy}
-            value={value}
+            value={draftText}
             onChange={(e) => {
-              setValue(e.target.value)
+              setValue(withComposerReferences(e.target.value, references))
               autosize()
             }}
             onKeyDown={(e) => {
@@ -1360,12 +1399,8 @@ export function Composer({
             <FileScopePicker
               open={folderPickerOpen}
               onOpenChange={(open) => { setFolderPickerOpen(open); if (!open) requestAnimationFrame(focusComposer) }}
-              selected={fileScopeIds}
-              onAdd={(ids) => {
-                onFileScopeChange?.(addFileScope(fileScopeIds, ids))
-                // Files are reached through agent tools; adding some implies agent mode.
-                if (canUseAgent && !messageEdit) setAgentMode(modelId, true)
-              }}
+              selected={references.map((reference) => reference.id)}
+              onAdd={(nodes) => addReferences(nodes.map(referenceOf))}
             />
           )}
 
@@ -1437,12 +1472,28 @@ export function Composer({
             onSelectClose={focusComposer}
             enabled={activeAgentMode}
             disabled={!canUseAgent}
+            files={canScopeFiles ? {
+              mode: fileChangeMode,
+              onModeChange: (mode) => {
+                if (chatId) useChat.getState().setChatFileChangeMode(chatId, mode)
+                // New chats start with the account's choice.
+                else useSettings.getState().set('agentFileChangeMode', mode)
+              },
+              onOpenAccess: chatId ? () => setFilesAccessOpen(true) : undefined,
+            } : undefined}
             onSelect={(enabled) => {
               if (!canUseAgent) return
               if (messageEdit) setEditAgentMode(enabled)
               else setAgentMode(modelId, enabled)
             }}
           />
+          {chatId && filesAccessOpen && (
+            <FilesAccessDialog
+              chatId={chatId}
+              open={filesAccessOpen}
+              onOpenChange={(open) => { setFilesAccessOpen(open); if (!open) requestAnimationFrame(focusComposer) }}
+            />
+          )}
 
           {/* Attachments, presets, and agent stay usable while dictating; only the trailing actions flip to the dictation bar. */}
           {/* While dictating, reserve room for a readable waveform; presets collapse rather than squeeze it. */}

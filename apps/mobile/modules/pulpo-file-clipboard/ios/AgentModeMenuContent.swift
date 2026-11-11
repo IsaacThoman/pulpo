@@ -4,6 +4,10 @@ final class AgentModeMenuModel: ObservableObject {
   @Published var selection = AgentModeSelection()
   @Published var available = false
   @Published var hint = ""
+  /// The "Changes to Files" choice (Files on, not a temporary chat), and "Files Access…" (a saved chat).
+  @Published var filesVisible = false
+  @Published var fileChangeMode = "suggest"
+  @Published var filesAccessVisible = false
 
   func select(_ enabled: Bool) -> AgentModeSelection? {
     guard available else { return nil }
@@ -14,9 +18,15 @@ final class AgentModeMenuModel: ObservableObject {
   }
 }
 
+enum AgentFilesAction: Equatable {
+  case changeMode(String)
+  case openAccess
+}
+
 struct AgentModeMenuContent: View {
   @ObservedObject var model: AgentModeMenuModel
   let onSelection: (AgentModeSelection) -> Void
+  var onFilesAction: (AgentFilesAction) -> Void = { _ in }
   @Environment(\.colorScheme) private var colorScheme
 
   private var enabled: Bool { model.available && model.selection.enabled }
@@ -41,6 +51,35 @@ struct AgentModeMenuContent: View {
       }
       .pickerStyle(.inline)
       .tint(.primary)
+      if model.filesVisible {
+        Divider()
+        // A submenu keeps its label ("Changes to Files") and shows the current choice; an inline
+        // picker's section title is dropped from the menu, which would leave the modes unexplained.
+        Picker(selection: Binding(
+          get: { model.fileChangeMode },
+          set: { mode in
+            guard mode != model.fileChangeMode else { return }
+            // Checked here at once; JavaScript saves it and confirms through the configuration.
+            model.fileChangeMode = mode
+            onFilesAction(.changeMode(mode))
+          }
+        )) {
+          Label("Read only", systemImage: "eye").tag("read")
+          Label("Suggest changes", systemImage: "text.badge.checkmark").tag("suggest")
+          Label("Edit directly", systemImage: "pencil").tag("write")
+        } label: {
+          Label("Changes to Files", systemImage: "folder.badge.gearshape")
+        }
+        .pickerStyle(.menu)
+        .tint(.primary)
+        if model.filesAccessVisible {
+          Button {
+            onFilesAction(.openAccess)
+          } label: {
+            Label("Files Access…", systemImage: "folder")
+          }
+        }
+      }
     } label: {
       Image(enabled ? "LucideBot" : "LucideBotOff")
         .resizable()

@@ -8,7 +8,8 @@ import { lazy, Suspense, useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { TRASH_RETENTION_VALUES, type InstructionPreset, type UsageVisibility } from '@pulpo/contracts'
+import { FILE_ACCESS_MODES, TRASH_RETENTION_VALUES, type FileAccessMode, type InstructionPreset, type UsageVisibility } from '@pulpo/contracts'
+import { accessModeCopy } from '@/features/files/access-modes'
 import {
   Database,
   Bot,
@@ -364,6 +365,7 @@ export function SettingsModal({
   const signOutActiveAccount = useAuth((a) => a.signOutActiveAccount)
   const billingEnabled = useAuth((a) => a.billingEnabled)
   const codexEnabled = useAuth((a) => a.codexEnabled)
+  const filesEnabled = useAuth((a) => a.filesEnabled)
   const replaceUser = useAuth((a) => a.replaceUser)
   const navigate = useNavigate()
   const [memoryDocument, setMemoryDocument] = useState<MemoryDocument | null>(null)
@@ -1146,6 +1148,26 @@ export function SettingsModal({
                         />
                       )}
                     </Row>
+                  )}
+                  {filesEnabled && (
+                    <>
+                      <Separator className="my-3" />
+                      <Row label={ui("Ask before the agent looks through Files")} hint={ui("The agent can always use the items you mention in a message. When this is off, it can also look through the rest of your Files without asking; changes to items you didn't mention still wait for your review.")}>
+                        {(control) => <Switch {...control} checked={s.agentFilesAskBeforeBrowsing} onCheckedChange={(v) => s.set('agentFilesAskBeforeBrowsing', v)} />}
+                      </Row>
+                      <Row label={ui("Changes to Files in new chats")} hint={ui("Each chat can change this in the Pulpo Agent menu.")}>
+                        {(control) => (
+                          <Select value={s.agentFileChangeMode} onValueChange={(v) => s.set('agentFileChangeMode', v as FileAccessMode)}>
+                            <SelectTrigger {...control} className="w-44">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {FILE_ACCESS_MODES.map((mode) => <SelectItem key={mode} value={mode}>{accessModeCopy(mode).label}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      </Row>
+                    </>
                   )}
                   <Separator className="my-3" />
                   <ImageGenerationSettings />

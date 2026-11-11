@@ -1,16 +1,29 @@
 import type { Ref } from 'react'
-import { Bot, BotOff, Check, ChevronDown } from 'lucide-react'
+import { FILE_ACCESS_MODES, type FileAccessMode } from '@pulpo/contracts'
+import { Bot, BotOff, Check, ChevronDown, FolderLock } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/useAppTranslation'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { ui } from '@/i18n/ui'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { ACCESS_ICONS, accessModeCopy } from '@/features/files/access-modes'
 import { useMenuTriggerFocus } from './use-menu-trigger-focus'
 
-export function AgentMenu({ ref, enabled, disabled, compact = false, onSelect, onSelectClose }: {
+/** The Files part of the menu: what the agent may change, and the chat's Files access. */
+export interface AgentFilesControls {
+  mode: FileAccessMode
+  onModeChange: (mode: FileAccessMode) => void
+  /** Shows what the agent can use in this chat; saved chats only. */
+  onOpenAccess?: () => void
+}
+
+export function AgentMenu({ ref, enabled, disabled, compact = false, files, onSelect, onSelectClose }: {
   ref?: Ref<HTMLButtonElement>
   enabled: boolean
   disabled: boolean
   /** Shows only the icon, for narrow composers. */
   compact?: boolean
+  /** Offered where the agent can work with Files. */
+  files?: AgentFilesControls
   onSelect: (enabled: boolean) => void
   onSelectClose?: () => void
 }) {
@@ -40,7 +53,7 @@ export function AgentMenu({ ref, enabled, disabled, compact = false, onSelect, o
           </>}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent {...menuFocus.contentProps} align="start" side="top" className="w-48">
+      <DropdownMenuContent {...menuFocus.contentProps} align="start" side="top" className={files ? 'w-64' : 'w-48'}>
         {[true, false].map((value) => {
           const ChoiceIcon = value ? Bot : BotOff
           return (
@@ -64,6 +77,49 @@ export function AgentMenu({ ref, enabled, disabled, compact = false, onSelect, o
             </DropdownMenuItem>
           )
         })}
+        {files && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup aria-label={ui("Changes to Files")}>
+              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{ui("Changes to Files")}</DropdownMenuLabel>
+              {FILE_ACCESS_MODES.map((mode) => {
+                const ModeIcon = ACCESS_ICONS[mode]
+                const copy = accessModeCopy(mode)
+                return (
+                  <DropdownMenuItem
+                    key={mode}
+                    role="menuitemradio"
+                    aria-checked={files.mode === mode}
+                    disabled={disabled}
+                    onSelect={() => {
+                      menuFocus.onSelect()
+                      if (mode !== files.mode) files.onModeChange(mode)
+                    }}
+                    className="items-start justify-between"
+                  >
+                    <span className="flex min-w-0 items-start gap-1.5">
+                      <ModeIcon className="mt-0.5 size-4 opacity-70" />
+                      <span className="flex min-w-0 flex-col">
+                        <span>{copy.label}</span>
+                        <span className="text-xs text-muted-foreground">{copy.description}</span>
+                      </span>
+                    </span>
+                    {files.mode === mode && <Check className="mt-0.5 size-3.5 shrink-0" />}
+                  </DropdownMenuItem>
+                )
+              })}
+            </DropdownMenuGroup>
+            {files.onOpenAccess && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => files.onOpenAccess?.()}>
+                  <FolderLock className="size-4 opacity-70" />
+                  {ui("Files access…")}
+                </DropdownMenuItem>
+              </>
+            )}
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )

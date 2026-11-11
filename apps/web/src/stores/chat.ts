@@ -9,6 +9,7 @@ import {
   type CreateQueuedMessageInput,
   type EmbeddedResponseSnapshot,
   type FileAccessMode,
+  type FilesPermissionDecision,
   type ResponseEvent,
   type ResponseSnapshot,
   type UpdateChatInput,
@@ -43,7 +44,7 @@ import { pinnedItemsCeiling, sidebarItemsFloor } from '@/features/sidebar/cache'
 import { useFileToasts } from '@/features/files/browser/toasts'
 import { filesErrorMessage } from '@/features/files/file-display'
 import { adminChatAccessActive, adminChatAccountKey } from '@/features/admin-chat/access'
-import { scopedFileAccess } from '@pulpo/client-core/files'
+import { referencePreviewText, scopedFileAccess } from '@pulpo/client-core/files'
 
 function applySortOrders(ids: string[]): Map<string, number> {
   return new Map(ids.map((id, index) => [id, index]))
@@ -199,6 +200,8 @@ export interface ServerChat {
   temporary?: boolean
   fileScopeIds?: string[]
   fileScopeAccess?: Record<string, FileAccessMode>
+  fileChangeMode?: FileAccessMode
+  filesBrowseAllowed?: boolean
   expiresAt?: string | null
   createdAt: string
   updatedAt: string
@@ -299,8 +302,12 @@ interface ChatState {
   renameChat: (id: string, title: string) => void
   /** Sets the Files folders the agent may use in a saved chat. */
   setChatFileScope: (id: string, fileScopeIds: string[]) => void
-  /** Sets what the agent may do with one item of a saved chat's Files scope. */
-  setChatFileAccess: (id: string, scopeId: string, mode: FileAccessMode) => void
+  /** Sets what the agent may change in Files in a saved chat. */
+  setChatFileChangeMode: (id: string, mode: FileAccessMode) => void
+  /** Takes back the agent's permission to browse all of the user's Files in a saved chat. */
+  revokeChatFilesBrowse: (id: string) => void
+  /** Answers an Agent reply's request to browse the user's Files. */
+  answerFilesPermission: (responseId: string, itemId: string, decision: FilesPermissionDecision) => Promise<void>
   togglePin: (id: string) => void
   /** Resolves once the server has it, so it can be undone. */
   moveToFolder: (id: string, folderId: string | null, position?: ChatListPosition) => Promise<void>
@@ -536,6 +543,8 @@ function toChat(
     temporary: row.temporary ?? current?.temporary ?? false,
     fileScopeIds: row.fileScopeIds ?? current?.fileScopeIds ?? [],
     fileScopeAccess: row.fileScopeAccess ?? current?.fileScopeAccess ?? {},
+    fileChangeMode: row.fileChangeMode ?? current?.fileChangeMode ?? 'suggest',
+    filesBrowseAllowed: row.filesBrowseAllowed ?? current?.filesBrowseAllowed ?? false,
     expiresAt: row.expiresAt === undefined
       ? current?.expiresAt ?? null
       : row.expiresAt === null ? null : Date.parse(row.expiresAt),
@@ -964,8 +973,8 @@ function enqueueChatMutation<T>(chatId: string, operation: () => Promise<T>): Pr
  */
 function saveChatFileScope(
   id: string,
-  patch: Pick<UpdateChatInput, 'fileScopeIds' | 'fileScopeAccess'>,
-  { current, revert }: { current: (chat: Chat) => boolean; revert: Pick<Chat, 'fileScopeIds' | 'fileScopeAccess'> },
+  patch: Pick<UpdateChatInput, 'fileScopeIds' | 'fileScopeAccess' | 'fileChangeMode' | 'filesBrowseAllowed'>,
+  { current, revert }: { current: (chat: Chat) => boolean; revert: Partial<Pick<Chat, 'fileScopeIds' | 'fileScopeAccess' | 'fileChangeMode' | 'filesBrowseAllowed'>> },
 ): void {
   void enqueueChatMutation(id, async () => {
     if (useChat.getState().chats.find((chat) => chat.id === id)?.provisional) return
@@ -1347,16 +1356,28 @@ export const useChat = create<ChatState>()((set, get) => ({
       revert: { fileScopeIds: chat.fileScopeIds, fileScopeAccess: chat.fileScopeAccess },
     })
   },
-  setChatFileAccess: (id, scopeId, mode) => {
+  setChatFileChangeMode: (id, fileChangeMode) => {
     const chat = get().chats.find((item) => item.id === id)
     if (!chat) return
-    const fileScopeAccess = { ...chat.fileScopeAccess, [scopeId]: mode }
-    set((state) => ({ chats: state.chats.map((item) => item.id === id ? { ...item, fileScopeAccess } : item) }))
-    // Only the changed entry: the server merges it into the chat's other modes.
-    saveChatFileScope(id, { fileScopeAccess: { [scopeId]: mode } }, {
-      current: (item) => item.fileScopeAccess === fileScopeAccess,
-      revert: { fileScopeAccess: chat.fileScopeAccess },
+    // The chat's mode replaces any an older client set per item.
+    const fileScopeAccess = {}
+    set((state) => ({ chats: state.chats.map((item) => item.id === id ? { ...item, fileChangeMode, fileScopeAccess } : item) }))
+    saveChatFileScope(id, { fileChangeMode }, {
+      current: (item) => item.fileChangeMode === fileChangeMode && item.fileScopeAccess === fileScopeAccess,
+      revert: { fileChangeMode: chat.fileChangeMode, fileScopeAccess: chat.fileScopeAccess },
     })
+  },
+  revokeChatFilesBrowse: (id) => {
+    const chat = get().chats.find((item) => item.id === id)
+    if (!chat?.filesBrowseAllowed) return
+    set((state) => ({ chats: state.chats.map((item) => item.id === id ? { ...item, filesBrowseAllowed: false } : item) }))
+    saveChatFileScope(id, { filesBrowseAllowed: false }, {
+      current: (item) => item.filesBrowseAllowed === false,
+      revert: { filesBrowseAllowed: true },
+    })
+  },
+  answerFilesPermission: async (responseId, itemId, decision) => {
+    await optimisticRequest('POST', `/api/responses/${responseId}/files-permission`, { itemId, decision })
   },
   togglePin: (id) => {
     const chat = get().chats.find((item) => item.id === id)
@@ -1427,7 +1448,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     }
     set((state) => {
       const existing = state.chats.find((chat) => chat.id === id)
-      const titleSource = input.content || (input.attachments[0]?.name ?? 'Message')
+      const titleSource = referencePreviewText(input.content) || (input.attachments[0]?.name ?? 'Message')
       const title = titleSource.length > 42 ? `${titleSource.slice(0, 42)}…` : titleSource
       const updated: Chat = existing
         ? {
@@ -1451,6 +1472,8 @@ export const useChat = create<ChatState>()((set, get) => ({
             temporary: input.temporary,
             fileScopeIds: input.fileScopeIds ?? [],
             fileScopeAccess: scopedFileAccess(input.fileScopeIds ?? [], input.fileScopeAccess ?? {}),
+            // The mode chosen in the new-chat composer; the request that creates the chat sends it.
+            fileChangeMode: useSettings.getState().agentFileChangeMode,
             expiresAt: input.temporary ? timestamp + 48 * 60 * 60 * 1_000 : newChatExpiresAt,
             expired: false,
             provisional: true,
@@ -1548,7 +1571,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     }
     set((state) => {
       const existing = state.chats.find((chat) => chat.id === id)
-      const titleSource = content || (attachments[0]?.name ?? 'Image')
+      const titleSource = referencePreviewText(content) || (attachments[0]?.name ?? 'Image')
       const title = titleSource.length > 42 ? `${titleSource.slice(0, 42)}…` : titleSource
       const updated: Chat = existing
         ? {
@@ -1573,6 +1596,7 @@ export const useChat = create<ChatState>()((set, get) => ({
           tags: [],
           temporary,
           fileScopeIds: [],
+          fileChangeMode: useSettings.getState().agentFileChangeMode,
           expiresAt: temporary ? timestamp + 48 * 60 * 60 * 1_000 : newChatExpiresAt,
           expired: false,
           // Request completion enables follow-up responses. List visibility has
@@ -1595,7 +1619,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       content,
       modelId: generation.effectiveModelId || modelId,
       displayModelId: modelId,
-      title: truncateChatTitle(content || attachments[0]?.name || '') || 'Image',
+      title: truncateChatTitle(referencePreviewText(content) || attachments[0]?.name || '') || 'Image',
       temporary,
       expiresAt: newChatExpiresAt === null ? null : new Date(newChatExpiresAt).toISOString(),
       attachments,
@@ -1621,12 +1645,14 @@ export const useChat = create<ChatState>()((set, get) => ({
         chat: {
           clientId: id,
           modelId,
-          title: truncateChatTitle(content || attachments[0]?.name || '') || 'Image',
+          title: truncateChatTitle(referencePreviewText(content) || attachments[0]?.name || '') || 'Image',
           temporary,
           autoExpire,
           // Staging put the scope on the provisional chat.
           fileScopeIds: currentChat?.fileScopeIds ?? [],
           fileScopeAccess: currentChat?.fileScopeAccess ?? {},
+          // Sent here, not left to the account setting: that syncs on its own and may still be behind.
+          fileChangeMode: currentChat?.fileChangeMode ?? useSettings.getState().agentFileChangeMode,
         },
         response: responseBody,
       }
@@ -1988,7 +2014,10 @@ export const useChat = create<ChatState>()((set, get) => ({
         : `/api/messages/${messageId}`
       const body = rejectedSend
         ? startChat ? {
-          chat: { ...startChat, clientId: chatId, modelId, title: truncateChatTitle(content || editedAttachments[0]?.name || '') || 'Image' },
+          chat: {
+            ...startChat, clientId: chatId, modelId, title: truncateChatTitle(referencePreviewText(content) || editedAttachments[0]?.name || '') || 'Image',
+            fileChangeMode: get().chats.find((chat) => chat.id === chatId)?.fileChangeMode ?? useSettings.getState().agentFileChangeMode,
+          },
           response: responseBody,
         } : responseBody
         : { ...selection, content }

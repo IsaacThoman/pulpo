@@ -491,6 +491,11 @@ export const chats = pgTable('chats', {
   fileScopeIds: jsonb('file_scope_ids').$type<string[]>().notNull().default([]),
   // What the agent may do with each scope entry ('read' | 'suggest' | 'write'), keyed like file_scope_ids.
   fileScopeAccess: jsonb('file_scope_access').$type<Record<string, string>>().notNull().default({}),
+  // What the agent may change in Files ('read' | 'suggest' | 'write'); file_scope_access entries, set
+  // by older clients, override it for their items. Items reached only by browsing take at most 'suggest'.
+  fileChangeMode: text('file_change_mode').notNull().default('suggest'),
+  // The user let Agent replies in this chat browse all of their Files.
+  filesBrowseAllowed: boolean('files_browse_allowed').notNull().default(false),
   activeBranchLeafId: uuid('active_branch_leaf_id'),
   activeResponseId: uuid('active_response_id'),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
@@ -515,6 +520,8 @@ export const responses = pgTable('responses', {
   modelId: text('model_id').notNull().references(() => models.id),
   actualModelId: text('actual_model_id').references(() => models.id),
   origin: text('origin').notNull().default('web'),
+  // What the app that sent the message can do (CLIENT_FEATURES), e.g. answer a Files permission request.
+  clientFeatures: jsonb('client_features').$type<string[]>().notNull().default([]),
   pricingVersionId: uuid('pricing_version_id').references(() => modelPricingVersions.id),
   openaiResponseId: text('openai_response_id'),
   previousResponseId: uuid('previous_response_id'),
@@ -566,6 +573,7 @@ export const queuedMessages = pgTable('queued_messages', {
   // Analytics attribution captured when the message was queued, applied when it dispatches.
   clientPlatform: text('client_platform'),
   clientVersion: text('client_version'),
+  clientFeatures: jsonb('client_features').$type<string[]>().notNull().default([]),
   usedDictation: boolean('used_dictation'),
   position: integer('position').notNull(),
   status: text('status').notNull().default('pending'),

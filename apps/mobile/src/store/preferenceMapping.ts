@@ -1,4 +1,4 @@
-import { agentCostLimitMicrosSchema, DEFAULT_AGENT_COST_LIMIT_MICROS, DEFAULT_TRASH_COLOR, type FileColor, imageGenerationPreferencesSchema, trashColorSchema, type ImageGenerationPreferences, instructionPresetSelectionsSchema, modelWarningDismissalsSchema, type ModelWarningDismissals, speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
+import { agentCostLimitMicrosSchema, DEFAULT_AGENT_COST_LIMIT_MICROS, DEFAULT_FILE_ACCESS_MODE, DEFAULT_TRASH_COLOR, type FileAccessMode, fileAccessModeSchema, type FileColor, imageGenerationPreferencesSchema, trashColorSchema, type ImageGenerationPreferences, instructionPresetSelectionsSchema, modelWarningDismissalsSchema, type ModelWarningDismissals, speechPreferencesSchema, type SpeechPreferences } from '@pulpo/contracts'
 export type ThemePreference = 'system' | 'light' | 'dark'
 export type TextSizePreference = 'default' | 'large' | 'extra-large'
 
@@ -25,6 +25,10 @@ export interface Preferences {
   /** Pause Agent responses for confirmation once they cost agentCostLimitMicros. */
   agentCostLimitEnabled: boolean
   agentCostLimitMicros: number
+  /** Ask before an Agent reply looks through Files beyond the items mentioned in its chat. */
+  agentFilesAskBeforeBrowsing: boolean
+  /** What the agent may change in Files in new chats. */
+  agentFileChangeMode: FileAccessMode
   memoryEnabled: boolean
   /** Account custom instructions appended to every conversation. */
   customInstructions: string
@@ -55,6 +59,7 @@ export const defaultPreferences: Preferences = {
   speech: speechPreferencesSchema.parse(undefined),
   theme: 'system', textSize: 'default', streamResponses: true, showPromptSuggestions: true, showModelWarnings: true, modelWarningDismissals: {}, showReasoning: true, memoryEnabled: false, customInstructions: '', instructionPresetSelections: {},
   showResponseCost: false, agentCostLimitEnabled: true, agentCostLimitMicros: DEFAULT_AGENT_COST_LIMIT_MICROS,
+  agentFilesAskBeforeBrowsing: true, agentFileChangeMode: DEFAULT_FILE_ACCESS_MODE,
   haptics: true, composerSyncEnabled: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
   trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, chatSortMode: 'default', trashColor: DEFAULT_TRASH_COLOR, favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentModes: {},
   generation: {},
@@ -85,6 +90,9 @@ export function preferencesFromServer(values: Record<string, unknown>): Partial<
   result.showResponseCost = values.showResponseCost === true
   result.agentCostLimitEnabled = values.agentCostLimitEnabled !== false
   result.agentCostLimitMicros = agentCostLimitMicrosSchema.catch(DEFAULT_AGENT_COST_LIMIT_MICROS).parse(values.agentCostLimitMicros)
+  // Accounts that never chose are asked, and the agent suggests changes, as on the server.
+  result.agentFilesAskBeforeBrowsing = values.agentFilesAskBeforeBrowsing !== false
+  result.agentFileChangeMode = fileAccessModeSchema.catch(DEFAULT_FILE_ACCESS_MODE).parse(values.agentFileChangeMode)
   if (typeof values.memoryEnabled === 'boolean') result.memoryEnabled = values.memoryEnabled
   if (typeof values.customInstructions === 'string') result.customInstructions = values.customInstructions
   if (typeof values.defaultModelId === 'string') result.defaultModelId = values.defaultModelId || null
@@ -131,7 +139,7 @@ function validAgentModes(value: unknown): Preferences['agentModes'] {
 
 export function serverPreferenceKey(key: keyof Preferences): string | null {
   return key === 'attachmentCacheMb' ? 'localAttachmentCacheMb'
-    : ['imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'sendWithEnter', 'streamResponses', 'showPromptSuggestions', 'showModelWarnings', 'modelWarningDismissals', 'showReasoning', 'showResponseCost', 'agentCostLimitEnabled', 'agentCostLimitMicros', 'memoryEnabled', 'customInstructions', 'instructionPresetSelections', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'chatSortMode', 'trashColor', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
+    : ['imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'sendWithEnter', 'streamResponses', 'showPromptSuggestions', 'showModelWarnings', 'modelWarningDismissals', 'showReasoning', 'showResponseCost', 'agentCostLimitEnabled', 'agentCostLimitMicros', 'agentFilesAskBeforeBrowsing', 'agentFileChangeMode', 'memoryEnabled', 'customInstructions', 'instructionPresetSelections', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'chatSortMode', 'trashColor', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
       ? key
       : null
 }

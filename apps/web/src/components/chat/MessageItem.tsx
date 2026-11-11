@@ -28,7 +28,9 @@ import {
   Pause,
   StepForward,
 } from 'lucide-react'
-import { findCostLimitItem, workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem, type CostLimitItem, type RecallItem } from '@pulpo/contracts'
+import { findCostLimitItem, findFilesPermissionItems, splitFileReferences, workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem, type CostLimitItem, type RecallItem } from '@pulpo/contracts'
+import { FilesPermissionIcon, FilesPermissionPrompt, FilesPermissionStepRow } from './FilesPermissionPrompt'
+import { filesPermissionStepLabel, useFilesPermissionPending } from './files-permission'
 import type { Chat, Message } from '@/lib/types'
 import { hasMultipleBranches } from '@/lib/message-branches'
 import { getCatalogModel } from '@/stores/catalog'
@@ -63,6 +65,7 @@ import { ui, activeLocale } from '@/i18n/ui'
 import { toolActivityPresentation } from './tool-activity-presentation'
 import { UsageCostBreakdown } from '@/components/usage/UsageCostBreakdown'
 import { FileChangesBar } from '@/features/files/FileChangesBar'
+import { FileReferenceCard } from '@/features/files/FileReferenceCard'
 import { fileChangesItem } from '@/features/files/file-changes'
 
 function CopyButton({ text }: { text: string }) {
@@ -280,6 +283,12 @@ function CostLimitPrompt({
   )
 }
 
+/** The request while it can still be answered. */
+function PendingFilesPermission({ responseId, item }: { responseId: string; item: Parameters<typeof FilesPermissionPrompt>[0]['item'] }) {
+  const pending = useFilesPermissionPending(item, true)
+  return pending ? <FilesPermissionPrompt responseId={responseId} item={item} /> : null
+}
+
 function compactionTokensLabel(item: CompactionItem): string | null {
   if (typeof item.estimated_tokens !== 'number' || typeof item.tokens_after !== 'number') return null
   return ui("Context: {{before}} → {{after}} tokens", { before: formatNumber(item.estimated_tokens), after: formatNumber(item.tokens_after) })
@@ -483,6 +492,10 @@ function ActivityBlock({
   const pausedCostLimit = active && lastStep?.kind === 'cost_limit' && lastStep.costLimit.status === 'awaiting_confirmation'
     ? lastStep.costLimit
     : undefined
+  const waitingPermission = active && lastStep?.kind === 'files_permission' && lastStep.permission.status === 'awaiting_decision'
+    ? lastStep.permission
+    : undefined
+  const permissionPending = useFilesPermissionPending(waitingPermission, active)
   const hasReasoning = steps.some((step) => step.kind === 'reasoning' && step.text)
   const hasMessages = steps.some((step) => step.kind === 'message')
   const workspaceBusy = workspaceIsActive(workspace?.state)
@@ -528,6 +541,7 @@ function ActivityBlock({
       return workspaceLabel(workspace)
     }
     if (pausedCostLimit) return costLimitStepLabel(pausedCostLimit, true)
+    if (waitingPermission && permissionPending) return filesPermissionStepLabel(waitingPermission, true)
     if (runningTool) return toolActivityPresentation(runningTool.tool, runningTool.arguments).label
     if (active && hasTools) return ui("Working…")
     if (active) return ui("Thinking…")
@@ -555,6 +569,7 @@ function ActivityBlock({
     }
     if (workspaceFailed) return <XCircle className="size-3.5 shrink-0 text-destructive" />
     if (pausedCostLimit) return <Pause className="size-3.5 shrink-0" />
+    if (waitingPermission && permissionPending) return <FilesPermissionIcon item={waitingPermission} pending className="size-3.5 shrink-0" />
     if (runningTool) {
       const Icon = toolActivityPresentation(runningTool.tool, runningTool.arguments).icon
       return <Icon className="size-3.5 shrink-0 animate-pulse" />
@@ -602,6 +617,9 @@ function ActivityBlock({
               }
               if (step.kind === 'cost_limit') {
                 return <CostLimitStepRow key={step.costLimit.id} item={step.costLimit} live={active} />
+              }
+              if (step.kind === 'files_permission') {
+                return <FilesPermissionStepRow key={step.permission.id} item={step.permission} live={active} />
               }
               return (
                 <ActivityToolRow
@@ -756,25 +774,36 @@ export const MessageItem = memo(function MessageItem({
 
   if (message.role === 'user') {
     const pendingDelivery = message.deliveryStatus === 'uploading' && Boolean(message.pendingSubmissionId)
+    // Files items mentioned in the message show with its attachments; the text is what was typed.
+    const { text: messageText, references } = splitFileReferences(message.content)
     return (
       <article aria-labelledby={headingId} className="group flex min-w-0 max-w-full flex-col items-end gap-1">
         <h2 id={headingId} className="sr-only">{ui('You said')}</h2>
         <div className={cn(
           'min-w-0 max-w-[85%] text-[15px] leading-7 [overflow-wrap:anywhere]',
-          message.content
+          messageText
             ? 'rounded-[1.25rem] rounded-br-md border border-foreground/[0.04] bg-secondary/85 px-4 py-2.5 shadow-sm'
             : 'w-full',
         )}>
           {message.attachments && message.attachments.length > 0 && (
-            <div className={cn(message.content ? 'mb-2' : undefined)}>
+            <div className={cn(messageText || references.length ? 'mb-2' : undefined)}>
               <MessageAttachmentList attachments={message.attachments} />
             </div>
           )}
-          {message.content ? <Markdown content={message.content} breaks /> : null}
+          {references.length > 0 && (
+            <div role="list" aria-label={ui("Mentioned from Files")} className={cn('flex max-w-full flex-wrap justify-end gap-2', messageText && 'mb-2')}>
+              {references.map((reference) => (
+                <div key={reference.id} role="listitem" className="max-w-full">
+                  <FileReferenceCard reference={reference} variant="message" />
+                </div>
+              ))}
+            </div>
+          )}
+          {messageText ? <Markdown content={messageText} breaks /> : null}
         </div>
         <div className="flex items-center gap-1">
             <div className={cn("flex items-center gap-0.5 transition-opacity group-hover:opacity-100 focus-within:opacity-100", speechActive ? "opacity-100" : "opacity-0")}>
-              {message.content ? <><CopyButton text={message.content} /><SpeechButton messageKey={`${chat.id}:${message.id}`} text={message.content} /></> : null}
+              {messageText ? <><CopyButton text={messageText} /><SpeechButton messageKey={`${chat.id}:${message.id}`} text={messageText} /></> : null}
               {!chat.expired && (
                 <>
                   <ActionButton
@@ -796,13 +825,12 @@ export const MessageItem = memo(function MessageItem({
                       <Trash2 className="size-3.5" />
                     </ActionButton>
                   )}
-                  {!pendingDelivery && <ReportMessageButton messageId={message.id} />}
                 </>
               )}
             </div>
             {!chat.expired && !pendingDelivery && <BranchControls chatId={chat.id} branch={message.branch} disabled={composerEditActive} />}
           </div>
-          {message.content ? <SpeechPlayer messageKey={`${chat.id}:${message.id}`} /> : null}
+          {messageText ? <SpeechPlayer messageKey={`${chat.id}:${message.id}`} /> : null}
         </article>
     )
   }
@@ -811,9 +839,10 @@ export const MessageItem = memo(function MessageItem({
   const outputItems = message.outputItems ?? []
   const otherItems = outputItems.filter((item) => {
     const type = (item as { type?: string }).type
-    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit', 'pulpo_file_changes'].includes(type)
+    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit', 'pulpo_files_permission', 'pulpo_file_changes'].includes(type)
   })
   const costLimit = findCostLimitItem(outputItems)
+  const filesPermission = findFilesPermissionItems(outputItems).findLast((item) => item.status === 'awaiting_decision')
   const lastActivityIndex = activitySegments.length - 1
   const hasVisibleBody = timeline.length > 0 || Boolean(message.error)
   let activityOrdinal = -1
@@ -937,6 +966,10 @@ export const MessageItem = memo(function MessageItem({
               onStop={() => stopStreaming(message.id)}
               onContinue={() => continuePastCostLimit(message.id)}
             />
+          )}
+
+          {!editing && streaming && filesPermission && (
+            <PendingFilesPermission key={filesPermission.id} responseId={message.id} item={filesPermission} />
           )}
 
           {!editing && message.error && (
