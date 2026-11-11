@@ -11,7 +11,7 @@ describe('landing pre-render', () => {
     expect(html).toMatch(/<div id="root">.*<h1[^>]*>Open-source chatbot for everyday use<\/h1>/s)
     expect(html).toContain('href="/login"')
     expect(html).toContain('href="https://help.pulpo.baby"')
-    expect(html).toContain('/landing/chat-dark.webp')
+    expect(html).toContain('landing-device-canvas')
     expect(html).toContain('<script type="module" src="/assets/index.js"></script>')
   })
 
