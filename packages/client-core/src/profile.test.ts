@@ -11,4 +11,10 @@ describe('profile usernames', () => {
     expect(usernameFormatError('is')).toContain('3–30')
     expect(usernameFormatError('@New_Name')).toBeNull()
   })
+
+  it('names the characters a username cannot hold', () => {
+    expect(usernameFormatError('isaac.t')).toBe('Usernames can’t contain “.”. Use only letters, numbers, or underscores.')
+    expect(usernameFormatError('a.b-c d.e')).toBe('Usernames can’t contain “.”, “-” or spaces. Use only letters, numbers, or underscores.')
+    expect(usernameFormatError('.')).toContain('“.”')
+  })
 })

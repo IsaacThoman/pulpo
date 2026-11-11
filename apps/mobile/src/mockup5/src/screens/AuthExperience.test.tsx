@@ -16,7 +16,7 @@ vi.mock('react-native', () => {
     KeyboardAvoidingView: Container, ScrollView: Container, View: Container,
     Text: ({ children, onPress, accessibilityRole }: { children?: ReactNode; onPress?: () => void; accessibilityRole?: string }) => createElement('span', { onClick: onPress, role: accessibilityRole }, children),
     Pressable: ({ children, onPress, disabled, accessibilityLabel }: { children?: ReactNode; onPress: () => void; disabled?: boolean; accessibilityLabel?: string }) => createElement('button', { onClick: onPress, disabled, 'aria-label': accessibilityLabel }, children),
-    TextInput: ({ value, onChangeText, accessibilityLabel, editable = true }: { value: string; onChangeText: (value: string) => void; accessibilityLabel: string; editable?: boolean }) => createElement('input', { 'aria-label': accessibilityLabel, value, disabled: !editable, onChange: (event: { target: { value: string } }) => onChangeText(event.target.value) }),
+    TextInput: ({ value, onChangeText, onBlur, accessibilityLabel, editable = true }: { value: string; onChangeText: (value: string) => void; onBlur?: () => void; accessibilityLabel: string; editable?: boolean }) => createElement('input', { 'aria-label': accessibilityLabel, value, disabled: !editable, onBlur, onChange: (event: { target: { value: string } }) => onChangeText(event.target.value) }),
   }
 })
 vi.mock('react-native-safe-area-context', () => ({ useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) }))
@@ -212,5 +212,46 @@ describe('mobile pending approval', () => {
     await act(async () => root.render(<AuthExperience />))
     expect(container.textContent).toContain('Account deletion is disabled by the instance administrator.')
     expect(Array.from(container.querySelectorAll('button')).some((value) => value.textContent === 'Delete account')).toBe(false)
+  })
+})
+
+describe('mobile signup', () => {
+  async function openSignup() {
+    mocks.state = { status: 'unauthenticated', instanceUrl: 'https://pulpo.test', accounts: [], config: { auth, capabilities: { passkeys: false } }, user: null, discover: mocks.discover }
+    await act(async () => root.render(<AuthExperience />))
+    await act(async () => (Array.from(container.querySelectorAll('span')).find((value) => value.textContent === 'Create account')!).click())
+  }
+  async function type(label: string, value: string) {
+    const input = container.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+  }
+  async function fillOtherFields() {
+    await type('Display name', 'Isaac')
+    await type('Email', 'isaac@example.test')
+    await type('Password', 'password1')
+    await type('Confirm password', 'password1')
+  }
+
+  it('says right away that a username cannot contain a dot', async () => {
+    await openSignup()
+    await type('Username', 'isaac.t')
+    expect(container.textContent).toContain('Usernames can’t contain “.”. Use only letters, numbers, or underscores.')
+    expect(mocks.announce).toHaveBeenCalledWith('Usernames can’t contain “.”. Use only letters, numbers, or underscores.', { queue: true })
+    await fillOtherFields()
+    expect(button('Create account').disabled).toBe(true)
+    await type('Username', 'isaac_t')
+    expect(container.textContent).not.toContain('Usernames can’t contain')
+    expect(button('Create account').disabled).toBe(false)
+  })
+
+  it('waits until the username field is left to say it is too short', async () => {
+    await openSignup()
+    await type('Username', 'is')
+    expect(container.textContent).not.toContain('3–30')
+    await act(async () => container.querySelector<HTMLInputElement>('input[aria-label="Username"]')!.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
+    expect(container.textContent).toContain('3–30')
   })
 })
