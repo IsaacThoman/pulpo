@@ -9,7 +9,7 @@ describe('landing pre-render', () => {
     const html = await renderLandingDocument(indexHtml)
     expect(html).toContain(`<title>${LANDING_TITLE}</title>`)
     expect(html).toContain(`<meta property="og:title" content="${LANDING_TITLE}" />`)
-    expect(html).toMatch(/<div id="root">.*<h1[^>]*>Open-source chatbot for everyday use<\/h1>/s)
+    expect(html).toMatch(/<div id="root">.*<h1[^>]*>Self-hosted chatbot for everyday use<\/h1>/s)
     expect(html).toContain('href="/login"')
     expect(html).toContain('href="https://help.pulpo.baby"')
     expect(html).toContain('landing-device-canvas')

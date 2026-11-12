@@ -30,7 +30,7 @@ export function parseStarCount(value: unknown): number | null {
   return typeof count === 'number' && Number.isFinite(count) && count >= 0 ? count : null
 }
 
-// Shared so the header and the open-source section make one request between them.
+// Shared so the header and the self-hosting section make one request between them.
 let pending: Promise<number | null> | null = null
 
 function fetchStars(): Promise<number | null> {
