@@ -273,7 +273,7 @@ install on a simulator instead. The app is launched with `simctl` rather than
 pulpo.baby with a screenshot account. It runs one simulator for each App Store
 Connect display category: iPhone with Dynamic Island (large and medium),
 iPhone with Face ID (large and medium), iPhone with Home Button, iPhone Duo
-(open), and iPad 13-inch and 11-inch.
+(open), and iPad 13-inch and 11-inch in landscape.
 
 ```bash
 PULPO_SCREENSHOT_EMAIL=… PULPO_SCREENSHOT_PASSWORD=… npm run screenshots:app-store -w @pulpo/mobile

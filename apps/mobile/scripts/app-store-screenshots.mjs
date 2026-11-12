@@ -31,9 +31,9 @@ const DEVICES = [
   { key: 'iphone-face-id-large', label: 'iPhone with Face ID (large)', type: 'iPhone-14-Plus', runtime: '27.0' },
   { key: 'iphone-face-id-medium', label: 'iPhone with Face ID (medium)', type: 'iPhone-17e', runtime: '27.0' },
   { key: 'iphone-home-button', label: 'iPhone with Home Button (medium)', type: 'iPhone-SE-3rd-generation', runtime: '27.0' },
-  { key: 'iphone-duo', label: 'iPhone Duo (open)', type: 'iPhone-Duo', runtime: '27.1', foldable: true },
-  { key: 'ipad-13', label: 'iPad 13-inch', type: 'iPad-Pro-13-inch-M5-12GB', runtime: '27.0' },
-  { key: 'ipad-11', label: 'iPad 11-inch', type: 'iPad-Pro-11-inch-M5-12GB', runtime: '27.0' },
+  { key: 'iphone-duo', label: 'iPhone Duo (open)', type: 'iPhone-Duo', runtime: '27.1', foldable: true, scale: 3 },
+  { key: 'ipad-13', label: 'iPad 13-inch (landscape)', type: 'iPad-Pro-13-inch-M5-12GB', runtime: '27.0', landscape: true, scale: 2 },
+  { key: 'ipad-11', label: 'iPad 11-inch (landscape)', type: 'iPad-Pro-11-inch-M5-12GB', runtime: '27.0', landscape: true, scale: 2 },
 ]
 
 const SHOTS = ['01-new-chat', '02-chats', '03-temporary-chat', '04-model-picker', '05-answer', '06-sign-in']
@@ -336,6 +336,7 @@ function agent(device) {
     wait: (label, ms = 30_000) => call(['wait', selector(label), String(ms)]),
     waitText: (text, ms = 30_000) => call(['wait', 'text', text, String(ms)]),
     fold: (pose) => call(['fold', pose], { allowFailure: true }),
+    orientation: (orientation) => call(['orientation', orientation]),
     scroll: (direction) => call(['scroll', direction], { allowFailure: true }),
     screenshot: (file, density) => call(['screenshot', file, '--pixel-density', String(density)]),
   }
@@ -348,9 +349,9 @@ async function capture(device, ui, shot, outDirectory) {
   if (!selectedShots.has(shot)) return
   await sleep(1200) // let menus and transitions finish animating
   const file = path.join(outDirectory, `${shot}.png`)
-  // simctl captures a foldable's raw portrait framebuffer for whichever display it picks; agent-device captures
-  // the lit panel in the app's orientation.
-  if (device.foldable) await ui.screenshot(file, 3)
+  // simctl captures the raw portrait framebuffer (and on a foldable, whichever display it picks); agent-device
+  // captures the lit panel in the app's orientation.
+  if (device.foldable || device.landscape) await ui.screenshot(file, device.scale)
   else await simctl('io', device.udid, 'screenshot', '--type=png', file)
   log(`  ${device.key}: ${shot}.png`)
 }
@@ -372,6 +373,10 @@ async function captureDevice(device, models, answer) {
       // Panel geometry changes with the pose, so unfold before reading any layout.
       await ui.fold('open')
       await sleep(3000)
+    }
+    if (device.landscape) {
+      await ui.orientation('landscape-left')
+      await sleep(2000)
     }
 
     await ui.wait('Email', 60_000)
