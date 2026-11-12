@@ -263,6 +263,46 @@ Test deployment orchestration without building or installing an app:
 python3 apps/mobile/scripts/deploy-iphone_test.py
 ```
 
+Set `PULPO_IOS_SIMULATOR=1` with a simulator UDID in `PULPO_IOS_DEVICE` to
+install on a simulator instead. The app is launched with `simctl` rather than
+`devicectl`.
+
+## App Store screenshots
+
+`screenshots:app-store` captures the App Store screenshot set against
+pulpo.baby with a screenshot account. It runs one simulator for each App Store
+Connect display category: iPhone with Dynamic Island (large and medium),
+iPhone with Face ID (large and medium), iPhone with Home Button, iPhone Duo
+(open), and iPad 13-inch and 11-inch.
+
+```bash
+PULPO_SCREENSHOT_EMAIL=… PULPO_SCREENSHOT_PASSWORD=… npm run screenshots:app-store -w @pulpo/mobile
+```
+
+The script:
+
+- Reads the account's default model and favorites. The account should follow
+  the instance defaults, so the screenshots show prod's current defaults. The
+  script warns when the account overrides them.
+- Asks the screenshot question once through the API so every device shows the
+  same fresh answer. It uses a favorite other than the default (Anthropic's
+  when there is one) with Agent mode, and deletes the chat from the previous
+  run. The account needs a balance.
+- Builds a Release simulator app through the shared build directory used by
+  `deploy:iphone` (see above), then installs it fresh on each simulator. These
+  simulators are named `Pulpo Screenshots <device>`.
+- Drives the app with [agent-device](https://github.com/callstack/agent-device),
+  which is installed on first use under `~/.cache/pulpo`. It captures dark-mode
+  PNGs at native resolution with a 9:41 status bar into
+  `apps/mobile/app-store-screenshots/<device>/` (ignored by Git).
+
+Each device gets a sign-in screen, a new chat on the default model, the model
+picker, a temporary chat, the chat list, and the answer. On iPad and the open
+iPhone Duo, the chat list is always visible as a sidebar, so those devices skip
+the separate chat-list shot. Use `--devices`, `--shots`, `--reuse-answer`
+(skip asking again), and `--skip-build` to rerun parts. `--help` lists every
+option.
+
 ## GitHub Actions releases
 
 Both platforms build directly on GitHub runners using Expo prebuild and the
