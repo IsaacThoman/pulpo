@@ -70,3 +70,33 @@ describe('malformed JSON bodies', () => {
     expect(openai.json()).toMatchObject({ error: { type: 'invalid_request_error', code: 'invalid_json' } })
   })
 })
+
+describe('public API request body limits', () => {
+  it('allows agent histories above 2 MiB for every protocol while keeping other routes limited', async () => {
+    const app = await buildApp()
+    apps.push(app)
+    app.post('/body-limit-probe', async () => ({ ok: true }))
+    const payload = { history: 'x'.repeat(2 * 1024 * 1024) }
+
+    for (const url of ['/v1/responses', '/v1/chat/completions', '/v1/completions', '/v1/messages', '/v1/messages/count_tokens']) {
+      const response = await app.inject({ method: 'POST', url, payload })
+      // Authentication is reached only after the body parser accepts the request.
+      expect(response.statusCode, url).toBe(401)
+      expect(response.json()).toMatchObject({ error: { message: 'Invalid API key' } })
+    }
+    expect((await app.inject({ method: 'POST', url: '/body-limit-probe', payload })).statusCode).toBe(413)
+  })
+
+  it('rejects bodies above 32 MiB with each protocol\'s JSON error envelope', async () => {
+    const app = await buildApp()
+    apps.push(app)
+    const payload = JSON.stringify({ history: 'x'.repeat(32 * 1024 * 1024) })
+    for (const url of ['/v1/responses', '/v1/chat/completions', '/v1/completions', '/v1/messages', '/v1/messages/count_tokens']) {
+      const response = await app.inject({ method: 'POST', url, payload, headers: { 'content-type': 'application/json' } })
+      expect(response.statusCode, url).toBe(413)
+      expect(response.json()).toMatchObject(url.startsWith('/v1/messages')
+        ? { type: 'error', error: { type: 'request_too_large', message: 'Request body is too large' } }
+        : { error: { code: 'payload_too_large', type: 'invalid_request_error', message: 'Request body is too large' } })
+    }
+  })
+})
