@@ -1865,7 +1865,7 @@ const esUi: Record<string, string> = {
   "Your own hardware": "Tu propio hardware",
   "Any compatible endpoint": "Cualquier punto de conexión compatible",
   "A fresh computer for every task": "Un ordenador nuevo para cada tarea",
-  "Turn on Agent mode and the model gets its own Linux machine to run code, crunch data, and build files. Workspaces are claimed from a warm pool, so they start in an instant.": "Activa el modo Agente y el modelo recibe su propia máquina Linux para ejecutar código, analizar datos y crear archivos. Los espacios de trabajo salen de una reserva ya arrancada, así que empiezan al instante.",
+  "Turn on Agent mode and the model gets its own Linux machine. Workspaces are claimed from a warm pool, so they start in an instant.": "Activa el modo Agente y el modelo recibe su propia máquina Linux. Los espacios de trabajo salen de una reserva ya arrancada, así que empiezan al instante.",
   "Isolated": "Aislado",
   "Every session runs in its own lightweight virtual machine, with nothing shared between chats or people.": "Cada sesión se ejecuta en su propia máquina virtual ligera, sin compartir nada entre chats ni entre personas.",
   "Ready to work": "Listo para trabajar",
