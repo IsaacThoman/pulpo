@@ -103,59 +103,18 @@ A different device model needs these values measured again.
 
 ## Link preview image
 
-`apps/web/scripts/capture-landing-screenshots.mjs` captures the chat view from a Pulpo instance you sign in to and writes `og-image.jpg`, cropped from the dark capture. It also writes `apps/web/public/landing/chat-light.webp` and `chat-dark.webp` along the way. The page doesn't use those two files, so don't commit them. Only capture accounts whose chats and profile can appear publicly.
+`apps/web/public/og-image.jpg` is the image link previews show, referenced by `og:image` in `apps/web/index.html`. It's composed from the landing page itself: the logo and the page's headline above the hero demo, in the light theme, at 1440×756.
 
-## Requirements
-
-- The Playwright Chromium browser: `npx playwright install chromium`.
-- `cwebp` for the WebP conversion: `brew install webp`.
-- An account whose data can appear publicly: either the local preview admin, or a dedicated demo account on production.
-
-## Capture from production
-
-Production has the full model catalog, so the screenshot matches what visitors get.
-
-1. Use the shared demo account on [pulpo.baby](https://pulpo.baby). It needs a presentable name and username, the model to feature set as its default, and enough balance for eight short prompts. Never capture a personal account: its chat titles appear in the sidebar.
-2. To refresh only the hero chat, move the previous hero chat to the trash. To refresh the sidebar demo chats too, trash all of the account's chats. The script only creates sidebar chats when the account has none.
-3. Run the script. It targets production by default:
+1. Start the web dev server: `npm run dev -w @pulpo/web`.
+2. Run the capture. It opens the page with reduced motion, so the demo holds the first scene finished:
 
    ```sh
-   npm run capture:landing -w @pulpo/web
+   npm run capture:og-image -w @pulpo/web
    ```
 
-4. Sign in with the demo account in the Chromium window that opens. The script waits up to 10 minutes, then continues on its own.
-5. Review the new images, then commit them.
+   `LANDING_URL` sets the page to capture if the dev server isn't on `http://localhost:5173/`.
+3. Review `og-image.jpg`, then commit it.
 
-The demo chats are real requests: they're billed to the demo account and appear in its usage like any other chats.
-
-## Capture from the local preview
-
-This needs no production account, but the local preview only has the preview provider's models.
-
-1. Configure the local preview (`npm run local:preview:init`, then fill in `~/.config/pulpo/local-preview.env`).
-2. For a clean sidebar, start from an empty stack with `npm run local:preview:reset`. Otherwise, run `npm run local:preview:refresh`. Either way the stack serves `http://localhost:8080`.
-3. Run the script against the local stack with a demo profile, since the preview admin is named "Preview Admin":
-
-   ```sh
-   PULPO_URL=http://localhost:8080 npm run capture:landing -w @pulpo/web -- --demo-profile
-   ```
-
-4. Sign in as the preview admin (`PULPO_PREVIEW_ADMIN_EMAIL` and `PULPO_PREVIEW_ADMIN_PASSWORD` in the local preview config) in the Chromium window.
-5. Review the new images, then commit them.
-
-## What the script does
-
-- With `--demo-profile`, renames the signed-in account to **Alex Rivera** (`@alex`). This changes the real account, so use it only on disposable accounts.
-- If the account has no chats, sends seven short prompts so the sidebar looks lived in.
-- Sends the hero prompt in a new chat, which uses the account's default model: "Explain how KV caching speeds up transformer decoding. Include a short PyTorch snippet and the memory cost formula." Its answer shows headings, display math, and a code block, and a fresh chat shows the "now" timestamp.
-- Opens that chat at 1440×900 with a device scale factor of 2, switches the composer's agent control to Pulpo Agent, scrolls to the start of the conversation and captures it once with a light and once with a dark color scheme.
-- Converts each capture with `cwebp -q 80 -m 6 -resize 2400 0` into `apps/web/public/landing/`.
-- Saves the top 1440×756 of the dark capture as `apps/web/public/og-image.jpg`, the link-preview image referenced by `og:image` in `apps/web/index.html`.
-
-## Options
-
-- `PULPO_URL` sets the instance (default `https://pulpo.baby`).
-- `--demo-profile` renames the signed-in account to the demo identity before capturing.
-- `--hero <chatId>` recaptures an existing chat without sending new prompts. Its timestamp shows the chat's real age.
+It needs the Playwright Chromium browser: `npx playwright install chromium`.
 
 The provider marks in the model grid come from `apps/web/public/ai-icons`.
