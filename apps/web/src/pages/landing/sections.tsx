@@ -52,17 +52,17 @@ const SELF_HOST_COMMANDS = [
 
 function Section({ id, className, children }: { id: string; className?: string; children: ReactNode }) {
   return (
-    <section id={id} className="scroll-mt-20 border-t">
+    <section id={id} className="scroll-mt-20">
       <div className={cn('mx-auto max-w-6xl px-4 py-16 sm:px-8 md:py-24', className)}>{children}</div>
     </section>
   )
 }
 
-function Heading({ title, lead, centered }: { title: string; lead: string; centered?: boolean }) {
+function Heading({ title, lead, centered }: { title: string; lead?: string; centered?: boolean }) {
   return (
     <div className={cn('max-w-2xl', centered && 'mx-auto text-center')}>
       <h2 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">{title}</h2>
-      <p className="mt-4 text-base text-pretty text-muted-foreground sm:text-lg">{lead}</p>
+      {lead ? <p className="mt-4 text-base text-pretty text-muted-foreground sm:text-lg">{lead}</p> : null}
     </div>
   )
 }
@@ -123,11 +123,6 @@ function MarkRow({ id, label, children }: { id: string; label: string; children:
 }
 
 export function ModelsSection() {
-  const facts = [
-    { title: ui("Runs on your own hardware"), body: ui("Pulpo speaks OpenAI Responses, Chat Completions, Anthropic Messages, and Mistral, so any inference server that offers one of them works, from vLLM and SGLang to llama.cpp and Ollama. Chats, agents, and the API behave the same on each.") },
-    { title: ui("Inference clouds, too"), body: ui("Connect Azure AI Foundry, including its image models, Fireworks with prompt-cache affinity, Baseten, and OpenRouter alongside each lab's own API.") },
-    { title: ui("Controls for each model"), body: ui("Reasoning effort, speed, and other presets sit in the composer, and Pulpo remembers your choice for every model.") },
-  ]
   return (
     <Section id="models">
       <Heading centered title={ui("Use any model")} lead={ui("Run open-weight models on your own GPUs, so conversations can stay on your network, or use the hosted APIs you already pay for. Chat, image, and speech models share the same provider connections, and you can switch between them in the middle of a conversation.")} />
@@ -154,14 +149,6 @@ export function ModelsSection() {
           <MarkTile mark={{ name: ui("Any compatible endpoint"), icon: Plug, muted: true }} className="col-span-2 lg:col-span-1" />
         </MarkRow>
       </div>
-      <dl className="mt-12 grid gap-8 md:grid-cols-3">
-        {facts.map((fact) => (
-          <div key={fact.title}>
-            <dt className="font-medium">{fact.title}</dt>
-            <dd className="mt-2 text-sm text-pretty text-muted-foreground">{fact.body}</dd>
-          </div>
-        ))}
-      </dl>
     </Section>
   )
 }
@@ -185,10 +172,11 @@ export function WorkspacesSection() {
 }
 
 // Simulator and emulator captures; see "App screenshots" in docs/landing-screenshots.md.
-const APP_SHOTS: DeviceShot[] = [
-  { platform: 'ios', light: '/landing/app-ios-models-light.webp', dark: '/landing/app-ios-models-dark.webp', width: 600, height: 1304 },
-  { platform: 'android', light: '/landing/app-android-brunch-light.webp', dark: '/landing/app-android-brunch-dark.webp', width: 600, height: 1333 },
-  { platform: 'ios', light: '/landing/app-ios-drawer-light.webp', dark: '/landing/app-ios-drawer-dark.webp', width: 600, height: 1304 },
+// A function so the alt text is translated at render time rather than at module load.
+const appShots = (): DeviceShot[] => [
+  { platform: 'ios', alt: ui("Pulpo on iPhone with the model menu open"), light: '/landing/app-ios-models-light.webp', dark: '/landing/app-ios-models-dark.webp', width: 600, height: 1304 },
+  { platform: 'android', alt: ui("Pulpo on Android answering a question about brunch spots"), light: '/landing/app-android-brunch-light.webp', dark: '/landing/app-android-brunch-dark.webp', width: 600, height: 1333 },
+  { platform: 'ios', alt: ui("Pulpo on iPhone showing the list of chats"), light: '/landing/app-ios-drawer-light.webp', dark: '/landing/app-ios-drawer-dark.webp', width: 600, height: 1304 },
 ]
 
 export function AppsSection() {
@@ -204,7 +192,7 @@ export function AppsSection() {
       {/* On phones the row is wider than the screen: the middle phone stays readable and the outer two run off the edges. */}
       <div role="img" aria-label={ui("The Pulpo apps on iPhone and Android showing the model menu, an answer, and the list of chats")} className="-mx-[24%] mt-12 sm:mx-auto sm:max-w-4xl">
         <div aria-hidden="true" className="grid grid-cols-3 items-end gap-4 select-none sm:gap-10">
-          {APP_SHOTS.map((shot, index) => (
+          {appShots().map((shot, index) => (
             <div key={shot.light} className={cn(index !== 1 && 'mb-6 sm:mb-10')}><DeviceFrame shot={shot} /></div>
           ))}
         </div>
@@ -239,7 +227,7 @@ export function MoreSection() {
   ]
   return (
     <Section id="more">
-      <Heading title={ui("And everything else you'd expect")} lead={ui("The everyday parts of a chat app are all here, on every platform.")} />
+      <Heading title={ui("And everything else you'd expect")} />
       <ul className="mt-12 grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
         {features.map((feature) => (
           <li key={feature.title}>
@@ -257,11 +245,11 @@ export function OpenSourceSection() {
   return (
     <Section id="open-source" className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
       <div>
-        <Heading title={ui("Open source, and yours to run")} lead={ui("The whole stack is on GitHub: server, web, desktop, mobile, and the workspace infrastructure. Read it, change it, and run it on your own hardware.")} />
+        <Heading title={ui("Open source, and yours to self-host")} lead={ui("The whole stack is on GitHub: server, web, desktop, mobile, and the workspace infrastructure. Read it, change it, and run it on your own hardware.")} />
         <Points items={[
           { title: ui("One Docker Compose file"), body: ui("Postgres, Redis, object storage, the API, the worker, and the web app start together.") },
           { title: ui("Run it your way"), body: ui("Manage providers, models, people, and budgets from the admin panel or the pulpo command line.") },
-          { title: ui("Your data stays yours"), body: ui("Provider keys are encrypted at rest, and backups can go offsite encrypted with a key only you hold.") },
+          { title: ui("No telemetry"), body: ui("Pulpo never phones home. There are no analytics, crash reports, or usage data sent back to us, in the server or in the apps.") },
         ]} />
         <div className="mt-8 flex flex-wrap gap-3">
           <Button asChild size="lg"><a href={GITHUB_URL}><GithubIcon />{ui("View on GitHub")}<GithubStars className="ml-0.5 text-primary-foreground/80 before:mr-1.5 before:h-4 before:w-px before:bg-primary-foreground/30" /></a></Button>

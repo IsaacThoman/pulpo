@@ -64,7 +64,7 @@ export function LandingContent({ instanceName, signupEnabled }: { instanceName: 
         <MoreSection />
         <OpenSourceSection />
 
-        <section className="border-t">
+        <section>
           <div className="mx-auto flex max-w-3xl flex-col items-center px-4 py-16 text-center sm:px-8 md:py-24">
             <img src="/pulpo-smiley.png" alt="" className="size-14" loading="lazy" />
             <h2 className="mt-6 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">{uit`Start using ${instanceName}`}</h2>

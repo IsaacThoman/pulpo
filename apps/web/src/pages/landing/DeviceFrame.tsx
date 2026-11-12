@@ -3,6 +3,8 @@ import { cn } from '@/lib/utils'
 
 export type DeviceShot = {
   platform: 'ios' | 'android'
+  /** Describes the screen for image search; the section labels the group for screen readers. */
+  alt: string
   /** Screenshot paths under public/, one per page theme. */
   light: string
   dark: string
@@ -55,8 +57,8 @@ export function DeviceFrame({ shot }: { shot: DeviceShot }) {
       )}>
         <div className={cn('bg-black', ios ? 'rounded-[16.75cqw] p-[2.35cqw]' : 'rounded-[11.1cqw] p-[2cqw]')}>
           <div className={cn('relative overflow-hidden bg-black', !ios && ANDROID_SCREEN)} style={ios ? IOS_SCREEN_STYLE : undefined}>
-            <img src={shot.light} alt="" width={shot.width} height={shot.height} loading="lazy" decoding="async" className="block h-auto w-full dark:hidden" />
-            <img src={shot.dark} alt="" width={shot.width} height={shot.height} loading="lazy" decoding="async" className="hidden h-auto w-full dark:block" />
+            <img src={shot.light} alt={shot.alt} width={shot.width} height={shot.height} loading="lazy" decoding="async" className="block h-auto w-full dark:hidden" />
+            <img src={shot.dark} alt={shot.alt} width={shot.width} height={shot.height} loading="lazy" decoding="async" className="hidden h-auto w-full dark:block" />
             {ios ? (
               <>
                 <span className="absolute top-[1.259%] left-[34.33%] h-[4.233%] w-[31.34%] rounded-full bg-black" />
