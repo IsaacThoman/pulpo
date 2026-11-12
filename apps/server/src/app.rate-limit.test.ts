@@ -3,6 +3,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 // Boot the real routes, limiter, and error handler without external services.
 vi.mock('./catalog/defaults.js', () => ({ ensureBuiltinCatalog: vi.fn() }))
 vi.mock('./bootstrap/ci-preview.js', () => ({ ensureBootstrapPreset: vi.fn() }))
+// API-key authentication reads instance settings before rejecting a missing key.
+// Return no setting so defaults apply without requiring a local database.
+vi.mock('./database/client.js', () => ({
+  db: {
+    select: vi.fn(() => ({
+      from: vi.fn(() => ({ where: vi.fn(() => ({ limit: vi.fn(async () => []) })) })),
+    })),
+  },
+}))
 vi.mock('./redis.js', () => ({ redis: {}, createRedis: () => ({ quit: vi.fn() }) }))
 vi.mock('./jobs.js', () => ({
   generationQueue: {}, codexLoginQueue: {}, maintenanceQueue: {}, embeddingQueue: {},
