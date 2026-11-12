@@ -46,10 +46,10 @@ describe('landing page', () => {
     expect(markup).toContain('Open in your browser')
   })
 
-  it('presents models, workspaces, apps, and the open-source project', () => {
+  it('presents models, workspaces, apps, and self-hosting', () => {
     const markup = renderToStaticMarkup(<MemoryRouter><LandingPage /></MemoryRouter>)
 
-    for (const id of ['models', 'workspaces', 'apps', 'more', 'open-source']) expect(markup).toContain(`id="${id}"`)
+    for (const id of ['models', 'workspaces', 'apps', 'more', 'self-host']) expect(markup).toContain(`id="${id}"`)
     expect(markup).toContain('/ai-icons/claude-color.svg')
     // The demo's tabs, the still of its agent scene further down the page, and the app screenshots in both themes.
     expect(markup).toContain('role="tablist"')
@@ -94,7 +94,7 @@ describe('landing page', () => {
     const markup = renderToStaticMarkup(<MemoryRouter><LandingPage /></MemoryRouter>)
 
     expect(markup).toContain('Iniciar sesión')
-    expect(markup).toContain('Chatbot de código abierto para el día a día')
+    expect(markup).toContain('Chatbot autoalojado para el día a día')
   })
 })
 

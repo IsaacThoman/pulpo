@@ -241,11 +241,11 @@ export function MoreSection() {
   )
 }
 
-export function OpenSourceSection() {
+export function SelfHostSection() {
   return (
-    <Section id="open-source" className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
+    <Section id="self-host" className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
       <div>
-        <Heading title={ui("Open source, and yours to self-host")} lead={ui("The whole stack is on GitHub: server, web, desktop, mobile, and the workspace infrastructure. Read it, change it, and run it on your own hardware.")} />
+        <Heading title={ui("Yours to read, change, and self-host")} lead={ui("The code for the whole stack is public on GitHub: server, web, desktop, mobile, and the workspace infrastructure.")} />
         <Points items={[
           { title: ui("One Docker Compose file"), body: ui("Postgres, Redis, object storage, the API, the worker, and the web app start together.") },
           { title: ui("Run it your way"), body: ui("Manage providers, models, people, and budgets from the admin panel or the pulpo command line.") },

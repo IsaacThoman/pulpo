@@ -8,7 +8,7 @@ import { DOCS_URL, GITHUB_URL } from '@/lib/links'
 import { GithubIcon } from './landing/GithubIcon'
 import { GithubStars } from './landing/GithubStars'
 import { HeroDemo } from './landing/demo/HeroDemo'
-import { AppsSection, ModelsSection, MoreSection, OpenSourceSection, WorkspacesSection } from './landing/sections'
+import { AppsSection, ModelsSection, MoreSection, SelfHostSection, WorkspacesSection } from './landing/sections'
 
 /** The signed-out landing page. Free of runtime stores so the build can pre-render it (see scripts/prerender-landing.mjs). */
 export function LandingContent({ instanceName, signupEnabled }: { instanceName: string; signupEnabled: boolean }) {
@@ -44,7 +44,7 @@ export function LandingContent({ instanceName, signupEnabled }: { instanceName: 
 
       <main>
         <section className="mx-auto flex max-w-5xl flex-col items-center px-4 pt-12 pb-10 text-center sm:px-8 sm:pt-16 sm:pb-12">
-          <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl">{ui("Open-source chatbot for everyday use")}</h1>
+          <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl">{ui("Self-hosted chatbot for everyday use")}</h1>
           <p className="mt-4 text-base text-pretty text-muted-foreground sm:text-lg">{ui("Pulpo comes with native mobile apps, fast disposable workspaces, and broad model support. Everything stays perfectly in sync.")}</p>
           <div className="mt-8 flex w-full max-w-xs flex-col gap-3 sm:w-auto sm:max-w-none sm:flex-row">
             <DownloadButton />
@@ -62,7 +62,7 @@ export function LandingContent({ instanceName, signupEnabled }: { instanceName: 
         <WorkspacesSection />
         <AppsSection />
         <MoreSection />
-        <OpenSourceSection />
+        <SelfHostSection />
 
         <section>
           <div className="mx-auto flex max-w-3xl flex-col items-center px-4 pt-12 pb-16 text-center sm:px-8 md:pt-16 md:pb-24">
