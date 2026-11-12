@@ -53,7 +53,7 @@ const SELF_HOST_COMMANDS = [
 function Section({ id, className, children }: { id: string; className?: string; children: ReactNode }) {
   return (
     <section id={id} className="scroll-mt-20">
-      <div className={cn('mx-auto max-w-6xl px-4 py-16 sm:px-8 md:py-24', className)}>{children}</div>
+      <div className={cn('mx-auto max-w-6xl px-4 py-12 sm:px-8 md:py-16', className)}>{children}</div>
     </section>
   )
 }

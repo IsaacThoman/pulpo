@@ -54,7 +54,7 @@ export function LandingContent({ instanceName, signupEnabled }: { instanceName: 
           </div>
         </section>
 
-        <section className="px-4 pb-16 sm:px-8 md:pb-24">
+        <section className="px-4 pb-6 sm:px-8 md:pb-8">
           <HeroDemo />
         </section>
 
@@ -65,7 +65,7 @@ export function LandingContent({ instanceName, signupEnabled }: { instanceName: 
         <OpenSourceSection />
 
         <section>
-          <div className="mx-auto flex max-w-3xl flex-col items-center px-4 py-16 text-center sm:px-8 md:py-24">
+          <div className="mx-auto flex max-w-3xl flex-col items-center px-4 pt-12 pb-16 text-center sm:px-8 md:pt-16 md:pb-24">
             <img src="/pulpo-smiley.png" alt="" className="size-14" loading="lazy" />
             <h2 className="mt-6 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">{uit`Start using ${instanceName}`}</h2>
             <p className="mt-4 text-base text-pretty text-muted-foreground sm:text-lg">{ui("Download the app for your device, or open it in the browser you already have.")}</p>
