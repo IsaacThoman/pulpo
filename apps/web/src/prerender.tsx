@@ -4,7 +4,7 @@ import i18n from '@/i18n'
 import { APP_STORE_URL, GITHUB_LATEST_RELEASE_URL, GITHUB_URL } from '@/lib/links'
 import { LandingContent } from '@/pages/LandingContent'
 
-export const LANDING_TITLE = 'Pulpo: open-source, self-hosted AI chat with mobile apps'
+export const LANDING_TITLE = 'Pulpo'
 /** Also the meta and Open Graph description in index.html, which a test keeps in step. */
 export const LANDING_DESCRIPTION = 'Open-source, self-hosted AI chat for any model, with native iPhone and Android apps, instant agent workspaces, and chats that stay in sync everywhere.'
 export const LANDING_URL = 'https://pulpo.baby/'
