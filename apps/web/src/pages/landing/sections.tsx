@@ -125,7 +125,7 @@ function MarkRow({ id, label, children }: { id: string; label: string; children:
 export function ModelsSection() {
   return (
     <Section id="models">
-      <Heading centered title={ui("Use any model")} lead={ui("Run open-weight models on your own GPUs, so conversations can stay on your network, or use the hosted APIs you already pay for. Chat, image, and speech models share the same provider connections, and you can switch between them in the middle of a conversation.")} />
+      <Heading centered title={ui("Use any model")} lead={ui("Run open-weight models on your own GPUs, so conversations can stay on your network, or use the hosted APIs you already pay for. You can freely switch between models and providers in the middle of a conversation.")} />
       <div className="mt-12 space-y-8">
         <MarkRow id="models-labs" label={ui("Models")}>
           {MODEL_MARKS.map((mark) => <MarkTile key={mark.name} mark={mark} />)}
@@ -157,7 +157,7 @@ export function WorkspacesSection() {
   return (
     <Section id="workspaces" className="grid items-center gap-12 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:gap-16">
       <div>
-        <Heading title={ui("A fresh computer for every task")} lead={ui("Turn on Agent mode and the model gets its own Linux machine to run code, crunch data, and build files. Workspaces are claimed from a warm pool, so they start in an instant.")} />
+        <Heading title={ui("A fresh computer for every task")} lead={ui("Turn on Agent mode and the model gets its own Linux machine. Workspaces are claimed from a warm pool, so they start in an instant.")} />
         <Points items={[
           { title: ui("Isolated"), body: ui("Every session runs in its own lightweight virtual machine, with nothing shared between chats or people.") },
           { title: ui("Ready to work"), body: ui("Python, Node.js, Git, and FFmpeg come preinstalled, along with tools for spreadsheets, PDFs, Word, and PowerPoint.") },
@@ -241,11 +241,11 @@ export function MoreSection() {
   )
 }
 
-export function OpenSourceSection() {
+export function SelfHostSection() {
   return (
-    <Section id="open-source" className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
+    <Section id="self-host" className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
       <div>
-        <Heading title={ui("Open source, and yours to self-host")} lead={ui("The whole stack is on GitHub: server, web, desktop, mobile, and the workspace infrastructure. Read it, change it, and run it on your own hardware.")} />
+        <Heading title={ui("Yours to read, change, and self-host")} lead={ui("The code for the whole stack is public on GitHub: server, web, desktop, mobile, and the workspace infrastructure.")} />
         <Points items={[
           { title: ui("One Docker Compose file"), body: ui("Postgres, Redis, object storage, the API, the worker, and the web app start together.") },
           { title: ui("Run it your way"), body: ui("Manage providers, models, people, and budgets from the admin panel or the pulpo command line.") },
