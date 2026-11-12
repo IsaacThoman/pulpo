@@ -1860,7 +1860,7 @@ const esUi: Record<string, string> = {
   "Download the app for your device, or open it in the browser you already have.": "Descarga la app para tu dispositivo o ábrela en el navegador que ya usas.",
   "Start using {{0}}": "Empieza a usar {{0}}",
   "Use any model": "Usa cualquier modelo",
-  "Run open-weight models on your own GPUs, so conversations can stay on your network, or use the hosted APIs you already pay for. Chat, image, and speech models share the same provider connections, and you can switch between them in the middle of a conversation.": "Ejecuta modelos de pesos abiertos en tus propias GPU, para que las conversaciones puedan quedarse en tu red, o usa las API en la nube que ya pagas. Los modelos de chat, imagen y voz comparten las mismas conexiones de proveedor, y puedes cambiar de uno a otro en mitad de una conversación.",
+  "Run open-weight models on your own GPUs, so conversations can stay on your network, or use the hosted APIs you already pay for. You can freely switch between models and providers in the middle of a conversation.": "Ejecuta modelos de pesos abiertos en tus propias GPU, para que las conversaciones puedan quedarse en tu red, o usa las API en la nube que ya pagas. Puedes cambiar libremente de modelo y de proveedor en mitad de una conversación.",
   "Runs on": "Funciona en",
   "Your own hardware": "Tu propio hardware",
   "Any compatible endpoint": "Cualquier punto de conexión compatible",

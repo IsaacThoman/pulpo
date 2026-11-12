@@ -125,7 +125,7 @@ function MarkRow({ id, label, children }: { id: string; label: string; children:
 export function ModelsSection() {
   return (
     <Section id="models">
-      <Heading centered title={ui("Use any model")} lead={ui("Run open-weight models on your own GPUs, so conversations can stay on your network, or use the hosted APIs you already pay for. Chat, image, and speech models share the same provider connections, and you can switch between them in the middle of a conversation.")} />
+      <Heading centered title={ui("Use any model")} lead={ui("Run open-weight models on your own GPUs, so conversations can stay on your network, or use the hosted APIs you already pay for. You can freely switch between models and providers in the middle of a conversation.")} />
       <div className="mt-12 space-y-8">
         <MarkRow id="models-labs" label={ui("Models")}>
           {MODEL_MARKS.map((mark) => <MarkTile key={mark.name} mark={mark} />)}
