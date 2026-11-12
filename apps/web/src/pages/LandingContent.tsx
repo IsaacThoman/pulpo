@@ -3,47 +3,32 @@ import { BookOpen, LaptopMinimal } from 'lucide-react'
 import { DownloadButton } from '@/components/DownloadButton'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/useAppTranslation'
-import { ui } from '@/i18n/ui'
+import { ui, uit } from '@/i18n/ui'
 import { DOCS_URL, GITHUB_URL } from '@/lib/links'
-
-function GithubIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" />
-    </svg>
-  )
-}
-
-function Screenshot({ name, alt }: { name: string; alt: string }) {
-  return (
-    <div className="overflow-hidden rounded-xl border bg-card shadow-2xl shadow-black/10 dark:shadow-black/40">
-      {/* The landing page always follows the system theme, so the browser can pick the matching image itself. */}
-      <picture>
-        <source srcSet={`/landing/${name}-dark.webp`} media="(prefers-color-scheme: dark)" />
-        <img src={`/landing/${name}-light.webp`} alt={alt} width={1440} height={900} className="block h-auto w-full" decoding="async" />
-      </picture>
-    </div>
-  )
-}
+import { GithubIcon } from './landing/GithubIcon'
+import { GithubStars } from './landing/GithubStars'
+import { HeroDemo } from './landing/demo/HeroDemo'
+import { AppsSection, ModelsSection, MoreSection, OpenSourceSection, WorkspacesSection } from './landing/sections'
 
 /** The signed-out landing page. Free of runtime stores so the build can pre-render it (see scripts/prerender-landing.mjs). */
 export function LandingContent({ instanceName, signupEnabled }: { instanceName: string; signupEnabled: boolean }) {
   const { t } = useTranslation()
 
   return (
-    <div className="min-h-dvh overflow-x-hidden bg-background text-foreground">
-      <header className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-8">
+    <div className="min-h-dvh overflow-x-clip bg-background text-foreground">
+      <div className="sticky top-0 z-50 bg-background/85 backdrop-blur-md">
+      <header className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-8">
         <Link to="/" className="flex min-w-0 items-center gap-2.5">
           <img src="/pulpo-smiley.png" alt="" className="size-8" />
           <span className="truncate text-lg font-semibold tracking-tight max-[379px]:sr-only">{instanceName}</span>
         </Link>
         <nav className="flex shrink-0 items-center gap-1 sm:gap-2">
-          {/* Icon-only on phones; the label stays available to screen readers. */}
+          {/* Icon-only on phones; the label stays available to screen readers, and the star count waits for room. */}
           <Button asChild variant="ghost" size="sm">
             <a href={DOCS_URL}><BookOpen /><span className="sr-only sm:not-sr-only">{ui("Docs")}</span></a>
           </Button>
           <Button asChild variant="ghost" size="sm">
-            <a href={GITHUB_URL}><GithubIcon /><span className="sr-only sm:not-sr-only">{ui("GitHub")}</span></a>
+            <a href={GITHUB_URL}><GithubIcon /><span className="sr-only sm:not-sr-only">{ui("GitHub")}</span><GithubStars className="hidden text-muted-foreground sm:inline-flex" /></a>
           </Button>
           {signupEnabled ? (
             <Button asChild variant="outline" size="sm">
@@ -55,6 +40,7 @@ export function LandingContent({ instanceName, signupEnabled }: { instanceName: 
           </Button>
         </nav>
       </header>
+      </div>
 
       <main>
         <section className="mx-auto flex max-w-5xl flex-col items-center px-4 pt-12 pb-10 text-center sm:px-8 sm:pt-16 sm:pb-12">
@@ -68,8 +54,28 @@ export function LandingContent({ instanceName, signupEnabled }: { instanceName: 
           </div>
         </section>
 
-        <section className="mx-auto max-w-6xl px-4 pb-16 sm:px-8 md:pb-24">
-          <Screenshot name="chat" alt={ui("A Pulpo conversation with a formatted answer and code")} />
+        <section className="px-4 pb-6 sm:px-8 md:pb-8">
+          <HeroDemo />
+        </section>
+
+        <ModelsSection />
+        <WorkspacesSection />
+        <AppsSection />
+        <MoreSection />
+        <OpenSourceSection />
+
+        <section>
+          <div className="mx-auto flex max-w-3xl flex-col items-center px-4 pt-12 pb-16 text-center sm:px-8 md:pt-16 md:pb-24">
+            <img src="/pulpo-smiley.png" alt="" className="size-14" loading="lazy" />
+            <h2 className="mt-6 text-3xl font-semibold tracking-tight text-balance sm:text-4xl">{uit`Start using ${instanceName}`}</h2>
+            <p className="mt-4 text-base text-pretty text-muted-foreground sm:text-lg">{ui("Download the app for your device, or open it in the browser you already have.")}</p>
+            <div className="mt-8 flex w-full max-w-xs flex-col gap-3 sm:w-auto sm:max-w-none sm:flex-row">
+              <DownloadButton />
+              <Button asChild size="lg" variant="outline">
+                <Link to="/login"><LaptopMinimal />{ui("Open in your browser")}</Link>
+              </Button>
+            </div>
+          </div>
         </section>
       </main>
     </div>
