@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from '../../../platform/SymbolView';
 import { useAppTheme } from '../theme';
 import { normalizeInstanceUrl } from '../domain';
-import { normalizeInstanceUrl as normalizeServerAddress } from '@pulpo/client-core';
+import { normalizeInstanceUrl as normalizeServerAddress, usernameFormatError } from '@pulpo/client-core';
 import { mobileApi } from '../../../api/client';
 import { NativePasskeyError, PasskeyCancelledError } from '../../../auth/passkeys';
 import { useSessionStore } from '../../../store/session';
@@ -36,6 +36,8 @@ type AuthFieldProps = ComponentProps<typeof TextInput> & {
   colors: AuthColors;
   icon: Parameters<typeof SymbolView>[0]['name'];
   invalid?: boolean;
+  /** Shown under the field and outlines it; takes the place of `invalid`. */
+  error?: string | null;
   label: string;
 };
 
@@ -96,13 +98,15 @@ function AuthShell({ title, subtitle, children, footer, colors }: PropsWithChild
   </KeyboardAvoidingView>;
 }
 
-function AuthField({ colors, icon, invalid = false, label, ...props }: AuthFieldProps) {
+function AuthField({ colors, icon, invalid = false, error, label, ...props }: AuthFieldProps) {
   const compact = useCompactAuthLayout();
-  if (Platform.OS === 'android') return <MaterialField label={label} icon={typeof icon === 'string' ? icon : undefined} error={invalid ? 'Check this value' : undefined} autoCapitalize="none" {...props} />;
-  return <View style={[styles.field, compact && styles.compactField, { backgroundColor: colors.surface, borderColor: invalid ? colors.destructive : colors.fieldBorder }]}>
+  if (Platform.OS === 'android') return <MaterialField label={label} icon={typeof icon === 'string' ? icon : undefined} error={error || (invalid ? 'Check this value' : undefined)} autoCapitalize="none" {...props} />;
+  const field = <View style={[styles.field, compact && styles.compactField, { backgroundColor: colors.surface, borderColor: invalid || error ? colors.destructive : colors.fieldBorder }]}>
     <SymbolView accessibilityElementsHidden importantForAccessibility="no-hide-descendants" name={icon} tintColor={colors.textFaint} size={18} />
-    <TextInput accessibilityLabel={label} placeholder={label} placeholderTextColor={colors.textFaint} autoCapitalize="none" style={[styles.input, compact && styles.compactInput, { color: colors.text }]} {...props} />
+    <TextInput accessibilityLabel={label} accessibilityHint={error || undefined} placeholder={label} placeholderTextColor={colors.textFaint} autoCapitalize="none" style={[styles.input, compact && styles.compactInput, { color: colors.text }]} {...props} />
   </View>;
+  if (!error) return field;
+  return <>{field}<Text style={[styles.hint, { color: colors.destructive }]}>{error}</Text></>;
 }
 
 function PrimaryAuthButton({ label, colors, loading = false, disabled = false, icon, onPress }: {
@@ -216,6 +220,8 @@ export function AuthExperience() {
   const [page, setPage] = useState<AuthPage>('login');
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
+  // Too short is only worth saying once they move on; a character like `.` is worth saying at once.
+  const [usernameLeft, setUsernameLeft] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -232,6 +238,9 @@ export function AuthExperience() {
   // iOS ignores the alert role and live regions below; speak errors and status as they appear.
   useAccessibilityAnnouncement(error);
   useAccessibilityAnnouncement(pendingFeedback);
+  const usernameError = usernameFormatError(username);
+  const shownUsernameError = username && usernameError && (usernameLeft || /[^a-z0-9_]/.test(username)) ? usernameError : null;
+  useAccessibilityAnnouncement(page === 'signup' && shownUsernameError);
   const [passkeyFallback, setPasskeyFallback] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
 
@@ -281,7 +290,8 @@ export function AuthExperience() {
   };
   const submitSignup = () => {
     if (name.trim().length < 2) return setError('Enter your display name.');
-    if (!/^[a-z0-9][a-z0-9_]{1,28}[a-z0-9]$/.test(username)) return setError('Use 3–30 letters, numbers, or underscores for your username.');
+    // The username's problem is shown under its field, so it is not repeated below the form.
+    if (usernameError) return setUsernameLeft(true);
     if (!/^\S+@\S+\.\S+$/.test(email)) return setError('Enter a valid email address.');
     if (password.length < 8) return setError('Use at least eight characters.');
     if (password !== confirmPassword) return setError('Passwords do not match.');
@@ -423,10 +433,10 @@ export function AuthExperience() {
   </AuthShell>;
 
   if (page === 'signup') {
-    const valid = Boolean(name.trim() && /^[a-z0-9][a-z0-9_]{1,28}[a-z0-9]$/.test(username) && email.trim() && password.length >= 8);
+    const valid = Boolean(name.trim() && !usernameError && email.trim() && password.length >= 8);
     return <AuthShell colors={colors} title="Create an account" subtitle="Join this Pulpo instance. Your administrator may need to approve new accounts.">
       <AuthField colors={colors} icon="person" label="Display name" value={name} onChangeText={setName} autoComplete="name" />
-      <AuthField colors={colors} icon="at" label="Username" value={username} onChangeText={(value) => setUsername(value.replace(/^@/, '').toLowerCase())} autoComplete="username" maxLength={30} />
+      <AuthField colors={colors} icon="at" label="Username" value={username} onChangeText={(value) => setUsername(value.replace(/^@/, '').toLowerCase())} onBlur={() => setUsernameLeft(true)} error={shownUsernameError} autoComplete="username" maxLength={30} />
       <AuthField colors={colors} icon="envelope" label="Email" value={email} onChangeText={setEmail} autoComplete="email" keyboardType="email-address" />
       <AuthField colors={colors} icon="lock" label="Password" value={password} onChangeText={setPassword} autoComplete="new-password" secureTextEntry returnKeyType="go" onSubmitEditing={submitSignup} />
       <AuthField colors={colors} icon="lock" label="Confirm password" invalid={Boolean(confirmPassword && password !== confirmPassword)} value={confirmPassword} onChangeText={setConfirmPassword} autoComplete="new-password" secureTextEntry returnKeyType="go" onSubmitEditing={submitSignup} />

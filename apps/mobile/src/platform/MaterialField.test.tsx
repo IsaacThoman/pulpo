@@ -2,7 +2,7 @@
 import { act, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
-const native = vi.hoisted(() => ({ dismiss: vi.fn(), done: () => {} }))
+const native = vi.hoisted(() => ({ dismiss: vi.fn(), done: () => {}, focus: (_focused: boolean) => {} }))
 vi.mock('react-native', () => ({ Keyboard: { dismiss: native.dismiss } }))
 vi.mock('./materialIcons', () => ({ materialIcon: (name: string) => name }))
 vi.mock('react-native-safe-area-context', () => ({ SafeAreaView: () => null }))
@@ -13,8 +13,9 @@ vi.mock('@expo/ui/jetpack-compose', async () => {
   const Container = ({ children }: { children: ReactNode }) => createElement('div', null, children)
   return {
     Host: Container, Text: Container,
-    OutlinedTextField: Object.assign(({ keyboardActions, children }: { keyboardActions: { onDone: () => void }; children: ReactNode }) => {
+    OutlinedTextField: Object.assign(({ keyboardActions, onFocusChanged, children }: { keyboardActions: { onDone: () => void }; onFocusChanged: (focused: boolean) => void; children: ReactNode }) => {
       native.done = keyboardActions.onDone
+      native.focus = onFocusChanged
       return createElement('div', null, children)
     }, { Label: Container }),
     useNativeState: (initial: string) => {
@@ -39,4 +40,15 @@ it('preserves an explicit submit action and passes the field text', async () => 
   await act(async () => native.done())
   expect(submit).toHaveBeenCalledWith({ nativeEvent: { text: 'Terra' } })
   expect(native.dismiss).not.toHaveBeenCalled()
+})
+it('reports focus and blur, ignoring the unfocused report before the field was focused', async () => {
+  const onFocus = vi.fn()
+  const onBlur = vi.fn()
+  await act(async () => root.render(<MaterialField label="Username" value="friends" onFocus={onFocus} onBlur={onBlur} />))
+  await act(async () => native.focus(false))
+  expect(onBlur).not.toHaveBeenCalled()
+  await act(async () => native.focus(true))
+  await act(async () => native.focus(false))
+  expect(onFocus).toHaveBeenCalledOnce()
+  expect(onBlur).toHaveBeenCalledWith({ nativeEvent: { text: 'friends' } })
 })

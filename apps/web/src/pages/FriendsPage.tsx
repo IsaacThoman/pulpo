@@ -261,7 +261,7 @@ export function FriendsPage() {
     void act(
       `dismiss:${suggestion.profile.id}`,
       () => apiRequest('/api/friends/suggestions/dismissals', { method: 'POST', body: { userId: suggestion.profile.id } }),
-      uit`${suggestion.profile.displayName} won't be suggested for at least 30 days, and only if you gain mutual friends.`,
+      '',
     )
   }
 

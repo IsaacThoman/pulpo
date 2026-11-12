@@ -690,6 +690,27 @@ html[data-desktop="true"] .desktop-titlebar[data-temporary-chat="true"] {
   background: var(--temporary-chat-background);
 }
 
+/* Registered so the header's fade (.chat-header::before) eases with the page background
+   instead of switching a frame ahead of it, which showed as a flickering band. */
+@property --chat-header-background {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: transparent;
+}
+
+.chat-page-surface {
+  --chat-header-background: var(--background);
+  transition:
+    background-color 200ms cubic-bezier(0.4, 0, 0.2, 1),
+    --chat-header-background 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-page-surface {
+    transition: none;
+  }
+}
+
 [data-desktop-temporary-chat="true"] {
   --chat-header-background: var(--temporary-chat-background);
   background: var(--temporary-chat-background);
@@ -1026,5 +1047,45 @@ html[data-desktop="true"] a {
 
   html[data-desktop="true"] .desktop-sidebar-titlebar[data-compact="true"] .desktop-sidebar-titlebar-collapsed::after {
     left: 0;
+  }
+}
+
+/* Landing demo: mock apps drawn at a fixed design width (--dw, in design pixels) that scale with their
+   container. Inside the canvas one Tailwind spacing unit is 4 design pixels, and the text scale follows it. */
+.landing-device {
+  container-type: inline-size;
+  /* Keep the mocks' own layers (header, composer, menus) from stacking over the page. */
+  isolation: isolate;
+}
+
+.landing-device-canvas {
+  --spacing: calc(100cqw / var(--dw) * 4);
+  --text-xs: calc(var(--spacing) * 3);
+  --text-sm: calc(var(--spacing) * 3.5);
+  --text-base: calc(var(--spacing) * 4);
+  --text-lg: calc(var(--spacing) * 4.5);
+  --text-xl: calc(var(--spacing) * 5);
+  --text-2xl: calc(var(--spacing) * 6);
+  --text-3xl: calc(var(--spacing) * 7.5);
+  --radius: calc(var(--spacing) * 2);
+  --radius-2xl: calc(var(--spacing) * 4);
+  font-size: var(--text-base);
+  line-height: 1.5;
+}
+
+/* The iPhone app's pending dots (ResponsePendingIndicator in apps/mobile): each rises 4pt and settles, 300ms each way. */
+.landing-phone-pending-dot {
+  animation: landing-phone-pending-dot 600ms ease-in-out infinite;
+}
+
+@keyframes landing-phone-pending-dot {
+  50% {
+    transform: translateY(calc(var(--spacing) * -1));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-phone-pending-dot {
+    animation: none;
   }
 }

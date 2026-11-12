@@ -7943,7 +7943,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   userMessageContextHost: { maxWidth: '85%', minWidth: 0, alignSelf: 'flex-end' },
   userMessageContextContent: { width: '100%', minWidth: 0, alignItems: 'flex-end' },
   assistantMessageContextHost: { width: '100%', minWidth: 0 },
-  userBubble: { maxWidth: '100%', minWidth: 0, backgroundColor: COLORS.secondary, borderRadius: 20, borderBottomRightRadius: 7, paddingHorizontal: 15, paddingVertical: 11 },
+  userBubble: { maxWidth: '100%', minWidth: 0, backgroundColor: COLORS.secondary, borderRadius: 20, paddingHorizontal: 15, paddingVertical: 11 },
   userMessageMarkdown: { alignSelf: 'flex-start' },
   sentAttachments: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 },
   assistantAttachments: { justifyContent: 'flex-start', marginTop: 8 },

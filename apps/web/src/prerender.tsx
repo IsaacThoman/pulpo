@@ -5,20 +5,49 @@ import { APP_STORE_URL, GITHUB_LATEST_RELEASE_URL, GITHUB_URL } from '@/lib/link
 import { LandingContent } from '@/pages/LandingContent'
 
 export const LANDING_TITLE = 'Pulpo'
+/** Also the meta and Open Graph description in index.html, which a test keeps in step. */
+export const LANDING_DESCRIPTION = 'Open-source, self-hosted AI chat for any model, with native iPhone and Android apps, instant agent workspaces, and chats that stay in sync everywhere.'
+export const LANDING_URL = 'https://pulpo.baby/'
 const EMPTY_ROOT = '<div id="root"></div>'
 
-// Structured data for search results. The description matches the meta description in index.html.
+// Self-hosted instances serve this same page, so the canonical URL keeps search results on pulpo.baby.
+const CANONICAL = `<link rel="canonical" href="${LANDING_URL}" /><meta property="og:url" content="${LANDING_URL}" />`
+
+// Structured data for search results: the site, who publishes it, and the app itself.
+const ORGANIZATION_ID = `${LANDING_URL}#organization`
 const STRUCTURED_DATA = {
   '@context': 'https://schema.org',
-  '@type': 'SoftwareApplication',
-  name: 'Pulpo',
-  url: 'https://pulpo.baby/',
-  description: 'Pulpo comes with native mobile apps, fast disposable workspaces, and broad model support. Everything stays perfectly in sync.',
-  applicationCategory: 'ProductivityApplication',
-  operatingSystem: 'Web, macOS, Windows, Android, iOS',
-  image: 'https://pulpo.baby/og-image.jpg',
-  downloadUrl: GITHUB_LATEST_RELEASE_URL,
-  sameAs: [GITHUB_URL, APP_STORE_URL],
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': ORGANIZATION_ID,
+      name: 'Pulpo',
+      url: LANDING_URL,
+      logo: `${LANDING_URL}pulpo-smiley.png`,
+      sameAs: [GITHUB_URL, APP_STORE_URL],
+    },
+    {
+      '@type': 'WebSite',
+      '@id': `${LANDING_URL}#website`,
+      name: 'Pulpo',
+      url: LANDING_URL,
+      publisher: { '@id': ORGANIZATION_ID },
+    },
+    {
+      '@type': 'SoftwareApplication',
+      name: 'Pulpo',
+      url: LANDING_URL,
+      description: LANDING_DESCRIPTION,
+      applicationCategory: 'ProductivityApplication',
+      operatingSystem: 'Web, macOS, Windows, Android, iOS',
+      image: `${LANDING_URL}og-image.jpg`,
+      downloadUrl: GITHUB_LATEST_RELEASE_URL,
+      isAccessibleForFree: true,
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+      publisher: { '@id': ORGANIZATION_ID },
+      sameAs: [GITHUB_URL, APP_STORE_URL],
+    },
+  ],
 }
 
 // Applies the system theme before first paint so dark-mode visitors never see the light page flash.
@@ -44,6 +73,6 @@ export async function renderLandingDocument(indexHtml: string): Promise<string> 
   return indexHtml
     .replace(/<title>[^<]*<\/title>/, `<title>${title}</title>`)
     .replace(/<meta property="og:title" content="[^"]*" \/>/, `<meta property="og:title" content="${title}" />`)
-    .replace('</head>', `${SYSTEM_THEME}<script type="application/ld+json">${JSON.stringify(STRUCTURED_DATA).replace(/</g, '\\u003c')}</script></head>`)
+    .replace('</head>', `${CANONICAL}${SYSTEM_THEME}<script type="application/ld+json">${JSON.stringify(STRUCTURED_DATA).replace(/</g, '\\u003c')}</script></head>`)
     .replace(EMPTY_ROOT, `<div id="root">${markup}</div>${SIGNED_IN_GUARD}`)
 }
