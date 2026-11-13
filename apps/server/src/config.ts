@@ -84,7 +84,6 @@ const configSchema = z.object({
   SESSION_COOKIE_NAME: z.string().min(1).default('pulpo_session'),
   SESSION_TTL_DAYS: z.coerce.number().int().positive().default(30),
   ENCRYPTION_KEY: z.string().min(32).default('development-only-key-change-me-000000'),
-  OPENAI_API_KEY: z.string().optional(),
   SMTP_URL: z.string().optional(),
   SMTP_FROM: z.string().default('Pulpo <noreply@pulpo.local>'),
   COOKIE_SECURE: booleanString,
