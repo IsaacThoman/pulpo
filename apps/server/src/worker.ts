@@ -218,6 +218,8 @@ await maintenanceQueue.add('startup-cleanup', { type: 'cleanup' }, { jobId: `sta
 await maintenanceQueue.add('startup-response-context-scrub', { type: 'scrub-response-binary-context' }, {
   jobId: 'response-context-scrub-v1',
   attempts: 3,
+  // The kept completed job is what stops this one-time scrub from running on every start.
+  removeOnComplete: false,
   removeOnFail: true,
 })
 await reconcileBackupJobs()

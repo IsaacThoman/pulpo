@@ -40,15 +40,24 @@ export function isSupportedCodexPlan(planType: string): boolean {
   return planType === 'unknown' || SUPPORTED_PLANS.has(planType)
 }
 
+const CODEX_LIMIT_ERROR = /rate.?limit|\b429\b|usage.?limit|too many requests/i
+/**
+ * Signs of an expired or revoked sign-in. A bare "token" is not one: rate-limit and context errors
+ * talk about tokens per minute or max_output_tokens, and treating those as sign-in failures would
+ * lock the user out of Codex until they reconnect.
+ */
+const CODEX_AUTH_ERROR = /\b401\b|unauthori[sz]ed|unauthenticated|authenticat|oauth|invalid[_ ]grant|refresh[_ ]token|access[_ ]token|id[_ ]token|invalid[_ ]token|token (?:has )?expired|expired token|\bauth\b/i
+
 export function safeCodexErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
+  if (CODEX_LIMIT_ERROR.test(message)) return 'Your Codex subscription limit has been reached. Try again later.'
   if (codexErrorRequiresReauthentication(error)) return 'Codex authentication failed. Reconnect in Settings.'
-  if (/rate.?limit|429|usage.?limit/i.test(message)) return 'Your Codex subscription limit has been reached. Try again later.'
   return 'Codex generation failed. Try again.'
 }
 
 export function codexErrorRequiresReauthentication(error: unknown): boolean {
-  return /auth|token|unauthorized|401/i.test(error instanceof Error ? error.message : String(error))
+  const message = error instanceof Error ? error.message : String(error)
+  return !CODEX_LIMIT_ERROR.test(message) && CODEX_AUTH_ERROR.test(message)
 }
 
 export function redactedCodexError(error: unknown): Error {
