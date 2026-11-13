@@ -59,6 +59,7 @@ import {
 import { useAuth, type AuthUser } from '@/stores/auth'
 import { cn } from '@/lib/utils'
 import { ApiError, apiRequest, downloadApiFile } from '@/lib/api'
+import { writeClipboardText } from '@/lib/clipboard'
 import { queryClient } from '@/lib/query-client'
 import { useChat } from '@/stores/chat'
 import { useCatalog } from '@/stores/catalog'
@@ -238,7 +239,8 @@ function CodexConnectionSettings({ active }: { active: boolean }) {
     queryKey: ['codex-connection'],
     queryFn: () => apiRequest<CodexConnectionStatus>('/api/account/providers/codex'),
     enabled: active,
-    refetchInterval: 3_000,
+    // Only a sign-in in progress (here or in another tab) changes this status on its own.
+    refetchInterval: (query) => attemptId || query.state.data?.activeAttemptId ? 3_000 : false,
   })
   const effectiveAttemptId = attemptId ?? statusQuery.data?.activeAttemptId ?? null
   const attemptQuery = useQuery({
@@ -282,9 +284,14 @@ function CodexConnectionSettings({ active }: { active: boolean }) {
   }
   const cancel = async () => {
     if (!effectiveAttemptId) return
-    await apiRequest(`/api/account/providers/codex/login/${effectiveAttemptId}`, { method: 'DELETE' })
-    setAttemptId(null)
-    await statusQuery.refetch()
+    setBusy(true); setError('')
+    try {
+      await apiRequest(`/api/account/providers/codex/login/${effectiveAttemptId}`, { method: 'DELETE' })
+      setAttemptId(null)
+      await statusQuery.refetch()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : ui("Could not cancel Codex sign-in."))
+    } finally { setBusy(false) }
   }
   const connected = statusQuery.data?.connected
   const waiting = attempt && ['queued', 'waiting'].includes(attempt.status)
@@ -323,13 +330,13 @@ function CodexConnectionSettings({ active }: { active: boolean }) {
                 <div className="text-xs text-muted-foreground">{ui("Enter this code on the verification page")}</div>
                 <div className="mt-1 flex items-center justify-between gap-3">
                   <code className="text-lg font-semibold tracking-wider">{attempt.userCode}</code>
-                  <Button variant="ghost" size="sm" onClick={() => void navigator.clipboard.writeText(attempt.userCode!)}><Copy className="mr-1 size-3.5" />{ui("Copy")}</Button>
+                  <Button variant="ghost" size="sm" onClick={() => void writeClipboardText(attempt.userCode!).then((success) => { if (!success) setError(ui("Could not copy to the clipboard.")) })}><Copy className="mr-1 size-3.5" />{ui("Copy")}</Button>
                 </div>
               </div>
             ) : <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />{ui("Requesting a device code…")}</div>}
             <div className="flex flex-wrap gap-2">
               {attempt.verificationUri && <Button size="sm" onClick={() => window.open(attempt.verificationUri!, '_blank', 'noopener,noreferrer')}><ExternalLink className="mr-1 size-3.5" />{ui("Open verification page")}</Button>}
-              <Button variant="ghost" size="sm" onClick={() => void cancel()}>{ui("Cancel")}</Button>
+              <Button variant="ghost" size="sm" disabled={busy} onClick={() => void cancel()}>{ui("Cancel")}</Button>
             </div>
           </div>
         ) : (

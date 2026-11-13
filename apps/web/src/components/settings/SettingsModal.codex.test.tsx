@@ -44,6 +44,29 @@ describe('Codex instance UI', () => {
     expect(mocks.request).not.toHaveBeenCalledWith('/api/account/providers/codex')
   })
 
+  it('polls Codex status only while a sign-in attempt is active', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      useAuth.setState({ codexEnabled: true })
+      const statusCalls = () => mocks.request.mock.calls.filter(([path]) => path === '/api/account/providers/codex').length
+      const view = render(modal())
+      await screen.findByRole('button', { name: 'Connect Codex' })
+      const idleCalls = statusCalls()
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
+      expect(statusCalls()).toBe(idleCalls)
+      view.unmount(); client.clear()
+
+      mocks.request.mockImplementation(async (path: string) => path === '/api/account/providers/codex'
+        ? { connected: false, activeAttemptId: 'attempt-1' }
+        : path.startsWith('/api/account/providers/codex/login/') ? { id: 'attempt-1', status: 'waiting', userCode: null, verificationUri: null } : {})
+      render(modal())
+      await waitFor(() => expect(statusCalls()).toBeGreaterThan(idleCalls))
+      const activeCalls = statusCalls()
+      await act(async () => { await vi.advanceTimersByTimeAsync(7_000) })
+      expect(statusCalls()).toBeGreaterThan(activeCalls)
+    } finally { vi.useRealTimers() }
+  })
+
   it('keeps the admin toggle visible, defaults off, and persists opt-in', async () => {
     render(<GeneralSection />)
     const toggle = screen.getByRole('switch')

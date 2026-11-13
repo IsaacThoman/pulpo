@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Check, Copy, Download, Loader2, RefreshCw, ShieldOff } from 'lucide-react'
 import type { TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus } from '@pulpo/contracts'
 import { apiRequest } from '@/lib/api'
+import { writeClipboardText } from '@/lib/clipboard'
+import { downloadBlob } from '@/lib/code-download'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -73,12 +75,10 @@ export function TwoFactorSettings() {
 
   const recoveryText = recoveryCodes.join('\n')
   const copyRecoveryCodes = async () => {
-    await navigator.clipboard.writeText(recoveryText); setCopied(true)
+    if (await writeClipboardText(recoveryText)) setCopied(true)
   }
   const downloadRecoveryCodes = () => {
-    const url = URL.createObjectURL(new Blob([`Pulpo recovery codes\n\n${recoveryText}\n`], { type: 'text/plain' }))
-    const link = document.createElement('a'); link.href = url; link.download = 'pulpo-recovery-codes.txt'; link.click()
-    URL.revokeObjectURL(url)
+    downloadBlob(new Blob([`Pulpo recovery codes\n\n${recoveryText}\n`], { type: 'text/plain' }), 'pulpo-recovery-codes.txt')
   }
 
   return <>

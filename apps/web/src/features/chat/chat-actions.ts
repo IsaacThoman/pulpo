@@ -1,5 +1,6 @@
 import { ui, uit } from '@/i18n/ui'
 import { apiRequest } from '@/lib/api'
+import { writeClipboardText } from '@/lib/clipboard'
 import type { Chat } from '@/lib/types'
 import { useChat } from '@/stores/chat'
 import { useFileToasts } from '@/features/files/browser/toasts'
@@ -17,8 +18,8 @@ const toast = (message: string, options: { tone?: 'error'; undo?: () => Promise<
 export async function copyChatShareLink(chatId: string): Promise<void> {
   try {
     const url = await useChat.getState().shareChat(chatId)
-    await navigator.clipboard.writeText(url)
-    toast(ui("Copied share link"))
+    if (await writeClipboardText(url)) toast(ui("Copied share link"))
+    else toast(ui("Could not copy to the clipboard."), { tone: 'error' })
   } catch (cause) {
     toast(filesErrorMessage(cause), { tone: 'error' })
   }
