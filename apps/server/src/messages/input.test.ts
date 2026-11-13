@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  replaceResponseInputText,
   replaceResponseUserInput,
   responseAttachmentIds,
   responseInputText,
@@ -31,7 +30,7 @@ describe('stored message input', () => {
   })
 
   it('replaces user text without discarding attachments or other input', () => {
-    const edited = replaceResponseInputText(storedInput, 'edited')
+    const edited = replaceResponseUserInput(storedInput, 'edited', responseUserAttachmentIds(storedInput))
 
     expect(responseInputText(edited)).toBe('edited')
     expect(responseAttachmentIds(edited)).toEqual(['00000000-0000-4000-8000-000000000001'])

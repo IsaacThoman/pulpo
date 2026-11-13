@@ -61,7 +61,3 @@ export function replaceResponseUserInput(input: unknown, text: string, attachmen
   items[userIndex] = { ...user, content: [...replacement, ...untouched] }
   return items
 }
-
-export function replaceResponseInputText(input: unknown, text: string): unknown[] {
-  return replaceResponseUserInput(input, text, responseUserAttachmentIds(input))
-}

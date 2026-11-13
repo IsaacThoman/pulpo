@@ -1,4 +1,11 @@
-import type { DailyModelUsage } from '@/lib/mock'
+/** Daily totals with a per-model breakdown, for stacked usage charts. */
+export interface DailyModelUsage {
+  date: string // yyyy-mm-dd
+  calls: number
+  tokens: number
+  cost: number
+  models: { modelId: string; calls: number; tokens: number; cost: number }[]
+}
 
 export interface SettledDailyRow {
   day: string

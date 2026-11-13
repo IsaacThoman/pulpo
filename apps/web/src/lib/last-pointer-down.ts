@@ -11,10 +11,6 @@ if (typeof window !== 'undefined') {
   }, true)
 }
 
-export function lastPointerDown(): Element | null {
-  return last
-}
-
 /**
  * Whether the pointer last went down in the side panel, decided as it did: what was clicked may be
  * gone since (a folder opened from its listing replaces the rows).

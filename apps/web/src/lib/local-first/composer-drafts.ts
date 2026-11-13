@@ -1,8 +1,6 @@
 import { LatestValueQueue } from '@pulpo/client-core'
 import { localAccountKey, localDb, type DraftRow } from './database'
 
-export const NEW_CHAT_DRAFT_ID = 'new'
-
 export interface PersistedDraftAttachment {
   localId: string
   serverId?: string

@@ -1,7 +1,7 @@
 import { initialResponseDurationMs } from '@pulpo/contracts'
 import { hydrateEmbeddedResponseSnapshot, lineageFromLeaf } from '@pulpo/client-core'
 import { mergeResponseSnapshots, type ResponseSnapshot } from '@pulpo/contracts'
-import type { ServerAttachment, ServerChat, ServerResponse } from '../../types'
+import type { ServerChat, ServerResponse } from '../../types'
 import { recalledChatLabel } from './recall-label'
 import { responseErrorMessage } from '../usage-limits/errors'
 import { responseCostMicros } from './responseCost'
@@ -276,8 +276,4 @@ export function createChatProjector() {
 /** Stateless entry for one-off projections; live transcripts use a scoped projector. */
 export function projectChat(chat: ServerChat, liveSnapshots: Record<string, ResponseSnapshot>): DisplayMessage[] {
   return createChatProjector()(chat, liveSnapshots)
-}
-
-export function metadataForAttachment(attachment: ServerAttachment): DisplayAttachment {
-  return { id: attachment.id, name: attachment.originalName, mimeType: attachment.mimeType, sizeBytes: attachment.sizeBytes, generated: false }
 }
