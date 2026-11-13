@@ -45,3 +45,6 @@ apps/mobile/e2e/evidence/**/*.gif
 apps/mobile/e2e/evidence/**/*.mp4
 apps/mobile/e2e/evidence/**/*.mov
 apps/mobile/e2e/evidence/**/*.webm
+
+# Turborepo
+.turbo
