@@ -470,7 +470,10 @@ jobs:
         run: .github/scripts/setup-xcodegen.sh
 
       - name: Test keyboard scripts and release validation
-        run: python3 -m unittest discover -s apps/keyboard-ios/scripts -p 'test_*.py'
+        # gboard_benchmark has no __init__.py, so discovery from scripts/ never reaches it.
+        run: |
+          python3 -m unittest discover -s apps/keyboard-ios/scripts -p 'test_*.py'
+          python3 -m unittest discover -s apps/keyboard-ios/scripts/gboard_benchmark -p 'test_*.py'
 
       - name: Test keyboard engine
         run: npm run keyboard:test
