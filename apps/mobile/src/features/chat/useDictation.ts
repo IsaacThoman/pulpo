@@ -1,10 +1,11 @@
 import { speechPlayback } from '../speech/state'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { AppState, Platform } from 'react-native'
-import { AudioModule, RecordingPresets, setAudioModeAsync } from 'expo-audio'
+import { AudioModule, RecordingPresets, setAudioModeAsync, setIsAudioActiveAsync } from 'expo-audio'
 import { File } from 'expo-file-system'
 import { insertDictationText } from '@pulpo/client-core'
 import { apiRequest } from '../../api/client'
+import PulpoAudioFocus from '../../../modules/pulpo-audio-focus'
 import { DictationController, type DictationLevelSource } from './dictation'
 
 async function requestMicrophonePermission(): Promise<boolean> {
@@ -27,11 +28,43 @@ async function requestMicrophonePermission(): Promise<boolean> {
   return true
 }
 
+/**
+ * Pauses other apps' audio (music, podcasts) while recording, so it is not transcribed over the
+ * user's voice, then hands audio back so those apps resume, like system dictation does.
+ */
+type AudioFocus = Pick<NonNullable<typeof PulpoAudioFocus>, 'acquire' | 'release'>
+
+export function createDictationAudioMode(focus: AudioFocus | null = PulpoAudioFocus) {
+  let interrupting = false
+  return async (recording: boolean): Promise<void> => {
+    // iOS: activating a non-mixing record session interrupts other apps. Android keeps its prior mode.
+    await setAudioModeAsync({
+      allowsRecording: recording, playsInSilentMode: true, shouldPlayInBackground: false,
+      ...(recording ? { interruptionMode: 'doNotMix' as const } : {}),
+    })
+    if (recording) {
+      interrupting = true
+      if (Platform.OS === 'android') await focus?.acquire().catch(() => false)
+      return
+    }
+    if (!interrupting) return
+    try {
+      // Deactivating notifies interrupted apps that they may resume. Android's equivalent is
+      // abandoning focus; expo-audio's setIsAudioActiveAsync(false) there would mute our own playback.
+      if (Platform.OS === 'ios') await setIsAudioActiveAsync(false)
+      else await focus?.release()
+      interrupting = false
+    } catch {
+      // The recorder may still hold the session; dictation's final cleanup tries again.
+    }
+  }
+}
+
 export function createNativeDictation(): DictationController {
   return new DictationController({
     permission: requestMicrophonePermission,
     isForeground: () => AppState.currentState === 'active',
-    audioMode: (allowsRecording) => setAudioModeAsync({ allowsRecording, playsInSilentMode: true, shouldPlayInBackground: false }),
+    audioMode: createDictationAudioMode(),
     recorder: () => {
       const preset = RecordingPresets.HIGH_QUALITY
       const recorder = new AudioModule.AudioRecorder({ ...preset, ...preset[Platform.OS === 'ios' ? 'ios' : 'android'], isMeteringEnabled: true })
