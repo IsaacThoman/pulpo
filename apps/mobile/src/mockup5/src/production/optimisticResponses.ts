@@ -1,5 +1,5 @@
 import { mergeResponseSnapshots, type ResponseSnapshot } from '@pulpo/contracts'
-import { hydrateEmbeddedResponseSnapshot } from '@pulpo/client-core'
+import { hydrateEmbeddedResponseSnapshot, newestDescendantId } from '@pulpo/client-core'
 import type { QueryClient } from '@tanstack/react-query'
 import { useRealtimeStore } from '../../../providers/realtimeStore'
 import type { ServerAttachment, ServerChat, ServerResponse } from '../../../types'
@@ -522,19 +522,6 @@ function deletionIds(responses: ServerResponse[], selected: ServerResponse, incl
     }
   }
   return deleting
-}
-
-function newestDescendantId(responses: ServerResponse[], selectedId: string): string {
-  const newestChild = new Map(responses.map((response) => [response.parentResponseId, response.id]))
-  let leafId = selectedId
-  const seen = new Set<string>()
-  while (!seen.has(leafId)) {
-    seen.add(leafId)
-    const child = newestChild.get(leafId)
-    if (!child || seen.has(child)) break
-    leafId = child
-  }
-  return leafId
 }
 
 /** Mirrors the server: show the neighbouring version, then another prompt variant, then the parent. */
