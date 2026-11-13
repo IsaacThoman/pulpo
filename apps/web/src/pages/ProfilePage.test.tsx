@@ -121,7 +121,7 @@ describe('profile page', () => {
     await screen.findByRole('heading', { name: 'Alice' })
     expect(mocks.request).toHaveBeenCalledWith('/api/profiles/alice')
     // Someone else's profile isn't one of People's tabs.
-    expect(screen.queryByRole('navigation', { name: 'People sections' })).toBeNull()
+    expect(screen.queryByRole('navigation', { name: 'Usage sections' })).toBeNull()
     expect(screen.getByText('@alice')).toBeTruthy()
     expect(screen.getByText(/^Joined /)).toBeTruthy()
     expect(screen.queryByText(/Friends since/)).toBeNull()
@@ -345,13 +345,13 @@ describe('own profile', () => {
     expect(screen.queryByText('Mutual friends')).toBeNull()
   })
 
-  it("sits under People's header as its Profile tab, with the leaderboard as a tab instead of a link", async () => {
+  it("sits under Usage's header as its Profile tab, with the leaderboard as a tab instead of a link", async () => {
     mocks.pendingFriendRequests = 1
     mount('/morgan')
 
-    expect(screen.getByRole('heading', { level: 1, name: 'People' })).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 1, name: 'Usage' })).toBeTruthy()
     expect(screen.queryByRole('heading', { level: 1, name: 'Profile' })).toBeNull()
-    const tabs = within(screen.getByRole('navigation', { name: 'People sections' }))
+    const tabs = within(screen.getByRole('navigation', { name: 'Usage sections' }))
     const profile = tabs.getByRole('link', { name: 'Profile' })
     expect(profile.getAttribute('href')).toBe('/morgan')
     expect(profile.getAttribute('aria-current')).toBe('page')

@@ -170,7 +170,7 @@ const enUS = {
     createFolder: 'Create folder',
     expand: 'Expand sidebar',
     files: 'Files',
-    friends: 'People',
+    friends: 'Usage',
     logout: 'Log out',
     newFolder: 'New folder',
     pinned: 'Pinned',

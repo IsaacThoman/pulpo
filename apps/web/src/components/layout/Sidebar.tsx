@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   Archive,
   ArrowDownUp,
+  BarChart3,
   ClipboardPaste,
   CopyPlus,
   FilePlus2,
@@ -31,7 +32,6 @@ import {
   ShieldCheck,
   SquarePen,
   Trash2,
-  UsersRound,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRight,
@@ -2045,7 +2045,7 @@ export function Sidebar({
             setFilesMenuPoint({ x: event.clientX, y: event.clientY })
           })}
           {billingEnabled && sidebarPins.billing && iconBtn(t('sidebar.billing'), '/billing', <CreditCard className="size-4" />, undefined, openNavMenu('billing'))}
-          {sidebarPins.friends && iconBtn(t('sidebar.friends'), ownProfilePath(user?.username), <UsersRound className="size-4" />, pendingSocialCount, openNavMenu('friends'), peopleCurrent)}
+          {sidebarPins.friends && iconBtn(t('sidebar.friends'), ownProfilePath(user?.username), <BarChart3 className="size-4" />, pendingSocialCount, openNavMenu('friends'), peopleCurrent)}
           {apiKeysEnabled && sidebarPins.apiKeys && iconBtn(t('sidebar.apiKeys'), '/api-keys', <KeyRound className="size-4" />, undefined, openNavMenu('apiKeys'))}
           {filesEnabled && <FilesNavMenu point={filesMenuPoint} onClose={() => setFilesMenuPoint(null)} go={go} />}
           <NavItemMenu
@@ -2185,7 +2185,7 @@ export function Sidebar({
             <AccountSwitcherMenuItems open={accountMenuOpen} />
             {accountNavItem('searchChats', t('sidebar.searchChats'), onOpenSearch, <Search />)}
             {filesEnabled && accountNavItem('files', t('sidebar.files'), filesTarget, <FolderIcon />)}
-            {accountNavItem('friends', t('sidebar.friends'), ownProfilePath(user?.username), <UsersRound />, pendingSocialCount)}
+            {accountNavItem('friends', t('sidebar.friends'), ownProfilePath(user?.username), <BarChart3 />, pendingSocialCount)}
             {apiKeysEnabled && accountNavItem('apiKeys', t('sidebar.apiKeys'), '/api-keys', <KeyRound />)}
             {billingEnabled && accountNavItem('billing', t('sidebar.billing'), '/billing', <CreditCard />)}
             {billingEnabled && billingQuery.data?.onHold && (

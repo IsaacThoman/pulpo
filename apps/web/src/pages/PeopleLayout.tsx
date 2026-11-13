@@ -8,7 +8,7 @@ import { useAuth } from '@/stores/auth'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { ui, uit } from '@/i18n/ui'
 
-/** People's header: your profile, Friends, and the friends leaderboard share one set of tabs. */
+/** Usage's header: your profile, Friends, and the friends leaderboard share one set of tabs. */
 export function PeopleHeader() {
   const { t } = useTranslation()
   const username = useAuth((state) => state.user?.username)
@@ -24,8 +24,8 @@ export function PeopleHeader() {
   // screen readers there. tests/responsive-layout.browser.mjs measures this.
   return (
     <header className="flex h-12 shrink-0 items-center gap-4 border-b px-5 max-sm:pr-3">
-      <h1 className="sr-only shrink-0 text-sm font-semibold sm:not-sr-only">{ui("People")}</h1>
-      <nav aria-label={ui("People sections")} className="settings-section-nav flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+      <h1 className="sr-only shrink-0 text-sm font-semibold sm:not-sr-only">{ui("Usage")}</h1>
+      <nav aria-label={ui("Usage sections")} className="settings-section-nav flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
         {tabs.map((tab) => (
           <NavLink
             key={tab.to}
