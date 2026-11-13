@@ -340,15 +340,14 @@ export async function markCachedChatOpened(namespace: string, chatId: string, li
   })
 }
 
-async function reconcileCachedChatScopeInternal(
+/** Remove stale summaries after list queries have already queued their writes. */
+export function pruneCachedChatScope(
   namespace: string,
   chats: ServerChat[],
   scope: 'active' | 'deleted' | 'all',
   limit: number,
-  cacheIncoming: boolean,
 ): Promise<void> {
-  await withDatabase(async (database) => {
-    if (cacheIncoming) await cacheChatsInDatabase(database, namespace, chats)
+  return withDatabase(async (database) => {
     const rows = await database.getAllAsync<{ chat_id: string; payload: string; updated_at: number }>(
       'SELECT chat_id, payload, updated_at FROM chat_cache WHERE namespace = ? ORDER BY updated_at DESC', namespace,
     )
@@ -368,25 +367,6 @@ async function reconcileCachedChatScopeInternal(
     }
     await trimOpenedChatDetailsInDatabase(database, namespace, limit)
   })
-}
-
-export function reconcileCachedChatScope(
-  namespace: string,
-  chats: ServerChat[],
-  scope: 'active' | 'deleted' | 'all',
-  limit: number,
-): Promise<void> {
-  return reconcileCachedChatScopeInternal(namespace, chats, scope, limit, true)
-}
-
-/** Remove stale summaries after list queries have already queued their writes. */
-export function pruneCachedChatScope(
-  namespace: string,
-  chats: ServerChat[],
-  scope: 'active' | 'deleted' | 'all',
-  limit: number,
-): Promise<void> {
-  return reconcileCachedChatScopeInternal(namespace, chats, scope, limit, false)
 }
 
 const maintenance = new Map<string, { limit: number; promise: Promise<void> }>()

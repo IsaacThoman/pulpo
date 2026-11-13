@@ -4,7 +4,7 @@ import { create } from 'zustand';
 import { truncateChatTitle } from '@pulpo/contracts';
 import type {
   AppPreferences, PersistedPrototypeState,
-  PrototypeChat, PrototypeFolder, PrototypeMessage, SessionState,
+  PrototypeChat, PrototypeMessage, SessionState,
 } from '../domain';
 import { createInitialState } from '../initialState';
 import { productionActions, runProductionAction } from '../production/productionActions';
@@ -52,9 +52,6 @@ type PrototypeActions = {
   emptyTrash: () => void;
   appendMessage: (chatId: string, message: PrototypeMessage) => void;
   updateMessage: (chatId: string, messageId: string, patch: Partial<PrototypeMessage>) => void;
-  deleteMessageCascade: (chatId: string, messageId: string) => void;
-  setDefaultModel: (id: string) => void;
-  toggleFavoriteModel: (id: string) => void;
 };
 
 export type PrototypeStore = PersistedPrototypeState & PrototypeActions;
@@ -356,30 +353,5 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
     updatedAt: Date.now(),
   } : chat) })),
   updateMessage: (chatId, messageId, patch) => set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, messages: chat.messages.map((message) => message.id === messageId ? { ...message, ...patch } : message), updatedAt: Date.now() } : chat) })),
-  deleteMessageCascade: (chatId, messageId) => set((state) => ({ chats: state.chats.map((chat) => {
-    if (chat.id !== chatId) return chat;
-    const index = chat.messages.findIndex((message) => message.id === messageId);
-    return index < 0 ? chat : { ...chat, messages: chat.messages.slice(0, index), updatedAt: Date.now() };
-  }) })),
-  setDefaultModel: (defaultModelId) => {
-    const previous = get().defaultModelId;
-    set({ defaultModelId });
-    runOptimisticAction('preference:defaultModelId', productionActions.setPreference('defaultModelId', defaultModelId), () => {
-      set({ defaultModelId: previous });
-      void usePreferencesStore.getState().setPreference('defaultModelId', previous);
-    });
-  },
-  toggleFavoriteModel: (modelId) => {
-    const previous = get().models.find((model) => model.id === modelId)?.favorite;
-    const previousIds = usePreferencesStore.getState().favoriteModelIds;
-    const favorite = !previous;
-    set((state) => ({ models: state.models.map((model) => model.id === modelId ? { ...model, favorite: !model.favorite } : model) }));
-    runOptimisticAction(`model:${modelId}:favorite`, productionActions.toggleFavoriteModel(modelId, favorite), () => {
-      if (previous === undefined) return;
-      set((state) => ({ models: state.models.map((model) => model.id === modelId ? { ...model, favorite: previous } : model) }));
-      void usePreferencesStore.getState().setPreference('favoriteModelIds', previousIds);
-    });
-  },
 }));
 
-export const selectFolders = (state: PrototypeStore): PrototypeFolder[] => state.folders;

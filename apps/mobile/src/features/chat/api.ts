@@ -22,30 +22,6 @@ function optimisticAutomaticExpiration(enabled: boolean, now = Date.now()): stri
   return duration === null ? null : new Date(now + duration).toISOString()
 }
 
-export async function createChat(input: { clientId?: string; modelId: string; temporary?: boolean; autoExpire?: boolean; title?: string }): Promise<ServerChat> {
-  const clientId = input.clientId ?? Crypto.randomUUID()
-  const body = { clientId, modelId: input.modelId, temporary: input.temporary ?? false, autoExpire: input.autoExpire ?? false, title: input.title }
-  try {
-    return await apiRequest('/api/chats', { method: 'POST', idempotencyKey: clientId, body })
-  } catch (error) {
-    const { instanceUrl, user } = useSessionStore.getState()
-    if (input.temporary && isNetworkError(error)) throw error
-    if (!user || !isNetworkError(error)) throw error
-    await queueOfflineMutation({
-      namespace: cacheNamespace(instanceUrl, user.id), entityKey: `chat:${clientId}`,
-      method: 'POST', path: '/api/chats', body, idempotencyKey: clientId,
-    })
-    const now = new Date().toISOString()
-    return {
-      id: clientId, title: input.title ?? 'New chat', modelId: input.modelId, pinned: false,
-      folderId: null, sortOrder: 0, temporary: input.temporary ?? false, activeResponseId: null,
-      activeBranchLeafId: null,
-      expiresAt: optimisticAutomaticExpiration(Boolean(input.autoExpire), Date.parse(now)),
-      createdAt: now, updatedAt: now, responses: [], attachments: [],
-    }
-  }
-}
-
 export async function updateChat(id: string, patch: Partial<Pick<ServerChat, 'title' | 'pinned' | 'folderId' | 'modelId' | 'sortOrder' | 'fileScopeIds' | 'fileScopeAccess' | 'fileChangeMode'>> & { autoExpire?: boolean; filesBrowseAllowed?: false }): Promise<ServerChat> {
   return apiRequest(`/api/chats/${id}`, { method: 'PATCH', body: patch })
 }
