@@ -438,7 +438,7 @@ export class WorkspaceManager {
     let response: Response
     try { response = await this.request(`/v1/leases/${leaseId}/v1/operations`, init) } catch (error) {
       if (signal?.aborted) { await this.cancel(operationId); throw error }
-      if (!(error instanceof Error) || !error.message.includes('(404)')) throw error
+      if (!(error instanceof ControllerRequestError) || error.status !== 404) throw error
       if (this.localLeaseId) await db.update(workspaceLeases).set({ status: 'expired', error: 'Controller lease expired', updatedAt: new Date() }).where(eq(workspaceLeases.id, this.localLeaseId))
       await this.onLeaseEvent?.('expired')
       this.localLeaseId = undefined; this.controllerLeaseId = undefined; this.staged = false; this.workspaceNotice = ''
