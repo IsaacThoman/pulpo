@@ -99,6 +99,7 @@ jobs:
         run: npm run test:backup-memory -w @pulpo/server
 
       - name: Validate production deployment ordering
+        if: matrix.name == 'Test'
         run: python3 .github/scripts/deploy-production_test.py
 
       - name: Validate stable iPhone deployment
@@ -217,6 +218,51 @@ jobs:
         run: |
           npm run db:migrate -w @pulpo/server
           npm run test -w @pulpo/server -- src/friends
+      - name: Create disposable admin model defaults database
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_admin_model_test"); await sql.end();'
+      - name: Verify administrator default models against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_admin_model_test
+          PULPO_ADMIN_MODEL_TESTS: 'true'
+        run: |
+          npm run db:migrate -w @pulpo/server
+          npm run test -w @pulpo/server -- src/admin/user-models.postgres.test.ts
+      - name: Create disposable restore uploads database
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_restore_test"); await sql.end();'
+      - name: Verify restore uploads against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_restore_test
+          PULPO_RESTORE_TESTS: 'true'
+        run: |
+          npm run db:migrate -w @pulpo/server
+          npm run test -w @pulpo/server -- src/admin/restore-uploads.integration.test.ts
+      - name: Create disposable workspace isolation database
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_workspace_test"); await sql.end();'
+      - name: Verify workspace history isolation against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_workspace_test
+          PULPO_WORKSPACE_POSTGRES_TEST: '1'
+        run: |
+          npm run db:migrate -w @pulpo/server
+          npm run test -w @pulpo/server -- src/agent/workspace-isolation.postgres.test.ts
+      - name: Create disposable device sessions database
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_devices_test"); await sql.end();'
+      - name: Verify device sessions against PostgreSQL and Redis
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_devices_test
+          PULPO_DEVICE_SESSION_TESTS: 'true'
+        run: |
+          npm run db:migrate -w @pulpo/server
+          npm run test -w @pulpo/server -- src/auth/device-sessions.integration.test.ts
+      - name: Create disposable shelf database
+        run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_shelf_test"); await sql.end();'
+      - name: Verify shelf transactions against PostgreSQL
+        env:
+          DATABASE_URL: postgres://postgres:search-test@localhost:5432/pulpo_shelf_test
+          PULPO_SHELF_TESTS: 'true'
+        run: |
+          npm run db:migrate -w @pulpo/server
+          npm run test -w @pulpo/server -- src/shelf/routes.integration.test.ts
       - name: Create disposable account switching database
         run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_account_switching_test"); await sql.end();'
       - name: Verify browser account switching against PostgreSQL
