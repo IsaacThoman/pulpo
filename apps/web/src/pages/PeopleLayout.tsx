@@ -8,14 +8,14 @@ import { useAuth } from '@/stores/auth'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { ui, uit } from '@/i18n/ui'
 
-/** People's header: your profile, Friends, and the friends leaderboard share one set of tabs. */
+/** People's header: your profile, Usage, and the friends leaderboard share one set of tabs. */
 export function PeopleHeader() {
   const { t } = useTranslation()
   const username = useAuth((state) => state.user?.username)
   const pending = usePendingSocialCount()
   const tabs = [
     { to: ownProfilePath(username), label: ui("Profile"), badge: 0 },
-    { to: '/friends', label: ui("Friends"), badge: pending },
+    { to: '/friends', label: ui("Usage"), badge: pending },
     // Its own short key, so Spanish reads "Clasificación" here while the leaderboard page keeps its full title.
     { to: '/friends/leaderboard', label: t('people.leaderboardTab'), badge: 0 },
   ]
@@ -53,7 +53,7 @@ export function PeopleHeader() {
 }
 
 /**
- * Someone else's profile drills down from the People tab it was opened from: `← Friends › Jordan`.
+ * Someone else's profile drills down from the People tab it was opened from: `← Usage › Jordan`.
  * `compare` offers the friends leaderboard, which only ranks friends.
  */
 export function PersonHeader({ name, compare }: { name: string; compare: boolean }) {
@@ -66,7 +66,7 @@ export function PersonHeader({ name, compare }: { name: string; compare: boolean
           <li className="shrink-0">
             <Button asChild size="sm" variant="ghost" className="-ml-2 text-muted-foreground">
               {/* The chevron and name show it's a breadcrumb; phones hide them, so the arrow marks it as a way back. */}
-              <Link to={origin}><ArrowLeft className="sm:hidden" aria-hidden />{origin.startsWith('/friends/leaderboard') ? t('people.leaderboardTab') : ui("Friends")}</Link>
+              <Link to={origin}><ArrowLeft className="sm:hidden" aria-hidden />{origin.startsWith('/friends/leaderboard') ? t('people.leaderboardTab') : ui("Usage")}</Link>
             </Button>
           </li>
           {/* Phones leave the name to the profile heading right below. */}
@@ -88,7 +88,7 @@ export function PersonHeader({ name, compare }: { name: string; compare: boolean
   )
 }
 
-/** People hub: Friends and the friends leaderboard render under the header your profile shares. */
+/** People hub: Usage and the friends leaderboard render under the header your profile shares. */
 export function PeopleLayout() {
   return (
     <div className="flex h-full flex-col">

@@ -182,7 +182,7 @@ describe('profile page', () => {
     await screen.findByRole('heading', { name: 'Top models' })
     expect(within(screen.getByRole('region', { name: 'Recent usage' })).getByText(model.name)).toBeTruthy()
     expect(screen.queryByText("Alice hasn't shared their usage with you.")).toBeNull()
-    expect(breadcrumb().getByRole('link', { name: 'Friends' })).toBeTruthy()
+    expect(breadcrumb().getByRole('link', { name: 'Usage' })).toBeTruthy()
     expect(screen.queryByRole('link', { name: 'Compare with friends' })).toBeNull()
   })
 
@@ -264,7 +264,7 @@ describe('profile page', () => {
 })
 
 describe("someone else's profile breadcrumb", () => {
-  it('leads back to Friends by default and names the person as the current page, by handle until they load', async () => {
+  it('leads back to Usage by default and names the person as the current page, by handle until they load', async () => {
     let respond!: () => void
     const fallback = mocks.request.getMockImplementation()!
     mocks.request.mockImplementation((path: string, options?: { method?: string }) => path === '/api/profiles/alice'
@@ -272,10 +272,10 @@ describe("someone else's profile breadcrumb", () => {
       : fallback(path, options))
     mount()
 
-    const back = breadcrumb().getByRole('link', { name: 'Friends' })
+    const back = breadcrumb().getByRole('link', { name: 'Usage' })
     expect(back.getAttribute('href')).toBe('/friends')
     // Phones show where you came from, not just an arrow.
-    expect(back.textContent).toBe('Friends')
+    expect(back.textContent).toBe('Usage')
     expect(back.querySelector('.sr-only')).toBeNull()
     expect(breadcrumb().getByText('@alice').getAttribute('aria-current')).toBe('page')
 
@@ -292,16 +292,16 @@ describe("someone else's profile breadcrumb", () => {
 
     await screen.findByRole('heading', { name: 'Alice' })
     expect(breadcrumb().getByRole('link', { name: 'Leaderboard' }).getAttribute('href')).toBe('/friends/leaderboard?scope=pool')
-    expect(breadcrumb().queryByRole('link', { name: 'Friends' })).toBeNull()
+    expect(breadcrumb().queryByRole('link', { name: 'Usage' })).toBeNull()
   })
 
   it.each([
     { peopleOrigin: '/billing' }, { peopleOrigin: 'https://example.com/friends' }, { peopleOrigin: ['/friends/leaderboard'] }, '/friends/leaderboard',
-  ])('falls back to Friends for untrusted history state %j', async (state) => {
+  ])('falls back to Usage for untrusted history state %j', async (state) => {
     mount('/alice', state)
 
     await screen.findByRole('heading', { name: 'Alice' })
-    expect(breadcrumb().getByRole('link', { name: 'Friends' }).getAttribute('href')).toBe('/friends')
+    expect(breadcrumb().getByRole('link', { name: 'Usage' }).getAttribute('href')).toBe('/friends')
   })
 
   it('passes its origin on to mutual friends, so their profile leads back to the same tab', async () => {
@@ -356,7 +356,7 @@ describe('own profile', () => {
     expect(profile.getAttribute('href')).toBe('/morgan')
     expect(profile.getAttribute('aria-current')).toBe('page')
     expect(tabs.getByRole('link', { name: 'Leaderboard' }).getAttribute('href')).toBe('/friends/leaderboard')
-    expect((await tabs.findByRole('link', { name: 'Friends, 1 pending' })).getAttribute('aria-current')).toBeNull()
+    expect((await tabs.findByRole('link', { name: 'Usage, 1 pending' })).getAttribute('aria-current')).toBeNull()
     expect(screen.queryByRole('link', { name: 'Compare with friends' })).toBeNull()
     await screen.findByRole('heading', { name: 'Top models' })
   })

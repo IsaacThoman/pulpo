@@ -50,7 +50,7 @@ it('replaces the legacy Pool URL with Friends without adding a history entry', a
   expect(window.history.length).toBe(length)
 })
 
-it('shows Profile, Friends and Leaderboard tabs under People, with Friends current', async () => {
+it('shows Profile, Usage and Leaderboard tabs under People, with Usage current', async () => {
   window.history.replaceState({}, '', '/friends')
   render(<App />)
   await screen.findByRole('heading', { name: 'Combined friends page' })
@@ -58,7 +58,7 @@ it('shows Profile, Friends and Leaderboard tabs under People, with Friends curre
   const links = tabs().getAllByRole('link')
   expect(links.map((link) => [link.textContent, link.getAttribute('href'), link.getAttribute('aria-current')])).toEqual([
     ['Profile', '/octo', null],
-    ['Friends', '/friends', 'page'],
+    ['Usage', '/friends', 'page'],
     ['Leaderboard', '/friends/leaderboard', null],
   ])
   // Phones give the tabs the whole header, so the heading is only read aloud there.
@@ -74,18 +74,18 @@ it('labels the People tabs in Spanish, with a Leaderboard tab short enough for a
   const links = within(screen.getByRole('navigation', { name: 'Secciones de personas' })).getAllByRole('link')
   expect(links.map((link) => [link.textContent, link.getAttribute('aria-current')])).toEqual([
     ['Perfil', null],
-    ['Amigos', null],
+    ['Uso', null],
     ['Clasificación', 'page'],
   ])
 })
 
-it('badges the Friends tab with pending requests', async () => {
+it('badges the Usage tab with pending requests', async () => {
   mocks.pendingFriendRequests = 3
   window.history.replaceState({}, '', '/friends/leaderboard')
   render(<App />)
-  const friends = await screen.findByRole('link', { name: 'Friends, 3 pending' })
-  expect(friends.getAttribute('href')).toBe('/friends')
-  expect(friends.textContent).toBe('Friends3')
+  const usage = await screen.findByRole('link', { name: 'Usage, 3 pending' })
+  expect(usage.getAttribute('href')).toBe('/friends')
+  expect(usage.textContent).toBe('Usage3')
 })
 
 it('shows profiles at their root username URL', async () => {
