@@ -65,5 +65,3 @@ export const useModels = create<ModelsState>()(
   )
 )
 
-/** @deprecated use resolveProviderOrder(useModels.getState().providerOrder) */
-export const PROVIDERS = CATALOG_PROVIDERS

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis, matchByDataKey } from 'recharts'
-import type { DailyModelUsage } from '@/lib/mock'
+import type { DailyModelUsage } from '@/lib/leaderboard-usage'
 import { getCatalogModel } from '@/stores/catalog'
 import { formatChartNumber, formatUsd } from '@/lib/format'
 import type { Metric } from '@/lib/types'

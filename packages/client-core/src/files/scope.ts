@@ -3,8 +3,6 @@ import { DEFAULT_FILE_ACCESS_MODE, type FileAccessMode } from '@pulpo/contracts'
 /** What the agent may do with each attached item, keyed like the scope ids. */
 export type FileScopeAccess = Readonly<Record<string, FileAccessMode>>
 
-export const NO_FILE_ACCESS: FileScopeAccess = Object.freeze({})
-
 /**
  * Adds items to a chat's Files scope once each. A folder and items inside it can both be in the
  * scope: the items tell the agent what the user pointed out.

@@ -5,7 +5,6 @@ import { diagnosticDb, diagnosticClient } from './diagnostic-database.js'
 import { diagnosticPayload, safeDiagnosticText, type DiagnosticPayload } from './diagnostic-sanitizer.js'
 import { DiagnosticWriter } from './diagnostic-writer.js'
 
-export const DIAGNOSTIC_ROW_RETENTION_DAYS = 90
 export interface DiagnosticContext {
   userId?: string; requestLogId?: string; modelCallId?: string; operationId?: string
   purpose: string; providerId?: string; modelId?: string; upstreamModelId?: string

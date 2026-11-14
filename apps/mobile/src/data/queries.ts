@@ -168,11 +168,3 @@ export function modelsQuery(namespace: string) {
     },
   })
 }
-
-export function mergeChatSummary(chats: ServerChat[], updated: ServerChat): ServerChat[] {
-  const existing = chats.findIndex((chat) => chat.id === updated.id)
-  if (existing < 0) return [updated, ...chats]
-  const copy = chats.slice()
-  copy[existing] = { ...copy[existing], ...updated }
-  return copy
-}

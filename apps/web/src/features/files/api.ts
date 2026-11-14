@@ -79,14 +79,6 @@ export function updateFileNode(id: string, input: UpdateFileNode): Promise<FileN
   return apiRequest<FileNode>(`/api/files/${id}`, { method: 'PATCH', body: input })
 }
 
-export function trashFileNode(id: string): Promise<void> {
-  return apiRequest<void>(`/api/files/${id}/trash`, { method: 'POST' })
-}
-
-export function restoreFileNode(id: string): Promise<FileNode> {
-  return apiRequest<FileNode>(`/api/files/${id}/restore`, { method: 'POST' })
-}
-
 export function deleteFileNode(id: string): Promise<void> {
   return apiRequest<void>(`/api/files/${id}`, { method: 'DELETE' })
 }
