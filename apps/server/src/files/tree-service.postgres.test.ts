@@ -15,6 +15,7 @@ import {
   mutateFileTree,
   restoreFileNode,
   restoreFileNodes,
+  searchFileNodes,
   trashFileNode,
   trashFileNodes,
   updateFileNode,
@@ -65,6 +66,32 @@ describe.skipIf(!enabled)('Files tree PostgreSQL behavior', () => {
     expect(listing.ancestors.map((node) => node.name)).toEqual(['Docs'])
     expect(listing.children.map((node) => node.name)).toEqual(['Zed', 'a.txt'])
     expect(publish).toHaveBeenCalledWith(expect.objectContaining({ userId, scopes: ['files', 'folders'] }))
+  })
+
+  it('finds live items by name, earliest match first, with their folders', async () => {
+    const work = await createFolder(userId, { parentId: null, name: 'Work' })
+    const plan = await insertBlob(work.id, 'Plan.md')
+    const project = await insertBlob(null, 'Project plan.txt')
+    const literal = await insertBlob(null, '100%_done.txt')
+    await insertBlob(null, '100 done.txt')
+    const trashed = await createFolder(userId, { parentId: null, name: 'Old plans' })
+    await insertBlob(trashed.id, 'plan-inside.txt')
+    await trashFileNode(userId, trashed.id)
+    await db.insert(fileNodes).values({ id: randomUUID(), ownerUserId: userId, parentId: null, kind: 'blob', name: 'plan-pending.txt', status: 'pending', objectKey: `users/${userId}/files/plan-pending` })
+    await db.insert(fileNodes).values({ id: randomUUID(), ownerUserId: userId, parentId: null, kind: 'shortcut', name: 'Plan shortcut', targetNodeId: plan })
+    const otherUser = randomUUID()
+    await db.insert(users).values({ id: otherUser, name: 'Other', email: `${otherUser}@example.test`, username: `f${otherUser.replaceAll('-', '')}`, role: 'user' })
+    await db.insert(fileNodes).values({ id: randomUUID(), ownerUserId: otherUser, parentId: null, kind: 'blob', name: 'Plan of theirs.md', objectKey: `users/${otherUser}/files/x` })
+
+    const found = await searchFileNodes(userId, 'PLAN', 10)
+    expect(found.map((item) => item.node.id)).toEqual([plan, project])
+    expect(found.map((item) => item.parent)).toEqual([{ id: work.id, name: 'Work' }, null])
+    // LIKE patterns in the query are taken literally.
+    expect((await searchFileNodes(userId, '%_', 10)).map((item) => item.node.id)).toEqual([literal])
+    expect(await searchFileNodes(userId, 'plan', 1)).toHaveLength(1)
+    // With nothing typed, the most recently changed.
+    await db.update(fileNodes).set({ updatedAt: new Date(Date.now() + 60_000) }).where(eq(fileNodes.id, project))
+    expect((await searchFileNodes(userId, '', 2))[0]!.node.id).toBe(project)
   })
 
   it('rejects case-insensitive sibling conflicts and moves into descendants', async () => {
