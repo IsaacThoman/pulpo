@@ -194,24 +194,3 @@ export interface PersistedPrototypeState {
   folders: PrototypeFolder[];
   preferences: AppPreferences;
 }
-
-export function normalizeInstanceUrl(input: string): string {
-  const candidate = input.trim();
-  if (!candidate) throw new Error('Enter an instance URL.');
-  if (/^[a-z][a-z\d+.-]*:\/\//i.test(candidate) && !/^https?:\/\//i.test(candidate)) {
-    throw new Error('Use an HTTP or HTTPS address.');
-  }
-  const withProtocol = /^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`;
-  let parsed: URL;
-  try {
-    parsed = new URL(withProtocol);
-  } catch {
-    throw new Error('Enter a valid web address.');
-  }
-  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Use an HTTP or HTTPS address.');
-  if (!parsed.hostname || parsed.username || parsed.password) throw new Error('Enter a valid Pulpo instance address.');
-  parsed.pathname = '';
-  parsed.search = '';
-  parsed.hash = '';
-  return parsed.origin;
-}

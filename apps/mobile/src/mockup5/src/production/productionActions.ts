@@ -20,7 +20,6 @@ type ProductionActions = {
   renameFolder: AsyncAction
   deleteFolder: AsyncAction
   setPreference: AsyncAction
-  toggleFavoriteModel: AsyncAction
 }
 
 const noop: AsyncAction = async () => undefined
@@ -28,7 +27,7 @@ const noop: AsyncAction = async () => undefined
 export const productionActions: ProductionActions = {
   renameChat: noop, setChatFileScope: noop, setChatFileChangeMode: noop, revokeChatFilesBrowse: noop, togglePin: noop, moveChat: noop, archiveChat: noop, setChatAutoExpiration: noop, trashChat: noop, trashAllChats: noop, restoreChat: noop,
   permanentlyDeleteChat: noop, duplicateChat: noop, shareChat: noop, createFolder: noop,
-  renameFolder: noop, deleteFolder: noop, emptyTrash: noop, setPreference: noop, toggleFavoriteModel: noop,
+  renameFolder: noop, deleteFolder: noop, emptyTrash: noop, setPreference: noop,
 }
 
 export function configureProductionActions(actions: Partial<ProductionActions>): void {

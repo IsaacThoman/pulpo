@@ -1,12 +1,10 @@
 import { MaterialCard, MaterialButton, MaterialField, MaterialIconButton, MaterialRow, MaterialSegmented, MaterialSwitch } from '../../../platform/MaterialUI';
-import { promptText } from '../../../platform/materialActions';
 import { useEffect, type ReactNode } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type TextInputProps, type ViewStyle } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from '../../../platform/SymbolView';
 import {
   Button as SwiftUIButton,
-  ColorPicker as SwiftUIColorPicker,
   HStack as SwiftUIHStack,
   Host as SwiftUIHost,
   Image as SwiftUIImage,
@@ -30,7 +28,6 @@ import {
   font,
   frame,
   keyboardType,
-  labelStyle,
   labelsHidden,
   lineLimit,
   padding,
@@ -108,40 +105,6 @@ export function Field({ label, error, ...props }: TextInputProps & { label?: str
   return <View style={styles.fieldWrap}>{label ? <Text style={[styles.fieldLabel, { color: theme.secondary }]}>{label}</Text> : null}{Platform.OS === 'ios' ? <NativeField {...props} accessibilityLabel={props.accessibilityLabel ?? label} /> : <TextInput placeholderTextColor={theme.secondary} {...props} style={[styles.field, { color: theme.text, backgroundColor: theme.elevated, borderColor: error ? theme.red : theme.separator }, props.style]} />}{error ? <Text style={[styles.fieldError, { color: theme.red }]}>{error}</Text> : null}</View>;
 }
 
-export function PasswordField({ label, value, onChangeText, placeholder, revealed, onToggleVisibility }: {
-  label: string;
-  value: string;
-  onChangeText: (value: string) => void;
-  placeholder?: string;
-  revealed: boolean;
-  onToggleVisibility: () => void;
-}) {
-  const theme = useAppTheme();
-  const nativeText = useNativeState(value);
-  useEffect(() => { if (nativeText.get() !== value) nativeText.set(value); }, [nativeText, value]);
-  if (Platform.OS === 'android') return <MaterialField label={label} value={value} onChangeText={onChangeText} placeholder={placeholder} secureTextEntry={!revealed} autoCapitalize="none" autoCorrect={false} autoComplete="new-password" trailingAction={{ label: revealed ? 'Hide password' : 'Show password', icon: revealed ? 'eye.slash' : 'eye', onPress: onToggleVisibility }} />;
-  if (Platform.OS === 'ios') return <View style={styles.fieldWrap}>
-    <Text style={[styles.fieldLabel, { color: theme.secondary }]}>{label}</Text>
-    <SwiftUIHost matchContents={{ vertical: true }} style={styles.nativePasswordField}>
-      <SwiftUIHStack spacing={8}>
-        {revealed
-          ? <SwiftUITextField text={nativeText} placeholder={placeholder} onTextChange={onChangeText} modifiers={[textFieldStyle('roundedBorder'), controlSize('large'), frame({ maxWidth: Infinity, minHeight: 50 })]} />
-          : <SwiftUISecureField text={nativeText} placeholder={placeholder} onTextChange={onChangeText} modifiers={[textFieldStyle('roundedBorder'), controlSize('large'), frame({ maxWidth: Infinity, minHeight: 50 })]} />}
-        <SwiftUIButton
-          label={revealed ? 'Hide password' : 'Show password'}
-          systemImage={revealed ? 'eye.slash' : 'eye'}
-          onPress={onToggleVisibility}
-          modifiers={[buttonStyle('plain'), labelStyle('iconOnly'), frame({ width: 44, height: 44 }), swiftUIAccessibilityLabel(revealed ? 'Hide password' : 'Show password')]}
-        />
-      </SwiftUIHStack>
-    </SwiftUIHost>
-  </View>;
-  return <View style={styles.fieldWrap}>
-    <Text style={[styles.fieldLabel, { color: theme.secondary }]}>{label}</Text>
-    <View><TextInput secureTextEntry={!revealed} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={theme.secondary} style={[styles.field, { color: theme.text, backgroundColor: theme.elevated, borderColor: theme.separator, paddingRight: 54 }]} /><Pressable accessibilityRole="button" accessibilityLabel={revealed ? 'Hide password' : 'Show password'} onPress={onToggleVisibility} style={styles.passwordEye}><SymbolView name={revealed ? 'eye.slash' : 'eye'} size={17} tintColor={theme.secondary} /></Pressable></View>
-  </View>;
-}
-
 function NativeField(props: TextInputProps) {
   const nativeText = useNativeState(String(props.value ?? ''));
   useEffect(() => { if (nativeText.get() !== String(props.value ?? '')) nativeText.set(String(props.value ?? '')); }, [nativeText, props.value]);
@@ -178,16 +141,6 @@ export function NativeSwitch({ label, value, onChange }: { label: string; value:
   return <MaterialSwitch label={label} value={value} onChange={onChange} />;
 }
 
-export function NativeColorPicker({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  if (Platform.OS === 'ios') return <SwiftUIHost style={styles.nativeColorPicker}><SwiftUIColorPicker label={label} selection={value} supportsOpacity={false} onSelectionChange={onChange} modifiers={[frame({ maxWidth: Infinity, minHeight: 44 })]} /></SwiftUIHost>;
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={() => promptText({ title: label, message: 'Enter a hex color, such as #10B981.', value, onSubmit: (next) => { if (/^#[0-9a-f]{6}$/i.test(next)) onChange(next); } })} style={[styles.colorFallback, { backgroundColor: value }]} />;
-}
-
-export function Badge({ label, color }: { label: string; color?: string }) {
-  const theme = useAppTheme(); const tint = color ?? theme.secondary;
-  return <View style={[styles.badge, { backgroundColor: `${tint}18` }]}><Text style={[styles.badgeText, { color: tint }]}>{label}</Text></View>;
-}
-
 export function EmptyState({ icon, title, detail, action }: { icon: string; title: string; detail: string; action?: ReactNode }) {
   const theme = useAppTheme();
   return <View style={styles.empty}><View style={[styles.emptyIcon, Platform.OS !== 'ios' && { backgroundColor: theme.fillStrong }]}><SymbolView name={icon as never} size={28} tintColor={theme.secondary} /></View><Text style={[styles.emptyTitle, { color: theme.text }]}>{title}</Text><Text style={[styles.emptyDetail, { color: theme.secondary }]}>{detail}</Text>{action}</View>;
@@ -198,7 +151,7 @@ const styles = StyleSheet.create({
   glassFill: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, pressed: { opacity: 0.7, transform: [{ scale: 0.96 }] },
   card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, overflow: 'hidden', shadowOpacity: 0.08, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } }, sectionTitleRow: { marginTop: 22, marginBottom: 8, paddingHorizontal: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, sectionTitle: { fontSize: Platform.OS === 'android' ? 14 : 12, fontWeight: '700', letterSpacing: Platform.OS === 'android' ? 0 : 0.8, textTransform: Platform.OS === 'android' ? 'none' : 'uppercase' },
   row: { minHeight: 72, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 11 }, rowIcon: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center' }, rowText: { minWidth: 0, flex: 1 }, rowTitle: { fontSize: Platform.OS === 'android' ? 16 : 15, fontWeight: Platform.OS === 'android' ? '500' : '600' }, rowDetail: { fontSize: Platform.OS === 'android' ? 14 : 12, marginTop: 2, lineHeight: Platform.OS === 'android' ? 20 : 16 }, rowValue: { fontSize: 14 },
-  fieldWrap: { gap: 6 }, fieldLabel: { marginLeft: 3, fontSize: 12, fontWeight: '600' }, field: { minHeight: 50, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, fontSize: 16 }, nativeField: { width: '100%', minHeight: 50 }, nativePasswordField: { width: '100%', minHeight: 52 }, passwordEye: { position: 'absolute', right: 6, top: 3, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }, fieldError: { fontSize: 12, marginLeft: 3 }, nativeButton: { width: '100%', minHeight: 50 }, button: { minHeight: 48, borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, gap: 8 }, buttonText: { fontSize: 15, fontWeight: '700' },
-  nativeSegmented: { width: '100%', minHeight: 38 }, nativeSwitch: { minWidth: 52, minHeight: 34 }, nativeColorPicker: { width: '100%', height: 48 }, colorFallback: { width: 44, height: 44, borderRadius: 22 }, segmented: { flexDirection: 'row', borderRadius: 11, padding: 3 }, segment: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 34, borderRadius: 8 }, segmentText: { fontSize: 12, fontWeight: '700' }, badge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 }, badgeText: { fontSize: 11, fontWeight: '700' },
+  fieldWrap: { gap: 6 }, fieldLabel: { marginLeft: 3, fontSize: 12, fontWeight: '600' }, field: { minHeight: 50, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, fontSize: 16 }, nativeField: { width: '100%', minHeight: 50 }, fieldError: { fontSize: 12, marginLeft: 3 }, nativeButton: { width: '100%', minHeight: 50 }, button: { minHeight: 48, borderRadius: 15, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, gap: 8 }, buttonText: { fontSize: 15, fontWeight: '700' },
+  nativeSegmented: { width: '100%', minHeight: 38 }, nativeSwitch: { minWidth: 52, minHeight: 34 }, segmented: { flexDirection: 'row', borderRadius: 11, padding: 3 }, segment: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 34, borderRadius: 8 }, segmentText: { fontSize: 12, fontWeight: '700' },
   empty: { paddingVertical: 58, alignItems: 'center', paddingHorizontal: 24 }, emptyIcon: { width: 58, height: 58, borderRadius: 19, alignItems: 'center', justifyContent: 'center', marginBottom: 15 }, emptyTitle: { fontSize: 18, fontWeight: '700', textAlign: 'center' }, emptyDetail: { fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: 6, marginBottom: 18, maxWidth: 300 },
 });

@@ -8,8 +8,7 @@ import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Linking, Platfor
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from '../../../platform/SymbolView';
 import { useAppTheme } from '../theme';
-import { normalizeInstanceUrl } from '../domain';
-import { normalizeInstanceUrl as normalizeServerAddress, usernameFormatError } from '@pulpo/client-core';
+import { normalizeInstanceUrl, usernameFormatError } from '@pulpo/client-core';
 import { mobileApi } from '../../../api/client';
 import { NativePasskeyError, PasskeyCancelledError } from '../../../auth/passkeys';
 import { useSessionStore } from '../../../store/session';
@@ -303,21 +302,18 @@ export function AuthExperience() {
   };
   const submitInstance = () => {
     setError('');
+    if (!instanceUrl.trim()) return setError('Enter an instance URL.');
     let normalized: string;
     try {
-      normalized = normalizeInstanceUrl(instanceUrl);
+      // Normalized as the session stores it (path included), so path-hosted instances keep their path.
+      // Localhost HTTP is allowed here; the session rejects it outside development builds.
+      normalized = normalizeInstanceUrl(instanceUrl, true);
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Invalid URL.');
+      setError(nextError instanceof TypeError || !(nextError instanceof Error) ? 'Enter a valid web address.' : nextError.message);
       return;
     }
-    // The same server (compared as the session stores it, path included): nothing to switch, and
-    // nobody is signed out.
-    let sameServer = false;
-    try {
-      sameServer = normalizeServerAddress(instanceUrl, true) === productionInstanceUrl;
-    } catch {
-      // Not a valid address for the session; the switch reports it.
-    }
+    // The same server: nothing to switch, and nobody is signed out.
+    const sameServer = normalized === productionInstanceUrl;
     if (sameServer) {
       setInstanceUrl(normalized);
       setPage('login');

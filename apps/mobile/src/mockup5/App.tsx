@@ -4768,9 +4768,16 @@ function SpeechPlayerBar() {
   const visible = state.key !== null && !state.key.startsWith('preview:');
   const [progress, setProgress] = useState<SpeechProgress | null>(null);
   // Audio time is not part of the playback store; poll while visible and refresh on every state change.
+  // Chunks keep generating while paused, so polling continues, but an unchanged reading keeps the
+  // previous object and skips the re-render.
   useEffect(() => {
     if (!visible) { setProgress(null); return; }
-    const refresh = () => setProgress(speechPlayback.progress());
+    const refresh = () => {
+      const next = speechPlayback.progress();
+      setProgress((current) => current && next
+        && current.elapsed === next.elapsed && current.total === next.total && current.estimated === next.estimated
+        && current.buffered === next.buffered && current.fraction === next.fraction ? current : next);
+    };
     refresh();
     const timer = setInterval(refresh, 250);
     return () => clearInterval(timer);
