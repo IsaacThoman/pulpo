@@ -34,7 +34,7 @@ vi.mock('@/pages/usage/LeaderboardPage', () => ({
 }))
 
 const render = (ui: React.ReactElement) => renderDom(<QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>)
-const tabs = () => within(screen.getByRole('navigation', { name: 'People sections' }))
+const tabs = () => within(screen.getByRole('navigation', { name: 'Usage sections' }))
 
 beforeEach(() => { mocks.pendingFriendRequests = 0 })
 afterEach(async () => {
@@ -50,11 +50,11 @@ it('replaces the legacy Pool URL with Friends without adding a history entry', a
   expect(window.history.length).toBe(length)
 })
 
-it('shows Profile, Friends and Leaderboard tabs under People, with Friends current', async () => {
+it('shows Profile, Friends and Leaderboard tabs under Usage, with Friends current', async () => {
   window.history.replaceState({}, '', '/friends')
   render(<App />)
   await screen.findByRole('heading', { name: 'Combined friends page' })
-  expect(screen.getByRole('heading', { level: 1, name: 'People' })).toBeTruthy()
+  expect(screen.getByRole('heading', { level: 1, name: 'Usage' })).toBeTruthy()
   const links = tabs().getAllByRole('link')
   expect(links.map((link) => [link.textContent, link.getAttribute('href'), link.getAttribute('aria-current')])).toEqual([
     ['Profile', '/octo', null],
@@ -62,16 +62,16 @@ it('shows Profile, Friends and Leaderboard tabs under People, with Friends curre
     ['Leaderboard', '/friends/leaderboard', null],
   ])
   // Phones give the tabs the whole header, so the heading is only read aloud there.
-  expect([...screen.getByRole('heading', { level: 1, name: 'People' }).classList]).toEqual(expect.arrayContaining(['sr-only', 'sm:not-sr-only']))
+  expect([...screen.getByRole('heading', { level: 1, name: 'Usage' }).classList]).toEqual(expect.arrayContaining(['sr-only', 'sm:not-sr-only']))
 })
 
-it('labels the People tabs in Spanish, with a Leaderboard tab short enough for a phone header', async () => {
+it('labels the Usage tabs in Spanish, with a Leaderboard tab short enough for a phone header', async () => {
   await i18n.changeLanguage('es-ES')
   window.history.replaceState({}, '', '/friends/leaderboard')
   render(<App />)
   await screen.findByRole('heading', { name: 'Friends leaderboard: friends' })
-  expect(screen.getByRole('heading', { level: 1, name: 'Personas' })).toBeTruthy()
-  const links = within(screen.getByRole('navigation', { name: 'Secciones de personas' })).getAllByRole('link')
+  expect(screen.getByRole('heading', { level: 1, name: 'Uso' })).toBeTruthy()
+  const links = within(screen.getByRole('navigation', { name: 'Secciones de uso' })).getAllByRole('link')
   expect(links.map((link) => [link.textContent, link.getAttribute('aria-current')])).toEqual([
     ['Perfil', null],
     ['Amigos', null],
@@ -92,7 +92,7 @@ it('shows profiles at their root username URL', async () => {
   window.history.replaceState({}, '', '/alice')
   render(<App />)
   await screen.findByRole('heading', { name: 'Profile: alice' })
-  expect(screen.queryByRole('navigation', { name: 'People sections' })).toBeNull()
+  expect(screen.queryByRole('navigation', { name: 'Usage sections' })).toBeNull()
 })
 
 it('marks the Leaderboard tab current, with your profile as its own tab instead of a usage link', async () => {

@@ -1101,10 +1101,10 @@ export const sidebarPinsSchema = z.object({
   // Shown by default; saved preferences that predate these keys keep them visible.
   searchChats: z.boolean().default(true),
   files: z.boolean().default(true),
-  /** Deprecated: usage moved into your profile, so no sidebar item reads it; kept so saved pins still parse. */
+  /** Deprecated: the old Usage item, superseded by `friends`; kept so saved pins still parse. */
   usage: z.boolean().default(false),
   billing: z.boolean().default(false),
-  /** The People item, keyed by its former name. */
+  /** The Usage item (formerly Friends), keyed by its former name. */
   friends: z.boolean().default(false),
   apiKeys: z.boolean().default(false),
 })
