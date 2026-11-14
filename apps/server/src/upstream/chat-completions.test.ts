@@ -59,6 +59,20 @@ describe('prefersMaxCompletionTokens', () => {
 })
 
 describe('chatCompletionsRequest', () => {
+  it('signs replayed tool calls with Google’s placeholder only for the Gemini API', () => {
+    const input = [
+      { role: 'user', content: 'date?' },
+      { type: 'function_call', call_id: 'call_a', name: 'get_date', arguments: '{}' },
+      { type: 'function_call_output', call_id: 'call_a', output: '2026-11-14' },
+    ]
+    const gemini = chatCompletionsRequest({ model: 'gemini-4-hydrogen', input }, { baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', stream: false })
+    expect((gemini.messages as Array<Record<string, unknown>>)[1]).toMatchObject({
+      tool_calls: [{ id: 'call_a', extra_content: { google: { thought_signature: 'skip_thought_signature_validator' } } }],
+    })
+    const other = chatCompletionsRequest({ model: 'm', input }, { baseUrl: OTHER, stream: false })
+    expect((other.messages as Array<Record<string, unknown>>)[1]).not.toHaveProperty('tool_calls.0.extra_content')
+  })
+
   it('hoists instructions and developer/system messages into one leading system message', () => {
     const body = chatCompletionsRequest({
       model: 'm',

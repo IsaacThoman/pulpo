@@ -85,6 +85,7 @@ import { codexErrorRequiresReauthentication, createCodexModels, markCodexReauthe
 import { codexInferenceReferenceCostMicros } from '../codex/reference-cost.js'
 import { agentSettlementAmounts } from './settlement.js'
 import { costLimitPause, redisCostLimitApproval, waitForCostLimitDecision } from './cost-limit.js'
+import { createThoughtSignatureStore, isGeminiApiBaseUrl } from '../upstream/thought-signatures.js'
 
 function toolResultText(result: unknown): string {
   const content = (result as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content
@@ -304,6 +305,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await db.update(requestLogs).set({ stickyFallbackUsed: true, fallbackUsed: true, currentModelId: active.model.id, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
   }
+  const thoughtSignatures = createThoughtSignatureStore()
   const providerStreams = { 'openai-responses': openAIResponsesApi(), 'openai-completions': openAICompletionsApi(), 'anthropic-messages': anthropicMessagesApi(), 'mistral-conversations': mistralConversationsApi() }
   const emptyUsage = { inputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 }
   const persistedUsage = record.response.usage as typeof emptyUsage | null
@@ -598,6 +600,11 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         reasoning: explicitReasoningEffort(request.parameters) ? request.reasoning : undefined,
         samplingParams: chatCompletionsSamplingParameters(providerPromptCacheParameters(active.model.promptCachingEnabled, request.parameters), active.provider.baseUrl),
         apiKey: active.apiKey,
+        fetch: thoughtSignatures.fetch(streamOptions.fetch),
+        onPayload: async (payload, model) => {
+          const body = await thoughtSignatures.apply(payload, { placeholder: isGeminiApiBaseUrl(active.provider.baseUrl) })
+          return await streamOptions.onPayload?.(body, model) ?? body
+        },
       })
     }
     if (active.piModel.api === 'mistral-conversations') {
