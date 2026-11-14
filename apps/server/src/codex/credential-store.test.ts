@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { OAuthCredential } from '@earendil-works/pi-ai'
-import { codexPlanType, isSupportedCodexPlan, safeCodexErrorMessage } from './credential-store.js'
+import { codexErrorRequiresReauthentication, codexPlanType, isSupportedCodexPlan, safeCodexErrorMessage } from './credential-store.js'
 
 function oauthWithClaims(claims: Record<string, unknown>): OAuthCredential {
   const header = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url')
@@ -36,5 +36,21 @@ describe('Codex plan handling', () => {
     expect(message).toBe('Codex authentication failed. Reconnect in Settings.')
     expect(message).not.toContain('access-secret')
     expect(message).not.toContain('acct-secret')
+  })
+
+  it('does not treat token-count or rate-limit errors as expired sign-ins', () => {
+    for (const text of [
+      '429 Rate limit reached for gpt-5 on tokens per min (TPM): Limit 30000',
+      'max_output_tokens is too large',
+      'This model maximum context length is 272000 tokens',
+      'Codex error: usage limit reached',
+    ]) expect(codexErrorRequiresReauthentication(new Error(text)), text).toBe(false)
+    expect(safeCodexErrorMessage(new Error('429 Rate limit reached on tokens per min'))).toBe('Your Codex subscription limit has been reached. Try again later.')
+  })
+
+  it('still detects expired or revoked sign-ins', () => {
+    for (const text of ['401 Unauthorized', 'invalid_grant: refresh token expired', 'Failed to refresh OAuth token', 'Codex authentication failed']) {
+      expect(codexErrorRequiresReauthentication(new Error(text)), text).toBe(true)
+    }
   })
 })

@@ -26,7 +26,7 @@ import {
   type AppStoreTransaction,
 } from './app-store.js'
 import { getBillingEntitlements } from './entitlements.js'
-import { commitBillingChanges, isStaleProviderUpdate, placeBillingHold, publishBillingChanges } from './webhooks.js'
+import { commitBillingChanges, isStaleProviderUpdate, placeBillingHold, publishBillingChanges, publishCommittedBillingChanges } from './webhooks.js'
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -335,8 +335,9 @@ export async function processAppStoreNotification(signedPayload: string): Promis
   }
   const resourceId = snapshot?.transaction.originalTransactionId ?? null
   const changedUsers = new Set<string>()
+  let changes: Array<{ userId: string; revision: number }>
   try {
-    const changes = await db.transaction(async (tx) => {
+    changes = await db.transaction(async (tx) => {
       await tx.insert(billingWebhookEvents).values({ providerEventId: id, provider: 'app_store', type, resourceId }).onConflictDoNothing()
       const [stored] = await tx.select().from(billingWebhookEvents)
         .where(eq(billingWebhookEvents.providerEventId, id)).for('update')
@@ -349,11 +350,11 @@ export async function processAppStoreNotification(signedPayload: string): Promis
         .where(eq(billingWebhookEvents.providerEventId, id))
       return revisions
     })
-    await publishBillingChanges(changes)
   } catch (error) {
     await recordNotificationFailure({ id, type, resourceId, error })
     throw error
   }
+  await publishCommittedBillingChanges(changes, 'app_store')
 }
 
 async function reconcileAppStoreSubscription(row: {

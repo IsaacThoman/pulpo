@@ -119,6 +119,11 @@ payloadRetentionWorker.on('failed', (job, error) => {
   }))
 })
 
+// Records that the one-time response-context scrub has run. A kept completed job can't do this:
+// the queue's completed-job cap trims the oldest jobs whatever their own retention setting.
+const RESPONSE_CONTEXT_SCRUB_JOB_ID = 'response-context-scrub-v1'
+const RESPONSE_CONTEXT_SCRUB_DONE_KEY = `pulpo:maintenance:${RESPONSE_CONTEXT_SCRUB_JOB_ID}:done`
+
 const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) => {
   if (job.data.type === 'export') await createExport(String(job.data.payload?.exportId))
   if (job.data.type === 'delete-account') await deleteAccountData(String(job.data.payload?.userId))
@@ -128,7 +133,10 @@ const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) 
     await reconcileBackupJobs()
     await runOffsiteBackupSchedule()
   }
-  if (job.data.type === 'scrub-response-binary-context') await scrubPersistedResponseBinaryContext()
+  if (job.data.type === 'scrub-response-binary-context') {
+    await scrubPersistedResponseBinaryContext()
+    await redis.set(RESPONSE_CONTEXT_SCRUB_DONE_KEY, new Date().toISOString())
+  }
   if (job.data.type === 'purge-chats') {
     const userId = typeof job.data.payload?.userId === 'string' ? job.data.payload.userId : undefined
     await markExpiredChatsForPurge(new Date(), userId)
@@ -215,11 +223,19 @@ if (config.PULPO_BILLING_ENABLED && acceptedAppStoreEnvironments(config).include
   await maintenanceQueue.removeJobScheduler('app-store-sandbox-sync')
 }
 await maintenanceQueue.add('startup-cleanup', { type: 'cleanup' }, { jobId: `startup-cleanup-${Date.now()}` })
-await maintenanceQueue.add('startup-response-context-scrub', { type: 'scrub-response-binary-context' }, {
-  jobId: 'response-context-scrub-v1',
-  attempts: 3,
-  removeOnFail: true,
-})
+// Deployments that ran the scrub before the marker key existed recorded it only as a kept job.
+const finishedScrub = await maintenanceQueue.getJob(RESPONSE_CONTEXT_SCRUB_JOB_ID)
+if (finishedScrub && await finishedScrub.isCompleted()) {
+  await redis.set(RESPONSE_CONTEXT_SCRUB_DONE_KEY, new Date(finishedScrub.finishedOn ?? Date.now()).toISOString(), 'NX')
+}
+if (!(await redis.exists(RESPONSE_CONTEXT_SCRUB_DONE_KEY))) {
+  await maintenanceQueue.add('startup-response-context-scrub', { type: 'scrub-response-binary-context' }, {
+    // The fixed id keeps workers that start together from queueing it twice.
+    jobId: RESPONSE_CONTEXT_SCRUB_JOB_ID,
+    attempts: 3,
+    removeOnFail: true,
+  })
+}
 await reconcileBackupJobs()
 
 generationWorker.on('failed', (job, error) => {

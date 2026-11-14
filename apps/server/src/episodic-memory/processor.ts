@@ -92,12 +92,27 @@ export async function processEmbeddingJob(job: EmbeddingJob): Promise<void> {
     const status = await client.status()
     if (!status.healthy) throw new Error(status.error ?? 'Ollama is unavailable')
     let installed = status.installedModels.find((model) => model.name === profile.model)
+    let latestProgress: { completed: number; total: number } | undefined
+    let progressWrite: Promise<void> | undefined
     if (!installed) {
       installed = await client.pullModel(profile, {
-        onProgress: (completed, total) => { void db.update(episodicMemoryGenerations).set({
-          downloadCompletedBytes: completed, downloadTotalBytes: total, updatedAt: new Date(),
-        }).where(eq(episodicMemoryGenerations.id, generationId)) },
+        // Ollama streams many progress lines a second; save at most one write at a time, and
+        // never let a failed progress write reject unhandled and take the worker down.
+        onProgress: (completed, total) => {
+          latestProgress = { completed, total }
+          if (progressWrite) return
+          const write = (): Promise<void> => {
+            const next = latestProgress!
+            latestProgress = undefined
+            return db.update(episodicMemoryGenerations).set({
+              downloadCompletedBytes: next.completed, downloadTotalBytes: next.total, updatedAt: new Date(),
+            }).where(eq(episodicMemoryGenerations.id, generationId)).then(() => undefined, () => undefined)
+              .then(() => latestProgress ? write() : undefined)
+          }
+          progressWrite = write().finally(() => { progressWrite = undefined })
+        },
       })
+      await progressWrite
       await db.insert(auditEvents).values({
         id: newId(), action: EPISODIC_MEMORY_AUDIT_ACTIONS.modelInstall,
         targetType: 'episodic_memory_generation', targetId: generationId,

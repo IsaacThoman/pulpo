@@ -163,9 +163,15 @@ async function runTitleTask(
               const response = await codex.completeSimple(codexModel, {
                 messages: [{ role: 'user', content: prompt, timestamp: Date.now() }],
               }, {
-                reasoning: 'low', maxTokens: maxOutputTokens, maxRetries: 0, transport: 'auto',
+                reasoning: 'low', maxTokens: maxOutputTokens, maxRetries: 0, timeoutMs: runtime.provider.requestTimeoutMs, transport: 'auto',
                 sessionId: `pulpo:${record.response.userId}:${record.response.chatId}:title`,
               })
+              // completeSimple resolves provider failures as error messages instead of rejecting. Surface
+              // them so a sign-in failure reaches the reauthentication check rather than looking like a
+              // malformed title and being retried.
+              if (response.stopReason === 'error' || response.stopReason === 'aborted') {
+                throw new Error(response.errorMessage ?? 'Codex title request failed')
+              }
               const outputText = response.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('\n')
               return {
                 id: response.responseId,

@@ -76,6 +76,9 @@ describe('shared model fallback policy', () => {
 
   it('classifies retryable and non-retryable failures consistently', () => {
     expect(classifyGenerationError(new Error('429 resource unavailable'))).toBe('rate_limit')
+    expect(classifyGenerationError(new Error('Rate limit exceeded'))).toBe('rate_limit')
+    expect(classifyGenerationError(new Error('model foo has been deprecated'))).not.toBe('rate_limit')
+    expect(classifyGenerationError(new Error('Failed to generate a response: moderation flagged the input'))).not.toBe('rate_limit')
     expect(classifyGenerationError(new Error("We're currently processing too many requests — please try again later."))).toBe('rate_limit')
     expect(classifyGenerationError(new Error('The service is overloaded'))).toBe('rate_limit')
     expect(classifyGenerationError(Object.assign(new Error('Request rejected'), { status: 429 }))).toBe('rate_limit')

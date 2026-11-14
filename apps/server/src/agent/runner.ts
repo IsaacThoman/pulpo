@@ -854,7 +854,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     if (!cancelled) return
     agentAbortReason ??= 'cancellation'
     agent.abort()
-  }), 500)
+  }).catch(() => undefined), 500)
   const initialParameters = resolveAgentModelParameters(active.model, record.response.parameters)
   let firstTokenTimeout: FirstTokenTimeout | undefined
   agent = new Agent({

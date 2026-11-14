@@ -119,6 +119,11 @@ export class OllamaClient {
       throw new Error('Ollama returned an invalid embedding response')
     }
     const embeddings = body.embeddings as number[][]
+    // Callers pair vectors with inputs by index; a short reply would store chunks without embeddings.
+    const expected = Array.isArray(input) ? input.length : 1
+    if (embeddings.length !== expected) {
+      throw new Error(`Ollama returned ${embeddings.length} embeddings for ${expected} inputs`)
+    }
     for (const embedding of embeddings) {
       if (embedding.length !== profile.dimension || embedding.some((value) => !Number.isFinite(value))) {
         throw new Error(`Ollama returned ${embedding.length} dimensions for ${profile.model}; expected ${profile.dimension}`)
