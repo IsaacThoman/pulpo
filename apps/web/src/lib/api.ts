@@ -1,4 +1,5 @@
 import { adminChatAccessHeaders } from '@/features/admin-chat/access'
+import { downloadBlob } from './code-download'
 
 export interface ApiErrorBody {
   error?: {
@@ -115,12 +116,7 @@ export function apiDownloadUrl(path: string): string {
 export async function downloadApiFile(path: string, suggestedName?: string): Promise<void> {
   const response = await authenticatedFetch(path)
   if (!response.ok) throw new Error(`Download failed (${response.status})`)
-  const blobUrl = URL.createObjectURL(await response.blob())
-  const anchor = document.createElement('a')
-  anchor.href = blobUrl
-  if (suggestedName) anchor.download = suggestedName
-  anchor.click()
-  window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1_000)
+  downloadBlob(await response.blob(), suggestedName)
 }
 
 export function isNetworkError(error: unknown): boolean {

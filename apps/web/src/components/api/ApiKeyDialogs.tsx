@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Check, Copy, Search } from 'lucide-react'
 import { apiRequest } from '@/lib/api'
+import { writeClipboardText } from '@/lib/clipboard'
 import type { ApiKey } from '@/lib/types'
 import { ui, uit } from '@/i18n/ui'
 import { Button } from '@/components/ui/button'
@@ -38,13 +39,9 @@ export function ApiKeyModelsDialog({ apiKey, onClose }: { apiKey: ApiKey; onClos
   }, [copied])
 
   const copy = async (id: string) => {
-    setCopyFailed(false)
-    try {
-      await navigator.clipboard.writeText(id)
-      setCopied(id)
-    } catch {
-      setCopyFailed(true)
-    }
+    const success = await writeClipboardText(id)
+    setCopyFailed(!success)
+    if (success) setCopied(id)
   }
 
   const search = query.trim().toLowerCase()

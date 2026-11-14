@@ -61,10 +61,11 @@ export function FilePreviewBody({ node }: { node: FileNode }) {
           return
         }
         const blob = await fetchFileBlob(node)
+        if (cancelled) return
         // Blob URLs share this page's origin, so the frame only ever receives a PDF type, never HTML.
         const type = kind === 'pdf' ? 'application/pdf' : node.mimeType ?? blob.type
         objectUrl = URL.createObjectURL(blob.slice(0, blob.size, type))
-        if (!cancelled) setState({ status: 'url', url: objectUrl })
+        setState({ status: 'url', url: objectUrl })
       } catch (cause) {
         if (!cancelled) setState({ status: 'error', message: filesErrorMessage(cause) })
       }

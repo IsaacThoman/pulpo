@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { writeClipboardText } from '@/lib/clipboard'
 import { ui } from '@/i18n/ui'
 
 export function CheckboxRow({
@@ -44,9 +45,11 @@ export function Snippet({ title, code }: { title: string; code: string }) {
         <button
           className="flex cursor-pointer items-center gap-1 text-[11px] text-code-muted hover:text-code-foreground"
           onClick={() => {
-            navigator.clipboard?.writeText(code).catch(() => {})
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1200)
+            void writeClipboardText(code).then((success) => {
+              if (!success) return
+              setCopied(true)
+              setTimeout(() => setCopied(false), 1200)
+            })
           }}
         >
           {copied ? <Check className="size-3" /> : <Copy className="size-3" />}

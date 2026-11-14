@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import type { FriendConnection, FriendProfile, FriendSearchResponse, FriendSearchResult, FriendSuggestion, FriendsList, PoolSummary } from '@pulpo/contracts'
 import { Check, ChevronDown, ChevronRight, Copy, LoaderCircle, MoreHorizontal, Search, UserRoundPlus, UsersRound, X } from 'lucide-react'
 import { ApiError, apiRequest, isNetworkError } from '@/lib/api'
+import { writeClipboardText } from '@/lib/clipboard'
 import { nextFriendSearchIndex, normalizedFriendSearchQuery, shouldSearchFriends } from '@/lib/friend-search'
 import { friendRequestAge } from '@/lib/friends'
 import { queryClient } from '@/lib/query-client'
@@ -26,7 +27,7 @@ import { ui, uit } from '@/i18n/ui'
 export function FriendsHandle({ username, label = true }: { username: string; label?: boolean }) {
   const [copied, setCopied] = useState(false)
   const copyHandle = async () => {
-    await navigator.clipboard.writeText(username)
+    if (!await writeClipboardText(username)) return
     setCopied(true)
     window.setTimeout(() => setCopied(false), 1_500)
   }
