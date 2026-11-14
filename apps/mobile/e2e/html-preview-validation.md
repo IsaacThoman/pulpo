@@ -50,13 +50,5 @@ Not covered: Android (unchanged; it opens HTML through the system viewer), attac
 
 ## Screenshots
 
-| Before (Quick Look) | After |
-| --- | --- |
-| ![Flash cards in Quick Look](evidence/html-preview/before-flashcards-quicklook.png) | ![Flash cards running](evidence/html-preview/after-flashcards-question.png) |
-| ![Probe in Quick Look](evidence/html-preview/before-probe-quicklook.png) | ![Probe checks passing](evidence/html-preview/after-probe-checks.png) |
+_Screenshots from this run were attached to its pull request; QA captures are kept out of git._
 
-![Flipped card](evidence/html-preview/after-flashcards-answer.png)
-![Finished deck](evidence/html-preview/after-flashcards-results.png)
-![Dark mode](evidence/html-preview/after-flashcards-dark.png)
-![Probe manual checks](evidence/html-preview/after-probe-manual-checks.png)
-![External link in Safari View Controller](evidence/html-preview/after-probe-external-link.png)
