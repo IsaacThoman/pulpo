@@ -162,6 +162,7 @@ const esUi: Record<string, string> = {
   "Test text exceeds this model’s limits": "El texto de prueba supera los límites de este modelo",
   "Model changed. Generate the preview again.": "El modelo ha cambiado. Genera la muestra de nuevo.",
   'Retry loading earlier messages': 'Reintentar cargar mensajes anteriores',
+  'Scroll to bottom': 'Desplazarse al final',
   'Loading earlier messages…': 'Cargando mensajes anteriores…',
   'Voice audio settings': 'Ajustes de audio de la voz',
   'Save this disabled model first, then discover voices or add a named voice and upload its cloning reference.': 'Guarda primero este modelo desactivado; después busca voces o añade una voz con nombre y sube su audio de referencia para clonarla.',
