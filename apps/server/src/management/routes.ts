@@ -59,18 +59,34 @@ async function proxyResponse(app: FastifyInstance, request: FastifyRequest, targ
   return response
 }
 
+/**
+ * Maps a management URL onto the admin route it proxies. The internal request resolves dot
+ * segments (`..`, `%2e%2e`), so a path that would leave the target prefix is rejected here;
+ * otherwise a token scoped to one resource could reach any admin route.
+ */
+export function proxyTargetUrl(url: string, sourcePrefix: string, targetPrefix: string): string | null {
+  const parsed = new URL(url, 'http://management.invalid')
+  if (parsed.pathname !== sourcePrefix && !parsed.pathname.startsWith(`${sourcePrefix}/`)) return null
+  const resolved = new URL(`${targetPrefix}${parsed.pathname.slice(sourcePrefix.length)}${parsed.search}`, 'http://management.invalid')
+  if (resolved.pathname !== targetPrefix && !resolved.pathname.startsWith(`${targetPrefix}/`)) return null
+  return `${resolved.pathname}${resolved.search}`
+}
+
 function registerProxy(
   management: FastifyInstance,
   root: FastifyInstance,
   sourcePrefix: string,
   targetPrefix: string,
   readScope: ManagementScope,
-  writeScope: ManagementScope,
+  writeScope: ManagementScope | null,
 ) {
   const handler = async (request: FastifyRequest, reply: FastifyReply) => {
-    const scope = request.method === 'GET' ? readScope : writeScope
-    requireManagementScope(request, scope, { admin: true })
-    const response = await proxyResponse(root, request, request.url.replace(sourcePrefix, targetPrefix))
+    const reading = request.method === 'GET' || request.method === 'HEAD'
+    if (!reading && !writeScope) throw new AppError(405, 'method_not_allowed', 'This management resource is read-only')
+    requireManagementScope(request, reading ? readScope : writeScope!, { admin: true })
+    const target = proxyTargetUrl(request.url, sourcePrefix, targetPrefix)
+    if (!target) throw notFound('Management resource')
+    const response = await proxyResponse(root, request, target)
     reply.code(response.statusCode)
     const contentType = response.headers['content-type']
     const disposition = response.headers['content-disposition']
@@ -327,7 +343,8 @@ export async function registerManagementRoutes(app: FastifyInstance): Promise<vo
 
     management.post('/api/management/v1/users/:id/reset-link', async (request, reply) => {
       requireManagementScope(request, 'users:write', { admin: true })
-      const response = await proxyResponse(app, request, request.url.replace('/api/management/v1/users', '/api/admin/users'))
+      const { id } = z.object({ id: z.uuid() }).parse(request.params)
+      const response = await proxyResponse(app, request, `/api/admin/users/${id}/reset-link`)
       if (response.statusCode !== 200) return reply.code(response.statusCode).send(response.rawPayload)
       const result = response.json() as { token: string; expiresAt: string }
       const publicUrl = getConfig().PUBLIC_URL.replace(/\/$/, '')
@@ -348,8 +365,8 @@ export async function registerManagementRoutes(app: FastifyInstance): Promise<vo
     registerProxy(management, app, '/api/management/v1/labs', '/api/admin/labs', 'catalog:read', 'catalog:write')
     registerProxy(management, app, '/api/management/v1/models', '/api/admin/models', 'catalog:read', 'catalog:write')
     registerProxy(management, app, '/api/management/v1/users', '/api/admin/users', 'users:read', 'users:write')
-    registerProxy(management, app, '/api/management/v1/usage', '/api/admin/usage', 'usage:read', 'usage:read')
-    registerProxy(management, app, '/api/management/v1/audit-events', '/api/admin/audit-events', 'audit:read', 'audit:read')
+    registerProxy(management, app, '/api/management/v1/usage', '/api/admin/usage', 'usage:read', null)
+    registerProxy(management, app, '/api/management/v1/audit-events', '/api/admin/audit-events', 'audit:read', null)
     registerProxy(management, app, '/api/management/v1/workspaces', '/api/admin/usage/workspaces', 'operations:read', 'operations:write')
     registerProxy(management, app, '/api/management/v1/banners', '/api/admin/banners', 'operations:read', 'operations:write')
     registerProxy(management, app, '/api/management/v1/exports', '/api/admin/exports', 'operations:read', 'operations:write')
