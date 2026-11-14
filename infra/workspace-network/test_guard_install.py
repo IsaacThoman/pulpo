@@ -20,7 +20,8 @@ class GuardInstallerTest(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        root = Path(temporary.name)
+        # Resolved so paths compare equal where the temp dir sits behind a symlink (macOS /var).
+        root = Path(temporary.name).resolve()
         self.calls = []
         self.guard_tables = False
         self.active = self.enabled = False
