@@ -22,7 +22,7 @@ export interface FriendMenuAction {
 const COPIED_MS = 1_500
 
 /** Everything the Friends screen shows and does, shared by its iOS and Android layouts. */
-export function useFriendsScreen({ openProfile }: { openProfile: (profile: FriendProfile) => void }) {
+export function useFriendsScreen({ openProfile, openLeaderboard }: { openProfile: (profile: FriendProfile) => void; openLeaderboard: () => void }) {
   const { namespace, user, poolsEnabled, inviteCodesEnabled } = useFriendsContext()
   const viewerId = user?.id ?? ''
   const list = useQuery({ ...friendsListQuery(namespace), enabled: Boolean(namespace) })
@@ -157,6 +157,7 @@ export function useFriendsScreen({ openProfile }: { openProfile: (profile: Frien
     poolInvitationMenu,
     suggestions: list.data?.suggestions ?? [],
     openProfile,
+    openLeaderboard,
     /** "Requested today · 2 mutuals": when a request was made, then the friends shared. */
     requestDetail: (verb: 'Requested' | 'Sent', connection: FriendConnection) => [
       `${verb} ${friendRequestAge(connection.requestedAt)}`,

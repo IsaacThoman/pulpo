@@ -157,5 +157,6 @@ const icons: Record<string, ImageSourcePropType> = {
   'add_comment': require('../../assets/material/add_comment.xml'),
   'folder_open': require('../../assets/material/folder_open.xml'),
   'block': require('../../assets/material/block.xml'),
+  'leaderboard': require('../../assets/material/leaderboard.xml'),
 };
 export function materialIcon(name: string): ImageSourcePropType { return icons[materialSymbolNames[name] ?? name] ?? icons.info; }
