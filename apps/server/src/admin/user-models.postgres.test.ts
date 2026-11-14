@@ -138,7 +138,8 @@ describe.skipIf(!enabled)('administrator default models with PostgreSQL', () => 
 
   it('creates missing preferences and lets the user clear or change the same preference', async () => {
     expect((await patch({ defaultModelId: 'available' })).statusCode).toBe(200)
-    expect((await preferences())?.values).toMatchObject({ defaultModelId: 'available', favoriteModelIds: [] })
+    // Favorites the admin did not set stay null, so they keep following the new-account defaults.
+    expect((await preferences())?.values).toMatchObject({ defaultModelId: 'available', favoriteModelIds: null })
     actorId = targetId
     expect((await app.inject('/api/settings')).json().values.defaultModelId).toBe('available')
     const ownUpdate = await app.inject({ method: 'PATCH', url: '/api/settings', payload: { defaultModelId: 'second' } })
