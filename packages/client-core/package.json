@@ -70,7 +70,7 @@
     "jsdom": "^26.1.0",
     "socket.io-client": "^4.8.3",
     "typescript": "~6.0.2",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   },
   "peerDependencies": {
     "socket.io-client": "^4.8.3"

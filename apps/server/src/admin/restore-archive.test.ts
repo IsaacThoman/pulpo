@@ -77,6 +77,19 @@ describe('streamed restore archives', () => {
     expect(count).toBe(3000); expect(batches).toBe(30)
     expect(await readFile(tables.get('empty')!, 'utf8')).toBe('')
   })
+  it('keeps __proto__ row keys as own data without polluting prototypes', async () => {
+    const dir = await directory(), path = join(dir, 'database.json')
+    await writeFile(path, '{"users":[{"id":"a","__proto__":{"polluted":true},"nested":{"__proto__":{"polluted":true}}}]}')
+    const tables = await splitRestoreDatabase(path, dir)
+    const rows: Record<string, any>[] = []
+    for await (const row of restoreRows(tables.get('users'))) rows.push(row)
+    expect(rows).toHaveLength(1)
+    expect(Object.getPrototypeOf(rows[0])).toBe(Object.prototype)
+    expect(Object.hasOwn(rows[0]!, '__proto__')).toBe(true)
+    expect(Object.hasOwn(rows[0]!.nested, '__proto__')).toBe(true)
+    expect(rows[0]!.polluted).toBeUndefined()
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined()
+  })
   it.each(['[]', '{"users":{}}', '{"users":[null]}', '{"users":[],"users":[]}', '{"../bad":[]}', '{"users":[{}]'])('rejects malformed database %s', async (body) => {
     const dir = await directory(), path = join(dir, 'database.json')
     await writeFile(path, body)

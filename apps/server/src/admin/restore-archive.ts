@@ -7,8 +7,8 @@ import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { createGunzip } from 'node:zlib'
 import tar from 'tar-stream'
-import streamJson from 'stream-json'
-import Assembler from 'stream-json/Assembler.js'
+import parserStream from 'stream-json'
+import Assembler from 'stream-json/assembler.js'
 import { z } from 'zod'
 
 const MAX_EXPANDED_BYTES = 100 * 1024 ** 3
@@ -93,7 +93,7 @@ export async function extractRestoreArchive(source: Readable, directory: string,
 /** Convert the v1 database object into disk-backed tables, one row at a time. */
 export async function splitRestoreDatabase(path: string, directory: string): Promise<Map<string, string>> {
   const tables = new Map<string, string>()
-  const parser = streamJson.parser({ streamValues: true })
+  const parser = parserStream({ streamValues: true })
   const done = pipeline(createReadStream(path), parser)
   void done.catch(() => undefined)
   let root = false, ended = false, inTable = false, table: string | undefined
@@ -107,9 +107,6 @@ export async function splitRestoreDatabase(path: string, directory: string): Pro
         rowSize += token.name.endsWith('Chunk') ? Buffer.byteLength(JSON.stringify(token.value)) : 8
         if (rowSize > MAX_ROW_BYTES) throw new Error('A backup database row exceeds the 64 MiB limit')
         if (assembler.depth > 1000) throw new Error('Backup database nesting is too deep')
-        if (token.name === 'keyValue' && token.value === '__proto__') {
-          Object.defineProperty(assembler.current, '__proto__', { value: undefined, writable: true, enumerable: true, configurable: true })
-        }
         assembler.consume(token)
         if (assembler.done) {
           await output!.writeFile(`${JSON.stringify(assembler.current)}\n`)

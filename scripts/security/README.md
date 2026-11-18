@@ -3,6 +3,14 @@
 Run `npm run test:dependency-security`. These tests also run at the start of
 `npm test` and exercise the installed dependencies through their consumers.
 
+CI runs `npm run audit:dependencies`, which fails on any high or critical npm
+advisory except the reviewed entries in `audit-exceptions.json`. Each exception
+names one advisory ID and a `reviewBy` date; after that date it stops applying
+and the audit fails again until someone re-reviews it. Pass npm audit flags
+through, for example `npm run audit:dependencies -- --omit=dev`. Prefer an
+upgrade, override, or reviewed fork; add an exception only when none is
+available and the vulnerable code cannot be reached with untrusted input.
+
 ## Zod collection validation and Expo compatibility
 
 Direct consumers now require Zod 4.6.7 or later to address
@@ -42,11 +50,61 @@ The previous 8.10.2, 7.30.0, and 6.29.0 releases fail this crash regression.
 
 ## Electron certificate mitigation
 
-The desktop application pins Electron 43.8.3, which includes the certificate
+The desktop application pins Electron 43.8.10. It includes the certificate
 distrust mitigation for
 [GHSA-jr5w-w6x2-84p9](https://github.com/advisories/GHSA-jr5w-w6x2-84p9).
 The CI audit continues to check development dependencies because Electron is
 declared as a build dependency but ships as the desktop application's runtime.
+43.8.5 through 43.8.10 also backport Chromium, V8, Skia, ANGLE, PDFium, and
+WebRTC security fixes, so keep the pin on the newest patch of its major.
+
+## Temporary picomatch audit exception
+
+As of November 17, 2026, picomatch 4.0.7 is the latest release, and every
+published version, including the 2.3.x line that micromatch and jest-util
+require, is covered by
+[CVE-2026-112366 / GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf).
+Repeated extglobs such as `+(*a)` compile to nested quantifiers that backtrack
+exponentially, so a crafted *pattern* can block the event loop. The advisory
+has no patched version. Upstream has more than ten competing, unreviewed fix
+PRs and no maintainer response, the CVE is under dispute with the CNA, and
+Snyk has withdrawn its matching advisory.
+
+`audit-exceptions.json` allows this one advisory until its review date. Unlike
+the braces fork below, vendoring one of the proposed rewrites of picomatch's
+regex compiler would affect every glob match in Vite, Vitest, Metro, Expo CLI,
+tinyglobby, and semantic-release, which risks silent matching regressions for
+no reachable security benefit. Pulpo reaches picomatch only through build,
+test, bundler, and file-watch tooling that matches globs written in this
+repository; no server, web, desktop, CLI, or mobile runtime code passes
+untrusted input to it as a pattern. Remove the exception and update the
+lockfile when a fixed release ships or the advisory is withdrawn. Re-review it
+if a runtime dependency starts matching user-supplied globs.
+
+## Server parser and transport patches
+
+These updates address moderate and low advisories that the high-severity gate
+does not block but that reach server request, upload, email, and restore paths:
+
+- fastify 5.12.8 (header validation bypass) and fast-uri 3.1.9/4.2.3 through
+  Fastify and Ajv (URI scheme and host confusion).
+- nodemailer 10.6.0 (address parser group/comment confusion that could add
+  recipients).
+- music-metadata 11.16.1 (MP4 and EBML parser denial of service on uploaded
+  media).
+- ip-address 10.7.6 through socks (quadratic zone-identifier matching).
+- stream-json 3.9.0 (Assembler prototype pollution and filter denial of
+  service). 3.x is ESM with bundled types, so `@types/stream-json` is removed.
+  The restore splitter previously defined `__proto__` keys by hand; the 3.9
+  Assembler now stores them as own properties like `JSON.parse`, and a restore
+  regression test covers top-level and nested `__proto__` keys.
+- vitest 4.1.12 (`@vitest/mocker` mock-registration code injection; dev only).
+
+Remaining moderate and low findings need breaking upgrades and are limited to
+tooling or trusted input: glob/minimatch through Expo and Electron packaging,
+the esbuild dev server bundled by drizzle-kit's `@esbuild-kit` loader, and
+KaTeX 0.16's low-severity trust bypass, which requires a separate prototype
+pollution and is pinned by `rehype-katex` and `micromark-extension-math`.
 
 ## Release-note Handlebars compiler
 
