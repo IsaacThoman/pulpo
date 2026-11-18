@@ -199,6 +199,12 @@ class DeploymentTests(unittest.TestCase):
         self.assertIn('intentional build failure', result.stderr)
         self.assertEqual(self.commands('xcrun', 'launch'), [])
 
+    def test_simulator_target_launches_with_simctl(self):
+        result = self.deploy(PULPO_IOS_DEVICE='SIM-UDID', PULPO_IOS_SIMULATOR='1')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([call['args'] for call in self.commands('xcrun', 'launch')],
+                         [['simctl', 'launch', 'SIM-UDID', 'com.isaacthoman.pulpo']])
+
     def test_lock_blocks_sync_and_log_truncation_and_releases_after_exit(self):
         self.root.mkdir()
         self.log.write_text('active deployment log')

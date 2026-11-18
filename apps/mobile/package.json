@@ -7,6 +7,7 @@
     "start": "expo start",
     "ios": "expo run:ios",
     "deploy:iphone": "bash ./scripts/deploy-iphone.sh",
+    "screenshots:app-store": "node ./scripts/app-store-screenshots.mjs",
     "prebuild": "expo prebuild",
     "typecheck": "tsc --noEmit",
     "build:editor": "node scripts/build-doc-editor.mjs",

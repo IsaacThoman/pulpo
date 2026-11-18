@@ -169,7 +169,11 @@ def deploy(source, root, log, lock_fd):
     device = os.environ.get('PULPO_IOS_DEVICE', 'Isaac iphone')
     run(['npx', '--no-install', 'expo', 'run:ios', '--device', device,
          '--configuration', configuration, '--no-bundler'])
-    run(['xcrun', 'devicectl', 'device', 'process', 'launch', '--device', device, 'com.isaacthoman.pulpo'])
+    if os.environ.get('PULPO_IOS_SIMULATOR') == '1':
+        # Simulators reject devicectl. Expo already installed the app; launch it the simulator way.
+        run(['xcrun', 'simctl', 'launch', device, 'com.isaacthoman.pulpo'])
+    else:
+        run(['xcrun', 'devicectl', 'device', 'process', 'launch', '--device', device, 'com.isaacthoman.pulpo'])
 
 
 def main():
