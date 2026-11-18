@@ -33,6 +33,23 @@ it('creates an OpenAI preset with an editable model and provider connection', as
   fireEvent.click(screen.getByRole('button', { name: 'Save' }))
   await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/admin/image-models', { method: 'POST', body: expect.objectContaining({ id: 'openai-image', adapter: 'openai-images', name: 'OpenAI image editor', upstreamModelId: 'gpt-image-2.5-sunburst', enabled: false, billUsers: false, providerConnectionId: providerId }) }))
 })
+it('saves an OpenRouter Image API model with the selected connection and per-image pricing', async () => {
+  const providerId = '11111111-1111-4111-8111-111111111111'
+  mocks.api.mockImplementation(async (path: string) => ({ data: path.endsWith('/providers') ? [{ id: providerId, name: 'OpenRouter connection' }] : [] }))
+  render(<AdminImageModelsPage />)
+  await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/admin/providers'))
+  fireEvent.click(screen.getByRole('button', { name: 'Add image model' }))
+  fireEvent.change(screen.getByLabelText('Image provider API'), { target: { value: 'openrouter-images' } })
+  expect((screen.getByLabelText('Upstream model ID') as HTMLInputElement).value).toBe('microsoft/mai-image-2.7-flash')
+  fireEvent.change(screen.getByLabelText('ID'), { target: { value: 'openrouter-mai' } })
+  fireEvent.click(screen.getByLabelText('Bill users for images'))
+  expect((screen.getByRole('option', { name: 'Per token' }) as HTMLOptionElement).disabled).toBe(true)
+  fireEvent.change(screen.getByLabelText('USD per generated image'), { target: { value: '0.02' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(mocks.api).toHaveBeenCalledWith('/api/admin/image-models', { method: 'POST', body: expect.objectContaining({
+    id: 'openrouter-mai', adapter: 'openrouter-images', providerConnectionId: providerId, upstreamModelId: 'microsoft/mai-image-2.7-flash', billingUnit: 'images', imagePriceMicros: 20_000,
+  }) }))
+})
 it('loads an existing OpenAI model for editing without overwriting its settings', async () => {
   const existing = { id: 'openai-image', adapter: 'openai-images', name: 'Custom image', upstreamModelId: 'gpt-image-2.5-sunburst', providerConnectionId: '11111111-1111-4111-8111-111111111111', enabled: true, billUsers: true, imagePriceMicros: 20_000, sortOrder: 3 }
   mocks.api.mockImplementation(async (path: string) => ({ data: path.endsWith('/providers') ? [{ id: existing.providerConnectionId, name: 'OpenAI connection' }] : [existing] }))
