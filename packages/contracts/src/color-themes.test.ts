@@ -59,6 +59,11 @@ describe('color themes', () => {
     // Nor do escaped comment openers outside strings.
     expect(unsafeThemeCssReason('body { --a: \\/*; background-image: url(https://example.com/collect); /* */ }')).not.toBeNull()
     expect(unsafeThemeCssReason('body { --a: \\2f*; background: url(https://example.com/a); /* */ }')).not.toBeNull()
+    // CRLF, CR, and form feed end an escape the way a newline does once the browser normalizes them.
+    expect(unsafeThemeCssReason('body { background: u\\72\r\nl(https://example.com/collect) }')).not.toBeNull()
+    expect(unsafeThemeCssReason('body { background: u\\72\rl(https://example.com/collect) }')).not.toBeNull()
+    expect(unsafeThemeCssReason('body { background: u\\72\fl(https://example.com/collect) }')).not.toBeNull()
+    expect(unsafeThemeCssReason('@im\\70\r\nort "https://example.com/x.css";')).not.toBeNull()
     // Comments are scanned too, so a commented-out remote url() is refused rather than trusted.
     expect(unsafeThemeCssReason('/* url(https://example.com/a) */ body { color: red }')).not.toBeNull()
     expect(unsafeThemeCssReason('/* a note */ body { color: red }')).toBeNull()

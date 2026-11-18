@@ -75,24 +75,20 @@ export const themeVariantSchema = z.object({
 })
 export type ThemeVariant = z.infer<typeof themeVariantSchema>
 
-function decodeCssEscapes(css: string): string {
+/** CSS input preprocessing, then every escape decoded in one pass, as the browser reads the text. */
+function decodeCss(css: string): string {
   return css
-    .replace(/\\([0-9a-fA-F]{1,6})\s?/g, (_, code: string) => {
-      const point = parseInt(code, 16)
-      return point > 0 && point <= 0x10ffff ? String.fromCodePoint(point) : '�'
+    // https://www.w3.org/TR/css-syntax-3/#input-preprocessing
+    .replace(/\r\n|[\r\f]/g, '\n')
+    .replaceAll('\u0000', '\uFFFD')
+    .replace(/\\(?:([0-9a-fA-F]{1,6})[ \t\n]?|([^\n]))/g, (_, code: string | undefined, char: string | undefined) => {
+      if (char !== undefined) return char
+      const point = parseInt(code!, 16)
+      return point > 0 && point <= 0x10ffff && (point < 0xd800 || point > 0xdfff) ? String.fromCodePoint(point) : '\uFFFD'
     })
-    .replace(/\\([^\n])/g, '$1')
 }
 
-/**
- * Why theme CSS may not be applied, or null when it is safe. Theme files are shared, so their CSS
- * must not load anything from the network: a remote `url()` or `@import` could report what's on
- * screen (attribute selectors can match input values) to someone else's server.
- */
-export function unsafeThemeCssReason(css: string): string | null {
-  // Comments are scanned too. They can't form tokens (`url/**/(` is not a url() call), so leaving
-  // them in can only over-refuse, while stripping them has let escapes and strings hide real rules.
-  const source = decodeCssEscapes(css).toLowerCase()
+function unsafeCssRule(source: string): string | null {
   if (/@import\b/.test(source)) return 'Theme CSS cannot use @import.'
   if (/(^|[^\w-])(-webkit-)?image-set\s*\(|(^|[^\w-])(image|src)\s*\(/.test(source)) {
     return 'Theme CSS cannot use image(), image-set(), or src().'
@@ -104,6 +100,20 @@ export function unsafeThemeCssReason(css: string): string | null {
     }
   }
   return null
+}
+
+/**
+ * Why theme CSS may not be applied, or null when it is safe. Theme files are shared, so their CSS
+ * must not load anything from the network: a remote `url()` or `@import` could report what's on
+ * screen (attribute selectors can match input values) to someone else's server.
+ */
+export function unsafeThemeCssReason(css: string): string | null {
+  // Comments are scanned too. They can't form tokens (`url/**/(` is not a url() call), so leaving
+  // them in can only over-refuse, while stripping them has let escapes and strings hide real rules.
+  const source = decodeCss(css).toLowerCase()
+  // Checked again with all whitespace and backslashes gone, so no way of splitting a token that
+  // the decoder misses can sneak one through; at worst this refuses a harmless rule.
+  return unsafeCssRule(source) ?? unsafeCssRule(source.replace(/[\s\\]/g, ''))
 }
 
 export const themeCssSchema = z.string().max(THEME_CSS_MAX_LENGTH).default('').superRefine((css, context) => {
