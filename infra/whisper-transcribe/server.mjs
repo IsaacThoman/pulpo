@@ -111,7 +111,7 @@ async function acceptUpload(request, response, source) {
         callback(this.bytes > maxBytes ? new Error('Upload limit exceeded') : null, chunk);
       },
     }), createWriteStream(join(folder, 'media'), { flags: 'wx', mode: 0o600 }));
-  } catch (error) {
+  } catch {
     await rm(folder, { recursive: true, force: true }).catch(() => {});
     busy = false;
     if (!response.destroyed) json(response, 400, { error: 'The upload did not complete.' });
