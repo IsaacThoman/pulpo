@@ -1,5 +1,5 @@
 import { AppState } from 'react-native'
-import { createAudioPlayer, setAudioModeAsync } from 'expo-audio'
+import { createAudioPlayer, setAudioModeAsync, setIsAudioActiveAsync } from 'expo-audio'
 import { File, Paths, Directory } from 'expo-file-system'
 import { randomUUID } from 'expo-crypto'
 import { speechChunks, speechText } from '@pulpo/client-core'
@@ -44,6 +44,8 @@ async function playSpeech(key: string, markdown?: string) {
     const chunks = speechChunks(text, model, instructions)
     if (!chunks.length) throw new Error('This message has no readable text')
     await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true, shouldPlayInBackground: false })
+    // Dictation hands audio back to other apps by deactivating it; reading aloud takes it again.
+    await setIsAudioActiveAsync(true)
     return chunks
   }, async (input, signal, offsetSeconds) => {
     const response = await fetch(apiUrl('/api/speech'), { method: 'POST', signal, headers: { ...nativeAuthorizationHeaders(), 'content-type': 'application/json' }, body: JSON.stringify({
