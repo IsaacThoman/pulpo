@@ -82,13 +82,21 @@ describe('dictation route', () => {
     expect(mocks.transcribeWithGroq).not.toHaveBeenCalled()
   })
 
-  it.each(['audio/webm', 'audio/mp4'])('hands supported %s audio to Groq without persisting it', async (mimeType) => {
+  it.each(['audio/webm', 'audio/mp4', 'audio/flac'])('hands supported %s audio to Groq without persisting it', async (mimeType) => {
     mocks.settings = { enabled: true, encryptedGroqApiKey: 'encrypted-groq-key' }
     const handler = await routeHandler()
     await expect(handler(request(mimeType))).resolves.toEqual({ text: 'Transcribed draft' })
     expect(mocks.transcribeWithGroq).toHaveBeenCalledWith(expect.objectContaining({
       apiKey: 'groq-secret', filename: 'dictation.webm', mimeType, audio: Buffer.from([1, 2, 3]),
     }))
+  })
+
+  it('returns segment timestamps with the plain transcript when available', async () => {
+    mocks.settings = { enabled: true, encryptedGroqApiKey: 'encrypted-groq-key' }
+    const segments = [{ start: 1.5, end: 4, text: 'Transcribed draft' }]
+    mocks.transcribeWithGroq.mockResolvedValueOnce({ text: 'Transcribed draft', durationSeconds: 12.1, segments })
+    const handler = await routeHandler()
+    await expect(handler(request())).resolves.toEqual({ text: 'Transcribed draft', segments })
   })
 
   it('rejects unsupported uploads before calling the provider', async () => {

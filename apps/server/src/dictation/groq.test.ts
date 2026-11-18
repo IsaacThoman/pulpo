@@ -20,11 +20,11 @@ describe('Groq transcription client', () => {
     expect((init.body as FormData).get('file')).toBeInstanceOf(Blob)
   })
 
-  it('falls back to the final segment timestamp for duration', async () => {
-    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ text: 'Hello', segments: [{ end: 4.2 }, { end: 9.75 }] }), { status: 200 }))
+  it('returns valid timestamp ranges and falls back to the final timestamp for duration', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ text: 'Hello again.', segments: [{ start: 0, end: 4.2, text: ' Hello ' }, { start: 5, end: 9.75, text: ' again. ' }, { start: 2, end: 1, text: 'Invalid' }, null] }), { status: 200 }))
     await expect(transcribeWithGroq({
       apiKey: 'secret', audio: new Uint8Array([1]), filename: 'audio.webm', mimeType: 'audio/webm', fetchImpl: fetch,
-    })).resolves.toEqual({ text: 'Hello', durationSeconds: 9.75 })
+    })).resolves.toEqual({ text: 'Hello again.', durationSeconds: 9.75, segments: [{ start: 0, end: 4.2, text: 'Hello' }, { start: 5, end: 9.75, text: 'again.' }] })
   })
 
   it('maps provider errors without accepting an invalid transcript', async () => {

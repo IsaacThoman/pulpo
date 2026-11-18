@@ -137,8 +137,8 @@ export async function uploadFile(parentId: string | null, file: File): Promise<F
   }
 }
 
-export async function fileUrl(node: FileNode): Promise<string> {
-  return (await apiRequest<{ url: string }>(`/api/files/${node.id}/download`)).url
+export async function fileUrl(node: FileNode, signal?: AbortSignal): Promise<string> {
+  return (await apiRequest<{ url: string }>(`/api/files/${node.id}/download`, { signal })).url
 }
 
 /**
@@ -162,10 +162,10 @@ export async function downloadFile(node: FileNode): Promise<void> {
   anchor.click()
 }
 
-export async function fetchFileBlob(node: FileNode): Promise<Blob> {
-  const url = await fileUrl(node)
-  if (isApiUrl(url)) return fetchApiBlob(url)
-  const response = await fetch(url)
+export async function fetchFileBlob(node: FileNode, signal?: AbortSignal): Promise<Blob> {
+  const url = await fileUrl(node, signal)
+  if (isApiUrl(url)) return fetchApiBlob(url, { signal })
+  const response = await fetch(url, { signal })
   if (!response.ok) throw new ApiError(response.status, 'file_download_failed', uit`Download failed (${response.status})`)
   return response.blob()
 }

@@ -3,7 +3,8 @@ import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, MessageSquare, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { CopyTextButton, PreviewBody } from '@/components/chat/AttachmentPreview'
+import { PreviewBody } from '@/components/chat/AttachmentPreview'
+import { CopyTextButton } from '@/components/chat/CopyTextButton'
 import { AttachmentSaveMenu } from '@/components/chat/SaveToFiles'
 import { attachmentDescription, usePreviewContent } from '@/components/chat/use-attachment-preview-content'
 import { attachmentQueryKey, downloadChatAttachment, fetchAttachment, type ChatAttachment } from '@/components/chat/attachment-actions'
@@ -55,7 +56,7 @@ function AttachmentView({ attachment, inPanel }: { attachment: ChatAttachment; i
         />
         {inPanel ? !stripShown && <PanelWindowButtons content={view} /> : <SplitViewButton view={view} />}
       </header>
-      <div className="min-h-0 flex-1 overflow-hidden bg-muted/25">
+      <div className={cn('min-h-0 flex-1 bg-muted/25', kind === 'audio' ? 'overflow-auto' : 'overflow-hidden')}>
         {kind
           ? <PreviewBody attachment={attachment} kind={kind} content={content} />
           : <p className="p-8 text-center text-sm text-muted-foreground">{ui("No preview is available for this file. Download it to open it.")}</p>}
