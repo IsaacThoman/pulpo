@@ -137,3 +137,21 @@ describe('VS Code themes', () => {
     expect(parseVsCodeTheme(JSON.stringify({ ...exported, pulpo: { version: 1, css: '@import "https://example.com/x.css";' } }))).toMatchObject({ ok: false, reason: 'css' })
   })
 })
+
+describe('temporary chats', () => {
+  it('stay violet in themes that do not set them, over each theme’s own background', () => {
+    for (const id of ['ocean', 'forest', 'ember']) {
+      const theme = findColorTheme(id, [])
+      const dark = resolvePalette(theme.dark, 'dark')
+      expect(dark).toMatchObject({ temporarySurface: '#2f0d6899', temporaryBorder: '#7f22fe80', temporaryText: '#c4b4ff', planText: '#a684ff' })
+      expect(dark.temporaryBackground).toBe(mixHex(dark.background, '#2f0d68', 0.15))
+      const light = resolvePalette(theme.light, 'light')
+      expect(light).toMatchObject({ temporarySurface: '#ede9fecc', temporaryBorder: '#8e51ff80', temporaryText: '#7008e7', planText: '#7f22fe' })
+    }
+  })
+
+  it('keep a theme’s own temporary colors', () => {
+    const palette = resolvePalette(variantFromRoles({ temporarySurface: '#134e4acc' }), 'dark')
+    expect(palette.temporarySurface).toBe('#134e4acc')
+  })
+})

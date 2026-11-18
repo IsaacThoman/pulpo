@@ -9,7 +9,7 @@ import {
   type ThemeTokenRule,
   type ThemeVariant,
 } from '@pulpo/contracts'
-import { alphaOf, chroma, flattenHex, lightness, mixHex, mostReadable, normalizeHex, solidHex, withAlpha } from './color'
+import { alphaOf, contrastRatio, flattenHex, lightness, mixHex, mostReadable, normalizeHex, solidHex, withAlpha } from './color'
 
 /** The colors a theme can set, in editor order. Each is stored under one VS Code color id. */
 export const THEME_ROLES = [
@@ -272,8 +272,8 @@ function derivedColor(role: ThemeRole, palette: Partial<ThemePalette>, dark: boo
   const background = palette.background!
   const text = palette.text!
   const action = palette.action!
-  // Temporary chats take the theme's accent; a gray accent keeps Pulpo's violet.
-  const tint = [palette.focus, action].find((color) => color && chroma(color) > 0.05) ?? '#8e51ff'
+  // Temporary chats are violet in every theme, as in Pulpo's: the same tints over this theme's background.
+  const violet = PULPO_PALETTE[dark ? 'dark' : 'light']
   switch (role) {
     case 'surface': return dark ? mixHex(background, text, 0.035) : background
     case 'raisedSurface': return mixHex(background, text, dark ? 0.09 : 0.045)
@@ -288,13 +288,13 @@ function derivedColor(role: ThemeRole, palette: Partial<ThemePalette>, dark: boo
     case 'sidebar': return mixHex(background, text, dark ? -0.015 : 0.02)
     case 'sidebarSelection': return mixHex(background, text, dark ? 0.09 : 0.06)
     case 'sidebarBorder': return mixHex(background, text, dark ? 0.08 : 0.09)
-    case 'temporaryBackground': return mixHex(background, tint, dark ? 0.07 : 0.05)
-    case 'temporarySurface': return withAlpha(mixHex(background, tint, dark ? 0.3 : 0.14), 0.8)
-    case 'temporaryBorder': return withAlpha(tint, 0.5)
-    case 'temporaryText': return mostReadable(background, [mixHex(tint, text, 0.3), tint, text])
+    case 'temporaryBackground': return dark ? mixHex(background, '#2f0d68', 0.15) : mixHex(background, '#ede9fe', 0.5)
+    case 'temporarySurface': return violet.temporarySurface
+    case 'temporaryBorder': return violet.temporaryBorder
+    case 'temporaryText': return contrastRatio(violet.temporaryText, background) >= 4.5 ? violet.temporaryText : text
     case 'temporaryToggle': return action
     case 'expiringText': return dark ? '#00d5be' : '#00786f'
-    case 'planText': return palette.temporaryText!
+    case 'planText': return violet.planText
     case 'error': return dark ? '#f8514f' : '#cd1f2b'
     case 'diffInserted': return PULPO_PALETTE[dark ? 'dark' : 'light'].diffInserted
     case 'diffRemoved': return PULPO_PALETTE[dark ? 'dark' : 'light'].diffRemoved
