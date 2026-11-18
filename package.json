@@ -71,8 +71,6 @@
     "decode-uri-component": "$decode-uri-component",
     "expo-modules-core": "57.0.9",
     "image-size": "$image-size",
-    "linkify-it": "6.1.0",
-    "markdown-it": "15.0.0",
     "metro": "0.84.5",
     "metro-config": "0.84.5",
     "metro-transform-worker": "0.84.5",
