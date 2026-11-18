@@ -65,10 +65,5 @@ Machine-readable evidence: [shared-chat assertions](evidence/qa-sync-results.jso
 
 ## Screenshots
 
-![Mobile synchronized queue](evidence/qa-mobile-sync.png)
+_Screenshots from this run were attached to its pull request; QA captures are kept out of git._
 
-![Web synchronized queue](evidence/qa-web-sync.png)
-
-![Native offline submissions](evidence/qa-offline.png)
-
-![Web completed transcript](evidence/qa-web-completed.png)
