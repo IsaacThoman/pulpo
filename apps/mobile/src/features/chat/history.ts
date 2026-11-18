@@ -1,7 +1,9 @@
 import { spokenRemaining } from './format'
+import { isListedChat } from './chatKind'
 
-export function visibleHistoryChats<T extends { deletedAt: number | null; temporary: boolean }>(chats: T[]): T[] {
-  return chats.filter((chat) => chat.deletedAt === null && !chat.temporary)
+/** Side chats and threads are reached from their chat, so the history never lists them. */
+export function visibleHistoryChats<T extends { deletedAt: number | null; temporary: boolean; kind?: string | null }>(chats: T[]): T[] {
+  return chats.filter((chat) => chat.deletedAt === null && !chat.temporary && isListedChat(chat))
 }
 
 export type HistoryChatSummary = {
@@ -159,12 +161,12 @@ export function historyChatSummary<T extends HistoryChatSource>(chat: T, now = D
 export function createHistoryProjector(project = historyChatSummary) {
   let cached = new Map<string, { updatedAt: number; timeOnly: boolean; summary: HistoryChatSummary }>()
   let previous: HistoryChatSummary[] = []
-  return (chats: Array<HistoryChatSource & { deletedAt: number | null; temporary: boolean }>, now = Date.now()) => {
+  return (chats: Array<HistoryChatSource & { deletedAt: number | null; temporary: boolean; kind?: string | null }>, now = Date.now()) => {
     const nextCache = new Map<string, { updatedAt: number; timeOnly: boolean; summary: HistoryChatSummary }>()
     const next: HistoryChatSummary[] = []
     let changed = false
     for (const chat of chats) {
-      if (chat.deletedAt !== null || chat.temporary) continue
+      if (chat.deletedAt !== null || chat.temporary || !isListedChat(chat)) continue
       const existing = cached.get(chat.id)
       const row = existing?.summary
       const timeOnly = chat.updatedAt > now - 86_400_000

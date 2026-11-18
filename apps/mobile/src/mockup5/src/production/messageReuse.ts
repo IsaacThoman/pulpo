@@ -55,6 +55,7 @@ export function projectedMessageUnchanged(left: PrototypeMessage, right: Prototy
     && left.costMicros === right.costMicros
     && left.feedback === right.feedback && left.activeBranch === right.activeBranch
     && left.agentMode === right.agentMode
+    && left.threadUpdate === right.threadUpdate
     && sameSelections(left.presetSelections, right.presetSelections)
     && sameAttachments(left.attachments, right.attachments)
     && sameActivity(left.activity, right.activity)

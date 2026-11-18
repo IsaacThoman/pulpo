@@ -2,6 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { toolActivityPresentation } from './toolActivityPresentation';
 
 const icons = vi.hoisted(() => ({
+  CircleCheck: Symbol('CircleCheck'),
+  GitBranch: Symbol('GitBranch'),
+  ListChecks: Symbol('ListChecks'),
+  MessageSquare: Symbol('MessageSquare'),
+  MessageSquareText: Symbol('MessageSquareText'),
+  NotebookPen: Symbol('NotebookPen'),
   FileDiff: Symbol('FileDiff'),
   FolderDown: Symbol('FolderDown'),
   FolderInput: Symbol('FolderInput'),
@@ -44,8 +50,19 @@ describe('toolActivityPresentation', () => {
     ['files_write', 'Writing a document…', icons.FilePlus],
     ['files_edit', 'Editing a document…', icons.FilePenLine],
     ['files_create_folder', 'Creating a folder…', icons.FolderPlus],
+    ['start_thread', 'Starting a thread…', icons.GitBranch],
+    ['message_thread', 'Messaging a thread…', icons.MessageSquare],
+    ['list_threads', 'Checking on threads…', icons.ListChecks],
+    ['read_thread', 'Reading a thread…', icons.MessageSquareText],
+    ['resolve_thread', 'Resolving a thread…', icons.CircleCheck],
+    ['update_project_memory', 'Updating project memory…', icons.NotebookPen],
   ])('maps %s to a friendly label and icon', (name, label, icon) => {
     expect(toolActivityPresentation(name)).toEqual({ label, icon });
+  });
+
+  it('names the thread a start_thread call starts', () => {
+    expect(toolActivityPresentation('start_thread', { title: ' Compare CRM pricing ', task: 'Look up prices' })).toEqual({ icon: icons.GitBranch, label: 'Starting thread “Compare CRM pricing”…' });
+    expect(toolActivityPresentation('start_thread', { title: '' }).label).toBe('Starting a thread…');
   });
 
   it('uses generic work presentation for unknown tools', () => {

@@ -55,7 +55,7 @@ vi.mock('./optimisticBranches', () => ({
   clearOptimisticBranchSelections: vi.fn(), reconcileOptimisticBranchSelection: vi.fn((_namespace, chat) => chat),
 }))
 
-import { hydrateProductionChatPreview, hydrateProductionScope, mergeProductionChatDetail } from './ProductionBridge'
+import { hydrateProductionChatPreview, hydrateProductionScope, mergeProductionChatDetail, mergeProductionChatList, upsertProductionChatSummary } from './ProductionBridge'
 import { mergeServerFolders } from './folderMetadata'
 import { createInitialState } from '../initialState'
 import { usePrototypeStore } from '../store/prototypeStore'
@@ -110,6 +110,37 @@ it('loads a remotely started transcript before its summary without duplicating i
   const restored = mergeProductionChatDetail(staleSummary, detail, [])
   expect(restored.map((row) => row.id)).toEqual(['remote', 'older'])
   expect(restored[0]?.detailLoaded).toBe(true)
+})
+
+describe('side chats and threads', () => {
+  it('keeps an opened side chat or thread when the chat list (which leaves them out) refreshes', () => {
+    const side = mergeProductionChatDetail([], { ...chat('side', 'Aside'), kind: 'side', originChatId: 'origin', originResponseId: 'response-1', responses: [] }, [])
+    const thread = mergeProductionChatDetail(side, { ...chat('thread', 'Task'), kind: 'thread', originChatId: 'origin', threadResolvedAt: '2026-11-18T00:00:00.000Z', responses: [] }, [])
+    const listed = mergeProductionChatList(thread, [{ ...chat('origin', 'Origin'), kind: 'chat' }, { ...chat('fork', 'Origin (fork)'), kind: 'chat', originChatId: 'origin' }], new Set())
+    expect(listed.map((row) => [row.id, row.kind, row.originChatId ?? null])).toEqual([
+      ['thread', 'thread', 'origin'],
+      ['side', 'side', 'origin'],
+      ['origin', 'chat', null],
+      ['fork', 'chat', 'origin'],
+    ])
+    expect(listed.find((row) => row.id === 'thread')).toMatchObject({ detailLoaded: true, threadResolvedAt: Date.parse('2026-11-18T00:00:00.000Z') })
+    expect(listed.find((row) => row.id === 'side')?.originResponseId).toBe('response-1')
+  })
+
+  it('drops an ordinary chat the list no longer has', () => {
+    const current = mergeProductionChatDetail([], { ...chat('gone', 'Gone'), responses: [] }, [])
+    expect(mergeProductionChatList(current, [], new Set())).toEqual([])
+  })
+
+  it('adds a chat the server returned on its own, keeping a transcript already loaded', () => {
+    usePrototypeStore.setState({ chats: mergeProductionChatDetail([], { ...chat('thread', 'Task'), kind: 'thread', originChatId: 'origin', responses: [] }, []) })
+    upsertProductionChatSummary({ ...chat('thread', 'Task'), kind: 'thread', originChatId: 'origin', threadResolvedAt: '2026-11-18T00:00:00.000Z' })
+    upsertProductionChatSummary({ ...chat('fork', 'Origin (fork)'), kind: 'chat', originChatId: 'origin' })
+    expect(usePrototypeStore.getState().chats.map((row) => [row.id, row.detailLoaded, row.threadResolvedAt ?? null])).toEqual([
+      ['fork', false, null],
+      ['thread', true, Date.parse('2026-11-18T00:00:00.000Z')],
+    ])
+  })
 })
 
 describe('production scope hydration', () => {

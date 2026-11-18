@@ -54,6 +54,8 @@ export interface DisplayMessage {
   /** Headline response cost in USD micros, once usage has settled. */
   costMicros?: number
   outputItems: unknown[]
+  /** A server-started turn reporting what the chat's threads did: its user side is the report. */
+  threadUpdate?: boolean
 }
 
 function textFromContent(content: unknown): string {
@@ -243,6 +245,7 @@ export function createChatProjector() {
           variants: branchVariants(byId, response.branches.user.ids, 'user', liveSnapshots),
         }, agentMode: response.agentMode,
         outputItems: [],
+        ...(response.threadUpdate ? { threadUpdate: true } : {}),
       }, {
         id: response.id, responseId: response.id, role: 'assistant', text: outputText(output), reasoning: reasoningText(output),
         modelId: response.displayModelId ?? response.modelId, status, createdAt: response.createdAt,
@@ -259,6 +262,7 @@ export function createChatProjector() {
         error: errorMessage, agentMode: response.agentMode, presetSelections: response.presetSelections, usage: response.usage,
         costMicros: responseCostMicros(response),
         outputItems: output,
+        ...(response.threadUpdate ? { threadUpdate: true } : {}),
       }]
       if (existing && userDependencies.length === existing.userDependencies.length
         && userDependencies.every((value, index) => value === existing.userDependencies[index])) projected[0] = existing.messages[0]!

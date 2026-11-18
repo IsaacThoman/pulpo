@@ -1,5 +1,6 @@
 import { mergeCachedResponseDetails } from '@pulpo/client-core'
 import type { ServerChat } from '../types'
+import { isListedChat } from '../features/chat/chatKind'
 
 export const MAX_CACHED_CHAT_DETAIL_BYTES = 5 * 1024 * 1024
 export const MAX_TOTAL_CACHED_CHAT_DETAIL_BYTES = 25 * 1024 * 1024
@@ -39,8 +40,9 @@ export function cachedChatDetailIdsToEvict(
   return ordered.flatMap((record) => retained.has(record.chatId) ? [] : [record.chatId])
 }
 
+/** Chats the offline list keeps: not temporary chats, nor side chats and threads (listed under their chat). */
 export function persistableChats(chats: ServerChat[]): ServerChat[] {
-  return chats.filter((chat) => !chat.temporary)
+  return chats.filter((chat) => !chat.temporary && isListedChat(chat))
 }
 
 /** A summaries refresh must not erase the detailed response graph held for offline use. */

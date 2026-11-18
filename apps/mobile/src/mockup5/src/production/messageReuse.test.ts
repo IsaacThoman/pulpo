@@ -28,6 +28,12 @@ describe('reuseProjectedMessages', () => {
     expect(next[0]?.latencyMs).toBe(1_250)
   })
 
+  it('publishes a turn becoming a thread update', () => {
+    const previous = [message('one:input', 'Thread update')]
+    const next = reuseProjectedMessages(previous, [{ ...message('one:input', 'Thread update'), threadUpdate: true }])
+    expect(next[0]?.threadUpdate).toBe(true)
+  })
+
   it('publishes preset choices missing from a cached row, and reuses equal ones', () => {
     const previous = [message('one', 'done')]
     const next = reuseProjectedMessages(previous, [{ ...message('one', 'done'), presetSelections: { effort: 'high' } }])

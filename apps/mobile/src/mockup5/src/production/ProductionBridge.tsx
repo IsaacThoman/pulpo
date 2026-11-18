@@ -24,6 +24,7 @@ import { usePrototypeStore } from '../store/prototypeStore'
 import { configureProductionActions } from './productionActions'
 import { reuseProjectedMessages } from './messageReuse'
 import { mergeServerFolders } from './folderMetadata'
+import { isAsideChat } from '../../../features/chat/chatKind'
 import { archiveSidebarItems } from '../../../features/sidebar/api'
 import { moveChatPatch, pinChatPatch } from './chatPatches'
 import { sidebarStateQuery } from '../../../features/sidebar/queries'
@@ -89,6 +90,7 @@ function mapMessage(message: DisplayMessage): PrototypeMessage {
     outputItems: message.outputItems,
     agentMode: message.agentMode,
     presetSelections: message.presetSelections,
+    ...(message.threadUpdate ? { threadUpdate: true } : {}),
     costMicros: message.costMicros,
     meta: message.usage ? `${message.usage.inputTokens.toLocaleString()}→${message.usage.outputTokens.toLocaleString()} tok` : undefined,
     branches: message.branch.variants.length > 1 ? message.branch.variants.map((branch) => ({
@@ -129,6 +131,12 @@ function mapChat(chat: ServerChat, messages: PrototypeMessage[] = [], detailLoad
     fileScopeAccess: chat.fileScopeAccess ?? previous?.fileScopeAccess ?? {},
     fileChangeMode: chat.fileChangeMode ?? previous?.fileChangeMode,
     filesBrowseAllowed: chat.filesBrowseAllowed ?? previous?.filesBrowseAllowed ?? false,
+    kind: chat.kind ?? previous?.kind,
+    originChatId: chat.originChatId !== undefined ? chat.originChatId : previous?.originChatId,
+    originResponseId: chat.originResponseId !== undefined ? chat.originResponseId : previous?.originResponseId,
+    threadResolvedAt: chat.threadResolvedAt !== undefined
+      ? chat.threadResolvedAt ? Date.parse(chat.threadResolvedAt) : null
+      : previous?.threadResolvedAt,
   }
 }
 
@@ -138,6 +146,42 @@ export function mergeProductionChatDetail(current: PrototypeChat[], detail: Serv
   const incoming = mapChat(detail, reuseProjectedMessages(previous?.messages ?? [], projected), true, previous)
   // A remotely started chat can load before its account summary refresh arrives.
   return previous ? current.map((chat) => chat.id === detail.id ? incoming : chat) : [incoming, ...current]
+}
+
+/**
+ * A chat the server just returned on its own (a fork, a side chat, an opened thread), in the app's
+ * chats ahead of the list and detail queries that load it fully. Its transcript, if any, is kept.
+ */
+// oxlint-disable-next-line react/only-export-components -- shared summary projection for related chats
+export function upsertProductionChatSummary(chat: ServerChat): void {
+  usePrototypeStore.setState((state) => {
+    const previous = state.chats.find((candidate) => candidate.id === chat.id)
+    const incoming = mapChat(chat, previous?.messages ?? [], previous?.detailLoaded, previous)
+    return { chats: previous ? state.chats.map((candidate) => candidate.id === chat.id ? incoming : candidate) : [incoming, ...state.chats] }
+  })
+}
+
+/**
+ * The app's chats from a refreshed chat list: chats still being started here, the side chats and
+ * threads opened from their chats (the list leaves them out), then the listed chats with the
+ * transcripts already loaded for them.
+ */
+// oxlint-disable-next-line react/only-export-components -- shared list projection
+export function mergeProductionChatList(current: PrototypeChat[], serverChats: ServerChat[], pendingChatIds: ReadonlySet<string>): PrototypeChat[] {
+  const oldChats = new Map(current.map((chat) => [chat.id, chat]))
+  const serverChatIds = new Set(serverChats.map((chat) => chat.id))
+  const pendingLocalChats = current.filter((chat) => pendingChatIds.has(chat.id) && !serverChatIds.has(chat.id))
+  const asideChats = current.filter((chat) => isAsideChat(chat) && !pendingChatIds.has(chat.id) && !serverChatIds.has(chat.id))
+  return [
+    ...pendingLocalChats,
+    ...asideChats,
+    ...serverChats.map((chat) => mapChat(
+      { ...chat, queuedMessages: chat.queuedMessages ?? oldChats.get(chat.id)?.queuedMessages },
+      oldChats.get(chat.id)?.messages,
+      oldChats.get(chat.id)?.detailLoaded,
+      oldChats.get(chat.id),
+    )),
+  ]
 }
 
 let scopeHydrationToken = 0
@@ -396,15 +440,15 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
       ? [[responseId, state.snapshots[responseId]]]
       : []),
   )))
-  const reconciledDetail = useMemo(
-    () => detail.data
-      ? reconcileOptimisticBranchSelection(
-        namespace,
-        reconcileOptimisticResponses(namespace, detail.data, snapshots),
-      )
-      : undefined,
-    [detail.data, namespace, snapshots],
-  )
+  const reconciledDetail = useMemo(() => {
+    if (!detail.data) return undefined
+    // Side chats and threads are never listed, so their sent turns can't wait for the list to show them.
+    if (isAsideChat(detail.data)) acknowledgeOptimisticChatList(namespace, new Set([detail.data.id]))
+    return reconcileOptimisticBranchSelection(
+      namespace,
+      reconcileOptimisticResponses(namespace, detail.data, snapshots),
+    )
+  }, [detail.data, namespace, snapshots])
   const activeResponseSubscriptionIds = useMemo(() => (reconciledDetail?.responses ?? [])
     .filter((response) => response.status === 'queued' || response.status === 'in_progress')
     .map((response) => response.id)
@@ -543,22 +587,10 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     serverHydrated.current = true
     usePrototypeStore.setState((state) => {
       if (state.productionNamespace !== namespace) return state
-      const oldChats = new Map(state.chats.map((chat) => [chat.id, chat]))
       const serverChats = [...(chats.data ?? []), ...(deleted.data ?? [])]
-      const serverChatIds = new Set(serverChats.map((chat) => chat.id))
-      acknowledgeOptimisticChatList(namespace, serverChatIds)
-      const pendingChatIds = pendingOptimisticChatIds(namespace)
-      const pendingLocalChats = state.chats.filter((chat) => pendingChatIds.has(chat.id) && !serverChatIds.has(chat.id))
+      acknowledgeOptimisticChatList(namespace, new Set(serverChats.map((chat) => chat.id)))
       return {
-        chats: [
-          ...pendingLocalChats,
-          ...serverChats.map((chat) => mapChat(
-            { ...chat, queuedMessages: chat.queuedMessages ?? oldChats.get(chat.id)?.queuedMessages },
-            oldChats.get(chat.id)?.messages,
-            oldChats.get(chat.id)?.detailLoaded,
-            oldChats.get(chat.id),
-          )),
-        ],
+        chats: mergeProductionChatList(state.chats, serverChats, pendingOptimisticChatIds(namespace)),
         folders: folders.data ? mergeServerFolders(folders.data, state.folders) : state.folders,
       }
     })
