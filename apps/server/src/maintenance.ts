@@ -115,10 +115,13 @@ export async function createExport(exportId: string): Promise<void> {
   }
 }
 
+const PENDING_ATTACHMENT_TTL_MS = 86_400_000
+
 export async function runCleanup(): Promise<void> {
   await expireComposerDrafts()
   const now = new Date()
-  const abandonedBefore = new Date(now.getTime() - 24 * 86_400_000)
+  // Upload URLs expire after 15 minutes, so a reservation still pending a day later was abandoned.
+  const abandonedBefore = new Date(now.getTime() - PENDING_ATTACHMENT_TTL_MS)
   const abandoned = await db.select().from(attachments).where(and(eq(attachments.status, 'pending'), lt(attachments.createdAt, abandonedBefore)))
   for (const attachment of abandoned) await getBlobStore().delete(attachment.objectKey).catch(() => undefined)
   if (abandoned.length) await db.update(attachments).set({ status: 'deleted', updatedAt: now }).where(inArray(attachments.id, abandoned.map((row) => row.id)))

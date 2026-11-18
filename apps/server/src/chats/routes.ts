@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, filesPermissionAnswerSchema, findCostLimitItem, findFilesPermissionItems, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema, type StateInvalidationScope } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { attachments, chatImportSources, chats, models, requestLogs, responses, usageEvents, users, workspaceLeases } from '../database/schema.js'
+import { attachments, chatImportSources, chats, models, queuedMessages, requestLogs, responses, usageEvents, users, workspaceLeases } from '../database/schema.js'
 import { billingUserForRequest, requireUser } from '../auth/service.js'
 import { AppError, forbidden, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -202,11 +202,13 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete('/api/chats', async (request, reply) => {
     const user = requireUser(request)
-    const active = await db.select({ id: chats.id }).from(chats).where(and(eq(chats.userId, user.id), isNull(chats.deletedAt)))
-    const ids = active.map((chat) => chat.id)
     const now = new Date()
     const retention = await getTrashRetention(user.id)
-    await db.update(chats).set(trashedChatValues(now, retention)).where(and(eq(chats.userId, user.id), isNull(chats.deletedAt)))
+    const trashed = await db.update(chats).set(trashedChatValues(now, retention))
+      .where(and(eq(chats.userId, user.id), isNull(chats.deletedAt))).returning({ id: chats.id })
+    const ids = trashed.map((chat) => chat.id)
+    // Like trashing one chat: a queued message must not dispatch if the chat is later recovered.
+    if (ids.length) await db.delete(queuedMessages).where(and(inArray(queuedMessages.chatId, ids), eq(queuedMessages.userId, user.id)))
     await cancelChatWork(ids)
     if (retention === 'instant' && ids.length) await queueTrashPurge(user.id, 'delete-all')
     await bumpRevision(user.id)
@@ -361,7 +363,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     }
     if (normalChatIsExpired(current, now)) throw notFound('Chat')
     if (current.deletedAt || current.purgeStartedAt) throw notFound('Chat')
-    if (!current.temporary) return current
+    if (!current.temporary) return withoutWorkspaceScope(current)
 
     const [updated] = await db.update(chats).set({
       temporary: false,
@@ -640,7 +642,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const [recovered] = await recoverChats(user.id, [id])
     if (!recovered) throw notFound('Deleted chat')
     await bumpRevision(user.id, id)
-    return recovered
+    return withoutWorkspaceScope(recovered)
   })
 
   app.delete('/api/chats/:id/permanent', async (request, reply) => {
@@ -754,7 +756,13 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     if (!response) throw notFound('Response')
     if (!['queued', 'in_progress'].includes(response.status)) return toSnapshot(response)
     await requestCancellation(id)
-    await db.update(responses).set({ status: 'cancelled', completedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, id))
+    // The worker may finish between the read above and this write; a finished response keeps its result.
+    const [changed] = await db.update(responses).set({ status: 'cancelled', completedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(responses.id, id), inArray(responses.status, ['queued', 'in_progress']))).returning({ id: responses.id })
+    if (!changed) {
+      const [settled] = await db.select().from(responses).where(eq(responses.id, id)).limit(1)
+      return toSnapshot(settled!)
+    }
     await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: new Date(), error: 'Generation cancelled while waiting for capacity', updatedAt: new Date() }).where(and(eq(workspaceLeases.responseId, id), eq(workspaceLeases.status, 'provisioning')))
     const [log] = await db.update(requestLogs).set({ status: 'cancelled', errorCategory: 'cancellation', completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.responseId, id)).returning({ id: requestLogs.id })
     if (log) await publishAdminUsage(log.id, true)
