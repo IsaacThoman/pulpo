@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { applicationSettings, models, providerConnections, responses } from '../database/schema.js'
+import { applicationSettings, chats, models, providerConnections, responses } from '../database/schema.js'
 import { persistGeneratedChatTitle } from '../chats/title-change.js'
 import { DEFAULT_TITLE_PROMPT, parseInterfaceSettings } from '../settings/application-settings.js'
 import { parseGeneratedTitle, selectTitleHistory } from './title-generation.js'
@@ -117,6 +117,11 @@ export async function runPostResponseTasks(
   requestLogId: string,
 ): Promise<PostResponseTaskResult> {
   if (record.response.origin === 'api') return { costMicros: 0 }
+  // A thread keeps the name the agent that started it gave it.
+  if (!record.response.parentResponseId) {
+    const [chat] = await db.select({ kind: chats.kind }).from(chats).where(eq(chats.id, record.response.chatId)).limit(1)
+    if (chat?.kind === 'thread') return { costMicros: 0 }
+  }
   let costMicros = 0
   try {
     await runTitleTask(record, current, output, requestLogId, (billedMicros) => { costMicros += billedMicros })

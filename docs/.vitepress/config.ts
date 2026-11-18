@@ -11,6 +11,7 @@ const sidebar = [
       { text: 'Speech and cloned voices', link: '/speech' },
       { text: 'Agent image generation', link: '/image-generation' },
       { text: 'Quizzes and flashcards', link: '/quizzes' },
+      { text: 'Threads, side chats, and projects', link: '/threads' },
       { text: 'Provider API formats', link: '/provider-api-formats' },
       { text: 'Support', link: '/support' },
     ],
