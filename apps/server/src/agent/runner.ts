@@ -54,6 +54,9 @@ import { lineageFromLeaf } from '../messages/branching.js'
 import { responseUserAttachmentIds } from '../messages/input.js'
 import { responseInputText } from '../messages/input.js'
 import { createGenerationMemoryTools } from './memory-tools.js'
+import { loadChatGenerationContext } from '../chats/chat-context.js'
+import { createThreadTools } from '../chats/thread-tools.js'
+import { createProjectMemoryTool } from '../chats/projects.js'
 import { describeFileScope } from '../files/agent/prompt.js'
 import { createFilesRelay } from '../files/agent/relay.js'
 import { loadChatFileScope } from '../files/agent/scope.js'
@@ -195,9 +198,13 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     output: record.response.output,
   })
   const { memoryContext, recallContext, recallItem } = memory
+  // The project the chat is in, the chat a side chat or thread came from, and the threads it runs.
+  const chatContext = await loadChatGenerationContext({
+    userId: record.response.userId, chatId: record.response.chatId, agentMode: true, origin: record.response.origin,
+  })
   let toolsDisabled = record.response.agentCapacityAction === 'continue_without_agent'
   const toolsDisabledSystemPrompt = () => withGenerationTimeContext(
-    [buildToolsDisabledSystemPrompt(record.model.systemPrompt, customInstructions, memoryContext), recallContext].filter(Boolean).join('\n\n'),
+    [buildToolsDisabledSystemPrompt(record.model.systemPrompt, customInstructions, memoryContext), chatContext.context, recallContext].filter(Boolean).join('\n\n'),
     record.response, Date.now(),
   )
   const baseAgentSystemPrompt = buildAgentSystemPrompt(
@@ -206,7 +213,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     customInstructions,
     memoryContext,
   )
-  const currentAgentSystemPrompt = [baseAgentSystemPrompt, fileScopeContext, recallContext].filter(Boolean).join('\n\n')
+  const currentAgentSystemPrompt = [baseAgentSystemPrompt, fileScopeContext, chatContext.context, recallContext].filter(Boolean).join('\n\n')
   if (!settings.enabled || !record.model.agentEnabled) throw new Error('Agent mode is no longer available')
   const allHistory = await db.select().from(responses).where(and(
     eq(responses.chatId, record.response.chatId),
@@ -874,6 +881,12 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         ...configuredWebTools,
         ...imageTools,
         ...memoryTools,
+        ...chatContext.canCoordinateThreads ? createThreadTools({
+          userId: record.response.userId, chatId: record.response.chatId, onOperationStarted: markToolStarted,
+        }) : [],
+        ...chatContext.project && record.response.origin === 'web' ? [createProjectMemoryTool({
+          userId: record.response.userId, folderId: chatContext.project.folderId, onOperationStarted: markToolStarted,
+        })] : [],
       ],
       messages: resumedMessages,
       thinkingLevel: initialParameters.reasoning,
@@ -1124,7 +1137,12 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       const item = toolItems.get(event.toolCallId)
       if (item) {
         const durationMs = item.startedAt ? Math.max(0, Date.now() - Date.parse(item.startedAt)) : undefined
-        Object.assign(item, { ...(imagePreview ? { imagePreview } : {}), output, status: event.isError ? 'failed' : 'completed', isError: event.isError, ...(durationMs !== undefined ? { durationMs } : {}) })
+        Object.assign(item, {
+          ...(imagePreview ? { imagePreview } : {}), output, status: event.isError ? 'failed' : 'completed', isError: event.isError,
+          ...(durationMs !== undefined ? { durationMs } : {}),
+          // Thread tools name the thread they acted on, so apps can link to it.
+          ...(typeof details.threadId === 'string' && !event.isError ? { threadId: details.threadId } : {}),
+        })
       }
       await recordReconstructedDiagnostic({ requestLogId: requestLog.id, operationId: event.toolCallId, purpose: 'tool', metadata: { toolName: event.toolName } }, item?.arguments, { output }, { durationMs: item?.durationMs, ...(event.isError ? { failureStage: 'tool' } : {}) }, event.isError ? 'failed' : 'completed')
       await db.update(toolExecutions).set({
@@ -1140,7 +1158,10 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       }).where(and(eq(toolExecutions.agentRunId, runId), eq(toolExecutions.operationId, event.toolCallId)))
       accruedToolCostMicros = await readToolCost()
       webProviderExecutions.delete(event.toolCallId)
-      await emit('pulpo.agent.tool.completed', { id: event.toolCallId, output, isError: event.isError, durationMs: item?.durationMs, ...(imagePreview ? { imagePreview } : {}) })
+      await emit('pulpo.agent.tool.completed', {
+        id: event.toolCallId, output, isError: event.isError, durationMs: item?.durationMs, ...(imagePreview ? { imagePreview } : {}),
+        ...(item?.threadId ? { threadId: item.threadId } : {}),
+      })
       if (manager.continuedWithoutAgent) disableAgentTools()
       await snapshotIfDue()
     }

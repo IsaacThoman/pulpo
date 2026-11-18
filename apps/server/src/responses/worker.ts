@@ -61,6 +61,7 @@ import { firstTokenTimeout } from './first-token-timeout.js'
 import { responseAttachmentIds, responseInputText } from '../messages/input.js'
 import { recalledChatContext } from '../episodic-memory/automatic-recall.js'
 import { loadGenerationMemory } from './memory-context.js'
+import { loadChatGenerationContext } from '../chats/chat-context.js'
 import {
   ContextOverflowError,
   GenerationAttemptError,
@@ -800,7 +801,12 @@ async function processGenerationAttempt(
     ...promptCacheKeyParameter(publicApi ? parameters : {}, cacheOptions.promptCacheKey),
   }
   const prepareInput = (items: unknown[]) => prepareInputFiles(client, record.response.userId, items, record.model, imageInterceptor, record.provider)
-  const contextual = await contextualInput(client, record, history, requestLog.id, recallItem, memory.memoryContext, publicApi, startedAt, {
+  // The project the chat is in, and the chat a side chat or thread came from. API requests have neither.
+  const chatContext = publicApi ? null : await loadChatGenerationContext({
+    userId: record.response.userId, chatId: record.response.chatId, agentMode: false, origin: record.response.origin,
+  })
+  const generationContext = [memory.memoryContext, chatContext?.context].filter(Boolean).join('\n\n')
+  const contextual = await contextualInput(client, record, history, requestLog.id, recallItem, generationContext, publicApi, startedAt, {
     force: options.forceCompaction === true,
     requestParameters,
     headers: cacheOptions.headers,

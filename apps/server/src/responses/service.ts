@@ -52,7 +52,7 @@ export interface CreateResponseOptions {
   idempotencyFingerprint?: string | null
   parentResponseId?: string | null
   userMessageId?: string
-  branchReason?: 'message' | 'regenerate' | 'user_edit'
+  branchReason?: 'message' | 'regenerate' | 'user_edit' | 'thread_update'
   /** App surface that sent the request, for admin analytics. */
   client?: ClientAttribution | null
 }
@@ -291,7 +291,8 @@ export async function createResponse(options: CreateResponseOptions) {
       return { existing }
     }
     // Files items the user linked in a new or edited message become available to the agent here.
-    const fileScopeIds = options.branchReason !== 'regenerate' && origin === 'web' && !current.temporary
+    // A thread update quotes what threads wrote, which is not the user linking Files items.
+    const fileScopeIds = options.branchReason !== 'regenerate' && options.branchReason !== 'thread_update' && origin === 'web' && !current.temporary
       ? await scopeWithMessageReferences(tx, options.ownerUserId, current.fileScopeIds, options.input.input)
       : undefined
     const [updatedChat] = await tx.update(chats).set({

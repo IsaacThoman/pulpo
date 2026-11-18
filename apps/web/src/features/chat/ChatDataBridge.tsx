@@ -151,6 +151,9 @@ export function ChatDataBridge() {
           add(['trash', userId])
         }
         for (const id of batch.chatIds) add(['chat', userId, id])
+        // A chat's side chats and threads change with it; a thread's status, with its origin chat.
+        for (const id of batch.chatIds) add(['chat-related', userId, id])
+        if (batch.scopes.includes('chats')) add(['chat-related', userId])
         for (const scope of batch.scopes) for (const key of stateInvalidationQueryKeys(scope, userId)) add(key)
         if (batch.accountOnlyRevisions.length) add(['settings', userId])
       }
@@ -221,6 +224,7 @@ export function ChatDataBridge() {
       for (const scope of scopes) invalidateStateScope(scope)
       if (scopes.includes('chats')) {
         queueInvalidation(['trash', userId])
+        queueInvalidation(['chat-related', userId])
       }
       if (scopes.includes('chats') && activeChatIdRef.current) {
         queueInvalidation(['chat', userId, activeChatIdRef.current])

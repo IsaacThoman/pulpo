@@ -12,6 +12,8 @@ export type ToolItem = {
   isError?: boolean
   startedAt?: string
   durationMs?: number
+  /** The thread a thread tool started or acted on, once it succeeded. */
+  threadId?: string
 }
 
 export type WorkspaceItem = {

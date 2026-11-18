@@ -37,6 +37,10 @@ import { ui } from '@/i18n/ui'
 import { DesktopActionsTitleBarSlot, DesktopModelTitleBarSlot } from '@/components/desktop/DesktopSidebarTitleBar'
 import { useDocumentTitle } from '@/lib/document-title'
 import { usePublishChatTarget } from '@/features/side-panel/agent'
+import { useRelatedChats } from '@/features/chat/use-related-chats'
+import { ChatContextLine, ThreadResolveButton, ThreadsMenu } from '@/features/chat/ChatThreadControls'
+import { forkFromReply, openSideChatAt } from '@/features/chat/chat-actions'
+import type { ComposerCommandName } from '@pulpo/client-core'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
   { id: '1', translationKey: 'chat.suggestedPrompts.build' },
@@ -44,6 +48,9 @@ const DEFAULT_SUGGESTED_PROMPTS = [
   { id: '3', translationKey: 'chat.suggestedPrompts.commit' },
   { id: '4', translationKey: 'chat.suggestedPrompts.models' },
 ] as const
+
+const BTW_AND_FORK: readonly ComposerCommandName[] = ['btw', 'fork']
+const FORK_ONLY: readonly ComposerCommandName[] = ['fork']
 
 type SuggestedPrompt = {
   id: string
@@ -159,6 +166,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     return current ? {
       id: current.id, title: current.title, modelId: current.modelId,
       temporary: current.temporary, expired: current.expired, expiresAt: current.expiresAt,
+      provisional: current.provisional, kind: current.kind ?? 'chat', originChatId: current.originChatId ?? null,
+      threadResolved: current.threadResolvedAt != null,
     } : null
   }))
   useDocumentTitle(adminMode ? null : chat?.title)
@@ -297,6 +306,30 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     })
   }, [])
   const openChat = useCallback((sourceChatId: string) => navigate(`/c/${sourceChatId}`), [navigate])
+  const filesEnabled = useAuth((s) => s.filesEnabled)
+  const openFolder = useCallback((folderId: string) => navigate(`/files/f/${folderId}`), [navigate])
+
+  // Side chats, threads, and forks: only saved chats in the user's own account have them.
+  const savedChat = Boolean(!adminMode && chat && !chat.temporary && !chat.provisional)
+  const related = useRelatedChats(chat?.id, savedChat).data
+  const originChatId = chat?.originChatId ?? null
+  // A thread's status is listed with its origin chat's threads.
+  const originRelated = useRelatedChats(originChatId, savedChat && chat?.kind === 'thread').data
+  // The agent can resolve or reopen a thread too, so the list is the better source once loaded.
+  const threadStatus = chat?.kind === 'thread'
+    ? originRelated?.threads.find((thread) => thread.id === chat.id)?.status ?? (chat.threadResolved ? 'resolved' : null)
+    : null
+  const canFork = savedChat && !chat?.expired
+  const canSideChat = canFork && chat?.kind === 'chat'
+  const forkAt = useCallback((responseId: string) => {
+    void forkFromReply(responseId).then((id) => { if (id) navigate(`/c/${id}`) })
+  }, [navigate])
+  const sideChatChatId = canSideChat ? chat?.id : undefined
+  const sideChatAt = useCallback((responseId: string) => {
+    if (!sideChatChatId) return
+    void openSideChatAt(sideChatChatId, responseId).then((id) => { if (id) navigate(`/c/${id}`) })
+  }, [navigate, sideChatChatId])
+  const composerCommands: readonly ComposerCommandName[] | undefined = canSideChat ? BTW_AND_FORK : canFork ? FORK_ONLY : undefined
 
   const isEmpty = !chat
   const effectiveNewChatAutoExpire = automaticChatExpiration !== 'disabled' && newChatAutoExpire
@@ -402,8 +435,21 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
           ) : (
             <ModelSelector value={modelId} onChange={selectModel} onSelectClose={focusComposer} />
           )}
+          {chat && savedChat && (
+            <ChatContextLine
+              kind={chat.kind}
+              related={related}
+              threadStatus={threadStatus}
+              onOpenChat={openChat}
+              onOpenFolder={filesEnabled ? openFolder : undefined}
+            />
+          )}
           <div className="flex-1" />
           <ChatHeaderActions desktop={desktopSidebarVisible}>
+            {chat && savedChat && <ThreadsMenu related={related} onOpenChat={openChat} />}
+            {chat && savedChat && chat.kind === 'thread' && (
+              <ThreadResolveButton chatId={chat.id} originChatId={originChatId} resolved={threadStatus === 'resolved'} />
+            )}
             {showExpirationControl && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -530,6 +576,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
                   onRegenerate={regenerateResponse}
                   onEditUserMessage={beginMessageEdit}
                   onOpenChat={openChat}
+                  onFork={canFork ? forkAt : undefined}
+                  onSideChat={canSideChat ? sideChatAt : undefined}
                   composerEditActive={composerEditActive || Boolean(messageEdit)}
                 />}
               </div>
@@ -558,6 +606,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
                   messageEdit={messageEdit}
                   onMessageEditComplete={() => setMessageEdit(null)}
                   onEditStateChange={setComposerEditActive}
+                  commands={composerCommands}
                 />
               )}
             </div>

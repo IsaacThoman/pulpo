@@ -11,6 +11,7 @@ import { ModelIcon } from '@/components/ModelIcon'
 import { focusComposer } from '@/components/chat/composer-focus'
 import { cn } from '@/lib/utils'
 import { ui } from '@/i18n/ui'
+import { isSidebarChat } from '@/features/sidebar/chat-groups'
 
 const EMPTY_CHATS = [] as const
 const MAX_QUERY_LENGTH = 200
@@ -26,7 +27,7 @@ export function SearchModal({
   const [cursor, setCursor] = useState(0)
   const allChats = useChat((state) => state.chats)
   const chats = useMemo(
-    () => open ? allChats.filter((chat) => !chat.temporary) : EMPTY_CHATS,
+    () => open ? allChats.filter(isSidebarChat) : EMPTY_CHATS,
     [allChats, open],
   )
   const navigate = useNavigate()

@@ -219,12 +219,15 @@ import { useSessionStore } from '../store/session';
 import type { ServerChat } from '../types';
 import { apiRequest, ApiError } from '../api/client';
 import { useFollowStartedChat } from '../features/chat/useFollowStartedChat';
-import { clearProductionScope, hydrateProductionChatPreview, hydrateProductionScope, ProductionBridge } from './src/production/ProductionBridge';
+import { clearProductionScope, hydrateProductionChatPreview, hydrateProductionScope, ProductionBridge, upsertProductionChatSummary } from './src/production/ProductionBridge';
 import { productionActions, runProductionAction } from './src/production/productionActions';
 import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTurn, discardOptimisticChat, failOptimisticTurn, rejectOptimisticTurn } from './src/production/optimisticResponses';
 import { activateOptimisticBranch } from './src/production/optimisticBranches';
 import { cacheNamespace, cacheOpenedChat, deleteResponseCursor, loadDraft, saveDraft } from '../data/database';
-import { queryKeys } from '../data/queries';
+import { chatQuery, mergeChatSummary, queryKeys } from '../data/queries';
+import { createSideChat as createServerSideChat, forkChat as forkServerChat, isAsideChat, latestSettledReplyId, markdownPreviewText, messageResponseId, originLabel, parseChatCommand, parseThreadUpdate, relatedChatsLabel, replySettled, setThreadResolved as setServerThreadResolved, type ChatCommand } from '../features/chat/threads';
+import { relatedChatsQueryKey, useRelatedChats } from '../features/chat/useRelatedChats';
+import { RelatedChatsSheet } from '../features/chat/RelatedChatsSheet';
 import { enqueueCacheWrite } from '../data/writeBehind';
 import { activateBranch as activateServerBranch, answerFilesPermission, cancelResponse, continuePastCostLimit, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, reportMessage as reportServerMessage, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
 import { attachmentUploadErrorMessage } from '../features/chat/attachmentUploadError';
@@ -669,6 +672,8 @@ type Message = {
   activeBranch?: number;
   agentMode?: boolean;
   presetSelections?: GenerationSelections;
+  /** A server-started thread update turn: its user side is the threads' report (see ThreadUpdateCard). */
+  threadUpdate?: boolean;
 };
 type Chat = { id: string; title: string; modelId: string; time: string; section: string; messages: Message[] };
 type SendOptions = {
@@ -772,6 +777,7 @@ function prototypeMessageToLegacy(message: PrototypeMessage, chatId: string, cha
     activeBranch: message.activeBranch,
     agentMode: message.agentMode,
     presetSelections: message.presetSelections,
+    threadUpdate: message.threadUpdate,
   };
   legacyMessageCache.set(message, { chatId, chatModelId, value });
   return value;
@@ -3127,6 +3133,144 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [messages]);
 
+  /** Shows a chat that is not picked from the sidebar: a fork, side chat, thread, or the chat one came from. */
+  const activateRelatedChat = useCallback((chat: { id: string; modelId: string }) => {
+    interruptDrawerTransition();
+    if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
+    thinkingTimer.current = null;
+    abandonActiveTemporaryChat();
+    composerFollowsDefaultModel.current = false;
+    setActiveChatId(chat.id);
+    if (chat.modelId) setSelectedModelId(chat.modelId);
+    setAssistantStatus('idle');
+    setComposerFocusSuppressed(true);
+    dismissComposer();
+    composerFocusRevision.current += 1;
+    setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'content' });
+    animatePanel(false, 0, finishExistingChatTransition);
+  }, [abandonActiveTemporaryChat, animatePanel, dismissComposer, finishExistingChatTransition, interruptDrawerTransition]);
+
+  const openRelatedChat = useCallback((chatId: string) => {
+    if (chatId === activeChatId) return;
+    const known = usePrototypeStore.getState().chats.find((chat) => chat.id === chatId && chat.deletedAt === null);
+    if (known) {
+      activateRelatedChat(known);
+      return;
+    }
+    if (!productionUserId) return;
+    // Side chats and threads are not listed, so the app may not know this one yet: load it first.
+    const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
+    void queryClient.fetchQuery(chatQuery(namespace, chatId, usePreferencesStore.getState().localChatLimit)).then((chat) => {
+      const session = useSessionStore.getState();
+      if (session.instanceUrl !== productionInstanceUrl || session.user?.id !== productionUserId) return;
+      if (chat.deletedAt) throw new Error('This chat is in the trash.');
+      // Without its transcript, the chat shows as loading until ProductionBridge projects the detail just fetched.
+      const { responses: _responses, attachments: _attachments, ...summary } = chat;
+      upsertProductionChatSummary(summary);
+      activateRelatedChat(chat);
+    }).catch((error) => Alert.alert('Couldn’t open chat', error instanceof Error ? error.message : undefined));
+  }, [activateRelatedChat, activeChatId, productionInstanceUrl, productionUserId, queryClient]);
+
+  const forkFromReply = useCallback(async (responseId: string): Promise<boolean> => {
+    if (!productionUserId) return false;
+    const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
+    try {
+      const chat = await forkServerChat(responseId, { clientId: Crypto.randomUUID() });
+      // A fork is an ordinary chat: listed at once, ahead of the list refresh.
+      queryClient.setQueryData<ServerChat[]>(queryKeys.chats(namespace), (chats) => chats ? mergeChatSummary(chats, chat) : chats);
+      upsertProductionChatSummary(chat);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) });
+      activateRelatedChat(chat);
+      AccessibilityInfo.announceForAccessibility('Opened the forked chat');
+      return true;
+    } catch (error) {
+      Alert.alert('Couldn’t fork chat', error instanceof Error ? error.message : undefined);
+      return false;
+    }
+  }, [activateRelatedChat, productionInstanceUrl, productionUserId, queryClient]);
+
+  /** A /btw question waiting for its new side chat to open, then sent there like any message. */
+  const [pendingSideQuestion, setPendingSideQuestion] = useState<{ chatId: string; value: string; options: SendOptions } | null>(null);
+  const openSideChat = useCallback(async (originChatId: string, responseId: string | null, question?: { value: string; options: SendOptions }): Promise<boolean> => {
+    if (!productionUserId) return false;
+    const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
+    try {
+      const chat = await createServerSideChat(originChatId, { responseId, clientId: Crypto.randomUUID() });
+      // New, so it has no transcript to load.
+      queryClient.setQueryData<ServerChat>(queryKeys.chat(namespace, chat.id), (current) => current ?? { ...chat, responses: [], attachments: [] });
+      upsertProductionChatSummary({ ...chat, responses: [] });
+      void queryClient.invalidateQueries({ queryKey: relatedChatsQueryKey(namespace, originChatId), exact: true });
+      if (question) setPendingSideQuestion({ chatId: chat.id, ...question });
+      activateRelatedChat(chat);
+      AccessibilityInfo.announceForAccessibility('Opened a side chat');
+      return true;
+    } catch (error) {
+      Alert.alert('Couldn’t open a side chat', error instanceof Error ? error.message : undefined);
+      return false;
+    }
+  }, [activateRelatedChat, productionInstanceUrl, productionUserId, queryClient]);
+
+  useEffect(() => {
+    if (!pendingSideQuestion || activePrototypeChat?.id !== pendingSideQuestion.chatId || activePrototypeChat.detailLoaded === false) return;
+    setPendingSideQuestion(null);
+    void sendMessageRef.current(pendingSideQuestion.value, [], pendingSideQuestion.options)
+      .catch((error) => Alert.alert('Couldn’t send message', error instanceof Error ? error.message : undefined));
+  }, [activePrototypeChat?.detailLoaded, activePrototypeChat?.id, pendingSideQuestion]);
+  useEffect(() => {
+    // Leaving the side chat before it opened drops the question with it.
+    if (pendingSideQuestion && activeChatId !== pendingSideQuestion.chatId) setPendingSideQuestion(null);
+  }, [activeChatId, pendingSideQuestion]);
+
+  const forkReply = useCallback((message: Message) => { void forkFromReply(messageResponseId(message.id)); }, [forkFromReply]);
+  const openReplySideChat = useCallback((message: Message) => {
+    const chatId = message.chatId ?? activeChatId;
+    if (chatId) void openSideChat(chatId, messageResponseId(message.id));
+  }, [activeChatId, openSideChat]);
+
+  const runChatCommand = useCallback(async (command: ChatCommand, options: { presetSelections: GenerationSelections; agentEnabled: boolean }): Promise<boolean> => {
+    const chat = activePrototypeChat;
+    if (!chat) return false;
+    if (chat.temporary) {
+      Alert.alert(command.kind === 'fork' ? 'Can’t fork a temporary chat' : 'No side chats in temporary chats', 'Save this chat first.');
+      return false;
+    }
+    if (command.kind === 'fork') {
+      const replyId = latestSettledReplyId(chat.messages);
+      if (!replyId) {
+        Alert.alert('Nothing to fork yet', 'Wait for the latest reply to finish, then try again.');
+        return false;
+      }
+      return forkFromReply(replyId);
+    }
+    if (isAsideChat(chat)) {
+      Alert.alert('Side chats open from a chat', 'Use /btw in the chat this one came from.');
+      return false;
+    }
+    if (!command.question) {
+      Alert.alert('Ask something after /btw', 'For example: /btw what does this error mean?');
+      return false;
+    }
+    return openSideChat(chat.id, null, {
+      value: command.question,
+      options: { presetSelections: options.presetSelections, agentEnabled: options.agentEnabled, temporary: false, autoExpire: false },
+    });
+  }, [activePrototypeChat, forkFromReply, openSideChat]);
+
+  const setActiveThreadResolved = useCallback((resolved: boolean) => {
+    const threadId = activeChatId;
+    if (!threadId || !productionUserId) return;
+    const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
+    Haptics.selectionAsync();
+    void setServerThreadResolved(threadId, resolved).then((chat) => {
+      upsertProductionChatSummary(chat);
+      if (chat.originChatId) void queryClient.invalidateQueries({ queryKey: relatedChatsQueryKey(namespace, chat.originChatId), exact: true });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, threadId), exact: true });
+      AccessibilityInfo.announceForAccessibility(resolved ? 'Thread resolved' : 'Thread reopened');
+    }).catch((error) => Alert.alert(resolved ? 'Couldn’t resolve thread' : 'Couldn’t reopen thread', error instanceof Error ? error.message : undefined));
+  }, [activeChatId, productionInstanceUrl, productionUserId, queryClient]);
+
   return (
     <GestureDetector gesture={panelGesture}>
       <View style={styles.root}>
@@ -3215,6 +3359,14 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             savingTemporary={savingTemporaryChatId === activePrototypeChat?.id}
             onTemporaryChange={setNewChatTemporary}
             onAutoExpirationChange={changeAutoExpiration}
+            chatKind={activePrototypeChat?.kind}
+            originChatId={activePrototypeChat?.originChatId}
+            threadResolved={activePrototypeChat?.threadResolvedAt != null}
+            onOpenRelatedChat={openRelatedChat}
+            onForkReply={forkReply}
+            onOpenSideChat={openReplySideChat}
+            onChatCommand={runChatCommand}
+            onSetThreadResolved={setActiveThreadResolved}
             onSaveTemporary={() => { void saveActiveTemporaryChat(); }}
             onNewChat={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -3237,6 +3389,143 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
 
 /** Whether this transcript's responses can be reported; an expired temporary chat is read-only. Off unless a transcript opts in. */
 const MessageReportsContext = createContext(false);
+
+/** What the open chat lets its messages do with forks, side chats, and threads (see ChatView). */
+type ChatRelationsActions = {
+  /** A saved chat: its settled replies can be forked from. */
+  canFork: boolean;
+  /** A saved, ordinary chat: its settled replies can be asked about in a side chat. */
+  canOpenSideChat: boolean;
+  fork: (message: Message) => void;
+  openSideChat: (message: Message) => void;
+  /** Opens a thread, side chat, or the chat one came from. */
+  openChat: (chatId: string) => void;
+};
+
+const NO_CHAT_RELATIONS: ChatRelationsActions = { canFork: false, canOpenSideChat: false, fork: () => undefined, openSideChat: () => undefined, openChat: () => undefined };
+const ChatRelationsContext = createContext<ChatRelationsActions>(NO_CHAT_RELATIONS);
+
+/** Fork from here and Ask in a side chat, on a reply that has finished. */
+function useMessageRelationActions(message: Message) {
+  const relations = useContext(ChatRelationsContext);
+  const eligible = message.role === 'assistant' && Boolean(message.chatId) && replySettled(message.status);
+  return {
+    canFork: eligible && relations.canFork,
+    canOpenSideChat: eligible && relations.canOpenSideChat,
+    fork: () => { speechPlayback.stop(); relations.fork(message); },
+    openSideChat: () => { speechPlayback.stop(); relations.openSideChat(message); },
+  };
+}
+
+/**
+ * The user side of a turn the server started to report what the chat's threads did: a compact card
+ * rather than a sent message, with each thread's title opening it. It can't be edited.
+ */
+function ThreadUpdateCard({ message }: { message: Message }) {
+  const { styles, COLORS } = useChatStyles();
+  const { openChat } = useContext(ChatRelationsContext);
+  const update = useMemo(() => parseThreadUpdate(message.text), [message.text]);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+  const toggle = (threadId: string) => setExpanded((current) => {
+    const next = new Set(current);
+    if (next.has(threadId)) next.delete(threadId); else next.add(threadId);
+    return next;
+  });
+  return (
+    <View style={styles.threadUpdateCard}>
+      <View accessible accessibilityRole="header" accessibilityLabel={`${update.heading}, sent automatically`} style={styles.threadUpdateHeader}>
+        <Icon name="arrow.triangle.branch" size={13} color={COLORS.muted} />
+        <Text style={styles.threadUpdateHeading}>{update.heading}</Text>
+        <Text style={styles.threadUpdateNote}>Sent automatically</Text>
+      </View>
+      {update.reports.length ? update.reports.map((report) => {
+        const open = expanded.has(report.threadId);
+        return (
+          <View key={report.threadId} style={styles.threadUpdateReport}>
+            <View style={styles.threadUpdateTitleRow}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Open thread ${report.title}, ${report.outcomeText}`}
+                hitSlop={TEXT_BUTTON_HIT_SLOP}
+                onPress={() => openChat(report.threadId)}
+                style={({ pressed }) => [styles.threadUpdateTitleButton, pressed && styles.pressed]}
+              >
+                <Text numberOfLines={1} style={styles.threadUpdateTitle}>{report.title}</Text>
+                <Icon name="chevron.right" size={10} color={COLORS.link} weight="semibold" />
+              </Pressable>
+              <Text numberOfLines={1} style={styles.threadUpdateOutcome}>{report.outcomeText}</Text>
+            </View>
+            {report.body ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ expanded: open }}
+                accessibilityHint={open ? 'Shows less of the thread’s reply' : 'Shows the thread’s whole reply'}
+                onPress={() => toggle(report.threadId)}
+              >
+                {open
+                  ? <SafeMarkdown selectable={Platform.OS !== 'android'} compact>{report.body}</SafeMarkdown>
+                  : <Text numberOfLines={3} style={styles.threadUpdateBody}>{markdownPreviewText(report.body)}</Text>}
+              </Pressable>
+            ) : null}
+          </View>
+        );
+      }) : <Text numberOfLines={4} style={styles.threadUpdateBody}>{message.text}</Text>}
+    </View>
+  );
+}
+
+/**
+ * Under the header of a chat that came from another (a side chat, thread, or fork) or has threads
+ * and side chats of its own: where it came from (tapping goes back), Resolve or Reopen on a thread,
+ * and the list of its threads and side chats.
+ */
+function ChatRelationsBar({ kind, originChatId, threadResolved, related, onOpenChat, onOpenList, onSetThreadResolved }: {
+  kind?: import('@pulpo/contracts').ChatKind;
+  originChatId?: string | null;
+  threadResolved: boolean;
+  related?: import('@pulpo/contracts').RelatedChats;
+  onOpenChat: (chatId: string) => void;
+  onOpenList: () => void;
+  onSetThreadResolved: (resolved: boolean) => void;
+}) {
+  const { styles, COLORS } = useChatStyles();
+  const label = originLabel({ kind, originChatId });
+  const origin = related?.origin ?? null;
+  const listLabel = relatedChatsLabel(related);
+  if (!label && !listLabel) return null;
+  const pill = (key: string, icon: SymbolName, text: string, onPress: (() => void) | undefined, accessibilityLabel = text) => (
+    <Pressable key={key} accessibilityRole={onPress ? 'button' : 'text'} accessibilityLabel={accessibilityLabel} disabled={!onPress} hitSlop={6} onPress={onPress} style={styles.relationPillHost}>
+      {({ pressed }) => (
+        <Glass interactive={Boolean(onPress)} style={[styles.relationPill, pressed && styles.pressed]}>
+          <Icon name={icon} size={12} color={onPress ? COLORS.link : COLORS.muted} />
+          <Text numberOfLines={1} style={[styles.relationPillText, onPress && styles.relationPillTextAction]}>{text}</Text>
+        </Glass>
+      )}
+    </Pressable>
+  );
+  const originText = !label ? null
+    : origin ? `${label} ${origin.deleted ? 'a deleted chat' : `“${origin.title}”`}`
+      : kind === 'side' ? 'Side chat' : kind === 'thread' ? 'Thread' : 'Forked chat';
+  return (
+    <View style={styles.relationsBar}>
+      {originText ? pill(
+        'origin',
+        kind === 'chat' || !kind ? 'arrow.triangle.branch' : 'arrow.turn.up.left',
+        originText,
+        origin && !origin.deleted ? () => onOpenChat(origin.id) : undefined,
+        origin && !origin.deleted ? `${originText}. Opens it.` : originText,
+      ) : null}
+      {kind === 'thread' ? pill(
+        'resolve',
+        threadResolved ? 'arrow.uturn.backward' : 'checkmark.circle',
+        threadResolved ? 'Reopen' : 'Resolve',
+        () => onSetThreadResolved(!threadResolved),
+        threadResolved ? 'Reopen thread' : 'Resolve thread',
+      ) : null}
+      {listLabel ? pill('list', related?.threads.length ? 'arrow.triangle.branch' : 'bubble.left.and.bubble.right', listLabel, onOpenList, `${listLabel}. Shows them.`) : null}
+    </View>
+  );
+}
 
 function useCanReportMessage(message: Message): boolean {
   const enabled = useSessionStore((state) => state.config?.capabilities.messageReports === true);
@@ -3392,7 +3681,8 @@ function useMessageMenu({ message, onEdit, onRegenerate }: {
   // A response can only be deleted as one of several versions; the user message owns the last one.
   const canDelete = message.role === 'user' || (message.branches?.length ?? 0) > 1;
   const deleteLabel = message.role === 'user' ? 'Delete message' : 'Delete version';
-  return { canDelete, canReport, canSpeak, deleteLabel, readable, runAction, speak, speaking, speechKey, speechLabel };
+  const relations = useMessageRelationActions(message);
+  return { canDelete, canReport, canSpeak, deleteLabel, readable, relations, runAction, speak, speaking, speechKey, speechLabel };
 }
 
 /**
@@ -3400,7 +3690,7 @@ function useMessageMenu({ message, onEdit, onRegenerate }: {
  * a long press on the message itself is hard to find with a screen reader.
  */
 function useMessageAccessibilityActions(message: Message, onEdit: (message: Message, content: string) => void, onRegenerate: (message: Message) => void, enabled = true) {
-  const { canDelete, canReport, canSpeak, deleteLabel, runAction, speak, speechLabel } = useMessageMenu({ message, onEdit, onRegenerate });
+  const { canDelete, canReport, canSpeak, deleteLabel, relations, runAction, speak, speechLabel } = useMessageMenu({ message, onEdit, onRegenerate });
   if (!enabled) return {};
   const actions: { name: string; label: string; run: () => void }[] = [
     { name: 'copy', label: 'Copy', run: () => runAction('copy') },
@@ -3408,6 +3698,8 @@ function useMessageAccessibilityActions(message: Message, onEdit: (message: Mess
     { name: 'reply', label: 'Reply', run: () => runAction('reply') },
     { name: 'edit', label: message.role === 'user' ? 'Edit message' : 'Edit response', run: () => runAction('edit') },
     ...(message.role === 'assistant' ? [{ name: 'regenerate', label: 'Regenerate response', run: () => runAction('regenerate') }] : []),
+    ...(relations.canFork ? [{ name: 'fork', label: 'Fork from here', run: relations.fork }] : []),
+    ...(relations.canOpenSideChat ? [{ name: 'side-chat', label: 'Ask in a side chat', run: relations.openSideChat }] : []),
     ...(canSpeak ? [{ name: 'read-aloud', label: speechLabel, run: speak }] : []),
     ...(canReport ? [{ name: 'report', label: 'Report message', run: () => runAction('report') }] : []),
     ...(canDelete ? [{ name: 'delete', label: deleteLabel, run: () => runAction('delete') }] : []),
@@ -3432,7 +3724,7 @@ function MessageContextMenu({
   children: ReactNode;
 }) {
   const { styles } = useChatStyles();
-  const { canDelete, canReport, canSpeak, deleteLabel, readable, runAction, speak, speaking, speechKey, speechLabel } = useMessageMenu({ message, onEdit, onRegenerate });
+  const { canDelete, canReport, canSpeak, deleteLabel, readable, relations, runAction, speak, speaking, speechKey, speechLabel } = useMessageMenu({ message, onEdit, onRegenerate });
   useEffect(() => () => { if (speechPlayback.getSnapshot().key === speechKey) speechPlayback.stop(); }, [speechKey, message.text]);
   const previewText = readable.length > 2_000
     ? `${readable.slice(0, 1_999)}…`
@@ -3449,6 +3741,8 @@ function MessageContextMenu({
         { label: 'Reply', icon: 'arrowshape.turn.up.left', onPress: () => runAction('reply') },
         { label: message.role === 'user' ? 'Edit message' : 'Edit response', icon: 'pencil', onPress: () => runAction('edit') },
         ...(message.role === 'assistant' ? [{ label: 'Regenerate response', icon: 'arrow.clockwise', onPress: () => runAction('regenerate') }] : []),
+        ...(relations.canFork ? [{ label: 'Fork from here', icon: 'arrow.triangle.branch', onPress: relations.fork }] : []),
+        ...(relations.canOpenSideChat ? [{ label: 'Ask in a side chat', icon: 'bubble.left.and.bubble.right', onPress: relations.openSideChat }] : []),
         ...(canSpeak ? [{ label: speechLabel, icon: speaking ? 'stop.fill' : 'speaker.wave.2', onPress: speak }] : []),
         ...(canReport ? [{ label: 'Report message', icon: 'pulpo.frown', onPress: () => runAction('report') }] : []),
         ...(canDelete ? [{ label: deleteLabel, icon: 'trash', destructive: true, onPress: () => runAction('delete') }] : []),
@@ -3479,6 +3773,8 @@ function MessageContextMenu({
               <SwiftUIButton label="Edit response" systemImage="pencil" onPress={() => runAction('edit')} />
               <SwiftUIButton label="Regenerate response" systemImage="arrow.clockwise" onPress={() => runAction('regenerate')} />
             </>}
+          {relations.canFork && <SwiftUIButton label="Fork from here" systemImage="arrow.triangle.branch" onPress={relations.fork} />}
+          {relations.canOpenSideChat && <SwiftUIButton label="Ask in a side chat" systemImage="bubble.left.and.bubble.right" onPress={relations.openSideChat} />}
           {canSpeak && <SwiftUIButton label={speechLabel} systemImage={speaking ? 'stop.fill' : 'speaker.wave.2'} onPress={speak} />}
           {canReport && <NativeReportMessageButton onPress={() => runAction('report')} />}
           {canDelete && <SwiftUIButton label={deleteLabel} role="destructive" systemImage="trash" onPress={() => runAction('delete')} />}
@@ -3881,11 +4177,14 @@ function toolStepSummary(step: Extract<TimelineStep, { kind: 'tool' }>['tool']):
   const command = typeof record.command === 'string' ? record.command : undefined;
   const pattern = typeof record.pattern === 'string' ? record.pattern : undefined;
   const query = typeof record.query === 'string' ? record.query : undefined;
+  // Thread tools: the thread a start_thread call names, or the message sent to one.
+  const title = typeof record.title === 'string' ? record.title : undefined;
+  const message = typeof record.message === 'string' ? record.message.replace(/\s+/g, ' ').trim() : undefined;
   if (step.tool === 'bash' && command) {
     const oneLine = command.replace(/\s+/g, ' ').trim();
     return oneLine.length > 72 ? `${oneLine.slice(0, 72)}…` : oneLine;
   }
-  return path ?? pattern ?? query ?? step.tool ?? 'tool';
+  return path ?? pattern ?? query ?? title ?? message ?? step.tool ?? 'tool';
 }
 
 const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<TimelineStep, { kind: 'tool' }> }) {
@@ -3901,27 +4200,40 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
   ].filter(Boolean).join('\n'), [step.tool.arguments, step.tool.output]);
   const seconds = step.tool.durationMs === undefined ? null : Math.max(0, Math.round(step.tool.durationMs / 1000));
   const ToolIcon = toolActivityPresentation(step.tool.tool, step.tool.arguments).icon;
+  const { openChat } = useContext(ChatRelationsContext);
+  // A thread tool names the thread it started or acted on.
+  const threadId = !failed && step.tool.threadId ? step.tool.threadId : undefined;
+  const trigger = (
+    <Pressable
+      // The running and failed states are otherwise only shown by the icon.
+      accessibilityLabel={[step.tool.tool ?? 'Tool', toolStepSummary(step.tool), running ? 'running' : failed ? 'failed' : null, seconds !== null ? `${seconds} ${seconds === 1 ? 'second' : 'seconds'}` : null].filter(Boolean).join(', ')}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: hasBody ? open : undefined }}
+      disabled={!hasBody}
+      onPress={() => setOpen((value) => !value)}
+      style={styles.workToolTrigger}
+    >
+      {running
+        ? <SpinningLoader color={COLORS.muted} reduceMotion={reduceMotion} size={13} />
+        : failed
+          ? <XCircle color={COLORS.critical} size={13} />
+          : <ToolIcon color={COLORS.muted} size={13} />}
+      <Text style={styles.workToolName}>{step.tool.tool ?? 'Tool'}</Text>
+      <Text numberOfLines={1} style={styles.workToolSummary}>{toolStepSummary(step.tool)}</Text>
+      {seconds !== null && <Text style={styles.workToolDuration}>{seconds}s</Text>}
+      {hasBody && <Icon name={open ? 'chevron.down' : 'chevron.right'} size={10} color={COLORS.dim} weight="semibold" />}
+    </Pressable>
+  );
   return (
     <View style={styles.workStep}>
-      <Pressable
-        // The running and failed states are otherwise only shown by the icon.
-        accessibilityLabel={[step.tool.tool ?? 'Tool', toolStepSummary(step.tool), running ? 'running' : failed ? 'failed' : null, seconds !== null ? `${seconds} ${seconds === 1 ? 'second' : 'seconds'}` : null].filter(Boolean).join(', ')}
-        accessibilityRole="button"
-        accessibilityState={{ expanded: hasBody ? open : undefined }}
-        disabled={!hasBody}
-        onPress={() => setOpen((value) => !value)}
-        style={styles.workToolTrigger}
-      >
-        {running
-          ? <SpinningLoader color={COLORS.muted} reduceMotion={reduceMotion} size={13} />
-          : failed
-            ? <XCircle color={COLORS.critical} size={13} />
-            : <ToolIcon color={COLORS.muted} size={13} />}
-        <Text style={styles.workToolName}>{step.tool.tool ?? 'Tool'}</Text>
-        <Text numberOfLines={1} style={styles.workToolSummary}>{toolStepSummary(step.tool)}</Text>
-        {seconds !== null && <Text style={styles.workToolDuration}>{seconds}s</Text>}
-        {hasBody && <Icon name={open ? 'chevron.down' : 'chevron.right'} size={10} color={COLORS.dim} weight="semibold" />}
-      </Pressable>
+      {threadId ? (
+        <View style={styles.workToolRow}>
+          <View style={styles.flex}>{trigger}</View>
+          <Pressable accessibilityLabel="Open thread" accessibilityRole="button" hitSlop={TEXT_BUTTON_HIT_SLOP} onPress={() => openChat(threadId)}>
+            <Text style={styles.recallSourceAction}>Open</Text>
+          </Pressable>
+        </View>
+      ) : trigger}
       <ToolImagePreview preview={step.tool.imagePreview} expanded={open} mutedColor={COLORS.muted} />
       {open && details ? (
         <ScrollView nestedScrollEnabled style={styles.workDetailScroller}>
@@ -4227,8 +4539,9 @@ const MessageRow = memo(function MessageRow({
   const showResponseCost = usePrototypeStore((state) => state.preferences.showResponseCost);
   // A user message's last paragraph of links to Files items shows as cards beside its attachments.
   const sent = useMemo(() => sentMessageParts(message.role, message.text), [message.role, message.text]);
+  // A thread update's report was sent by the server, not typed: it offers no message actions.
   const headerActions = useMessageAccessibilityActions(message, onEdit, onRegenerate, message.role === 'user'
-    ? message.text.length > 0
+    ? message.text.length > 0 && !message.threadUpdate
     : Boolean(message.text || message.error || message.outputItems?.length || message.status === 'stopped'));
   // Token counts only accompany answer text, but a settled cost shows even when a reply stopped or failed
   // before writing any, as on web.
@@ -4312,7 +4625,9 @@ const MessageRow = memo(function MessageRow({
   }, [activityFinishedDuringStream, responseStartedAt, streaming]);
   return (
     <View style={message.role === 'user' ? styles.userRow : styles.assistantRow}>
-      {message.role === 'user' ? (
+      {message.role === 'user' && message.threadUpdate ? (
+        <ThreadUpdateCard message={message} />
+      ) : message.role === 'user' ? (
         <View style={styles.userMessageContent}>
           {(message.attachments?.length ?? 0) > 0 ? (
             <SentAttachmentWindow attachments={message.attachments ?? []} after={sent.references.length ? <SentFileReferences references={sent.references} /> : null}>{(visible) => <>
@@ -4944,6 +5259,7 @@ function ComposerQueueSection({ title, subject, visible, collapsed, onToggle, fa
 function ChatView({
   acceptIncomingFiles, title, messages, queuedMessages, chatId, chatLoaded, onTranscriptReady, openingChatId, draftNamespace, keyboardLayoutEnabled, transcriptTransitionActive, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, onRemoteChatStarted, assistantStatus,
   onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onSelectModel, onSavePresetDefault, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, sidebarWidth, foldMargin, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
+  chatKind, originChatId, threadResolved = false, onOpenRelatedChat, onForkReply, onOpenSideChat, onChatCommand, onSetThreadResolved,
 }: {
   acceptIncomingFiles: boolean;
   /** The open chat's title, announced as the screen's heading. */
@@ -4993,6 +5309,18 @@ function ChatView({
   savingTemporary: boolean;
   onTemporaryChange: (value: boolean) => void;
   onAutoExpirationChange: (value: boolean) => void;
+  /** An ordinary chat, a side chat, or a thread (absent before kinds were cached). */
+  chatKind?: import('@pulpo/contracts').ChatKind;
+  /** The chat this one was forked from, or that a side chat or thread belongs to. */
+  originChatId?: string | null;
+  threadResolved?: boolean;
+  /** Opens a thread, side chat, or the chat one came from. */
+  onOpenRelatedChat: (chatId: string) => void;
+  onForkReply: (message: Message) => void;
+  onOpenSideChat: (message: Message) => void;
+  /** Runs `/btw` or `/fork` in this saved chat; resolves whether it ran (otherwise the draft is restored). */
+  onChatCommand: (command: ChatCommand, options: { presetSelections: GenerationSelections; agentEnabled: boolean }) => Promise<boolean>;
+  onSetThreadResolved: (resolved: boolean) => void;
 }) {
   const { styles, COLORS } = useChatStyles();
   const queueClient = useQueryClient();
@@ -5132,6 +5460,18 @@ function ChatView({
   const showFileReferencePicker = useFileReferencePicker((state) => state.show);
   const [filesAccessOpen, setFilesAccessOpen] = useState(false);
   useEffect(() => { setFilesAccessOpen(false); }, [chatId]);
+  // Forks, side chats, and threads belong to saved chats (not temporary ones).
+  const savedChat = Boolean(chatId && chatLoaded && !temporary && !expired);
+  const related = useRelatedChats(draftNamespace, chatId, savedChat);
+  const [relatedOpen, setRelatedOpen] = useState(false);
+  useEffect(() => { setRelatedOpen(false); }, [chatId]);
+  const chatRelations = useMemo<ChatRelationsActions>(() => ({
+    canFork: savedChat,
+    canOpenSideChat: savedChat && (chatKind ?? 'chat') === 'chat',
+    fork: onForkReply,
+    openSideChat: onOpenSideChat,
+    openChat: onOpenRelatedChat,
+  }), [chatKind, onForkReply, onOpenRelatedChat, onOpenSideChat, savedChat]);
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
   const attachmentsRequireAgent = attachments.some((attachment) => attachment.kind === 'file')
@@ -6266,10 +6606,38 @@ function ChatView({
         return;
       }
       const sharedDraftId = submittedDraftIdentity?.draftId ?? NEW_CHAT_DRAFT_ID;
-      const accepted = await submitComposerDraft({
+      const draftSubmission = {
         submitted: { scope: submittedDraftIdentity?.scope ?? null, body: submittedDraft.input, attachments: submittedDraft.attachments },
         current: () => ({ scope: activeDraftRef.current?.scope ?? null, body: inputRef.current, attachments: attachmentsRef.current }),
         prepare: async () => composerSync?.prepareSubmission(sharedDraftId, sharedComposerState),
+        clear: () => {
+          skipNextEdit();
+          usedDictationRef.current = false;
+          onChangeInput('');
+          inputRef.current = '';
+          attachmentsRef.current = [];
+          setAttachments([]);
+          draftOwnerRef.current = `draft:${Crypto.randomUUID()}`;
+          if (submittedDraftIdentity) {
+            cacheComposerDraft(submittedDraftIdentity.scope, { body: '', attachments: [] });
+            if (submittedDraftIdentity.namespace) void saveDraft(submittedDraftIdentity.namespace, sharedDraftId, '', []);
+          }
+        },
+        canRestore: () => !composerSync || composerSync.canRestoreSubmission(sharedDraftId, sharedComposerState),
+        restore: restoreSubmittedDraft,
+        complete: async (revision: number | null | undefined) => { await composerSync?.completeSubmission(sharedDraftId, sharedComposerState, revision ?? undefined); },
+      };
+      // In a saved chat, `/btw <question>` asks in a new side chat and `/fork` forks from the latest reply.
+      const command = chatId && !submittedDraft.attachments.length ? parseChatCommand(submittedDraft.input) : null;
+      if (command) {
+        await submitComposerDraft({
+          ...draftSubmission,
+          send: () => onChatCommand(command, { presetSelections, agentEnabled: activeAgentEnabled }),
+        });
+        return;
+      }
+      const accepted = await submitComposerDraft({
+        ...draftSubmission,
         send: () => {
           // Arm before onSend inserts its optimistic rows.
           if (!shouldQueueMessage(assistantStatus !== 'idle', queuedMessages.length)) followSnapshot = armSubmittedTurnFollow();
@@ -6287,22 +6655,6 @@ function ChatView({
             },
           );
         },
-        clear: () => {
-          skipNextEdit();
-          usedDictationRef.current = false;
-          onChangeInput('');
-          inputRef.current = '';
-          attachmentsRef.current = [];
-          setAttachments([]);
-          draftOwnerRef.current = `draft:${Crypto.randomUUID()}`;
-          if (submittedDraftIdentity) {
-            cacheComposerDraft(submittedDraftIdentity.scope, { body: '', attachments: [] });
-            if (submittedDraftIdentity.namespace) void saveDraft(submittedDraftIdentity.namespace, sharedDraftId, '', []);
-          }
-        },
-        canRestore: () => !composerSync || composerSync.canRestoreSubmission(sharedDraftId, sharedComposerState),
-        restore: restoreSubmittedDraft,
-        complete: async (revision) => { await composerSync?.completeSubmission(sharedDraftId, sharedComposerState, revision ?? undefined); },
       });
       settleStart(startToken);
       if (!accepted) {
@@ -6680,6 +7032,7 @@ function ChatView({
   );
 
   return (
+    <ChatRelationsContext.Provider value={chatRelations}>
     <Reanimated.View style={[styles.chatRoot, temporarySurfaceAnimatedStyle]}>
       <View style={[styles.flex, { marginLeft: foldMargin }]}>
       <View
@@ -6743,6 +7096,21 @@ function ChatView({
           </Reanimated.View>
         </AppHeader>
 
+        {chatId && !openingChatId ? (
+          <ChatRelationsBar
+            kind={chatKind}
+            originChatId={originChatId}
+            threadResolved={threadResolved}
+            related={savedChat ? related.data : undefined}
+            onOpenChat={onOpenRelatedChat}
+            onOpenList={() => {
+              Keyboard.dismiss();
+              setRelatedOpen(true);
+              void related.refetch();
+            }}
+            onSetThreadResolved={onSetThreadResolved}
+          />
+        ) : null}
         {showConnectionBanner && (
           <View style={[styles.connectionBanner, (connectionState === 'offline' || syncError) && styles.connectionBannerOffline]}>
             <Icon name={syncError ? 'exclamationmark.triangle' : connectionState === 'offline' ? 'wifi.slash' : 'arrow.triangle.2.circlepath'} size={12} color={connectionState === 'offline' || syncError ? COLORS.warning : COLORS.muted} />
@@ -7185,7 +7553,21 @@ function ChatView({
         resolveUri={resolvePreviewImageUri}
         visible={Boolean(imageViewer)}
       />
+      {relatedOpen ? (
+        <RelatedChatsSheet
+          related={related.data}
+          loading={related.isFetching}
+          error={related.isError}
+          onClose={() => setRelatedOpen(false)}
+          onRetry={() => { void related.refetch(); }}
+          onOpen={(chat) => {
+            setRelatedOpen(false);
+            onOpenRelatedChat(chat.id);
+          }}
+        />
+      ) : null}
     </Reanimated.View>
+    </ChatRelationsContext.Provider>
   );
 }
 
@@ -7920,6 +8302,21 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   connectionBannerOffline: { backgroundColor: 'rgba(255,159,63,0.12)' },
   temporaryExpiredBanner: { backgroundColor: 'rgba(139,92,246,0.14)' },
   connectionBannerText: { color: COLORS.muted, fontSize: 11.5, fontWeight: '600' },
+  relationsBar: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 6, paddingHorizontal: 16, marginBottom: 6 },
+  relationPillHost: { maxWidth: '100%', minWidth: 0 },
+  relationPill: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 14, paddingHorizontal: 11, paddingVertical: 6, maxWidth: '100%', overflow: 'hidden' },
+  relationPillText: { color: COLORS.muted, fontSize: 12, lineHeight: 16, fontWeight: '600', flexShrink: 1 },
+  relationPillTextAction: { color: COLORS.link },
+  threadUpdateCard: { alignSelf: 'stretch', borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line, backgroundColor: COLORS.fill, paddingHorizontal: 13, paddingVertical: 11, gap: 10 },
+  threadUpdateHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  threadUpdateHeading: { color: COLORS.textSoft, fontSize: 12.5, lineHeight: 17, fontWeight: '600' },
+  threadUpdateNote: { color: COLORS.muted, fontSize: 11.5, lineHeight: 16, marginLeft: 'auto' },
+  threadUpdateReport: { gap: 4 },
+  threadUpdateTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, minWidth: 0 },
+  threadUpdateTitleButton: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1, minWidth: 0 },
+  threadUpdateTitle: { color: COLORS.link, fontSize: 14, lineHeight: 19, fontWeight: '600', flexShrink: 1 },
+  threadUpdateOutcome: { color: COLORS.muted, fontSize: 12, lineHeight: 17 },
+  threadUpdateBody: { color: COLORS.textSoft, fontSize: 13.5, lineHeight: 19 },
   chatContent: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center' },
   conversation: { width: '100%', minWidth: 0, paddingBottom: CHAT_COMPOSER_BOTTOM_PADDING },
   transcriptColumn: { width: '100%', minWidth: 0, maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center' },
@@ -8020,6 +8417,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   recallSourceUnavailable: { color: COLORS.muted, fontSize: 10.5, lineHeight: 17 },
   recallSourceExcerpt: { color: COLORS.muted, fontSize: 12, lineHeight: 18 },
   workToolTrigger: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  workToolRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   workToolName: { color: COLORS.textSoft, fontSize: 12, lineHeight: 17, fontWeight: '600' },
   workToolSummary: { color: COLORS.muted, fontSize: 11, lineHeight: 16, fontFamily: COLORS.mono, flex: 1 },
   workToolDuration: { color: COLORS.muted, fontSize: 10.5, fontVariant: ['tabular-nums'] },

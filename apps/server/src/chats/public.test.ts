@@ -16,11 +16,17 @@ describe('public chat DTOs', () => {
       id: '00000000-0000-4000-8000-000000000001', userId: 'private-user', folderId: null, inFilesRoot: false,
       title: 'Chat', modelId: 'model-1', pinned: false, sortOrder: 0, temporary: false,
       fileScopeIds: ['root'], fileScopeAccess: { root: 'write' }, fileChangeMode: 'suggest', filesBrowseAllowed: false,
+      kind: 'thread', originChatId: '00000000-0000-4000-8000-000000000009', originResponseId: null,
+      threadReportResponseId: 'private-report', threadResolvedAt: null,
       activeBranchLeafId: null, activeResponseId: null, expiresAt: null, deletedAt: null,
       purgeStartedAt: null, createdAt: date, updatedAt: date,
     }
     const result = toPublicChat(row)
-    expect(result).toMatchObject({ id: row.id, title: 'Chat', fileScopeIds: ['root'], createdAt: date.toISOString() })
+    expect(result).toMatchObject({
+      id: row.id, title: 'Chat', fileScopeIds: ['root'], createdAt: date.toISOString(),
+      kind: 'thread', originChatId: row.originChatId, threadResolvedAt: null,
+    })
+    expect(result).not.toHaveProperty('threadReportResponseId')
     expect(result).not.toHaveProperty('workspaceScopeId')
     expect(result).not.toHaveProperty('userId')
     expect(result).not.toHaveProperty('deletedAt')
@@ -62,6 +68,8 @@ describe('public chat DTOs', () => {
       'executionMode', 'agentCapacityAction', 'instructions', 'parameters', 'lastSequence',
       'upstreamSequence', 'idempotencyKey', 'publiclyStored', 'startedAt', 'deletedAt', 'updatedAt',
     ]) expect(result).not.toHaveProperty(field)
+    expect(result).not.toHaveProperty('threadUpdate')
+    expect(toPublicChatResponse({ ...row, branchReason: 'thread_update' }, [row])).toMatchObject({ threadUpdate: true })
 
     expect(toPublicChatResponse(row, [row], { compact: true }).displayModelId).toBe('model-1')
     expect(toPublicChatResponseStub(row, [row]).displayModelId).toBe('model-1')

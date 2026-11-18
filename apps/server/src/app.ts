@@ -19,6 +19,7 @@ import { registerAuthRoutes } from './auth/routes.js'
 import { registerAccountSwitchingRoutes, signedInAccountsCookieName } from './auth/accounts.js'
 import { registerCatalogRoutes } from './catalog/routes.js'
 import { registerChatRoutes } from './chats/routes.js'
+import { registerThreadRoutes } from './chats/thread-routes.js'
 import { registerApiKeyRoutes } from './api-keys/routes.js'
 import { registerPublicApiRoutes } from './public-api/routes.js'
 import { registerSettingsRoutes } from './settings/routes.js'
@@ -188,6 +189,7 @@ export async function buildApp() {
   await registerAdminChatAccess(app)
   await registerShelfRoutes(app)
   await registerChatRoutes(app)
+  await registerThreadRoutes(app)
   await registerApiKeyRoutes(app)
   await registerSettingsRoutes(app)
   await registerShareRoutes(app)

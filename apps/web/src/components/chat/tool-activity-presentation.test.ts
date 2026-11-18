@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CircleCheckBig,
   FileDiff,
   FilePenLine,
   FilePlus,
@@ -13,8 +14,12 @@ import {
   Globe,
   Image,
   List,
+  ListTree,
+  MessageSquareShare,
+  NotebookPen,
   Paperclip,
   Search,
+  Split,
   Terminal,
   Trash2,
   Wrench,
@@ -36,6 +41,12 @@ describe('toolActivityPresentation', () => {
     ['web_search', 'Searching the web…', Search],
     ['web_fetch', 'Fetching a webpage…', Globe],
     ['update_memory', 'Updating memory…', FilePenLine],
+    ['update_project_memory', 'Updating project memory…', NotebookPen],
+    ['start_thread', 'Starting a thread…', Split],
+    ['message_thread', 'Messaging a thread…', MessageSquareShare],
+    ['list_threads', 'Checking on threads…', ListTree],
+    ['read_thread', 'Reading a thread…', FileText],
+    ['resolve_thread', 'Updating a thread…', CircleCheckBig],
   ])('maps %s to a friendly label and icon', (name, label, icon) => {
     expect(toolActivityPresentation(name)).toEqual({ label, icon })
   })

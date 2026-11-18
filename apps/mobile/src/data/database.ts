@@ -12,6 +12,7 @@ import {
   type OutboxRecord,
 } from './schema'
 import type { ServerChat } from '../types'
+import { isListedChat } from '../features/chat/chatKind'
 import {
   MAX_CACHED_CHAT_DETAIL_BYTES,
   cachedChatDetailIdsToEvict,
@@ -413,7 +414,8 @@ export async function cachedChatSummaries(namespace: string): Promise<ServerChat
     const rows = await database.getAllAsync<{ payload: string }>(
       'SELECT payload FROM chat_cache WHERE namespace = ? ORDER BY updated_at DESC', namespace,
     )
-    return rows.map((row) => JSON.parse(row.payload) as ServerChat).filter((chat) => !chat.temporary)
+    // An opened side chat or thread is cached for offline reading, but is never listed.
+    return rows.map((row) => JSON.parse(row.payload) as ServerChat).filter((chat) => !chat.temporary && isListedChat(chat))
   })
 }
 

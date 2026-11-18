@@ -1,5 +1,6 @@
 import { agentPathName, pulpoFilesCommand } from '@pulpo/client-core/files';
 import {
+  CircleCheck,
   FileDiff,
   FilePenLine,
   FilePlus,
@@ -10,9 +11,14 @@ import {
   FolderPlus,
   FolderSearch,
   FolderUp,
+  GitBranch,
   Globe,
   Image,
   List,
+  ListChecks,
+  MessageSquare,
+  MessageSquareText,
+  NotebookPen,
   Paperclip,
   Search,
   Terminal,
@@ -45,6 +51,12 @@ const presentations: Record<string, ToolActivityPresentation> = {
   files_write: { icon: FilePlus, label: 'Writing a document…' },
   files_edit: { icon: FilePenLine, label: 'Editing a document…' },
   files_create_folder: { icon: FolderPlus, label: 'Creating a folder…' },
+  start_thread: { icon: GitBranch, label: 'Starting a thread…' },
+  message_thread: { icon: MessageSquare, label: 'Messaging a thread…' },
+  list_threads: { icon: ListChecks, label: 'Checking on threads…' },
+  read_thread: { icon: MessageSquareText, label: 'Reading a thread…' },
+  resolve_thread: { icon: CircleCheck, label: 'Resolving a thread…' },
+  update_project_memory: { icon: NotebookPen, label: 'Updating project memory…' },
 };
 
 /** What a `pulpo files` command in the agent's bash does, as the web labels it. */
@@ -71,6 +83,8 @@ export function toolActivityPresentation(name?: string, args?: unknown): ToolAct
   const command = name === 'bash' && args && typeof args === 'object' ? (args as { command?: unknown }).command : undefined;
   const files = typeof command === 'string' ? filesCommandPresentation(command) : null;
   if (files) return files;
+  const title = name === 'start_thread' && args && typeof args === 'object' ? (args as { title?: unknown }).title : undefined;
+  if (typeof title === 'string' && title.trim()) return { icon: GitBranch, label: `Starting thread “${title.trim()}”…` };
   return name && presentations[name]
     ? presentations[name]
     : { icon: Wrench, label: 'Working…' };

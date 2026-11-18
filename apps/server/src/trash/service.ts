@@ -2,7 +2,7 @@ import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm'
 import type { FileNode, TrashFolderListing, TrashItem, TrashListing, TrashRetention } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { chats, fileNodes } from '../database/schema.js'
-import { filePurgeAtFor, getTrashRetention, markChatsForPurge, purgeAtFor } from '../chats/trash.js'
+import { filePurgeAtFor, getTrashRetention, listedInTrashCondition, markChatsForPurge, purgeAtFor } from '../chats/trash.js'
 import { getUnifiedTrashSince } from './unified-since.js'
 import { chatToFileNode, chatsFolderIdOf } from '../files/chat-items.js'
 import { deleteFileNodes, emptyTrash, listTrash, listTrashedFolder, mutateFileTree, restoreFileNodes } from '../files/tree-service.js'
@@ -24,6 +24,7 @@ const chatTrashed = (userId: string) => and(
   isNotNull(chats.deletedAt),
   isNull(chats.purgeStartedAt),
   eq(chats.temporary, false),
+  listedInTrashCondition(),
 )
 
 async function trashedFileItems(userId: string, scope: TrashScope): Promise<FileNode[]> {

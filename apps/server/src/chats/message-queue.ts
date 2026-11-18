@@ -3,6 +3,8 @@ import type { CreateQueuedMessageInput, QueuedMessage, ReorderQueuedMessageInput
 import { clientPlatformSchema, parseClientFeaturesHeader } from '@pulpo/contracts'
 import type { ClientAttribution } from '../analytics/capture.js'
 import { db } from '../database/client.js'
+import { redis } from '../redis.js'
+import { threadReportDispatchKey } from './thread-dispatch.js'
 import { applicationSettings, attachments, chats, models, queuedMessages, responses, users } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -292,6 +294,8 @@ export async function advanceMessageQueue(chatId: string): Promise<void> {
       isNull(responses.deletedAt),
     )).limit(1)
     if (active) return null
+    // A thread update is being started (chats/threads.ts); this runs again once it settles.
+    if (await redis.exists(threadReportDispatchKey(chatId))) return null
     const [head] = await tx.select().from(queuedMessages)
       .where(eq(queuedMessages.chatId, chatId))
       .orderBy(asc(queuedMessages.position), asc(queuedMessages.id)).limit(1)

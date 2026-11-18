@@ -23,6 +23,7 @@ vi.mock('../database/client.js', () => {
 })
 vi.mock('../responses/service.js', () => ({ createResponse: mocks.createResponse, resolveResponseGeneration: vi.fn() }))
 vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn() }))
+vi.mock('../redis.js', () => ({ redis: { exists: async () => 0 } }))
 
 const { advanceMessageQueue } = await import('./message-queue.js')
 

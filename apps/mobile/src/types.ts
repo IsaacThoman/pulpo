@@ -58,6 +58,14 @@ export interface ServerChat {
   filesBrowseAllowed?: boolean
   /** Filed at the top of My files rather than in a folder. */
   inFilesRoot?: boolean
+  /** Older servers and caches send no kind: an ordinary chat. Side chats and threads are not listed. */
+  kind?: import('@pulpo/contracts').ChatKind
+  /** The chat this one was forked from, or that a side chat or thread belongs to. */
+  originChatId?: string | null
+  /** The reply in the origin chat it was forked or opened from. */
+  originResponseId?: string | null
+  /** Threads only: when the thread was marked done. */
+  threadResolvedAt?: string | null
 }
 
 export interface ServerDeletedChat {
@@ -109,6 +117,8 @@ export interface ServerResponse {
     assistant: { ids: string[]; index: number }
   }
   detailAvailable?: boolean
+  /** A turn the server started to report what the chat's threads did, rather than one the user sent. */
+  threadUpdate?: true
 }
 
 export interface BranchActivationResult {

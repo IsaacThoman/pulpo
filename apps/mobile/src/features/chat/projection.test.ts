@@ -38,6 +38,24 @@ function response(input: {
 }
 
 describe('projectChat branch variants', () => {
+  it('marks both sides of a thread update turn', () => {
+    const update = { ...response({ id: 'response-update', text: 'Thread update — sent automatically…', output: 'Noted.', branchIds: ['response-update'], branchIndex: 0 }), threadUpdate: true as const }
+    const sent = response({ id: 'response-sent', text: 'Hi', output: 'Hello', branchIds: ['response-sent'], branchIndex: 0 })
+    const chat = {
+      id: 'chat-threads', title: 'Threads', modelId: 'model-1', pinned: false, folderId: null,
+      sortOrder: 0, temporary: false, activeResponseId: update.id, activeBranchLeafId: update.id,
+      createdAt: '2026-11-18T00:00:00.000Z', updatedAt: '2026-11-18T00:00:01.000Z',
+      responses: [sent, { ...update, parentResponseId: sent.id }],
+    } satisfies ServerChat
+
+    expect(projectChat(chat, {}).map((message) => [message.id, message.threadUpdate])).toEqual([
+      ['response-sent:input', undefined],
+      ['response-sent', undefined],
+      ['response-update:input', true],
+      ['response-update', true],
+    ])
+  })
+
   it('carries the settled response cost with any API-equivalent reference', () => {
     const settled = { ...response({ id: 'response-cost', text: 'Hi', output: 'Hello', branchIds: ['response-cost'], branchIndex: 0 }), costMicros: 4_200, inferenceReferenceCostMicros: 800 }
     const pending = { ...response({ id: 'response-pending', text: 'Again', output: 'Hello again', branchIds: ['response-pending'], branchIndex: 0 }), parentResponseId: 'response-cost', costMicros: null }

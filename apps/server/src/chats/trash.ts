@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, isNull, lte, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, isNull, lte, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 import { DEFAULT_TRASH_RETENTION, MIN_FILE_TRASH_RETENTION_MS, TRASH_RETENTION_VALUES, type TrashRetention } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { applicationSettings, attachments, chats, queuedMessages, responses, userPreferences, users } from '../database/schema.js'
@@ -120,6 +120,16 @@ export async function cancelChatWork(chatIds: string[]): Promise<void> {
 export async function markChatsForPurge(chatIds: string[], userId?: string): Promise<number> {
   if (!chatIds.length) return 0
   const now = new Date()
+  // Side chats and threads in the trash are deleted with the chat they belong to.
+  const related = await db.select({ id: chats.id }).from(chats).where(and(
+    inArray(chats.originChatId, chatIds), inArray(chats.kind, ['side', 'thread']),
+    userId ? eq(chats.userId, userId) : undefined,
+  ))
+  if (related.length) {
+    await db.update(chats).set({ purgeStartedAt: now, updatedAt: now }).where(and(
+      inArray(chats.id, related.map((row) => row.id)), isNotNull(chats.deletedAt), isNull(chats.purgeStartedAt),
+    ))
+  }
   const marked = await db.update(chats).set({
     purgeStartedAt: now,
     updatedAt: now,
@@ -204,9 +214,14 @@ export async function expireNormalChat(
     .where(normalChatExpiryCondition(chatId, userId, now, expectedExpiresAt))
     .returning({ id: chats.id })
   if (!marked) return false
+  // Its side chats and threads go to the trash with it, as when the user trashes it.
+  const related = await db.update(chats).set(trashedChatValues(now, retention)).where(and(
+    eq(chats.originChatId, chatId), inArray(chats.kind, ['side', 'thread']), eq(chats.userId, userId), isNull(chats.deletedAt),
+  )).returning({ id: chats.id })
+  const trashedIds = [chatId, ...related.map((row) => row.id)]
   const cleanup = await Promise.allSettled([
-    db.delete(queuedMessages).where(and(eq(queuedMessages.chatId, chatId), eq(queuedMessages.userId, userId))),
-    cancelChatWork([chatId]),
+    db.delete(queuedMessages).where(and(inArray(queuedMessages.chatId, trashedIds), eq(queuedMessages.userId, userId))),
+    cancelChatWork(trashedIds),
   ])
   await publishExpiredChat(userId, chatId)
   await scheduleChatIndex(chatId, userId, 'chat-expired')
@@ -260,4 +275,15 @@ export async function purgePendingChats(userId?: string): Promise<number> {
   }
   if (firstError) throw firstError
   return purged
+}
+
+/**
+ * Trashed chats the trash lists: every ordinary chat, and side chats and threads the user trashed
+ * on their own. Those trashed along with their chat come back with it instead.
+ */
+export function listedInTrashCondition() {
+  return or(
+    eq(chats.kind, 'chat'),
+    sql`not exists (select 1 from chats origin where origin.id = ${chats.originChatId} and origin.deleted_at is not null)`,
+  )
 }

@@ -58,6 +58,14 @@ describe('persistableChats', () => {
   it('never returns temporary chats for durable storage', () => {
     expect(persistableChats([chat(), chat({ id: 'temporary', temporary: true })]).map((item) => item.id)).toEqual(['chat-1'])
   })
+
+  it('keeps forks but not side chats or threads in the offline chat list', () => {
+    expect(persistableChats([
+      chat({ id: 'fork', kind: 'chat', originChatId: 'chat-1' }),
+      chat({ id: 'side', kind: 'side', originChatId: 'chat-1' }),
+      chat({ id: 'thread', kind: 'thread', originChatId: 'chat-1' }),
+    ]).map((item) => item.id)).toEqual(['fork'])
+  })
 })
 
 describe('cachedChatIdsToRemove', () => {

@@ -5,7 +5,8 @@ export function canContinueWorkspaceScope(input: {
   activeResponseId: string | null
   predecessorStatus?: string
 }): boolean {
-  return input.branchReason === 'message'
+  // A thread update carries on from the reply before it, like a message the user sent.
+  return (input.branchReason === 'message' || input.branchReason === 'thread_update')
     && input.parentResponseId === input.activeResponseId
     && (!input.parentResponseId || ['completed', 'failed', 'cancelled', 'incomplete'].includes(input.predecessorStatus ?? ''))
 }

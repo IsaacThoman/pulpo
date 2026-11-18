@@ -118,6 +118,8 @@ export interface PrototypeMessage {
   outputItems?: unknown[];
   agentMode?: boolean;
   presetSelections?: Record<string, string>;
+  /** A server-started turn reporting what the chat's threads did (its user side is the report). */
+  threadUpdate?: boolean;
 }
 
 export interface PrototypeChat {
@@ -149,6 +151,13 @@ export interface PrototypeChat {
   fileChangeMode?: import('@pulpo/contracts').FileAccessMode;
   /** The user let the agent look through all of their Files in this chat. */
   filesBrowseAllowed?: boolean;
+  /** An ordinary chat, a side chat, or a thread; absent on chats cached before kinds existed. */
+  kind?: import('@pulpo/contracts').ChatKind;
+  /** The chat this one was forked from, or that a side chat or thread belongs to. */
+  originChatId?: string | null;
+  originResponseId?: string | null;
+  /** Threads only: when the thread was marked done. */
+  threadResolvedAt?: number | null;
 }
 
 export interface PrototypeFolder {

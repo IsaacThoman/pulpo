@@ -496,6 +496,19 @@ export const chats = pgTable('chats', {
   fileChangeMode: text('file_change_mode').notNull().default('suggest'),
   // The user let Agent replies in this chat browse all of their Files.
   filesBrowseAllowed: boolean('files_browse_allowed').notNull().default(false),
+  // 'chat' is an ordinary chat. A 'side' chat is a /btw aside that reads its origin chat without
+  // adding to it; a 'thread' is a task an agent delegated from its origin chat (see chats/threads.ts).
+  // Side chats and threads are listed under their origin chat rather than in the sidebar or Files.
+  kind: text('kind').notNull().default('chat'),
+  // The chat this one was forked from, opened beside, or delegated from. Not a foreign key, so a
+  // backup can restore chats in any order; trashing or purging a chat takes its side chats and threads.
+  originChatId: uuid('origin_chat_id'),
+  // The origin chat's reply this chat starts after: the fork point, or the last reply a side chat sees.
+  originResponseId: uuid('origin_response_id'),
+  // A thread's settled reply that its origin chat has not been told about yet.
+  threadReportResponseId: uuid('thread_report_response_id'),
+  // When the user or the coordinating agent marked a thread done.
+  threadResolvedAt: timestamp('thread_resolved_at', { withTimezone: true }),
   activeBranchLeafId: uuid('active_branch_leaf_id'),
   activeResponseId: uuid('active_response_id'),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
@@ -509,6 +522,10 @@ export const chats = pgTable('chats', {
   index('chats_title_search_idx').using('gin', sql`to_tsvector('simple', ${table.title})`),
   index('chats_expiry_idx').on(table.expiresAt)
     .where(sql`${table.expiresAt} is not null and ${table.deletedAt} is null and ${table.purgeStartedAt} is null`),
+  index('chats_origin_idx').on(table.originChatId).where(sql`${table.originChatId} is not null`),
+  check('chats_kind_check', sql`${table.kind} in ('chat', 'side', 'thread')`),
+  // Side chats and threads always have the chat they belong to.
+  check('chats_kind_origin_check', sql`${table.kind} = 'chat' or ${table.originChatId} is not null`),
 ])
 
 export const responses = pgTable('responses', {
@@ -979,6 +996,26 @@ export const fileNodes = pgTable('file_nodes', {
   // The Sidebar folder is the sidebar itself, so it cannot be pinned there.
   check('file_nodes_pinned_check', sql`not ${table.pinned} or ${table.systemRole} is distinct from 'chats'`),
   index('file_nodes_owner_pinned_idx').on(table.ownerUserId).where(sql`${table.pinned}`),
+])
+
+/**
+ * A Files folder the user made into a project. Chats filed in it (or its subfolders), and the side
+ * chats and threads they start, share its instructions and memory, and the folder is their library.
+ */
+export const fileProjects = pgTable('file_projects', {
+  folderId: uuid('folder_id').primaryKey().references(() => fileNodes.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  instructions: text('instructions').notNull().default(''),
+  // MEMORY.md for the project, kept by the agent with update_project_memory and editable by the user.
+  memory: text('memory').notNull().default(''),
+  memoryRevision: integer('memory_revision').notNull().default(0),
+  // The model new threads in this project use; null uses the coordinating chat's model.
+  threadModelId: text('thread_model_id').references(() => models.id, { onDelete: 'set null' }),
+  ...timestamps,
+}, (table) => [
+  index('file_projects_user_idx').on(table.userId),
+  check('file_projects_instructions_length_check', sql`char_length(${table.instructions}) <= 16000`),
+  check('file_projects_memory_length_check', sql`char_length(${table.memory}) <= 16000`),
 ])
 
 /** Collaborative document state: a compacted Yjs update plus Markdown derived from it. */

@@ -11,6 +11,8 @@ export type ToolItem = {
   isError?: boolean
   startedAt?: string
   durationMs?: number
+  /** start_thread only: the thread it started. */
+  threadId?: string
 }
 
 export type WorkspaceItem = {

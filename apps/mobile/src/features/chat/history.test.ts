@@ -102,6 +102,20 @@ describe('visibleHistoryChats', () => {
 
     expect(visibleHistoryChats(chats).map((chat) => chat.id)).toEqual(['saved'])
   })
+
+  it('leaves out side chats and threads, which are reached from their chat', () => {
+    const chats = [
+      { id: 'legacy', deletedAt: null, temporary: false },
+      { id: 'fork', deletedAt: null, temporary: false, kind: 'chat' },
+      { id: 'side', deletedAt: null, temporary: false, kind: 'side' },
+      { id: 'thread', deletedAt: null, temporary: false, kind: 'thread' },
+    ]
+
+    expect(visibleHistoryChats(chats).map((chat) => chat.id)).toEqual(['legacy', 'fork'])
+    const now = Date.parse('2026-11-18T12:00:00.000Z')
+    const rows = chats.map((chat) => ({ ...chat, title: chat.id, modelId: 'model-1', pinned: false, folderId: null, sortOrder: 0, createdAt: now, updatedAt: now }))
+    expect(createHistoryProjector()(rows, now).map((chat) => chat.id)).toEqual(['legacy', 'fork'])
+  })
 })
 
 describe('resolveHistoryChatExpiryMenuAction', () => {
