@@ -4,11 +4,11 @@ const mocks = vi.hoisted(() => ({
   appState: 'active', onAppState: undefined as undefined | ((state: string) => void),
   onSession: undefined as undefined | ((state: unknown, previous: unknown) => void),
   status: undefined as undefined | ((status: { didJustFinish?: boolean; playbackState?: string }) => void),
-  play: vi.fn(), pause: vi.fn(), remove: vi.fn(), seekTo: vi.fn(async () => {}), setPlaybackRate: vi.fn(), deleteFile: vi.fn(), write: vi.fn(), audioMode: vi.fn(),
+  play: vi.fn(), pause: vi.fn(), remove: vi.fn(), seekTo: vi.fn(async () => {}), setPlaybackRate: vi.fn(), deleteFile: vi.fn(), write: vi.fn(), audioMode: vi.fn(), audioActive: vi.fn(),
   preferences: { modelId: 'speech', models: {} } as SpeechPreferences, request: vi.fn(),
 }))
 vi.mock('react-native', () => ({ AppState: { get currentState() { return mocks.appState }, addEventListener: (_event: string, fn: typeof mocks.onAppState) => { mocks.onAppState = fn } } }))
-vi.mock('expo-audio', () => ({ setAudioModeAsync: mocks.audioMode, createAudioPlayer: () => ({ play: mocks.play, pause: mocks.pause, remove: mocks.remove, seekTo: mocks.seekTo, setPlaybackRate: mocks.setPlaybackRate, currentTime: 4, duration: 12, shouldCorrectPitch: false, addListener: (_event: string, listener: typeof mocks.status) => { mocks.status = listener; return { remove: vi.fn() } } }) }))
+vi.mock('expo-audio', () => ({ setAudioModeAsync: mocks.audioMode, setIsAudioActiveAsync: mocks.audioActive, createAudioPlayer: () => ({ play: mocks.play, pause: mocks.pause, remove: mocks.remove, seekTo: mocks.seekTo, setPlaybackRate: mocks.setPlaybackRate, currentTime: 4, duration: 12, shouldCorrectPitch: false, addListener: (_event: string, listener: typeof mocks.status) => { mocks.status = listener; return { remove: vi.fn() } } }) }))
 vi.mock('expo-file-system', () => ({
   Paths: { cache: 'cache' }, Directory: class { exists = false; delete() {} create() {} },
   File: class { exists = true; uri = 'cache/speech/audio.wav'; write = mocks.write; delete = mocks.deleteFile },
@@ -39,6 +39,7 @@ describe('native speech lifecycle', () => {
     await tick(); expect(mocks.play).toHaveBeenCalledOnce()
     expect(fetch).toHaveBeenCalledWith('https://instance.example/api/speech', expect.objectContaining({ headers: { authorization: 'Bearer session', 'content-type': 'application/json' } }))
     expect(mocks.audioMode).toHaveBeenCalledWith(expect.objectContaining({ shouldPlayInBackground: false, allowsRecording: false }))
+    expect(mocks.audioActive).toHaveBeenCalledWith(true)
     mocks.status?.({ didJustFinish: true }); await tick()
     expect(speechPlayback.getSnapshot()).toMatchObject({ key: 'chat:message', phase: 'ended' }); expect(mocks.remove).not.toHaveBeenCalled()
     void readAloud('chat:message', 'Hello'); await tick(); await tick()
