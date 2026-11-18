@@ -93,8 +93,9 @@ function unsafeCssRule(source: string): string | null {
   if (/(^|[^\w-])(-webkit-)?image-set\s*\(|(^|[^\w-])(image|src)\s*\(/.test(source)) {
     return 'Theme CSS cannot use image(), image-set(), or src().'
   }
-  for (const match of source.matchAll(/url\s*\(\s*(['"]?)\s*([^'")\s]*)/g)) {
-    const target = match[2] ?? ''
+  // Each `url(` is judged on its own: one allowed target must never extend over (and hide) the next.
+  for (const match of source.matchAll(/url\s*\(/g)) {
+    const target = source.slice(match.index + match[0].length).replace(/^\s*['"]?\s*/, '')
     if (!target.startsWith('data:') && !target.startsWith('#')) {
       return 'Theme CSS can only use url() with data: or #id targets.'
     }

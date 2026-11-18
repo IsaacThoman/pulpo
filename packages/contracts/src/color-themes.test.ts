@@ -64,6 +64,10 @@ describe('color themes', () => {
     expect(unsafeThemeCssReason('body { background: u\\72\rl(https://example.com/collect) }')).not.toBeNull()
     expect(unsafeThemeCssReason('body { background: u\\72\fl(https://example.com/collect) }')).not.toBeNull()
     expect(unsafeThemeCssReason('@im\\70\r\nort "https://example.com/x.css";')).not.toBeNull()
+    // An allowed url() can't run on and hide a later remote one.
+    expect(unsafeThemeCssReason('/*url(data:*/body{background:url(https://example.com/collect)}')).not.toBeNull()
+    expect(unsafeThemeCssReason('a{background:url(data:x)}b{background:url(https://example.com/collect)}')).not.toBeNull()
+    expect(unsafeThemeCssReason('a{background:url(#x),url("data:image/png;base64,AA")}')).toBeNull()
     // Comments are scanned too, so a commented-out remote url() is refused rather than trusted.
     expect(unsafeThemeCssReason('/* url(https://example.com/a) */ body { color: red }')).not.toBeNull()
     expect(unsafeThemeCssReason('/* a note */ body { color: red }')).toBeNull()
