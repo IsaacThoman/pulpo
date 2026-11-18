@@ -13,6 +13,7 @@
     "test:long-thread-opening": "node tests/long-thread-opening.browser.mjs",
     "test:attachment-scroll": "node tests/attachment-scroll.browser.mjs",
     "test:table-preview": "node tests/table-preview.browser.mjs",
+    "test:scroll-to-bottom": "node tests/scroll-to-bottom.browser.mjs",
     "test:sidebar-animation": "node tests/sidebar-animation.browser.mjs",
     "test:suggestion-card": "node tests/suggestion-card.browser.mjs",
     "test:doc-dictation": "node tests/doc-dictation.browser.mjs",
