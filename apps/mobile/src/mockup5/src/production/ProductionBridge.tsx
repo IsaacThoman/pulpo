@@ -300,20 +300,28 @@ async function offlineCapableMutation<T>(input: {
 type SettingsMutationResult = Awaited<ReturnType<typeof mobileApi.updateSettings>> | undefined
 const settingMutations = new LatestValueQueue<string, Record<string, unknown>, SettingsMutationResult>()
 
+function ownsSettingsScope(namespace: string): boolean {
+  const { status, instanceUrl, user } = useSessionStore.getState()
+  return status === 'authenticated' && Boolean(user && cacheNamespace(instanceUrl, user.id) === namespace)
+}
+
 function persistLatestSetting(
   namespace: string,
   serverKey: string,
   body: Record<string, unknown>,
 ): Promise<SettingsMutationResult> {
   const entityKey = `setting:${serverKey}`
-  return settingMutations.enqueue(`${namespace}:${serverKey}`, body, (latestBody) => offlineCapableMutation({
-    namespace,
-    entityKey,
-    method: 'PATCH',
-    path: '/api/settings',
-    body: latestBody,
-    request: () => mobileApi.updateSettings(latestBody),
-  }))
+  return settingMutations.enqueue(`${namespace}:${serverKey}`, body, async (latestBody) => {
+    if (!ownsSettingsScope(namespace)) return
+    return offlineCapableMutation({
+      namespace,
+      entityKey,
+      method: 'PATCH',
+      path: '/api/settings',
+      body: latestBody,
+      request: async () => ownsSettingsScope(namespace) ? mobileApi.updateSettings(latestBody) : undefined,
+    })
+  })
 }
 
 export function ProductionBridge({ activeChatId }: { activeChatId: string | null }) {
@@ -446,29 +454,19 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
       renameFolder: (id, name) => offlineCapableMutation({ namespace, entityKey: `folder:${id}`, method: 'PATCH', path: `/api/folders/${id}`, body: { name }, request: () => updateFolder(id, { name }) }),
       deleteFolder: (id) => offlineCapableMutation({ namespace, entityKey: `folder:${id}`, method: 'DELETE', path: `/api/folders/${id}`, request: () => deleteFolder(id) }),
       setPreference: async (key, value) => {
+        if (!ownsSettingsScope(namespace)) return
         const persisted = usePreferencesStore.getState().setPreference(key, value)
         const body = preferencePatchForServer(key, value)
         if (!body) return persisted
         const serverKey = Object.keys(body)[0] ?? String(key)
         const saved = await persistLatestSetting(namespace, serverKey, body)
         await persisted
-        if (saved) {
-          await usePreferencesStore.getState().markSynchronizedPreferenceSynced(key, value)
-          const latest = await mobileApi.settings()
-          await usePreferencesStore.getState().applyServerPreferences(preferencesFromServer(latest.values))
-        }
-      },
-      toggleFavoriteModel: async (modelId: string, favorite: boolean) => {
-        const current = usePreferencesStore.getState().favoriteModelIds
-        const next = favorite
-          ? [...current.filter((id) => id !== modelId), modelId]
-          : current.filter((id) => id !== modelId)
-        const persisted = usePreferencesStore.getState().setPreference('favoriteModelIds', next)
-        const saved = await persistLatestSetting(namespace, 'favoriteModelIds', { favoriteModelIds: next })
-        await persisted
-        if (saved) {
-          await usePreferencesStore.getState().markSynchronizedPreferenceSynced('favoriteModelIds', next)
-          const latest = await mobileApi.settings()
+        if (!saved || !ownsSettingsScope(namespace)) return
+        await usePreferencesStore.getState().markSynchronizedPreferenceSynced(key, value)
+        // The PATCH acknowledges these complete model preference values.
+        if (key === 'favoriteModelIds' || key === 'defaultModelId' || !ownsSettingsScope(namespace)) return
+        const latest = await mobileApi.settings()
+        if (ownsSettingsScope(namespace)) {
           await usePreferencesStore.getState().applyServerPreferences(preferencesFromServer(latest.values))
         }
       },
@@ -530,7 +528,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
           newChatAutoExpire: preferences.newChatAutoExpire,
           chatSortMode: preferences.chatSortMode,
         },
-        defaultModelId: preferences.defaultModelId ?? models.data?.data[0]?.id ?? state.defaultModelId,
+        defaultModelId: preferences.defaultModelId ?? (models.data ? models.data.data[0]?.id : state.models[0]?.id) ?? '',
         models: models.data ? models.data.data.map((model) => mapModel(model, preferences.favoriteModelIds)) : state.models,
         modelCatalogReady: Boolean(models.data) || models.isError || state.modelCatalogReady,
         agentAvailable: models.data?.agentAvailable ?? state.agentAvailable,

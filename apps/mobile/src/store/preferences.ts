@@ -200,6 +200,7 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
       agentFileChangeMode: defaults.agentFileChangeMode,
       customInstructions: defaults.customInstructions,
       instructionPresetSelections: {},
+      defaultModelId: null,
       favoriteModelIds: [],
       providerOrder: [],
       generation: {},
