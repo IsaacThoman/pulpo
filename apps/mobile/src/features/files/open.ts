@@ -1,4 +1,5 @@
 import type { FileNode } from '@pulpo/contracts'
+import { mediaMimeType } from '@pulpo/client-core/files'
 import { useNavigation } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import * as Sharing from 'expo-sharing'
@@ -31,10 +32,12 @@ async function withDownload<T>(id: string, task: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Opens an uploaded file with the system viewer (Quick Look, or the sandboxed page viewer for HTML). */
-export async function previewUploadedFile(node: FileNode): Promise<void> {
+/** Opens audio in Pulpo and other uploaded files in their native preview. */
+export async function previewUploadedFile(node: FileNode, navigation: NativeStackNavigationProp<RootStackParamList>): Promise<void> {
   const file = await withDownload(node.id, () => downloadFile(node))
-  await openAttachmentFile(file.uri, node.name, node.mimeType ?? undefined)
+  const mimeType = mediaMimeType(node.name, node.mimeType)
+  if (mimeType?.startsWith('audio/')) navigation.push('AudioPreview', { uri: file.uri, name: node.name, mimeType })
+  else await openAttachmentFile(file.uri, node.name, node.mimeType ?? undefined)
 }
 
 /** Shares an uploaded file's bytes, or a document's Markdown (`markdown` from an open editor wins). */
@@ -66,7 +69,7 @@ export function useOpenFileItem() {
         case 'unavailable': Alert.alert('Can’t open this item', target.reason); return
         case 'file': {
           const file = target.node ?? (await fetchFileNode(target.id)).node
-          await previewUploadedFile(file)
+          await previewUploadedFile(file, navigation)
         }
       }
     } catch (error) {

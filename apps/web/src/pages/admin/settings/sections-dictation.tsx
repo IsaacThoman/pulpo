@@ -32,10 +32,10 @@ export function DictationSection() {
 
   const keyAvailable = hasApiKey || Boolean(groqApiKey.value.trim())
   return <div>
-    <Section title={ui("Dictation")} hint="Transcribe microphone recordings on the server with Groq Whisper Large v3 Turbo. Audio is not retained by Pulpo.">
+    <Section title={ui("Dictation")} hint={ui("Transcribe microphone recordings and audio files with Groq Whisper Large v3 Turbo.")}>
       <Toggle
         label={ui("Enable dictation")}
-        hint="Shows the microphone control in the web chat composer. Disabled by default."
+        hint={ui("Enables the microphone in the composer and the Transcribe button in audio previews.")}
         checked={enabled}
         onChange={setEnabled}
       />

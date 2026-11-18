@@ -1,13 +1,44 @@
 import { describe, expect, it, vi } from 'vitest'
 import sharp from 'sharp'
 import { readFile } from 'node:fs/promises'
-import { AZURE_MAI_IMAGE_PRESET, META_MUSE_IMAGE_PRESET, OPENAI_IMAGE_PRESET, type ImageModel } from '@pulpo/contracts'
+import { AZURE_MAI_IMAGE_PRESET, META_MUSE_IMAGE_PRESET, OPENAI_IMAGE_PRESET, OPENROUTER_IMAGE_PRESET, type ImageModel } from '@pulpo/contracts'
 import { generateImage, imageProviderEndpoint, validateImageBytes } from './provider.js'
 const model = (meta = false): ImageModel => ({ ...(meta ? META_MUSE_IMAGE_PRESET : AZURE_MAI_IMAGE_PRESET), id: 'image', providerConnectionId: '11111111-1111-4111-8111-111111111111' })
 const png = () => sharp({ create: { width: 16, height: 16, channels: 3, background: '#f24' } }).png().toBuffer()
 const options = (meta = false) => ({ model: model(meta), baseUrl: meta ? 'https://api.meta.ai/v1' : 'https://example.services.ai.azure.com', apiKey: 'SECRET', prompt: 'A red fox', references: [], signal: new AbortController().signal })
 const openaiOptions = () => ({ ...options(), model: { ...model(), ...OPENAI_IMAGE_PRESET }, baseUrl: 'https://api.openai.com/v1' })
+const openRouterOptions = () => ({ ...options(), model: { ...model(), ...OPENROUTER_IMAGE_PRESET }, baseUrl: 'https://openrouter.ai/api/v1' })
 describe('image providers', () => {
+  it('posts OpenRouter generations to the dedicated Images API with bearer auth and the requested framing', async () => {
+    const data = await png()
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ data: [{ b64_json: data.toString('base64') }], usage: { cost: 0.01 } }))
+    const result = await generateImage({ ...openRouterOptions(), aspectRatio: '2:3', fetch: fetcher })
+    const [url, request] = fetcher.mock.calls[0]!
+    expect(url).toBe('https://openrouter.ai/api/v1/images')
+    expect(request).toMatchObject({ method: 'POST', redirect: 'error', headers: { Authorization: 'Bearer SECRET', 'Content-Type': 'application/json' } })
+    expect(JSON.parse(String(request!.body))).toEqual({ model: 'microsoft/mai-image-2.7-flash', prompt: 'A red fox', n: 1, aspect_ratio: '2:3' })
+    expect(result).toMatchObject({ data, mimeType: 'image/png' })
+  })
+  it('sends OpenRouter edit references as JSON data URLs and saves the returned format', async () => {
+    const data = await png()
+    const jpeg = await sharp(data).jpeg().toBuffer()
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ data: [{ b64_json: jpeg.toString('base64'), media_type: 'image/jpeg' }] }))
+    const references = [{ data, mimeType: 'image/png' }, { data: jpeg, mimeType: 'image/jpeg' }]
+    const result = await generateImage({ ...openRouterOptions(), baseUrl: 'https://openrouter.ai/', references, fetch: fetcher })
+    const [url, request] = fetcher.mock.calls[0]!
+    expect(url).toBe('https://openrouter.ai/api/v1/images')
+    const body = JSON.parse(String(request!.body))
+    expect(body.aspect_ratio).toBe('auto')
+    expect(body.input_references).toHaveLength(2)
+    for (const [index, reference] of references.entries()) {
+      const part = body.input_references[index]
+      expect(part.type).toBe('image_url')
+      expect(part.image_url.url).toMatch(`data:${reference.mimeType};base64,`)
+      const bytes = Buffer.from(part.image_url.url.split(',')[1], 'base64')
+      expect(await sharp(bytes).metadata()).toMatchObject({ width: 16, height: 16 })
+    }
+    expect(result).toMatchObject({ data: jpeg, mimeType: 'image/jpeg' })
+  })
   it.each([
     ['1:1', '1024x1024', 1024, 1024],
     ['3:2', '1536x1024', 1200, 800],

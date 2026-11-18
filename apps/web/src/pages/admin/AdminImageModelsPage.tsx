@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AZURE_MAI_IMAGE_PRESET, IMAGE_MODEL_PRESETS, imageModelSchema, imagePriceLabel, imageTokenRateKeys, imageTokenRateLabel, supportsMaiAutoAspectRatio, type ImageModel } from '@pulpo/contracts'
+import { AZURE_MAI_IMAGE_PRESET, IMAGE_MODEL_PRESETS, IMAGE_TOKEN_BILLING_UNAVAILABLE, imageModelSchema, imagePriceLabel, imageTokenRateKeys, imageTokenRateLabel, supportsMaiAutoAspectRatio, type ImageModel } from '@pulpo/contracts'
 import { apiRequest } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,6 +11,7 @@ const providerCopy: Record<ImageModel['adapter'], { label: string; help: string;
   'azure-mai': { label: 'Azure MAI', help: 'Use your Foundry resource endpoint and API key. Enter the deployment name below.', modelLabel: 'Deployment name' },
   'meta-muse': { label: 'Meta Muse', help: 'Use https://api.meta.ai/v1 and a Meta Model API key.', modelLabel: 'Upstream model ID' },
   'openai-images': { label: 'OpenAI Images', help: 'Use https://api.openai.com/v1 and an OpenAI API key with access to GPT Image models.', modelLabel: 'Upstream model ID' },
+  'openrouter-images': { label: 'OpenRouter Images', help: 'Use https://openrouter.ai/api/v1 and an OpenRouter API key. Enter an OpenRouter Image API model ID.', modelLabel: 'Upstream model ID' },
 }
 
 export function AdminImageModelsPage() {
@@ -20,6 +21,7 @@ export function AdminImageModelsPage() {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const tokenBillingUnavailable = draft && IMAGE_TOKEN_BILLING_UNAVAILABLE[draft.adapter]
   const load = async () => {
     const [catalog, connections] = await Promise.all([apiRequest<{ data: ImageModel[] }>('/api/admin/image-models'), apiRequest<{ data: typeof providers }>('/api/admin/providers')])
     setModels(catalog.data); setProviders(connections.data)
@@ -62,9 +64,9 @@ export function AdminImageModelsPage() {
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" disabled={saving} checked={draft.billUsers} onChange={event => field('billUsers', event.target.checked)} />{ui('Bill users for images')}</label>
       {draft.billUsers && <>
         <label className="block text-sm">{ui('Image billing unit')}<select aria-label={ui('Image billing unit')} className="mt-1 w-full rounded border bg-background p-2" disabled={saving} value={draft.billingUnit} onChange={event => field('billingUnit', event.target.value as ImageModel['billingUnit'])}>
-          <option value="images">{ui('Per image')}</option><option value="tokens" disabled={draft.adapter === 'azure-mai'}>{ui('Per token')}</option>
+          <option value="images">{ui('Per image')}</option><option value="tokens" disabled={Boolean(tokenBillingUnavailable)}>{ui('Per token')}</option>
         </select></label>
-        {draft.adapter === 'azure-mai' && <p className="text-xs text-muted-foreground">{ui('Azure MAI does not report token usage; use per-image pricing.')}</p>}
+        {tokenBillingUnavailable && <p className="text-xs text-muted-foreground">{ui(tokenBillingUnavailable)}</p>}
         {draft.billingUnit === 'images' ? <label className="block text-sm">{ui('USD per generated image')}<Input type="number" min={0} step="0.000001" disabled={saving} value={draft.imagePriceMicros / 1e6} onChange={event => field('imagePriceMicros', Math.round(Number(event.target.value) * 1e6))} /></label> : <>
           <p className="text-xs text-muted-foreground">{ui('Rates are USD per 1M tokens. Enter your user prices, including zero for free categories. Rates are not automatically synchronized with providers.')}</p>
           <div className="grid gap-3 sm:grid-cols-2">{imageTokenRateKeys(draft.adapter).map(key => <label key={key} className="block text-sm">{ui(imageTokenRateLabel(draft.adapter, key))}<Input type="number" min={0} step="0.000001" disabled={saving} value={draft.tokenPrices[key] === null ? '' : draft.tokenPrices[key]! / 1e6} onChange={event => field('tokenPrices', { ...draft.tokenPrices, [key]: event.target.value === '' ? null : Math.round(Number(event.target.value) * 1e6) })} /></label>)}</div>
