@@ -140,23 +140,23 @@ describe('sidebar nav button menus', () => {
     expect(mocks.openBillingPortal).toHaveBeenCalled()
   })
 
-  it('opens your profile or friends from People, and copies the handle', async () => {
+  it('opens your profile or friends from Usage, and copies the handle', async () => {
     const writeText = vi.fn(async () => {})
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
     mount()
-    expect(await openMenu('People')).toEqual(['Your profile', 'View friends', 'Copy handle', 'Unpin'])
+    expect(await openMenu('Usage')).toEqual(['Your profile', 'View friends', 'Copy handle', 'Unpin'])
     choose('Copy handle')
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('octo'))
 
-    await openMenu('People')
+    await openMenu('Usage')
     choose('View friends')
     expect(location.pathname).toBe('/friends')
 
-    await openMenu('People')
+    await openMenu('Usage')
     choose('Your profile')
     expect(location.pathname).toBe('/octo')
 
-    await openMenu('People')
+    await openMenu('Usage')
     choose('Unpin')
     expect(settings.set).toHaveBeenCalledWith('sidebarPins', expect.objectContaining({ friends: false }))
   })
@@ -174,45 +174,44 @@ describe('sidebar nav button menus', () => {
     const billing = screen.getByRole('link', { name: 'Billing' })
     expect(nav.contains(billing)).toBe(true)
     expect(billing.getAttribute('aria-current')).toBe('page')
-    expect(screen.getByRole('link', { name: 'People' }).getAttribute('aria-current')).toBeNull()
+    expect(screen.getByRole('link', { name: 'Usage' }).getAttribute('aria-current')).toBeNull()
     fireEvent.click(screen.getByRole('link', { name: 'API keys' }))
     expect(location.pathname).toBe('/api-keys')
   })
 
-  it('leaves Usage out of the sidebar, even with an old pin saved', async () => {
+  it('shows one Usage item, even with the old Usage pin saved', async () => {
     mount()
-    expect(screen.queryByRole('link', { name: 'Usage' })).toBeNull()
+    expect(screen.getAllByRole('link', { name: 'Usage' })).toHaveLength(1)
     fireEvent.contextMenu(screen.getByRole('button', { name: /Octo/ }))
     await screen.findByRole('menuitem', { name: 'Settings' })
-    expect(screen.queryByRole('menuitem', { name: 'Usage' })).toBeNull()
-    expect(screen.getByRole('menuitem', { name: 'People' })).toBeTruthy()
+    expect(screen.getAllByRole('menuitem', { name: 'Usage' })).toHaveLength(1)
   })
 
-  // Someone else's profile is a drill-down inside People, so People stays current there too.
-  it.each(['/octo', '/Octo', '/friends', '/friends/leaderboard', '/jordan', '/Jordan'])('opens your profile from People and keeps it current on %s', (path) => {
+  // Someone else's profile is a drill-down inside Usage, so Usage stays current there too.
+  it.each(['/octo', '/Octo', '/friends', '/friends/leaderboard', '/jordan', '/Jordan'])('opens your profile from Usage and keeps it current on %s', (path) => {
     mount(path)
-    const people = screen.getByRole('link', { name: 'People' })
-    expect(people.getAttribute('href')).toBe('/octo')
-    expect(people.getAttribute('aria-current')).toBe('page')
+    const usage = screen.getByRole('link', { name: 'Usage' })
+    expect(usage.getAttribute('href')).toBe('/octo')
+    expect(usage.getAttribute('aria-current')).toBe('page')
   })
 
-  it.each(['/', '/files', '/Files', '/api-keys', '/usage', '/admin/users', '/c/chat-1'])("doesn't mark People current on %s", (path) => {
+  it.each(['/', '/files', '/Files', '/api-keys', '/usage', '/admin/users', '/c/chat-1'])("doesn't mark Usage current on %s", (path) => {
     mount(path)
-    expect(screen.getByRole('link', { name: 'People' }).getAttribute('aria-current')).toBeNull()
+    expect(screen.getByRole('link', { name: 'Usage' }).getAttribute('aria-current')).toBeNull()
   })
 
-  it('announces pending friend requests on People', async () => {
+  it('announces pending friend requests on Usage', async () => {
     mocks.pendingFriendRequests = 2
     mount()
-    const people = await screen.findByRole('link', { name: 'People, 2 pending' })
-    expect(people.textContent).toContain('2')
+    const usage = await screen.findByRole('link', { name: 'Usage, 2 pending' })
+    expect(usage.textContent).toContain('2')
     fireEvent.contextMenu(screen.getByRole('button', { name: /Octo/ }))
-    expect((await screen.findByRole('menuitem', { name: /^People/ })).textContent).toBe('People2')
+    expect((await screen.findByRole('menuitem', { name: /^Usage/ })).textContent).toBe('Usage2')
   })
 
   it.each([
-    { pinned: true, key: 'Enter', label: 'Unpin People from sidebar' },
-    { pinned: false, key: ' ', label: 'Pin People to sidebar' },
+    { pinned: true, key: 'Enter', label: 'Unpin Usage from sidebar' },
+    { pinned: false, key: ' ', label: 'Pin Usage to sidebar' },
   ])('lets the keyboard activate "$label" with $key without leaving the menu', async ({ pinned, key, label }) => {
     settings.sidebarPins.friends = pinned
     mount()
@@ -224,10 +223,10 @@ describe('sidebar nav button menus', () => {
     fireEvent.keyDown(search, { key: 'ArrowDown' })
     await waitFor(() => expect(document.activeElement).toBe(searchPin))
     fireEvent.keyDown(searchPin, { key: 'ArrowDown' })
-    const people = screen.getByRole('menuitem', { name: 'People' })
-    await waitFor(() => expect(document.activeElement).toBe(people))
+    const usage = screen.getByRole('menuitem', { name: 'Usage' })
+    await waitFor(() => expect(document.activeElement).toBe(usage))
     const pin = screen.getByRole('menuitem', { name: label })
-    fireEvent.keyDown(people, { key: 'ArrowDown' })
+    fireEvent.keyDown(usage, { key: 'ArrowDown' })
     await waitFor(() => expect(document.activeElement).toBe(pin))
     fireEvent.keyDown(pin, { key })
     expect(settings.set).toHaveBeenCalledExactlyOnceWith('sidebarPins', expect.objectContaining({ friends: !pinned }))

@@ -11,7 +11,7 @@ import { FileContextMenu, type ContextMenuPoint } from '@/features/files/browser
 import { useFileToasts } from '@/features/files/browser/toasts'
 import { OpenChatToLeftItem } from '@/features/side-panel/AgentActions'
 
-/** The sidebar's nav buttons with a right-click menu (Files has its own, FilesNavMenu); `friends` is People. */
+/** The sidebar's nav buttons with a right-click menu (Files has its own, FilesNavMenu); `friends` is Usage. */
 export type NavItemMenuKey = 'newChat' | Extract<SidebarPinKey, 'searchChats' | 'billing' | 'friends' | 'apiKeys'>
 
 export interface NavItemMenuState extends ContextMenuPoint {

@@ -2786,7 +2786,6 @@ const esUi: Record<string, string> = {
   "Options for {{0}}": "Opciones de {{0}}",
   "{{0}}, {{1}} pending": "{{0}}, {{1}} pendientes",
   "Admin sections": "Secciones de administración",
-  "People sections": "Secciones de personas",
   "Breadcrumb": "Ruta de navegación",
   "{{0}}, sorted ascending": "{{0}}, orden ascendente",
   "{{0}}, sorted descending": "{{0}}, orden descendente",
