@@ -452,25 +452,12 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
         const serverKey = Object.keys(body)[0] ?? String(key)
         const saved = await persistLatestSetting(namespace, serverKey, body)
         await persisted
-        if (saved) {
-          await usePreferencesStore.getState().markSynchronizedPreferenceSynced(key, value)
-          const latest = await mobileApi.settings()
-          await usePreferencesStore.getState().applyServerPreferences(preferencesFromServer(latest.values))
-        }
-      },
-      toggleFavoriteModel: async (modelId: string, favorite: boolean) => {
-        const current = usePreferencesStore.getState().favoriteModelIds
-        const next = favorite
-          ? [...current.filter((id) => id !== modelId), modelId]
-          : current.filter((id) => id !== modelId)
-        const persisted = usePreferencesStore.getState().setPreference('favoriteModelIds', next)
-        const saved = await persistLatestSetting(namespace, 'favoriteModelIds', { favoriteModelIds: next })
-        await persisted
-        if (saved) {
-          await usePreferencesStore.getState().markSynchronizedPreferenceSynced('favoriteModelIds', next)
-          const latest = await mobileApi.settings()
-          await usePreferencesStore.getState().applyServerPreferences(preferencesFromServer(latest.values))
-        }
+        // A signed-out or switched account must not receive this account's settings.
+        if (!saved || usePrototypeStore.getState().productionNamespace !== namespace) return
+        await usePreferencesStore.getState().markSynchronizedPreferenceSynced(key, value)
+        const latest = await mobileApi.settings()
+        if (usePrototypeStore.getState().productionNamespace !== namespace) return
+        await usePreferencesStore.getState().applyServerPreferences(preferencesFromServer(latest.values))
       },
     })
   }, [namespace])

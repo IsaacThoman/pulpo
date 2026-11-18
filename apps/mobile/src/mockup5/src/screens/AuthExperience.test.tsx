@@ -27,7 +27,6 @@ vi.mock('../../../platform/SymbolView', () => ({ SymbolView: () => null }))
 vi.mock('../../../components/DeleteAccount', () => ({ DeleteAccountAction: () => createElement('button', null, 'Delete account') }))
 vi.mock('../../../features/files/doc/accountSessions', () => ({ unsyncedEditsNote: async () => '' }))
 vi.mock('../theme', () => ({ useAppTheme: () => ({ isDark: false }) }))
-vi.mock('../domain', () => ({ normalizeInstanceUrl: (value: string) => value }))
 vi.mock('../../../api/client', () => ({ mobileApi: { redeemInviteCode: mocks.redeem } }))
 vi.mock('../../../auth/passkeys', () => ({ NativePasskeyError: class extends Error {}, PasskeyCancelledError: class extends Error {} }))
 vi.mock('../../../store/session', () => ({

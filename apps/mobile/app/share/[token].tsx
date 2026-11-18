@@ -7,21 +7,9 @@ import { SafeMarkdown } from '@/components/SafeMarkdown'
 import { referencePreviewText } from '@pulpo/client-core/files'
 import { useAppTheme } from '@/theme'
 import { CHAT_CONTENT_MAX } from '@/responsive'
+import { projectSharedMessages, type PublicShareResponse } from '@/features/chat/shared'
 
-interface SharedResponse { id: string; input: unknown[]; output: unknown[]; modelId: string }
-interface SharedChat { chat: { title: string; modelId: string; createdAt: string }; responses: SharedResponse[] }
-
-function contentText(value: unknown): string {
-  if (typeof value === 'string') return value
-  if (!Array.isArray(value)) return ''
-  return value.map((item) => {
-    if (typeof item === 'string') return item
-    const part = item as { text?: string; content?: unknown; role?: string; type?: string }
-    if (part.role === 'user') return contentText(part.content)
-    if (part.type === 'message') return contentText(part.content)
-    return part.text ?? ''
-  }).join('')
-}
+interface SharedChat { chat: { title: string; modelId: string; createdAt: string }; responses: PublicShareResponse[] }
 
 export default function SharedChatRoute() {
   const { token } = useLocalSearchParams<{ token: string }>()
@@ -43,7 +31,7 @@ export default function SharedChatRoute() {
     {error ? <View style={styles.center}><Text style={[styles.errorTitle, { color: theme.text }]}>Link unavailable</Text><Text style={[styles.error, { color: theme.secondary }]}>{error}</Text></View> : null}
     {data ? <ScrollView contentContainerStyle={styles.content}>
       <View style={styles.intro}><Image accessible={false} accessibilityElementsHidden importantForAccessibility="no" source={require('../../src/mockup5/assets/pulpo-smiley.png')} style={styles.logo} /><Text style={[styles.eyebrow, { color: theme.blue }]}>SHARED FROM PULPO</Text><Text accessibilityRole="header" style={[styles.title, { color: theme.text }]}>{data.chat.title}</Text><Text style={[styles.meta, { color: theme.secondary }]}>{data.responses.length * 2} messages · {data.chat.modelId}</Text></View>
-      {data.responses.flatMap((response) => [{ id: `${response.id}:input`, role: 'user' as const, text: referencePreviewText(contentText(response.input)) }, { id: response.id, role: 'assistant' as const, text: contentText(response.output) }]).map((message) => <View key={message.id} style={[styles.message, message.role === 'user' && { backgroundColor: theme.elevated, alignSelf: 'flex-end' }]}><Text accessibilityRole="header" style={[styles.role, { color: theme.secondary }]}>{message.role === 'user' ? 'You' : 'Pulpo'}</Text><SafeMarkdown>{message.text}</SafeMarkdown></View>)}
+      {projectSharedMessages(data.responses).map((message) => message.role === 'user' ? { ...message, text: referencePreviewText(message.text) } : message).map((message) => <View key={message.id} style={[styles.message, message.role === 'user' && { backgroundColor: theme.elevated, alignSelf: 'flex-end' }]}><Text accessibilityRole="header" style={[styles.role, { color: theme.secondary }]}>{message.role === 'user' ? 'You' : 'Pulpo'}</Text><SafeMarkdown>{message.text}</SafeMarkdown></View>)}
       <Text style={[styles.privacy, { color: theme.secondary }]}>This is a public, read-only snapshot. Reasoning is never included in shared chats.</Text>
     </ScrollView> : null}
   </SafeAreaView>

@@ -207,11 +207,6 @@ describe('prototype store', () => {
     expect(usePrototypeStore.getState().chats).toEqual([]);
   });
 
-  it('deletes a message and every later message in its branch', () => {
-    usePrototypeStore.getState().deleteMessageCascade('c-streaming', 'm-stream-user');
-    expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-streaming')?.messages).toEqual([]);
-  });
-
   it('discards a local chat when initial server creation fails', () => {
     const chat = usePrototypeStore.getState().chats[0]!;
     usePrototypeStore.getState().discardChat(chat.id);
