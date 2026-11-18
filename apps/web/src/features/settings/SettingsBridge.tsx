@@ -9,12 +9,12 @@ import { enqueueMutation } from '@/lib/local-first/outbox'
 import { localAccountKey, localDb } from '@/lib/local-first/database'
 import { useAuth } from '@/stores/auth'
 import { useModels } from '@/stores/models'
-import { DEFAULT_SETTINGS, normalizeLanguage, useSettings, type SettingsState } from '@/stores/settings'
+import { DEFAULT_SETTINGS, normalizeColorThemeId, normalizeCustomThemes, normalizeLanguage, useSettings, type SettingsState } from '@/stores/settings'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { normalizeAnimationSpeed } from '@/lib/animation-speed'
 
 const persistedKeys = [
-  'imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'language', 'sendWithEnter', 'doubleShiftSearch', 'streamResponses', 'showPromptSuggestions', 'showModelWarnings', 'modelWarningDismissals', 'showReasoning', 'showResponseCost',
+  'imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'colorTheme', 'customThemes', 'language', 'sendWithEnter', 'doubleShiftSearch', 'streamResponses', 'showPromptSuggestions', 'showModelWarnings', 'modelWarningDismissals', 'showReasoning', 'showResponseCost',
   'agentCostLimitEnabled', 'agentCostLimitMicros', 'agentFilesAskBeforeBrowsing', 'agentFileChangeMode',
   'chatWidth', 'animationSpeed', 'customInstructions', 'instructionPresetSelections', 'nickname', 'memoryEnabled', 'agentModes',
   'leaderboardColor', 'generation',
@@ -140,6 +140,8 @@ export function SettingsBridge() {
         language: normalizeLanguage(remote.values.language),
         animationSpeed: normalizeAnimationSpeed(remote.values.animationSpeed),
         sidebarPins: normalizeSidebarPins(remote.values.sidebarPins),
+        colorTheme: normalizeColorThemeId(remote.values.colorTheme),
+        customThemes: normalizeCustomThemes(remote.values.customThemes),
         ownerUserId: userId,
       }
       for (const key of dirtyKeys.current) {

@@ -24,6 +24,7 @@ import {
   Plug,
   Monitor,
   Moon,
+  Palette,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -77,6 +78,7 @@ import { SETTINGS_SECTION_IDS, type SettingsSectionId } from './settings-dialog'
 import { InstructionPresetButtons } from './InstructionPresetButtons'
 import { DesktopAppVersion } from './DesktopAppVersion'
 import { AnimationSpeedInput } from './AnimationSpeedInput'
+import { ColorThemeSettings } from './ColorThemeSettings'
 import { CostLimitInput } from './CostLimitInput'
 import { chatImportFileIsTooLarge } from './chat-import'
 import { ui, uit } from '@/i18n/ui'
@@ -92,6 +94,7 @@ const SECTION_CONFIG = {
   devices: { labelKey: 'settings.sections.devices', icon: Laptop },
   connections: { labelKey: 'settings.sections.connections', icon: Plug },
   personalization: { labelKey: 'settings.sections.personalization', icon: Sparkles },
+  appearance: { labelKey: 'settings.sections.appearance', icon: Palette },
   interface: { labelKey: 'settings.sections.interface', icon: Monitor },
   agent: { labelKey: 'settings.sections.agent', icon: Bot },
   billing: { labelKey: 'settings.sections.billing', icon: CreditCard },
@@ -752,9 +755,6 @@ export function SettingsModal({
                 <div>
                   <h2 className="text-base font-semibold">{t('settings.general.title')}</h2>
                   <Separator className="my-3" />
-                  <Row label={t('settings.general.theme')} hint={t('settings.general.themeHint')} group>
-                    {(control) => <ThemePicker labelId={control.labelId} describedBy={control['aria-describedby']} />}
-                  </Row>
                   <Row label={t('settings.general.language')}>
                     {(control) => (
                       <Select value={s.language} onValueChange={(value) => s.set('language', normalizeLanguage(value))}>
@@ -1032,6 +1032,17 @@ export function SettingsModal({
                   </div>
                   <Separator className="my-5" />
                   <SpeechSettings />
+                </div>
+              )}
+
+              {section === 'appearance' && (
+                <div>
+                  <h2 className="text-base font-semibold">{t('settings.sections.appearance')}</h2>
+                  <Separator className="my-3" />
+                  <Row label={t('settings.general.theme')} hint={t('settings.general.themeHint')} group>
+                    {(control) => <ThemePicker labelId={control.labelId} describedBy={control['aria-describedby']} />}
+                  </Row>
+                  <ColorThemeSettings />
                 </div>
               )}
 

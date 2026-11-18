@@ -52,12 +52,14 @@ describe('settings dialog accessibility', () => {
   })
 
   it('exposes the theme choice and names the language select by its label', () => {
-    open('general')
+    open('appearance')
     const theme = screen.getByRole('group', { name: 'Theme' })
     expect(within(theme).getByRole('button', { name: 'Dark' }).getAttribute('aria-pressed')).toBe('true')
     expect(within(theme).getByRole('button', { name: 'Light' }).getAttribute('aria-pressed')).toBe('false')
     fireEvent.click(within(theme).getByRole('button', { name: 'Light' }))
     expect(within(theme).getByRole('button', { name: 'Light' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('group', { name: 'Color theme' })).toBeTruthy()
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Settings sections' })).getByRole('button', { name: 'General' }))
     expect(screen.getByRole('combobox', { name: 'Language' })).toBeTruthy()
   })
 

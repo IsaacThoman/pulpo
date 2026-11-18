@@ -33,6 +33,8 @@
   --sidebar-accent: oklch(0.967 0.001 286.375);
   --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
   --sidebar-border: oklch(0.92 0.004 286.32);
+  /* User message bubbles. Color themes set a solid color. */
+  --message: color-mix(in oklab, var(--secondary) 85%, transparent);
   --code: oklch(0.985 0 0);
   --code-foreground: oklch(0.21 0.006 285.885);
   --code-muted: oklch(0.552 0.016 285.938);
@@ -144,6 +146,7 @@
   --color-sidebar-accent: var(--sidebar-accent);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
+  --color-message: var(--message);
   --color-code: var(--code);
   --color-code-foreground: var(--code-foreground);
   --color-code-muted: var(--code-muted);
