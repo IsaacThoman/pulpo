@@ -21,11 +21,8 @@ import {
 } from 'lucide-react'
 import type { Attachment } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { downloadAttachment } from '@/lib/local-first/attachment-cache'
 import { hasPrimaryModifier } from '@/features/files/browser/shortcuts'
 import { useMainNavigate } from '@/features/side-panel/use-panel-actions'
-import { useAuth } from '@/stores/auth'
-import { useSettings } from '@/stores/settings'
 import {
   attachmentKind,
   attachmentTypeLabel,
@@ -37,9 +34,9 @@ import { attachmentPreviewKind } from '@/lib/attachment-previews'
 import { useAttachmentPreviewUrl } from './use-attachment-preview-url'
 import { useAttachmentImageDimensions } from './use-attachment-image-dimensions'
 import { AttachmentPreviewDialog } from './AttachmentPreview'
-import { downloadChatAttachment, openAttachment } from './attachment-actions'
+import { downloadChatAttachment, downloadPendingAttachment, openAttachment } from './attachment-actions'
 import { AttachmentSaveMenu } from './SaveToFiles'
-import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
+import { useUploadOutbox } from '@/stores/upload-outbox'
 import { ui, uit } from '@/i18n/ui'
 
 const ATTACHMENT_KIND_DETAILS: Record<AttachmentKind, {
@@ -141,26 +138,6 @@ function MessageAttachmentPage({
       )}
     </div>
   )
-}
-
-function downloadPendingAttachment(record: UploadRecord): void {
-  if (record.file) {
-    const url = URL.createObjectURL(record.file)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = record.file.name
-    anchor.click()
-    setTimeout(() => URL.revokeObjectURL(url), 0)
-    return
-  }
-  const userId = useAuth.getState().user?.id
-  if (!userId || !record.id) return
-  void downloadAttachment(userId, {
-    id: record.id,
-    originalName: record.name,
-    mimeType: record.mimeType,
-    sizeBytes: record.size,
-  }, useSettings.getState().localAttachmentCacheMb)
 }
 
 function PendingMessageAttachment({ attachment }: { attachment: Attachment }) {

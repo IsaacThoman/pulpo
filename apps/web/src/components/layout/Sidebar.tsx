@@ -1514,7 +1514,7 @@ export function Sidebar({
   const recentOrder = useSettings((s) => s.chatSortMode === 'recent')
   // Rows render from a non-reactive snapshot below, so this key must cover every chat field they display or sort by.
   const chatListRevision = useChat((state) => state.chats.map((chat) => (
-    `${chat.id}:${chat.title}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}:${chat.temporary}:${chat.expiresAt ?? ''}:${recentOrder ? chat.updatedAt : ''}`
+    `${chat.id}:${chat.title}:${chat.pinned}:${chat.folderId ?? ''}:${chat.inFilesRoot ?? false}:${chat.modelId}:${chat.sortOrder}:${chat.temporary}:${chat.expiresAt ?? ''}:${recentOrder ? chat.updatedAt : ''}`
   )).join('|'))
   void chatListRevision
   const chats = useChat.getState().chats.filter((chat) => !chat.temporary)

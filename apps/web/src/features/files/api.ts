@@ -12,6 +12,7 @@ import type {
 import { formatAttachmentSizeLimit } from '@pulpo/client-core'
 import { ApiError, apiDownloadUrl, apiRequest, authenticatedFetch, downloadApiFile, fetchApiBlob } from '@/lib/api'
 import { uit } from '@/i18n/ui'
+import { downloadBlob } from '@/lib/code-download'
 import { useAuth } from '@/stores/auth'
 
 // Every Files query starts with ['files', userId] so the 'files' realtime scope refreshes them all.
@@ -67,12 +68,7 @@ export function convertToDoc(id: string): Promise<FileNode> {
 /** An open editor exports its local snapshot, including offline edits; the browser fetches others. */
 export async function downloadDocMarkdown(node: Pick<FileNode, 'id' | 'name'>, snapshot?: string): Promise<void> {
   const markdown = snapshot ?? (await apiRequest<{ name: string; markdown: string }>(`/api/files/${node.id}/markdown`)).markdown
-  const url = URL.createObjectURL(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }))
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = /\.(md|markdown)$/i.test(node.name) ? node.name : `${node.name}.md`
-  anchor.click()
-  window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+  downloadBlob(new Blob([markdown], { type: 'text/markdown;charset=utf-8' }), /\.(md|markdown)$/i.test(node.name) ? node.name : `${node.name}.md`)
 }
 
 export function updateFileNode(id: string, input: UpdateFileNode): Promise<FileNode> {

@@ -2,6 +2,7 @@ import { Copy, CreditCard, ExternalLink, Ghost, KeyRound, PinOff, Plus, Search, 
 import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { ui } from '@/i18n/ui'
+import { writeClipboardText } from '@/lib/clipboard'
 import { openBillingPortal } from '@/lib/billing'
 import { ownProfilePath } from '@/lib/profile'
 import { toggleSidebarPin, type SidebarPinKey } from '@/lib/sidebar-pins'
@@ -43,12 +44,8 @@ export function NavItemMenu({ menu, onClose, onNewChat, onSearch, subscribed, go
   )
   const copyHandle = async () => {
     if (!username) return
-    try {
-      await navigator.clipboard.writeText(username)
-      toast(ui("Handle copied"))
-    } catch (error) {
-      toast(error instanceof Error ? error.message : String(error), 'error')
-    }
+    if (await writeClipboardText(username)) toast(ui("Handle copied"))
+    else toast(ui("Could not copy to the clipboard."), 'error')
   }
   const openPortal = () => openBillingPortal().catch((error: unknown) => {
     toast(error instanceof Error ? error.message : String(error), 'error')

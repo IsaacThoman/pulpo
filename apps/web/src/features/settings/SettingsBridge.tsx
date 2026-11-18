@@ -3,7 +3,7 @@ import { normalizeSidebarPins } from '@/lib/sidebar-pins'
 import { useQuery } from '@tanstack/react-query'
 import { modelPreferencesSchema, type FollowedModelDefaults } from '@pulpo/contracts'
 import { LatestValueQueue } from '@pulpo/client-core'
-import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
+import { apiRequest, isNetworkError } from '@/lib/api'
 import { enforceAttachmentQuota } from '@/lib/local-first/attachment-cache'
 import { enqueueMutation } from '@/lib/local-first/outbox'
 import { localAccountKey, localDb } from '@/lib/local-first/database'
@@ -55,7 +55,7 @@ async function persistSettings(userId: string, body: Record<string, unknown>): P
     await localDb.outbox.delete(id)
     return true
   } catch (error) {
-    if (!(isNetworkError(error) || (error instanceof ApiError && error.status >= 500))) throw error
+    if (!isNetworkError(error)) throw error
     await enqueueMutation({ id, userId, method: 'PATCH', path: '/api/settings', body })
     return false
   }
@@ -77,7 +77,7 @@ async function persistModelPreferences(userId: string, body: ReturnType<typeof m
     await localDb.outbox.delete(id)
     return true
   } catch (error) {
-    if (!(isNetworkError(error) || (error instanceof ApiError && error.status >= 500))) throw error
+    if (!isNetworkError(error)) throw error
     await enqueueMutation({
       id,
       userId,

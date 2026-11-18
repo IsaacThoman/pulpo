@@ -26,11 +26,12 @@ export function downloadCode(code: string, fileName: string, mimeType = 'text/pl
   downloadBlob(new Blob([code], { type: mimeType }), fileName)
 }
 
-export function downloadBlob(blob: Blob, fileName: string): void {
+/** Saves a blob through a temporary link; the URL outlives the click so slower browsers can start the download. */
+export function downloadBlob(blob: Blob, fileName?: string): void {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = fileName
+  if (fileName) anchor.download = fileName
   anchor.click()
-  setTimeout(() => URL.revokeObjectURL(url), 0)
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
 }

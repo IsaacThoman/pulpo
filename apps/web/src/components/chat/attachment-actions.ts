@@ -1,10 +1,12 @@
 import type { FileNode } from '@pulpo/contracts'
 import type { Attachment } from '@/lib/types'
 import { apiRequest } from '@/lib/api'
+import { downloadBlob } from '@/lib/code-download'
 import { downloadAttachment } from '@/lib/local-first/attachment-cache'
 import { queryClient } from '@/lib/query-client'
 import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
+import type { UploadRecord } from '@/stores/upload-outbox'
 import { openBeside, panelContentPath } from '@/features/side-panel/use-panel-actions'
 import { useSidePanel } from '@/features/side-panel/store'
 
@@ -24,6 +26,22 @@ export async function fetchAttachment(id: string): Promise<ChatAttachment> {
  */
 export async function saveAttachmentToFiles(id: string, input: { parentId: string | null; name: string; replaceId?: string }): Promise<{ node: FileNode; replacedId: string | null }> {
   return apiRequest(`/api/attachments/${id}/save-to-files`, { method: 'POST', body: input })
+}
+
+/** Downloads an attachment still in the upload outbox: the local file while it has one, else the uploaded copy. */
+export function downloadPendingAttachment(record: UploadRecord): void {
+  if (record.file) {
+    downloadBlob(record.file, record.file.name)
+    return
+  }
+  const userId = useAuth.getState().user?.id
+  if (!userId || !record.id) return
+  void downloadAttachment(userId, {
+    id: record.id,
+    originalName: record.name,
+    mimeType: record.mimeType,
+    sizeBytes: record.size,
+  }, useSettings.getState().localAttachmentCacheMb)
 }
 
 export function downloadChatAttachment(attachment: Attachment): void {

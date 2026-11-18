@@ -26,6 +26,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Snippet } from '@/components/api/misc'
 import { ApiKeyModelsDialog } from '@/components/api/ApiKeyDialogs'
 import { runtimeInstanceUrl } from '@/lib/runtime'
+import { writeClipboardText } from '@/lib/clipboard'
 import {
   Collapsible,
   CollapsibleContent,
@@ -204,7 +205,7 @@ export function ApiKeysPage() {
           <Eye /> {ui('View models')}
         </DropdownMenuItem>
         <DropdownMenuItem
-          onClick={() => navigator.clipboard?.writeText(key.prefix).catch(() => {})}
+          onClick={() => void writeClipboardText(key.prefix)}
         >
           <Copy /> {ui("Copy prefix")} </DropdownMenuItem>
         {key.disabled ? (
@@ -465,9 +466,12 @@ export function ApiKeysPage() {
             <button
               className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
               onClick={() => {
-                if (secret) navigator.clipboard?.writeText(secret).catch(() => {})
-                setCopied(true)
-                setTimeout(() => setCopied(false), 1200)
+                if (!secret) return
+                void writeClipboardText(secret).then((success) => {
+                  if (!success) return
+                  setCopied(true)
+                  setTimeout(() => setCopied(false), 1200)
+                })
               }}
               aria-label={ui("Copy key")}
             >

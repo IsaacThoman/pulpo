@@ -1,4 +1,5 @@
 import { apiRequest, fetchApiBlob } from '@/lib/api'
+import { downloadBlob } from '@/lib/code-download'
 import { localAccountKey, localDb, type CachedAttachmentRow } from './database'
 import { adminChatAccessActive } from '@/features/admin-chat/access'
 
@@ -106,15 +107,12 @@ export async function downloadAttachment(
       // Fall back to a direct download when local caching is unavailable.
     }
   }
-  const anchor = document.createElement('a')
-  anchor.download = cached?.originalName ?? metadata.originalName
   if (cached) {
-    const url = URL.createObjectURL(cached.blob)
-    anchor.href = url
-    anchor.click()
-    window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+    downloadBlob(cached.blob, cached.originalName)
     return
   }
+  const anchor = document.createElement('a')
+  anchor.download = metadata.originalName
   const result = await apiRequest<{ url: string }>(`/api/attachments/${metadata.id}/download`)
   anchor.href = result.url
   anchor.click()
