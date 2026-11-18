@@ -37,12 +37,20 @@ import { DOC_SCHEMA_VERSION } from '@pulpo/client-core/doc-schema'
 import { registerMobileRoutes } from './routes.js'
 
 describe('mobile dictation capability', () => {
+  afterEach(() => { mocks.config = {} })
+
   it.each([
-    [undefined, false],
-    [{ enabled: false, encryptedGroqApiKey: 'configured' }, false],
-    [{ enabled: true, encryptedGroqApiKey: null }, false],
-    [{ enabled: true, encryptedGroqApiKey: 'configured' }, true],
-  ])('advertises dictation only when configured and enabled (%j)', async (settings, enabled) => {
+    [undefined, false, false],
+    [{ enabled: false, encryptedGroqApiKey: 'configured' }, false, false],
+    [{ enabled: true, encryptedGroqApiKey: null }, false, false],
+    [{ enabled: true, encryptedGroqApiKey: 'configured' }, false, true],
+    [{ enabled: true, provider: 'whisper', encryptedGroqApiKey: 'configured' }, false, false],
+    [{ enabled: true, provider: 'whisper' }, true, true],
+  ])('advertises dictation only when configured and enabled (%j)', async (settings, whisperConfigured, enabled) => {
+    mocks.config = whisperConfigured ? {
+      PULPO_DICTATION_WHISPER_URL: 'https://whisper.example.ts.net',
+      PULPO_DICTATION_WHISPER_TOKEN: 'token',
+    } : {}
     const values = [[{ id: 'user' }], [{ value: {} }], settings ? [{ value: settings }] : [], []]
     mocks.select.mockImplementation(() => {
       const rows = values.shift()
