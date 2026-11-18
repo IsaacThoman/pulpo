@@ -80,7 +80,7 @@ export function createNativeDictation(): DictationController {
     },
     size: (uri) => new File(uri).size,
     remove: (uri) => { const file = new File(uri); if (file.exists) file.delete() },
-    transcribe: (uri, signal) => transcribeAudioFile(uri, 'dictation.m4a', 'audio/mp4', signal),
+    transcribe: async (uri, signal) => (await transcribeAudioFile(uri, 'dictation.m4a', 'audio/mp4', signal)).text,
   })
 }
 

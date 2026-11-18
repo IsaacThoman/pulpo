@@ -82,6 +82,6 @@ export async function registerDictationRoutes(app: FastifyInstance): Promise<voi
         },
       })
     }
-    return { text: transcript.text }
+    return { text: transcript.text, ...(transcript.segments && { segments: transcript.segments }) }
   })
 }

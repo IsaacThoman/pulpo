@@ -10,3 +10,14 @@ export function audioTranscriptionMimeType(mimeType: string | null | undefined):
   if (type === 'audio/x-m4a' || type === 'audio/m4a') return 'audio/mp4'
   return type && SUPPORTED_AUDIO_TYPES.has(type) ? type : null
 }
+
+export interface AudioTranscriptSegment {
+  start: number
+  end: number
+  text: string
+}
+
+export interface AudioTranscript {
+  text: string
+  segments?: AudioTranscriptSegment[]
+}

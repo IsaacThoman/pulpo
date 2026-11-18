@@ -689,6 +689,7 @@ const esUi: Record<string, string> = {
   "Transcribing…": "Transcribiendo…",
   "Transcribe": "Transcribir",
   "Transcript": "Transcripción",
+  "Timestamps": "Marcas de tiempo",
   "Transcript ready.": "La transcripción está lista.",
   "Transcribe microphone recordings and audio files with Groq Whisper Large v3 Turbo.": "Transcribe grabaciones del micrófono y archivos de audio con Groq Whisper Large v3 Turbo.",
   "Enables the microphone in the composer and the Transcribe button in audio previews.": "Activa el micrófono en el cuadro de redacción y el botón Transcribir en las vistas previas de audio.",

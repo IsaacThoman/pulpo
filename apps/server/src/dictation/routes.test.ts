@@ -91,6 +91,14 @@ describe('dictation route', () => {
     }))
   })
 
+  it('returns segment timestamps with the plain transcript when available', async () => {
+    mocks.settings = { enabled: true, encryptedGroqApiKey: 'encrypted-groq-key' }
+    const segments = [{ start: 1.5, end: 4, text: 'Transcribed draft' }]
+    mocks.transcribeWithGroq.mockResolvedValueOnce({ text: 'Transcribed draft', durationSeconds: 12.1, segments })
+    const handler = await routeHandler()
+    await expect(handler(request())).resolves.toEqual({ text: 'Transcribed draft', segments })
+  })
+
   it('rejects unsupported uploads before calling the provider', async () => {
     mocks.settings = { enabled: true, encryptedGroqApiKey: 'encrypted-groq-key' }
     const handler = await routeHandler()

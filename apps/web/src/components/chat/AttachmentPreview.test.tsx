@@ -97,6 +97,7 @@ describe('attachment audio previews', () => {
 
     fireEvent.click(button)
     expect(await view.findByText('The call starts at noon.')).toBeTruthy()
+    expect(view.queryByRole('button', { name: 'Timestamps' })).toBeNull()
     expect(fetch).toHaveBeenCalledOnce()
     const [path, options] = fetch.mock.calls[0]!
     expect(path).toBe('/api/dictation/transcriptions')
@@ -106,6 +107,31 @@ describe('attachment audio previews', () => {
 
     fireEvent.click(view.getByRole('button', { name: 'Copy text' }))
     expect(writeClipboardText).toHaveBeenCalledWith('The call starts at noon.')
+  })
+
+  it('toggles timestamp ranges without regenerating the transcript', async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(JSON.stringify({
+      text: 'The call starts at noon. Bring your notes.',
+      segments: [
+        { start: 0.2, end: 2.8, text: 'The call starts at noon.' },
+        { start: 3.1, end: 5.4, text: 'Bring your notes.' },
+      ],
+    })))
+    vi.stubGlobal('fetch', fetch)
+    const view = renderPreview('call.wav', 'audio bytes', 'audio/wav')
+
+    fireEvent.click(await view.findByRole('button', { name: 'Transcribe' }))
+    const toggle = await view.findByRole('button', { name: 'Timestamps' })
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+    expect(view.queryByText('0:03–0:05')).toBeNull()
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+    expect(view.getByText('0:03–0:05')).toBeTruthy()
+    expect(view.getByText('Bring your notes.')).toBeTruthy()
+    fireEvent.click(toggle)
+    expect(view.queryByText('0:03–0:05')).toBeNull()
+    expect(view.getByText('The call starts at noon. Bring your notes.')).toBeTruthy()
+    expect(fetch).toHaveBeenCalledOnce()
   })
 
   it('allows retry after a service error and cancels work when the preview closes', async () => {

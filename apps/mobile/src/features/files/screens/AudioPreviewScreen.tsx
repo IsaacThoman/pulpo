@@ -1,5 +1,5 @@
 import { SPEECH_SEEK_SECONDS, speechClock } from '@pulpo/client-core'
-import { audioTranscriptionMimeType, MAX_AUDIO_TRANSCRIPTION_BYTES } from '@pulpo/contracts'
+import { audioTranscriptionMimeType, MAX_AUDIO_TRANSCRIPTION_BYTES, type AudioTranscript } from '@pulpo/contracts'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { setAudioModeAsync, setIsAudioActiveAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio'
 import * as Clipboard from 'expo-clipboard'
@@ -7,7 +7,7 @@ import { File } from 'expo-file-system'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AccessibilityInfo, ActivityIndicator, Alert, AppState, Platform, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Card, GlassIconButton, PageHeader, PrimaryButton } from '../../../mockup5/src/components/PrototypeUI'
+import { GlassIconButton, NativeSwitch, PageHeader, PrimaryButton } from '../../../mockup5/src/components/PrototypeUI'
 import type { RootStackParamList } from '../../../mockup5/src/navigation'
 import { shareLocalFile } from '../../../native/shareFile'
 import { MaterialIconButton } from '../../../platform/MaterialUI'
@@ -24,7 +24,8 @@ export function AudioPreviewScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets()
   const enabled = useSessionStore((state) => state.status === 'authenticated' && state.config?.capabilities.dictation === true)
   const [size] = useState(() => new File(uri).size)
-  const [text, setText] = useState<string | null>(null)
+  const [transcript, setTranscript] = useState<AudioTranscript | null>(null)
+  const [showTimestamps, setShowTimestamps] = useState(false)
   const [transcriptionError, setTranscriptionError] = useState('')
   const [pending, setPending] = useState(false)
   const request = useRef<AbortController | null>(null)
@@ -62,8 +63,8 @@ export function AudioPreviewScreen({ navigation, route }: Props) {
     setPending(true)
     setTranscriptionError('')
     try {
-      const transcript = await transcribeAudioFile(uri, name, type, controller.signal)
-      if (!controller.signal.aborted) setText(transcript)
+      const result = await transcribeAudioFile(uri, name, type, controller.signal)
+      if (!controller.signal.aborted) setTranscript(result)
     } catch (error) {
       if (!controller.signal.aborted) setTranscriptionError(error instanceof Error ? error.message : 'Unable to transcribe audio.')
     } finally {
@@ -119,7 +120,7 @@ export function AudioPreviewScreen({ navigation, route }: Props) {
       {Platform.OS === 'android' && <PageHeader title={name} onBack={() => navigation.goBack()}
         right={<MaterialIconButton icon="square.and.arrow.up" label="Share" onPress={share} />} />}
       <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 24 }]}>
-        <Card style={styles.card}>
+        <View style={styles.section}>
           <View style={styles.controls}>
             {!status.isLoaded && !status.error ? <ActivityIndicator color={theme.secondary} /> : status.isLoaded && (
               <>
@@ -138,25 +139,36 @@ export function AudioPreviewScreen({ navigation, route }: Props) {
             </>
           )}
           {(status.error || playbackError) && <Text accessibilityRole="alert" style={{ color: theme.red }}>{playbackError || 'This audio could not be played.'}</Text>}
-          {text === null && (
+          {transcript === null && (
             <PrimaryButton label={pending ? 'Transcribing…' : 'Transcribe'} variant="secondary" icon="waveform"
               loading={pending} disabled={pending || Boolean(unavailable)} onPress={() => void transcribe()} />
           )}
-          {unavailable && text === null && <Text style={{ color: theme.secondary }}>{unavailable}</Text>}
+          {unavailable && transcript === null && <Text style={{ color: theme.secondary }}>{unavailable}</Text>}
           {transcriptionError ? <Text accessibilityRole="alert" style={{ color: theme.red }}>{transcriptionError}</Text> : null}
-        </Card>
-        {text !== null && (
-          <Card style={styles.card}>
+        </View>
+        {transcript !== null && (
+          <View style={[styles.section, styles.transcriptSection, { borderColor: theme.separator }]}>
             <View style={styles.transcriptHeader}>
               <Text accessibilityRole="header" style={[styles.heading, { color: theme.text }]}>Transcript</Text>
               <GlassIconButton icon="doc.on.doc" label="Copy transcript" onPress={() => {
-                void Clipboard.setStringAsync(text)
+                void Clipboard.setStringAsync(transcript.text)
                   .then(() => AccessibilityInfo.announceForAccessibility('Transcript copied'))
                   .catch(() => Alert.alert('Couldn’t copy transcript'))
               }} />
             </View>
-            <Text selectable style={[styles.transcript, { color: theme.text }]}>{text}</Text>
-          </Card>
+            {Boolean(transcript.segments?.length) && (
+              <View style={styles.transcriptHeader}>
+                <Text style={{ color: theme.secondary }}>Timestamps</Text>
+                <NativeSwitch label="Timestamps" value={showTimestamps} onChange={setShowTimestamps} />
+              </View>
+            )}
+            {showTimestamps && transcript.segments?.length ? transcript.segments.map((segment, index) => (
+              <View key={index}>
+                <Text style={[styles.timestamp, { color: theme.secondary }]}>{speechClock(segment.start)}–{speechClock(segment.end)}</Text>
+                <Text selectable style={[styles.transcript, { color: theme.text }]}>{segment.text}</Text>
+              </View>
+            )) : <Text selectable style={[styles.transcript, { color: theme.text }]}>{transcript.text}</Text>}
+          </View>
         )}
       </ScrollView>
     </View>
@@ -166,7 +178,9 @@ export function AudioPreviewScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: 16, gap: 16, width: '100%', maxWidth: 680, alignSelf: 'center' },
-  card: { padding: 16, gap: 12 },
+  section: { gap: 12 },
+  transcriptSection: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 12 },
+  timestamp: { fontSize: 13, fontVariant: ['tabular-nums'] },
   controls: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 20, minHeight: 44 },
   track: { height: 4, borderRadius: 2, overflow: 'hidden' },
   time: { fontSize: 13, fontVariant: ['tabular-nums'], textAlign: 'center' },
