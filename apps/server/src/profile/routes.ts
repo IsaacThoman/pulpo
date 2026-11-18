@@ -49,6 +49,7 @@ export async function registerProfileRoutes(app: FastifyInstance): Promise<void>
     const key = `users/${user.id}/avatar/${newId()}.webp`
     await getBlobStore().put(key, image, { contentType: 'image/webp', contentLength: image.byteLength })
     let previousKey: string | null = null
+    let committed: { updated: typeof users.$inferSelect; friendChanges: Awaited<ReturnType<typeof bumpAccountRevisions>> }
     try {
       const { updated, friendChanges } = await db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`avatar:${user.id}`}))`)
@@ -65,15 +66,21 @@ export async function registerProfileRoutes(app: FastifyInstance): Promise<void>
         return { updated, friendChanges: await bumpAccountRevisions(tx, peers) }
       })
       if (!updated) throw notFound('User')
-      await publishStateChange({ userId: user.id, revision: updated.stateRevision })
-      await publishScopedStateChanges(friendChanges, ['friends'])
-      if (previousKey) await getBlobStore().delete(previousKey).catch(() => undefined)
-      reply.code(200)
-      return { user: serializeUser(updated) }
+      committed = { updated, friendChanges }
     } catch (cause) {
       await getBlobStore().delete(key).catch(() => undefined)
       throw cause
     }
+    // The new key is committed now: a publish failure must not delete the blob the row points at.
+    try {
+      await publishStateChange({ userId: user.id, revision: committed.updated.stateRevision })
+      await publishScopedStateChanges(committed.friendChanges, ['friends'])
+    } catch (cause) {
+      request.log.warn({ err: cause }, 'Avatar change notification failed')
+    }
+    if (previousKey) await getBlobStore().delete(previousKey).catch(() => undefined)
+    reply.code(200)
+    return { user: serializeUser(committed.updated) }
   })
 
   app.delete('/api/me/avatar', async (request, reply) => {
