@@ -38,7 +38,9 @@ jobs:
           cache: npm
 
       - name: Report high and critical vulnerabilities
-        run: npm audit --audit-level=high
+        run: node scripts/security/audit.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   checks:
     name: Checks / ${{ matrix.name }}
