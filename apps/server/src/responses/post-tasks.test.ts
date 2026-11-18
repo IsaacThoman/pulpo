@@ -14,7 +14,6 @@ const persistGeneratedChatTitle = vi.hoisted(() => vi.fn(async () => true))
 vi.mock('../chats/title-change.js', () => ({ persistGeneratedChatTitle }))
 
 import {
-  persistGeneratedTitleResult,
   retryInvalidTitleOutput,
   runPostResponseTasks,
   resolvePostTaskRuntime,
@@ -62,30 +61,6 @@ describe('post-response task model selection', () => {
     policy.enabled = false
     const current = { ...runtime('codex:test'), provider: { id: CODEX_PROVIDER_ID } } as CatalogModelRuntime
     expect(await resolvePostTaskRuntime('current', current)).toBe(current)
-  })
-
-  it('persists a parsed generated title through the realtime-aware helper', async () => {
-    await expect(persistGeneratedTitleResult({
-      userId: 'user-1',
-      chatId: 'chat-1',
-      outputText: '{"title":"  Generated title  "}',
-    })).resolves.toBe(true)
-
-    expect(persistGeneratedChatTitle).toHaveBeenCalledWith({
-      userId: 'user-1',
-      chatId: 'chat-1',
-      title: 'Generated title',
-    })
-  })
-
-  it('does not persist or publish malformed title output', async () => {
-    await expect(persistGeneratedTitleResult({
-      userId: 'user-1',
-      chatId: 'chat-1',
-      outputText: 'A plain title',
-    })).resolves.toBe(false)
-
-    expect(persistGeneratedChatTitle).not.toHaveBeenCalled()
   })
 
   it('rejects malformed, incomplete, and token-limited title responses', () => {

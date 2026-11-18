@@ -98,11 +98,3 @@ export const VOXTRAL_SPEECH_PRESET = {
   // A conservative batching default, not a claimed upstream hard limit.
   maxInputCharacters: 1500, maxInputTokens: null, billingUnit: 'characters', inputPriceMicros: 0, outputPriceMicros: 0,
 } satisfies Omit<SpeechModel, 'id' | 'providerConnectionId'>
-
-export function speechPriceLabel(model: PublicSpeechModel): string {
-  const usd = (micros: number) => `$${micros / 1e6}`
-  if (!model.billUsers) return 'Free to use'
-  if (model.billingUnit === 'tokens') return `${usd(model.inputPriceMicros)} / 1M input text tokens · ${usd(model.outputPriceMicros)} / 1M output audio tokens`
-  if (model.billingUnit === 'characters') return `${usd(model.characterPriceMicros)} / 1,000 characters`
-  return `${usd(model.minutePriceMicros)} / generated audio minute`
-}

@@ -532,7 +532,6 @@ const esUi: Record<string, string> = {
   "Unpin": "Desfijar",
   "{{0}}s": "{{0}}s",
   "{{count}} seconds": "{{count}} segundos",
-  "{{input}} in / {{output}} out": "{{input}} entrada/ {{output}} salida",
   "@{{0}}": "@{{0}}",
   "/ month": "/ mes",
   "/v1": "/v1",
