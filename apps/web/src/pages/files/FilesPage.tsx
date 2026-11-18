@@ -16,6 +16,7 @@ import {
   Eye,
   FilePlus2,
   FolderInput,
+  FolderKanban,
   FolderPlus,
   HardDrive,
   LayoutGrid,
@@ -73,6 +74,8 @@ import { FileContextMenu, type ContextMenuPoint } from '@/features/files/browser
 import { FileDragOverlay } from '@/features/files/browser/FileDragOverlay'
 import { FileItem, type FileDropHandlers } from '@/features/files/browser/FileItem'
 import { editAppearance, hasAppearance } from '@/features/files/appearance'
+import { ProjectMenuItem } from '@/features/files/ProjectDialog'
+import { canBeProject, editProject, useFolderProject } from '@/features/files/project'
 import { isSidebarItemDrag, readSidebarItems } from '@/features/sidebar/drag-data'
 import {
   clickSelect,
@@ -217,6 +220,9 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
   })
   const trashListing = useTrashView(userId, trash)
   const listing: UseQueryResult<FileListing> = inTrash ? trashListing : folderListing
+  // A project folder says so beside its name.
+  const shownFolder = inTrash ? null : folderListing.data?.folder ?? null
+  const shownProject = useFolderProject(shownFolder?.id, Boolean(shownFolder && canBeProject(shownFolder))).data
   const trashView = inTrash ? trashListing.data : undefined
   const place = useMemo<FilesViewPlace>(() => ({ layout, view: { kind: 'folder', id: folderId } }), [folderId, layout])
   const agentItem = useMemo(() => ({ id: folderId ?? FILE_SCOPE_ROOT }), [folderId])
@@ -978,6 +984,7 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       {/* Built-in folders list the actions they do not allow, unavailable, so every folder's menu reads the same. */}
       {single && <DropdownMenuItem disabled={isBuiltInFolder(single)} onSelect={() => setRenamingId(single.id)}><Pencil /> {ui("Rename")}<DropdownMenuShortcut>{shortcutLabel('F2')}</DropdownMenuShortcut></DropdownMenuItem>}
       {canStyle && <DropdownMenuItem onSelect={() => editAppearance(selectedNodes)}><Palette /> {styleLabel}</DropdownMenuItem>}
+      {single && !inTrash && canBeProject(single) && <ProjectMenuItem folder={single} />}
       <DropdownMenuItem disabled={hasSystem} onSelect={() => setMoving(selectedNodes)}><FolderInput /> {ui("Move to…")}</DropdownMenuItem>
       {sidebar && <DropdownMenuItem disabled={hasSystem} onSelect={archiveSelection}><Archive /> {ui("Move to archive")}</DropdownMenuItem>}
       {single && single.kind !== 'shortcut' && !hasTrash && (
@@ -1344,7 +1351,21 @@ function FilesBrowser({ folderId, layout }: { folderId: string | null; layout: F
       )}>
         <div className="min-w-0 flex-1 pr-1">
           {path}
-          <h1 className="truncate text-base leading-7 font-semibold">{listing.data?.folder?.name ?? (inTrash ? ui("Trash") : ui("My files"))}</h1>
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="truncate text-base leading-7 font-semibold">{listing.data?.folder?.name ?? (inTrash ? ui("Trash") : ui("My files"))}</h1>
+            {shownProject && listing.data?.folder && (
+              <button
+                type="button"
+                className="flex shrink-0 cursor-pointer items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+                aria-label={ui("Project settings…")}
+                title={ui("Project settings…")}
+                onClick={() => editProject(listing.data!.folder!)}
+              >
+                <FolderKanban className="size-3.5" />
+                {ui("Project")}
+              </button>
+            )}
+          </div>
         </div>
         {selectionBar}
         {/* With room the controls stay beside the selection bar; in a narrow header the bar takes their place. */}

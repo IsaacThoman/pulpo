@@ -1,5 +1,5 @@
 import { ui, uit } from '@/i18n/ui'
-import { apiRequest } from '@/lib/api'
+import { ApiError, apiRequest } from '@/lib/api'
 import type { Chat } from '@/lib/types'
 import { useChat } from '@/stores/chat'
 import { useFileToasts } from '@/features/files/browser/toasts'
@@ -42,4 +42,39 @@ export async function duplicateChats(chats: readonly Pick<Chat, 'id' | 'title'>[
     },
   })
   return copies
+}
+
+/** Why a fork or side chat could not open, in the app's words where it knows the reason. */
+export function threadActionErrorMessage(cause: unknown): string {
+  if (cause instanceof ApiError) {
+    switch (cause.code) {
+      case 'fork_in_progress': return ui('Wait for this reply to finish before forking from it')
+      case 'fork_unsupported': return ui('Save this temporary chat before forking it')
+      case 'side_chat_unsupported': return ui('Side chats can only be opened from an ordinary chat')
+    }
+  }
+  return filesErrorMessage(cause)
+}
+
+/** Copies the chat up to a reply into a new chat. Resolves with its id, or null after saying why it could not. */
+export async function forkFromReply(responseId: string): Promise<string | null> {
+  try {
+    return await useChat.getState().forkChat(responseId)
+  } catch (cause) {
+    toast(threadActionErrorMessage(cause), { tone: 'error' })
+    return null
+  }
+}
+
+/**
+ * Opens a side chat beside `chatId` that sees it up to `responseId` (its active reply when absent).
+ * Resolves with its id, or null after saying why it could not.
+ */
+export async function openSideChatAt(chatId: string, responseId?: string | null): Promise<string | null> {
+  try {
+    return await useChat.getState().openSideChat(chatId, responseId)
+  } catch (cause) {
+    toast(threadActionErrorMessage(cause), { tone: 'error' })
+    return null
+  }
 }

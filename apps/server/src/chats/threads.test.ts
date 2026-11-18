@@ -34,6 +34,9 @@ describe('thread summaries and reports', () => {
   it('summarizes the latest reply on one line', () => {
     expect(threadSummary(reply('Found   three\noptions.'))).toBe('Found three options.')
     expect(threadSummary([])).toBeNull()
+    expect(threadSummary(reply('## Result\n**Porto** wins — see [the table](https://x.test) and `notes.md`.\n\n| | A |\n|---|---|\n| x | 1 |')))
+      .toBe('Result Porto wins — see the table and notes.md. A x 1')
+    expect(threadSummary(reply('- *one* item\n- snake_case_name stays'))).toBe('one item snake_case_name stays')
     const long = threadSummary(reply('x'.repeat(500)))!
     expect(long).toHaveLength(280)
     expect(long.endsWith('…')).toBe(true)

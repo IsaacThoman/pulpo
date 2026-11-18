@@ -55,8 +55,22 @@ function collapse(text: string): string {
   return text.replace(/\s+/g, ' ').trim()
 }
 
+/** Plain text from Markdown, for a one-line summary: no emphasis marks, headings, links, or table rules. */
+export function plainSummaryText(markdown: string): string {
+  return markdown
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+|\d+[.)]\s+)/gm, '')
+    .replace(/^\s*\|?[\s:|-]+\|[\s:|-]*$/gm, ' ')
+    .replace(/\|/g, ' ')
+    .replace(/(\*\*|__|~~)(.+?)\1/g, '$2')
+    .replace(/(^|[^\w*])[*_](\S(?:.*?\S)?)[*_](?=[^\w*]|$)/g, '$1$2')
+    .replace(/`([^`]+)`/g, '$1')
+}
+
 export function threadSummary(output: unknown): string | null {
-  const text = collapse(assistantOutputText(output))
+  const text = collapse(plainSummaryText(assistantOutputText(output)))
   if (!text) return null
   return text.length > SUMMARY_LIMIT ? `${text.slice(0, SUMMARY_LIMIT - 1)}…` : text
 }

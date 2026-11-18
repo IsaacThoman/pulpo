@@ -1,4 +1,5 @@
 import {
+  CircleCheckBig,
   FileDiff,
   FilePenLine,
   FilePlus,
@@ -12,8 +13,12 @@ import {
   Globe,
   Image,
   List,
+  ListTree,
+  MessageSquareShare,
+  NotebookPen,
   Paperclip,
   Search,
+  Split,
   Terminal,
   Trash2,
   Wrench,
@@ -43,6 +48,12 @@ const presentations: Record<string, ToolActivityPresentation> = {
   web_search: { icon: Search, label: 'Searching the web…' },
   web_fetch: { icon: Globe, label: 'Fetching a webpage…' },
   update_memory: { icon: FilePenLine, label: 'Updating memory…' },
+  update_project_memory: { icon: NotebookPen, label: 'Updating project memory…' },
+  start_thread: { icon: Split, label: 'Starting a thread…' },
+  message_thread: { icon: MessageSquareShare, label: 'Messaging a thread…' },
+  list_threads: { icon: ListTree, label: 'Checking on threads…' },
+  read_thread: { icon: FileText, label: 'Reading a thread…' },
+  resolve_thread: { icon: CircleCheckBig, label: 'Updating a thread…' },
 }
 
 function filesCommandPresentation(command: string): ToolActivityPresentation | null {

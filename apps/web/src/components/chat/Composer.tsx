@@ -24,7 +24,9 @@ import {
   ChevronDown,
   CornerDownRight,
   FolderPlus,
+  GitFork,
   ImagePlus,
+  MessagesSquare,
   Loader2,
   Mic,
   Paperclip,
@@ -76,6 +78,8 @@ import { useDictationRecorder } from '@/components/chat/use-dictation-recorder'
 import { DictationBar } from '@/components/chat/DictationBar'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
+import { matchingComposerCommands, parseComposerCommand, type ComposerCommand, type ComposerCommandName } from './composer-commands'
+import { threadActionErrorMessage } from '@/features/chat/chat-actions'
 import {
   deleteComposerDraft,
   loadComposerDraft,
@@ -151,6 +155,7 @@ export function Composer({
   onTemporaryChange,
   onSelectModel,
   canReferenceFiles = false,
+  commands,
 }: {
   chatId: string | null
   modelId: string
@@ -171,6 +176,8 @@ export function Composer({
   onSelectModel?: (modelId: string) => void
   /** Lets the message mention Files items, which the agent may then use in the chat. */
   canReferenceFiles?: boolean
+  /** Commands a message can run in this chat (`/btw`, `/fork`); none when absent. */
+  commands?: readonly ComposerCommandName[]
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -811,6 +818,57 @@ export function Composer({
     },
   }))
 
+  /** Runs `/btw` or `/fork` in place of sending the draft, then opens the chat it made. */
+  const runCommand = async (command: ComposerCommand) => {
+    if (!chatId) return
+    setSubmitting(true)
+    try {
+      if (command.kind === 'fork') {
+        const reply = useChat.getState().chats.find((item) => item.id === chatId)?.messages.findLast((message) => message.role === 'assistant')
+        if (!reply) throw new Error(ui('There is no reply to fork from yet'))
+        if (!reply.done) throw new Error(ui('Wait for this reply to finish before forking from it'))
+        const forkId = await useChat.getState().forkChat(reply.id)
+        clearDraft()
+        navigate(`/c/${forkId}`)
+        return
+      }
+      const sideChatId = await useChat.getState().openSideChat(chatId)
+      const ids = attachmentIdsRef.current
+      if (command.question || ids.length) {
+        // The question is the side chat's first message, sent with this composer's model and options.
+        stageSubmission({
+          chatId: sideChatId,
+          content: command.question,
+          ...generationSelection,
+          temporary: false,
+          autoExpire: false,
+          attachmentIds: ids,
+        })
+        clearDraft(false)
+      } else {
+        clearDraft()
+      }
+      navigate(`/c/${sideChatId}`)
+    } catch (error) {
+      setQueueError(threadActionErrorMessage(error))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+  const commandHints = commands?.length && chatId && !editingExisting && !recovery
+    ? matchingComposerCommands(draftText, commands)
+    : []
+  const completeCommand = (name: ComposerCommandName) => {
+    // A command already typed out (a /btw question, say) is kept as it is.
+    if (!parseComposerCommand(draftText, [name]) || draftText.trim() === '/btw') {
+      setValue((current) => withComposerReferences(name === 'btw' ? '/btw ' : '/fork', composerReferences(current).references))
+    }
+    requestAnimationFrame(() => {
+      autosize()
+      focusAtEnd()
+    })
+  }
+
   const submit = async () => {
     // Mentioned Files items travel as links at the end of the message.
     const text = composerMessageText(value)
@@ -867,6 +925,11 @@ export function Composer({
         ...(usedDictationRef.current ? { usedDictation: true } : {}),
       })
       clearDraft(false)
+      return
+    }
+    const command = chatId && commands?.length ? parseComposerCommand(text, commands) : null
+    if (command) {
+      await runCommand(command)
       return
     }
     setSubmitting(true)
@@ -1289,6 +1352,29 @@ export function Composer({
                 </div>
               ))}
             </div>
+          </div>
+        )}
+        {commandHints.length > 0 && (
+          <div aria-label={ui('Commands')} role="group" className="flex flex-col px-2 pt-2">
+            {commandHints.map((name) => {
+              const Icon = name === 'btw' ? MessagesSquare : GitFork
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs hover:bg-accent"
+                  // Keep focus (and the caret) in the message while choosing.
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => completeCommand(name)}
+                >
+                  <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="shrink-0 font-mono font-medium">/{name}</span>
+                  <span className="min-w-0 truncate text-muted-foreground">
+                    {name === 'btw' ? ui('Ask in a side chat that sees this chat but adds nothing to it') : ui('Continue in a new chat from the latest reply')}
+                  </span>
+                </button>
+              )
+            })}
           </div>
         )}
         <div className="flex items-end pr-2.5">

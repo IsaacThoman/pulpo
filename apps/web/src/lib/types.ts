@@ -1,4 +1,5 @@
 import type {
+  ChatKind,
   ChatPreset,
   DataRetentionTag,
   FileAccessMode,
@@ -92,6 +93,8 @@ export interface Message {
   error?: string
   outputItems?: unknown[]
   agentMode?: boolean
+  /** A turn the server started to report what the chat's threads did, rather than one the user sent. */
+  threadUpdate?: boolean
   done: boolean
 }
 
@@ -121,6 +124,14 @@ export interface Chat {
   filesBrowseAllowed?: boolean
   expiresAt: number | null
   expired: boolean
+  /** A side chat or thread is reached from its origin chat rather than listed in the sidebar. */
+  kind?: ChatKind
+  /** The chat a side chat, thread, or fork came from. */
+  originChatId?: string | null
+  /** The reply in the origin chat it was opened or forked at. */
+  originResponseId?: string | null
+  /** Threads only: when the thread was marked done. */
+  threadResolvedAt?: number | null
   shareId?: string
   /** Client-only chat created before its first response is persisted. */
   provisional?: boolean

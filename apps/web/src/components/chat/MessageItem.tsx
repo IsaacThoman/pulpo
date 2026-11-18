@@ -27,6 +27,8 @@ import {
   ExternalLink,
   Pause,
   StepForward,
+  GitFork,
+  MessagesSquare,
 } from 'lucide-react'
 import { findCostLimitItem, findFilesPermissionItems, splitFileReferences, workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem, type CostLimitItem, type RecallItem } from '@pulpo/contracts'
 import { FilesPermissionIcon, FilesPermissionPrompt, FilesPermissionStepRow } from './FilesPermissionPrompt'
@@ -67,6 +69,8 @@ import { UsageCostBreakdown } from '@/components/usage/UsageCostBreakdown'
 import { FileChangesBar } from '@/features/files/FileChangesBar'
 import { FileReferenceCard } from '@/features/files/FileReferenceCard'
 import { fileChangesItem } from '@/features/files/file-changes'
+import { ThreadStartedCard, ThreadUpdateCard } from './ThreadCards'
+import { startedThreadTools } from './thread-tools'
 
 function CopyButton({ text }: { text: string }) {
   const { t } = useTranslation()
@@ -138,6 +142,12 @@ function toolSummary(tool: ToolItem): string {
   const query = typeof record.query === 'string' ? record.query : undefined
   if (tool.tool === 'bash' && command) {
     const oneLine = command.replace(/\s+/g, ' ').trim()
+    return oneLine.length > 72 ? `${oneLine.slice(0, 72)}…` : oneLine
+  }
+  // Thread tools and project memory edits: the thread's title, the message sent, or the change.
+  const described = [record.title, record.message, record.summary].find((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+  if (described && ['start_thread', 'message_thread', 'update_project_memory'].includes(tool.tool ?? '')) {
+    const oneLine = described.replace(/\s+/g, ' ').trim()
     return oneLine.length > 72 ? `${oneLine.slice(0, 72)}…` : oneLine
   }
   if (path) return path
@@ -657,6 +667,8 @@ export const MessageItem = memo(function MessageItem({
   onEditUserMessage = ignoreUserMessageEdit,
   composerEditActive = false,
   onOpenChat = ignoreOpenChat,
+  onFork,
+  onSideChat,
   editDrafts,
 }: {
   chat: Pick<Chat, 'id' | 'expired' | 'modelId'>
@@ -666,6 +678,10 @@ export const MessageItem = memo(function MessageItem({
   onEditUserMessage?: (message: Message) => void
   composerEditActive?: boolean
   onOpenChat?: (chatId: string) => void
+  /** Copies the chat up to this reply into a new chat; offered where the chat can be forked. */
+  onFork?: (messageId: string) => void
+  /** Opens a side chat that sees the chat up to this reply; offered where side chats can open. */
+  onSideChat?: (messageId: string) => void
   editDrafts?: Map<string, string>
 }) {
   const speechState = useSyncExternalStore(speechPlayback.subscribe, speechPlayback.getSnapshot, speechPlayback.getSnapshot)
@@ -772,6 +788,26 @@ export const MessageItem = memo(function MessageItem({
     }
   }
 
+  if (message.role === 'user' && message.threadUpdate) {
+    return (
+      <article aria-labelledby={headingId} className="group flex min-w-0 max-w-full flex-col gap-1">
+        <h2 id={headingId} className="sr-only">{ui('Thread update')}</h2>
+        <ThreadUpdateCard message={message} onOpenChat={onOpenChat} />
+        <div className="flex items-center justify-end gap-1">
+          <div className={cn("flex items-center gap-0.5 transition-opacity group-hover:opacity-100 focus-within:opacity-100", speechActive ? "opacity-100" : "opacity-0")}>
+            <CopyButton text={message.content} />
+            {!chat.expired && (
+              <ActionButton label={t('chat.deleteMessage')} onClick={() => { if (confirm(t('chat.deleteMessageConfirm'))) deleteMessage(chat.id, message.id) }}>
+                <Trash2 className="size-3.5" />
+              </ActionButton>
+            )}
+          </div>
+          {!chat.expired && <BranchControls chatId={chat.id} branch={message.branch} disabled={composerEditActive} />}
+        </div>
+      </article>
+    )
+  }
+
   if (message.role === 'user') {
     const pendingDelivery = message.deliveryStatus === 'uploading' && Boolean(message.pendingSubmissionId)
     // Files items mentioned in the message show with its attachments; the text is what was typed.
@@ -841,6 +877,7 @@ export const MessageItem = memo(function MessageItem({
     const type = (item as { type?: string }).type
     return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit', 'pulpo_files_permission', 'pulpo_file_changes'].includes(type)
   })
+  const startedThreads = startedThreadTools(outputItems)
   const costLimit = findCostLimitItem(outputItems)
   const filesPermission = findFilesPermissionItems(outputItems).findLast((item) => item.status === 'awaiting_decision')
   const lastActivityIndex = activitySegments.length - 1
@@ -939,6 +976,16 @@ export const MessageItem = memo(function MessageItem({
             </>
           )}
 
+          {!editing && startedThreads.length > 0 && (
+            <div role="list" aria-label={ui('Threads started')} className="flex flex-col gap-1.5">
+              {startedThreads.map((tool, index) => (
+                <div key={tool.id ?? `thread:${index}`} role="listitem" className="min-w-0">
+                  <ThreadStartedCard chatId={chat.id} tool={tool} onOpenChat={onOpenChat} />
+                </div>
+              ))}
+            </div>
+          )}
+
           {!editing && message.attachments && message.attachments.length > 0 && (
             <MessageAttachmentList attachments={message.attachments} align="start" />
           )}
@@ -1012,6 +1059,16 @@ export const MessageItem = memo(function MessageItem({
                     <ActionButton label={t('chat.regenerate')} onClick={() => { speechPlayback.stop(); onRegenerate(message.id) }}>
                       <RefreshCw className="size-3.5" />
                     </ActionButton>
+                    {onFork && (
+                      <ActionButton label={ui('Fork from here')} onClick={() => onFork(message.id)}>
+                        <GitFork className="size-3.5" />
+                      </ActionButton>
+                    )}
+                    {onSideChat && (
+                      <ActionButton label={ui('Ask in a side chat')} onClick={() => onSideChat(message.id)}>
+                        <MessagesSquare className="size-3.5" />
+                      </ActionButton>
+                    )}
                     {hasMultipleBranches(message.branch) && (
                       <ActionButton label={t('chat.deleteVersion')} onClick={() => { if (confirm(t('chat.deleteVersionConfirm'))) { speechPlayback.stop(); deleteMessage(chat.id, message.id) } }}>
                         <Trash2 className="size-3.5" />
@@ -1055,6 +1112,8 @@ export const MessageItem = memo(function MessageItem({
   && previous.editDrafts === next.editDrafts
   && previous.streaming === next.streaming
   && previous.onRegenerate === next.onRegenerate
+  && previous.onFork === next.onFork
+  && previous.onSideChat === next.onSideChat
   && previous.chat.id === next.chat.id
   && previous.chat.modelId === next.chat.modelId
   && previous.chat.expired === next.chat.expired

@@ -1064,3 +1064,84 @@ describe('Files changes under a reply', () => {
     expect(markup).toContain('Saving to Files…')
   })
 })
+
+describe('threads', () => {
+  const threadId = '00000000-0000-4000-8000-0000000000c1'
+
+  it('offers fork and side chat on a finished reply only where the chat allows them', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const onFork = vi.fn()
+    const onSideChat = vi.fn()
+    const view = render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><TooltipProvider><MessageItem
+      chat={chat}
+      message={assistant({ content: 'Answer' })}
+      streaming={false}
+      onRegenerate={() => undefined}
+      onFork={onFork}
+      onSideChat={onSideChat}
+    /></TooltipProvider></MemoryRouter></QueryClientProvider>)
+
+    fireEvent.click(view.getByRole('button', { name: 'Fork from here' }))
+    fireEvent.click(view.getByRole('button', { name: 'Ask in a side chat' }))
+    expect(onFork).toHaveBeenCalledWith('response-1')
+    expect(onSideChat).toHaveBeenCalledWith('response-1')
+
+    const without = renderToStaticMarkup(<MessageItem chat={chat} message={assistant({ content: 'Answer' })} streaming={false} onRegenerate={() => undefined} />)
+    expect(without).not.toContain('Fork from here')
+    const streaming = renderToStaticMarkup(<MessageItem chat={chat} message={assistant({ content: 'Ans', done: false })} streaming onRegenerate={() => undefined} onFork={onFork} onSideChat={onSideChat} />)
+    expect(streaming).not.toContain('Fork from here')
+    expect(streaming).not.toContain('Ask in a side chat')
+  })
+
+  it('shows a thread update as a card of reports that open their threads, without edit', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const onOpenChat = vi.fn()
+    const view = render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><TooltipProvider><MessageItem
+      chat={chat}
+      message={user({ threadUpdate: true, content: `Thread update — sent automatically when a thread you started stops working.\n\n### Thread “Compare pricing” finished\nThread id: ${threadId}\n\nHubSpot is cheapest.` })}
+      streaming={false}
+      onRegenerate={() => undefined}
+      onOpenChat={onOpenChat}
+    /></TooltipProvider></MemoryRouter></QueryClientProvider>)
+
+    expect(view.getByRole('article', { name: 'Thread update' })).toBeTruthy()
+    expect(view.getByText('Finished')).toBeTruthy()
+    expect(view.getByText('HubSpot is cheapest.')).toBeTruthy()
+    expect(view.queryByRole('button', { name: 'Edit' })).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: 'Open thread "Compare pricing"' }))
+    expect(onOpenChat).toHaveBeenCalledWith(threadId)
+  })
+
+  it('shows a card for each thread a reply started, with its live status', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const { useAuth } = await import('@/stores/auth')
+    useAuth.setState({ user: { id: 'user-1' } as never })
+    onTestFinished(() => useAuth.setState({ user: null }))
+    const { queryClient: client } = await import('@/lib/query-client')
+    onTestFinished(() => client.clear())
+    client.setQueryData(['chat-related', 'user-1', chat.id], {
+      origin: null, project: null, sideChats: [],
+      threads: [{ id: threadId, kind: 'thread', title: 'Compare pricing', createdAt: '', updatedAt: '', status: 'working', summary: 'Reading pricing pages' }],
+    })
+    const onOpenChat = vi.fn()
+    const view = render(<QueryClientProvider client={client}><MemoryRouter><TooltipProvider><MessageItem
+      chat={chat}
+      message={assistant({
+        content: 'Started a thread.',
+        outputItems: [
+          { type: 'pulpo_tool', id: 'tool-1', tool: 'start_thread', status: 'completed', arguments: { title: 'Compare pricing', task: 'Compare' }, output: `Started thread “Compare pricing” (thread_id: ${threadId}).` },
+          { type: 'message', content: [{ type: 'output_text', text: 'Started a thread.' }] },
+        ],
+      })}
+      streaming={false}
+      onRegenerate={() => undefined}
+      onOpenChat={onOpenChat}
+    /></TooltipProvider></MemoryRouter></QueryClientProvider>)
+
+    const card = view.getByRole('button', { name: 'Open thread "Compare pricing"' })
+    expect(card.textContent).toContain('Working')
+    expect(card.textContent).toContain('Reading pricing pages')
+    fireEvent.click(card)
+    expect(onOpenChat).toHaveBeenCalledWith(threadId)
+  })
+})

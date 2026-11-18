@@ -6,6 +6,7 @@ import {
   initialResponseDurationMs,
   mergeResponseSnapshots,
   truncateChatTitle,
+  type ChatKind,
   type CreateQueuedMessageInput,
   type EmbeddedResponseSnapshot,
   type FileAccessMode,
@@ -41,6 +42,7 @@ import { BranchHistoryCache } from '@/lib/branch-history-cache'
 import { reorderList } from '@/lib/model-order'
 import { useAuth } from './auth'
 import { pinnedItemsCeiling, sidebarItemsFloor } from '@/features/sidebar/cache'
+import { isSidebarChat } from '@/features/sidebar/chat-groups'
 import { useFileToasts } from '@/features/files/browser/toasts'
 import { filesErrorMessage } from '@/features/files/file-display'
 import { adminChatAccessActive, adminChatAccountKey } from '@/features/admin-chat/access'
@@ -64,7 +66,7 @@ function orderedChatIds(chats: Chat[]): string[] {
  * sidebar's unfiled list.
  */
 function looseChats(chats: Chat[]): Chat[] {
-  return chats.filter((chat) => !chat.pinned && !chat.temporary && !chat.folderId && !chat.inFilesRoot)
+  return chats.filter((chat) => !chat.pinned && isSidebarChat(chat) && !chat.folderId && !chat.inFilesRoot)
 }
 
 function chatListMembers(chats: Chat[], folderId: string | null): Chat[] {
@@ -172,6 +174,8 @@ export interface ServerResponse {
   createdAt: string
   completedAt: string | null
   agentMode?: boolean
+  /** Set on a turn the server started to report what the chat's threads did. */
+  threadUpdate?: true
   snapshot: ResponseSnapshot | EmbeddedResponseSnapshot
   branches: {
     user: { ids: string[]; index: number }
@@ -203,6 +207,10 @@ export interface ServerChat {
   fileChangeMode?: FileAccessMode
   filesBrowseAllowed?: boolean
   expiresAt?: string | null
+  kind?: ChatKind
+  originChatId?: string | null
+  originResponseId?: string | null
+  threadResolvedAt?: string | null
   createdAt: string
   updatedAt: string
   activeResponseId: string | null
@@ -299,6 +307,12 @@ interface ChatState {
   recoverChats: (ids: readonly string[]) => Promise<void>
   /** Copies a chat, history included, beside the original. Resolves with the copy's id. */
   duplicateChat: (id: string) => Promise<string>
+  /** Copies the conversation up to a reply into a new chat. Resolves with the new chat's id. */
+  forkChat: (responseId: string) => Promise<string>
+  /** Opens a side chat that sees `chatId` up to `responseId` (its active reply when absent). Resolves with its id. */
+  openSideChat: (chatId: string, responseId?: string | null) => Promise<string>
+  /** Marks a thread done, or reopens it. */
+  setThreadResolved: (id: string, resolved: boolean) => Promise<void>
   renameChat: (id: string, title: string) => void
   /** Sets the Files folders the agent may use in a saved chat. */
   setChatFileScope: (id: string, fileScopeIds: string[]) => void
@@ -461,6 +475,7 @@ function messagesFromResponses(responses: ServerResponse[], attachmentRows: Serv
         id: `${response.id}:input`, role: 'user' as const, content: inputText(response.input),
         timestamp, done: true, branch: response.branches.user, attachments: messageAttachments,
         agentMode: response.agentMode,
+        ...(response.threadUpdate ? { threadUpdate: true } : {}),
       },
       {
         id: response.id, role: 'assistant' as const, content: outputText(response.output),
@@ -549,6 +564,12 @@ function toChat(
       ? current?.expiresAt ?? null
       : row.expiresAt === null ? null : Date.parse(row.expiresAt),
     expired: current?.expired ?? false,
+    kind: row.kind ?? current?.kind ?? 'chat',
+    originChatId: row.originChatId === undefined ? current?.originChatId ?? null : row.originChatId,
+    originResponseId: row.originResponseId === undefined ? current?.originResponseId ?? null : row.originResponseId,
+    threadResolvedAt: row.threadResolvedAt === undefined
+      ? current?.threadResolvedAt ?? null
+      : row.threadResolvedAt === null ? null : Date.parse(row.threadResolvedAt),
     provisional: current?.provisional,
     awaitingSummary: current?.awaitingSummary,
   }
@@ -1045,8 +1066,9 @@ export const useChat = create<ChatState>()((set, get) => ({
     const activeTemporary = state.activeTemporaryChatId
       ? state.chats.find((chat) => chat.id === state.activeTemporaryChatId && chat.temporary)
       : undefined
+    // Side chats and threads are never in the summaries; keep the ones already opened.
     const localOnly = state.chats.filter((chat) => (
-      (chat.provisional || chat.awaitingSummary || chat.id === activeTemporary?.id)
+      (chat.provisional || chat.awaitingSummary || chat.id === activeTemporary?.id || (chat.kind ?? 'chat') !== 'chat')
       && !serverIds.has(chat.id)
     ))
     const chats = [...localOnly, ...serverChats]
@@ -1338,6 +1360,27 @@ export const useChat = create<ChatState>()((set, get) => ({
     queryClient.setQueryData(chatsKey(), (rows: ServerChat[] | undefined) => rows && [...rows.filter((row) => row.id !== copy.id), copy])
     set((state) => ({ chats: [...state.chats.filter((chat) => chat.id !== copy.id), toChat(copy)] }))
     return copy.id
+  },
+  forkChat: async (responseId) => {
+    const fork = await apiRequest<ServerChat>(`/api/messages/${responseId}/fork`, { method: 'POST', body: { clientId: crypto.randomUUID() } })
+    queryClient.setQueryData(chatsKey(), (rows: ServerChat[] | undefined) => rows && [...rows.filter((row) => row.id !== fork.id), fork])
+    set((state) => ({ chats: [...state.chats.filter((chat) => chat.id !== fork.id), toChat(fork)] }))
+    return fork.id
+  },
+  openSideChat: async (chatId, responseId) => {
+    const side = await apiRequest<ServerChat>(`/api/chats/${chatId}/side-chats`, {
+      method: 'POST',
+      body: { clientId: crypto.randomUUID(), ...(responseId ? { responseId } : {}) },
+    })
+    // Side chats stay out of the chat list; the store holds them so they can open at once.
+    set((state) => ({ chats: [...state.chats.filter((chat) => chat.id !== side.id), toChat(side)] }))
+    return side.id
+  },
+  setThreadResolved: async (id, resolved) => {
+    const row = await apiRequest<ServerChat>(`/api/chats/${id}/thread`, { method: 'PATCH', body: { resolved } })
+    const threadResolvedAt = row.threadResolvedAt ? Date.parse(row.threadResolvedAt) : null
+    set((state) => ({ chats: state.chats.map((chat) => chat.id === id ? { ...chat, threadResolvedAt } : chat) }))
+    queryClient.setQueryData<ServerChat>(chatKey(id), (cached) => cached ? { ...cached, threadResolvedAt: row.threadResolvedAt ?? null } : cached)
   },
   renameChat: (id, rawTitle) => {
     const title = truncateChatTitle(rawTitle)

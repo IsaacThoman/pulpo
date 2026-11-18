@@ -78,6 +78,8 @@ import { SuggestedBadge } from '@/features/files/FileSuggestion'
 import { registerItemDropZone } from '@/features/files/browser/use-item-drag'
 import { useTrashOperations } from '@/features/trash/use-trash-operations'
 import { AppearanceDialog } from '@/features/files/AppearanceDialog'
+import { ProjectDialog, ProjectMenuItem } from '@/features/files/ProjectDialog'
+import { canBeProject } from '@/features/files/project'
 import { ImportUrlDialog } from '@/features/files/ImportUrlDialog'
 import { editAppearance, hasAppearance } from '@/features/files/appearance'
 import { FolderPickerDialog } from '@/features/sidebar/FolderPickerDialog'
@@ -93,7 +95,7 @@ import { isPeoplePath, ownProfilePath } from '@/lib/profile'
 import { usePendingSocialCount } from '@/lib/pending-social'
 import { copyChatShareLink, duplicateChats } from '@/features/chat/chat-actions'
 import { ChatExpiryMenuItem } from '@/features/chat/ChatExpiryMenuItem'
-import { sidebarChatGroups } from '@/features/sidebar/chat-groups'
+import { isSidebarChat, sidebarChatGroups } from '@/features/sidebar/chat-groups'
 import {
   archiveSidebarSelection,
   createShortcutInteractively,
@@ -1034,6 +1036,7 @@ function ItemMenu({ node, folder, sidebar, atPointer = false, onRename, onNewFol
           {system ? ui("Color…") : ui("Color and icon…")}
         </DropdownMenuItem>
       )}
+      {folder && filesEnabled && canBeProject(node) && <ProjectMenuItem folder={node} />}
       {!system && (
         <MoveToFolderSub
           sidebar={sidebar}
@@ -1517,7 +1520,7 @@ export function Sidebar({
     `${chat.id}:${chat.title}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}:${chat.temporary}:${chat.expiresAt ?? ''}:${recentOrder ? chat.updatedAt : ''}`
   )).join('|'))
   void chatListRevision
-  const chats = useChat.getState().chats.filter((chat) => !chat.temporary)
+  const chats = useChat.getState().chats.filter(isSidebarChat)
   const activeTemporaryChatId = useChat((state) => state.activeTemporaryChatId)
   const composerModelId = useChat((state) => state.composerModelId)
   const sidebar = useSidebarState().data
@@ -2218,6 +2221,7 @@ export function Sidebar({
 
       <FolderPickerDialog />
       <AppearanceDialog />
+      <ProjectDialog />
       <PointerMenu point={spaceMenu} onClose={() => setSpaceMenu(null)}>
         {spaceMenu && sidebar && (
           <SpaceMenuContent
