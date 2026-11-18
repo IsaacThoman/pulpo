@@ -1,3 +1,4 @@
+import { MAX_AUDIO_TRANSCRIPTION_BYTES } from '@pulpo/contracts'
 import {
   DICTATION_LEVEL_INTERVAL_MS,
   DICTATION_MAX_SECONDS,
@@ -6,7 +7,7 @@ import {
   pushDictationLevel,
 } from '@pulpo/client-core'
 
-export const MAX_DICTATION_BYTES = 10 * 1024 * 1024
+export { MAX_AUDIO_TRANSCRIPTION_BYTES as MAX_DICTATION_BYTES }
 export const MAX_DICTATION_SECONDS = DICTATION_MAX_SECONDS
 
 export type DictationState = {
@@ -146,7 +147,7 @@ export class DictationController implements DictationLevelSource {
       const uri = recorder.uri
       const bytes = uri ? this.deps.size(uri) : 0
       if (!uri || bytes === 0) throw new Error('The recording is empty. Please try again.')
-      if (bytes > MAX_DICTATION_BYTES) throw new Error('Dictation recordings must be 10 MB or smaller.')
+      if (bytes > MAX_AUDIO_TRANSCRIPTION_BYTES) throw new Error('Dictation recordings must be 10 MB or smaller.')
       const text = await this.deps.transcribe(uri, active.abort.signal)
       if (!cancelled()) {
         if (!text.trim()) throw new Error('No speech was detected. Please try again.')

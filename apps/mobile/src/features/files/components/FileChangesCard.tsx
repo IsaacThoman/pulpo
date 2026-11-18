@@ -106,7 +106,7 @@ export function FileChangesCard({ namespace, responseId }: { namespace: string; 
     else {
       try {
         const { node } = await fetchFileNode(change.nodeId)
-        await previewUploadedFile(node)
+        await previewUploadedFile(node, navigation)
       } catch (error) {
         Alert.alert(`Couldn’t open “${change.name}”`, filesErrorMessage(error, change.name))
       }

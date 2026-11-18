@@ -4,7 +4,7 @@ import { AppState, Platform } from 'react-native'
 import { AudioModule, RecordingPresets, setAudioModeAsync, setIsAudioActiveAsync } from 'expo-audio'
 import { File } from 'expo-file-system'
 import { insertDictationText } from '@pulpo/client-core'
-import { apiRequest } from '../../api/client'
+import { transcribeAudioFile } from './transcribeAudio'
 import PulpoAudioFocus from '../../../modules/pulpo-audio-focus'
 import { DictationController, type DictationLevelSource } from './dictation'
 
@@ -80,17 +80,7 @@ export function createNativeDictation(): DictationController {
     },
     size: (uri) => new File(uri).size,
     remove: (uri) => { const file = new File(uri); if (file.exists) file.delete() },
-    transcribe: async (uri, signal) => {
-      const form = new FormData()
-      // SDK 57 uses standards-based fetch; URI descriptors are not multipart Blobs.
-      const audio = new File(uri)
-      Object.defineProperties(audio, { type: { value: 'audio/mp4' }, name: { value: 'dictation.m4a' } })
-      form.append('file', audio, 'dictation.m4a')
-      const result = await apiRequest<{ text: string }>('/api/dictation/transcriptions', {
-        method: 'POST', body: form, signal, timeoutMs: 45_000,
-      })
-      return result.text
-    },
+    transcribe: async (uri, signal) => (await transcribeAudioFile(uri, 'dictation.m4a', 'audio/mp4', signal)).text,
   })
 }
 

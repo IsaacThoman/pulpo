@@ -16,7 +16,7 @@ import { mediaMimeType } from '@pulpo/client-core/files'
 export type PreviewContent =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'ready'; url: string | null; text: string | null; textTruncated: boolean }
+  | { status: 'ready'; url: string | null; text: string | null; textTruncated: boolean; audio?: Blob }
   | { status: 'error'; message: string }
 
 function previewLabel(kind: AttachmentPreviewKind): string {
@@ -95,7 +95,7 @@ export function usePreviewContent(
 
         // Media saved under a generic type is retyped from its extension so every browser plays it.
         const mediaType = kind === 'audio' || kind === 'video'
-          ? mediaMimeType(attachment.name, blob.type) ?? mediaMimeType(attachment.name, attachment.mimeType)
+          ? mediaMimeType('', blob.type) ?? mediaMimeType(attachment.name, attachment.mimeType)
           : null
         const typedBlob = mediaType && mediaType !== blob.type
           ? new Blob([blob], { type: mediaType })
@@ -103,7 +103,7 @@ export function usePreviewContent(
             ? blob
             : new Blob([blob], { type: attachment.mimeType })
         objectUrl = URL.createObjectURL(typedBlob)
-        setContent({ status: 'ready', url: objectUrl, text: null, textTruncated: false })
+        setContent({ status: 'ready', url: objectUrl, text: null, textTruncated: false, audio: kind === 'audio' ? typedBlob : undefined })
       } catch (cause) {
         if (!cancelled) setContent({
           status: 'error',
