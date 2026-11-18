@@ -5193,6 +5193,8 @@ function ChatView({
   }, [input]);
   const inputRef = useRef(input);
   const [inputSelection, setInputSelection] = useState({ start: input.length, end: input.length });
+  // Typing @ suggests Files items only while the field has focus.
+  const [inputFocused, setInputFocused] = useState(false);
   const inputSelectionRef = useRef(inputSelection);
   const hydratedDraftScopeRef = useRef<string | null>(null);
   const [hydratedComposerScope, setHydratedComposerScope] = useState<string | null>(null);
@@ -6988,6 +6990,15 @@ function ChatView({
                 canUseAgent={canUseAgent}
                 onTurnOnAgent={() => setAgentEnabled(true)}
                 onAdd={(added) => updateComposerDraft(addComposerReferences(inputRef.current, added))}
+                mention={{
+                  text: composerDraft.text,
+                  selection: { start: Math.min(inputSelection.start, composerDraft.text.length), end: Math.min(inputSelection.end, composerDraft.text.length) },
+                  focused: inputFocused,
+                  onReplaceText: (next) => {
+                    setComposerSelection(setInputSelection, inputSelectionRef, { start: next.caret, end: next.caret });
+                    updateComposerDraft(withComposerText(inputRef.current, next.text));
+                  },
+                }}
               />
               {attachmentUploadError ? (
                 <Text accessibilityRole="alert" style={styles.attachmentErrorText}>
@@ -7019,8 +7030,8 @@ function ChatView({
                     maxFontSizeMultiplier={COMPOSER_MAX_FONT_SIZE_MULTIPLIER}
                     multiline
                     maxLength={1_000_000}
-                    onFocus={() => { setQueueCollapsed(true); setShelfCollapsed(true); }}
-                    onBlur={() => { setQueueCollapsed(false); setShelfCollapsed(false); }}
+                    onFocus={() => { setInputFocused(true); setQueueCollapsed(true); setShelfCollapsed(true); }}
+                    onBlur={() => { setInputFocused(false); setQueueCollapsed(false); setShelfCollapsed(false); }}
                     // The field shows the typed text; the draft's Files references follow it as chips.
                     onChangeText={(value) => { updateComposerDraft(withComposerText(inputRef.current, value)); }}
                     selection={{ start: Math.min(inputSelection.start, composerDraft.text.length), end: Math.min(inputSelection.end, composerDraft.text.length) }}

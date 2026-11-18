@@ -1,5 +1,5 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, sql, type SQL } from 'drizzle-orm'
-import { FILE_TREE_MAX_DEPTH, isMarkdownName, nextAvailableName, type FileColor, type FileIcon, type FileListing, type FileNode, type FileNodeKind, type FileSystemRole, type StateInvalidationScope } from '@pulpo/contracts'
+import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, lt, ne, sql, type SQL } from 'drizzle-orm'
+import { FILE_TREE_MAX_DEPTH, isMarkdownName, nextAvailableName, type FileColor, type FileIcon, type FileListing, type FileNode, type FileSearchResults, type FileNodeKind, type FileSystemRole, type StateInvalidationScope } from '@pulpo/contracts'
 import { assertStorageCapacity } from '../attachments/storage-quota.js'
 import { db } from '../database/client.js'
 import { chats, fileNodes, fileVersions, userPreferences } from '../database/schema.js'
@@ -171,6 +171,33 @@ export async function getFileNode(userId: string, id: string): Promise<{ node: F
   const access = await resolveFileAccess(db, userId, id)
   if (!access) throw notFound('File')
   return { node: (await toFileNodes(db, userId, [access.node]))[0]!, ancestors: (await ancestorsOf(db, userId, access.node)).map(toFileNode) }
+}
+
+/**
+ * The account's own documents, uploaded files, and folders whose names contain `query`, ignoring
+ * case: names that start with it first, then where it appears earliest, then the most recently
+ * changed. Without a query, the most recently changed. Composers use it to mention items by name.
+ */
+export async function searchFileNodes(userId: string, query: string, limit: number): Promise<FileSearchResults['items']> {
+  const needle = query.trim()
+  // LIKE treats %, _, and the escape character as patterns; a name search means them literally.
+  const pattern = `%${needle.replace(/[\\%_]/g, (char) => `\\${char}`)}%`
+  const position = sql`strpos(lower(${fileNodes.name}), lower(${needle}))`
+  const rows = await db.select().from(fileNodes).where(and(
+    eq(fileNodes.ownerUserId, userId),
+    isNull(fileNodes.trashedAt),
+    eq(fileNodes.status, 'ready'),
+    inArray(fileNodes.kind, ['folder', 'doc', 'blob']),
+    needle ? ilike(fileNodes.name, pattern) : undefined,
+  )).orderBy(...(needle ? [asc(position)] : []), desc(fileNodes.updatedAt), asc(fileNodes.id)).limit(limit)
+  const parentIds = [...new Set(rows.map((row) => row.parentId).filter((id): id is string => Boolean(id)))]
+  // A live item's folders are live too: trashing a folder trashes everything in it.
+  const parents = parentIds.length
+    ? await db.select({ id: fileNodes.id, name: fileNodes.name }).from(fileNodes)
+      .where(and(eq(fileNodes.ownerUserId, userId), inArray(fileNodes.id, parentIds)))
+    : []
+  const parentById = new Map(parents.map((parent) => [parent.id, parent]))
+  return rows.map((row) => ({ node: toFileNode(row), parent: row.parentId ? parentById.get(row.parentId) ?? null : null }))
 }
 
 export const treeTooDeep = () => new AppError(400, 'file_tree_too_deep', `Folders can be nested at most ${FILE_TREE_MAX_DEPTH} levels deep`)

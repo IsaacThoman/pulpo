@@ -2803,6 +2803,8 @@ const esUi: Record<string, string> = {
   "Changes to Files": "Cambios en Archivos",
   "Files access…": "Acceso a Archivos…",
   "Mentioned from Files": "Mencionados de Archivos",
+  "Mention from Files": "Mencionar de Archivos",
+  "Recent in Files": "Recientes en Archivos",
   "It asked to list My files.": "Pidió ver la lista de Mis archivos.",
   "It asked to search My files.": "Pidió buscar en Mis archivos.",
   "It asked about “{{0}}”.": "Preguntó por «{{0}}».",
