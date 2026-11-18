@@ -94,9 +94,14 @@ describe('side chats, forks, and threads', () => {
   })
 
   it('keeps opened side chats and threads when the chat list refreshes without them', () => {
-    useChat.setState((state) => ({ chats: [...state.chats, chat('side', { kind: 'side' }), chat('thread', { kind: 'thread' }), chat('gone')] }))
+    useChat.setState((state) => ({ chats: [
+      ...state.chats, chat('side', { kind: 'side', originChatId: originId }), chat('thread', { kind: 'thread', originChatId: originId }), chat('gone'),
+    ] }))
     useChat.getState().replaceSummaries([serverChat(originId)])
     expect(useChat.getState().chats.map((item) => item.id).sort()).toEqual([originId, 'side', 'thread'].sort())
+    // Once the chat they belong to leaves the list (trashed, say), they go too.
+    useChat.getState().replaceSummaries([])
+    expect(useChat.getState().chats).toEqual([])
   })
 
   it('resolves and reopens a thread', async () => {

@@ -214,9 +214,14 @@ export async function expireNormalChat(
     .where(normalChatExpiryCondition(chatId, userId, now, expectedExpiresAt))
     .returning({ id: chats.id })
   if (!marked) return false
+  // Its side chats and threads go to the trash with it, as when the user trashes it.
+  const related = await db.update(chats).set(trashedChatValues(now, retention)).where(and(
+    eq(chats.originChatId, chatId), inArray(chats.kind, ['side', 'thread']), eq(chats.userId, userId), isNull(chats.deletedAt),
+  )).returning({ id: chats.id })
+  const trashedIds = [chatId, ...related.map((row) => row.id)]
   const cleanup = await Promise.allSettled([
-    db.delete(queuedMessages).where(and(eq(queuedMessages.chatId, chatId), eq(queuedMessages.userId, userId))),
-    cancelChatWork([chatId]),
+    db.delete(queuedMessages).where(and(inArray(queuedMessages.chatId, trashedIds), eq(queuedMessages.userId, userId))),
+    cancelChatWork(trashedIds),
   ])
   await publishExpiredChat(userId, chatId)
   await scheduleChatIndex(chatId, userId, 'chat-expired')

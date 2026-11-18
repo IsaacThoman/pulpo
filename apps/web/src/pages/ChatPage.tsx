@@ -40,7 +40,7 @@ import { usePublishChatTarget } from '@/features/side-panel/agent'
 import { useRelatedChats } from '@/features/chat/use-related-chats'
 import { ChatContextLine, ThreadResolveButton, ThreadsMenu } from '@/features/chat/ChatThreadControls'
 import { forkFromReply, openSideChatAt } from '@/features/chat/chat-actions'
-import type { ComposerCommandName } from '@/components/chat/composer-commands'
+import type { ComposerCommandName } from '@pulpo/client-core'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
   { id: '1', translationKey: 'chat.suggestedPrompts.build' },

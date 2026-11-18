@@ -1,6 +1,8 @@
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import {
   MAX_THREADS_PER_CHAT,
+  MODEL_ACCESS_DENIED_ERROR,
+  MODEL_UNAVAILABLE_ON_PLATFORM_ERROR,
   MAX_WORKING_THREADS_PER_CHAT,
   THREAD_UPDATE_BRANCH_REASON,
   truncateChatTitle,
@@ -8,8 +10,11 @@ import {
   type ChatThreadStatus,
   type RelatedChat,
   type RelatedChats,
+  type StateInvalidationScope,
 } from '@pulpo/contracts'
+import { markdownPreviewText } from '@pulpo/client-core'
 import { db } from '../database/client.js'
+import { redis } from '../redis.js'
 import { chats, queuedMessages, responses, users } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -20,7 +25,9 @@ import { assistantOutputText } from '../responses/output-text.js'
 import { createResponse } from '../responses/service.js'
 import { planDuplicateTree } from './duplicate.js'
 import { accessibleChatCondition } from './temporary.js'
-import { createQueuedMessage } from './message-queue.js'
+import { topChatOrder, topSortOrder } from '../files/order.js'
+import { advanceMessageQueue, createQueuedMessage } from './message-queue.js'
+import { threadReportDispatchKey } from './thread-dispatch.js'
 import { chatProject } from './projects.js'
 
 type ChatRow = typeof chats.$inferSelect
@@ -39,6 +46,8 @@ const SUMMARY_LIMIT = 280
 const SIDE_CHAT_CONTEXT_LIMIT = 24_000
 
 const ACTIVE_STATUSES = ['queued', 'in_progress'] as const
+/** Errors that mean a model can't be used here, as opposed to the request being wrong. */
+const MODEL_UNAVAILABLE_CODES = new Set(['model_not_found', 'model_not_agent_capable', MODEL_ACCESS_DENIED_ERROR, MODEL_UNAVAILABLE_ON_PLATFORM_ERROR])
 
 /** Where a thread stands, from its latest reply and whether follow-ups are waiting. */
 export function deriveThreadStatus(input: {
@@ -55,25 +64,8 @@ function collapse(text: string): string {
   return text.replace(/\s+/g, ' ').trim()
 }
 
-/** Plain text from Markdown, for a one-line summary: no emphasis marks, headings, links, or table rules. */
-export function plainSummaryText(markdown: string): string {
-  return markdown
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
-    .replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+|\d+[.)]\s+)/gm, '')
-    .replace(/^\s*\|?[\s:|-]+\|[\s:|-]*$/gm, ' ')
-    .replace(/\|/g, ' ')
-    .replace(/(\*\*|__|~~)(.+?)\1/g, '$2')
-    .replace(/(^|[^\w*])[*_](\S(?:.*?\S)?)[*_](?=[^\w*]|$)/g, '$1$2')
-    .replace(/`([^`]+)`/g, '$1')
-    // A reply still streaming can end inside emphasis or code.
-    .replace(/\*\*|__|~~|`/g, '')
-    .replace(/(^|\s)[*_](?=\S)/g, '$1')
-}
-
 export function threadSummary(output: unknown): string | null {
-  const text = collapse(plainSummaryText(assistantOutputText(output)))
+  const text = collapse(markdownPreviewText(assistantOutputText(output)))
   if (!text) return null
   return text.length > SUMMARY_LIMIT ? `${text.slice(0, SUMMARY_LIMIT - 1)}…` : text
 }
@@ -124,12 +116,12 @@ export function threadReportText(reports: Array<{ threadId: string; title: strin
   return `${heading} — sent automatically when a thread you started stops working.\n\n${sections.join('\n\n')}`
 }
 
-async function bumpRevision(userId: string, chatId?: string): Promise<void> {
+async function bumpRevision(userId: string, chatId?: string, scopes: StateInvalidationScope[] = ['chats']): Promise<void> {
   const [updated] = await db.update(users)
     .set({ stateRevision: sql`${users.stateRevision} + 1` })
     .where(eq(users.id, userId))
     .returning({ revision: users.stateRevision })
-  if (updated) await publishStateChange({ userId, revision: updated.revision, chatId, scopes: ['chats'] })
+  if (updated) await publishStateChange({ userId, revision: updated.revision, chatId, scopes })
 }
 
 async function ownedChat(userId: string, chatId: string): Promise<ChatRow> {
@@ -277,15 +269,21 @@ export async function forkChat(input: { userId: string; responseId: string; clie
   const leafId = plan.responseIds.get(anchor.id) ?? null
   const now = new Date()
   const title = truncateChatTitle(source.title.endsWith(' (fork)') ? source.title : `${source.title} (fork)`)
+  const folderId = source.kind === 'chat' ? source.folderId : null
+  const inFilesRoot = source.kind === 'chat' && source.inFilesRoot
+  // As with a duplicate, the fork sits beside the original; a pinned original's order is its place
+  // in the pinned list, so the unpinned fork goes to the top of the folder instead.
+  const sortOrder = source.kind === 'chat' && !source.pinned ? source.sortOrder
+    : inFilesRoot ? await topSortOrder(db, input.userId, null) : await topChatOrder(db, input.userId, folderId)
   const created = await db.transaction(async (tx) => {
     const [chat] = await tx.insert(chats).values({
       id: chatId,
       userId: input.userId,
-      folderId: source.kind === 'chat' ? source.folderId : null,
-      inFilesRoot: source.kind === 'chat' ? source.inFilesRoot : false,
+      folderId,
+      inFilesRoot,
       title,
       modelId: source.modelId,
-      sortOrder: source.sortOrder,
+      sortOrder,
       fileScopeIds: source.fileScopeIds,
       fileScopeAccess: source.fileScopeAccess,
       fileChangeMode: source.fileChangeMode,
@@ -311,7 +309,8 @@ export async function forkChat(input: { userId: string; responseId: string; clie
     }
     return chat!
   })
-  await bumpRevision(input.userId, chatId)
+  // The fork shows in Files listings, which list filed chats.
+  await bumpRevision(input.userId, chatId, ['chats', 'files', 'folders'])
   return created
 }
 
@@ -386,21 +385,23 @@ export async function startThread(input: StartThreadInput): Promise<{ thread: Ch
     createdAt: now,
     updatedAt: now,
   }).returning()
+  const start = (modelId: string, presetSelections: Record<string, string>) => startReply({
+    ownerUserId: input.ownerUserId,
+    chatId: thread!.id,
+    parentResponseId: null,
+    input: { input: task, modelId, presetSelections, attachmentIds: [], agentMode: true, timeZone: settings.timeZone },
+  })
   let response: ResponseRow
   try {
-    response = await startReply({
-      ownerUserId: input.ownerUserId,
-      chatId: thread!.id,
-      parentResponseId: null,
-      input: {
-        input: task,
-        modelId: threadModelId ?? settings.modelId,
-        presetSelections: threadModelId ? {} : settings.presetSelections,
-        attachmentIds: [],
-        agentMode: true,
-        timeZone: settings.timeZone,
-      },
-    })
+    try {
+      response = await start(threadModelId ?? settings.modelId, threadModelId ? {} : settings.presetSelections)
+    } catch (error) {
+      // A project's thread model that was turned off or isn't available to this account falls
+      // back to the chat's own model rather than blocking every thread in the project.
+      if (!threadModelId || threadModelId === settings.modelId || !(error instanceof AppError) || !MODEL_UNAVAILABLE_CODES.has(error.code)) throw error
+      response = await start(settings.modelId, settings.presetSelections)
+      await db.update(chats).set({ modelId: coordinator.modelId }).where(eq(chats.id, thread!.id))
+    }
   } catch (error) {
     await db.delete(chats).where(eq(chats.id, thread!.id))
     throw error
@@ -493,15 +494,30 @@ export async function handleSettledResponse(responseId: string): Promise<void> {
   if (chat.kind === 'chat') await deliverThreadReports(chat.id)
 }
 
+// Long enough to start a reply; a crashed worker's claim lapses and the reports stay pending.
+const DISPATCH_CLAIM_SECONDS = 120
+
+async function hasPendingReports(chatId: string): Promise<boolean> {
+  const [pending] = await db.select({ id: chats.id }).from(chats).where(and(
+    eq(chats.originChatId, chatId), eq(chats.kind, 'thread'), isNull(chats.deletedAt), isNotNull(chats.threadReportResponseId),
+  )).limit(1)
+  return Boolean(pending)
+}
+
 /**
  * Tells an idle chat what its threads reported since it last heard from them, as a new turn the
  * chat answers like any other. Waits while the chat is replying or has queued messages: those
  * settle first, and this runs again when they do.
  */
 export async function deliverThreadReports(chatId: string): Promise<void> {
+  // Most chats never start a thread; they are done after one indexed lookup.
+  if (!await hasPendingReports(chatId)) return
+  const claimKey = threadReportDispatchKey(chatId)
   const claim = await db.transaction(async (tx) => {
-    // Shares the message queue's lock, so a report and a queued message never start together.
+    // Shares the message queue's lock. The claim key, set under it, keeps the queue from starting
+    // a message until this report's turn exists, and keeps a second delivery from starting.
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-message-queue:${chatId}`}))`)
+    if (await redis.exists(claimKey)) return null
     const [chat] = await tx.select().from(chats).where(and(
       eq(chats.id, chatId), eq(chats.kind, 'chat'), isNull(chats.deletedAt), isNull(chats.purgeStartedAt), accessibleChatCondition(),
     )).limit(1)
@@ -521,27 +537,27 @@ export async function deliverThreadReports(chatId: string): Promise<void> {
     const turns = await tx.select({ id: responses.id, parentResponseId: responses.parentResponseId, branchReason: responses.branchReason })
       .from(responses).where(and(eq(responses.chatId, chatId), isNull(responses.deletedAt)))
     if (consecutiveThreadUpdates(turns, activeLeaf(chat)) >= MAX_CONSECUTIVE_THREAD_UPDATES) return null
-    await tx.update(chats).set({ threadReportResponseId: null })
-      .where(inArray(chats.id, pending.map((thread) => thread.id)))
+    if (await redis.set(claimKey, '1', 'EX', DISPATCH_CLAIM_SECONDS, 'NX') !== 'OK') return null
     return { chat, pending }
   })
   if (!claim) return
-  const reportIds = claim.pending.map((thread) => thread.threadReportResponseId!)
-  const replies = await db.select().from(responses).where(inArray(responses.id, reportIds))
-  const repliesById = new Map(replies.map((reply) => [reply.id, reply]))
-  const text = threadReportText(claim.pending.map((thread) => {
-    const reply = repliesById.get(thread.threadReportResponseId!)
-    const error = reply?.error && typeof reply.error === 'object' && 'message' in reply.error ? String((reply.error as { message: unknown }).message) : null
-    return {
-      threadId: thread.id,
-      title: thread.title,
-      status: reply?.status ?? 'completed',
-      reply: reply ? assistantOutputText(reply.output) : '',
-      error,
-    }
-  }))
-  const settings = await dispatchSettings(claim.chat)
+  let delivered = false
   try {
+    const reportIds = claim.pending.map((thread) => thread.threadReportResponseId!)
+    const replies = await db.select().from(responses).where(inArray(responses.id, reportIds))
+    const repliesById = new Map(replies.map((reply) => [reply.id, reply]))
+    const text = threadReportText(claim.pending.map((thread) => {
+      const reply = repliesById.get(thread.threadReportResponseId!)
+      const error = reply?.error && typeof reply.error === 'object' && 'message' in reply.error ? String((reply.error as { message: unknown }).message) : null
+      return {
+        threadId: thread.id,
+        title: thread.title,
+        status: reply?.status ?? 'completed',
+        reply: reply ? assistantOutputText(reply.output) : '',
+        error,
+      }
+    }))
+    const settings = await dispatchSettings(claim.chat)
     await startReply({
       ownerUserId: claim.chat.userId,
       chatId,
@@ -555,17 +571,23 @@ export async function deliverThreadReports(chatId: string): Promise<void> {
         timeZone: settings.timeZone,
       },
     })
-  } catch (error) {
-    // Keep the reports for the next time this chat goes idle.
+    delivered = true
+    // Only the reports this turn told; a thread that reported again meanwhile waits for the next.
     for (const thread of claim.pending) {
-      await db.update(chats).set({ threadReportResponseId: thread.threadReportResponseId })
-        .where(and(eq(chats.id, thread.id), isNull(chats.threadReportResponseId)))
+      await db.update(chats).set({ threadReportResponseId: null })
+        .where(and(eq(chats.id, thread.id), eq(chats.threadReportResponseId, thread.threadReportResponseId!)))
     }
+  } catch (error) {
+    // The reports stay pending for the next time this chat goes idle.
     console.warn(JSON.stringify({
       level: 'warn', service: 'pulpo-worker', event: 'threads.report_delivery_failed', chatId,
       error: error instanceof Error ? error.message : String(error),
     }))
+  } finally {
+    await redis.del(claimKey)
   }
+  // A message queued while the claim was held starts now, unless the report's turn is running.
+  if (!delivered) await advanceMessageQueue(chatId)
   await bumpRevision(claim.chat.userId, chatId)
 }
 
@@ -588,8 +610,21 @@ export async function originTranscript(chat: Pick<ChatRow, 'userId' | 'originCha
     .where(and(eq(chats.id, chat.originChatId), eq(chats.userId, chat.userId), isNull(chats.purgeStartedAt))).limit(1)
   if (!origin) return null
   if (!chat.originResponseId) return { title: origin.title, transcript: '' }
-  const turns = await db.select().from(responses).where(and(eq(responses.chatId, chat.originChatId), isNull(responses.deletedAt)))
-    .orderBy(asc(responses.createdAt), asc(responses.id))
+  // Only the branch the side chat saw, not every reply in the origin chat.
+  const lineage = await db.execute<{ id: string }>(sql`
+    with recursive lineage(id, parent_response_id, depth) as (
+      select id, parent_response_id, 0 from responses
+      where id = ${chat.originResponseId}::uuid and chat_id = ${chat.originChatId}::uuid and deleted_at is null
+      union all
+      select response.id, response.parent_response_id, lineage.depth + 1 from responses response
+      join lineage on response.id = lineage.parent_response_id
+      where response.deleted_at is null and lineage.depth < 10000
+    )
+    select id::text as id from lineage
+  `)
+  const ids = lineage.map((row) => row.id)
+  const turns = ids.length ? await db.select({ id: responses.id, parentResponseId: responses.parentResponseId, input: responses.input, output: responses.output })
+    .from(responses).where(inArray(responses.id, ids)) : []
   return { title: origin.title, transcript: conversationTranscript(lineageFromLeaf(turns, chat.originResponseId)) }
 }
 

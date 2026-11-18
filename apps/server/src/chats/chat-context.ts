@@ -65,7 +65,10 @@ export async function loadChatGenerationContext(input: {
     const origin = await originTranscript(chat)
     if (origin) sections.push(sideChatContext(origin.title, origin.transcript))
   } else if (chat.kind === 'thread') {
-    const origin = await originTranscript({ ...chat, originResponseId: null })
+    // A thread works from its brief, so it needs only the name of the chat that started it.
+    const [origin] = chat.originChatId
+      ? await db.select({ title: chats.title }).from(chats).where(and(eq(chats.id, chat.originChatId), eq(chats.userId, input.userId))).limit(1)
+      : []
     sections.push(threadContext(origin?.title ?? 'a chat'))
   } else if (canCoordinateThreads) {
     const threads = await coordinatorContext(input.userId, chat.id)

@@ -171,7 +171,10 @@ export function mergeProductionChatList(current: PrototypeChat[], serverChats: S
   const oldChats = new Map(current.map((chat) => [chat.id, chat]))
   const serverChatIds = new Set(serverChats.map((chat) => chat.id))
   const pendingLocalChats = current.filter((chat) => pendingChatIds.has(chat.id) && !serverChatIds.has(chat.id))
-  const asideChats = current.filter((chat) => isAsideChat(chat) && !pendingChatIds.has(chat.id) && !serverChatIds.has(chat.id))
+  // An opened side chat or thread stays while the chat it belongs to is listed and not in the trash.
+  const liveChatIds = new Set(serverChats.filter((chat) => !chat.deletedAt).map((chat) => chat.id))
+  const asideChats = current.filter((chat) => isAsideChat(chat) && !pendingChatIds.has(chat.id) && !serverChatIds.has(chat.id)
+    && Boolean(chat.originChatId && liveChatIds.has(chat.originChatId)))
   return [
     ...pendingLocalChats,
     ...asideChats,

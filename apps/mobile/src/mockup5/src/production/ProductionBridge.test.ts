@@ -127,6 +127,13 @@ describe('side chats and threads', () => {
     expect(listed.find((row) => row.id === 'side')?.originResponseId).toBe('response-1')
   })
 
+  it('drops an opened side chat or thread once the chat it belongs to is trashed or gone', () => {
+    const side = mergeProductionChatDetail([], { ...chat('side', 'Aside'), kind: 'side', originChatId: 'origin', responses: [] }, [])
+    expect(mergeProductionChatList(side, [{ ...chat('origin', 'Origin'), kind: 'chat', deletedAt: '2026-11-18T00:00:00.000Z' }], new Set())
+      .map((row) => row.id)).toEqual(['origin'])
+    expect(mergeProductionChatList(side, [], new Set())).toEqual([])
+  })
+
   it('drops an ordinary chat the list no longer has', () => {
     const current = mergeProductionChatDetail([], { ...chat('gone', 'Gone'), responses: [] }, [])
     expect(mergeProductionChatList(current, [], new Set())).toEqual([])

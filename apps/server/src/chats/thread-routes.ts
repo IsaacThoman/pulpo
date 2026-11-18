@@ -39,6 +39,7 @@ export async function registerThreadRoutes(app: FastifyInstance): Promise<void> 
 
   app.patch('/api/chats/:id/thread', async (request) => {
     const user = requireUser(request)
+    if (request.adminChatAccess) throw new AppError(403, 'forbidden', 'Threads cannot be resolved through admin chat access')
     const input = updateThreadSchema.parse(request.body)
     const chat = await setThreadResolved({ userId: user.id, threadId: idParams.parse(request.params).id, resolved: input.resolved })
     return { ...toPublicChat(chat), inFlightResponseIds: [] }

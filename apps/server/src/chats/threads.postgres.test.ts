@@ -13,6 +13,10 @@ vi.mock('../files/doc-events.js', () => ({ publishDocsClosed: vi.fn() }))
 const createResponse = vi.fn(async (options: {
   ownerUserId: string; chatId: string; parentResponseId?: string | null; branchReason?: string; input: { input: string; modelId: string; agentMode: boolean }
 }) => {
+  if (options.input.modelId.startsWith('off-')) {
+    const { AppError } = await import('../lib/errors.js')
+    throw new AppError(400, 'model_not_found', 'The selected model is unavailable')
+  }
   const [chat] = await db.select().from(chats).where(eq(chats.id, options.chatId))
   const parent = options.parentResponseId === undefined ? chat!.activeBranchLeafId ?? chat!.activeResponseId : options.parentResponseId
   const id = randomUUID()
@@ -25,15 +29,30 @@ const createResponse = vi.fn(async (options: {
   return row!
 })
 vi.mock('../responses/service.js', () => ({ createResponse, resolveResponseGeneration: vi.fn() }))
-vi.mock('./message-queue.js', () => ({ createQueuedMessage: vi.fn() }))
+const advanceMessageQueue = vi.fn()
+vi.mock('./message-queue.js', () => ({ advanceMessageQueue, createQueuedMessage: vi.fn() }))
+// The dispatch claim (thread-dispatch.ts) in memory.
+const redisKeys = new Map<string, string>()
+vi.mock('../redis.js', () => ({
+  redis: {
+    exists: async (key: string) => (redisKeys.has(key) ? 1 : 0),
+    set: async (key: string, value: string, ..._options: unknown[]) => {
+      if (redisKeys.has(key)) return null
+      redisKeys.set(key, value)
+      return 'OK'
+    },
+    del: async (key: string) => (redisKeys.delete(key) ? 1 : 0),
+  },
+}))
 
 const threads = await import('./threads.js')
 const { trashChats, recoverChats } = await import('./trash-service.js')
-const { markChatsForPurge } = await import('./trash.js')
+const { expireNormalChat, markChatsForPurge } = await import('./trash.js')
 const { listAccountTrash } = await import('../trash/service.js')
 const { chatProject, upsertFolderProject } = await import('./projects.js')
 const { createFolder } = await import('../files/tree-service.js')
 const { loadChatGenerationContext } = await import('./chat-context.js')
+const { threadReportDispatchKey } = await import('./thread-dispatch.js')
 
 const enabled = process.env.PULPO_FILES_TESTS === 'true'
 let userId: string
@@ -65,6 +84,8 @@ describe.skipIf(!enabled)('forks, side chats, and threads', () => {
   beforeEach(async () => {
     if (!process.env.DATABASE_URL?.endsWith('/pulpo_files_test')) throw new Error('Use the disposable pulpo_files_test database')
     createResponse.mockClear()
+    advanceMessageQueue.mockClear()
+    redisKeys.clear()
     userId = randomUUID()
     const providerId = randomUUID()
     modelId = `m-${randomUUID()}`
@@ -174,6 +195,26 @@ describe.skipIf(!enabled)('forks, side chats, and threads', () => {
     expect((await chatRow(thread.id)).threadReportResponseId).toBe(responseId)
   })
 
+  it('starts one thread update at a time and lets the queue go on when starting one fails', async () => {
+    const coordinator = await insertChat()
+    await addTurn(coordinator.id, 'start', { agentMode: true })
+    const { thread, responseId } = await threads.startThread({ ownerUserId: userId, coordinatorChatId: coordinator.id, title: 'T', task: 'go' })
+    await db.update(responses).set({ status: 'completed' }).where(eq(responses.id, responseId))
+    await db.update(chats).set({ threadReportResponseId: responseId }).where(eq(chats.id, thread.id))
+    // Another worker is already starting this chat's thread update.
+    redisKeys.set(threadReportDispatchKey(coordinator.id), '1')
+    createResponse.mockClear()
+    await threads.deliverThreadReports(coordinator.id)
+    expect(createResponse).not.toHaveBeenCalled()
+    redisKeys.clear()
+
+    createResponse.mockRejectedValueOnce(new Error('provider down'))
+    await threads.deliverThreadReports(coordinator.id)
+    expect((await chatRow(thread.id)).threadReportResponseId).toBe(responseId)
+    expect(redisKeys.size).toBe(0)
+    expect(advanceMessageQueue).toHaveBeenCalledWith(coordinator.id)
+  })
+
   it('limits how many threads work at once', async () => {
     const coordinator = await insertChat()
     for (let index = 0; index < 6; index += 1) {
@@ -223,6 +264,39 @@ describe.skipIf(!enabled)('forks, side chats, and threads', () => {
     expect((await chatRow(trashedWith.id)).deletedAt).toBeNull()
     expect((await chatRow(side.id)).deletedAt).not.toBeNull()
     expect(await listed()).toEqual([side.id])
+  })
+
+  it('falls back to the chat\'s model when the project\'s thread model is unavailable', async () => {
+    const folder = await createFolder(userId, { parentId: null, name: 'Fallback' })
+    const offModel = `off-${randomUUID()}`
+    const [provider] = await db.select({ id: models.providerConnectionId }).from(models).where(eq(models.id, modelId))
+    await db.insert(models).values({ id: offModel, providerConnectionId: provider!.id, upstreamModelId: 'off', name: 'Off', contextWindow: 1000, maxOutputTokens: 100, agentEnabled: true })
+    await upsertFolderProject(userId, folder.id, { threadModelId: offModel })
+    const coordinator = await insertChat({ folderId: folder.id })
+    await addTurn(coordinator.id, 'go', { agentMode: true })
+    const { thread } = await threads.startThread({ ownerUserId: userId, coordinatorChatId: coordinator.id, title: 'T', task: 'go' })
+    expect(createResponse.mock.calls.at(-1)![0].input.modelId).toBe(modelId)
+    expect((await chatRow(thread.id)).modelId).toBe(modelId)
+  })
+
+  it('expires a chat\'s side chats and threads with it', async () => {
+    const main = await insertChat()
+    const side = await threads.createSideChat({ userId, chatId: main.id })
+    const { thread } = await threads.startThread({ ownerUserId: userId, coordinatorChatId: main.id, title: 'T', task: 'go' })
+    await db.update(chats).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(chats.id, main.id))
+    expect(await expireNormalChat(main.id, userId)).toBe(true)
+    expect((await chatRow(side.id)).deletedAt).not.toBeNull()
+    expect((await chatRow(thread.id)).deletedAt).toEqual((await chatRow(main.id)).deletedAt)
+  })
+
+  it('puts a fork of a pinned chat at the top of its folder, unpinned', async () => {
+    const folder = await createFolder(userId, { parentId: null, name: 'Pinned' })
+    await insertChat({ folderId: folder.id, sortOrder: 5 })
+    const pinned = await insertChat({ folderId: folder.id, pinned: true, sortOrder: 0 })
+    const reply = await addTurn(pinned.id, 'one')
+    const fork = await threads.forkChat({ userId, responseId: reply.id })
+    expect(fork).toMatchObject({ pinned: false, folderId: folder.id })
+    expect(fork.sortOrder).toBeLessThan(5)
   })
 
   it('finds the nearest project above a chat, and side chats and threads share it', async () => {

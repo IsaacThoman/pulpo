@@ -13,16 +13,12 @@ import {
   latestSettledReplyId,
   messageResponseId,
   originLabel,
-  parseChatCommand,
-  parseThreadUpdate,
   relatedChatSections,
   relatedChatsLabel,
   replySettled,
   setThreadResolved,
 } from './threads'
 
-const THREAD_A = '11111111-1111-4111-8111-111111111111'
-const THREAD_B = '22222222-2222-4222-8222-222222222222'
 
 function related(id: string, kind: RelatedChat['kind'], status: RelatedChat['status'] = null): RelatedChat {
   return {
@@ -94,41 +90,6 @@ describe('chat kinds', () => {
   })
 })
 
-describe('parseThreadUpdate', () => {
-  it('reads one thread’s report', () => {
-    const text = [
-      'Thread update — sent automatically when a thread you started stops working.',
-      '',
-      `### Thread “Compare CRM pricing” finished\nThread id: ${THREAD_A}\n\nHubSpot is cheapest.\n\n- Pipedrive: $14`,
-    ].join('\n')
-    expect(parseThreadUpdate(text)).toEqual({
-      heading: 'Thread update',
-      reports: [{ threadId: THREAD_A, title: 'Compare CRM pricing', outcome: 'finished', body: 'HubSpot is cheapest.\n\n- Pipedrive: $14' }],
-    })
-  })
-
-  it('reads several reports, including ones without reply text', () => {
-    const text = [
-      'Thread updates (2) — sent automatically when a thread you started stops working.',
-      '',
-      `### Thread “Draft the email” stopped before finishing\nThread id: ${THREAD_A}\n\n(No reply text.)`,
-      '',
-      `### Thread “Check “quoted” titles” failed\nThread id: ${THREAD_B}\n\nError: Model unavailable`,
-    ].join('\n')
-    const update = parseThreadUpdate(text)
-    expect(update.heading).toBe('Thread updates (2)')
-    expect(update.reports.map(({ threadId, title, outcome, body }) => [threadId, title, outcome, body])).toEqual([
-      [THREAD_A, 'Draft the email', 'stopped before finishing', '(No reply text.)'],
-      [THREAD_B, 'Check “quoted” titles', 'failed', 'Error: Model unavailable'],
-    ])
-  })
-
-  it('reads other text as a heading without reports', () => {
-    expect(parseThreadUpdate('Thread update')).toEqual({ heading: 'Thread update', reports: [] })
-    expect(parseThreadUpdate('')).toEqual({ heading: 'Thread update', reports: [] })
-  })
-})
-
 describe('related chats', () => {
   const value = {
     threads: [related('done', 'thread', 'done'), related('working', 'thread', 'working'), related('failed', 'thread', 'attention'), related('resolved', 'thread', 'resolved')],
@@ -155,20 +116,8 @@ describe('related chats', () => {
   })
 })
 
-describe('composer commands', () => {
-  it('parses /btw with its question and /fork', () => {
-    expect(parseChatCommand('/btw what does this error mean?')).toEqual({ kind: 'btw', question: 'what does this error mean?' })
-    expect(parseChatCommand('  /BTW\nmulti\nline  ')).toEqual({ kind: 'btw', question: 'multi\nline' })
-    expect(parseChatCommand('/btw')).toEqual({ kind: 'btw', question: '' })
-    expect(parseChatCommand('/fork')).toEqual({ kind: 'fork' })
-  })
 
-  it('leaves other messages alone', () => {
-    expect(parseChatCommand('/btwx hi')).toBeNull()
-    expect(parseChatCommand('/fork this')).toBeNull()
-    expect(parseChatCommand('btw /fork')).toBeNull()
-  })
-
+describe('latestSettledReplyId', () => {
   it('forks from the latest reply only once it has settled', () => {
     expect(latestSettledReplyId([
       { id: 'r1:input', role: 'user' }, { id: 'r1', role: 'assistant', status: 'complete' },

@@ -225,7 +225,7 @@ import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTu
 import { activateOptimisticBranch } from './src/production/optimisticBranches';
 import { cacheNamespace, cacheOpenedChat, deleteResponseCursor, loadDraft, saveDraft } from '../data/database';
 import { chatQuery, mergeChatSummary, queryKeys } from '../data/queries';
-import { createSideChat as createServerSideChat, forkChat as forkServerChat, isAsideChat, latestSettledReplyId, messageResponseId, originLabel, parseChatCommand, parseThreadUpdate, relatedChatsLabel, replySettled, setThreadResolved as setServerThreadResolved, type ChatCommand } from '../features/chat/threads';
+import { createSideChat as createServerSideChat, forkChat as forkServerChat, isAsideChat, latestSettledReplyId, markdownPreviewText, messageResponseId, originLabel, parseChatCommand, parseThreadUpdate, relatedChatsLabel, replySettled, setThreadResolved as setServerThreadResolved, type ChatCommand } from '../features/chat/threads';
 import { relatedChatsQueryKey, useRelatedChats } from '../features/chat/useRelatedChats';
 import { RelatedChatsSheet } from '../features/chat/RelatedChatsSheet';
 import { enqueueCacheWrite } from '../data/writeBehind';
@@ -3445,7 +3445,7 @@ function ThreadUpdateCard({ message }: { message: Message }) {
             <View style={styles.threadUpdateTitleRow}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`Open thread ${report.title}, ${report.outcome}`}
+                accessibilityLabel={`Open thread ${report.title}, ${report.outcomeText}`}
                 hitSlop={TEXT_BUTTON_HIT_SLOP}
                 onPress={() => openChat(report.threadId)}
                 style={({ pressed }) => [styles.threadUpdateTitleButton, pressed && styles.pressed]}
@@ -3453,7 +3453,7 @@ function ThreadUpdateCard({ message }: { message: Message }) {
                 <Text numberOfLines={1} style={styles.threadUpdateTitle}>{report.title}</Text>
                 <Icon name="chevron.right" size={10} color={COLORS.link} weight="semibold" />
               </Pressable>
-              <Text numberOfLines={1} style={styles.threadUpdateOutcome}>{report.outcome}</Text>
+              <Text numberOfLines={1} style={styles.threadUpdateOutcome}>{report.outcomeText}</Text>
             </View>
             {report.body ? (
               <Pressable
@@ -3464,7 +3464,7 @@ function ThreadUpdateCard({ message }: { message: Message }) {
               >
                 {open
                   ? <SafeMarkdown selectable={Platform.OS !== 'android'} compact>{report.body}</SafeMarkdown>
-                  : <Text numberOfLines={3} style={styles.threadUpdateBody}>{report.body}</Text>}
+                  : <Text numberOfLines={3} style={styles.threadUpdateBody}>{markdownPreviewText(report.body)}</Text>}
               </Pressable>
             ) : null}
           </View>

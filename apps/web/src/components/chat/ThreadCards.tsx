@@ -6,7 +6,7 @@ import type { Message } from '@/lib/types'
 import { useRelatedChats } from '@/features/chat/use-related-chats'
 import { ThreadStatusIcon } from '@/features/chat/thread-status'
 import { threadStatusLabel } from '@/features/chat/thread-status-label'
-import { isLongReport, parseThreadUpdate, type ThreadReport } from '@/features/chat/thread-update'
+import { isLongThreadReport, parseThreadUpdate, type ThreadReport } from '@pulpo/client-core'
 import { Markdown } from './Markdown'
 import type { ToolItem } from './message-timeline'
 import { startedThreadId, threadTitle } from './thread-tools'
@@ -73,7 +73,7 @@ function ReportOutcome({ report }: { report: ThreadReport }) {
 }
 
 function ThreadReportSection({ report, onOpenChat }: { report: ThreadReport; onOpenChat: (chatId: string) => void }) {
-  const long = isLongReport(report.body)
+  const long = isLongThreadReport(report.body)
   const [expanded, setExpanded] = useState(false)
   const collapsed = long && !expanded
   return (
@@ -117,7 +117,7 @@ function ThreadReportSection({ report, onOpenChat }: { report: ThreadReport; onO
  * server rather than typed by the user.
  */
 export function ThreadUpdateCard({ message, onOpenChat }: { message: Pick<Message, 'content'>; onOpenChat: (chatId: string) => void }) {
-  const reports = parseThreadUpdate(message.content)
+  const { reports } = parseThreadUpdate(message.content)
   return (
     <div className="w-full min-w-0 space-y-3 rounded-xl border bg-muted px-4 py-3">
       <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">

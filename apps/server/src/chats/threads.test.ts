@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('../database/client.js', () => ({ db: {} }))
 vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn(), requestCancellation: vi.fn() }))
 vi.mock('../responses/service.js', () => ({ createResponse: vi.fn() }))
-vi.mock('./message-queue.js', () => ({ createQueuedMessage: vi.fn() }))
+vi.mock('./message-queue.js', () => ({ advanceMessageQueue: vi.fn(), createQueuedMessage: vi.fn() }))
+vi.mock('../redis.js', () => ({ redis: {} }))
 
 const { consecutiveThreadUpdates, conversationTranscript, deriveThreadStatus, threadReportText, threadSummary } = await import('./threads.js')
 const { projectContext } = await import('./projects.js')

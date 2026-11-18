@@ -78,7 +78,7 @@ import { useDictationRecorder } from '@/components/chat/use-dictation-recorder'
 import { DictationBar } from '@/components/chat/DictationBar'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
-import { matchingComposerCommands, parseComposerCommand, type ComposerCommand, type ComposerCommandName } from './composer-commands'
+import { matchingComposerCommands, parseComposerCommand, type ComposerCommand, type ComposerCommandName } from '@pulpo/client-core'
 import { threadActionErrorMessage } from '@/features/chat/chat-actions'
 import {
   deleteComposerDraft,

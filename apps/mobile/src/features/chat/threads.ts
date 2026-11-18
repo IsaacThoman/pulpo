@@ -58,42 +58,8 @@ export function originLabel(chat: ChatRelationSource): string | null {
   return null
 }
 
-export type ThreadUpdateReport = {
-  threadId: string
-  title: string
-  /** How the thread stopped, as the server words it: `finished`, `failed`, `was stopped`… */
-  outcome: string
-  body: string
-}
-
-export type ThreadUpdate = {
-  heading: string
-  reports: ThreadUpdateReport[]
-}
-
-const THREAD_REPORT_HEADER = /^### Thread “(.*)” ([^\n]+)\nThread id: ([0-9a-f-]{36})[ \t]*(?:\n|$)/gm
-
-/**
- * The thread reports in a thread update's message (see threadReportText on the server):
- * `Thread update — …` then a `### Thread “<title>” <outcome>\nThread id: <uuid>\n\n<reply>` section
- * per thread. Text that is not a thread update reads as a single heading with no reports.
- */
-export function parseThreadUpdate(text: string): ThreadUpdate {
-  const matches = [...text.matchAll(THREAD_REPORT_HEADER)]
-  const preamble = (matches[0] ? text.slice(0, matches[0].index) : text).trim()
-  const heading = preamble.split(' — ')[0]?.trim() || 'Thread update'
-  const reports = matches.map((match, index) => {
-    const start = (match.index ?? 0) + match[0].length
-    const end = matches[index + 1]?.index ?? text.length
-    return {
-      title: match[1]!.trim() || 'Thread',
-      outcome: match[2]!.trim(),
-      threadId: match[3]!,
-      body: text.slice(start, end).trim(),
-    }
-  })
-  return { heading, reports }
-}
+/** Thread updates and the `/btw` and `/fork` commands are read the same way on every client. */
+export { markdownPreviewText, parseThreadUpdate, type ThreadReport, type ThreadUpdate } from '@pulpo/client-core'
 
 export const THREAD_STATUS_LABELS: Record<ChatThreadStatus, string> = {
   working: 'Working',
@@ -138,16 +104,7 @@ export function relatedChatsLabel(related: Pick<RelatedChats, 'threads' | 'sideC
   return parts.length ? parts.join(' · ') : null
 }
 
-export type ChatCommand = { kind: 'btw'; question: string } | { kind: 'fork' }
-
-/** `/btw <question>` asks in a new side chat; `/fork` forks from the latest reply. */
-export function parseChatCommand(input: string): ChatCommand | null {
-  const trimmed = input.trim()
-  const btw = /^\/btw(?:\s+([\s\S]*))?$/i.exec(trimmed)
-  if (btw) return { kind: 'btw', question: (btw[1] ?? '').trim() }
-  if (/^\/fork$/i.test(trimmed)) return { kind: 'fork' }
-  return null
-}
+export { parseComposerCommand as parseChatCommand, type ComposerCommand as ChatCommand } from '@pulpo/client-core'
 
 /** The latest settled reply in a transcript, which `/fork` and `/btw` start from. */
 export function latestSettledReplyId(messages: readonly { id: string; role: string; status?: string }[]): string | null {

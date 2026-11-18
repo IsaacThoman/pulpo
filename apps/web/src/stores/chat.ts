@@ -1066,9 +1066,11 @@ export const useChat = create<ChatState>()((set, get) => ({
     const activeTemporary = state.activeTemporaryChatId
       ? state.chats.find((chat) => chat.id === state.activeTemporaryChatId && chat.temporary)
       : undefined
-    // Side chats and threads are never in the summaries; keep the ones already opened.
+    // Side chats and threads are never in the summaries; keep the ones already opened while the
+    // chat they belong to is still listed. Trashing that chat takes them with it.
+    const keptAside = (chat: Chat) => (chat.kind ?? 'chat') !== 'chat' && Boolean(chat.originChatId && serverIds.has(chat.originChatId))
     const localOnly = state.chats.filter((chat) => (
-      (chat.provisional || chat.awaitingSummary || chat.id === activeTemporary?.id || (chat.kind ?? 'chat') !== 'chat')
+      (chat.provisional || chat.awaitingSummary || chat.id === activeTemporary?.id || keptAside(chat))
       && !serverIds.has(chat.id)
     ))
     const chats = [...localOnly, ...serverChats]
