@@ -1195,7 +1195,7 @@ export const apiKeyModelPermissions = pgTable('api_key_model_permissions', {
 export const budgetReservations = pgTable('budget_reservations', {
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  apiKeyId: uuid('api_key_id').references(() => apiKeys.id),
+  apiKeyId: uuid('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
   responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
   poolId: uuid('pool_id').references(() => pools.id, { onDelete: 'set null' }),
   amountMicros: bigint('amount_micros', { mode: 'number' }).notNull(),
@@ -1289,7 +1289,8 @@ export const creditLedger = pgTable('credit_ledger', {
 export const usageEvents = pgTable('usage_events', {
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  apiKeyId: uuid('api_key_id').references(() => apiKeys.id),
+  // Deleting a key keeps its usage history, like request logs and analytics.
+  apiKeyId: uuid('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
   responseId: uuid('response_id').references(() => responses.id, { onDelete: 'set null' }),
   modelId: text('model_id').notNull().references(() => models.id),
   // The model the user asked for. Request logs are removed with purged chats,
@@ -1319,6 +1320,8 @@ export const usageEvents = pgTable('usage_events', {
   uniqueIndex('usage_response_unique').on(table.responseId),
   index('usage_user_created_idx').on(table.userId, table.createdAt),
   index('usage_created_idx').on(table.createdAt),
+  // API key spend totals in the key list.
+  index('usage_api_key_created_idx').on(table.apiKeyId, table.createdAt).where(sql`${table.apiKeyId} is not null`),
 ])
 
 /**
