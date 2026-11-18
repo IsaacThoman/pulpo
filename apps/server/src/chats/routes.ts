@@ -71,6 +71,8 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       .from(chats)
       .where(and(
         eq(chats.userId, user.id), isNull(chats.deletedAt), eq(chats.temporary, false), accessibleChatCondition(),
+        // Side chats and threads are listed under their chat (GET /api/chats/:id/related).
+        eq(chats.kind, 'chat'),
       ))
       .orderBy(desc(chats.updatedAt))
     const inFlight = rows.length
@@ -109,6 +111,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       isNotNull(chats.deletedAt),
       isNull(chats.purgeStartedAt),
       eq(chats.temporary, false),
+      eq(chats.kind, 'chat'),
     )).orderBy(desc(chats.deletedAt))
     return {
       data: rows.map((row) => ({
@@ -131,6 +134,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         isNull(chats.deletedAt),
         eq(chats.temporary, false),
         accessibleChatCondition(),
+        eq(chats.kind, 'chat'),
         // Search serialized payload text directly; casting back to jsonb rejects valid NUL escapes.
         sql`to_tsvector('simple', coalesce(${chats.title}, '') || ' ' || coalesce(${responses.input}::text, '') || ' ' || coalesce(${responses.output}::text, ''))
           @@ plainto_tsquery('simple', ${query})`,
@@ -427,6 +431,12 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         pinned: false,
         sortOrder,
         temporary: false,
+        // A copy of a side chat or thread is an ordinary chat of its own.
+        kind: 'chat',
+        originChatId: null,
+        originResponseId: null,
+        threadReportResponseId: null,
+        threadResolvedAt: null,
         activeResponseId,
         activeBranchLeafId,
         expiresAt: null,
@@ -454,7 +464,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     await bumpRevision(user.id, chatId, ['chats', 'files', 'folders'])
     await scheduleChatIndex(chatId, user.id, 'chat-duplicate')
     reply.code(201)
-    return { ...withoutWorkspaceScope(source), id: chatId, title: title.slice(0, 200), pinned: false, sortOrder, temporary: false, activeResponseId, activeBranchLeafId, expiresAt: null, createdAt: now, updatedAt: now }
+    return { ...withoutWorkspaceScope(source), id: chatId, title: title.slice(0, 200), pinned: false, sortOrder, temporary: false, kind: 'chat', originChatId: null, originResponseId: null, threadReportResponseId: null, threadResolvedAt: null, activeResponseId, activeBranchLeafId, expiresAt: null, createdAt: now, updatedAt: now }
   })
 
   app.put('/api/chats/order', async (request) => {

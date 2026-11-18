@@ -24,6 +24,8 @@ const chatTrashed = (userId: string) => and(
   isNotNull(chats.deletedAt),
   isNull(chats.purgeStartedAt),
   eq(chats.temporary, false),
+  // Side chats and threads are in the trash with their chat, not listed on their own.
+  eq(chats.kind, 'chat'),
 )
 
 async function trashedFileItems(userId: string, scope: TrashScope): Promise<FileNode[]> {

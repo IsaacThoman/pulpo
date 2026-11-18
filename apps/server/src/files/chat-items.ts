@@ -38,14 +38,15 @@ const liveChat = (userId: string) => and(
   accessibleChatCondition(),
 )
 
-/** The chats inside `folder` (null is the top of My files). */
+/** The chats inside `folder` (null is the top of My files). Side chats and threads are listed under their chat instead. */
 export async function listFolderChats(executor: FileExecutor, userId: string, folder: FileNodeRow | null): Promise<FileNode[]> {
   if (!folder) {
-    const rows = await executor.select().from(chats).where(and(liveChat(userId), isNull(chats.folderId), eq(chats.inFilesRoot, true)))
+    const rows = await executor.select().from(chats).where(and(liveChat(userId), eq(chats.kind, 'chat'), isNull(chats.folderId), eq(chats.inFilesRoot, true)))
     return rows.map((chat) => chatToFileNode(chat, null))
   }
   const rows = await executor.select().from(chats).where(and(
     liveChat(userId),
+    eq(chats.kind, 'chat'),
     folder.systemRole === 'chats'
       ? or(eq(chats.folderId, folder.id), and(isNull(chats.folderId), eq(chats.inFilesRoot, false)))
       : eq(chats.folderId, folder.id),

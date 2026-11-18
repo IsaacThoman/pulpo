@@ -52,7 +52,7 @@ export interface CreateResponseOptions {
   idempotencyFingerprint?: string | null
   parentResponseId?: string | null
   userMessageId?: string
-  branchReason?: 'message' | 'regenerate' | 'user_edit'
+  branchReason?: 'message' | 'regenerate' | 'user_edit' | 'thread_update'
   /** App surface that sent the request, for admin analytics. */
   client?: ClientAttribution | null
 }

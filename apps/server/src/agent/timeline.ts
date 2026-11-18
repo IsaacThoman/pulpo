@@ -12,6 +12,8 @@ export type ToolTimelineItem = {
   isError?: boolean
   startedAt?: string
   durationMs?: number
+  /** The thread a thread tool started or acted on. */
+  threadId?: string
 }
 
 export type AttachmentTimelineItem = {

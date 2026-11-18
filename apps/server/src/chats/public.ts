@@ -1,4 +1,4 @@
-import type { EmbeddedResponseSnapshot, ResponseSnapshot } from '@pulpo/contracts'
+import { THREAD_UPDATE_BRANCH_REASON, type EmbeddedResponseSnapshot, type ResponseSnapshot } from '@pulpo/contracts'
 import type { chats, responses } from '../database/schema.js'
 import { branchMetadataIndex, lineageFromLeaf, metadataForTurn } from '../messages/branching.js'
 import { toSnapshot } from '../responses/service.js'
@@ -27,6 +27,8 @@ export interface PublicChatResponse {
   createdAt: string
   completedAt: string | null
   agentMode: boolean
+  /** Set on a turn the server started to tell the chat what its threads did, rather than one the user sent. */
+  threadUpdate?: true
   snapshot: ResponseSnapshot | EmbeddedResponseSnapshot
   branches: ReturnType<typeof metadataForTurn>
   detailAvailable: boolean
@@ -58,6 +60,7 @@ export function toPublicChatResponse(
     createdAt: response.createdAt.toISOString(),
     completedAt: response.completedAt?.toISOString() ?? null,
     agentMode: response.agentMode,
+    ...(response.branchReason === THREAD_UPDATE_BRANCH_REASON ? { threadUpdate: true as const } : {}),
     snapshot: options.compact ? snapshotMarker : snapshot,
     branches: options.branches ?? metadataForTurn(allTurns, response),
     detailAvailable: true,
@@ -132,6 +135,10 @@ export function toPublicChat(chat: ChatRow) {
     filesBrowseAllowed: chat.filesBrowseAllowed,
     activeResponseId: chat.activeResponseId,
     activeBranchLeafId: chat.activeBranchLeafId,
+    kind: chat.kind,
+    originChatId: chat.originChatId,
+    originResponseId: chat.originResponseId,
+    threadResolvedAt: chat.threadResolvedAt?.toISOString() ?? null,
     expiresAt: chat.expiresAt?.toISOString() ?? null,
     createdAt: chat.createdAt.toISOString(),
     updatedAt: chat.updatedAt.toISOString(),

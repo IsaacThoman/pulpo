@@ -120,6 +120,16 @@ export async function cancelChatWork(chatIds: string[]): Promise<void> {
 export async function markChatsForPurge(chatIds: string[], userId?: string): Promise<number> {
   if (!chatIds.length) return 0
   const now = new Date()
+  // Side chats and threads in the trash are deleted with the chat they belong to.
+  const related = await db.select({ id: chats.id }).from(chats).where(and(
+    inArray(chats.originChatId, chatIds), inArray(chats.kind, ['side', 'thread']),
+    userId ? eq(chats.userId, userId) : undefined,
+  ))
+  if (related.length) {
+    await db.update(chats).set({ purgeStartedAt: now, updatedAt: now }).where(and(
+      inArray(chats.id, related.map((row) => row.id)), isNotNull(chats.deletedAt), isNull(chats.purgeStartedAt),
+    ))
+  }
   const marked = await db.update(chats).set({
     purgeStartedAt: now,
     updatedAt: now,

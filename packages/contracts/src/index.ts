@@ -18,6 +18,8 @@ import { z } from 'zod'
 import { DEFAULT_MAX_INLINE_IMAGES, MAX_CONFIGURABLE_INLINE_IMAGES, MAX_MESSAGE_ATTACHMENTS } from './attachment-limits.js'
 export * from './attachment-limits.js'
 export * from './sandbox.js'
+export * from './threads.js'
+import { chatKindSchema } from './threads.js'
 import { CHAT_PRESET_ICON_NAMES } from './chat-preset-icons.generated.js'
 
 export { CHAT_PRESET_ICON_NAMES } from './chat-preset-icons.generated.js'
@@ -2061,6 +2063,10 @@ export const chatSummarySchema = z.object({
   updatedAt: isoDateSchema,
   activeResponseId: idSchema.nullable(),
   inFlightResponseIds: z.array(idSchema).default([]),
+  /** Older servers send no kind: every chat they list is an ordinary one. */
+  kind: chatKindSchema.default('chat'),
+  /** The chat this one was forked from, or that a side chat or thread belongs to. */
+  originChatId: idSchema.nullable().default(null),
 })
 export type ChatSummary = z.infer<typeof chatSummarySchema>
 

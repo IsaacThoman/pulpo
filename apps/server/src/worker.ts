@@ -26,6 +26,7 @@ import { expireNormalChat, expireTemporaryChat, markExpiredChatsForPurge, purgeP
 import { parseAgentSettings } from './settings/application-settings.js'
 import { accessibleChatCondition } from './chats/temporary.js'
 import { advanceMessageQueue, recoverMessageQueues } from './chats/message-queue.js'
+import { handleSettledResponse, recoverThreadReports } from './chats/threads.js'
 import { isTerminalResponseStatus } from './chats/message-queue-policy.js'
 import { reconcileBilling } from './billing/reconciliation.js'
 import { reconcileAppStoreBilling } from './billing/app-store-sync.js'
@@ -72,6 +73,13 @@ const generationWorker = new Worker<GenerationJob>('generation', async (job) => 
         }))
       })
       await advanceMessageQueue(response.chatId)
+      // Threads report to the chat that started them, and a chat that went idle hears from its threads.
+      await handleSettledResponse(job.data.responseId).catch((error: unknown) => {
+        console.error(JSON.stringify({
+          level: 'error', service: 'pulpo-worker', event: 'threads.settle_failed',
+          responseId: job.data.responseId, error: safeErrorMessage(error),
+        }))
+      })
       if (response.status === 'completed') await scheduleChatIndex(response.chatId, response.userId, 'response-completed')
     }
   }
@@ -254,6 +262,7 @@ for (const response of recoverable) {
   if (!existing) await generationQueue.add('recover', { responseId: response.id }, { jobId: response.id })
 }
 await recoverMessageQueues()
+await recoverThreadReports()
 if ((await readEpisodicMemorySettings()).enabled) await enqueueEpisodicReconciliation()
 
 const workers = [generationWorker, codexLoginWorker, embeddingWorker, maintenanceWorker, payloadRetentionWorker, fileDocWorker, analyticsWorker]
