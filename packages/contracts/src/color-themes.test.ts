@@ -56,8 +56,12 @@ describe('color themes', () => {
     expect(unsafeThemeCssReason('body { --a: "/*"; background-image: url(https://example.com/collect); --b: "*/"; }')).not.toBeNull()
     expect(unsafeThemeCssReason("body { --a: '/*'; background: url(//example.com/a); --b: '*/' }")).not.toBeNull()
     expect(unsafeThemeCssReason('body { --a: "\\"/*"; background: url(https://example.com/a); --b: "*/" }')).not.toBeNull()
-    // Real comments still hide nothing harmful.
-    expect(unsafeThemeCssReason('/* url(https://example.com/a) */ body { color: red }')).toBeNull()
+    // Nor do escaped comment openers outside strings.
+    expect(unsafeThemeCssReason('body { --a: \\/*; background-image: url(https://example.com/collect); /* */ }')).not.toBeNull()
+    expect(unsafeThemeCssReason('body { --a: \\2f*; background: url(https://example.com/a); /* */ }')).not.toBeNull()
+    // Comments are scanned too, so a commented-out remote url() is refused rather than trusted.
+    expect(unsafeThemeCssReason('/* url(https://example.com/a) */ body { color: red }')).not.toBeNull()
+    expect(unsafeThemeCssReason('/* a note */ body { color: red }')).toBeNull()
   })
 
   it('reads the Pulpo extension of an exported VS Code theme', () => {
