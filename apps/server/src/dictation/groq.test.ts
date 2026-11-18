@@ -9,7 +9,7 @@ describe('Groq transcription client', () => {
     const text = await transcribeWithGroq({
       apiKey: 'groq-secret', audio: new Uint8Array([1, 2, 3]), filename: 'dictation.webm', mimeType: 'audio/webm', fetchImpl: fetch,
     })
-    expect(text).toEqual({ text: 'Hello world.', durationSeconds: 12.1 })
+    expect(text).toEqual({ text: 'Hello world.', durationSeconds: 12.1, segments: [] })
     expect(fetch).toHaveBeenCalledOnce()
     const [url, init] = fetch.mock.calls[0]!
     expect(url).toBe('https://api.groq.com/openai/v1/audio/transcriptions')
@@ -21,10 +21,27 @@ describe('Groq transcription client', () => {
   })
 
   it('falls back to the final segment timestamp for duration', async () => {
-    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ text: 'Hello', segments: [{ end: 4.2 }, { end: 9.75 }] }), { status: 200 }))
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      text: 'Hello there',
+      segments: [{ start: 0, end: 4.2, text: ' Hello' }, { start: 4.2, end: 9.75, text: ' there ' }],
+    }), { status: 200 }))
     await expect(transcribeWithGroq({
       apiKey: 'secret', audio: new Uint8Array([1]), filename: 'audio.webm', mimeType: 'audio/webm', fetchImpl: fetch,
-    })).resolves.toEqual({ text: 'Hello', durationSeconds: 9.75 })
+    })).resolves.toEqual({
+      text: 'Hello there',
+      durationSeconds: 9.75,
+      segments: [{ start: 0, end: 4.2, text: 'Hello' }, { start: 4.2, end: 9.75, text: 'there' }],
+    })
+  })
+
+  it('drops malformed and empty segments', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      text: 'Kept', duration: 3,
+      segments: [{ start: 0, end: 1, text: '  ' }, { start: 'x', end: 2, text: 'Bad' }, { start: -0.1, end: 3, text: 'Kept' }, null],
+    }), { status: 200 }))
+    await expect(transcribeWithGroq({
+      apiKey: 'secret', audio: new Uint8Array([1]), filename: 'audio.mp3', mimeType: 'audio/mpeg', fetchImpl: fetch,
+    })).resolves.toEqual({ text: 'Kept', durationSeconds: 3, segments: [{ start: 0, end: 3, text: 'Kept' }] })
   })
 
   it('maps provider errors without accepting an invalid transcript', async () => {

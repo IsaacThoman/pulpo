@@ -1,17 +1,7 @@
-import { diagnosticFetch } from '../logging/diagnostic-fetch.js'
-import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { requireUser } from '../auth/service.js'
-import { getConfig } from '../config.js'
-import { db } from '../database/client.js'
-import { applicationSettings } from '../database/schema.js'
-import { decryptSecret } from '../lib/crypto.js'
 import { AppError } from '../lib/errors.js'
-import { parseDictationSettings } from '../settings/application-settings.js'
-import { GroqTranscriptionError, transcribeWithGroq } from './groq.js'
-import { chargeMeteredUsage } from '../accounting/service.js'
-import { dictationUsageMicros } from './billing.js'
-import { assertDailySpendAvailable } from '../billing/usage-tiers.js'
+import { enabledDictationSettings, transcribeAndBill } from './transcribe.js'
 
 export const MAX_DICTATION_BYTES = 10 * 1024 * 1024
 const SUPPORTED_AUDIO_TYPES = new Set([
@@ -23,13 +13,7 @@ export async function registerDictationRoutes(app: FastifyInstance): Promise<voi
     config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
   }, async (request) => {
     const user = requireUser(request)
-    const [row] = await db.select({ value: applicationSettings.value }).from(applicationSettings)
-      .where(eq(applicationSettings.key, 'dictation')).limit(1)
-    const settings = parseDictationSettings(row?.value)
-    if (!settings.enabled || !settings.encryptedGroqApiKey) {
-      throw new AppError(404, 'dictation_disabled', 'Dictation is not enabled')
-    }
-    if (settings.billUsers) await assertDailySpendAvailable(user.id)
+    const settings = await enabledDictationSettings(user.id)
 
     let part: Awaited<ReturnType<typeof request.file>> = undefined
     try {
@@ -55,37 +39,15 @@ export async function registerDictationRoutes(app: FastifyInstance): Promise<voi
     if (part.file.truncated) throw new AppError(413, 'dictation_audio_too_large', 'Dictation recordings must be 10 MB or smaller')
     if (audio.length === 0) throw new AppError(400, 'dictation_audio_empty', 'The audio recording is empty')
 
-    let transcript: Awaited<ReturnType<typeof transcribeWithGroq>>
-    try {
-      transcript = await transcribeWithGroq({
-        apiKey: decryptSecret(settings.encryptedGroqApiKey, getConfig().ENCRYPTION_KEY),
-        audio,
-        filename: part.filename || 'dictation.webm',
-        mimeType,
-        signal: AbortSignal.timeout(30_000),
-        fetchImpl: diagnosticFetch({ purpose: 'dictation', userId: user.id, providerId: 'groq', upstreamModelId: 'whisper-large-v3-turbo' }),
-      })
-    } catch (cause) {
-      request.log.warn({ err: cause }, 'Groq dictation transcription failed')
-      if (cause instanceof GroqTranscriptionError && cause.status === 429) {
-        throw new AppError(429, 'dictation_provider_rate_limited', 'Dictation is temporarily busy. Try again shortly.')
-      }
-      throw new AppError(502, 'dictation_provider_error', 'The recording could not be transcribed', 'server_error')
-    }
-    if (!transcript.text) throw new AppError(422, 'dictation_no_speech', 'No speech was detected in the recording')
-    if (settings.billUsers) {
-      const usage = dictationUsageMicros(transcript.durationSeconds, settings.pricePerMinuteMicros)
-      await chargeMeteredUsage({
-        userId: user.id,
-        costMicros: usage.costMicros,
-        type: 'dictation',
-        metadata: {
-          provider: 'groq', model: 'whisper-large-v3-turbo',
-          durationSeconds: transcript.durationSeconds, billedSeconds: usage.billedSeconds,
-          pricePerMinuteMicros: settings.pricePerMinuteMicros,
-        },
-      })
-    }
+    const transcript = await transcribeAndBill({
+      userId: user.id,
+      settings,
+      audio,
+      filename: part.filename || 'dictation.webm',
+      mimeType,
+      timeoutMs: 30_000,
+      log: request.log,
+    })
     return { text: transcript.text }
   })
 }

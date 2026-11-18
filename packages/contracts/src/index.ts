@@ -1568,6 +1568,20 @@ export const dictationSettingsSchema = z.object({
 })
 export type DictationSettings = z.infer<typeof dictationSettingsSchema>
 
+/** A transcript of an audio attachment or file, with timed phrases for following along. */
+export const audioTranscriptSchema = z.object({
+  text: z.string(),
+  durationSeconds: z.number().nonnegative(),
+  segments: z.array(z.object({
+    /** Seconds from the start of the audio. */
+    start: z.number().nonnegative(),
+    end: z.number().nonnegative(),
+    text: z.string(),
+  })),
+})
+export type AudioTranscript = z.infer<typeof audioTranscriptSchema>
+export type AudioTranscriptSegment = AudioTranscript['segments'][number]
+
 export const managementScopeSchema = z.enum([
   'account:read',
   'account:write',

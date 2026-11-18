@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { TableVirtuoso, type TableComponents } from 'react-virtuoso'
-import { Check, Copy, Download, FileWarning, Loader2, X } from 'lucide-react'
+import { Download, FileWarning, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Markdown } from '@/components/chat/Markdown'
 import {
@@ -11,7 +11,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { Attachment } from '@/lib/types'
-import { writeClipboardText } from '@/lib/clipboard'
 import {
   attachmentPreviewKind,
   createDelimitedReader,
@@ -27,6 +26,10 @@ import { previewKindForFile } from '@/lib/code-preview'
 import { parseQuiz } from '@pulpo/client-core/quiz'
 import { QuizCard } from '@/components/chat/QuizCard'
 import { languageForFile } from '@/lib/syntax-highlight'
+import { AudioPreview } from '@/components/audio/AudioPreview'
+import { CopyTextButton } from './CopyTextButton'
+
+export { CopyTextButton }
 
 const TABLE_ROW_BATCH = 200
 
@@ -165,10 +168,13 @@ export function PreviewBody({
   attachment,
   kind,
   content,
+  transcribable = true,
 }: {
   attachment: Attachment
   kind: AttachmentPreviewKind
   content: PreviewContent
+  /** Whether audio can be transcribed: only once it is stored, not while it is a local file. */
+  transcribable?: boolean
 }) {
   const isTable = useMemo(() => content.status === 'ready' && kind === 'table' && !!content.text
     && createDelimitedReader(attachment.name, attachment.mimeType, content.text) !== null,
@@ -217,34 +223,16 @@ export function PreviewBody({
   }
   if (kind === 'audio') {
     return (
-      <div className="flex size-full items-center justify-center bg-gradient-to-br from-fuchsia-500/10 via-background to-violet-500/10 p-6" data-preview-kind="audio">
-        <audio src={content.url} controls preload="metadata" aria-label={uit`Audio preview of ${attachment.name}`} className="w-full max-w-xl" />
-      </div>
+      <AudioPreview
+        src={content.url}
+        name={attachment.name}
+        mimeType={attachment.mimeType}
+        sizeBytes={attachment.size}
+        source={transcribable ? { kind: 'attachment', id: attachment.id } : null}
+      />
     )
   }
   return <video src={content.url} controls preload="metadata" aria-label={uit`Video preview of ${attachment.name}`} className="size-full bg-black object-contain" data-preview-kind="video" />
-}
-
-export function CopyTextButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-sm"
-      className="rounded-full"
-      aria-label={copied ? ui("Copied") : ui("Copy text")}
-      onClick={() => {
-        void writeClipboardText(text).then((success) => {
-          if (!success) return
-          setCopied(true)
-          setTimeout(() => setCopied(false), 1200)
-        })
-      }}
-    >
-      {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-    </Button>
-  )
 }
 
 export function AttachmentPreviewDialog({
@@ -292,7 +280,7 @@ export function AttachmentPreviewDialog({
           </DialogClose>
         </header>
         <div className="min-h-0 flex-1 overflow-hidden bg-muted/25">
-          <PreviewBody attachment={attachment} kind={kind} content={content} />
+          <PreviewBody attachment={attachment} kind={kind} content={content} transcribable={!sourceFile} />
         </div>
       </DialogContent>
     </Dialog>

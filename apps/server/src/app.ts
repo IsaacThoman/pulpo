@@ -49,6 +49,7 @@ import { registerBillingRoutes } from './billing/routes.js'
 import { registerAdminBillingRoutes } from './billing/admin-routes.js'
 import { registerInviteCodeRoutes } from './invite-codes/routes.js'
 import { registerDictationRoutes } from './dictation/routes.js'
+import { registerAudioTranscriptionRoutes } from './dictation/audio-files.js'
 import { registerCodexRoutes } from './codex/routes.js'
 import { anthropicErrorBody, isAnthropicApiRequest } from './public-api/anthropic-codec.js'
 
@@ -208,6 +209,7 @@ export async function buildApp() {
   await registerSpeechRoutes(app)
   await registerImageGenerationRoutes(app)
   await registerDictationRoutes(app)
+  await registerAudioTranscriptionRoutes(app)
   await registerPublicApiRoutes(app)
   await registerManagementRoutes(app)
 

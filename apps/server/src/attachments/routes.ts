@@ -41,20 +41,21 @@ export function attachmentStorageErrorCode(cause: unknown): string {
   return 'attachment_storage_error'
 }
 
+/** A ready attachment the user owns, unless the chat holding it is deleted or out of reach. */
+export async function findReadyAttachment(userId: string, id: string) {
+  const [result] = await db.select({ attachment: attachments }).from(attachments)
+    .leftJoin(chats, eq(chats.id, attachments.chatId))
+    .where(and(
+      eq(attachments.id, id),
+      eq(attachments.userId, userId),
+      eq(attachments.status, 'ready'),
+      accessibleAttachmentCondition(),
+    )).limit(1)
+  return result?.attachment
+}
+
 export async function registerAttachmentRoutes(app: FastifyInstance): Promise<void> {
   app.addContentTypeParser('application/octet-stream', (_request, body, done) => done(null, body))
-
-  const readyAttachment = async (userId: string, id: string) => {
-    const [result] = await db.select({ attachment: attachments }).from(attachments)
-      .leftJoin(chats, eq(chats.id, attachments.chatId))
-      .where(and(
-        eq(attachments.id, id),
-        eq(attachments.userId, userId),
-        eq(attachments.status, 'ready'),
-        accessibleAttachmentCondition(),
-      )).limit(1)
-    return result?.attachment
-  }
 
   app.get('/api/attachments/usage', async (request) => {
     const user = requireUser(request)
@@ -161,7 +162,7 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
   app.get('/api/attachments/:id', { config: attachmentRateLimit }, async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const attachment = await readyAttachment(user.id, id)
+    const attachment = await findReadyAttachment(user.id, id)
     if (!attachment) throw notFound('Attachment')
     return {
       attachment: {
@@ -181,7 +182,7 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     const user = await requireFilesUser(request)
     const { id } = request.params as { id: string }
     const input = parseFileInput(saveAttachmentToFilesSchema, request.body ?? {})
-    const attachment = await readyAttachment(user.id, id)
+    const attachment = await findReadyAttachment(user.id, id)
     if (!attachment) throw notFound('Attachment')
     const saved = await saveAttachmentToFiles(user.id, attachment, input)
     reply.code(201)
@@ -191,7 +192,7 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
   app.get('/api/attachments/:id/download', { config: attachmentRateLimit }, async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const attachment = await readyAttachment(user.id, id)
+    const attachment = await findReadyAttachment(user.id, id)
     if (!attachment) throw notFound('Attachment')
     return { url: await getBlobStore().createDownloadUrl(attachment.objectKey, 300) }
   })
@@ -200,7 +201,7 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
   app.get('/api/attachments/:id/thumbnail', { config: attachmentRateLimit }, async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const attachment = await readyAttachment(user.id, id)
+    const attachment = await findReadyAttachment(user.id, id)
     if (!attachment || !isConfirmedRasterImage(attachment.mimeType)) throw notFound('Image preview')
     const etag = `"thumbnail-v1-${attachment.checksum ?? attachment.updatedAt.getTime()}"`
     reply.header('cache-control', 'private, max-age=31536000, immutable').header('etag', etag)
