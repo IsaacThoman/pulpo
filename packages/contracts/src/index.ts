@@ -2,6 +2,8 @@ import { imageGenerationPreferencesSchema } from './image-generation.js'
 export * from './image-generation.js'
 import { speechPreferencesSchema } from './speech.js'
 export * from './speech.js'
+import { colorThemeIdSchema, customThemesSchema, DEFAULT_COLOR_THEME_ID } from './color-themes.js'
+export * from './color-themes.js'
 import { eventHasAssistantReplyText } from './response-timing.js'
 export * from './avatar-crop.js'
 export * from './response-timing.js'
@@ -1765,6 +1767,9 @@ export const managementAccountSettingsSchema = z.object({
   imageGeneration: imageGenerationPreferencesSchema,
   speech: speechPreferencesSchema,
   theme: z.enum(['light', 'dark', 'system']).default('system'),
+  /** The selected color theme: a built-in theme id or one of `customThemes`. */
+  colorTheme: colorThemeIdSchema.default(DEFAULT_COLOR_THEME_ID),
+  customThemes: customThemesSchema.default([]),
   language: z.string().min(1).max(32).default('en-US'),
   composerSyncEnabled: z.boolean().default(true),
   sendWithEnter: z.boolean().default(true),

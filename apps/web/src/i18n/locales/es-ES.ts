@@ -211,6 +211,7 @@ const esES = {
       devices: 'Dispositivos',
       connections: 'Conexiones',
       personalization: 'Personalización',
+      appearance: 'Apariencia',
       interface: 'Interfaz',
       billing: 'Facturación',
       api: 'Claves de API',

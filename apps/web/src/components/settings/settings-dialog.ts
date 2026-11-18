@@ -7,6 +7,7 @@ export const SETTINGS_SECTION_IDS = [
   'devices',
   'connections',
   'personalization',
+  'appearance',
   'interface',
   'agent',
   'billing',
