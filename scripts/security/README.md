@@ -3,6 +3,15 @@
 Run `npm run test:dependency-security`. These tests also run at the start of
 `npm test` and exercise the installed dependencies through their consumers.
 
+## Withdrawn Picomatch advisory
+
+GitHub withdrew [GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf)
+on November 18, 2026. npm's audit feed still reports it and marks Picomatch's
+dependents high severity. The CI audit accepts that result only when it is the
+sole high or critical advisory and the GitHub Advisory API confirms the
+withdrawal. Remove `audit.mjs` and restore the direct
+`npm audit --audit-level=high` command once npm stops reporting this advisory.
+
 ## Zod collection validation and Expo compatibility
 
 Direct consumers now require Zod 4.6.7 or later to address
