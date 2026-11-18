@@ -2,56 +2,64 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import {
   CUSTOM_THEMES_MAX,
   DEFAULT_COLOR_THEME_ID,
-  THEME_BASE_COLOR_ROLES,
   THEME_CSS_MAX_LENGTH,
   THEME_NAME_MAX_LENGTH,
   unsafeThemeCssReason,
   type CustomTheme,
   type ThemeAppearance,
-  type ThemeColorRole,
+  type ThemeVariant,
 } from '@pulpo/contracts'
-import { Check, ChevronRight, Copy, Download, RotateCcw, Trash2, Upload } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Copy, Download, RotateCcw, Trash2, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { normalizeHex } from '@/lib/color'
+import { alphaOf, normalizeHex, solidHex, withAlpha } from '@/lib/color'
 import {
   allColorThemes,
+  BASE_ROLES,
   findColorTheme,
   newCustomThemeId,
-  parseThemeFile,
+  parseVsCodeTheme,
   resolvePalette,
-  themeFileName,
-  themeToFile,
+  resolveSyntax,
+  ROLE_SPECS,
+  SYNTAX_ROLES,
+  SYNTAX_SCOPES,
+  THEME_ROLES,
+  themeToVsCode,
+  vsCodeThemeFileName,
+  withSyntaxColor,
   type ColorTheme,
+  type SyntaxRole,
+  type ThemeImport,
+  type ThemeRole,
+  type ThemeRoleGroup,
 } from '@/lib/color-themes'
 import { cn } from '@/lib/utils'
 import { ui, uit } from '@/i18n/ui'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useSettings } from '@/stores/settings'
 
-const ROLE_GROUPS: { id: 'foundation' | 'content' | 'sidebar' | 'status'; roles: ThemeColorRole[] }[] = [
-  { id: 'foundation', roles: ['background', 'surface', 'raisedSurface', 'hover', 'text', 'mutedText', 'border', 'input'] },
-  { id: 'content', roles: ['action', 'focus', 'messageSurface', 'codeSurface'] },
-  { id: 'sidebar', roles: ['sidebar', 'sidebarSelection', 'sidebarBorder'] },
-  { id: 'status', roles: ['error'] },
-]
-
-const BASE_ROLES = new Set<ThemeColorRole>(THEME_BASE_COLOR_ROLES)
+const GROUPS: ThemeRoleGroup[] = ['foundation', 'content', 'sidebar', 'chatModes', 'status', 'code']
 const CSS_PLACEHOLDER = '.dark [data-slot="button"] {\n  border-radius: 999px;\n}'
+const EMPTY_VARIANT: ThemeVariant = { colors: {}, tokenColors: [] }
+const MAX_THEME_FILE_BYTES = 2 * 1024 * 1024
 
-function groupLabel(group: (typeof ROLE_GROUPS)[number]['id']): string {
+function groupLabel(group: ThemeRoleGroup): string {
   switch (group) {
     case 'foundation': return ui('Foundation')
     case 'content': return ui('Brand & content')
     case 'sidebar': return ui('Sidebar')
+    case 'chatModes': return ui('Chat modes')
     case 'status': return ui('Status')
+    case 'code': return ui('Code')
   }
 }
 
-function roleLabel(role: ThemeColorRole): string {
+function roleLabel(role: ThemeRole): string {
   switch (role) {
     case 'background': return ui('Background')
     case 'surface': return ui('Cards and menus')
@@ -62,13 +70,39 @@ function roleLabel(role: ThemeColorRole): string {
     case 'border': return ui('Border')
     case 'input': return ui('Input border')
     case 'action': return ui('Action')
+    case 'actionText': return ui('Action text')
     case 'focus': return ui('Focus ring')
     case 'messageSurface': return ui('Your messages')
     case 'codeSurface': return ui('Code blocks')
     case 'sidebar': return ui('Sidebar background')
     case 'sidebarSelection': return ui('Sidebar selection')
     case 'sidebarBorder': return ui('Sidebar border')
+    case 'temporaryBackground': return ui('Temporary chat background')
+    case 'temporarySurface': return ui('Temporary composer and cards')
+    case 'temporaryBorder': return ui('Temporary border')
+    case 'temporaryText': return ui('Temporary label')
+    case 'temporaryToggle': return ui('Temporary toggle')
+    case 'expiringText': return ui('Expiring chat label')
+    case 'planText': return ui('Plan name')
     case 'error': return ui('Error')
+    case 'diffInserted': return ui('Inserted lines')
+    case 'diffRemoved': return ui('Removed lines')
+  }
+}
+
+function syntaxLabel(role: SyntaxRole): string {
+  switch (role) {
+    case 'keyword': return ui('Keywords')
+    case 'title': return ui('Functions and types')
+    case 'constant': return ui('Numbers and constants')
+    case 'string': return ui('Strings')
+    case 'builtin': return ui('Built-ins')
+    case 'comment': return ui('Comments')
+    case 'tag': return ui('Tags')
+    case 'section': return ui('Headings')
+    case 'bullet': return ui('List markers')
+    case 'addition': return ui('Inserted text')
+    case 'deletion': return ui('Deleted text')
   }
 }
 
@@ -83,6 +117,23 @@ function useActiveAppearance(): ThemeAppearance {
   const mode = useSettings((state) => state.theme)
   const systemDark = useSyncExternalStore(subscribeToColorScheme, () => window.matchMedia('(prefers-color-scheme: dark)').matches)
   return mode === 'dark' || (mode === 'system' && systemDark) ? 'dark' : 'light'
+}
+
+async function readThemeFile(file: File): Promise<ThemeImport> {
+  if (file.size > MAX_THEME_FILE_BYTES) return { ok: false, reason: 'format' }
+  try {
+    return parseVsCodeTheme(await file.text(), file.name)
+  } catch {
+    return { ok: false, reason: 'json' }
+  }
+}
+
+function importError(result: Extract<ThemeImport, { ok: false }>): string {
+  switch (result.reason) {
+    case 'vsix': return ui('That’s a .vsix extension. Unzip it and import the theme’s .json file from its themes folder.')
+    case 'css': return ui('This theme’s CSS loads content from the internet, so it wasn’t imported.')
+    default: return ui('That file isn’t a VS Code color theme.')
+  }
 }
 
 function ThemePreview({ theme, appearance }: { theme: ColorTheme; appearance: ThemeAppearance }) {
@@ -113,20 +164,23 @@ function HexInput({ value, label, derived, onCommit }: { value: string; label: s
   useEffect(() => {
     if (!focused) setDraft(value)
   }, [focused, value])
+  const commit = (text: string) => {
+    const hex = normalizeHex(text)
+    if (hex && [6, 8].includes(text.replace('#', '').length)) onCommit(hex)
+  }
   return (
     <Input
       aria-label={label}
       value={focused ? draft : value}
       spellCheck={false}
       autoComplete="off"
-      maxLength={7}
-      className={cn('h-8 w-24 font-mono text-sm', derived && !focused && 'text-muted-foreground')}
+      maxLength={9}
+      className={cn('h-8 w-28 font-mono text-sm', derived && !focused && 'text-muted-foreground')}
       onFocus={() => { setDraft(value); setFocused(true) }}
       onBlur={() => setFocused(false)}
       onChange={(event) => {
         setDraft(event.target.value)
-        const hex = normalizeHex(event.target.value)
-        if (hex && event.target.value.replace('#', '').length === 6) onCommit(hex)
+        commit(event.target.value)
       }}
       onKeyDown={(event) => {
         if (event.key !== 'Enter') return
@@ -138,18 +192,22 @@ function HexInput({ value, label, derived, onCommit }: { value: string; label: s
   )
 }
 
-function ColorRow({ role, value, derived, canReset, onChange, onReset }: {
-  role: ThemeColorRole
+function ColorRow({ label, vsCodeId, value, derived, canReset, onChange, onReset }: {
+  label: string
+  /** Shown in Advanced mode so VS Code theme authors know which id to set. */
+  vsCodeId?: string
   value: string
   derived: boolean
   canReset: boolean
   onChange: (hex: string) => void
   onReset: () => void
 }) {
-  const label = roleLabel(role)
   return (
     <div className="flex min-w-0 items-center gap-3 py-1.5 pl-2">
-      <div className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{label}</div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm text-muted-foreground">{label}</div>
+        {vsCodeId && <div className="truncate font-mono text-[11px] text-muted-foreground/70">{vsCodeId}</div>}
+      </div>
       {canReset && (
         <Button type="button" variant="ghost" size="icon" className="size-7 text-muted-foreground" aria-label={uit`Reset ${label}`} title={ui('Reset to the derived color')} onClick={onReset}>
           <RotateCcw className="size-3.5" aria-hidden />
@@ -159,9 +217,10 @@ function ColorRow({ role, value, derived, canReset, onChange, onReset }: {
         <input
           type="color"
           aria-label={uit`Pick ${label}`}
-          value={value}
+          value={solidHex(value)}
           className="peer absolute inset-0 z-10 size-full cursor-pointer opacity-0"
-          onChange={(event) => onChange(event.currentTarget.value)}
+          // The picker has no alpha, so a translucent color keeps its alpha.
+          onChange={(event) => onChange(withAlpha(event.currentTarget.value, alphaOf(value)))}
         />
         <span
           aria-hidden
@@ -202,12 +261,14 @@ function ThemeEditor({ theme, activeAppearance, onUpdate }: {
   onUpdate: (patch: Partial<Omit<CustomTheme, 'id'>>) => void
 }) {
   const id = useId()
+  const fileInput = useRef<HTMLInputElement>(null)
   const [appearance, setAppearance] = useState<ThemeAppearance>(activeAppearance)
   const [advanced, setAdvanced] = useState(false)
   const [filter, setFilter] = useState('')
   const [name, setName] = useState(theme.name)
   const [css, setCss] = useState(theme.css)
   const [cssOpen, setCssOpen] = useState(Boolean(theme.css.trim()))
+  const [message, setMessage] = useState<{ kind: 'error' | 'status'; text: string } | null>(null)
 
   // Edit what's on screen: switching the app between light and dark switches the editor too.
   useEffect(() => setAppearance(activeAppearance), [activeAppearance])
@@ -215,23 +276,44 @@ function ThemeEditor({ theme, activeAppearance, onUpdate }: {
   useEffect(() => setName(theme.name), [theme.name])
   useEffect(() => setCss(theme.css), [theme.css])
 
-  const colors = theme[appearance]
-  const palette = resolvePalette(colors, appearance)
+  const variant = theme[appearance]
+  const palette = resolvePalette(variant, appearance)
+  const syntax = resolveSyntax(variant, appearance)
   const query = filter.trim().toLowerCase()
-  const groups = ROLE_GROUPS.map((group) => ({
-    ...group,
-    roles: group.roles.filter((role) => (advanced || BASE_ROLES.has(role)) && (!query || roleLabel(role).toLowerCase().includes(query))),
-  })).filter((group) => group.roles.length)
-  const hiddenOverrides = advanced ? 0 : Object.keys(colors).filter((role) => !BASE_ROLES.has(role as ThemeColorRole)).length
+  const matches = (label: string, ids: readonly string[]) => !query || label.toLowerCase().includes(query) || ids.some((value) => value.toLowerCase().includes(query))
+  const roles = (group: ThemeRoleGroup) => THEME_ROLES.filter((role) => ROLE_SPECS[role].group === group
+    && (advanced || BASE_ROLES.includes(role))
+    && matches(roleLabel(role), [ROLE_SPECS[role].key]))
+  const syntaxRoles = advanced ? SYNTAX_ROLES.filter((role) => matches(syntaxLabel(role), SYNTAX_SCOPES[role])) : []
+  const groups = GROUPS.map((group) => ({ group, roles: roles(group), syntax: group === 'code' ? syntaxRoles : [] }))
+    .filter((entry) => entry.roles.length || entry.syntax.length)
+  const ownRule = (role: SyntaxRole) => variant.tokenColors.some((rule) => rule.name === `pulpo.${role}`)
+  const hiddenOverrides = advanced
+    ? 0
+    : Object.keys(variant.colors).filter((key) => !BASE_ROLES.some((role) => ROLE_SPECS[role].key === key)).length + SYNTAX_ROLES.filter(ownRule).length
   const cssError = css.length > THEME_CSS_MAX_LENGTH
     ? uit`Theme CSS can be up to ${THEME_CSS_MAX_LENGTH.toLocaleString()} characters.`
     : (unsafeThemeCssReason(css) ? ui('Theme CSS can’t load anything from the internet: no @import, and url() only with data: or #id.') : '')
 
-  const setColor = (role: ThemeColorRole, hex: string | null) => {
-    const next = { ...colors }
-    if (hex) next[role] = hex
-    else delete next[role]
-    onUpdate({ [appearance]: next })
+  const setVariant = (next: ThemeVariant) => onUpdate({ [appearance]: next })
+  const setColor = (role: ThemeRole, hex: string | null) => {
+    const colors = { ...variant.colors }
+    if (hex) colors[ROLE_SPECS[role].key] = hex
+    else delete colors[ROLE_SPECS[role].key]
+    setVariant({ ...variant, colors })
+  }
+
+  const importInto = async (file: File) => {
+    const result = await readThemeFile(file)
+    if (!result.ok) {
+      setMessage({ kind: 'error', text: importError(result) })
+      return
+    }
+    setVariant(result.pulpo?.[appearance] ?? result.variant)
+    setMessage({
+      kind: 'status',
+      text: appearance === 'light' ? uit`Light colors now come from “${result.name}”.` : uit`Dark colors now come from “${result.name}”.`,
+    })
   }
 
   return (
@@ -259,8 +341,30 @@ function ThemeEditor({ theme, activeAppearance, onUpdate }: {
             </p>
           )}
         </div>
-        <SegmentedAppearance value={appearance} onChange={setAppearance} labelledBy={`${id}-appearance`} />
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => fileInput.current?.click()}>
+            <Upload className="size-3.5" aria-hidden />
+            {appearance === 'light' ? ui('Import light colors') : ui('Import dark colors')}
+          </Button>
+          <SegmentedAppearance value={appearance} onChange={(value) => { setMessage(null); setAppearance(value) }} labelledBy={`${id}-appearance`} />
+        </div>
+        <input
+          ref={fileInput}
+          type="file"
+          accept=".json,.jsonc,application/json"
+          className="hidden"
+          data-testid="theme-editor-import"
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0]
+            event.currentTarget.value = ''
+            if (file) void importInto(file)
+          }}
+        />
       </div>
+      {message?.kind === 'error' && <p role="alert" className="text-xs text-destructive">{message.text}</p>}
+      <p role="status" className={cn('text-xs text-muted-foreground', message?.kind !== 'status' && 'sr-only')}>
+        {message?.kind === 'status' ? message.text : ''}
+      </p>
       <div className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-sm font-medium">{ui('Colors')}</div>
         <div className="flex items-center gap-3">
@@ -276,19 +380,31 @@ function ThemeEditor({ theme, activeAppearance, onUpdate }: {
           <Switch id={`${id}-advanced`} checked={advanced} onCheckedChange={setAdvanced} />
         </div>
       </div>
-      {groups.map((group) => (
-        <section key={group.id} aria-labelledby={`${id}-${group.id}`} className="pt-2">
-          {advanced && <h4 id={`${id}-${group.id}`} className="py-1 text-sm font-medium">{groupLabel(group.id)}</h4>}
-          {!advanced && <h4 id={`${id}-${group.id}`} className="sr-only">{groupLabel(group.id)}</h4>}
-          {group.roles.map((role) => (
+      {groups.map(({ group, roles: groupRoles, syntax: groupSyntax }) => (
+        <section key={group} aria-labelledby={`${id}-${group}`} className="pt-2">
+          <h4 id={`${id}-${group}`} className={advanced ? 'py-1 text-sm font-medium' : 'sr-only'}>{groupLabel(group)}</h4>
+          {groupRoles.map((role) => (
             <ColorRow
               key={`${appearance}-${role}`}
-              role={role}
+              label={roleLabel(role)}
+              vsCodeId={advanced ? ROLE_SPECS[role].key : undefined}
               value={palette[role]}
-              derived={!colors[role]}
-              canReset={advanced && Boolean(colors[role]) && !BASE_ROLES.has(role)}
+              derived={!variant.colors[ROLE_SPECS[role].key]}
+              canReset={advanced && Boolean(variant.colors[ROLE_SPECS[role].key]) && !BASE_ROLES.includes(role)}
               onChange={(hex) => setColor(role, hex)}
               onReset={() => setColor(role, null)}
+            />
+          ))}
+          {groupSyntax.map((role) => (
+            <ColorRow
+              key={`${appearance}-syntax-${role}`}
+              label={syntaxLabel(role)}
+              vsCodeId={SYNTAX_SCOPES[role][0]}
+              value={syntax[role]}
+              derived={!ownRule(role)}
+              canReset={ownRule(role)}
+              onChange={(hex) => setVariant(withSyntaxColor(variant, role, hex))}
+              onReset={() => setVariant(withSyntaxColor(variant, role, null))}
             />
           ))}
         </section>
@@ -297,7 +413,7 @@ function ThemeEditor({ theme, activeAppearance, onUpdate }: {
       {!advanced && (
         <p className="pt-1 text-xs text-muted-foreground">
           {hiddenOverrides === 0
-            ? ui('Other colors follow these three. Turn on Advanced to set them yourself.')
+            ? ui('Other colors follow these three. Turn on Advanced to set them yourself, including temporary chats and code.')
             : hiddenOverrides === 1
               ? ui('1 more color is set in Advanced.')
               : uit`${hiddenOverrides} more colors are set in Advanced.`}
@@ -339,12 +455,12 @@ function ThemeEditor({ theme, activeAppearance, onUpdate }: {
   )
 }
 
-function downloadTheme(theme: ColorTheme) {
-  const blob = new Blob([`${JSON.stringify(themeToFile(theme), null, 2)}\n`], { type: 'application/json' })
+function downloadVsCodeTheme(theme: ColorTheme, appearance: ThemeAppearance) {
+  const blob = new Blob([`${JSON.stringify(themeToVsCode(theme, appearance), null, 2)}\n`], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = themeFileName(theme)
+  link.download = vsCodeThemeFileName(theme, appearance)
   document.body.appendChild(link)
   link.click()
   link.remove()
@@ -379,8 +495,8 @@ export function ColorThemeSettings() {
     setMessage(null)
     addTheme({
       name: uit`${selected.name} copy`.slice(0, THEME_NAME_MAX_LENGTH),
-      light: { ...selected.light },
-      dark: { ...selected.dark },
+      light: structuredClone(selected.light),
+      dark: structuredClone(selected.dark),
       css: selected.css,
     })
   }
@@ -393,35 +509,30 @@ export function ColorThemeSettings() {
   }
 
   const importFile = async (file: File) => {
-    if (file.size > 256 * 1024) {
-      setMessage({ kind: 'error', text: ui('That file is too large to be a theme.') })
-      return
-    }
-    let text: string
-    try {
-      text = await file.text()
-    } catch {
-      setMessage({ kind: 'error', text: ui('That file isn’t a Pulpo theme.') })
-      return
-    }
-    const result = parseThemeFile(text)
+    const result = await readThemeFile(file)
     if (!result.ok) {
-      setMessage({
-        kind: 'error',
-        text: result.reason === 'css'
-          ? ui('This theme’s CSS loads content from the internet, so it wasn’t imported.')
-          : ui('That file isn’t a Pulpo theme.'),
-      })
+      setMessage({ kind: 'error', text: importError(result) })
       return
     }
-    addTheme(result.theme)
-    setMessage({ kind: 'status', text: uit`Imported “${result.theme.name}”.` })
+    const other: ThemeAppearance = result.appearance === 'dark' ? 'light' : 'dark'
+    const variants = {
+      [result.appearance]: result.pulpo?.[result.appearance] ?? result.variant,
+      [other]: result.pulpo?.[other] ?? EMPTY_VARIANT,
+    } as Record<ThemeAppearance, ThemeVariant>
+    addTheme({ name: result.name, light: variants.light, dark: variants.dark, css: result.pulpo?.css ?? '' })
+    const both = Boolean(result.pulpo?.light && result.pulpo?.dark)
+    const note = both
+      ? uit`Imported “${result.name}”.`
+      : result.appearance === 'dark'
+        ? uit`Imported “${result.name}” as dark colors. Its light colors are Pulpo’s until you import a light theme into it.`
+        : uit`Imported “${result.name}” as light colors. Its dark colors are Pulpo’s until you import a dark theme into it.`
+    setMessage({ kind: 'status', text: result.partial ? `${note} ${ui('It builds on another theme file, so some colors may be missing.')}` : note })
   }
 
   return (
     <div className="py-3">
       <div id={headingId} className="text-sm font-medium">{ui('Color theme')}</div>
-      <p className="mt-0.5 text-xs text-muted-foreground">{ui('Each theme has light and dark colors. Duplicate a theme to customize it.')}</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">{ui('Themes use VS Code’s color theme format, so you can import VS Code themes and export yours to VS Code. Each has light and dark colors.')}</p>
       <div role="group" aria-labelledby={headingId} className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
         {themes.map((theme) => {
           const isSelected = theme.id === selected.id
@@ -452,9 +563,17 @@ export function ColorThemeSettings() {
         <Button type="button" variant="outline" size="sm" disabled={atLimit} onClick={() => fileInput.current?.click()}>
           <Upload className="size-3.5" aria-hidden />{ui('Import')}
         </Button>
-        <Button type="button" variant="outline" size="sm" onClick={() => downloadTheme(selected)}>
-          <Download className="size-3.5" aria-hidden />{ui('Export')}
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="outline" size="sm">
+              <Download className="size-3.5" aria-hidden />{ui('Export')}<ChevronDown className="size-3.5" aria-hidden />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onSelect={() => downloadVsCodeTheme(selected, 'dark')}>{ui('Dark VS Code theme')}</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => downloadVsCodeTheme(selected, 'light')}>{ui('Light VS Code theme')}</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         {selectedCustom && (
           <Button type="button" variant="outline" size="sm" className="text-destructive hover:text-destructive" onClick={remove}>
             <Trash2 className="size-3.5" aria-hidden />{ui('Delete')}
@@ -463,8 +582,9 @@ export function ColorThemeSettings() {
         <input
           ref={fileInput}
           type="file"
-          accept=".json,application/json"
+          accept=".json,.jsonc,application/json"
           className="hidden"
+          data-testid="theme-import"
           onChange={(event) => {
             const file = event.currentTarget.files?.[0]
             event.currentTarget.value = ''

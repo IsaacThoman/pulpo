@@ -3,22 +3,34 @@ import {
   CUSTOM_THEMES_MAX,
   customThemesSchema,
   managementAccountSettingsSchema,
-  themeFileSchema,
+  pulpoThemeExtensionSchema,
   unsafeThemeCssReason,
 } from './index.js'
 
 describe('color themes', () => {
-  it('normalizes colors and drops roles it does not know', () => {
+  it('keeps the VS Code color ids Pulpo renders, with alpha, and drops the rest', () => {
     const [theme] = customThemesSchema.parse([{
       id: 'custom-1',
       name: ' Iris copy ',
-      dark: { background: '#1D1929', futureRole: '#ffffff' },
+      dark: {
+        colors: { 'editor.background': '#1D1929', 'panel.border': '#ffffff17', 'activityBar.background': '#000000' },
+        tokenColors: [{ scope: ['keyword', 'storage.type'], settings: { foreground: '#FF7B72' } }],
+      },
     }])
-    expect(theme).toEqual({ id: 'custom-1', name: 'Iris copy', light: {}, dark: { background: '#1d1929' }, css: '' })
+    expect(theme).toEqual({
+      id: 'custom-1',
+      name: 'Iris copy',
+      light: { colors: {}, tokenColors: [] },
+      dark: {
+        colors: { 'editor.background': '#1d1929', 'panel.border': '#ffffff17' },
+        tokenColors: [{ scope: ['keyword', 'storage.type'], settings: { foreground: '#ff7b72' } }],
+      },
+      css: '',
+    })
   })
 
   it('rejects invalid colors, duplicate ids, and too many themes', () => {
-    expect(customThemesSchema.safeParse([{ id: 'a', name: 'A', light: { text: 'red' } }]).success).toBe(false)
+    expect(customThemesSchema.safeParse([{ id: 'a', name: 'A', light: { colors: { foreground: 'red' } } }]).success).toBe(false)
     expect(customThemesSchema.safeParse([{ id: 'a', name: 'A' }, { id: 'a', name: 'B' }]).success).toBe(false)
     const many = Array.from({ length: CUSTOM_THEMES_MAX + 1 }, (_, index) => ({ id: `t${index}`, name: 'T' }))
     expect(customThemesSchema.safeParse(many).success).toBe(false)
@@ -42,10 +54,10 @@ describe('color themes', () => {
     expect(customThemesSchema.safeParse([{ id: 'a', name: 'A', css: '@import "x.css";' }]).success).toBe(false)
   })
 
-  it('reads exported theme files', () => {
-    expect(themeFileSchema.parse({ kind: 'pulpo-theme', version: 1, name: 'Iris', dark: { action: '#F099D8' } }))
-      .toEqual({ kind: 'pulpo-theme', version: 1, name: 'Iris', light: {}, dark: { action: '#f099d8' }, css: '' })
-    expect(themeFileSchema.safeParse({ kind: 'other', version: 1, name: 'Iris' }).success).toBe(false)
+  it('reads the Pulpo extension of an exported VS Code theme', () => {
+    expect(pulpoThemeExtensionSchema.parse({ version: 1, light: { colors: { foreground: '#000000' } }, css: '' }))
+      .toEqual({ version: 1, light: { colors: { foreground: '#000000' }, tokenColors: [] }, css: '' })
+    expect(pulpoThemeExtensionSchema.safeParse({ version: 1, css: '@import "x";' }).success).toBe(false)
   })
 
   it('keeps themes in management account settings', () => {
@@ -54,7 +66,7 @@ describe('color themes', () => {
     expect(managementAccountSettingsSchema.parse({
       username: 'pulpo_user',
       colorTheme: 'custom-1',
-      customThemes: [{ id: 'custom-1', name: 'Mine', dark: { background: '#000000' } }],
+      customThemes: [{ id: 'custom-1', name: 'Mine', dark: { colors: { 'editor.background': '#000000' } } }],
     }).customThemes).toHaveLength(1)
   })
 })

@@ -78,7 +78,7 @@ describe('color themes', () => {
     storage.set('pulpo-profile', '{"id":"u1"}')
     settings.useSettings.setState({
       colorTheme: 'custom-a',
-      customThemes: [{ id: 'custom-a', name: 'Mine', light: { action: '#ff0000' }, dark: {}, css: '.x { color: red }' }],
+      customThemes: [{ id: 'custom-a', name: 'Mine', light: { colors: { 'button.background': '#ff0000' }, tokenColors: [] }, dark: { colors: {}, tokenColors: [] }, css: '.x { color: red }' }],
     })
     expect(themeStyle()).toContain('--primary:#ff0000;')
     expect(themeStyle()).toContain('.x { color: red }')

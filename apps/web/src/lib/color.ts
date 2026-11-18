@@ -3,19 +3,51 @@
 type Rgb = [number, number, number]
 type Lab = [number, number, number]
 
-const HEX_PATTERN = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i
+const HEX_PATTERN = /^#?([0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i
 
-/** Returns `#rrggbb` for a 3- or 6-digit hex color (with or without `#`), or null. */
+/**
+ * Returns `#rrggbb`, or `#rrggbbaa` when the color is translucent, for a 3-, 4-, 6-, or 8-digit hex
+ * color (with or without `#`), or null. Fully opaque alpha is dropped.
+ */
 export function normalizeHex(value: string): string | null {
   const match = HEX_PATTERN.exec(value.trim())
   if (!match) return null
-  const digits = match[1]!.toLowerCase()
-  return `#${digits.length === 3 ? [...digits].map((digit) => digit + digit).join('') : digits}`
+  let digits = match[1]!.toLowerCase()
+  if (digits.length <= 4) digits = [...digits].map((digit) => digit + digit).join('')
+  if (digits.length === 8 && digits.endsWith('ff')) digits = digits.slice(0, 6)
+  return `#${digits}`
+}
+
+/** The color without its alpha, `#rrggbb`. */
+export function solidHex(hex: string): string {
+  return (normalizeHex(hex) ?? '#000000').slice(0, 7)
+}
+
+/** Alpha from 0 to 1. */
+export function alphaOf(hex: string): number {
+  const value = normalizeHex(hex) ?? '#000000'
+  return value.length === 9 ? parseInt(value.slice(7), 16) / 255 : 1
+}
+
+/** Replaces a color's alpha (0–1), keeping `#rrggbb` when opaque. */
+export function withAlpha(hex: string, alpha: number): string {
+  const solid = solidHex(hex)
+  const byte = Math.round(Math.min(1, Math.max(0, alpha)) * 255)
+  return byte === 255 ? solid : `${solid}${byte.toString(16).padStart(2, '0')}`
 }
 
 function hexToRgb(hex: string): Rgb {
-  const value = normalizeHex(hex) ?? '#000000'
+  const value = solidHex(hex)
   return [1, 3, 5].map((start) => parseInt(value.slice(start, start + 2), 16) / 255) as Rgb
+}
+
+/** Paints a translucent color over an opaque one, like the browser does, giving `#rrggbb`. */
+export function flattenHex(hex: string, background: string): string {
+  const alpha = alphaOf(hex)
+  if (alpha === 1) return solidHex(hex)
+  const top = hexToRgb(hex)
+  const bottom = hexToRgb(background)
+  return rgbToHex(top.map((channel, index) => channel * alpha + bottom[index]! * (1 - alpha)) as Rgb)
 }
 
 function rgbToHex(rgb: Rgb): string {
@@ -58,6 +90,12 @@ export function mixHex(from: string, to: string, amount: number): string {
   const a = rgbToOklab(hexToRgb(from))
   const b = rgbToOklab(hexToRgb(to))
   return rgbToHex(oklabToRgb(a.map((value, index) => value + (b[index]! - value) * amount) as Lab))
+}
+
+/** OKLab chroma: near 0 for grays. */
+export function chroma(hex: string): number {
+  const [, a, b] = rgbToOklab(hexToRgb(hex))
+  return Math.hypot(a, b)
 }
 
 /** OKLab lightness, 0 (black) to 1 (white). */
