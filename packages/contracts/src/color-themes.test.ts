@@ -52,6 +52,12 @@ describe('color themes', () => {
     expect(unsafeThemeCssReason('a { background: image-set("https://example.com/a.png" 1x) }')).not.toBeNull()
     expect(unsafeThemeCssReason('@font-face { src: src("https://example.com/f.woff2") }')).not.toBeNull()
     expect(customThemesSchema.safeParse([{ id: 'a', name: 'A', css: '@import "x.css";' }]).success).toBe(false)
+    // Comment delimiters inside strings don't comment anything out.
+    expect(unsafeThemeCssReason('body { --a: "/*"; background-image: url(https://example.com/collect); --b: "*/"; }')).not.toBeNull()
+    expect(unsafeThemeCssReason("body { --a: '/*'; background: url(//example.com/a); --b: '*/' }")).not.toBeNull()
+    expect(unsafeThemeCssReason('body { --a: "\\"/*"; background: url(https://example.com/a); --b: "*/" }')).not.toBeNull()
+    // Real comments still hide nothing harmful.
+    expect(unsafeThemeCssReason('/* url(https://example.com/a) */ body { color: red }')).toBeNull()
   })
 
   it('reads the Pulpo extension of an exported VS Code theme', () => {

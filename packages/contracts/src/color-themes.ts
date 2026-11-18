@@ -85,12 +85,40 @@ function decodeCssEscapes(css: string): string {
 }
 
 /**
+ * Removes comments the way the CSS tokenizer sees them: `/*` inside a string is part of the string,
+ * so string contents can't be used to comment out (and hide) real declarations from the check.
+ */
+function stripCssComments(css: string): string {
+  let output = ''
+  let index = 0
+  while (index < css.length) {
+    const char = css[index]!
+    if (char === '"' || char === "'") {
+      const start = index
+      index += 1
+      // A string ends at its closing quote, or (unterminated) at a newline.
+      while (index < css.length && css[index] !== char && css[index] !== '\n') index += css[index] === '\\' ? 2 : 1
+      output += css.slice(start, index + 1)
+      index += 1
+    } else if (char === '/' && css[index + 1] === '*') {
+      const end = css.indexOf('*/', index + 2)
+      index = end === -1 ? css.length : end + 2
+    } else {
+      output += char
+      index += 1
+    }
+  }
+  return output
+}
+
+/**
  * Why theme CSS may not be applied, or null when it is safe. Theme files are shared, so their CSS
  * must not load anything from the network: a remote `url()` or `@import` could report what's on
  * screen (attribute selectors can match input values) to someone else's server.
  */
 export function unsafeThemeCssReason(css: string): string | null {
-  const source = decodeCssEscapes(css).replace(/\/\*[\s\S]*?\*\//g, '').toLowerCase()
+  // Comments first, on the raw text: an escaped `/*` is not a comment, so decoding comes after.
+  const source = decodeCssEscapes(stripCssComments(css)).toLowerCase()
   if (/@import\b/.test(source)) return 'Theme CSS cannot use @import.'
   if (/(^|[^\w-])(-webkit-)?image-set\s*\(|(^|[^\w-])(image|src)\s*\(/.test(source)) {
     return 'Theme CSS cannot use image(), image-set(), or src().'

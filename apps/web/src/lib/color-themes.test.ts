@@ -98,6 +98,8 @@ describe('color themes', () => {
 describe('VS Code themes', () => {
   it('strips comments and trailing commas but not inside strings', () => {
     expect(JSON.parse(stripJsonc('{"a": "// not a comment, }", /* x */ "b": [1, 2,],}'))).toEqual({ a: '// not a comment, }', b: [1, 2] })
+    expect(JSON.parse(stripJsonc('{"colors": {"editor.background": "#000000", /* background */ }, // end\n "x": [1, // one\n ], }'))).toEqual({ colors: { 'editor.background': '#000000' }, x: [1] })
+    expect(JSON.parse(stripJsonc('{"a": "say \\"/* hi */\\"", "b": "x,]"}'))).toEqual({ a: 'say "/* hi */"', b: 'x,]' })
   })
 
   it('imports a VS Code theme as one appearance', () => {
