@@ -7,6 +7,12 @@ import { io as connectSocket, type Socket } from 'socket.io-client'
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ZodError } from 'zod'
 
+// Sign-in IPs come from Cloudflare's header only behind a trusted proxy; requests here come from loopback.
+vi.hoisted(() => {
+  process.env.PULPO_CLIENT_IP_MODE = 'cloudflare'
+  process.env.PULPO_TRUSTED_PROXY_CIDRS = '127.0.0.1/32,::1/128'
+})
+
 // The suite uses real PostgreSQL, Redis pub/sub, Socket.IO servers and clients.
 // Chat-grant issuance is outside this feature; supply a grant to exercise its actor identity.
 vi.mock('../jobs.js', () => ({ generationQueue: {}, maintenanceQueue: {}, embeddingQueue: {} }))
