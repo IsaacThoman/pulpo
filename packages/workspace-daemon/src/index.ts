@@ -5,7 +5,7 @@ import { createWriteStream } from 'node:fs'
 import { chmod, link, lstat, mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { dirname, isAbsolute, join, resolve, relative } from 'node:path'
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { readTextFile, resolveReadableVmPath } from './read.js'
@@ -45,6 +45,28 @@ const relayRequests = new Map<string, RelayRequest>()
  */
 type LiveOperation = { outputRevision: number; servedRevision: number; longPolled: boolean; wake: Set<() => void> }
 const live = new Map<string, LiveOperation>()
+/** Bash output so far, decoded into `operation.output` only when it is served or journaled rather than on every chunk. */
+type StreamedOutput = { chunks: Buffer[]; decodedChunks: number }
+const streamedOutput = new Map<string, StreamedOutput>()
+
+function syncOutput(operation: Operation): void {
+  const stream = streamedOutput.get(operation.id)
+  if (!stream || stream.decodedChunks === stream.chunks.length) return
+  operation.output = Buffer.concat(stream.chunks).toString('utf8')
+  stream.decodedChunks = stream.chunks.length
+}
+
+/** Hashing first keeps the constant-time comparison independent of the presented token's length. */
+function authorized(header: string | undefined): boolean {
+  const digest = (value: string) => createHash('sha256').update(value).digest()
+  return timingSafeEqual(digest(header ?? ''), digest(`Bearer ${token}`))
+}
+
+/** Agent commands get the daemon's environment minus its own credential, which only the controller should hold. */
+function commandEnvironment(operationId: string): NodeJS.ProcessEnv {
+  const { PULPO_WORKSPACE_TOKEN: _token, ...environment } = process.env
+  return { ...environment, HOME: '/home/agent', PULPO_OPERATION_ID: operationId, PULPO_RELAY_SOCKET: relaySocket }
+}
 
 function pendingRelay(operationId: string): RelayRequest[] { return [...relayRequests.values()].filter((request) => request.operationId === operationId) }
 function wake(operationId: string): void { for (const check of [...live.get(operationId)?.wake ?? []]) check() }
@@ -56,6 +78,7 @@ function stopped(operation: Operation): void {
 }
 
 function operationView(operation: Operation) {
+  syncOutput(operation)
   const state = live.get(operation.id); if (state) state.servedRevision = state.outputRevision
   return { ...operation, relay: { version: 1, pending: pendingRelay(operation.id).map(({ id, command, args }) => ({ id, command, args })) } }
 }
@@ -79,7 +102,7 @@ function waitForChange(operation: Operation, waitMs: number, response: ServerRes
 }
 
 function journalPath(id: string): string { return resolve(journalRoot, `${createHash('sha256').update(id).digest('hex')}.json`) }
-async function saveOperation(operation: Operation): Promise<void> { await mkdir(journalRoot, { recursive: true }); await writeFile(journalPath(operation.id), JSON.stringify(operation), 'utf8') }
+async function saveOperation(operation: Operation): Promise<void> { syncOutput(operation); await mkdir(journalRoot, { recursive: true }); await writeFile(journalPath(operation.id), JSON.stringify(operation), 'utf8') }
 async function findOperation(id: string): Promise<Operation | undefined> {
   const current = operations.get(id); if (current) return current
   try {
@@ -191,13 +214,13 @@ async function finishOperation(operation: Operation, type: string, args: Record<
       const command = String(args.command ?? '')
       const timeoutMs = Math.min(Number(args.timeoutMs ?? 600_000), 3_600_000)
       operation.output = await new Promise<string>((resolveOutput, reject) => {
-        const child = spawn('/bin/bash', ['-lc', command], { cwd: workspacePath(args.cwd), env: { ...process.env, HOME: '/home/agent', PULPO_OPERATION_ID: id, PULPO_RELAY_SOCKET: relaySocket }, detached: true })
+        const child = spawn('/bin/bash', ['-lc', command], { cwd: workspacePath(args.cwd), env: commandEnvironment(id), detached: true })
         children.set(id, child)
-        const chunks: Buffer[] = []; let bytes = 0
+        const stream: StreamedOutput = { chunks: [], decodedChunks: 0 }; let bytes = 0
+        streamedOutput.set(id, stream)
         const collect = (chunk: Buffer) => {
           if (bytes >= maxCommandOutputBytes) { outputComplete = false; return }
-          chunks.push(chunk); bytes += chunk.length
-          operation.output = Buffer.concat(chunks).toString('utf8')
+          stream.chunks.push(chunk); bytes += chunk.length
           const state = live.get(id); if (state) state.outputRevision += 1
           wake(id)
         }
@@ -206,9 +229,9 @@ async function finishOperation(operation: Operation, type: string, args: Record<
         child.once('error', reject)
         child.once('close', (code, signal) => {
           clearTimeout(timer); children.delete(id); operation.exitCode = code
-          const output = Buffer.concat(chunks).toString('utf8')
+          syncOutput(operation); streamedOutput.delete(id)
           if (signal && operation.status !== 'cancelled') reject(new Error(`Command terminated by ${signal}`))
-          else resolveOutput(output)
+          else resolveOutput(operation.output)
         })
       })
     } else if (type === 'read') {
@@ -244,6 +267,7 @@ async function finishOperation(operation: Operation, type: string, args: Record<
     operation.status = operation.status === 'cancelled' ? 'cancelled' : 'failed'
     operation.error = error instanceof Error ? error.message : String(error)
   }
+  syncOutput(operation); streamedOutput.delete(id)
   operation.completedAt = new Date().toISOString()
   stopped(operation); live.delete(id)
   await saveOperation(operation)
@@ -252,7 +276,7 @@ async function finishOperation(operation: Operation, type: string, args: Record<
 const server = createServer(async (request, response) => {
   try {
     if (request.url === '/healthz') return json(response, 200, { status: 'ok' })
-    if (request.headers.authorization !== `Bearer ${token}`) return json(response, 401, { error: 'unauthorized' })
+    if (!authorized(request.headers.authorization)) return json(response, 401, { error: 'unauthorized' })
     const url = new URL(request.url ?? '/', 'http://workspace')
     if (request.method === 'POST' && url.pathname === '/v1/files/missing') {
       const input = JSON.parse((await body(request)).toString('utf8')) as { preserveExisting?: boolean; files?: Array<{ path: string; checksum: string | null; sizeBytes: number }> }
@@ -304,6 +328,8 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === 'POST' && match?.[2] === 'cancel') {
       const operation = await findOperation(match[1]!); if (!operation) return json(response, 404, { error: 'not_found' })
+      // A cancel that loses the race with completion must not rewrite the finished outcome.
+      if (operation.status !== 'running') return json(response, 200, operationView(operation))
       operation.status = 'cancelled'; stopped(operation)
       const child = children.get(operation.id); if (child) killProcessGroup(child, 'SIGTERM')
       await saveOperation(operation); return json(response, 202, operationView(operation))

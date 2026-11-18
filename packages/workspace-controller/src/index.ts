@@ -8,6 +8,7 @@ import { BOUNDED_RUNTIME, storageSettings, workspacePodSlots } from './storage.j
 import { CapacityReservationError, CapacityTracker, WorkspaceCapacityError } from './capacity.js'
 import { isStaleStartingPod, isTerminalPod, isUnleasedOrphanPod, podMatchesSpec, WORKSPACE_SPEC_HASH_ANNOTATION, workspaceSpecHash, type WorkspaceSpec } from './workspace-spec.js'
 import { parseEgressProxyUrl, podEgressProxy, workspaceEgressSettings } from './egress.js'
+import { bearerTokenMatches, ClientRequestError, daemonRequestHeaders, decodePathSegment, kubernetesStatusCode, parseJsonBody } from './http.js'
 import { effectiveWarmTargets, instanceIdHash, normalizeInstanceId, WORKSPACE_INSTANCE_ANNOTATION, WORKSPACE_INSTANCE_HASH_LABEL, WORKSPACE_INSTANCE_HEADER, type WarmRequest } from './tenancy.js'
 
 const namespace = process.env.PULPO_WORKSPACE_NAMESPACE ?? 'pulpo-workspaces'
@@ -283,7 +284,7 @@ async function claim(instanceId: string, input: ClaimInput): Promise<Lease> {
       const created = await createWorkspacePod('starting', spec, input.chatId, instanceId)
       lease = await claimPod(await waitForPodReady(created.name, deadline), instanceId, input, spec)
     }
-    void reconcile()
+    void reconcile().catch((error) => console.error(error))
     return lease
   } finally {
     if (capacityReservationId) capacityTracker.complete(capacityReservationId)
@@ -296,12 +297,7 @@ async function proxy(lease: Lease, request: IncomingMessage, pathname: string, s
   const hasBody = !['GET', 'HEAD'].includes(request.method ?? 'GET')
   const init = {
     method: request.method,
-    headers: {
-      authorization: `Bearer ${lease.daemonToken}`,
-      'content-type': request.headers['content-type'] ?? 'application/json',
-      ...(request.headers['x-pulpo-file-checksum'] ? { 'x-pulpo-file-checksum': String(request.headers['x-pulpo-file-checksum']) } : {}),
-      ...(request.headers['content-length'] ? { 'content-length': request.headers['content-length'] } : {}),
-    },
+    headers: daemonRequestHeaders(request.headers, lease.daemonToken),
     ...(hasBody ? { body: request, duplex: 'half' as const } : {}),
   }
   const upstream = await fetch(`http://${lease.podIp}:8787${pathname}${search}`, init as unknown as RequestInit)
@@ -371,14 +367,14 @@ async function workspaceInventory(instanceId: string) {
 const handler = async (request: IncomingMessage, response: ServerResponse) => {
   try {
     if (request.url === '/healthz') { await reconcile(); return json(response, 200, { status: 'ok', warmCapacity: [...currentWarmTargets().values()].reduce((total, target) => total + target.capacity, 0), active: leases.size }) }
-    if (request.headers.authorization !== `Bearer ${authToken}`) return json(response, 401, { error: 'unauthorized' })
+    if (!bearerTokenMatches(request.headers.authorization, authToken)) return json(response, 401, { error: 'unauthorized' })
     let instanceId: string
     try { instanceId = normalizeInstanceId(request.headers[WORKSPACE_INSTANCE_HEADER] ?? 'default') } catch (error) {
       return json(response, 400, { error: error instanceof Error ? error.message : String(error) })
     }
     const url = new URL(request.url ?? '/', 'http://controller')
     if (request.method === 'POST' && url.pathname === '/v1/capacity-reservations') {
-      const input = JSON.parse((await body(request)).toString('utf8') || '{}') as { maxActiveWorkspaces?: number }
+      const input = parseJsonBody<{ maxActiveWorkspaces?: number }>(await body(request))
       await reconcile()
       const reservation = capacityTracker.reserve(
         instanceId,
@@ -390,10 +386,10 @@ const handler = async (request: IncomingMessage, response: ServerResponse) => {
     }
     const capacityReservationMatch = url.pathname.match(/^\/v1\/capacity-reservations\/([^/]+)$/)
     if (request.method === 'DELETE' && capacityReservationMatch) {
-      const released = capacityTracker.cancel(decodeURIComponent(capacityReservationMatch[1]!), instanceId)
+      const released = capacityTracker.cancel(decodePathSegment(capacityReservationMatch[1]!), instanceId)
       return json(response, 200, { status: released ? 'released' : 'not_released' })
     }
-    if (request.method === 'POST' && url.pathname === '/v1/leases') return json(response, 201, await claim(instanceId, JSON.parse((await body(request)).toString('utf8') || '{}')))
+    if (request.method === 'POST' && url.pathname === '/v1/leases') return json(response, 201, await claim(instanceId, parseJsonBody<ClaimInput>(await body(request))))
     if (request.method === 'GET' && url.pathname === '/v1/leases') {
       await reconcile()
       return json(response, 200, { leases: [...leases.values()].filter((lease) => lease.instanceId === instanceId).map((lease) => ({ id: lease.id, createdAt: lease.createdAt, lastUsedAt: lease.lastUsedAt })) })
@@ -401,13 +397,12 @@ const handler = async (request: IncomingMessage, response: ServerResponse) => {
     if (request.method === 'GET' && url.pathname === '/v1/workspaces') return json(response, 200, { warmCapacity: configuredWarmCapacity(instanceId), active: activeForInstance(instanceId), globalActive: leases.size, workspaces: await workspaceInventory(instanceId) })
     const workspaceMatch = url.pathname.match(/^\/v1\/workspaces\/([^/]+)$/)
     if (request.method === 'DELETE' && workspaceMatch) {
-      const name = decodeURIComponent(workspaceMatch[1]!)
+      const name = decodePathSegment(workspaceMatch[1]!)
       let pod: k8s.V1Pod
       try {
         pod = await core.readNamespacedPod({ namespace, name })
       } catch (error) {
-        const statusCode = (error as { statusCode?: number; code?: number }).statusCode ?? (error as { code?: number }).code
-        if (statusCode === 404) return json(response, 404, { error: 'workspace_not_found' })
+        if (kubernetesStatusCode(error) === 404) return json(response, 404, { error: 'workspace_not_found' })
         throw error
       }
       if (podInstanceId(pod) !== instanceId) return json(response, 404, { error: 'workspace_not_found' })
@@ -417,7 +412,12 @@ const handler = async (request: IncomingMessage, response: ServerResponse) => {
     }
     const match = url.pathname.match(/^\/v1\/leases\/([^/]+)(\/.*)?$/); const lease = match ? leases.get(match[1]!) : undefined
     if (!lease || lease.instanceId !== instanceId) return json(response, 404, { error: 'lease_not_found' })
-    if (request.method === 'DELETE' && !match?.[2]) { await core.deleteNamespacedPod({ namespace, name: lease.podName }); leases.delete(lease.id); activeOperations.delete(lease.id); return json(response, 200, { status: 'released' }) }
+    if (request.method === 'DELETE' && !match?.[2]) {
+      // A pod that is already gone (evicted, or removed by reconcile) still releases its lease.
+      await core.deleteNamespacedPod({ namespace, name: lease.podName }).catch((error: unknown) => { if (kubernetesStatusCode(error) !== 404) throw error })
+      leases.delete(lease.id); activeOperations.delete(lease.id)
+      return json(response, 200, { status: 'released' })
+    }
     openRequests.set(lease.id, (openRequests.get(lease.id) ?? 0) + 1)
     response.once('close', () => {
       const remaining = (openRequests.get(lease.id) ?? 1) - 1
@@ -434,6 +434,7 @@ const handler = async (request: IncomingMessage, response: ServerResponse) => {
   } catch (error) {
     if (response.headersSent) response.destroy(error instanceof Error ? error : new Error(String(error)))
     else if (error instanceof WorkspaceCapacityError) json(response, 503, { error: error.message, code: error.code, scope: error.scope })
+    else if (error instanceof ClientRequestError) json(response, 400, { error: error.message })
     else if (error instanceof CapacityReservationError) json(response, 409, { error: error.message, code: error.code })
     else json(response, 503, { error: error instanceof Error ? error.message : String(error) })
   }
@@ -441,4 +442,4 @@ const handler = async (request: IncomingMessage, response: ServerResponse) => {
 const server = tlsCert && tlsKey ? createHttpsServer({ cert: tlsCert, key: tlsKey }, handler) : createHttpServer(handler)
 
 setInterval(() => void reconcile().catch((error) => console.error(error)), 15_000).unref()
-server.listen(port, '0.0.0.0', () => void reconcile())
+server.listen(port, '0.0.0.0', () => void reconcile().catch((error) => console.error(error)))

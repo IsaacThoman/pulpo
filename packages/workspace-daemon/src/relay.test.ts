@@ -288,3 +288,42 @@ describe('workspace daemon long-poll', () => {
     await api('POST', `/v1/operations/${operation.id}/cancel`)
   })
 })
+
+describe('workspace daemon operations', () => {
+  it('leaves a finished operation alone when a cancel arrives late', async () => {
+    const operation = await bash('echo done')
+    const completed = await finished(operation.id)
+    expect(completed).toMatchObject({ status: 'completed', output: 'done\n', exitCode: 0 })
+    const cancelled = await api('POST', `/v1/operations/${operation.id}/cancel`)
+    expect(cancelled.status).toBe(200)
+    expect(cancelled.body).toMatchObject({ status: 'completed', output: 'done\n', exitCode: 0 })
+    expect((await poll(operation.id)).operation).toMatchObject({ status: 'completed', output: 'done\n' })
+    const journal = await Promise.all((await readdir(join(root, '.pulpo', 'operations'))).map((name) => readFile(join(root, '.pulpo', 'operations', name), 'utf8')))
+    expect(journal.map((entry) => JSON.parse(entry)).find((entry) => entry.id === operation.id)).toMatchObject({ status: 'completed' })
+  })
+
+  it('still cancels running commands', async () => {
+    const operation = await bash('sleep 30')
+    const cancelled = await api('POST', `/v1/operations/${operation.id}/cancel`)
+    expect(cancelled).toMatchObject({ status: 202, body: { status: 'cancelled' } })
+  })
+
+  it('serves output streamed across many chunks, including split multibyte characters', async () => {
+    const operation = await bash(`for i in $(seq 1 200); do printf 'line %s é\\n' "$i"; done; printf '\\xc3'; sleep 0.05; printf '\\xa9\\n'`)
+    const output = (await finished(operation.id)).output
+    expect(output.split('\n').slice(0, 200)).toEqual(Array.from({ length: 200 }, (_, index) => `line ${index + 1} é`))
+    expect(output.endsWith('é\n')).toBe(true)
+  })
+
+  it('keeps the daemon token out of agent commands', async () => {
+    const operation = await bash('echo "token=${PULPO_WORKSPACE_TOKEN:-unset} home=$HOME"')
+    expect((await finished(operation.id)).output).toBe('token=unset home=/home/agent\n')
+  })
+
+  it('rejects wrong bearer tokens of any length', async () => {
+    for (const authorization of [`Bearer ${token.slice(0, -1)}y`, `Bearer ${token}x`, 'Bearer short', token, '']) {
+      const response = await fetch(`${base}/v1/operations/anything`, { headers: authorization ? { authorization } : {} })
+      expect(response.status).toBe(401)
+    }
+  })
+})
