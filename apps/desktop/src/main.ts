@@ -22,7 +22,10 @@ import {
   desktopDevelopmentRequestHeaders,
   desktopDevelopmentResponseHeaders,
   desktopPermissionAllowed,
+  isTrustedIpcSender,
   isTrustedRendererUrl,
+  navigationTarget,
+  type NavigationTarget,
   rendererAssetHeaders,
   rendererAssetPath,
   rendererCsp,
@@ -159,7 +162,8 @@ function initializeDesktopUpdater(): void {
 }
 
 function assertTrustedSender(event: Electron.IpcMainInvokeEvent): void {
-  if (!event.senderFrame || !isTrustedRendererUrl(event.senderFrame.url, developmentUrl)) throw new Error('Untrusted renderer.')
+  const frame = event.senderFrame
+  if (!frame || !isTrustedIpcSender(frame.url, frame.frameTreeNodeId === event.sender.mainFrame.frameTreeNodeId, developmentUrl)) throw new Error('Untrusted renderer.')
 }
 
 function trustedWindow(event: Electron.IpcMainInvokeEvent): BrowserWindow {
@@ -360,17 +364,20 @@ async function createMainWindow(): Promise<void> {
   })
   mainWindow = window
   if (state.maximized) window.maximize()
+  const openExternally = (target: NavigationTarget, url: string) => {
+    if (target.kind === 'external') void shell.openExternal(target.url).catch(() => undefined)
+    else if (target.kind === 'blocked') log.warn('Blocked opening an insecure or invalid link', { protocol: URL.parse(url)?.protocol ?? null })
+  }
   window.webContents.setWindowOpenHandler(({ url }) => {
     // In-app links (e.g. middle-clicked sidebar chats) have no external equivalent; keep them out of the system browser.
-    if (new URL(url).origin === rendererOrigin) return { action: 'deny' }
-    void shell.openExternal(validatedExternalUrl(url, !app.isPackaged)).catch(() => undefined)
+    openExternally(navigationTarget(url, rendererOrigin, !app.isPackaged), url)
     return { action: 'deny' }
   })
   window.webContents.on('will-navigate', (event, url) => {
-    if (new URL(url).origin !== rendererOrigin) {
-      event.preventDefault()
-      void shell.openExternal(validatedExternalUrl(url, !app.isPackaged)).catch(() => undefined)
-    }
+    const target = navigationTarget(url, rendererOrigin, !app.isPackaged)
+    if (target.kind === 'internal') return
+    event.preventDefault()
+    openExternally(target, url)
   })
   window.webContents.on('did-finish-load', () => {
     rendererReady = true

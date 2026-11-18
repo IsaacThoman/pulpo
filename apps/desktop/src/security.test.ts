@@ -6,7 +6,9 @@ import {
   desktopDevelopmentResponseHeaders,
   desktopPermissionAllowed,
   isSandboxUrl,
+  isTrustedIpcSender,
   isTrustedRendererUrl,
+  navigationTarget,
   rendererAssetHeaders,
   rendererAssetPath,
   rendererCsp,
@@ -87,6 +89,26 @@ describe('desktop security helpers', () => {
     expect(() => validatedExternalUrl('http://pulpo.baby', false)).toThrow()
     expect(() => validatedExternalUrl('https://user:secret@pulpo.baby', false)).toThrow()
     expect(validatedExternalUrl('http://localhost:3000', true)).toBe('http://localhost:3000/')
+  })
+
+  it('routes links without throwing, opening only secure external addresses', () => {
+    expect(navigationTarget(`${DESKTOP_ORIGIN}/c/one`, DESKTOP_ORIGIN, false)).toEqual({ kind: 'internal' })
+    expect(navigationTarget('https://example.com/a?b=c', DESKTOP_ORIGIN, false)).toEqual({ kind: 'external', url: 'https://example.com/a?b=c' })
+    for (const url of ['http://example.com/', 'mailto:someone@example.com', 'javascript:alert(1)', 'file:///etc/passwd', 'https://user:pass@example.com/', 'not a url']) {
+      expect(() => navigationTarget(url, DESKTOP_ORIGIN, false)).not.toThrow()
+      expect(navigationTarget(url, DESKTOP_ORIGIN, false)).toEqual({ kind: 'blocked' })
+    }
+    expect(navigationTarget('http://localhost:3000/', DESKTOP_ORIGIN, true)).toEqual({ kind: 'external', url: 'http://localhost:3000/' })
+    expect(navigationTarget('http://localhost:5174/c/one', 'http://localhost:5174', true)).toEqual({ kind: 'internal' })
+  })
+
+  it('accepts IPC only from the top-level app page', () => {
+    expect(isTrustedIpcSender(`${DESKTOP_ORIGIN}/c/one`, true)).toBe(true)
+    expect(isTrustedIpcSender('http://localhost:5174/c/one', true, 'http://localhost:5174')).toBe(true)
+    expect(isTrustedIpcSender(`${DESKTOP_ORIGIN}/c/one`, false)).toBe(false)
+    expect(isTrustedIpcSender(`${DESKTOP_ORIGIN}/sandbox.html`, true)).toBe(false)
+    expect(isTrustedIpcSender(`${DESKTOP_ORIGIN}/sandbox.html`, false)).toBe(false)
+    expect(isTrustedIpcSender('https://pulpo.example/', true)).toBe(false)
   })
 
   it('accepts only passkey callbacks and safe renderer paths', () => {
