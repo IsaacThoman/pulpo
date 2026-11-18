@@ -37,6 +37,9 @@ describe('thread summaries and reports', () => {
     expect(threadSummary(reply('## Result\n**Porto** wins — see [the table](https://x.test) and `notes.md`.\n\n| | A |\n|---|---|\n| x | 1 |')))
       .toBe('Result Porto wins — see the table and notes.md. A x 1')
     expect(threadSummary(reply('- *one* item\n- snake_case_name stays'))).toBe('one item snake_case_name stays')
+    // Mid-stream, emphasis may not be closed yet.
+    expect(threadSummary(reply('**Kyoto in Ap'))).toBe('Kyoto in Ap')
+    expect(threadSummary(reply('Use `npm'))).toBe('Use npm')
     const long = threadSummary(reply('x'.repeat(500)))!
     expect(long).toHaveLength(280)
     expect(long.endsWith('…')).toBe(true)

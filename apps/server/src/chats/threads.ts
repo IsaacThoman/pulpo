@@ -67,6 +67,9 @@ export function plainSummaryText(markdown: string): string {
     .replace(/(\*\*|__|~~)(.+?)\1/g, '$2')
     .replace(/(^|[^\w*])[*_](\S(?:.*?\S)?)[*_](?=[^\w*]|$)/g, '$1$2')
     .replace(/`([^`]+)`/g, '$1')
+    // A reply still streaming can end inside emphasis or code.
+    .replace(/\*\*|__|~~|`/g, '')
+    .replace(/(^|\s)[*_](?=\S)/g, '$1')
 }
 
 export function threadSummary(output: unknown): string | null {
