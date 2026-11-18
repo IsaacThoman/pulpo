@@ -21,7 +21,8 @@ composer, or choose **Ask in a side chat** on a message.
   context. Nothing you say there is added to the main chat.
 - Side chats aren't listed in the sidebar. Open them from the chat they belong to, and use the
   link at the top of a side chat to go back.
-- Side chats move to the trash, come back, and are deleted with their chat.
+- Side chats move to the trash, come back, and are deleted with their chat. One you delete on its
+  own is listed in the trash by itself.
 
 ## Threads
 

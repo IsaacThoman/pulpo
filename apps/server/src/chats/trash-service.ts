@@ -29,6 +29,9 @@ export async function trashChats(userId: string, ids: string[]): Promise<string[
 /** Brings trashed chats back. Returns the restored rows. */
 export async function recoverChats(userId: string, ids: string[]) {
   if (!ids.length) return []
+  // When each chat went to the trash, to tell what was trashed along with it.
+  const trashedAt = new Map((await db.select({ id: chats.id, deletedAt: chats.deletedAt }).from(chats)
+    .where(and(inArray(chats.id, ids), eq(chats.userId, userId)))).map((row) => [row.id, row.deletedAt]))
   const recovered = await db.update(chats).set({ deletedAt: null, expiresAt: null, updatedAt: new Date() }).where(and(
     inArray(chats.id, ids),
     eq(chats.userId, userId),
@@ -36,11 +39,17 @@ export async function recoverChats(userId: string, ids: string[]) {
     isNotNull(chats.deletedAt),
     isNull(chats.purgeStartedAt),
   )).returning()
-  // Side chats and threads come back with the chat they belong to; the caller gets that chat.
-  const related = await relatedChatIds(userId, recovered.map((chat) => chat.id))
-  const recoveredRelated = related.length ? await db.update(chats).set({ deletedAt: null, expiresAt: null, updatedAt: new Date() }).where(and(
-    inArray(chats.id, related), eq(chats.userId, userId), isNotNull(chats.deletedAt), isNull(chats.purgeStartedAt),
-  )).returning({ id: chats.id }) : []
+  // Side chats and threads trashed along with a chat come back with it; ones the user trashed on
+  // their own stay in the trash. The caller gets only the chats it asked for.
+  const recoveredRelated: Array<{ id: string }> = []
+  for (const chat of recovered) {
+    const deletedAt = trashedAt.get(chat.id)
+    const related = deletedAt ? await relatedChatIds(userId, [chat.id]) : []
+    if (!deletedAt || !related.length) continue
+    recoveredRelated.push(...await db.update(chats).set({ deletedAt: null, expiresAt: null, updatedAt: new Date() }).where(and(
+      inArray(chats.id, related), eq(chats.userId, userId), eq(chats.deletedAt, deletedAt), isNull(chats.purgeStartedAt),
+    )).returning({ id: chats.id }))
+  }
   for (const chat of [...recovered, ...recoveredRelated]) await scheduleChatIndex(chat.id, userId, 'chat-recovery')
   return recovered
 }

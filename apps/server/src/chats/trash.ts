@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, isNull, lte, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, isNull, lte, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm'
 import { DEFAULT_TRASH_RETENTION, MIN_FILE_TRASH_RETENTION_MS, TRASH_RETENTION_VALUES, type TrashRetention } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { applicationSettings, attachments, chats, queuedMessages, responses, userPreferences, users } from '../database/schema.js'
@@ -270,4 +270,15 @@ export async function purgePendingChats(userId?: string): Promise<number> {
   }
   if (firstError) throw firstError
   return purged
+}
+
+/**
+ * Trashed chats the trash lists: every ordinary chat, and side chats and threads the user trashed
+ * on their own. Those trashed along with their chat come back with it instead.
+ */
+export function listedInTrashCondition() {
+  return or(
+    eq(chats.kind, 'chat'),
+    sql`not exists (select 1 from chats origin where origin.id = ${chats.originChatId} and origin.deleted_at is not null)`,
+  )
 }

@@ -30,6 +30,7 @@ vi.mock('./message-queue.js', () => ({ createQueuedMessage: vi.fn() }))
 const threads = await import('./threads.js')
 const { trashChats, recoverChats } = await import('./trash-service.js')
 const { markChatsForPurge } = await import('./trash.js')
+const { listAccountTrash } = await import('../trash/service.js')
 const { chatProject, upsertFolderProject } = await import('./projects.js')
 const { createFolder } = await import('../files/tree-service.js')
 const { loadChatGenerationContext } = await import('./chat-context.js')
@@ -205,6 +206,23 @@ describe.skipIf(!enabled)('forks, side chats, and threads', () => {
     await trashChats(userId, [main.id])
     expect(await markChatsForPurge([main.id], userId)).toBe(1)
     expect((await chatRow(thread.id)).purgeStartedAt).not.toBeNull()
+  })
+
+  it('lists a side chat trashed on its own, and leaves it there when its chat comes back', async () => {
+    const main = await insertChat()
+    const side = await threads.createSideChat({ userId, chatId: main.id })
+    const trashedWith = await threads.createSideChat({ userId, chatId: main.id })
+    await trashChats(userId, [side.id])
+    const listed = async () => (await listAccountTrash(userId, { files: false })).items.map((item) => item.id)
+    expect(await listed()).toEqual([side.id])
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    await trashChats(userId, [main.id])
+    // While its chat is in the trash too, the side chat goes wherever that chat goes.
+    expect(await listed()).toEqual([main.id])
+    await recoverChats(userId, [main.id])
+    expect((await chatRow(trashedWith.id)).deletedAt).toBeNull()
+    expect((await chatRow(side.id)).deletedAt).not.toBeNull()
+    expect(await listed()).toEqual([side.id])
   })
 
   it('finds the nearest project above a chat, and side chats and threads share it', async () => {

@@ -12,7 +12,7 @@ import { createResponse, toSnapshot } from '../responses/service.js'
 import { publishChatStarted, publishStateChange, requestCancellation } from '../responses/events.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { queueTrashPurge } from '../jobs.js'
-import { cancelChatWork, getTrashRetention, markChatsForPurge, purgeAtFor, trashedChatValues } from './trash.js'
+import { cancelChatWork, getTrashRetention, listedInTrashCondition, markChatsForPurge, purgeAtFor, trashedChatValues } from './trash.js'
 import { planDuplicateTree } from './duplicate.js'
 import { toPublicChat, toPublicChatResponses, withoutWorkspaceScope } from './public.js'
 import { assertFileScope, defaultFileChangeMode, mergedFileAccessSql, scopedFileAccess } from './file-scope.js'
@@ -111,7 +111,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       isNotNull(chats.deletedAt),
       isNull(chats.purgeStartedAt),
       eq(chats.temporary, false),
-      eq(chats.kind, 'chat'),
+      listedInTrashCondition(),
     )).orderBy(desc(chats.deletedAt))
     return {
       data: rows.map((row) => ({
