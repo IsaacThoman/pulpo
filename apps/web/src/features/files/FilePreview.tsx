@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react'
 import { parseQuiz } from '@pulpo/client-core/quiz'
 import { Markdown } from '@/components/chat/Markdown'
 import { QuizCard } from '@/components/chat/QuizCard'
+import { AudioPreview } from '@/components/audio/AudioPreview'
 import { ui } from '@/i18n/ui'
 import { cn } from '@/lib/utils'
 import { fetchFileBlob, fileStreamUrl } from './api'
@@ -85,7 +86,17 @@ export function FilePreviewBody({ node }: { node: FileNode }) {
       {state.status === 'url' && kind === 'image' && <img src={state.url} alt={node.name} className={cn('mx-auto object-contain', media)} />}
       {state.status === 'url' && kind === 'pdf' && <iframe src={state.url} title={node.name} className="h-[calc(100dvh-10rem)] w-full" />}
       {state.status === 'url' && kind === 'video' && <video src={state.url} controls className={cn('mx-auto', media)} />}
-      {state.status === 'url' && kind === 'audio' && <audio src={state.url} controls className="m-6 w-[calc(100%-3rem)]" />}
+      {state.status === 'url' && kind === 'audio' && (
+        <div className="h-[calc(100dvh-10rem)] min-h-96 overflow-hidden rounded-2xl">
+          <AudioPreview
+            src={state.url}
+            name={node.name}
+            mimeType={node.mimeType}
+            sizeBytes={node.sizeBytes}
+            source={{ kind: 'file', id: node.id, revision: node.revision }}
+          />
+        </div>
+      )}
       {state.status === 'text' && !state.text.trim() && <p className="p-8 text-center text-sm text-muted-foreground">{ui("This file is empty.")}</p>}
       {state.status === 'text' && state.text.trim() && kind === 'markdown' && <div className="px-6 py-4"><Markdown content={state.text} /></div>}
       {state.status === 'text' && state.text.trim() && kind === 'quiz' && <QuizFilePreview node={node} text={state.text} />}
