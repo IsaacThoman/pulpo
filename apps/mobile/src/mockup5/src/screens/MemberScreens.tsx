@@ -1,6 +1,6 @@
 import { CustomInstructionsSettings } from '../../../features/personalization/CustomInstructionsSettings';
 import { ImageGenerationSettings } from '../../../features/image-generation/ImageGenerationSettings';
-import { ModelSettings } from './ModelSettings';
+import { DefaultModelPicker, ModelSettings } from './ModelSettings';
 import { SpeechSettings } from '../../../features/speech/SpeechSettings';
 import { UsageLimitsSettings } from '../../../features/usage-limits/UsageLimitsSettings';
 import { FriendsSettingsEntry } from '../../../features/friends/FriendsSettingsEntry';
@@ -322,7 +322,7 @@ function NativeSettingsLink({ icon, title, detail, onPress }: { icon: string; ti
   return <SwiftUIButton modifiers={[buttonStyle('plain'), foregroundStyle('primary')]} onPress={onPress}><SwiftUIHStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}><SwiftUIImage systemName={icon as never} size={17} modifiers={[frame({ width: 22, height: 22 })]} /><SwiftUIVStack alignment="leading" spacing={2}><SwiftUIText modifiers={[font({ textStyle: 'subheadline', weight: 'medium' }), lineLimit(2)]}>{title}</SwiftUIText><SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary'), lineLimit(3)]}>{detail}</SwiftUIText></SwiftUIVStack><SwiftUISpacer /><SwiftUIImage systemName="chevron.right" size={11} /></SwiftUIHStack></SwiftUIButton>;
 }
 
-const settingTitles: Record<SettingsSection, string> = { general: 'General', interface: 'Interface', models: 'Models', personalization: 'Personalization', data: 'Data Controls', trash: 'Trash', usage: 'Usage' };
+const settingTitles: Record<SettingsSection, string> = { general: 'General', interface: 'Interface', models: 'Models', 'default-model': 'Default model', personalization: 'Personalization', data: 'Data Controls', trash: 'Trash', usage: 'Usage' };
 
 function NativeToggleRow({ title, detail, value, onChange, icon }: { title: string; detail: string; value: boolean; onChange: (value: boolean) => void; icon?: string }) {
   const theme = useAppTheme();
@@ -353,7 +353,7 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
       ? 'Unavailable'
       : 'Loading…';
   useLayoutEffect(() => {
-    if (Platform.OS === 'ios') navigation.setOptions({ title: settingTitles[section] });
+    if (Platform.OS === 'ios') navigation.setOptions({ title: settingTitles[section], headerBackTitle: section === 'default-model' ? 'Models' : 'Settings' });
   }, [navigation, section]);
   const appStorePlans = useAppStorePlans(section === 'usage');
   if (appStorePlans) return <AppStorePlans {...appStorePlans} />;
@@ -379,7 +379,8 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
         <SwiftUILabeledContent label="Attachment cache"><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{`${preferences.attachmentCacheMb} MB`}</SwiftUIText></SwiftUILabeledContent>
       </SwiftUISection>
     </>}
-    {section === 'models' && <ModelSettings />}
+    {section === 'models' && <ModelSettings onChooseDefault={() => navigation.push('SettingsDetail', { section: 'default-model' })} />}
+    {section === 'default-model' && <DefaultModelPicker onSelect={() => navigation.goBack()} />}
     {section === 'personalization' && <><CustomInstructionsSettings /><SpeechSettings /><AgentFilesSettings /><ImageGenerationSettings /></>}
     {section === 'usage' && <UsageLimitsSettings />}
     {section === 'data' && <>
@@ -411,7 +412,8 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
   return <Screen><PageHeader title={settingTitles[section]} onBack={() => navigation.goBack()} />
     {section === 'general' && <><SectionTitle>Appearance</SectionTitle><Card><View style={{ padding: 16 }}><Segmented label="Appearance" options={[{ value: 'system', label: 'System' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }] as const} value={preferences.theme} onChange={(value) => setPreference('theme', value)} /></View></Card></>}
     {section === 'interface' && <><SectionTitle>Chat history</SectionTitle><Card><ListRow icon="arrow.up.arrow.down" iconColor={theme.blue} title="Chat order" detail={chatOrderDetail} value={preferences.chatSortMode === 'recent' ? 'Recent' : 'Default'} last onPress={() => showActions('Chat order', chatOrderOptions.map((option) => ({ label: option.label, selected: preferences.chatSortMode === option.value, onPress: () => setPreference('chatSortMode', option.value) })))} /></Card><SectionTitle>Conversation</SectionTitle><Card><Toggle title="Show prompt suggestions" detail="Show suggested prompts in new chats." value={preferences.showPromptSuggestions} onChange={(value) => setPreference('showPromptSuggestions', value)} /><Toggle title="Show model warnings" detail="Show notes from your administrator about the selected model." value={preferences.showModelWarnings} onChange={(value) => setPreference('showModelWarnings', value)} /><Toggle title="Show reasoning" detail="Show expandable work details." value={preferences.showReasoning} onChange={(value) => setPreference('showReasoning', value)} /><Toggle title="Show response costs" detail={RESPONSE_COST_DETAIL} value={preferences.showResponseCost} onChange={(value) => setPreference('showResponseCost', value)} /><Toggle title="Haptics" detail="Feedback for sends, menus, and completion." value={preferences.haptics} onChange={(value) => setPreference('haptics', value)} last /></Card><SectionTitle>Offline storage</SectionTitle><Card><ListRow title="Chats kept on device" detail="Recent chats remain instantly available." value={`${preferences.localChatLimit}`} /><ListRow title="Attachment cache" detail="Maximum local file data." value={`${preferences.attachmentCacheMb} MB`} last /></Card></>}
-    {section === 'models' && <ModelSettings />}
+    {section === 'models' && <ModelSettings onChooseDefault={() => navigation.push('SettingsDetail', { section: 'default-model' })} />}
+    {section === 'default-model' && <DefaultModelPicker onSelect={() => navigation.goBack()} />}
     {section === 'personalization' && <><CustomInstructionsSettings /><SpeechSettings /><AgentFilesSettings /><ImageGenerationSettings /></>}
     {section === 'usage' && <UsageLimitsSettings />}
     {section === 'data' && <><SectionTitle>Memories</SectionTitle><Card><Toggle title="Memories" detail="Use your MEMORY.md profile and recall relevant context from eligible chats." value={preferences.memoryEnabled} onChange={(value) => setPreference('memoryEnabled', value)} last /></Card><SectionTitle>Chat expiration</SectionTitle><Card><ListRow icon="hourglass" iconColor={theme.green} title="Automatic expiration" detail="Move chats to Trash automatically unless saved within the selected period." value={preferences.automaticChatExpiration === 'disabled' ? 'Disabled' : preferences.automaticChatExpiration} last onPress={() => showActions('Automatic chat expiration', [{ label: 'Disabled', selected: preferences.automaticChatExpiration === 'disabled', onPress: () => setPreference('automaticChatExpiration', 'disabled') }, { label: '24 hours', selected: preferences.automaticChatExpiration === '24h', onPress: () => setPreference('automaticChatExpiration', '24h') }, { label: '7 days', selected: preferences.automaticChatExpiration === '7d', onPress: () => setPreference('automaticChatExpiration', '7d') }])} /></Card><SectionTitle>File storage</SectionTitle><Card style={styles.storage}><View style={styles.storageLine}><Text style={[styles.storageTitle, { color: theme.text }]}>{storageLabel}</Text><Text style={[styles.storagePercent, { color: theme.secondary }]}>{`${Math.round(storageProgress * 100)}%`}</Text></View><View style={[styles.storageTrack, { backgroundColor: theme.fillStrong }]}><View style={[styles.storageBar, { backgroundColor: theme.blue, width: `${storageProgress * 100}%` }]} /></View><Text style={[styles.helper, { color: theme.secondary }]}>Uploaded files and model-created files count toward this allowance.</Text></Card><SectionTitle>Danger zone</SectionTitle><Card><ListRow icon="trash" iconColor={theme.red} title="Trash all chats" detail={`${chats.filter((chat) => chat.deletedAt === null).length} active chats`} destructive last onPress={() => Alert.alert('Trash all chats?', 'Chats remain recoverable according to your trash retention setting.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Trash all', style: 'destructive', onPress: trashAllChats }])} /></Card></>}
