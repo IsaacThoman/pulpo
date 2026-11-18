@@ -17,6 +17,7 @@ import {
 import { ResponsesStreamBuilder, responsesUsage, type ResponsesStreamEvent, type ResponsesUsage } from './responses-builder.js'
 import { MAX_PARAMETER_RETRIES, logParameterRetry, rejectedOptionalParameter, withoutKey } from './parameter-retry.js'
 import { upstreamErrorDetails } from '../responses/upstream-request.js'
+import { isGeminiApiBaseUrl, withThoughtSignatures } from './thought-signatures.js'
 
 type JsonRecord = Record<string, unknown>
 type ChatMessage = JsonRecord & { role: string }
@@ -209,7 +210,8 @@ export function chatCompletionsRequest(payload: JsonRecord, options: { baseUrl: 
     ...(record(payload.cache_control) && acceptsCacheControl(options.baseUrl) ? { cache_control: payload.cache_control } : {}),
     ...(options.stream ? { stream: true, stream_options: { include_usage: true } } : { stream: false }),
   }
-  return body
+  // Responses items do not carry Gemini's tool call signatures, so replayed calls take Google's placeholder.
+  return isGeminiApiBaseUrl(options.baseUrl) ? withThoughtSignatures(body, new Map(), { placeholder: true }) as JsonRecord : body
 }
 
 const OPTIONAL_CHAT_PARAMETERS = new Set([
