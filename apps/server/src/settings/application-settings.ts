@@ -108,6 +108,7 @@ export const storedWebToolsSettingsSchema = webToolsSettingsSchema.extend({
 })
 
 export const storedDictationSettingsSchema = dictationSettingsSchema.extend({
+  provider: z.enum(['groq', 'whisper']).default('groq'),
   encryptedGroqApiKey: z.string().nullable().default(null),
 })
 
@@ -192,9 +193,15 @@ export function parseBackupSettings(value: unknown): StoredBackupSettings {
   return parsed.success ? parsed.data : storedBackupSettingsSchema.parse({})
 }
 
-export function publicDictationSettings(value: z.infer<typeof storedDictationSettingsSchema>) {
+export function dictationProviderConfigured(value: z.infer<typeof storedDictationSettingsSchema>, whisperConfigured: boolean) {
+  return value.provider === 'whisper' ? whisperConfigured : Boolean(value.encryptedGroqApiKey)
+}
+
+export function publicDictationSettings(value: z.infer<typeof storedDictationSettingsSchema>, whisperConfigured: boolean) {
   return {
     enabled: value.enabled,
+    provider: value.provider,
+    whisperConfigured,
     billUsers: value.billUsers,
     pricePerMinuteMicros: value.pricePerMinuteMicros,
     hasApiKey: Boolean(value.encryptedGroqApiKey),

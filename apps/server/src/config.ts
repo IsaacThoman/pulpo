@@ -34,6 +34,15 @@ const configSchema = z.object({
   PULPO_ANDROID_CERTIFICATE_FINGERPRINTS: z.string().default('').refine((value) => { try { androidCertificateFingerprints(value); return true } catch { return false } }, 'Use comma-separated SHA-256 signing certificate fingerprints'),
   INSTANCE_NAME: z.string().trim().min(1).default('Pulpo'),
   PULPO_VERSION: z.string().trim().min(1).default('0.1.0'),
+  PULPO_DICTATION_WHISPER_URL: optionalEnvironmentValue(z.url({
+    protocol: /^https?$/,
+    normalize: true,
+  }).refine((value) => {
+    const url = new URL(value)
+    return !url.username && !url.password && url.href === url.origin + '/' &&
+      (url.protocol === 'https:' || LOOPBACK_HOSTS.has(url.hostname))
+  }, 'Use an HTTPS origin or a local HTTP origin')),
+  PULPO_DICTATION_WHISPER_TOKEN: optionalEnvironmentValue(z.string().regex(/^[!-~]{32,}$/)),
   PULPO_BILLING_ENABLED: booleanString,
   STRIPE_SECRET_KEY: optionalEnvironmentValue(z.string().regex(/^sk_(?:test|live)_/)),
   STRIPE_WEBHOOK_SECRET: optionalEnvironmentValue(z.string().startsWith('whsec_')),

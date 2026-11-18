@@ -1,4 +1,5 @@
 import type { AudioTranscript } from '@pulpo/contracts'
+import type { DictationTranscript } from './transcript.js'
 
 const GROQ_TRANSCRIPTIONS_URL = 'https://api.groq.com/openai/v1/audio/transcriptions'
 const GROQ_TRANSCRIPTION_MODEL = 'whisper-large-v3-turbo'
@@ -10,10 +11,6 @@ export class GroqTranscriptionError extends Error {
   }
 }
 
-export interface GroqTranscript extends AudioTranscript {
-  durationSeconds: number
-}
-
 export async function transcribeWithGroq(input: {
   apiKey: string
   audio: Uint8Array
@@ -21,7 +18,7 @@ export async function transcribeWithGroq(input: {
   mimeType: string
   signal?: AbortSignal
   fetchImpl?: typeof fetch
-}): Promise<GroqTranscript> {
+}): Promise<DictationTranscript> {
   const form = new FormData()
   form.set('model', GROQ_TRANSCRIPTION_MODEL)
   form.set('response_format', 'verbose_json')
