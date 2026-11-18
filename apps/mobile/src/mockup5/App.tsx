@@ -250,7 +250,7 @@ import { FileReferenceBar } from '../features/files/components/FileReferenceBar'
 import { FileReferenceCard, type FileReferenceCardAppearance } from '../features/files/components/FileReferenceCard';
 import { sentMessageParts, sentMessageReadableText } from '../features/files/messageReferences';
 import { useFileReferencePicker } from '../features/files/scopePicker';
-import { addComposerReferences, composerMessageText, composerReferences, removeComposerReference } from '@pulpo/client-core/files';
+import { addComposerReferences, composerMessageText, composerReferences, mediaMimeType, removeComposerReference } from '@pulpo/client-core/files';
 import { appendComposerText, composerTextEnd, draftPreviewText, draftReferenceNames, withComposerText } from '../features/files/composerDraft';
 import { fileReferenceHref, type FileReference } from '@pulpo/contracts';
 import { useOpenFileItem } from '../features/files/open';
@@ -278,6 +278,7 @@ import { filesQueryKeys, lookUpFileNode } from '../features/files/queries';
 import { fileChangesItem } from '@pulpo/client-core/files';
 import { FileDocumentScreen } from '../features/files/screens/FileDocumentScreen';
 import { FileMarkdownScreen } from '../features/files/screens/FileMarkdownScreen';
+import { AudioPreviewScreen } from '../features/files/screens/AudioPreviewScreen';
 import { FileQuizScreen } from '../features/files/screens/FileQuizScreen';
 import { FilesFolderScreen } from '../features/files/screens/FilesFolderScreen';
 import { FriendsScreen } from '../features/friends/FriendsScreen';
@@ -1886,6 +1887,7 @@ function PrototypeRoot() {
         <RootStack.Screen name="FilesFolder" component={FilesFolderScreen} options={{ headerShown: Platform.OS === 'ios', headerLargeTitle: true, title: 'My files' }} />
         <RootStack.Screen name="FileDocument" component={FileDocumentScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Document' }} />
         <RootStack.Screen name="FileMarkdown" component={FileMarkdownScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Markdown' }} />
+        <RootStack.Screen name="AudioPreview" component={AudioPreviewScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Audio preview' }} />
         <RootStack.Screen name="FileQuiz" component={FileQuizScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Quiz' }} />
       </RootStack.Navigator>
     </NavigationContainer>
@@ -5790,7 +5792,11 @@ function ChatView({
       const uri = attachment.uri || (await downloadAttachment(attachment.id, attachment.name)).uri;
       // Quizzes open in the app, where they can be taken.
       if (isQuizFileName(attachment.name)) navigation.push('FileQuiz', { uri, name: attachment.name });
-      else await openAttachmentFile(uri, attachment.name, attachment.mimeType);
+      else {
+        const mimeType = mediaMimeType(attachment.name, attachment.mimeType);
+        if (mimeType?.startsWith('audio/')) navigation.push('AudioPreview', { uri, name: attachment.name, mimeType });
+        else await openAttachmentFile(uri, attachment.name, attachment.mimeType);
+      }
     })().catch((error) => {
       const message = error instanceof AttachmentPreviewError
         ? previewFallbackMessage(error.code)

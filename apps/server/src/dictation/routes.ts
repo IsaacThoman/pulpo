@@ -1,3 +1,4 @@
+import { audioTranscriptionMimeType, MAX_AUDIO_TRANSCRIPTION_BYTES } from '@pulpo/contracts'
 import { diagnosticFetch } from '../logging/diagnostic-fetch.js'
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
@@ -12,11 +13,6 @@ import { GroqTranscriptionError, transcribeWithGroq } from './groq.js'
 import { chargeMeteredUsage } from '../accounting/service.js'
 import { dictationUsageMicros } from './billing.js'
 import { assertDailySpendAvailable } from '../billing/usage-tiers.js'
-
-export const MAX_DICTATION_BYTES = 10 * 1024 * 1024
-const SUPPORTED_AUDIO_TYPES = new Set([
-  'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav',
-])
 
 export async function registerDictationRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/dictation/transcriptions', {
@@ -33,7 +29,7 @@ export async function registerDictationRoutes(app: FastifyInstance): Promise<voi
 
     let part: Awaited<ReturnType<typeof request.file>> = undefined
     try {
-      part = await request.file({ limits: { files: 1, fileSize: MAX_DICTATION_BYTES } })
+      part = await request.file({ limits: { files: 1, fileSize: MAX_AUDIO_TRANSCRIPTION_BYTES } })
     } catch (cause) {
       if (cause && typeof cause === 'object' && 'code' in cause && cause.code === 'FST_REQ_FILE_TOO_LARGE') {
         throw new AppError(413, 'dictation_audio_too_large', 'Dictation recordings must be 10 MB or smaller')
@@ -41,8 +37,8 @@ export async function registerDictationRoutes(app: FastifyInstance): Promise<voi
       throw cause
     }
     if (!part) throw new AppError(400, 'dictation_audio_required', 'An audio recording is required')
-    const mimeType = part.mimetype.toLowerCase().split(';', 1)[0]!
-    if (!SUPPORTED_AUDIO_TYPES.has(mimeType)) {
+    const mimeType = audioTranscriptionMimeType(part.mimetype)
+    if (!mimeType) {
       throw new AppError(415, 'dictation_audio_type_unsupported', 'This audio format is not supported')
     }
     let audio: Buffer

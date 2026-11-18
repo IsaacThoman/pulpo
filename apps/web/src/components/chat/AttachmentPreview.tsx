@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { TableVirtuoso, type TableComponents } from 'react-virtuoso'
-import { Check, Copy, Download, FileWarning, Loader2, X } from 'lucide-react'
+import { Download, FileWarning, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Markdown } from '@/components/chat/Markdown'
 import {
@@ -11,7 +11,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { Attachment } from '@/lib/types'
-import { writeClipboardText } from '@/lib/clipboard'
+import { cn } from '@/lib/utils'
+import { CopyTextButton } from './CopyTextButton'
+import { AudioFilePreview } from '@/components/AudioFilePreview'
 import {
   attachmentPreviewKind,
   createDelimitedReader,
@@ -216,35 +218,14 @@ export function PreviewBody({
     return <iframe src={content.url} title={uit`Preview of ${attachment.name}`} className="size-full bg-white" data-preview-kind="pdf" />
   }
   if (kind === 'audio') {
+    const audio = content.audio
+    if (!audio) return null
     return (
-      <div className="flex size-full items-center justify-center bg-gradient-to-br from-fuchsia-500/10 via-background to-violet-500/10 p-6" data-preview-kind="audio">
-        <audio src={content.url} controls preload="metadata" aria-label={uit`Audio preview of ${attachment.name}`} className="w-full max-w-xl" />
-      </div>
+      <AudioFilePreview key={content.url} name={attachment.name} mimeType={audio.type} size={audio.size}
+        url={content.url} loadAudio={async () => audio} className="min-h-full" />
     )
   }
   return <video src={content.url} controls preload="metadata" aria-label={uit`Video preview of ${attachment.name}`} className="size-full bg-black object-contain" data-preview-kind="video" />
-}
-
-export function CopyTextButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false)
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon-sm"
-      className="rounded-full"
-      aria-label={copied ? ui("Copied") : ui("Copy text")}
-      onClick={() => {
-        void writeClipboardText(text).then((success) => {
-          if (!success) return
-          setCopied(true)
-          setTimeout(() => setCopied(false), 1200)
-        })
-      }}
-    >
-      {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-    </Button>
-  )
 }
 
 export function AttachmentPreviewDialog({
@@ -269,7 +250,10 @@ export function AttachmentPreviewDialog({
       <DialogContent
         showCloseButton={false}
         data-testid="attachment-preview-dialog"
-        className="flex h-[min(88dvh,52rem)] w-[min(calc(100vw-2rem),64rem)] max-w-none grid-rows-none flex-col gap-0 overflow-hidden rounded-2xl p-0 shadow-2xl sm:max-w-none"
+        className={cn(
+          'flex max-w-none grid-rows-none flex-col gap-0 overflow-hidden rounded-2xl p-0 shadow-2xl sm:max-w-none',
+          kind === 'audio' ? 'max-h-[80dvh] w-[min(calc(100vw-2rem),42rem)]' : 'h-[min(88dvh,52rem)] w-[min(calc(100vw-2rem),64rem)]',
+        )}
       >
         <header className="flex min-w-0 shrink-0 items-center gap-3 border-b px-4 py-2">
           <div className="flex min-w-0 flex-1 items-baseline gap-2">
@@ -291,7 +275,7 @@ export function AttachmentPreviewDialog({
             </Button>
           </DialogClose>
         </header>
-        <div className="min-h-0 flex-1 overflow-hidden bg-muted/25">
+        <div className={cn('min-h-0 flex-1 bg-muted/25', kind === 'audio' ? 'overflow-auto' : 'overflow-hidden')}>
           <PreviewBody attachment={attachment} kind={kind} content={content} />
         </div>
       </DialogContent>
