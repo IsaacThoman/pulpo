@@ -91,7 +91,9 @@ function failureMessage(error: unknown, signal?: AbortSignal): string {
  * their computer. Like the Files relay, this is a trust boundary: the sandbox is agent-controlled.
  */
 export function createComputerFolderRelay(input: ComputerFolderRelayInput): (operationId: string, request: RelayRequest, signal?: AbortSignal) => Promise<RelayResult> {
-  const totals = { applied: 0, suggested: 0 }
+  // Each path counts once for the reply, however many commands touched it.
+  const applied = new Set<string>()
+  const suggested = new Set<string>()
   const name = folderName(input.folder)
   return async (_operationId, request, signal) => {
     const command = isComputerRelayCommand(request.command) ? request.command.slice(COMPUTER_RELAY_PREFIX.length) : ''
@@ -100,7 +102,7 @@ export function createComputerFolderRelay(input: ComputerFolderRelayInput): (ope
     if (!parsed.success) return { ok: false, error: `Invalid arguments for ${command}: ${z.prettifyError(parsed.error).slice(0, 1_000)}` }
     const ctx: FolderContext = {
       session: input.session, responseId: input.responseId, mode: input.mode, name, workspace: input.workspace,
-      maxOutputBytes: input.maxOutputBytes, signal, changes: { applied: 0, suggested: 0 },
+      maxOutputBytes: input.maxOutputBytes, signal, changes: { applied: new Set(), suggested: new Set() },
     }
     try {
       const handler = handlers[command] as (ctx: FolderContext, args: unknown) => Promise<FolderOutput>
@@ -109,11 +111,11 @@ export function createComputerFolderRelay(input: ComputerFolderRelayInput): (ope
     } catch (error) {
       return { ok: false, error: truncatedOutput(failureMessage(error, signal), input.maxOutputBytes) }
     } finally {
-      if (ctx.changes.applied || ctx.changes.suggested) {
-        totals.applied += ctx.changes.applied
-        totals.suggested += ctx.changes.suggested
+      if (ctx.changes.applied.size || ctx.changes.suggested.size) {
+        for (const path of ctx.changes.applied) applied.add(path)
+        for (const path of ctx.changes.suggested) suggested.add(path)
         // Announcing the change is best effort; the command's answer must still reach the agent.
-        await Promise.resolve().then(() => input.onChanged?.({ ...totals })).catch(() => undefined)
+        await Promise.resolve().then(() => input.onChanged?.({ applied: applied.size, suggested: suggested.size })).catch(() => undefined)
       }
     }
   }

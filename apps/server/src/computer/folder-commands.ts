@@ -4,6 +4,8 @@ import { folderPath, FolderCommandError, formatSize, isFolderPath, isWithin, joi
 import { computerCall, ComputerRequestError, type ComputerSessionRef } from './tunnel.js'
 
 const LIST_LIMIT = 300
+/** The most text `cat` asks for: one socket message carries it, even when JSON escapes swell it. */
+const CAT_MAX_BYTES = 1024 * 1024
 const LIST_MAX_DEPTH = 8
 const TREE_LIMIT = 500
 const TREE_DEFAULT_DEPTH = 3
@@ -22,7 +24,8 @@ export interface FolderContext {
   maxOutputBytes: number
   signal?: AbortSignal
   /** What this command applied or suggested, added to the reply's totals afterwards. */
-  changes: { applied: number; suggested: number }
+  /** Paths this command changed or suggested changing; the reply counts each path once. */
+  changes: { applied: Set<string>; suggested: Set<string> }
 }
 
 export interface FolderOutput {
@@ -92,7 +95,7 @@ export async function catCommand(ctx: FolderContext, args: { path: string }): Pr
   const path = folderPath(args.path)
   if (!path) throw new FolderCommandError(`"${ctx.name}" is a folder; list it with pulpo computer ls`)
   // The reply is cut to maxOutputBytes anyway, so nothing longer needs to cross the socket.
-  const read = await computerCall(ctx.session, 'folder.read', { path, maxBytes: ctx.maxOutputBytes }, { signal: ctx.signal })
+  const read = await computerCall(ctx.session, 'folder.read', { path, maxBytes: Math.min(ctx.maxOutputBytes, CAT_MAX_BYTES) }, { signal: ctx.signal })
   return { output: read.truncated ? `${read.text}\n[Output truncated (${formatSize(read.sizeBytes)} in all); pull the file to see the rest.]` : read.text }
 }
 
@@ -112,13 +115,15 @@ export async function grepCommand(ctx: FolderContext, args: { pattern: string; p
   return { output: lines.join('\n') }
 }
 
+const changedPath = (change: ComputerFolderChange) => change.kind === 'move' ? change.from : change.path
+
 /** Sends one change and counts it; refusals become errors, since a single change has nothing else to report. */
 async function change(ctx: FolderContext, change: ComputerFolderChange, messages: { applied: string; suggested: string; unchanged: string }): Promise<FolderOutput> {
   assertWritable(ctx)
   const result: ComputerFolderChangeResult = await computerCall(ctx.session, 'folder.change', { change, responseId: ctx.responseId }, { signal: ctx.signal })
   switch (result.status) {
-    case 'created': case 'updated': ctx.changes.applied += 1; return { output: messages.applied }
-    case 'suggested': ctx.changes.suggested += 1; return { output: messages.suggested }
+    case 'created': case 'updated': ctx.changes.applied.add(changedPath(change)); return { output: messages.applied }
+    case 'suggested': ctx.changes.suggested.add(changedPath(change)); return { output: messages.suggested }
     case 'unchanged': return { output: result.message || messages.unchanged }
     case 'denied': throw new FolderCommandError(result.message || readOnlyMessage(ctx))
     default: throw new FolderCommandError(result.message || `The user's computer could not make this change (${result.status})`)

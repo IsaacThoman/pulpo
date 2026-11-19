@@ -1,6 +1,6 @@
 import {
   COMPUTER_INLINE_MAX_BYTES, COMPUTER_PULL_MAX_BYTES, COMPUTER_PULL_MAX_FILE_BYTES, COMPUTER_PULL_MAX_FILES, COMPUTER_PUSH_MAX_FILE_BYTES,
-  COMPUTER_TRANSFER_TIMEOUT_MS, type ComputerFolderChangeResult, type ComputerFolderEntry,
+  computerTransferTimeoutMs, type ComputerFolderChangeResult, type ComputerFolderEntry,
 } from '@pulpo/contracts'
 import { readOnlyMessage, skippedNote, type FolderContext, type FolderOutput } from './folder-commands.js'
 import { folderPath, FolderCommandError, formatSize, isFolderPath, isWithin, localPath } from './folder-paths.js'
@@ -54,9 +54,11 @@ async function writeLocal(ctx: FolderContext, local: string, body: Uint8Array | 
 
 /** Copies one file from the user's computer into the workspace. */
 async function pullFile(ctx: FolderContext, entry: ComputerFolderEntry, local: string, signal: AbortSignal): Promise<PulledFile> {
-  const upload = await createComputerUpload(ctx.session, { maxBytes: COMPUTER_PULL_MAX_FILE_BYTES })
+  // A big file on a home uplink takes a while: the request and its URL are given time by size.
+  const timeoutMs = computerTransferTimeoutMs(entry.sizeBytes)
+  const upload = await createComputerUpload(ctx.session, { maxBytes: COMPUTER_PULL_MAX_FILE_BYTES, ttlMs: timeoutMs + 60_000 })
   try {
-    const sent = await computerCall(ctx.session, 'folder.send', { path: entry.path, transfer: upload.transfer, maxBytes: COMPUTER_PULL_MAX_FILE_BYTES }, { timeoutMs: COMPUTER_TRANSFER_TIMEOUT_MS, signal })
+    const sent = await computerCall(ctx.session, 'folder.send', { path: entry.path, transfer: upload.transfer, maxBytes: COMPUTER_PULL_MAX_FILE_BYTES }, { timeoutMs, signal })
     if (sent.data !== undefined) {
       const bytes = Buffer.from(sent.data, 'base64')
       await writeLocal(ctx, local, bytes, bytes.byteLength, signal)
@@ -153,9 +155,9 @@ async function pushOne(ctx: FolderContext, item: PushItem, budget: { remainingBy
         ...item.force ? { force: true } : {},
         ...download ? { transfer: download.transfer } : { data: Buffer.from(bytes).toString('base64') },
       },
-    }, { signal: ctx.signal, ...download ? { timeoutMs: COMPUTER_TRANSFER_TIMEOUT_MS } : {} })
-    if (answer.status === 'created' || answer.status === 'updated') ctx.changes.applied += 1
-    if (answer.status === 'suggested') ctx.changes.suggested += 1
+    }, { signal: ctx.signal, ...download ? { timeoutMs: computerTransferTimeoutMs(bytes.byteLength) } : {} })
+    if (answer.status === 'created' || answer.status === 'updated') ctx.changes.applied.add(remote)
+    if (answer.status === 'suggested') ctx.changes.suggested.add(remote)
     const saved = answer.status === 'created' || answer.status === 'updated' || answer.status === 'suggested'
     return {
       ...result, remote, status: answer.status, nodeId: remote,

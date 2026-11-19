@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { posix, win32 } from 'node:path'
 import type { Readable } from 'node:stream'
 import {
-  COMPUTER_INLINE_MAX_BYTES, COMPUTER_OPERATION_TYPES, COMPUTER_REQUEST_TIMEOUT_MS, COMPUTER_TRANSFER_TIMEOUT_MS,
+  COMPUTER_INLINE_MAX_BYTES, COMPUTER_OPERATION_TYPES, COMPUTER_REQUEST_TIMEOUT_MS, COMPUTER_TRANSFER_TIMEOUT_MS, computerTransferTimeoutMs,
   type ComputerDescription, type ComputerMethod, type ComputerOperationType, type ComputerParams, type ComputerResult,
 } from '@pulpo/contracts'
 import {
@@ -184,10 +184,19 @@ export class ComputerWorkspace implements AgentWorkspace {
     return new Error(message)
   }
 
+  /**
+   * Whether the computer is gone for the rest of the reply: unreachable, or its app no longer knows
+   * the session (it was restarted, or access was taken back). Every later request would fail the
+   * same way, so the tools go off instead of the agent retrying until its tool limit.
+   */
+  private gone(error: unknown): boolean {
+    return error instanceof ComputerUnavailableError || (error instanceof ComputerRequestError && error.code === 'unknown_session')
+  }
+
   /** One request; losing the computer ends its use for the reply. */
   private async call<M extends ComputerMethod>(method: M, params: ComputerParams<M>, options: ComputerCallOptions = {}): Promise<ComputerResult<M>> {
     try { return await computerCall(this.input.session, method, params, options) } catch (error) {
-      if (error instanceof ComputerUnavailableError && !options.signal?.aborted) throw await this.lost(error)
+      if (this.gone(error) && !options.signal?.aborted) throw await this.lost(error)
       throw error
     }
   }
@@ -225,7 +234,7 @@ export class ComputerWorkspace implements AgentWorkspace {
 
   /** Saves bytes on the computer: inline when small, else through a one-time download URL. */
   private async sendFile(path: string, body: Uint8Array | Readable, sizeBytes: number, sha256: string | undefined, signal?: AbortSignal): Promise<void> {
-    const options = { signal, timeoutMs: COMPUTER_TRANSFER_TIMEOUT_MS }
+    const options = { signal, timeoutMs: computerTransferTimeoutMs(sizeBytes) }
     if (body instanceof Uint8Array && sizeBytes <= COMPUTER_INLINE_MAX_BYTES) {
       await this.call('file.receive', { path, data: Buffer.from(body).toString('base64'), sizeBytes, ...(sha256 ? { sha256 } : {}) }, options)
       return
@@ -254,7 +263,8 @@ export class ComputerWorkspace implements AgentWorkspace {
       try {
         return await computerCall(this.input.session, 'operation.get', { id, waitMs: LONG_POLL_WAIT_MS }, { signal, timeoutMs: LONG_POLL_TIMEOUT_MS })
       } catch (error) {
-        if (signal?.aborted || error instanceof ComputerRequestError) throw error
+        if (signal?.aborted) throw error
+        if (error instanceof ComputerRequestError) throw this.gone(error) ? await this.lost(error) : error
         if (attempt >= POLL_ATTEMPTS) throw error instanceof ComputerUnavailableError ? await this.lost(error) : error
         await wait(POLL_RETRY_MS * attempt)
       }

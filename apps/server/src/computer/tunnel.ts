@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { Readable } from 'node:stream'
 import type { Redis } from 'ioredis'
 import {
-  COMPUTER_REQUEST_TIMEOUT_MS, computerMethods,
+  COMPUTER_REQUEST_TIMEOUT_MS, computerMethods, computerTransferTimeoutMs,
   type ComputerErrorCode, type ComputerMethod, type ComputerParams, type ComputerRequest, type ComputerResponse, type ComputerResult, type ComputerTransfer,
 } from '@pulpo/contracts'
 import { createRedis } from '../redis.js'
@@ -205,8 +205,8 @@ function disposer(id: string): () => Promise<void> {
   }
 }
 
-export async function createComputerUpload(session: ComputerSessionRef, options: { maxBytes: number }): Promise<ComputerUpload> {
-  const { id, url } = await createComputerTransfer(session, 'upload', options.maxBytes)
+export async function createComputerUpload(session: ComputerSessionRef, options: { maxBytes: number; /** How long the URL must live, when longer than usual. */ ttlMs?: number }): Promise<ComputerUpload> {
+  const { id, url } = await createComputerTransfer(session, 'upload', options.maxBytes, Date.now(), options.ttlMs)
   const storedSize = async () => {
     const record = await readComputerTransfer(id)
     if (record?.sizeBytes == null) throw new ComputerRequestError('failed', 'The computer did not send the file')
@@ -235,7 +235,7 @@ export interface ComputerDownload {
 }
 
 export async function createComputerDownload(session: ComputerSessionRef, body: Uint8Array | Readable, sizeBytes: number): Promise<ComputerDownload> {
-  const { id, url } = await createComputerTransfer(session, 'download', sizeBytes)
+  const { id, url } = await createComputerTransfer(session, 'download', sizeBytes, Date.now(), computerTransferTimeoutMs(sizeBytes) + 60_000)
   const dispose = disposer(id)
   try {
     const metadata = { contentType: 'application/octet-stream', contentLength: sizeBytes }

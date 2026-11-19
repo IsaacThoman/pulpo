@@ -44,16 +44,19 @@ export async function createComputerTransfer(
   direction: ComputerTransferDirection,
   maxBytes: number,
   now = Date.now(),
+  /** At least the usual lifetime; a big file on a slow link is given as long as its request may take. */
+  ttlMs = COMPUTER_TRANSFER_TTL_MS,
 ): Promise<{ id: string; url: string }> {
   const id = randomUUID()
   const token = randomBytes(32).toString('base64url')
+  const lifetimeMs = Math.max(COMPUTER_TRANSFER_TTL_MS, ttlMs)
   const record: ComputerTransferRecord = {
     direction, userId: session.userId, sessionId: session.sessionId,
-    tokenHash: hashToken(token).toString('hex'), maxBytes, sizeBytes: null, expiresAt: now + COMPUTER_TRANSFER_TTL_MS,
+    tokenHash: hashToken(token).toString('hex'), maxBytes, sizeBytes: null, expiresAt: now + lifetimeMs,
   }
   // The sweep entry goes in with the record, before any bytes, so a crash cannot leave an untracked blob.
   await redis.multi()
-    .set(computerTransferKey(id), JSON.stringify(record), 'PX', COMPUTER_TRANSFER_TTL_MS)
+    .set(computerTransferKey(id), JSON.stringify(record), 'PX', lifetimeMs)
     .zadd(COMPUTER_TRANSFERS_KEY, record.expiresAt, id)
     .exec()
   return { id, url: `${COMPUTER_TRANSFER_PATH}${id}?token=${token}` }

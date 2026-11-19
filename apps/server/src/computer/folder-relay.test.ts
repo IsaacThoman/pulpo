@@ -252,6 +252,15 @@ describe('pulpo computer relay: changes', () => {
     expect(onChanged.mock.calls).toEqual([[{ applied: 1, suggested: 0 }], [{ applied: 1, suggested: 1 }], [{ applied: 2, suggested: 1 }]])
   })
 
+  it('counts a path once for the reply, however often it was changed', async () => {
+    const { run, onChanged } = setup('suggest', () => ({ status: 'suggested', message: '' }))
+    await run('computer:mkdir', { path: 'notes' })
+    await run('computer:rm', { path: 'old.txt' })
+    await run('computer:rm', { path: 'old.txt' })
+    await run('computer:mkdir', { path: 'notes' })
+    expect(onChanged).toHaveBeenLastCalledWith({ applied: 0, suggested: 2 })
+  })
+
   it('moves into an existing folder like mv', async () => {
     const { run } = setup('write', (method, params) => method === 'folder.list'
       ? { entries: params.path === 'archive' ? [file('archive/x.md')] : [file('Notes.md')], truncated: false }

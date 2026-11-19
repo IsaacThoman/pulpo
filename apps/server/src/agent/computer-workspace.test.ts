@@ -215,6 +215,20 @@ describe('ComputerWorkspace.execute', () => {
     expect(instance.continuedWithoutAgent).toBe(false)
   })
 
+  it('turns tools off when the app no longer knows the session, instead of failing call after call', async () => {
+    serve({
+      'file.missing': () => ({ missing: [] }),
+      'operation.start': () => { throw new ComputerRequestError('unknown_session', 'The Pulpo app was restarted') },
+    })
+    const { instance, events } = workspace()
+    await expect(instance.execute('op-1', 'bash', { command: 'x' })).rejects.toThrow('The Pulpo app was restarted')
+    expect(instance.continuedWithoutAgent).toBe(true)
+    expect(events.at(-1)).toEqual(['unavailable', { error: expect.stringContaining('The Pulpo app was restarted') }])
+    // The next tool call is refused at once, without asking the computer again.
+    await expect(instance.execute('op-2', 'bash', { command: 'y' })).rejects.toThrow()
+    expect(calls('operation.start')).toHaveLength(1)
+  })
+
   it('cancels on the computer when the reply is stopped', async () => {
     const controller = new AbortController()
     serve({

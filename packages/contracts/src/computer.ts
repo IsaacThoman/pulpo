@@ -297,6 +297,13 @@ export const COMPUTER_HOST_TTL_MS = 45_000
 export const COMPUTER_REQUEST_TIMEOUT_MS = 30_000
 /** Requests that move a file get longer. */
 export const COMPUTER_TRANSFER_TIMEOUT_MS = 300_000
+/**
+ * How long a request that moves `sizeBytes` may take: the usual allowance, or longer for a big
+ * file, enough for a slow home uplink (about 2 Mbps), up to an hour.
+ */
+export function computerTransferTimeoutMs(sizeBytes: number): number {
+  return Math.min(3_600_000, Math.max(COMPUTER_TRANSFER_TIMEOUT_MS, Math.ceil(sizeBytes / 250_000) * 1_000))
+}
 
 /** Largest file `pulpo computer pull` copies into the workspace, and the most one pull may hold. */
 export const COMPUTER_PULL_MAX_FILE_BYTES = 1_000 * 1024 * 1024
@@ -366,6 +373,10 @@ export interface DesktopComputerApi {
   chooseFolder(): Promise<ComputerFolder | null>
   /** Asks, in a native dialog the first time, whether the agent may run commands on this computer. */
   allowFullAccess(): Promise<boolean>
+  /** Takes full access back: sessions using it end, and the next use asks again. */
+  revokeFullAccess(): Promise<void>
+  /** Forgets a folder the user allowed: sessions using it end, and it must be chosen again to be used. */
+  forgetFolder(path: string): Promise<void>
   /** Registers what a message's session may do. Refused unless the folder and access were allowed above. */
   begin(session: { sessionId: string; access: ComputerAccess; folder: string | null }): Promise<{ ok: true } | { ok: false; reason: 'folder_not_allowed' | 'full_access_not_allowed' | 'signed_out' }>
   /** The session's reply is over; later requests for it are refused. */
