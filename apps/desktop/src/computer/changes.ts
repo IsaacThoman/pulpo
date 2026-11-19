@@ -27,6 +27,8 @@ export interface StoredChange extends ComputerChange {
   sha256?: string
   /** The version on disk the suggestion was made against (null: no file), for the accept-time conflict check. */
   diskBase?: string | null
+  /** A suggested removal: whether it takes a folder's contents with it. Without it, a folder must still be empty when accepted. */
+  recursive?: boolean
   decidedAt?: string
 }
 
@@ -64,7 +66,7 @@ async function textForReview(file: string): Promise<{ text: string | null; binar
 }
 
 function publicChange(change: StoredChange): ComputerChange {
-  const { sha256: _sha256, diskBase: _diskBase, decidedAt: _decidedAt, ...rest } = change
+  const { sha256: _sha256, diskBase: _diskBase, recursive: _recursive, decidedAt: _decidedAt, ...rest } = change
   return rest
 }
 
@@ -79,6 +81,8 @@ export interface NewChange {
   kind: ComputerChange['kind']
   to?: string
   sizeBytes?: number
+  /** For a suggested removal: see `StoredChange.recursive`. */
+  recursive?: boolean
 }
 
 export class ChangesStore {
@@ -276,7 +280,13 @@ export class ChangesStore {
       return 'accepted'
     }
     if (change.kind === 'mkdir') { await mkdir(target.absolute, { recursive: true }); return 'accepted' }
-    if (change.kind === 'remove') { if (target.exists) await this.options.trash(target.absolute); return 'accepted' }
+    if (change.kind === 'remove') {
+      if (!target.exists) return 'accepted'
+      // Suggested as an empty folder: what was put in it since was never part of the suggestion.
+      if (!overwrite && change.recursive === false && (await stat(target.absolute)).isDirectory() && (await readdir(target.absolute)).length > 0) return 'conflict'
+      await this.options.trash(target.absolute)
+      return 'accepted'
+    }
     // move
     if (!target.exists || change.to === undefined) return 'conflict'
     const destination = await resolveForChange(root, change.to, this.options.platform)

@@ -181,6 +181,15 @@ describe('Suggested changes review', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
+  it('says a folder suggested for removal is no longer empty, and removes it only when told to', async () => {
+    const bridge = installBridge([change({ path: 'drafts', kind: 'remove', status: 'conflict' })], { c1: {} })
+    const dialog = await openReview()
+    expect(within(dialog).getByText('This folder is no longer empty.')).toBeTruthy()
+    expect(within(dialog).queryByRole('button', { name: 'Overwrite' })).toBeNull()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove anyway' }))
+    await waitFor(() => expect(bridge.api.accept).toHaveBeenLastCalledWith(['c1'], { overwrite: true }))
+  })
+
   it('rejects a conflict', async () => {
     const bridge = installBridge([change({ status: 'conflict' })], { c1: { before: 'a', after: 'b' } })
     const dialog = await openReview()

@@ -303,7 +303,7 @@ export class FolderService {
       throw new ComputerError('failed', `"${change.path}" is a folder that is not empty; remove it recursively.`)
     }
     if (session.access === 'suggest') {
-      await changes.suggest(session.account, { ...base, path: target.relative, kind: 'remove' })
+      await changes.suggest(session.account, { ...base, path: target.relative, kind: 'remove', recursive: change.recursive === true })
       return { status: 'suggested', message: `Suggested removing ${target.relative}. The user will accept or reject it.` }
     }
     await this.context.trash(target.absolute)

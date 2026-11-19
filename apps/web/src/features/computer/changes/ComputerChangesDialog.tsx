@@ -164,7 +164,7 @@ export function ComputerChangesDialog({ bridge, changes, onChanged, onClose }: {
                 <span className="min-w-0 flex-1 truncate font-mono text-xs" title={selected.path}>{selected.path}</span>
                 {selected.status === 'conflict' ? (
                   <Button size="sm" variant="outline" className="h-7" disabled={Boolean(busy)} onClick={() => void decide(selected, `overwrite:${selected.id}`, () => bridge.changes.accept([selected.id], { overwrite: true }))}>
-                    {busy === `overwrite:${selected.id}` ? <Loader2 className="animate-spin" /> : <Check />} {ui("Overwrite")}
+                    {busy === `overwrite:${selected.id}` ? <Loader2 className="animate-spin" /> : <Check />} {selected.kind === 'remove' ? ui("Remove anyway") : ui("Overwrite")}
                   </Button>
                 ) : (
                   <Button size="sm" variant="outline" className="h-7" disabled={Boolean(busy)} onClick={() => void decide(selected, `accept:${selected.id}`, () => bridge.changes.accept([selected.id]))}>
@@ -178,7 +178,8 @@ export function ComputerChangesDialog({ bridge, changes, onChanged, onClose }: {
               {selected.status === 'conflict' && (
                 <p role="status" className="flex items-start gap-1.5 rounded-md bg-amber-500/10 px-2 py-1.5 text-xs text-amber-800 dark:text-amber-300">
                   <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-                  {ui("This file changed on your computer since the suggestion.")}
+                  {/* A removal conflicts only when the folder it names has been given something since. */}
+                  {selected.kind === 'remove' ? ui("This folder is no longer empty.") : ui("This file changed on your computer since the suggestion.")}
                 </p>
               )}
               <ChangeBody bridge={bridge} change={selected} />

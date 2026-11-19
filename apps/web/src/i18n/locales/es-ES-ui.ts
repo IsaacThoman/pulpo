@@ -2927,6 +2927,8 @@ const esUi: Record<string, string> = {
   "Can run commands anywhere on this computer": "Puede ejecutar comandos en cualquier parte de este ordenador",
   "Changes apply right away": "Los cambios se aplican al momento",
   "Starting folder": "Carpeta inicial",
+  "Remove anyway": "Eliminar de todos modos",
+  "This folder is no longer empty.": "Esta carpeta ya no está vacía.",
   "Items you mention": "Elementos que mencionas",
   "All files": "Todos los archivos",
   "Can use the items you mention": "Puede usar los elementos que mencionas",

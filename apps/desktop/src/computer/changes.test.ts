@@ -26,6 +26,7 @@ describe('ChangesStore', () => {
   let clock: number
   let onChanged: ReturnType<typeof vi.fn<() => void>>
   let store: ChangesStore
+  let trash: ReturnType<typeof vi.fn<(target: string) => Promise<void>>>
 
   beforeEach(async () => {
     base = await realpath(await mkdtemp(path.join(os.tmpdir(), 'pulpo-changes-')))
@@ -34,7 +35,8 @@ describe('ChangesStore', () => {
     granted = true
     clock = Date.parse('2026-11-18T12:00:00Z')
     onChanged = vi.fn<() => void>()
-    store = new ChangesStore({ root: path.join(base, 'changes'), onChanged, folderGranted: async () => granted, trash: async () => undefined, now: () => clock })
+    trash = vi.fn(async (target: string) => { await rm(target, { recursive: true }) })
+    store = new ChangesStore({ root: path.join(base, 'changes'), onChanged, folderGranted: async () => granted, trash, now: () => clock })
   })
 
   afterEach(async () => { copies.afterCopy = undefined; await rm(base, { recursive: true, force: true }) })
@@ -77,6 +79,30 @@ describe('ChangesStore', () => {
     copies.afterCopy = async () => { await writeFile(target, 'saved again') }
     expect((await store.accept(account, [change.id], { overwrite: true }))[0]).toMatchObject({ status: 'accepted' })
     expect(await readFile(target, 'utf8')).toBe('suggested')
+  })
+
+  it('does not remove what was put into a folder suggested for removal while it was empty', async () => {
+    const remove = (name: string, recursive: boolean) => store.suggest(account, { sessionId: randomUUID(), responseId: randomUUID(), folder, path: name, kind: 'remove', recursive })
+    await mkdir(path.join(folder, 'empty'))
+    await mkdir(path.join(folder, 'whole'))
+    const empty = await remove('empty', false)
+    const whole = await remove('whole', true)
+    expect(empty).not.toHaveProperty('recursive')
+    // The user keeps working in both before deciding.
+    await writeFile(path.join(folder, 'empty', 'new.txt'), 'added since')
+    await writeFile(path.join(folder, 'whole', 'new.txt'), 'added since')
+
+    expect((await store.accept(account, [empty.id]))[0]).toMatchObject({ status: 'conflict' })
+    expect(trash).not.toHaveBeenCalled()
+    expect(await readFile(path.join(folder, 'empty', 'new.txt'), 'utf8')).toBe('added since')
+    // A folder suggested with its contents goes as a whole, and so does the other once the user says so.
+    expect((await store.accept(account, [whole.id]))[0]).toMatchObject({ status: 'accepted' })
+    expect((await store.accept(account, [empty.id], { overwrite: true }))[0]).toMatchObject({ status: 'accepted' })
+    expect(trash.mock.calls.map(([target]) => path.basename(target))).toEqual(['whole', 'empty'])
+
+    // Still empty when accepted: nothing stands in the way.
+    await mkdir(path.join(folder, 'bare'))
+    expect((await store.accept(account, [(await remove('bare', false)).id]))[0]).toMatchObject({ status: 'accepted' })
   })
 
   it('refuses a suggestion whose bytes do not match', async () => {
