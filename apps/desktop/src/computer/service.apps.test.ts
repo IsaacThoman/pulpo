@@ -99,7 +99,8 @@ beforeEach(async () => {
 afterEach(async () => {
   await Promise.all(services.map((service) => service.shutdown()))
   services = []
-  await rm(base, { recursive: true, force: true })
+  // A helper that was just told to leave may still be writing its last line into the folder.
+  await rm(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
 })
 
 describe('apps in a full-access session', () => {

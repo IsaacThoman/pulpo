@@ -78,7 +78,7 @@ const refusal = async (attempt: Promise<unknown>) => {
 }
 
 beforeEach(async () => { base = await mkdtemp(path.join(os.tmpdir(), 'pulpo-apps-')) })
-afterEach(async () => { await rm(base, { recursive: true, force: true }) })
+afterEach(async () => { await rm(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }) })
 
 describe('which app and window the agent means', () => {
   const apps = [safari, textEdit(), { ...textEdit(), id: 'com.example.TextMate', name: 'TextMate', pid: 501 }]
