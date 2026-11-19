@@ -33,6 +33,8 @@
   --sidebar-accent: oklch(0.967 0.001 286.375);
   --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
   --sidebar-border: oklch(0.92 0.004 286.32);
+  /* User message bubbles. Color themes set a solid color. */
+  --message: color-mix(in oklab, var(--secondary) 85%, transparent);
   --code: oklch(0.985 0 0);
   --code-foreground: oklch(0.21 0.006 285.885);
   --code-muted: oklch(0.552 0.016 285.938);
@@ -144,6 +146,16 @@
   --color-sidebar-accent: var(--sidebar-accent);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
+  --color-message: var(--message);
+  --color-temporary-surface: var(--temporary-surface);
+  --color-temporary-card: var(--temporary-card);
+  --color-temporary-card-hover: var(--temporary-card-hover);
+  --color-temporary-border: var(--temporary-border);
+  --color-temporary-card-border: var(--temporary-card-border);
+  --color-temporary-foreground: var(--temporary-foreground);
+  --color-temporary-toggle: var(--temporary-toggle);
+  --color-expiring-foreground: var(--expiring-foreground);
+  --color-plan-foreground: var(--plan-foreground);
   --color-code: var(--code);
   --color-code-foreground: var(--code-foreground);
   --color-code-muted: var(--code-muted);
@@ -622,6 +634,16 @@ html[data-desktop-os="win32"] .desktop-sidebar-titlebar {
     var(--color-violet-100) 50%,
     var(--background)
   );
+  /* Temporary chats, chat badges, and the plan name. Color themes set these as hex. */
+  --temporary-surface: color-mix(in oklab, var(--color-violet-100) 80%, transparent);
+  --temporary-card: var(--temporary-surface);
+  --temporary-card-hover: color-mix(in oklab, var(--color-violet-200) 80%, transparent);
+  --temporary-border: color-mix(in oklab, var(--color-violet-500) 50%, transparent);
+  --temporary-card-border: var(--temporary-border);
+  --temporary-foreground: var(--color-violet-700);
+  --temporary-toggle: var(--primary);
+  --expiring-foreground: var(--color-teal-700);
+  --plan-foreground: var(--color-violet-600);
 }
 
 html.dark {
@@ -630,6 +652,15 @@ html.dark {
     var(--color-violet-950) 15%,
     var(--background)
   );
+  --temporary-surface: color-mix(in oklab, var(--color-violet-950) 60%, transparent);
+  --temporary-card: color-mix(in oklab, var(--color-violet-950) 30%, transparent);
+  --temporary-card-hover: color-mix(in oklab, var(--color-violet-900) 40%, transparent);
+  --temporary-border: color-mix(in oklab, var(--color-violet-600) 50%, transparent);
+  --temporary-card-border: color-mix(in oklab, var(--color-violet-600) 30%, transparent);
+  --temporary-foreground: var(--color-violet-300);
+  --temporary-toggle: var(--primary);
+  --expiring-foreground: var(--color-teal-400);
+  --plan-foreground: var(--color-violet-400);
 }
 
 html[data-desktop="true"] .app-layout-frame {

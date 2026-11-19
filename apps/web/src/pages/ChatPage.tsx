@@ -95,7 +95,7 @@ function Placeholder({
           aria-label={t('chat.temporaryChatLabel')}
           data-visible={badge?.kind === 'temporary'}
           role="status"
-          className="chat-landing-badge-transition absolute inset-x-0 bottom-full mb-3 flex items-center justify-center gap-1.5 px-2 text-center text-xs font-medium text-violet-700 dark:text-violet-300"
+          className="chat-landing-badge-transition absolute inset-x-0 bottom-full mb-3 flex items-center justify-center gap-1.5 px-2 text-center text-xs font-medium text-temporary-foreground"
         >
           <Ghost className="size-3.5" />
           {t('chat.temporary')}
@@ -105,7 +105,7 @@ function Placeholder({
           aria-label={badge?.kind === 'expiration' && expirationPeriod ? t('chat.expirationBadgeLabel', { period: expirationPeriod }) : undefined}
           data-visible={badge?.kind === 'expiration'}
           role="status"
-          className="chat-landing-badge-transition absolute inset-x-0 bottom-full mb-3 flex items-center justify-center gap-1.5 px-2 text-center text-xs font-medium text-teal-700 dark:text-teal-400"
+          className="chat-landing-badge-transition absolute inset-x-0 bottom-full mb-3 flex items-center justify-center gap-1.5 px-2 text-center text-xs font-medium text-expiring-foreground"
         >
           <Hourglass className="size-3.5" />
           {expirationPeriod ? t('chat.expiresIn', { period: expirationPeriod }) : null}
@@ -125,7 +125,7 @@ function Placeholder({
               onClick={() => onPick(s.message ?? '')}
               className={cn(
                 'cursor-pointer rounded-xl border bg-card px-4 py-3 text-left text-sm text-foreground/90 transition-colors hover:bg-accent',
-                badge?.kind === 'temporary' && 'border-dashed !border-violet-500/50 bg-violet-100/80 hover:bg-violet-200/80 dark:!border-violet-600/30 dark:bg-violet-950/30 dark:hover:bg-violet-900/40',
+                badge?.kind === 'temporary' && 'border-dashed !border-temporary-card-border bg-temporary-card hover:bg-temporary-card-hover',
               )}
             >
               {s.label}
@@ -464,7 +464,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
                   onClick={() => void handleTemporaryControl()}
                   data-active={temporaryMode}
                 >
-                  <Ghost className={cn('size-4', temporaryMode && 'text-primary')} />
+                  <Ghost className={cn('size-4', temporaryMode && 'text-temporary-toggle')} />
                 </button>
               </TooltipTrigger>
               <TooltipContent>{temporaryMode ? t('chat.disableTemporary') : t('chat.enableTemporary')}</TooltipContent>

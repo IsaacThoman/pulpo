@@ -1267,7 +1267,7 @@ export function Composer({
         className={cn(
           'relative rounded-2xl border bg-card shadow-sm transition-[background-color,box-shadow,border-color] duration-200 focus-within:shadow-md',
           (queuedMessages.length > 0 || showShelf && shelfRows.length > 0 || messageEdit || recovery) && '-mt-px rounded-t-xl',
-          temporary && '!border-violet-500/50 bg-violet-100/80 dark:!border-violet-600/50 dark:bg-violet-950/60',
+          temporary && '!border-temporary-border bg-temporary-surface',
           temporary && 'border-dashed',
         )}
       >

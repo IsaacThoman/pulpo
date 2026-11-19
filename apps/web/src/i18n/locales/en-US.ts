@@ -205,6 +205,7 @@ const enUS = {
       devices: 'Devices',
       connections: 'Connections',
       personalization: 'Personalization',
+      appearance: 'Appearance',
       interface: 'Interface',
       billing: 'Billing',
       api: 'API keys',
