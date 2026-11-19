@@ -36,13 +36,22 @@ function Harness({ chatId = 'chat-a', files = true, reach }: { chatId?: string |
   )
 }
 
+/** The menu stays open after a choice; this is the user pressing Escape until it is gone. */
+async function closeMenu() {
+  await waitFor(() => {
+    if (!screen.queryAllByRole('menu').length) return
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+    throw new Error('the menu is still open')
+  })
+}
+
 async function openMenu() {
   fireEvent.keyDown(screen.getByRole('button', { name: /^Agent options/ }), { key: 'Enter' })
   return screen.findByRole('menu')
 }
 
 async function openComputer() {
-  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+  await closeMenu()
   await openMenu()
   const trigger = screen.getByRole('menuitem', { name: /This computer/ })
   fireEvent.keyDown(trigger, { key: 'ArrowRight' })
@@ -51,7 +60,7 @@ async function openComputer() {
 
 /** The rows under Access, as they read. */
 async function accessRows() {
-  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+  await closeMenu()
   await openMenu()
   return within(screen.getByRole('group', { name: 'Access' })).getAllByRole('menuitem').map((item) => item.textContent)
 }
@@ -96,9 +105,8 @@ describe('Access in the agent menu', () => {
       const view = render(<Harness />)
       await openMenu()
       expect(screen.queryByRole('menuitem', { name: /This computer/ })).toBeNull()
-      // Files are then chosen in the menu itself, as everywhere else.
-      expect(screen.queryByRole('group', { name: 'Access' })).toBeNull()
-      expect(screen.getByRole('group', { name: 'Changes to Files' })).not.toBeNull()
+      // Files keep their row under Access, as on the web.
+      expect(within(screen.getByRole('group', { name: 'Access' })).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['FilesItems you mention · Suggest changes'])
       view.unmount()
       window.pulpoDesktop = { platform: 'desktop', computer } as unknown as typeof window.pulpoDesktop
       useCatalog.setState({ computerAccess: true })
@@ -148,6 +156,10 @@ describe('Access in the agent menu', () => {
     fireEvent.click(screen.getByRole('menuitemradio', { name: /Read only/ }))
     await waitFor(() => expect(computerChoice(owner, 'chat-a')).toEqual({ enabled: true, access: 'read', folder: project }))
     expect(onEnable).toHaveBeenCalledOnce()
+    // The submenu is still open and shows the choice, with the folder it now works in.
+    expect(checked(screen.getByRole('group', { name: 'This computer' }))).toEqual(['Read onlyThe agent can look but not change anything'])
+    expect(checked(screen.getByRole('group', { name: 'Folder' }))).toEqual(['project'])
+    await closeMenu()
     const trigger = screen.getByRole('button', { name: 'Agent options, This computer' })
     expect(trigger.querySelector('.lucide-laptop')).not.toBeNull()
     expect(await accessRows()).toEqual(['FilesItems you mention · Suggest changes', 'This computerproject · Read only'])
@@ -203,6 +215,9 @@ describe('Access in the agent menu', () => {
 
     fireEvent.click(within(await openComputer()).getByRole('menuitemradio', { name: 'Off' }))
     await waitFor(() => expect(computerChoice(owner, 'chat-a')).toEqual({ enabled: false, access: 'full', folder: null }))
+    // Off takes the folder choices away while the submenu is still open.
+    expect(screen.queryByRole('group', { name: 'Folder' })).toBeNull()
+    await closeMenu()
     expect(screen.getByRole('button', { name: 'Agent options, Pulpo Agent' })).not.toBeNull()
     expect(await accessRows()).toEqual(['FilesItems you mention · Suggest changes', 'This computerOff'])
   })

@@ -108,7 +108,10 @@ export function AgentMenu({ ref, enabled, disabled, compact = false, files, comp
     const room = window.innerWidth - menu.getBoundingClientRect().right - SUBMENU_WIDTH - 8
     setSubmenuOffset(Math.min(0, Math.floor(room)))
   }
-  const choose = (action: () => void) => () => {
+  // Choosing something leaves the menu open, so several things can be set in one visit and each
+  // choice is seen to take. It closes when the user clicks away, clicks the trigger, or presses Escape.
+  const choose = (action: () => void) => (event: Event) => {
+    event.preventDefault()
     menuFocus.onSelect()
     action()
   }
@@ -117,10 +120,12 @@ export function AgentMenu({ ref, enabled, disabled, compact = false, files, comp
       {row}
     </DropdownMenuItem>
   )
-  /** What the agent may change in Files, under a line that says what the choice is about. */
-  const fileModes = (files: AgentFilesControls, heading: string) => (
+  /** What the agent may change in Files, under a line that says which of them it can reach. */
+  const fileModes = (files: AgentFilesControls) => (
     <DropdownMenuGroup aria-label={ui("Changes to Files")}>
-      <DropdownMenuLabel className={mutedLabel}>{heading}</DropdownMenuLabel>
+      <DropdownMenuLabel className={mutedLabel}>
+        {files.reach === 'all' ? ui("Can look through all of your Files") : ui("Can use the items you mention")}
+      </DropdownMenuLabel>
       {FILE_ACCESS_MODES.map((mode) => {
         const copy = accessModeCopy(mode)
         const checked = files.mode === mode
@@ -178,11 +183,7 @@ export function AgentMenu({ ref, enabled, disabled, compact = false, files, comp
               role="menuitemradio"
               aria-checked={active === value}
               disabled={disabled}
-              onSelect={() => {
-                if (disabled) return
-                menuFocus.onSelect()
-                if (value !== active) onSelect(value)
-              }}
+              onSelect={choose(() => { if (!disabled && value !== active) onSelect(value) })}
               className="justify-between"
             >
               <span className="flex items-center gap-1.5">
@@ -193,16 +194,8 @@ export function AgentMenu({ ref, enabled, disabled, compact = false, files, comp
             </DropdownMenuItem>
           )
         })}
-        {/* Files alone are chosen right here. */}
-        {files && !computer && (
-          <>
-            <DropdownMenuSeparator />
-            {fileModes(files, ui("Changes to Files"))}
-            {filesAccess(files)}
-          </>
-        )}
-        {/* With a computer there are two things the agent can reach. Each row says what it can reach there and what it may do, and opens to change that. */}
-        {computer && (
+        {/* One row for each thing the agent can reach. Each says what it can reach there and what it may do, and opens to change that. */}
+        {(files || computer) && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuGroup aria-label={ui("Access")}>
@@ -213,49 +206,51 @@ export function AgentMenu({ ref, enabled, disabled, compact = false, files, comp
                     <AccessRow icon={Folder} label={ui("Files")} summary={filesSummary} />
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent sideOffset={submenuOffset} className={submenuClass}>
-                    {fileModes(files, files.reach === 'all' ? ui("Can look through all of your Files") : ui("Can use the items you mention"))}
+                    {fileModes(files)}
                     {filesAccess(files)}
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
               )}
-              <DropdownMenuSub onOpenChange={fitSubmenu}>
-                <DropdownMenuSubTrigger disabled={disabled} className="items-start">
-                  <AccessRow icon={Laptop} label={ui("This computer")} summary={computerSummary} />
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent sideOffset={submenuOffset} className={submenuClass}>
-                  {/* One option is always chosen: Off, or what the agent may do on this computer. */}
-                  <DropdownMenuGroup aria-label={ui("This computer")}>
-                    {radio('off', !computer.active, () => { if (computer.active) computer.onOff() },
-                      <ChoiceRow icon={CircleOff} label={t('chat.computerOff')} checked={!computer.active} />)}
-                    {COMPUTER_ACCESS_MODES.map((access) => {
-                      const copy = computerAccessCopy(access)
-                      const checked = computer.active && computer.access === access
-                      return radio(access, checked, () => { if (!checked) computer.onAccess(access) },
-                        <ChoiceRow icon={COMPUTER_ACCESS_ICONS[access]} label={copy.label} description={copy.description} checked={checked} />)
-                    })}
-                  </DropdownMenuGroup>
-                  {/* A folder only means something once the computer is in use, so it is offered then. */}
-                  {computer.active && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuGroup aria-label={ui("Folder")}>
-                        {/* Full access only starts in its folder; the other modes stay inside theirs. */}
-                        <DropdownMenuLabel className={mutedLabel}>{computer.access === 'full' ? ui("Starting folder") : ui("Folder")}</DropdownMenuLabel>
-                        {computer.folder && radio(computer.folder.path, true, () => undefined,
-                          <ChoiceRow icon={Folder} label={computer.folder.name} checked />, computer.folder.path)}
-                        {computer.recentFolders?.map((folder) => radio(folder.path, false, () => computer.onFolder(folder),
-                          <ChoiceRow icon={Folder} label={folder.name} checked={false} />, folder.path))}
-                        {computer.access === 'full' && radio('none', !computer.folder, () => { if (computer.folder) computer.onFolder(null) },
-                          <ChoiceRow icon={FolderX} label={ui("No folder")} checked={!computer.folder} />)}
-                        <DropdownMenuItem onSelect={choose(computer.onChooseFolder)} className="gap-1.5">
-                          <FolderOpen className="size-4 opacity-70" />
-                          {ui("Choose folder…")}
-                        </DropdownMenuItem>
-                      </DropdownMenuGroup>
-                    </>
-                  )}
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
+              {computer && (
+                <DropdownMenuSub onOpenChange={fitSubmenu}>
+                  <DropdownMenuSubTrigger disabled={disabled} className="items-start">
+                    <AccessRow icon={Laptop} label={ui("This computer")} summary={computerSummary} />
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent sideOffset={submenuOffset} className={submenuClass}>
+                    {/* One option is always chosen: Off, or what the agent may do on this computer. */}
+                    <DropdownMenuGroup aria-label={ui("This computer")}>
+                      {radio('off', !computer.active, () => { if (computer.active) computer.onOff() },
+                        <ChoiceRow icon={CircleOff} label={t('chat.computerOff')} checked={!computer.active} />)}
+                      {COMPUTER_ACCESS_MODES.map((access) => {
+                        const copy = computerAccessCopy(access)
+                        const checked = computer.active && computer.access === access
+                        return radio(access, checked, () => { if (!checked) computer.onAccess(access) },
+                          <ChoiceRow icon={COMPUTER_ACCESS_ICONS[access]} label={copy.label} description={copy.description} checked={checked} />)
+                      })}
+                    </DropdownMenuGroup>
+                    {/* A folder only means something once the computer is in use, so it is offered then. */}
+                    {computer.active && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuGroup aria-label={ui("Folder")}>
+                          {/* Full access only starts in its folder; the other modes stay inside theirs. */}
+                          <DropdownMenuLabel className={mutedLabel}>{computer.access === 'full' ? ui("Starting folder") : ui("Folder")}</DropdownMenuLabel>
+                          {computer.folder && radio(computer.folder.path, true, () => undefined,
+                            <ChoiceRow icon={Folder} label={computer.folder.name} checked />, computer.folder.path)}
+                          {computer.recentFolders?.map((folder) => radio(folder.path, false, () => computer.onFolder(folder),
+                            <ChoiceRow icon={Folder} label={folder.name} checked={false} />, folder.path))}
+                          {computer.access === 'full' && radio('none', !computer.folder, () => { if (computer.folder) computer.onFolder(null) },
+                            <ChoiceRow icon={FolderX} label={ui("No folder")} checked={!computer.folder} />)}
+                          <DropdownMenuItem onSelect={choose(computer.onChooseFolder)} className="gap-1.5">
+                            <FolderOpen className="size-4 opacity-70" />
+                            {ui("Choose folder…")}
+                          </DropdownMenuItem>
+                        </DropdownMenuGroup>
+                      </>
+                    )}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+              )}
             </DropdownMenuGroup>
           </>
         )}
