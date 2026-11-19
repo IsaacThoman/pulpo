@@ -7,7 +7,7 @@ import { COMPUTER_OPERATION_OUTPUT_MAX_CHARACTERS, type ComputerOperation, type 
 import { readTextFile, resolveReadableVmPath } from '../../../../packages/workspace-daemon/src/read'
 import { saveLargeOutput } from '../../../../packages/workspace-daemon/src/saved-output'
 import { ComputerError } from './errors'
-import { killProcessTree, shellInvocation, type CommandShell, type Spawn } from './platform'
+import { forceKillGroup, killProcessTree, shellInvocation, type CommandShell, type Spawn } from './platform'
 import { findFiles, grepFiles } from './search'
 
 /**
@@ -22,6 +22,8 @@ const DEFAULT_TIMEOUT_MS = 600_000
 const MAX_TIMEOUT_MS = 3_600_000
 const MAX_POLL_WAIT_MS = 25_000
 const OUTPUT_POLL_INTERVAL_MS = 250
+/** A cancelled command that ignores the polite signal is killed after this long. */
+const KILL_GRACE_MS = 5_000
 /** Finished operations are kept this long for a final poll, then forgotten. */
 const FINISHED_RETENTION_MS = 30 * 60_000
 
@@ -48,6 +50,8 @@ export interface OperationsOptions {
   scriptDir: string
   spawn?: Spawn
   now?: () => number
+  /** How long a cancelled command gets to stop before it is killed; KILL_GRACE_MS unless a test shortens it. */
+  killGraceMs?: number
 }
 
 function operationKey(sessionId: string, id: string): string { return `${sessionId}\0${id}` }
@@ -138,22 +142,30 @@ export class Operations {
     return this.view(key, operation)
   }
 
-  cancel(sessionId: string, id: string): ComputerOperation {
+  /** `now`: the app is quitting and cannot wait for a command to stop politely. */
+  cancel(sessionId: string, id: string, options: { now?: boolean } = {}): ComputerOperation {
     const key = operationKey(sessionId, id)
     const operation = this.find(sessionId, id)
     // As in the daemon: a cancelled operation reports `cancelled` whatever it was doing.
     operation.status = 'cancelled'
     this.wake(key)
     const child = this.live.get(key)?.child
-    if (child) killProcessTree(this.options.platform, child, 'SIGTERM', this.spawn)
+    if (child) {
+      const { platform } = this.options
+      const { pid } = child
+      killProcessTree(platform, child, options.now ? 'SIGKILL' : 'SIGTERM', this.spawn)
+      // A command may ignore the polite signal, or leave something running after its shell is gone.
+      if (options.now) forceKillGroup(platform, pid)
+      else setTimeout(() => forceKillGroup(platform, pid), this.options.killGraceMs ?? KILL_GRACE_MS).unref()
+    }
     return this.view(key, operation)
   }
 
   /** Ends every running operation of a session whose reply is over. */
-  cancelSession(sessionId: string): void {
+  cancelSession(sessionId: string, options: { now?: boolean } = {}): void {
     for (const [key, operation] of this.operations) {
       if (operation.sessionId !== sessionId) continue
-      if (operation.status === 'running') this.cancel(sessionId, operation.id)
+      if (operation.status === 'running') this.cancel(sessionId, operation.id, options)
       if (!this.live.has(key)) this.operations.delete(key)
     }
   }

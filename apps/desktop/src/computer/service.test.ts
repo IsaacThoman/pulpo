@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -159,6 +159,44 @@ describe('grants and sessions', () => {
     h.identity.session = { ...h.identity.session!, token: 'b'.repeat(43) }
     await h.service.sessionChanged()
     expect(await h.service.sessions()).toEqual([])
+  })
+
+  it('keeps a running session through a network blip, and ends it when the sign-in changes while offline', async () => {
+    const h = harness(server.origin)
+    await h.service.allowFullAccess()
+    const sessionId = randomUUID()
+    await h.service.begin({ sessionId, access: 'full', folder: null })
+    // The instance stops answering who the token belongs to; the stored sign-in is the same.
+    const known = h.identity.users
+    h.identity.users = {}
+    await h.service.sessionChanged()
+    expect(await h.service.sessions()).toEqual([sessionId])
+    // Another account signs in while the instance still cannot be asked.
+    h.identity.session = { ...h.identity.session!, token: 'b'.repeat(43) }
+    await h.service.sessionChanged()
+    expect(await h.service.sessions()).toEqual([])
+    h.identity.users = known
+  })
+
+  it('takes back full access and forgets a folder, ending the sessions that used them', async () => {
+    const h = harness(server.origin)
+    const folder = path.join(home, 'project')
+    await mkdir(folder, { recursive: true })
+    await grantFolder(h, folder)
+    await h.service.allowFullAccess()
+    const full = randomUUID(); const reading = randomUUID()
+    await h.service.begin({ sessionId: full, access: 'full', folder: null })
+    await h.service.begin({ sessionId: reading, access: 'read', folder })
+
+    await h.service.revokeFullAccess()
+    expect(await h.service.sessions()).toEqual([reading])
+    expect(await h.service.status()).toMatchObject({ fullAccess: false })
+    expect(await h.service.begin({ sessionId: randomUUID(), access: 'full', folder: null })).toEqual({ ok: false, reason: 'full_access_not_allowed' })
+
+    await h.service.forgetFolder(folder)
+    expect(await h.service.sessions()).toEqual([])
+    expect((await h.service.status()).folders).toEqual([])
+    expect(await h.service.begin({ sessionId: randomUUID(), access: 'read', folder })).toEqual({ ok: false, reason: 'folder_not_allowed' })
   })
 })
 
@@ -363,6 +401,103 @@ describe('folder modes', () => {
       ['mkdir', 'docs/guides', 'applied'], ['move', 'README.md', 'applied'], ['remove', 'src', 'applied'],
     ])
     expect(h.changed).toHaveBeenCalled()
+  })
+
+  it('never changes the folder itself or anything through a symbolic link', async () => {
+    const sessionId = await session('write')
+    const change = (value: Record<string, unknown>) => call(h, sessionId, 'folder.change', { responseId: randomUUID(), change: value })
+    await symlink(folder, path.join(folder, 'self'))
+    await symlink(path.join(folder, 'src'), path.join(folder, 'sources'))
+    // `rm -r self` must not send the whole shared folder to the trash, nor `rm -r sources` the real src.
+    for (const name of ['self', 'sources']) {
+      expect((await refused(change({ kind: 'remove', path: name, recursive: true }))).code).toBe('not_allowed')
+      expect((await refused(change({ kind: 'move', from: name, to: 'elsewhere' }))).code).toBe('not_allowed')
+    }
+    expect((await refused(put(sessionId, 'sources/a.ts', 'through a link', sha('export const a = 1\n')))).code).toBe('not_allowed')
+    expect((await refused(change({ kind: 'mkdir', path: 'self/new' }))).code).toBe('not_allowed')
+    expect(h.trash).not.toHaveBeenCalled()
+    expect(await readFile(path.join(folder, 'src', 'a.ts'), 'utf8')).toBe('export const a = 1\n')
+    // Reading through a link that stays inside the folder is still fine.
+    expect(await ok(call(h, sessionId, 'folder.read', { path: 'sources/a.ts', maxBytes: 1_000 }))).toMatchObject({ text: 'export const a = 1\n' })
+  })
+
+  it('does not accept a suggestion whose path has become a link since', async () => {
+    const sessionId = await session('suggest')
+    expect(await ok(call(h, sessionId, 'folder.change', { responseId: randomUUID(), change: { kind: 'remove', path: 'src', recursive: true } }))).toMatchObject({ status: 'suggested' })
+    await rename(path.join(folder, 'src'), path.join(folder, 'real-src'))
+    await symlink(folder, path.join(folder, 'src'))
+    const [pending] = await h.service.listChanges({ sessionIds: [sessionId] })
+    await expect(h.service.acceptChanges([pending!.id])).rejects.toThrow(/symbolic link/)
+    expect(h.trash).not.toHaveBeenCalled()
+  })
+
+  it('refuses every change inside .git, where a config or hook would make git run things', async () => {
+    const sessionId = await session('write')
+    const change = (value: Record<string, unknown>) => call(h, sessionId, 'folder.change', { responseId: randomUUID(), change: value })
+    for (const target of ['.git/config', '.git/hooks/pre-commit', 'src/.GIT/config']) {
+      const answer = await refused(put(sessionId, target, '[core]\n\tfsmonitor = touch /tmp/pwned\n', null, { force: true }))
+      expect(answer).toMatchObject({ code: 'not_allowed', message: expect.stringContaining('.git') })
+    }
+    expect((await refused(change({ kind: 'mkdir', path: '.git/hooks', parents: true }))).code).toBe('not_allowed')
+    expect((await refused(change({ kind: 'move', from: 'README.md', to: '.git/README.md' }))).code).toBe('not_allowed')
+    expect((await refused(change({ kind: 'remove', path: '.git', recursive: true }))).code).toBe('not_allowed')
+    expect(await readdir(path.join(folder, '.git'))).toEqual([])
+    // Suggest mode refuses too: accepting is one click away.
+    const suggesting = await session('suggest')
+    expect((await refused(put(suggesting, '.git/config', 'x', null))).code).toBe('not_allowed')
+    // Looking inside is still allowed.
+    expect(await ok(call(h, sessionId, 'folder.list', { path: '.git', depth: 1, limit: 10 }))).toMatchObject({ entries: [] })
+  })
+
+  it.skipIf(process.platform === 'win32')('keeps a replaced file\'s permissions, directly and when a suggestion is accepted', async () => {
+    const script = path.join(folder, 'build.sh')
+    await writeFile(script, '#!/bin/sh\necho one\n')
+    await chmod(script, 0o755)
+    const writing = await session('write')
+    expect(await ok(put(writing, 'build.sh', '#!/bin/sh\necho two\n', sha('#!/bin/sh\necho one\n')))).toMatchObject({ status: 'updated' })
+    expect((await stat(script)).mode & 0o777).toBe(0o755)
+
+    const suggesting = await session('suggest')
+    expect(await ok(put(suggesting, 'build.sh', '#!/bin/sh\necho three\n', sha('#!/bin/sh\necho two\n')))).toMatchObject({ status: 'suggested' })
+    const [pending] = await h.service.listChanges({ sessionIds: [suggesting] })
+    await h.service.acceptChanges([pending!.id])
+    expect(await readFile(script, 'utf8')).toBe('#!/bin/sh\necho three\n')
+    expect((await stat(script)).mode & 0o777).toBe(0o755)
+  })
+
+  it('reports a conflict when the user saves the file while the new bytes are still arriving', async () => {
+    const sessionId = await session('write')
+    const body = Buffer.alloc(COMPUTER_INLINE_MAX_BYTES + 5, 7)
+    const url = '/api/computer/transfers/slow?token=t'
+    server.downloads.set(url, body)
+    server.beforeDownload = async () => { await writeFile(path.join(folder, 'src', 'a.ts'), 'saved by the user meanwhile\n') }
+    try {
+      const answer = await ok(call(h, sessionId, 'folder.change', {
+        responseId: randomUUID(),
+        change: { kind: 'put', path: 'src/a.ts', transfer: { url }, sizeBytes: body.byteLength, base: sha('export const a = 1\n') },
+      }))
+      expect(answer).toMatchObject({ status: 'conflict', version: sha('saved by the user meanwhile\n') })
+    } finally { server.beforeDownload = undefined }
+    expect(await readFile(path.join(folder, 'src', 'a.ts'), 'utf8')).toBe('saved by the user meanwhile\n')
+    // Nothing is left behind beside the file.
+    expect((await readdir(path.join(folder, 'src'))).filter((name) => name.endsWith('.pulpo-part'))).toEqual([])
+  })
+
+  it('answers unchanged, not conflict, when a push is repeated after its answer was lost', async () => {
+    const sessionId = await session('write')
+    const base = sha('export const a = 1\n')
+    expect(await ok(put(sessionId, 'src/a.ts', 'new content', base))).toMatchObject({ status: 'updated' })
+    // The same push again, still naming the version it pulled.
+    expect(await ok(put(sessionId, 'src/a.ts', 'new content', base))).toMatchObject({ status: 'unchanged', version: sha('new content') })
+    expect(await ok(put(sessionId, 'src/a.ts', 'something else', base))).toMatchObject({ status: 'conflict' })
+  })
+
+  it('names the folder, never its path, in errors the agent reads', async () => {
+    const sessionId = await session('read')
+    await rm(folder, { recursive: true, force: true })
+    const answer = await refused(call(h, sessionId, 'folder.list', { path: '', depth: 1, limit: 10 }))
+    expect(answer.message).toContain('project')
+    expect(answer.message).not.toContain(home)
   })
 
   it('writes inline and transferred puts', async () => {

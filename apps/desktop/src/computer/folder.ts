@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { mkdir, open, readdir, readFile, rename, rm, stat } from 'node:fs/promises'
+import { chmod, mkdir, open, readdir, readFile, rename, rm, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import {
@@ -17,8 +17,8 @@ import type { ChangesStore, StoredChange } from './changes'
 import { versionIfFile } from './changes'
 import { ComputerError } from './errors'
 import type { ComputerAccount } from './grants'
-import { realFolder, resolveInFolder } from './paths'
-import { createLineMatcher, isSkippedFolder, looksBinary, SEARCH_MAX_FILE_BYTES, SEARCH_MAX_FILES } from './search'
+import { realFolder, resolveForChange, resolveInFolder } from './paths'
+import { createLineMatcher, isSkippedFolder, looksBinary, SEARCH_MAX_FILE_BYTES, SEARCH_MAX_FILES, SEARCH_TIME_BUDGET_MS } from './search'
 import { downloadFile, temporarySibling, transferUrl, uploadFile, writeInline } from './transfers'
 
 /**
@@ -30,8 +30,10 @@ import { downloadFile, temporarySibling, transferUrl, uploadFile, writeInline } 
  * conflict checks, and folders they would create appear too.
  */
 
-/** Longest text `folder.read` returns in one answer; it has to fit a socket message. */
-const READ_MAX_BYTES = 4 * 1024 * 1024
+/** Longest text `folder.read` returns in one answer; it has to fit a socket message even when JSON escapes swell it. */
+const READ_MAX_BYTES = 1024 * 1024
+/** A listing that walks this long stops and says it is incomplete: the main process must stay responsive. */
+const LIST_TIME_BUDGET_MS = 20_000
 
 export interface FolderSession {
   sessionId: string
@@ -70,6 +72,8 @@ export class FolderService {
   }
 
   private resolve(view: View, requested: string) { return resolveInFolder(view.root, requested, this.context.platform) }
+  /** For anything about to be created, replaced, moved or removed. */
+  private resolveChange(view: View, requested: string) { return resolveForChange(view.root, requested, this.context.platform) }
 
   /** Folders that exist only because a pending suggestion would create files in them. */
   private pendingFolders(view: View): Set<string> {
@@ -147,9 +151,11 @@ export class FolderService {
     const entries: ComputerFolderEntry[] = []
     const skipped: string[] = []
     let truncated = false
+    const deadline = Date.now() + LIST_TIME_BUDGET_MS
     const visit = async (folder: Node, depth: number): Promise<void> => {
       for (const child of await this.children(view, folder.relative, folder.absolute)) {
         if (truncated) return
+        if (Date.now() > deadline) { truncated = true; return }
         if (child.kind === 'folder' && params.depth > 1 && isSkippedFolder(child.name)) { skipped.push(child.relative); continue }
         if (child.kind === 'file' || !params.filesOnly) {
           if (entries.length >= params.limit) { truncated = true; return }
@@ -199,6 +205,8 @@ export class FolderService {
     const matches: ComputerResult<'folder.search'>['matches'] = []
     let truncated = false
     let visited = 0
+    // Matching runs on the main process, one file at a time: a slow pattern over a big folder must end.
+    const deadline = Date.now() + SEARCH_TIME_BUDGET_MS
     const searchFile = async (node: Node) => {
       visited += 1
       let bytes: Buffer
@@ -216,7 +224,7 @@ export class FolderService {
     const visit = async (folder: Node): Promise<void> => {
       for (const child of await this.children(view, folder.relative, folder.absolute)) {
         if (truncated) return
-        if (visited >= SEARCH_MAX_FILES) { truncated = true; return }
+        if (visited >= SEARCH_MAX_FILES || Date.now() > deadline) { truncated = true; return }
         if (child.kind === 'folder') { if (!isSkippedFolder(child.name)) await visit(child) } else await searchFile(child)
       }
     }
@@ -257,7 +265,7 @@ export class FolderService {
     const changes = this.context.changes
     if (change.kind === 'put') return this.put(session, view, change, base)
     if (change.kind === 'mkdir') {
-      const target = await this.resolve(view, change.path)
+      const target = await this.resolveChange(view, change.path)
       if (!target.relative) throw new ComputerError('invalid_request', 'The folder itself already exists.')
       if (target.exists) {
         if ((await stat(target.absolute)).isDirectory()) return { status: 'unchanged', message: `${target.relative} already exists.` }
@@ -272,8 +280,8 @@ export class FolderService {
       return { status: 'created', message: '' }
     }
     if (change.kind === 'move') {
-      const from = await this.resolve(view, change.from)
-      const to = await this.resolve(view, change.to)
+      const from = await this.resolveChange(view, change.from)
+      const to = await this.resolveChange(view, change.to)
       if (!from.relative || !to.relative) throw new ComputerError('invalid_request', 'The folder itself cannot be moved.')
       if (!from.exists) throw new ComputerError('not_found', `"${change.from}" does not exist in the folder${view.pending.has(from.relative) ? ' yet: it is only a pending suggestion' : ''}.`)
       if (to.exists) return { status: 'conflict', message: `"${change.to}" already exists. Remove it first or choose another name.` }
@@ -287,7 +295,7 @@ export class FolderService {
       return { status: 'updated', message: `Moved ${from.relative} to ${to.relative}.` }
     }
     // remove
-    const target = await this.resolve(view, change.path)
+    const target = await this.resolveChange(view, change.path)
     if (!target.relative) throw new ComputerError('invalid_request', 'The folder itself cannot be removed.')
     if (!target.exists) throw new ComputerError('not_found', `"${change.path}" does not exist in the folder.`)
     const metadata = await stat(target.absolute)
@@ -305,22 +313,30 @@ export class FolderService {
 
   private async put(session: FolderSession, view: View, change: Extract<ComputerFolderChange, { kind: 'put' }>, base: { sessionId: string; responseId: string; folder: string }): Promise<ComputerFolderChangeResult> {
     if (change.sizeBytes > COMPUTER_PUSH_MAX_FILE_BYTES) throw new ComputerError('too_large', `Files over ${COMPUTER_PUSH_MAX_FILE_BYTES / 1024 / 1024} MB cannot be saved to the computer.`)
-    const target = await this.resolve(view, change.path)
+    const target = await this.resolveChange(view, change.path)
     if (!target.relative) throw new ComputerError('invalid_request', 'A file path is required.')
-    if (target.exists && !(await stat(target.absolute)).isFile()) throw new ComputerError('failed', `"${change.path}" is a folder.`)
+    const existing = target.exists ? await stat(target.absolute) : null
+    if (existing && !existing.isFile()) throw new ComputerError('failed', `"${change.path}" is a folder.`)
     const current = await this.currentVersion(view, target.relative, target.absolute, target.exists)
+    const conflict = (version: string | null): ComputerFolderChangeResult => version === null
+      ? { status: 'conflict', message: `"${target.relative}" no longer exists on the computer. Push with --force to create it again.` }
+      : { status: 'conflict', message: `"${target.relative}" changed on the computer since you pulled it. Pull it again and redo your change, or push with --force to overwrite.`, version }
     if (!change.force && change.base !== current) {
-      return current === null
-        ? { status: 'conflict', message: `"${target.relative}" no longer exists on the computer. Push with --force to create it again.` }
-        : { status: 'conflict', message: `"${target.relative}" changed on the computer since you pulled it. Pull it again and redo your change, or push with --force to overwrite.`, version: current }
+      // A push repeated after its answer was lost finds its own bytes already there: that is no conflict.
+      const repeated = await this.stage(session, change)
+      try {
+        if (repeated.sha256 === current) return { status: 'unchanged', message: '', version: repeated.sha256 }
+      } finally { await repeated.dispose() }
+      return conflict(current)
     }
-    const diskVersion = target.exists ? await versionIfFile(target.absolute) : null
+    const diskVersion = existing ? await versionIfFile(target.absolute) : null
     const kind = target.exists ? 'update' : 'create'
     if (session.access === 'suggest') {
       const staged = await this.stage(session, change)
-      if (staged.sha256 === current) { await staged.dispose(); return { status: 'unchanged', message: '', version: current } }
-      await this.context.changes.suggest(session.account, { ...base, path: target.relative, kind, sizeBytes: change.sizeBytes }, { source: staged.open(), sha256: staged.sha256, sizeBytes: change.sizeBytes, diskBase: diskVersion })
-      await staged.dispose()
+      try {
+        if (staged.sha256 === current) return { status: 'unchanged', message: '', version: current }
+        await this.context.changes.suggest(session.account, { ...base, path: target.relative, kind, sizeBytes: change.sizeBytes }, { source: staged.open(), sha256: staged.sha256, sizeBytes: change.sizeBytes, diskBase: diskVersion })
+      } finally { await staged.dispose() }
       return { status: 'suggested', message: `Suggested ${kind === 'create' ? 'creating' : 'changing'} ${target.relative}. The user will accept or reject it; until then you see your version.`, version: staged.sha256 }
     }
     // Edit directly: write beside the target, verify, then rename into place.
@@ -332,12 +348,20 @@ export class FolderService {
       version = change.data !== undefined
         ? await writeInline(change.data, temporary, check)
         : await downloadFile(transferUrl(session.origin, change.transfer!.url, this.context.allowHttpLocalhost), temporary, check)
-    } catch (error) { await rm(temporary, { force: true }); throw error }
-    if (version === diskVersion && !view.pending.has(target.relative)) {
-      await rm(temporary, { force: true })
-      return { status: 'unchanged', message: '', version }
-    }
-    await rename(temporary, target.absolute)
+      if (version === diskVersion && !view.pending.has(target.relative)) {
+        await rm(temporary, { force: true })
+        return { status: 'unchanged', message: '', version }
+      }
+      // The bytes took a while to arrive; a save the user made meanwhile must not be lost.
+      const latest = await versionIfFile(target.absolute)
+      if (!change.force && latest !== diskVersion) {
+        await rm(temporary, { force: true })
+        return conflict(latest)
+      }
+      // The new file takes the place of the old one, so it keeps its permissions (a script stays executable).
+      if (existing) await chmod(temporary, existing.mode & 0o7777)
+      await rename(temporary, target.absolute)
+    } catch (error) { await rm(temporary, { force: true }).catch(() => undefined); throw error }
     await this.context.changes.recordApplied(session.account, { ...base, path: target.relative, kind: target.exists ? 'update' : 'create', sizeBytes: change.sizeBytes })
     return { status: target.exists ? 'updated' : 'created', message: '', version }
   }

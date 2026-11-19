@@ -1,8 +1,8 @@
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createLineMatcher, findFiles, globMatcher, grepFiles } from './search'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { createLineMatcher, findFiles, globMatcher, grepFiles, SEARCH_TIME_BUDGET_MS } from './search'
 
 describe('globMatcher', () => {
   it('matches like ripgrep --glob', () => {
@@ -67,6 +67,18 @@ describe('find and grep', () => {
     })
     await expect(grepFiles(root, { pattern: 'needle', path: 'src/a.ts' })).resolves.toMatchObject({ output: 'src/a.ts:1:const needle = 1' })
     await expect(grepFiles(root, { pattern: '' })).rejects.toMatchObject({ code: 'invalid_request' })
+  })
+
+  it('stops a search that runs past its time budget, and says so', async () => {
+    const started = Date.now()
+    let calls = 0
+    // The clock jumps past the budget once the walk is under way.
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => { calls += 1; return calls <= 2 ? started : started + SEARCH_TIME_BUDGET_MS + 1 })
+    try {
+      const result = await grepFiles(root, { pattern: 'needle' })
+      expect(result.complete).toBe(false)
+      expect(result.output).toContain(`[Stopped after ${SEARCH_TIME_BUDGET_MS / 1000} seconds; narrow the path or pattern.]`)
+    } finally { clock.mockRestore() }
   })
 
   it('stops when cancelled', async () => {

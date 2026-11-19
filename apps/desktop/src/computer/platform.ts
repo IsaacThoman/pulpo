@@ -120,6 +120,16 @@ export function killProcessTree(platform: NodeJS.Platform, child: ChildProcess, 
   }
 }
 
+/**
+ * Kills whatever is left of a command's process group on macOS/Linux, where the shell may be gone
+ * while something it started lives on (or ignored the polite signal). Windows needs none of this:
+ * `taskkill /T /F` already forces the whole tree.
+ */
+export function forceKillGroup(platform: NodeJS.Platform, pid: number | undefined): void {
+  if (platform === 'win32' || !pid) return
+  try { process.kill(-pid, 'SIGKILL') } catch { /* nothing left */ }
+}
+
 const ENV_MARK = '__PULPO_ENV_7f3a__'
 
 /** Parses `env -0` output printed between two marks, ignoring anything the shell's startup files printed around it. */

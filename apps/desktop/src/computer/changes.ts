@@ -1,11 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { Readable } from 'node:stream'
 import type { ComputerChange, ComputerChangeDetail } from '@pulpo/contracts'
 import { accountDirectoryName, type ComputerAccount } from './grants'
-import { realFolder, resolveInFolder } from './paths'
+import { realFolder, resolveForChange, resolveInFolder } from './paths'
 import { temporarySibling, writeVerified } from './transfers'
 
 /**
@@ -250,15 +250,19 @@ export class ChangesStore {
 
   private async apply(account: ComputerAccount, change: StoredChange, overwrite: boolean): Promise<'accepted' | 'conflict'> {
     const root = await realFolder(change.folder)
-    const target = await resolveInFolder(root, change.path, this.options.platform)
+    // The same rules as when the change was suggested: the folder may have changed since.
+    const target = await resolveForChange(root, change.path, this.options.platform)
     if (carriesFile(change)) {
-      const current = target.exists ? await versionIfFile(target.absolute) : null
-      if (target.exists && current === null) throw new Error('A folder is in the way')
+      const existing = target.exists ? await stat(target.absolute) : null
+      const current = existing ? await versionIfFile(target.absolute) : null
+      if (existing && current === null) throw new Error('A folder is in the way')
       if (!overwrite && current !== (change.diskBase ?? null) && current !== change.sha256) return 'conflict'
       await mkdir(path.dirname(target.absolute), { recursive: true })
       const temporary = temporarySibling(target.absolute)
       try {
         await copyFile(this.blobPath(account, change.id), temporary)
+        // The new file takes the place of the old one, so it keeps its permissions.
+        if (existing) await chmod(temporary, existing.mode & 0o7777)
         await rename(temporary, target.absolute)
       } catch (error) {
         await rm(temporary, { force: true }).catch(() => undefined)
@@ -270,7 +274,7 @@ export class ChangesStore {
     if (change.kind === 'remove') { if (target.exists) await this.options.trash(target.absolute); return 'accepted' }
     // move
     if (!target.exists || change.to === undefined) return 'conflict'
-    const destination = await resolveInFolder(root, change.to, this.options.platform)
+    const destination = await resolveForChange(root, change.to, this.options.platform)
     if (destination.exists && !overwrite) return 'conflict'
     await mkdir(path.dirname(destination.absolute), { recursive: true })
     await rename(target.absolute, destination.absolute)

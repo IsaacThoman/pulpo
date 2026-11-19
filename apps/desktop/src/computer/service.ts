@@ -1,4 +1,4 @@
-import { mkdir, readdir, rm, stat } from 'node:fs/promises'
+import { mkdir, readdir, realpath, rm, stat } from 'node:fs/promises'
 import path from 'node:path'
 import {
   computerAccessSchema,
@@ -47,6 +47,8 @@ interface Session {
   /** The granted folder; for full access, null means the default folder. */
   folder: string | null
   account: ComputerAccount
+  /** The sign-in (instance and token) the session was begun under; it ends when that sign-in does. */
+  signIn: string
   /** Instance the session was begun under: transfers go there and nowhere else. */
   origin: string
   lastUsedAt: number
@@ -156,7 +158,8 @@ export class ComputerService implements Api {
       throw new Error('Invalid computer session.')
     }
     const account = await this.options.accounts.current()
-    if (!account) return { ok: false, reason: 'signed_out' }
+    const signIn = await this.options.accounts.signIn()
+    if (!account || !signIn) return { ok: false, reason: 'signed_out' }
     const grants = await this.grants.get(account)
     const folder = value.folder === null || value.folder === undefined ? null : path.resolve(value.folder)
     if (folder !== null && (!path.isAbsolute(value.folder!) || !grants.folders.includes(folder))) return { ok: false, reason: 'folder_not_allowed' }
@@ -167,14 +170,14 @@ export class ComputerService implements Api {
     const existing = this.sessionsById.get(value.sessionId)
     if (existing && (existing.access !== access.data || existing.folder !== folder || accountKey(existing.account) !== accountKey(account))) this.operations.cancelSession(existing.id)
     this.sessionsById.delete(value.sessionId)
-    this.sessionsById.set(value.sessionId, { id: value.sessionId, access: access.data, folder, account, origin: account.origin, lastUsedAt: this.now() })
+    this.sessionsById.set(value.sessionId, { id: value.sessionId, access: access.data, folder, account, signIn, origin: account.origin, lastUsedAt: this.now() })
     while (this.sessionsById.size > MAX_SESSIONS) this.endSession(this.sessionsById.keys().next().value!)
     return { ok: true }
   }
 
-  private endSession(sessionId: string): void {
+  private endSession(sessionId: string, options: { now?: boolean } = {}): void {
     if (!this.sessionsById.delete(sessionId)) return
-    this.operations.cancelSession(sessionId)
+    this.operations.cancelSession(sessionId, options)
   }
 
   async end(sessionId: string): Promise<void> {
@@ -193,15 +196,41 @@ export class ComputerService implements Api {
 
   /** The app is quitting: nothing it started for the agent keeps running after it. */
   shutdown(): void {
-    for (const sessionId of [...this.sessionsById.keys()]) this.endSession(sessionId)
+    for (const sessionId of [...this.sessionsById.keys()]) this.endSession(sessionId, { now: true })
   }
 
-  /** The signed-in session changed: sessions of any other account (or of nobody) end now. */
+  /**
+   * The stored sign-in changed: sessions begun under any other one (or left behind by a sign-out)
+   * end now. This asks nothing of the instance, so a network blip neither ends a running reply
+   * nor leaves another account's sessions served while an answer is awaited.
+   */
   async sessionChanged(): Promise<void> {
     this.options.accounts.forget()
-    const account = await this.options.accounts.current().catch(() => null)
+    const signIn = await this.options.accounts.signIn().catch(() => null)
     for (const session of [...this.sessionsById.values()]) {
-      if (!account || accountKey(account) !== accountKey(session.account)) this.endSession(session.id)
+      if (session.signIn !== signIn) this.endSession(session.id)
+    }
+  }
+
+  /** Takes full access back; the next use shows the native confirmation again. */
+  async revokeFullAccess(): Promise<void> {
+    const account = await this.options.accounts.current()
+    if (!account) return
+    await this.grants.revokeFullAccess(account)
+    for (const session of [...this.sessionsById.values()]) {
+      if (session.access === 'full' && accountKey(session.account) === accountKey(account)) this.endSession(session.id)
+    }
+  }
+
+  /** Forgets an allowed folder; it must be chosen in the folder dialog again to be used. */
+  async forgetFolder(folder: string): Promise<void> {
+    if (typeof folder !== 'string' || !path.isAbsolute(folder)) return
+    const account = await this.options.accounts.current()
+    if (!account) return
+    const target = path.resolve(folder)
+    await this.grants.removeFolder(account, target)
+    for (const session of [...this.sessionsById.values()]) {
+      if (session.folder === target && accountKey(session.account) === accountKey(account)) this.endSession(session.id)
     }
   }
 
@@ -224,12 +253,31 @@ export class ComputerService implements Api {
       const params = computerMethods[method].params.safeParse(request.data.params)
       if (!params.success) return fail('invalid_request', `Invalid parameters for ${method}: ${params.error.issues.map((issue) => `${issue.path.join('.') || 'params'}: ${issue.message}`).join('; ')}`.slice(0, 1_000))
       session.lastUsedAt = this.now()
-      const result = await this.run(session, method, params.data)
-      return { id, sessionId, ok: true, result }
+      try {
+        const result = await this.run(session, method, params.data)
+        return { id, sessionId, ok: true, result }
+      } catch (error) {
+        const { code, message } = computerErrorOf(error)
+        return fail(code, session.access === 'full' ? message : await this.withoutFolderPath(session, message))
+      }
     } catch (error) {
       const { code, message } = computerErrorOf(error)
       return fail(code, message)
     }
+  }
+
+  /**
+   * In the folder modes the agent, a cloud sandbox, only ever learns the folder's name. Errors
+   * raised by the file system carry absolute paths, so the folder's own path is replaced by its name.
+   */
+  private async withoutFolderPath(session: Session, message: string): Promise<string> {
+    if (!session.folder) return message
+    const name = path.basename(session.folder) || 'the folder'
+    const real = await realpath(session.folder).catch(() => session.folder!)
+    let result = message
+    // Longest first, so one path is not cut by the other's replacement.
+    for (const folder of [...new Set([real, session.folder])].sort((left, right) => right.length - left.length)) result = result.split(folder).join(name)
+    return result
   }
 
   private async sessionCwd(session: Session): Promise<string> {

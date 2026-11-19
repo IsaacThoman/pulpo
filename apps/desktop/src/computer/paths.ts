@@ -94,6 +94,50 @@ export async function resolveInFolder(root: string, requested: string, platform:
   }
 }
 
+/**
+ * Whether a folder-relative path is, or goes through, a symbolic link (or a Windows junction).
+ * Reads may follow a link that stays inside the folder; a change must name the real thing, or
+ * removing `link` would remove what it points at, the folder itself included.
+ */
+export async function goesThroughLink(root: string, segments: readonly string[]): Promise<boolean> {
+  let current = root
+  for (const segment of segments) {
+    current = path.join(current, segment)
+    let metadata
+    try { metadata = await lstat(current) } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'ENOENT' || code === 'ENOTDIR') return false
+      throw error
+    }
+    if (metadata.isSymbolicLink()) return true
+  }
+  return false
+}
+
+/** Git's own folder: writing there (config, hooks) would make git run things on the user's computer. */
+function isGitFolderName(segment: string, platform: NodeJS.Platform): boolean {
+  const name = segment.toLowerCase()
+  // NTFS short names alias `.git` as `GIT~1`.
+  return name === '.git' || (platform === 'win32' && /^git~\d+$/.test(name))
+}
+
+/**
+ * Resolves a path that is about to be created, replaced, moved or removed. On top of the
+ * confinement every path gets, a change may not name the folder itself, anything inside `.git`,
+ * or a path that is or goes through a symbolic link.
+ */
+export async function resolveForChange(root: string, requested: string, platform: NodeJS.Platform = process.platform): Promise<ResolvedFolderPath> {
+  const segments = folderPathSegments(requested, platform)
+  if (segments.some((segment) => isGitFolderName(segment, platform))) {
+    throw new ComputerError('not_allowed', `"${requested}" is inside .git, which cannot be changed from here. Ask the user to run git themselves.`)
+  }
+  const target = await resolveInFolder(root, requested, platform)
+  if (target.relative && (target.absolute === root || await goesThroughLink(root, segments))) {
+    throw new ComputerError('not_allowed', `"${requested}" is or goes through a symbolic link; change the real file or folder instead.`)
+  }
+  return target
+}
+
 /** Joins a folder-relative path for display and storage. */
 export function joinFolderPath(...parts: string[]): string {
   return parts.filter(Boolean).join('/')

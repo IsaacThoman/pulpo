@@ -18,6 +18,8 @@ export function registerComputerIpc(ipcMain: Pick<IpcMain, 'handle'>, service: C
   channel('status', () => service.status())
   channel('choose-folder', () => service.chooseFolder())
   channel('allow-full-access', () => service.allowFullAccess())
+  channel('revoke-full-access', () => service.revokeFullAccess())
+  channel('forget-folder', (folder: string) => service.forgetFolder(folder))
   channel('begin', (session: Parameters<ComputerService['begin']>[0]) => service.begin(session))
   channel('end', (sessionId: string) => service.end(sessionId))
   channel('sessions', () => service.sessions())

@@ -38,6 +38,15 @@ export class AccountResolver {
     return { origin: session.instanceUrl, userId }
   }
 
+  /**
+   * Identifies the stored sign-in (instance and token) without asking the instance, or null when
+   * nobody is signed in. A computer session belongs to the sign-in it was begun under.
+   */
+  async signIn(): Promise<string | null> {
+    const session = await this.options.loadSession()
+    return session ? tokenKey(session.instanceUrl, session.token) : null
+  }
+
   /** The session changed; tokens that are gone should not keep their ids. */
   forget(): void { this.userIds.clear() }
 }

@@ -15,7 +15,12 @@ export const SEARCH_MAX_FILE_BYTES = 10 * 1024 * 1024
 const SEARCH_MAX_LINE_CHARACTERS = 2_000
 const BINARY_SAMPLE_BYTES = 4_096
 /** How long one file's matching may take before the pattern is blamed. */
-const MATCH_TIMEOUT_MS = 2_000
+const MATCH_TIMEOUT_MS = 1_000
+/**
+ * How long one search may run in all. Matching happens on the main process, a file at a time, so a
+ * pattern that is merely slow over a big folder must end and say it is incomplete.
+ */
+export const SEARCH_TIME_BUDGET_MS = 15_000
 
 const SKIPPED = new Set<string>(COMPUTER_SKIPPED_FOLDERS)
 
@@ -161,7 +166,12 @@ export async function findFiles(cwd: string, args: { pattern?: unknown; path?: u
   const matches = globMatcher(typeof args.pattern === 'string' && args.pattern ? args.pattern : '*', platform === 'win32')
   const output = new OutputCollector()
   let visited = 0
-  const stop = () => output.full || visited >= SEARCH_MAX_FILES || Boolean(shouldStop?.())
+  const deadline = Date.now() + SEARCH_TIME_BUDGET_MS
+  let timedOut = false
+  const stop = () => {
+    if (Date.now() > deadline) timedOut = true
+    return timedOut || output.full || visited >= SEARCH_MAX_FILES || Boolean(shouldStop?.())
+  }
   const metadata = await stat(root)
   if (metadata.isFile()) {
     if (matches(path.basename(root))) output.add(base)
@@ -174,6 +184,7 @@ export async function findFiles(cwd: string, args: { pattern?: unknown; path?: u
   }
   const notes: string[] = []
   if (visited >= SEARCH_MAX_FILES) notes.push(`[Stopped after ${SEARCH_MAX_FILES} files; narrow the path or pattern.]`)
+  if (timedOut) notes.push(`[Stopped after ${SEARCH_TIME_BUDGET_MS / 1000} seconds; narrow the path or pattern.]`)
   if (output.full) notes.push(`[Output stopped at ${SEARCH_MAX_OUTPUT_BYTES / 1024 / 1024} MB; narrow the path or pattern.]`)
   return { output: output.text(notes), exitCode: output.count ? 0 : 1, complete: notes.length === 0 }
 }
@@ -187,7 +198,12 @@ export async function grepFiles(cwd: string, args: { pattern?: unknown; path?: u
   const match = createLineMatcher(pattern, { ignoreCase: args.ignoreCase === true })
   const output = new OutputCollector()
   let visited = 0
-  const stop = () => output.full || visited >= SEARCH_MAX_FILES || Boolean(shouldStop?.())
+  const deadline = Date.now() + SEARCH_TIME_BUDGET_MS
+  let timedOut = false
+  const stop = () => {
+    if (Date.now() > deadline) timedOut = true
+    return timedOut || output.full || visited >= SEARCH_MAX_FILES || Boolean(shouldStop?.())
+  }
   const searchFile = async (absolute: string, display: string) => {
     visited += 1
     let text: string | null
@@ -203,6 +219,7 @@ export async function grepFiles(cwd: string, args: { pattern?: unknown; path?: u
   else for await (const entry of walk(root, { shouldStop: stop })) if (entry.kind === 'file') await searchFile(entry.absolute, displayJoin(base, entry.relative))
   const notes: string[] = []
   if (visited >= SEARCH_MAX_FILES) notes.push(`[Stopped after ${SEARCH_MAX_FILES} files; narrow the path or pattern.]`)
+  if (timedOut) notes.push(`[Stopped after ${SEARCH_TIME_BUDGET_MS / 1000} seconds; narrow the path or pattern.]`)
   if (output.full) notes.push(`[Output stopped at ${SEARCH_MAX_OUTPUT_BYTES / 1024 / 1024} MB; narrow the path or pattern.]`)
   return { output: output.text(notes), exitCode: output.count ? 0 : 1, complete: notes.length === 0 }
 }

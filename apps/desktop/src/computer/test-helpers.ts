@@ -7,6 +7,8 @@ export interface TransferServer {
   uploads: Map<string, Buffer>
   downloads: Map<string, Buffer>
   requests: Array<{ method: string; url: string; headers: IncomingHttpHeaders }>
+  /** Runs before a download is answered, to stand in for something happening while bytes travel. */
+  beforeDownload?: (url: string) => Promise<void>
   close: () => Promise<void>
 }
 
@@ -25,15 +27,17 @@ export async function startTransferServer(): Promise<TransferServer> {
     }
     const body = downloads.get(request.url ?? '')
     if (!body) { response.writeHead(404).end(); return }
+    await transfers.beforeDownload?.(request.url ?? '')
     response.writeHead(200, { 'content-length': body.byteLength }).end(body)
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const { port } = server.address() as AddressInfo
-  return {
+  const transfers: TransferServer = {
     origin: `http://127.0.0.1:${port}`,
     uploads,
     downloads,
     requests,
     close: () => new Promise((resolve) => server.close(() => resolve())),
   }
+  return transfers
 }

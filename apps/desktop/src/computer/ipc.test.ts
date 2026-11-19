@@ -14,7 +14,8 @@ describe('computer IPC', () => {
     expect([...handlers.keys()].sort()).toEqual([
       'desktop:computer:allow-full-access', 'desktop:computer:begin', 'desktop:computer:changes:accept', 'desktop:computer:changes:get',
       'desktop:computer:changes:list', 'desktop:computer:changes:reject', 'desktop:computer:choose-folder', 'desktop:computer:end',
-      'desktop:computer:handle', 'desktop:computer:sessions', 'desktop:computer:status',
+      'desktop:computer:forget-folder', 'desktop:computer:handle', 'desktop:computer:revoke-full-access', 'desktop:computer:sessions',
+      'desktop:computer:status',
     ])
     for (const handler of handlers.values()) {
       await expect(handler({ trusted: false } as unknown as IpcMainInvokeEvent)).rejects.toThrow('Untrusted renderer.')

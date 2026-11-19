@@ -97,4 +97,12 @@ export class GrantsStore {
   allowFullAccess(account: ComputerAccount): Promise<AccountGrants> {
     return this.update(account, (grants) => { grants.fullAccess = true })
   }
+
+  revokeFullAccess(account: ComputerAccount): Promise<AccountGrants> {
+    return this.update(account, (grants) => { grants.fullAccess = false })
+  }
+
+  removeFolder(account: ComputerAccount, folder: string): Promise<AccountGrants> {
+    return this.update(account, (grants) => { grants.folders = grants.folders.filter((existing) => existing !== folder) })
+  }
 }

@@ -113,6 +113,31 @@ describe.skipIf(!posix)('Operations', () => {
   })
 })
 
+describe.skipIf(!posix)('Operations that ignore a polite stop', () => {
+  it('kills a cancelled command that ignores SIGTERM, and what it started', async () => {
+    const base = await mkdtemp(path.join(os.tmpdir(), 'pulpo-ops-kill-'))
+    const operations = new Operations({ platform: process.platform, savedOutputDir: path.join(base, 'saved'), scriptDir: path.join(base, 'scripts'), killGraceMs: 200 })
+    const context: OperationContext = { sessionId: 's1', cwd: base, shell: { path: '/bin/sh', name: 'sh' }, env: async () => ({ PATH: '/usr/bin:/bin' }) }
+    const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
+    try {
+      // The shell ignores SIGTERM and keeps a child going; both print their pids first.
+      operations.start(context, 'stubborn', 'bash', { command: 'trap "" TERM; (trap "" TERM; echo child $$; sleep 60) & echo shell $$; wait' })
+      let output = ''
+      for (let attempt = 0; attempt < 50 && !/shell \d+/.test(output); attempt += 1) output = (await operations.get('s1', 'stubborn', 200)).output
+      const shellPid = Number(/shell (\d+)/.exec(output)![1])
+      expect(alive(shellPid)).toBe(true)
+      expect(operations.cancel('s1', 'stubborn').status).toBe('cancelled')
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(alive(shellPid)).toBe(true)
+      for (let attempt = 0; attempt < 50 && alive(shellPid); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(alive(shellPid)).toBe(false)
+    } finally {
+      operations.cancelSession('s1', { now: true })
+      await rm(base, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('outputForAnswer', () => {
   it('leaves short output alone', () => {
     expect(outputForAnswer('hello', 10)).toBe('hello')
