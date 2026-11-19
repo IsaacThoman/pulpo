@@ -1,10 +1,15 @@
 # This computer
 
-The desktop app can lend the agent the computer it runs on. In the Pulpo Agent menu of the composer, **Workspace** offers **Cloud** (the default) and **This computer**, with a **Folder** and an **Access** mode:
+The desktop app can lend the agent the computer it runs on. In the composer's Pulpo Agent menu, **Access** has one row for each thing the agent can reach, and each row says what it can reach there and what it may do:
+
+- **Files**: the items the chat mentions, or all of the user's Files once that was mentioned or allowed, with **Read only**, **Suggest changes** or **Edit directly**.
+- **This computer**: **Off** (the default), or one of the access modes below. Once it is on, the same submenu offers the folder.
+
+The two are chosen separately, and Files stay available whichever way the computer is used. Outside the desktop app there is no computer to offer, and the Files choices sit in the menu itself.
 
 | Access | Folder | What the agent does |
 |---|---|---|
-| **Full access** | optional; `~/Pulpo` when none is chosen | The computer is the workspace. Shell, read, write, edit, ls, find, grep, view_image and attach_file run there as the user, starting in the folder and free to leave it. No cloud workspace is used, no workspace minutes are billed, and `pulpo files` is not available. |
+| **Full access** | optional; `~/Pulpo` when none is chosen | The computer is the workspace. Shell, read, write, edit, ls, find, grep, view_image and attach_file run there as the user, starting in the folder and free to leave it. No cloud workspace is used and no workspace minutes are billed. `pulpo files` works in its commands as it does in the cloud. |
 | **Read only** / **Suggest changes** / **Edit directly** | required | The agent keeps its cloud workspace and reaches the folder with `pulpo computer` in bash, the way it reaches Files with `pulpo files`. Nothing runs on the computer. |
 
 The choice is kept per chat on that device (`localStorage`, per instance and account) and is not synced. It is offered only where `window.pulpoDesktop.computer` exists, the instance allows it (`agent.computerAccess`, on by default, exposed as `computerAccess` on `GET /api/models`) and the chat is the user's own. macOS and Windows are supported.
@@ -38,6 +43,17 @@ File bytes do not cross the socket unless they are small (up to 256 KiB, inline 
 - `find` and `grep` are implemented in Node (users do not have ripgrep) and skip `.git` and `node_modules`.
 - A computer that is not connected fails the reply when it starts, with the workspace step showing why. One that drops mid-run, or whose app was restarted and no longer knows the session, turns the tools off for the rest of the reply. Cancelling sends the command's process group SIGTERM, then SIGKILL after five seconds; quitting the app kills every command it started.
 
+### Pulpo Files in full access
+
+A full-access reply reaches the user's Files the way a cloud reply does, by running `pulpo files ls|tree|cat|grep|pull|status|push|mkdir|mv|rm` in its shell command, with the same scope, access modes, permission request and changes bar. The desktop app plays the part the workspace daemon plays in the cloud:
+
+- The app's build bundles the daemon's CLI into one file (`pulpo-cli.cjs`, from `apps/desktop/src/computer/pulpo-cli.ts`). Before a full-access session's first command the main process copies it to `<userData>/computer/bin` beside launchers (`apps/desktop/src/computer/launcher.ts`) that run it with the app's own executable as Node: `pulpo` (sh), and on Windows `pulpo.ps1`, which PowerShell picks, and `pulpo.cmd`. `ELECTRON_RUN_AS_NODE` is set inside the launchers only, never in the agent's commands.
+- Commands get that folder first on `PATH`, `PULPO_RELAY_SOCKET` (a unix socket under `<userData>/computer/relay`, or in a private temporary folder when that path is too long for one; a randomly named pipe on Windows) and `PULPO_WORKSPACE_ROOT` (`<userData>/computer/workspaces/<account>`), where the CLI keeps its copies in `files` and its manifest in `.pulpo/files.json`. The copies are per account, and the prompt and `pulpo files --help` name that folder instead of `/workspace/files`.
+- The CLI posts each request to the relay endpoint (`relay.ts`). `Operations` holds it, lists it as `relay.pending` on the operation and returns the server's long-poll early. `ComputerWorkspace.execute` runs the same Files relay as the cloud and sends the answer with `operation.relay`; only the session that started the command may answer. Pulled bytes arrive through `file.receive` and pushed files leave through `file.send`, so they move like any other file.
+- Local paths in `pull` and `push` are absolute paths on the computer in its own form (`ComputerWorkspace.localPath`); in the cloud they stay confined to `/workspace`.
+- The endpoint is open to the user's own programs only (socket mode 0600 in a 0700 folder; an unguessable pipe name on Windows), and only while a full-access command runs. Whatever uses it gets what the reply itself gets: the server holds every request to the chat's Files scope and access mode.
+- `describe` names `filesDir` only once the launchers are written and the endpoint listens. Without it the reply is told nothing about Files, as when Files are off, so an app that cannot offer them fails nothing.
+
 ## Folder modes
 
 `pulpo computer ls|tree|cat|grep|pull|status|push|mkdir|mv|rm` (`packages/workspace-daemon`, same code as `pulpo files` with a second store) mirrors the folder at `/workspace/computer` with the manifest `/workspace/.pulpo/computer.json`. Its relay requests are named `computer:<command>` and served by `apps/server/src/computer/folder-relay.ts` through `folder.list`, `folder.read`, `folder.search`, `folder.send` and `folder.change`.
@@ -54,5 +70,6 @@ The reply's `pulpo_computer_changes` item carries only counts and the session id
 ## Deploying
 
 - The workspace image must be rebuilt and rolled out for `pulpo computer` to exist in cloud workspaces. Until then the folder modes fail with the CLI's "unknown command" error; full access does not depend on the image.
+- `pulpo files` in full access comes with the desktop app, so it needs a desktop release that includes it. Older apps keep working without Files in full access. It relies on Electron's run-as-Node mode, which the app's build leaves on (no fuse turns it off).
 - Migration `0115_computer_workspace` adds `responses.computer` and `queued_messages.computer`.
 - Behind the bundled nginx, `/api/computer/transfers/` streams uploads up to 1000 MiB; other proxies need the same.
