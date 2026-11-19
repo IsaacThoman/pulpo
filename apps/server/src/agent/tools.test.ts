@@ -189,6 +189,21 @@ describe('agent workspace tools', () => {
       expect(execute.mock.calls[0]![6]).toBeUndefined()
     })
 
+    it('relays pulpo files from either shell, with the browse wait floor', async () => {
+      const request = { id: 'relay-1', command: 'ls', args: {} }
+      const execute = vi.fn(async (_id: string, _type: string, _args: unknown, _signal: unknown, _onUpdate: unknown, _onStarted: unknown,
+        relay?: (request: unknown, signal?: AbortSignal) => Promise<unknown>) => ({ output: JSON.stringify(await relay?.(request)), exitCode: 0 }))
+      const onRelay = vi.fn().mockResolvedValue({ ok: true, output: 'Notes.md' })
+      const windows = { ...mac, os: 'windows' as const, shell: 'pwsh', cwd: 'C:\\Users\\Ada\\Pulpo' }
+      for (const [computer, name] of [[mac, 'bash'], [windows, 'powershell']] as const) {
+        const tools = createWorkspaceTools({ execute } as unknown as WorkspaceManager, 600_000, undefined, undefined, undefined, onRelay, computer)
+        const result = await tools.find((tool) => tool.name === name)!.execute(`${name}-1`, { command: 'pulpo files ls', timeoutMs: 5_000 })
+        expect(onRelay).toHaveBeenLastCalledWith(`${name}-1`, request, undefined)
+        expect(result.content).toEqual([{ type: 'text', text: '{"ok":true,"output":"Notes.md"}' }])
+        expect(execute.mock.calls.at(-1)?.[2]).toEqual({ command: 'pulpo files ls', timeoutMs: 210_000 })
+      }
+    })
+
     it('stays generic before the computer is described', () => {
       const tools = createWorkspaceTools({ execute: vi.fn() } as unknown as WorkspaceManager, 1_000, undefined, undefined, undefined, undefined, null)
       const text = JSON.stringify(tools.map((tool) => tool.description))

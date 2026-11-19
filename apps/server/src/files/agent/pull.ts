@@ -3,7 +3,7 @@ import { FILE_TREE_MAX_DEPTH } from '@pulpo/contracts'
 import { db } from '../../database/client.js'
 import { getBlobStore } from '../../storage/index.js'
 import type { FileNodeRow } from '../access.js'
-import { formatSize, workspacePath, type CommandContext, type CommandOutput } from './command-context.js'
+import { formatSize, localWorkspacePath, type CommandContext, type CommandOutput } from './command-context.js'
 import { markdownVersion, readProposedMarkdown } from './docs.js'
 import { FilesCommandError, locateExisting, modeFor } from './scope.js'
 import { agentBlobView, blobVersion } from './versions.js'
@@ -56,7 +56,7 @@ async function pullFile(ctx: CommandContext, node: FileNodeRow, remote: string, 
  * arrive as Markdown of their proposed view; `data.files` is what the CLI's manifest records.
  */
 export async function pullCommand(ctx: CommandContext, args: { path: string; dest: string }): Promise<CommandOutput> {
-  const destination = workspacePath(args.dest)
+  const destination = localWorkspacePath(ctx.workspace, args.dest)
   const located = await locateExisting(ctx.scope, args.path)
   const items: Array<{ node: FileNodeRow; remote: string; local: string }> = []
   if (located.node && located.node.kind !== 'folder') {
@@ -68,7 +68,8 @@ export async function pullCommand(ctx: CommandContext, args: { path: string; des
       throw new FilesCommandError(`"${located.path || 'My files'}" holds more than ${PULL_MAX_FILES} files; pull the folders inside it one at a time`)
     }
     const prefix = located.path ? located.path.length + 1 : 0
-    for (const item of files) items.push({ node: item.node, remote: item.path, local: `${destination}/${item.path.slice(prefix)}` })
+    // Through the workspace again, so a computer's own separators are used (Files names hold no `/`, `.` or `..`).
+    for (const item of files) items.push({ node: item.node, remote: item.path, local: localWorkspacePath(ctx.workspace, `${destination}/${item.path.slice(prefix)}`) })
   }
   if (items.reduce((total, item) => total + item.node.sizeBytes, 0) > PULL_MAX_BYTES) {
     throw new FilesCommandError(`"${located.path || 'My files'}" is larger than ${formatSize(PULL_MAX_BYTES)}; pull the folders inside it one at a time`)

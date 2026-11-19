@@ -1,3 +1,4 @@
+import { posix } from 'node:path'
 import { attachmentWorkspacePath, restoredAttachmentWorkspacePath } from './policy.js'
 
 export const MAX_VIEW_IMAGE_BYTES = 20 * 1024 * 1024
@@ -60,6 +61,19 @@ export const cloudWorkspacePaths: WorkspacePaths = {
 }
 
 /**
+ * A local path the agent named for `pulpo files pull|push` in a cloud workspace. The daemon checks
+ * too, but the sandbox is the agent's, so the server never lets a path leave /workspace/ or hide
+ * `..` segments.
+ */
+export function cloudLocalPath(value: string): string {
+  const path = value.replace(/\/+$/, '')
+  if (!path.startsWith('/workspace/') || posix.normalize(path) !== path || path.includes('\0')) {
+    throw new Error(`"${value}" is not an absolute path inside /workspace`)
+  }
+  return path
+}
+
+/**
  * Where an agent reply's tools run: a cloud workspace pod (`WorkspaceManager`) or the user's own
  * computer through the desktop app (`ComputerWorkspace`).
  */
@@ -86,6 +100,11 @@ export interface AgentWorkspace {
   saveGeneratedFile(path: string, data: Uint8Array, mimeType: string, leaseId: string, signal?: AbortSignal): Promise<void>
   readGeneratedFile(path: string, leaseId: string, signal?: AbortSignal): Promise<WorkspaceFile>
   cancel(operationId: string): Promise<void>
+  /**
+   * A local path the agent named for `pulpo files pull|push`, as this workspace accepts it, or an
+   * error whose message is written for the agent.
+   */
+  localPath(value: string): string
   /** The `workspace_leases` row, for records that reference it; always undefined for a computer. */
   readonly leaseId: string | undefined
   /** Tools are off for the rest of the reply (the user continued without them, or the workspace went away). */

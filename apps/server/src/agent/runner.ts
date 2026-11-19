@@ -60,6 +60,7 @@ import { responseInputText } from '../messages/input.js'
 import { createGenerationMemoryTools } from './memory-tools.js'
 import { describeFileScope } from '../files/agent/prompt.js'
 import { createFilesRelay } from '../files/agent/relay.js'
+import { replyFilesAccess } from './reply-files.js'
 import { loadChatFileScope } from '../files/agent/scope.js'
 import { filesPermissionRequest, redisFilesPermissionAnswers, waitForFilesPermissionDecision } from '../files/agent/permission.js'
 import { readEpisodicMemorySettings } from '../episodic-memory/settings.js'
@@ -193,14 +194,19 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   const computerFullAccess = computerDescribed !== undefined
   const [chatState] = await db.select({ temporary: chats.temporary, fileScopeIds: chats.fileScopeIds }).from(chats)
     .where(eq(chats.id, record.response.chatId)).limit(1)
-  // Files attached to the chat, reached only through `pulpo files` in bash and only while Files is
-  // on. Turns sent through admin chat access never reach the owner's Files; temporary chats have none.
-  // `pulpo files` does not exist on the user's computer, so a full-access reply has no Files either.
-  const filesAllowed = parseAuthSettings(attachmentSettingsRow?.value).filesEnabled && record.response.origin !== 'admin_chat' && !chatState?.temporary && !computerFullAccess
+  // Files attached to the chat, reached only through `pulpo files` in the shell and only while Files
+  // is on; a full-access reply has them when the computer's app can run `pulpo files`.
+  const filesAccess = replyFilesAccess({
+    filesEnabled: parseAuthSettings(attachmentSettingsRow?.value).filesEnabled,
+    adminChat: record.response.origin === 'admin_chat',
+    temporary: Boolean(chatState?.temporary),
+    computer: computerFullAccess ? { description: computerDescription } : undefined,
+  })
+  const filesAllowed = filesAccess.allowed
   const fileScope = filesAllowed ? await loadChatFileScope(record.response.userId, record.response.chatId) : null
   // Only an app that said it can show the request is asked; otherwise the reply would wait for nobody.
   const canAskToBrowseFiles = record.response.clientFeatures.includes('files-permission' satisfies ClientFeature)
-  const fileScopeContext = fileScope ? describeFileScope(fileScope, { canAskToBrowse: canAskToBrowseFiles }) : ''
+  const fileScopeContext = fileScope ? describeFileScope(fileScope, { canAskToBrowse: canAskToBrowseFiles, mirror: filesAccess.mirror }) : ''
   const memory = await loadGenerationMemory({
     chat: chatState,
     memoryEnabled: preferenceValues.memoryEnabled,

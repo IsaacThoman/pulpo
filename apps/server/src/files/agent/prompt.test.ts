@@ -51,6 +51,22 @@ describe('describeFileScope', () => {
     expect(readOnly).toContain('rest of their Files (read only)')
   })
 
+  it('names the cloud mirror by default and a computer\'s own folder and shell when given', () => {
+    const cloud = describeFileScope(scopeOf({}))
+    expect(cloud).toContain('pulpo files pull <path>   copy into /workspace/files/<path>')
+    expect(cloud).toContain('local paths, e.g. /workspace/files/<path>; none: all changes')
+    expect(cloud).toContain('the `pulpo files` command in bash;')
+    expect(describeFileScope(scopeOf({}), { mirror: { dir: '/workspace/files', separator: '/' } })).toBe(cloud)
+
+    const mac = describeFileScope(scopeOf({}), { mirror: { dir: '/Users/ada/Pulpo Files/', separator: '/', shell: 'bash' } })
+    expect(mac).toContain('copy into /Users/ada/Pulpo Files/<path>')
+    const windows = describeFileScope(scopeOf({}), { mirror: { dir: 'C:\\Users\\Ada\\Pulpo Files', separator: '\\', shell: 'powershell' } })
+    expect(windows).toContain('copy into C:\\Users\\Ada\\Pulpo Files\\<path>')
+    expect(windows).toContain('local paths, e.g. C:\\Users\\Ada\\Pulpo Files\\<path>;')
+    expect(windows).toContain('the `pulpo files` command in powershell;')
+    expect(windows).not.toContain('/workspace')
+  })
+
   it('describes the whole tree for the all-files scope', () => {
     const prompt = describeFileScope(scopeOf({
       attached: [{ path: '', node: null, mode: 'write' }],

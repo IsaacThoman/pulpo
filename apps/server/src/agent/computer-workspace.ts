@@ -12,10 +12,11 @@ import {
 import { getBlobStore } from '../storage/index.js'
 import { loadWorkspaceAttachments } from './attachment-manifest.js'
 import { detectImageMime } from './images.js'
+import { truncateUtf8 } from './output.js'
 import { attachmentFileName } from './policy.js'
 import {
   MAX_EXPORT_FILE_BYTES, MAX_VIEW_IMAGE_BYTES,
-  type AgentWorkspace, type WorkspaceFile, type WorkspaceImage, type WorkspaceLeaseEvent, type WorkspaceOperation, type WorkspacePaths,
+  type AgentWorkspace, type RelayRequest, type RelayResult, type WorkspaceFile, type WorkspaceImage, type WorkspaceLeaseEvent, type WorkspaceOperation, type WorkspacePaths,
 } from './workspace.js'
 
 const LONG_POLL_WAIT_MS = 10_000
@@ -26,6 +27,19 @@ const POLL_RETRY_MS = 500
 /** Keeps an app that answers long-polls at once from spinning the loop. */
 const POLL_FLOOR_MS = 250
 const CANCEL_TIMEOUT_MS = 10_000
+/** Delivering one relay answer; it goes out even after the reply was stopped, so it is bounded on its own. */
+const RELAY_DELIVERY_TIMEOUT_MS = 10_000
+/**
+ * Between polls while the app lists only requests already answered (a delivery to retry, or one it
+ * failed to drop): it returns long-polls at once while any is listed, which would spin the loop.
+ */
+const STALE_RELAY_POLL_MS = 1_000
+/**
+ * The most output one relay answer carries. It travels in one socket message, while the Files
+ * relay's own cap is the instance's `maxToolOutputBytes`, which an admin can set far higher.
+ */
+export const COMPUTER_RELAY_OUTPUT_MAX_BYTES = 1_048_576
+const RELAY_TRUNCATED_NOTE = '\n[Output truncated; pull the file or narrow the command to see the rest.]'
 /** `file.missing` takes at most this many files per request. */
 const STAGE_BATCH = 500
 
@@ -44,6 +58,14 @@ function hexChecksum(checksum: string | null | undefined): string | undefined {
   if (!checksum) return undefined
   const digest = Buffer.from(checksum, 'base64url')
   return digest.byteLength === 32 ? digest.toString('hex') : undefined
+}
+
+/** A relay answer as it may travel to the computer: its text cut to `COMPUTER_RELAY_OUTPUT_MAX_BYTES`, with a note. */
+export function boundRelayResult(result: RelayResult): RelayResult {
+  const bound = (text: string) => Buffer.byteLength(text, 'utf8') <= COMPUTER_RELAY_OUTPUT_MAX_BYTES
+    ? text
+    : `${truncateUtf8(text, COMPUTER_RELAY_OUTPUT_MAX_BYTES - Buffer.byteLength(RELAY_TRUNCATED_NOTE, 'utf8'))}${RELAY_TRUNCATED_NOTE}`
+  return result.ok ? { ...result, output: bound(result.output) } : { ok: false, error: bound(result.error) }
 }
 
 export function describeComputer(session: ComputerSessionRef): Promise<ComputerDescription> {
@@ -271,6 +293,47 @@ export class ComputerWorkspace implements AgentWorkspace {
     }
   }
 
+  /**
+   * Answers each new `pulpo files` request the app lists, one at a time, as the cloud does.
+   * `settled` remembers every request answered in this operation, so none is answered twice: its
+   * result while a delivery that failed transiently waits to be resent (only while the app still
+   * lists it), else null (delivered, dropped by the app, or refused). Answers go out even after the
+   * reply was stopped, because the change they report may already be committed. An answer may wait
+   * minutes for the user (a request to browse Files); requests listed meanwhile wait on the app and
+   * are answered on the next round. Returns whether a new request was answered.
+   */
+  private async answerRelay(
+    operation: WorkspaceOperation,
+    settled: Map<string, RelayResult | null>,
+    onRelay: ((request: RelayRequest, signal?: AbortSignal) => Promise<RelayResult>) | undefined,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    const pending = operation.relay?.pending ?? []
+    const listed = new Set(pending.map((request) => request.id))
+    for (const [id, result] of settled) if (result && !listed.has(id)) settled.set(id, null)
+    let answered = false
+    for (const request of pending) {
+      const retry = settled.get(request.id)
+      if (retry === null || (!retry && signal?.aborted)) continue
+      const result = retry ?? boundRelayResult(onRelay
+        ? await onRelay({ id: request.id, command: request.command, args: request.args }, signal)
+          .catch((error: unknown): RelayResult => ({ ok: false, error: error instanceof Error ? error.message : String(error) }))
+        : { ok: false, error: 'Files are not available in this chat' })
+      if (!retry) answered = true
+      settled.set(request.id, null)
+      try {
+        // `delivered: false`: the command no longer waits for it (it ended, or gave up); nothing to resend.
+        await computerCall(this.input.session, 'operation.relay', { requestId: request.id, result }, { timeoutMs: RELAY_DELIVERY_TIMEOUT_MS })
+      } catch (error) {
+        const details = { responseId: this.input.responseId, operationId: operation.id, requestId: request.id, error: error instanceof Error ? error.message : String(error) }
+        if (error instanceof ComputerRequestError) { console.warn('The user\'s computer refused a relay answer', details); continue }
+        if (!retry) console.warn('Relay answer was not delivered to the user\'s computer; retrying', details)
+        settled.set(request.id, result)
+      }
+    }
+    return answered
+  }
+
   async execute(
     operationId: string,
     type: string,
@@ -278,8 +341,8 @@ export class ComputerWorkspace implements AgentWorkspace {
     signal?: AbortSignal,
     onUpdate?: (output: string) => void,
     onStarted?: () => void | Promise<void>,
+    onRelay?: (request: RelayRequest, signal?: AbortSignal) => Promise<RelayResult>,
   ): Promise<WorkspaceOperation> {
-    // `pulpo files` does not exist on the user's computer, so there is nothing to relay.
     await this.ensureLease(signal)
     if (!isOperationType(type)) throw new Error(`${type} is not available on the user's computer`)
     let operation: WorkspaceOperation
@@ -290,11 +353,16 @@ export class ComputerWorkspace implements AgentWorkspace {
     await onStarted?.()
     let previousOutput = ''
     let polledAt = 0
+    const settled = new Map<string, RelayResult | null>()
     const stop = async (): Promise<never> => { await this.cancel(operationId); throw signal?.reason ?? new Error('Operation cancelled') }
     while (operation.status === 'running') {
       if (signal?.aborted) await stop()
       if (operation.output !== previousOutput) { previousOutput = operation.output; onUpdate?.(operation.output) }
-      await wait(Math.max(0, POLL_FLOOR_MS - (Date.now() - polledAt)))
+      const answered = await this.answerRelay(operation, settled, onRelay, signal)
+      if (signal?.aborted) await stop()
+      // After an answer the app has news at once; otherwise the floor keeps an app that answers instantly from spinning.
+      const stale = operation.relay?.pending.some((request) => settled.has(request.id)) ?? false
+      if (!answered) await wait(Math.max(0, (stale ? STALE_RELAY_POLL_MS : POLL_FLOOR_MS) - (Date.now() - polledAt)))
       polledAt = Date.now()
       try { operation = await this.poll(operationId, signal) } catch (error) {
         if (signal?.aborted) await stop()
@@ -323,6 +391,22 @@ export class ComputerWorkspace implements AgentWorkspace {
     await onStarted?.()
     const data = await this.fetchFile(computerPath(computer, path), MAX_EXPORT_FILE_BYTES, () => new Error(`File exceeds the ${MAX_EXPORT_FILE_BYTES} byte limit`), signal)
     return { data, sizeBytes: data.byteLength }
+  }
+
+  /**
+   * A local path for `pulpo files pull|push`: absolute in this computer's own form, normalised.
+   * Anywhere on the computer will do, since a full-access command can reach all of it anyway.
+   */
+  localPath(value: string): string {
+    if (!this.computer) throw new Error('The workspace is not available')
+    const windows = this.computer.os === 'windows'
+    const absolute = windows ? /^(?:[a-z]:[\\/]|[\\/]{2}[^\\/])/i.test(value) : value.startsWith('/')
+    if (!absolute || value.includes('\0')) throw new Error(`"${value}" is not an absolute path on the user's computer`)
+    const path = pathFlavour(this.computer)
+    const normalized = path.normalize(value)
+    const trimmed = normalized.replace(windows ? /[\\/]+$/ : /\/+$/, '')
+    // The root keeps its separator: `/`, `C:\`.
+    return trimmed.length < path.parse(normalized).root.length ? normalized : trimmed
   }
 
   /** Relay requests arrive while a command holds the computer, so these never connect anew. */

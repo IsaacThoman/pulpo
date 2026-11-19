@@ -11,7 +11,7 @@ vi.mock('./attachment-manifest.js', () => manifest)
 vi.mock('../storage/index.js', () => ({ getBlobStore: () => blobs }))
 
 const { ComputerRequestError, ComputerUnavailableError } = await import('../computer/tunnel.js')
-const { COMPUTER_UNAVAILABLE_MESSAGE, ComputerWorkspace, computerPath, computerWorkspacePaths } = await import('./computer-workspace.js')
+const { boundRelayResult, COMPUTER_RELAY_OUTPUT_MAX_BYTES, COMPUTER_UNAVAILABLE_MESSAGE, ComputerWorkspace, computerPath, computerWorkspacePaths } = await import('./computer-workspace.js')
 
 const mac: ComputerDescription = {
   os: 'macos', osVersion: 'macOS 15.1', arch: 'arm64', shell: 'zsh', home: '/Users/ada',
@@ -249,6 +249,168 @@ describe('ComputerWorkspace.execute', () => {
     serve({ 'file.missing': () => ({ missing: [] }), 'operation.start': () => ({ id: 'op-1', status: 'failed', output: '', exitCode: null, error: 'ENOENT: no such file' }) })
     const { instance } = workspace()
     await expect(instance.execute('op-1', 'read', { path: 'x' })).rejects.toThrow('ENOENT: no such file')
+  })
+})
+
+describe('ComputerWorkspace relay', () => {
+  type Listed = { id: string; command: string; args: unknown }
+  const request = (id: string, command = 'ls'): Listed => ({ id, command, args: { path: id } })
+  const running = (...pending: Listed[]) => ({ id: 'op-1', status: 'running', output: '', exitCode: null, relay: { version: 1, pending } })
+  const done = { id: 'op-1', status: 'completed', output: 'done', exitCode: 0, relay: { version: 1, pending: [] } }
+  const delivered = () => calls('operation.relay').map((call) => call[2] as { requestId: string; result: { ok: boolean; output?: string; error?: string } })
+
+  /** The app's side: each poll takes the next listing (the last one repeats), each delivery the next outcome. */
+  function app(listings: unknown[], relay: Handler = () => ({ delivered: true }), extra: Record<string, Handler> = {}) {
+    serve({
+      'file.missing': () => ({ missing: [] }),
+      'operation.start': () => running(),
+      'operation.get': () => listings.length > 1 ? listings.shift() : listings[0],
+      'operation.relay': relay,
+      'operation.cancel': () => ({ id: 'op-1', status: 'cancelled', output: '', exitCode: null }),
+      ...extra,
+    })
+  }
+
+  it('answers a relay request and delivers the answer', async () => {
+    app([running(request('r1', 'cat')), done])
+    const onRelay = vi.fn().mockResolvedValue({ ok: true, output: '# Notes' })
+    const { instance } = workspace()
+    await expect(instance.execute('op-1', 'bash', { command: 'pulpo files cat r1' }, undefined, undefined, undefined, onRelay)).resolves.toMatchObject({ output: 'done' })
+    expect(onRelay).toHaveBeenCalledTimes(1)
+    expect(onRelay).toHaveBeenCalledWith(request('r1', 'cat'), undefined)
+    expect(delivered()).toEqual([{ requestId: 'r1', result: { ok: true, output: '# Notes' } }])
+    expect(calls('operation.relay')[0]![3]).toMatchObject({ timeoutMs: expect.any(Number) })
+    expect(calls('operation.cancel')).toHaveLength(0)
+  })
+
+  it('answers several requests once each, including ones listed again or arriving later', async () => {
+    // r2 is still listed after its answer (the app was slow to drop it); r3 arrives meanwhile.
+    app([running(request('r1'), request('r2')), running(request('r2'), request('r3')), running(request('r3')), done])
+    const onRelay = vi.fn(async (relayed: Listed) => ({ ok: true as const, output: `answer ${relayed.id}` }))
+    const { instance } = workspace()
+    await instance.execute('op-1', 'bash', { command: 'x' }, undefined, undefined, undefined, onRelay)
+    expect(onRelay.mock.calls.map(([relayed]) => relayed.id)).toEqual(['r1', 'r2', 'r3'])
+    expect(delivered().map((answer) => answer.requestId)).toEqual(['r1', 'r2', 'r3'])
+  })
+
+  it('drops a request the command stopped waiting for', async () => {
+    app([running(request('r1')), running(request('r1')), done], () => ({ delivered: false }))
+    const onRelay = vi.fn().mockResolvedValue({ ok: true, output: 'late' })
+    const { instance } = workspace()
+    await instance.execute('op-1', 'bash', { command: 'x' }, undefined, undefined, undefined, onRelay)
+    expect(onRelay).toHaveBeenCalledTimes(1)
+    expect(delivered()).toHaveLength(1)
+  })
+
+  it('resends an answer whose delivery failed, without answering again, and gives up on a refusal', async () => {
+    const outcomes: Array<() => unknown> = [
+      () => { throw new ComputerUnavailableError('The user\'s computer did not answer in time') },
+      () => ({ delivered: true }),
+      () => { throw new ComputerRequestError('invalid_request', 'No') },
+    ]
+    app([running(request('r1')), running(request('r1')), running(request('r2')), running(request('r2')), done], () => outcomes.shift()!())
+    const onRelay = vi.fn(async (relayed: Listed) => ({ ok: true as const, output: relayed.id }))
+    const { instance } = workspace()
+    await instance.execute('op-1', 'bash', { command: 'x' }, undefined, undefined, undefined, onRelay)
+    expect(onRelay.mock.calls.map(([relayed]) => relayed.id)).toEqual(['r1', 'r2'])
+    expect(delivered()).toEqual([
+      { requestId: 'r1', result: { ok: true, output: 'r1' } },
+      { requestId: 'r1', result: { ok: true, output: 'r1' } },
+      { requestId: 'r2', result: { ok: true, output: 'r2' } },
+    ])
+  })
+
+  it('refuses requests when the reply has no Files', async () => {
+    app([running(request('r1')), done])
+    const { instance } = workspace()
+    await instance.execute('op-1', 'bash', { command: 'pulpo files ls' })
+    expect(delivered()).toEqual([{ requestId: 'r1', result: { ok: false, error: 'Files are not available in this chat' } }])
+  })
+
+  it('waits out a slow answer without polling or cancelling the command meanwhile', async () => {
+    app([running(request('r1')), running(request('r2')), done])
+    let pollsDuringAnswer = -1
+    const onRelay = vi.fn(async (relayed: Listed) => {
+      if (relayed.id === 'r1') {
+        const before = calls('operation.get').length
+        await new Promise((resolve) => setTimeout(resolve, 400))
+        pollsDuringAnswer = calls('operation.get').length - before
+      }
+      return { ok: true as const, output: relayed.id }
+    })
+    const { instance } = workspace()
+    await expect(instance.execute('op-1', 'bash', { command: 'x' }, undefined, undefined, undefined, onRelay)).resolves.toMatchObject({ status: 'completed' })
+    expect(pollsDuringAnswer).toBe(0)
+    expect(onRelay.mock.calls.map(([relayed]) => relayed.id)).toEqual(['r1', 'r2'])
+    expect(calls('operation.cancel')).toHaveLength(0)
+  })
+
+  it('does not spin while the app keeps listing an answered request', async () => {
+    let polls = 0
+    app([running(request('r1'))], () => ({ delivered: false }), {
+      'operation.get': () => (++polls > 3 ? done : running(request('r1'))),
+    })
+    const startedAt = Date.now()
+    const { instance } = workspace()
+    await instance.execute('op-1', 'bash', { command: 'x' }, undefined, undefined, undefined, vi.fn().mockResolvedValue({ ok: true, output: '' }))
+    // The first answer is followed at once by a poll; the stale listings after it are a second apart.
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(1_900)
+  }, 10_000)
+
+  it('cuts an answer to what one socket message should carry', async () => {
+    const huge = 'é'.repeat(COMPUTER_RELAY_OUTPUT_MAX_BYTES)
+    app([running(request('r1'), request('r2')), done])
+    const onRelay = vi.fn(async (relayed: Listed) => relayed.id === 'r1' ? { ok: true as const, output: huge, data: { files: [] } } : { ok: false as const, error: huge })
+    const { instance } = workspace()
+    await instance.execute('op-1', 'bash', { command: 'x' }, undefined, undefined, undefined, onRelay)
+    const [first, second] = delivered()
+    for (const text of [first!.result.output!, second!.result.error!]) {
+      expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(COMPUTER_RELAY_OUTPUT_MAX_BYTES)
+      expect(text).toMatch(/^é+\n\[Output truncated; pull the file or narrow the command to see the rest\.\]$/)
+    }
+    expect(calls('operation.relay')[0]![2].result.data).toEqual({ files: [] })
+    expect(boundRelayResult({ ok: true, output: 'small' })).toEqual({ ok: true, output: 'small' })
+  })
+
+  it('delivers the answer in progress when the reply is stopped, answers nothing more and cancels the command', async () => {
+    const controller = new AbortController()
+    app([running(request('r1'), request('r2')), done])
+    const onRelay = vi.fn((_relayed: Listed, signal?: AbortSignal) => new Promise<{ ok: false; error: string }>((resolve) => {
+      signal?.addEventListener('abort', () => resolve({ ok: false, error: 'The command was stopped' }))
+      setTimeout(() => controller.abort(new Error('Generation cancelled')), 10)
+    }))
+    const { instance } = workspace()
+    await expect(instance.execute('op-1', 'bash', { command: 'x' }, controller.signal, undefined, undefined, onRelay)).rejects.toThrow('Generation cancelled')
+    expect(onRelay).toHaveBeenCalledTimes(1)
+    expect(delivered()).toEqual([{ requestId: 'r1', result: { ok: false, error: 'The command was stopped' } }])
+    expect(calls('operation.cancel')[0]![2]).toEqual({ id: 'op-1' })
+  })
+})
+
+describe('ComputerWorkspace.localPath', () => {
+  it('accepts absolute macOS paths anywhere, normalised', async () => {
+    const { instance } = workspace()
+    await instance.describe()
+    expect(instance.localPath('/Users/ada/Pulpo Files/Plan.md')).toBe('/Users/ada/Pulpo Files/Plan.md')
+    expect(instance.localPath('/Users/ada/x/../Pulpo Files//notes/')).toBe('/Users/ada/Pulpo Files/notes')
+    expect(instance.localPath('/tmp/a')).toBe('/tmp/a')
+    expect(instance.localPath('/')).toBe('/')
+    for (const path of ['Pulpo Files/a', '~/a', 'C:\\Users\\a', '/tmp/a\0b', '']) expect(() => instance.localPath(path), path).toThrow('not an absolute path on the user\'s computer')
+  })
+
+  it('accepts absolute Windows paths with drive letters or shares, in Windows form', async () => {
+    const { instance } = workspace(windows)
+    await instance.describe()
+    expect(instance.localPath('C:\\Users\\Ada\\Pulpo Files\\Plan.md')).toBe('C:\\Users\\Ada\\Pulpo Files\\Plan.md')
+    expect(instance.localPath('C:/Users/Ada/Pulpo Files/notes/')).toBe('C:\\Users\\Ada\\Pulpo Files\\notes')
+    expect(instance.localPath('d:\\data\\..\\out\\a.csv')).toBe('d:\\out\\a.csv')
+    expect(instance.localPath('C:\\')).toBe('C:\\')
+    expect(instance.localPath('\\\\server\\share\\a')).toBe('\\\\server\\share\\a')
+    for (const path of ['Pulpo Files\\a', '\\Users\\a', 'C:relative', '/Users/ada', 'C:\\a\0b']) expect(() => instance.localPath(path), path).toThrow('not an absolute path on the user\'s computer')
+  })
+
+  it('refuses before the computer was reached', () => {
+    expect(() => workspace().instance.localPath('/tmp/a')).toThrow('not available')
   })
 })
 

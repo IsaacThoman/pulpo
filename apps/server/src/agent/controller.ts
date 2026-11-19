@@ -14,7 +14,7 @@ import type { RequestInit } from 'undici'
 import { posix } from 'node:path'
 import { detectImageMime } from './images.js'
 import { attemptWorkspaceLease, ControllerRequestError } from './lease-acquisition.js'
-import { cloudWorkspacePaths, MAX_EXPORT_FILE_BYTES, MAX_VIEW_IMAGE_BYTES, type AgentWorkspace, type RelayRequest, type RelayResult, type WorkspaceFile, type WorkspaceImage, type WorkspaceLeaseEvent, type WorkspaceOperation } from './workspace.js'
+import { cloudLocalPath, cloudWorkspacePaths, MAX_EXPORT_FILE_BYTES, MAX_VIEW_IMAGE_BYTES, type AgentWorkspace, type RelayRequest, type RelayResult, type WorkspaceFile, type WorkspaceImage, type WorkspaceLeaseEvent, type WorkspaceOperation } from './workspace.js'
 
 const POLL_INTERVAL_MS = 250
 const LONG_POLL_WAIT_MS = 10_000
@@ -289,6 +289,8 @@ export class WorkspaceManager implements AgentWorkspace {
     if (this.toolsDisabled || !this.controllerLeaseId) throw new Error('The workspace is not available')
     return this.controllerLeaseId
   }
+
+  localPath(value: string): string { return cloudLocalPath(value) }
 
   /** Writes bytes into the current workspace (used by `pulpo files pull`). */
   async writeWorkspaceFile(path: string, body: Uint8Array | NodeJS.ReadableStream, sizeBytes: number, signal?: AbortSignal): Promise<void> {
