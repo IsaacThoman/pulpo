@@ -65,7 +65,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { cn } from '@/lib/utils'
 import { writeClipboardText } from '@/lib/clipboard'
 import { ui, activeLocale } from '@/i18n/ui'
-import { isShellTool, toolActivityPresentation } from './tool-activity-presentation'
+import { appToolSummary, isShellTool, toolActivityPresentation } from './tool-activity-presentation'
 import { UsageCostBreakdown } from '@/components/usage/UsageCostBreakdown'
 import { FileChangesBar } from '@/features/files/FileChangesBar'
 import { FileReferenceCard } from '@/features/files/FileReferenceCard'
@@ -137,6 +137,8 @@ function toolSummary(tool: ToolItem): string {
   const args = tool.arguments
   if (!args || typeof args !== 'object') return tool.tool ?? 'tool'
   const record = args as Record<string, unknown>
+  const app = appToolSummary(tool.tool, args)
+  if (app) return app
   const path = typeof record.path === 'string' ? record.path : undefined
   const command = typeof record.command === 'string' ? record.command : undefined
   const pattern = typeof record.pattern === 'string' ? record.pattern : undefined

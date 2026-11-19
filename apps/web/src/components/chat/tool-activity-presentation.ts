@@ -1,4 +1,5 @@
 import {
+  AppWindow,
   FileDiff,
   FilePenLine,
   FilePlus,
@@ -11,10 +12,15 @@ import {
   FolderUp,
   Globe,
   Image,
+  Keyboard,
   List,
+  Mouse,
+  MousePointerClick,
+  Move,
   Paperclip,
   Search,
   Terminal,
+  TextCursorInput,
   Trash2,
   Wrench,
   type LucideIcon,
@@ -72,11 +78,58 @@ function cliCommandPresentation(command: string): ToolActivityPresentation | nul
   }
 }
 
+/** The app tools: a full-access run seeing and working in another app's window on the user's computer. */
+export function isAppTool(name?: string): boolean {
+  return Boolean(name?.startsWith('app_'))
+}
+
+function appToolName(args: unknown): string | null {
+  const app = args && typeof args === 'object' ? (args as { app?: unknown }).app : undefined
+  if (typeof app !== 'string' || !app.trim()) return null
+  const name = app.trim()
+  return name.length > 40 ? `${name.slice(0, 39)}…` : name
+}
+
+function appToolPresentation(tool: string, args: unknown): ToolActivityPresentation | null {
+  const name = appToolName(args)
+  switch (tool) {
+    case 'app_list': return { icon: AppWindow, label: ui("Checking which apps are open…") }
+    case 'app_view': return { icon: AppWindow, label: name ? ui("Looking at {{name}}…", { name }) : ui("Looking at an app…") }
+    case 'app_click': return { icon: MousePointerClick, label: name ? ui("Clicking in {{name}}…", { name }) : ui("Clicking in an app…") }
+    case 'app_type': return { icon: Keyboard, label: name ? ui("Typing in {{name}}…", { name }) : ui("Typing in an app…") }
+    case 'app_key': return { icon: Keyboard, label: name ? ui("Pressing keys in {{name}}…", { name }) : ui("Pressing keys in an app…") }
+    case 'app_scroll': return { icon: Mouse, label: name ? ui("Scrolling in {{name}}…", { name }) : ui("Scrolling in an app…") }
+    case 'app_drag': return { icon: Move, label: name ? ui("Dragging in {{name}}…", { name }) : ui("Dragging in an app…") }
+    case 'app_set_value': return { icon: TextCursorInput, label: name ? ui("Filling in a field in {{name}}…", { name }) : ui("Filling in a field…") }
+    default: return null
+  }
+}
+
+/** What an app tool was asked to do, in a few words: the app, then the element, point, keys or text. */
+export function appToolSummary(tool: string | undefined, args: unknown): string | null {
+  if (!isAppTool(tool) || !args || typeof args !== 'object') return null
+  const record = args as Record<string, unknown>
+  const short = (value: string) => { const line = value.replace(/\s+/g, ' ').trim(); return line.length > 48 ? `${line.slice(0, 48)}…` : line }
+  const number = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : null
+  const element = number(record.element)
+  const place = element !== null ? `#${element}` : number(record.x) !== null && number(record.y) !== null ? `${number(record.x)},${number(record.y)}` : null
+  const detail = tool === 'app_type' && typeof record.text === 'string' ? JSON.stringify(short(record.text))
+    : tool === 'app_key' && typeof record.keys === 'string' ? short(record.keys)
+    : tool === 'app_scroll' && typeof record.direction === 'string' ? [place, record.direction].filter(Boolean).join(' ')
+    : tool === 'app_drag' && number(record.from_x) !== null && number(record.to_x) !== null ? `${number(record.from_x)},${number(record.from_y)} → ${number(record.to_x)},${number(record.to_y)}`
+    : tool === 'app_set_value' && typeof record.value === 'string' ? [place, JSON.stringify(short(record.value))].filter(Boolean).join(' ')
+    : tool === 'app_view' && typeof record.window === 'string' ? short(record.window)
+    : place
+  return [appToolName(args), detail].filter(Boolean).join(' · ') || null
+}
+
 export function toolActivityPresentation(name?: string, args?: unknown): ToolActivityPresentation {
   // `pulpo` runs only in the cloud workspace's bash, never in a computer's PowerShell.
   const command = name === 'bash' && args && typeof args === 'object' ? (args as { command?: unknown }).command : undefined
   const cli = typeof command === 'string' ? cliCommandPresentation(command) : null
   if (cli) return cli
+  const app = name && isAppTool(name) ? appToolPresentation(name, args) : null
+  if (app) return app
   const presentation = name ? presentations[name] : undefined
   return presentation
     ? { ...presentation, label: ui(presentation.label) }
