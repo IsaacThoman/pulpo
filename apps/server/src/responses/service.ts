@@ -30,6 +30,7 @@ import { detailedPayloadPolicy } from '../logging/detailed-payload-retention.js'
 import { discardRequestAnalytics, recordRequestAdmission, type ClientAttribution } from '../analytics/capture.js'
 import { assertModelsAvailableOnPlatform } from '../catalog/model-platforms.js'
 import { assertModelsAccessibleToUser } from '../catalog/model-access.js'
+import { admitComputer } from '../computer/admission.js'
 
 export interface CreateResponseOptions {
   requestReceivedAt?: Date | null
@@ -171,11 +172,19 @@ export async function createResponse(options: CreateResponseOptions) {
       }))
     }
   }
+  const origin = options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web'
+  // Only a fresh client request carries a computer: replies made from an older one would name a stale session.
+  let computer: ReturnType<typeof admitComputer> = null
   if (options.input.agentMode) {
     if (options.apiKeyId) throw new AppError(400, 'agent_web_only', 'Agent mode is only available in Pulpo web chat')
     const [agentRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1)
-    if (!parseAgentSettings(agentRow?.value).enabled) throw new AppError(503, 'agent_unavailable', 'Agent mode is not enabled')
+    const agentSettings = parseAgentSettings(agentRow?.value)
+    if (!agentSettings.enabled) throw new AppError(503, 'agent_unavailable', 'Agent mode is not enabled')
     if (!model.agentEnabled) throw new AppError(400, 'model_not_agent_capable', 'The selected model is not enabled for agent mode')
+    computer = admitComputer({
+      computer: options.input.computer, agentMode: true, origin,
+      clientFeatures: options.client?.features, computerAccess: agentSettings.computerAccess,
+    })
   }
   const parameters: Record<string, unknown> = { ...(admittedParameters ?? {}), ...resolved.parameters }
   const maxOutputTokens = publicOutputTokenLimit(model.maxOutputTokens, {
@@ -235,7 +244,6 @@ export async function createResponse(options: CreateResponseOptions) {
       ...options.input.attachmentIds.map((attachmentId) => ({ type: 'input_file', attachment_id: attachmentId })),
     ],
   }]
-  const origin = options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web'
   const acceptedAt = new Date()
   const admission = await db.transaction(async (tx) => {
     const [current] = await tx.select().from(chats).where(and(
@@ -280,6 +288,7 @@ export async function createResponse(options: CreateResponseOptions) {
       idempotencyFingerprint: options.idempotencyFingerprint,
       origin,
       clientFeatures: origin === 'web' ? options.client?.features ?? [] : [],
+      computer,
     }).onConflictDoNothing().returning({ id: responses.id })
     if (!inserted) {
       const [existing] = await tx.select().from(responses).where(or(

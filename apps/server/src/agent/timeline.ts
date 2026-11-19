@@ -1,5 +1,5 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
-import type { CompactionItem, CostLimitItem, FileChangesItem, FilesPermissionItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
+import type { CompactionItem, ComputerChangesItem, CostLimitItem, FileChangesItem, FilesPermissionItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
 
 export type ToolTimelineItem = {
   id: string
@@ -105,7 +105,7 @@ export function nextAgentDisplayTurn(displayMessages: readonly AgentMessage[]): 
 
 /**
  * Ordered response.output: workspace → (reasoning|message|tool)* preserving turn order, with each
- * cost limit pause after its turn, and what the reply changed in Files last.
+ * cost limit pause after its turn, and what the reply changed in Files and on the user's computer last.
  */
 export function buildAgentOutput(options: {
   messages: AgentMessage[]
@@ -119,6 +119,8 @@ export function buildAgentOutput(options: {
   /** Requests to browse Files, each shown after the turn that asked. */
   filesPermissionItems?: FilesPermissionItem[]
   fileChangesItem?: FileChangesItem
+  /** What the reply changed, or suggested changing, in the folder shared from the user's computer. */
+  computerChangesItem?: ComputerChangesItem
   /** Model-turn durations keyed by 1-based assistant turn index in this run. */
   turnDurationsMs?: Map<number, number>
   /** Last message is still streaming (use in_progress status). */
@@ -136,6 +138,7 @@ export function buildAgentOutput(options: {
     costLimitItems = [],
     filesPermissionItems = [],
     fileChangesItem,
+    computerChangesItem,
     turnDurationsMs,
     streaming = false,
     terminal = false,
@@ -187,6 +190,7 @@ export function buildAgentOutput(options: {
   output.push(...costLimitItems.filter((item) => !output.includes(item)))
   output.push(...filesPermissionItems.filter((item) => !output.includes(item)))
   if (fileChangesItem) output.push(fileChangesItem)
+  if (computerChangesItem) output.push(computerChangesItem)
 
   if (terminal) {
     for (const entry of output) {

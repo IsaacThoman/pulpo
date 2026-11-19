@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { attachmentWorkspacePath, buildAgentSystemPrompt, buildAgentUserPrompt, buildToolsDisabledSystemPrompt, restoredAttachmentWorkspacePath } from './policy.js'
+import { attachmentWorkspacePath, BASE_AGENT_PROMPT, buildAgentSystemPrompt, buildAgentUserPrompt, buildToolsDisabledSystemPrompt, computerAgentPrompt, computerShellToolName, restoredAttachmentWorkspacePath } from './policy.js'
 
 describe('agent policy', () => {
   it('replaces workspace capabilities while preserving model policy and personalization when tools are disabled', () => {
@@ -108,5 +108,36 @@ describe('agent policy', () => {
 
     expect(prompt.startsWith('[Pulpo attachment context]')).toBe(true)
     expect(prompt).toContain('/workspace/abcdefgh-1234-image.png')
+  })
+
+  describe('on the user\'s computer', () => {
+    const mac = { os: 'macos' as const, osVersion: 'macOS 15.1', arch: 'arm64', shell: 'zsh', home: '/Users/ada', cwd: '/Users/ada/Pulpo', attachmentsDir: '/Users/ada/Pulpo/.pulpo/attachments' }
+
+    it('replaces the disposable workspace lines and keeps the rest of the harness', () => {
+      const prompt = buildAgentSystemPrompt('Model policy', 'Agent policy', '', '', computerAgentPrompt(mac))
+      expect(prompt).toContain('working directly on the user\'s own computer')
+      expect(prompt).toContain('macOS 15.1 (arm64)')
+      expect(prompt).toContain('Commands run in zsh as the user (the bash tool), starting in `/Users/ada/Pulpo`')
+      expect(prompt).toContain('saved in `/Users/ada/Pulpo/.pulpo/attachments`')
+      expect(prompt).toContain('do not use sudo')
+      for (const cloud of ['disposable Ubuntu', '/workspace', 'passwordless sudo', '/opt/pulpo/PACKAGES.md']) expect(prompt).not.toContain(cloud)
+      for (const kept of ['Use view_image', 'Use attach_file', 'make one self-contained file', 'Cite source URLs', 'update_memory']) expect(prompt).toContain(kept)
+      expect(prompt.indexOf('Model policy')).toBeGreaterThan(prompt.indexOf('Use view_image'))
+    })
+
+    it('names PowerShell on Windows and stays generic without a description', () => {
+      const windows = { ...mac, os: 'windows' as const, osVersion: 'Windows 11 (10.0.26100)', shell: 'pwsh', cwd: 'C:\\Users\\Ada\\Pulpo' }
+      expect(computerShellToolName(windows)).toBe('powershell')
+      expect(computerAgentPrompt(windows)).toContain('Commands run in pwsh as the user (the powershell tool)')
+      const generic = computerAgentPrompt(undefined)
+      expect(generic).toContain('the user\'s own computer')
+      expect(generic).not.toContain('undefined')
+      expect(BASE_AGENT_PROMPT).toContain('/opt/pulpo/PACKAGES.md')
+    })
+
+    it('lists attachments at the computer\'s paths', () => {
+      const prompt = buildAgentUserPrompt([{ role: 'user', content: 'Look' }], [{ id: 'id-1', originalName: 'a b.txt', mimeType: 'text/plain', sizeBytes: 3 }], (name, id) => `C:\\att\\${id}-${name}`)
+      expect(prompt).toContain(`path=${JSON.stringify('C:\\att\\id-1-a b.txt')}`)
+    })
   })
 })

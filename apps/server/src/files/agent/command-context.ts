@@ -1,12 +1,12 @@
 import { posix } from 'node:path'
 import type { FileAccessMode } from '@pulpo/contracts'
-import type { WorkspaceManager } from '../../agent/controller.js'
+import type { AgentWorkspace } from '../../agent/workspace.js'
 import type { FileExecutor } from '../access.js'
 import type { ReplyContext } from './changes.js'
 import { assertScopeCurrent, FilesCommandError, FilesPermissionNeeded, type FileScope } from './scope.js'
 
 /** What Pulpo needs from the agent's workspace: files written into it (pull) and read from it (push). */
-export type FilesWorkspace = Pick<WorkspaceManager, 'writeWorkspaceFile' | 'readWorkspaceFile'>
+export type FilesWorkspace = Pick<AgentWorkspace, 'writeWorkspaceFile' | 'readWorkspaceFile'>
 
 /** One relayed `pulpo files` command, with the scope loaded for it. */
 export interface CommandContext extends ReplyContext {

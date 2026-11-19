@@ -241,8 +241,11 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const iconRows = await db.select().from(catalogIcons)
     const iconById = new Map(iconRows.map((icon) => [icon.id, icon]))
     const customIcon = (id: string | null) => id && iconById.has(id) ? catalogIconUrls(iconById.get(id)!) : null
-    const agentAvailable = parseAgentSettings(agentRow?.value).enabled && Boolean(getConfig().WORKSPACE_CONTROLLER_URL && getConfig().WORKSPACE_CONTROLLER_TOKEN)
-    return { codexEnabled: codexAvailable, agentAvailable, data: await Promise.all(rows.map(async ({ model, pricing, lab, provider }) => ({
+    const agentSettings = parseAgentSettings(agentRow?.value)
+    const agentAvailable = agentSettings.enabled && Boolean(getConfig().WORKSPACE_CONTROLLER_URL && getConfig().WORKSPACE_CONTROLLER_TOKEN)
+    // Whether a desktop app may offer "This computer"; the app still needs its own bridge.
+    const computerAccess = agentAvailable && agentSettings.computerAccess
+    return { codexEnabled: codexAvailable, agentAvailable, computerAccess, data: await Promise.all(rows.map(async ({ model, pricing, lab, provider }) => ({
       id: model.id,
       upstreamModelId: model.upstreamModelId,
       name: model.name,

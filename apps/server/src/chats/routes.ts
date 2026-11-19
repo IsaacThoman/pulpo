@@ -1,8 +1,8 @@
 import { historyPageQuery, loadHistoryPage } from './history-page.js'
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql, type SQL } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
-import type { FastifyInstance } from 'fastify'
-import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, filesPermissionAnswerSchema, findCostLimitItem, findFilesPermissionItems, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema, type StateInvalidationScope } from '@pulpo/contracts'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
+import { type QueuedMessage, createChatResponseSchema, createChatSchema, createQueuedMessageSchema, filesPermissionAnswerSchema, findCostLimitItem, findFilesPermissionItems, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema, type StateInvalidationScope } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { attachments, chatImportSources, chats, models, requestLogs, responses, usageEvents, users, workspaceLeases } from '../database/schema.js'
 import { billingUserForRequest, requireUser } from '../auth/service.js'
@@ -48,6 +48,11 @@ async function requestedNormalChatExpiry(userId: string, enabled: boolean, now: 
     throw new AppError(400, 'automatic_chat_expiration_disabled', 'Choose an automatic chat expiration period in Data controls')
   }
   return expiresAt
+}
+
+/** A queued message's computer names a folder on the owner's machine; admin chat access does not see it. */
+function queuedMessagesForViewer<T extends QueuedMessage | null>(request: FastifyRequest, messages: T[]): T[] {
+  return request.adminChatAccess ? messages.map((message) => message && { ...message, computer: null }) : messages
 }
 
 /** New and newly persisted chats go to the top of the unfiled chats, above any Files items there. */
@@ -445,6 +450,8 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
           userId: user.id,
           openaiResponseId: null,
           idempotencyKey: null,
+          // The session belonged to the original reply's message.
+          computer: null,
           createdAt: response.createdAt,
           updatedAt: now,
         })
@@ -529,7 +536,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       return {
         ...toPublicChat(chat), deletedAt: null,
         ...await loadHistoryPage(id, user.id, chat.activeBranchLeafId ?? chat.activeResponseId, historyLimit, before),
-        queuedMessages: await listQueuedMessages(id, user.id),
+        queuedMessages: queuedMessagesForViewer(request, await listQueuedMessages(id, user.id)),
       }
     }
     const allTurns = await db.select()
@@ -560,7 +567,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       eq(attachments.status, 'ready'),
       inArray(attachments.id, referencedAttachmentIds),
     )) : []
-    const queue = await listQueuedMessages(id, user.id)
+    const queue = queuedMessagesForViewer(request, await listQueuedMessages(id, user.id))
     return {
       ...toPublicChat(chat),
       deletedAt: null,
@@ -694,25 +701,26 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       client: clientAttributionForRequest(request),
     })
     reply.code(202)
-    return result
+    return { ...result, queuedMessage: queuedMessagesForViewer(request, [result.queuedMessage])[0] ?? null }
   })
 
   app.patch('/api/chats/:id/queued-messages/:messageId', async (request) => {
     const user = requireUser(request)
     const { id, messageId } = request.params as { id: string; messageId: string }
     const input = updateQueuedMessageSchema.parse(request.body)
-    return { queuedMessage: await updateQueuedMessage(user.id, id, messageId, input, {
+    const [queuedMessage] = queuedMessagesForViewer(request, [await updateQueuedMessage(user.id, id, messageId, input, {
       billingUserId: billingUserForRequest(request).id,
       actorUserId: request.adminChatAccess?.actorUser.id,
       client: clientAttributionForRequest(request),
-    }) }
+    })])
+    return { queuedMessage }
   })
 
   app.patch('/api/chats/:id/queued-messages/:messageId/reorder', async (request) => {
     const user = requireUser(request)
     const { id, messageId } = request.params as { id: string; messageId: string }
     const input = reorderQueuedMessageSchema.parse(request.body)
-    return { queuedMessages: await reorderQueuedMessage(user.id, id, messageId, input) }
+    return { queuedMessages: queuedMessagesForViewer(request, await reorderQueuedMessage(user.id, id, messageId, input)) }
   })
 
   app.delete('/api/chats/:id/queued-messages/:messageId', async (request, reply) => {
