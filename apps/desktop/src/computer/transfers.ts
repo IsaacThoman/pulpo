@@ -117,13 +117,15 @@ export function temporarySibling(target: string): string {
 }
 
 /** Writes a stream to `target` through a temporary file, verified before it is renamed into place. Returns the hex SHA-256. */
-export async function writeVerified(source: Readable, target: string, check: DownloadCheck): Promise<string> {
+export async function writeVerified(source: Readable, target: string, check: DownloadCheck, beforeCommit?: () => void): Promise<string> {
   await mkdir(path.dirname(target), { recursive: true })
   const temporary = temporarySibling(target)
   const { stream, finish } = verifier(check)
   try {
     await pipeline(source, stream, createWriteStream(temporary, { flags: 'wx' }))
     const digest = finish()
+    // The bytes may have taken a while; a caller can still call the write off (it throws).
+    beforeCommit?.()
     await rename(temporary, target)
     return digest
   } catch (error) {
@@ -134,7 +136,7 @@ export async function writeVerified(source: Readable, target: string, check: Dow
 }
 
 /** Fetches the transfer URL with GET into `target` (temporary name, then rename). */
-export async function downloadFile(url: URL, target: string, check: DownloadCheck): Promise<string> {
+export async function downloadFile(url: URL, target: string, check: DownloadCheck, beforeCommit?: () => void): Promise<string> {
   const incoming = request(url, 'GET', {})
   const response = await new Promise<http.IncomingMessage>((resolve, reject) => {
     incoming.once('response', resolve)
@@ -143,10 +145,10 @@ export async function downloadFile(url: URL, target: string, check: DownloadChec
     incoming.end()
   })
   if ((response.statusCode ?? 0) < 200 || (response.statusCode ?? 0) >= 300) throw failure(response, 'download')
-  return writeVerified(response, target, check)
+  return writeVerified(response, target, check, beforeCommit)
 }
 
 /** Writes inline base64 bytes to `target` the same way. */
-export async function writeInline(data: string, target: string, check: DownloadCheck): Promise<string> {
-  return writeVerified(Readable.from([Buffer.from(data, 'base64')]), target, check)
+export async function writeInline(data: string, target: string, check: DownloadCheck, beforeCommit?: () => void): Promise<string> {
+  return writeVerified(Readable.from([Buffer.from(data, 'base64')]), target, check, beforeCommit)
 }

@@ -15,7 +15,7 @@ import {
 } from '@pulpo/contracts'
 import type { ChangesStore, StoredChange } from './changes'
 import { versionIfFile } from './changes'
-import { ComputerError } from './errors'
+import { assertSessionActive, ComputerError } from './errors'
 import type { ComputerAccount } from './grants'
 import { realFolder, resolveForChange, resolveInFolder } from './paths'
 import { createLineMatcher, isSkippedFolder, looksBinary, SEARCH_MAX_FILE_BYTES, SEARCH_MAX_FILES, SEARCH_TIME_BUDGET_MS } from './search'
@@ -42,6 +42,8 @@ export interface FolderSession {
   folder: string
   account: ComputerAccount
   origin: string
+  /** Whether this is still the registered session; checked before anything in the folder is changed. */
+  active?: () => boolean
 }
 
 export interface FolderContext {
@@ -275,6 +277,7 @@ export class FolderService {
         await changes.suggest(session.account, { ...base, path: target.relative, kind: 'mkdir' })
         return { status: 'suggested', message: `Suggested creating ${target.relative}/. The user will accept or reject it.` }
       }
+      assertSessionActive(session.active)
       await mkdir(target.absolute, { recursive: change.parents === true })
       await changes.recordApplied(session.account, { ...base, path: target.relative, kind: 'mkdir' })
       return { status: 'created', message: '' }
@@ -289,6 +292,7 @@ export class FolderService {
         await changes.suggest(session.account, { ...base, path: from.relative, kind: 'move', to: to.relative })
         return { status: 'suggested', message: `Suggested moving ${from.relative} to ${to.relative}. The user will accept or reject it.` }
       }
+      assertSessionActive(session.active)
       await mkdir(path.dirname(to.absolute), { recursive: true })
       await rename(from.absolute, to.absolute)
       await changes.recordApplied(session.account, { ...base, path: from.relative, kind: 'move', to: to.relative })
@@ -306,6 +310,7 @@ export class FolderService {
       await changes.suggest(session.account, { ...base, path: target.relative, kind: 'remove', recursive: change.recursive === true })
       return { status: 'suggested', message: `Suggested removing ${target.relative}. The user will accept or reject it.` }
     }
+    assertSessionActive(session.active)
     await this.context.trash(target.absolute)
     await changes.recordApplied(session.account, { ...base, path: target.relative, kind: 'remove' })
     return { status: 'updated', message: `Moved ${target.relative} to the trash.` }
@@ -360,6 +365,8 @@ export class FolderService {
       }
       // The new file takes the place of the old one, so it keeps its permissions (a script stays executable).
       if (existing) await chmod(temporary, existing.mode & 0o7777)
+      // Nor is a file put in place for a reply that ended, or a folder taken back, while it arrived.
+      assertSessionActive(session.active)
       await rename(temporary, target.absolute)
     } catch (error) { await rm(temporary, { force: true }).catch(() => undefined); throw error }
     await this.context.changes.recordApplied(session.account, { ...base, path: target.relative, kind: target.exists ? 'update' : 'create', sizeBytes: change.sizeBytes })

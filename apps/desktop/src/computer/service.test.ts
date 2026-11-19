@@ -205,6 +205,43 @@ describe('grants and sessions', () => {
     await expect(h.service.begin({ sessionId, access: 'full', folder: null })).resolves.toEqual({ ok: false, reason: 'full_access_not_allowed' })
   })
 
+  it('refuses a session when what it needs is taken back while it is being begun', async () => {
+    const stored = { session: { instanceUrl: server.origin, token: 'a'.repeat(43), expiresAt: '2099-01-01T00:00:00Z' } }
+    const accounts = new AccountResolver({ loadSession: async () => stored.session, fetchUserId: async () => USER_A })
+    // Holds a session at its last check before it is registered.
+    let hold: Promise<void> | undefined
+    const signIn = accounts.signIn.bind(accounts)
+    accounts.signIn = async () => { await hold; return signIn() }
+    const h = harness(server.origin, { accounts })
+    const folder = path.join(home, 'project'); await mkdir(folder)
+    const other = path.join(home, 'other'); await mkdir(other)
+    await grantFolder(h, folder)
+    await grantFolder(h, other)
+    expect(await h.service.allowFullAccess()).toBe(true)
+
+    const beginWhile = async (input: { access: 'full' | 'read'; folder: string | null }, meanwhile: () => Promise<void>) => {
+      let resume!: () => void
+      hold = new Promise<void>((resolve) => { resume = resolve })
+      const sessionId = randomUUID()
+      const begun = h.service.begin({ sessionId, ...input })
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      await meanwhile()
+      hold = undefined
+      resume()
+      return { sessionId, result: await begun }
+    }
+
+    // Taking back something else leaves the session alone.
+    const kept = await beginWhile({ access: 'read', folder }, () => h.service.forgetFolder(other))
+    expect(kept.result).toEqual({ ok: true })
+    expect(await h.service.sessions()).toEqual([kept.sessionId])
+    await h.service.end(kept.sessionId)
+
+    expect((await beginWhile({ access: 'full', folder: null }, () => h.service.revokeFullAccess())).result).toEqual({ ok: false, reason: 'full_access_not_allowed' })
+    expect((await beginWhile({ access: 'read', folder }, () => h.service.forgetFolder(folder))).result).toEqual({ ok: false, reason: 'folder_not_allowed' })
+    expect(await h.service.sessions()).toEqual([])
+  })
+
   it('reads the account and its sign-in together', async () => {
     const stored = { session: { instanceUrl: server.origin, token: 'a'.repeat(43), expiresAt: '2099-01-01T00:00:00Z' } }
     let answer!: () => void
@@ -350,6 +387,42 @@ describe('handle', () => {
       { path: transferTarget, sizeBytes: 12, sha256: null },
       { path: path.join(base, 'nope'), sizeBytes: 0, sha256: null },
     ] }))).toEqual({ missing: [transferTarget, transferTarget, path.join(base, 'nope')] })
+  })
+})
+
+describe('requests still being served when their session ends', () => {
+  it('does not put a file in place that was still arriving', async () => {
+    const h = harness(server.origin)
+    await h.service.allowFullAccess()
+    const sessionId = randomUUID()
+    await h.service.begin({ sessionId, access: 'full', folder: null })
+    const url = '/api/computer/transfers/late?token=t'
+    server.downloads.set(url, Buffer.from('too late'))
+    server.beforeDownload = async () => { await h.service.end(sessionId) }
+    const target = path.join(base, 'in', 'late.txt')
+    try {
+      expect((await refused(call(h, sessionId, 'file.receive', { path: target, transfer: { url }, sizeBytes: 8 }))).code).toBe('unknown_session')
+    } finally { server.beforeDownload = undefined }
+    expect(await readdir(path.join(base, 'in')).catch(() => [])).toEqual([])
+  })
+
+  it('does not change a folder that was taken back while the new bytes arrived', async () => {
+    const h = harness(server.origin)
+    const folder = path.join(home, 'project'); await mkdir(folder)
+    await writeFile(path.join(folder, 'a.txt'), 'kept')
+    await grantFolder(h, folder)
+    const sessionId = randomUUID()
+    await h.service.begin({ sessionId, access: 'write', folder })
+    const body = Buffer.alloc(COMPUTER_INLINE_MAX_BYTES + 5, 7)
+    const url = '/api/computer/transfers/revoked?token=t'
+    server.downloads.set(url, body)
+    server.beforeDownload = async () => { await h.service.forgetFolder(folder) }
+    try {
+      const answer = await refused(call(h, sessionId, 'folder.change', { responseId: randomUUID(), change: { kind: 'put', path: 'a.txt', transfer: { url }, sizeBytes: body.byteLength, base: sha('kept') } }))
+      expect(answer.code).toBe('unknown_session')
+    } finally { server.beforeDownload = undefined }
+    expect(await readFile(path.join(folder, 'a.txt'), 'utf8')).toBe('kept')
+    expect(await readdir(folder)).toEqual(['a.txt'])
   })
 })
 

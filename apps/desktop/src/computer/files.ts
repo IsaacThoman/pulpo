@@ -2,7 +2,7 @@ import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { COMPUTER_INLINE_MAX_BYTES, type ComputerParams, type ComputerResult } from '@pulpo/contracts'
 import { fileVersion } from './changes'
-import { ComputerError } from './errors'
+import { assertSessionActive, ComputerError } from './errors'
 import { downloadFile, transferUrl, uploadFile, writeInline } from './transfers'
 
 /** Full access moves files to and from anywhere on the computer (attachments, generated images, attach_file, view_image). */
@@ -11,6 +11,8 @@ export interface FileTransferContext {
   origin: string
   allowHttpLocalhost: boolean
   platform: NodeJS.Platform
+  /** Whether the session the request came for is still the registered one. */
+  active?: () => boolean
 }
 
 function absolute(requested: string, platform: NodeJS.Platform): string {
@@ -38,8 +40,10 @@ export async function receiveFile(context: FileTransferContext, params: Computer
   const existing = await stat(file).catch(() => null)
   if (existing?.isDirectory()) throw new ComputerError('invalid_request', `${file} is a folder.`)
   const check = { sizeBytes: params.sizeBytes, sha256: params.sha256 }
-  if (params.data !== undefined) await writeInline(params.data, file, check)
-  else if (params.transfer) await downloadFile(transferUrl(context.origin, params.transfer.url, context.allowHttpLocalhost), file, check)
+  // A file that was still arriving when its reply ended is not put in place.
+  const stillWanted = () => assertSessionActive(context.active)
+  if (params.data !== undefined) await writeInline(params.data, file, check, stillWanted)
+  else if (params.transfer) await downloadFile(transferUrl(context.origin, params.transfer.url, context.allowHttpLocalhost), file, check, stillWanted)
   else throw new ComputerError('invalid_request', 'Send the bytes inline or through a transfer.')
   return { path: file }
 }

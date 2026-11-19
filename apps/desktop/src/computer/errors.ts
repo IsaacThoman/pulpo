@@ -5,6 +5,14 @@ export class ComputerError extends Error {
   constructor(readonly code: ComputerErrorCode, message: string) { super(message) }
 }
 
+/**
+ * A request found its session gone when it was about to change something: the reply ended, or the
+ * user took the access back, while the request was being prepared. Nothing more is changed then.
+ */
+export function assertSessionActive(active: (() => boolean) | undefined): void {
+  if (active && !active()) throw new ComputerError('unknown_session', 'The reply this belongs to is over, or the user took this access back. Nothing more was changed.')
+}
+
 const MESSAGE_LIMIT = 4_000
 
 /** Maps anything thrown while serving a request to a code and a message the agent can act on. */

@@ -104,6 +104,24 @@ describe.skipIf(!posix)('Operations', () => {
     expect(await until('missing-edit')).toMatchObject({ status: 'failed', error: 'Edit target was not found' })
   })
 
+  it('leaves a file alone when a write or an edit is cancelled before it reaches it', async () => {
+    const created = path.join(base, 'new', 'file.txt')
+    operations.start(context, 'write', 'write', { path: created, content: 'late' })
+    expect(operations.cancel('s1', 'write').status).toBe('cancelled')
+    expect((await until('write')).status).toBe('cancelled')
+    // Long enough for a write that was not held back to land.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    await expect(readFile(created)).rejects.toMatchObject({ code: 'ENOENT' })
+
+    const existing = path.join(base, 'existing.txt')
+    await writeFile(existing, 'before')
+    operations.start(context, 'edit', 'edit', { path: existing, oldText: 'before', newText: 'after' })
+    // A session that ends cancels what it was doing, as when access is taken back.
+    operations.cancelSession('s1')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(await readFile(existing, 'utf8')).toBe('before')
+  })
+
   it('finds and greps without ripgrep', async () => {
     await writeFile(path.join(base, 'a.md'), 'needle\n')
     operations.start(context, 'f', 'find', { pattern: '*.md' })

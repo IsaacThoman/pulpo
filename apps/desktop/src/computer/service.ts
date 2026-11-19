@@ -110,6 +110,8 @@ export class ComputerService implements Api {
   private filesRelay: Promise<FilesRelay | null> | null = null
   /** Counts changes of the stored sign-in, so work that began under one can tell it is no longer current. */
   private signInChanges = 0
+  /** Counts what the user took back (full access, a folder), so a session being begun reads its grants again. */
+  private revocations = 0
   private shuttingDown = false
 
   constructor(private readonly options: ComputerServiceOptions) {
@@ -217,16 +219,21 @@ export class ComputerService implements Api {
     const identity = await this.options.accounts.identity()
     if (!identity) return { ok: false, reason: 'signed_out' }
     const { account, signIn } = identity
-    const grants = await this.grants.get(account)
     const folder = value.folder === null || value.folder === undefined ? null : path.resolve(value.folder)
-    if (folder !== null && (!path.isAbsolute(value.folder!) || !grants.folders.includes(folder))) return { ok: false, reason: 'folder_not_allowed' }
-    if (access.data === 'full') {
-      if (!grants.fullAccess) return { ok: false, reason: 'full_access_not_allowed' }
-    } else if (folder === null) return { ok: false, reason: 'folder_not_allowed' }
-    // The account and its grants were read a moment ago. If someone else signed in meanwhile, they
-    // are not that person's, and the cleanup for the change may already be over. Nothing is awaited
-    // between this check and registering the session.
-    if (await this.options.accounts.signIn() !== signIn || signInChanges !== this.signInChanges) return { ok: false, reason: 'signed_out' }
+    for (;;) {
+      const revocations = this.revocations
+      const grants = await this.grants.get(account)
+      if (folder !== null && (!path.isAbsolute(value.folder!) || !grants.folders.includes(folder))) return { ok: false, reason: 'folder_not_allowed' }
+      if (access.data === 'full') {
+        if (!grants.fullAccess) return { ok: false, reason: 'full_access_not_allowed' }
+      } else if (folder === null) return { ok: false, reason: 'folder_not_allowed' }
+      // The account and its grants were read a moment ago. If someone else signed in meanwhile, they
+      // are not that person's, and the cleanup for the change may already be over.
+      if (await this.options.accounts.signIn() !== signIn || signInChanges !== this.signInChanges) return { ok: false, reason: 'signed_out' }
+      // Likewise when something was taken back meanwhile: the grants are read again. Nothing is
+      // awaited between this check and registering the session.
+      if (revocations === this.revocations) break
+    }
     this.pruneSessions()
     const existing = this.sessionsById.get(value.sessionId)
     if (existing && (existing.access !== access.data || existing.folder !== folder || accountKey(existing.account) !== accountKey(account))) this.operations.cancelSession(existing.id)
@@ -286,6 +293,7 @@ export class ComputerService implements Api {
     const account = await this.options.accounts.current()
     if (!account) return
     await this.grants.revokeFullAccess(account)
+    this.revocations += 1
     for (const session of [...this.sessionsById.values()]) {
       if (session.access === 'full' && accountKey(session.account) === accountKey(account)) this.endSession(session.id)
     }
@@ -298,6 +306,7 @@ export class ComputerService implements Api {
     if (!account) return
     const target = path.resolve(folder)
     await this.grants.removeFolder(account, target)
+    this.revocations += 1
     for (const session of [...this.sessionsById.values()]) {
       if (session.folder === target && accountKey(session.account) === accountKey(account)) this.endSession(session.id)
     }
@@ -379,7 +388,10 @@ export class ComputerService implements Api {
   private async run(session: Session, method: ComputerMethod, input: unknown): Promise<unknown> {
     // `input` was validated against computerMethods[method].params by the caller.
     const params = <M extends ComputerMethod>() => input as ComputerParams<M>
-    const files = { origin: session.origin, allowHttpLocalhost: this.options.allowHttpLocalhost, platform: this.options.platform }
+    // Ending a session cannot reach a request that is still being prepared, so each one asks again
+    // just before it changes anything.
+    const active = () => this.sessionsById.get(session.id) === session
+    const files = { origin: session.origin, allowHttpLocalhost: this.options.allowHttpLocalhost, platform: this.options.platform, active }
     switch (method) {
       case 'describe': {
         const cwd = await this.sessionCwd(session)
@@ -404,7 +416,7 @@ export class ComputerService implements Api {
         // The reply may have ended, or access been taken back, while that was prepared. Ending a
         // session cancels the operations it has, and this one is not among them yet: started now,
         // it would run with nothing left that could stop it.
-        if (this.sessionsById.get(session.id) !== session) throw new ComputerError('unknown_session', UNKNOWN_SESSION)
+        if (!active()) throw new ComputerError('unknown_session', UNKNOWN_SESSION)
         return this.operations.start(context, id, type, args)
       }
       case 'operation.get': { const { id, waitMs } = params<'operation.get'>(); return this.operations.get(session.id, id, waitMs) }
@@ -416,7 +428,7 @@ export class ComputerService implements Api {
       default: break
     }
     if (!isComputerFolderMode(session.access) || session.folder === null) throw new ComputerError('not_allowed', `${method} needs a folder session.`)
-    const folder: FolderSession = { sessionId: session.id, access: session.access as ComputerFolderMode, folder: session.folder, account: session.account, origin: session.origin }
+    const folder: FolderSession = { sessionId: session.id, access: session.access as ComputerFolderMode, folder: session.folder, account: session.account, origin: session.origin, active }
     switch (method) {
       case 'folder.list': return this.folders.list(folder, params<'folder.list'>())
       case 'folder.read': return this.folders.read(folder, params<'folder.read'>())

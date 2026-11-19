@@ -301,8 +301,11 @@ export class Operations {
         if (typeof args.path !== 'string' || !args.path) throw new Error('path must be a non-empty string')
         const target = path.resolve(context.cwd, args.path)
         await mkdir(path.dirname(target), { recursive: true })
-        await writeFile(target, String(args.content ?? ''), 'utf8')
-        operation.output = `Wrote ${displayPath(context.cwd, target)}`
+        // Cancelled, or its session ended, while the folder was made: the file is left as it was.
+        if (!cancelled()) {
+          await writeFile(target, String(args.content ?? ''), 'utf8')
+          operation.output = `Wrote ${displayPath(context.cwd, target)}`
+        }
       } else if (type === 'edit') {
         if (typeof args.path !== 'string' || !args.path) throw new Error('path must be a non-empty string')
         const target = path.resolve(context.cwd, args.path)
@@ -311,8 +314,10 @@ export class Operations {
         if (!oldText || !current.includes(oldText)) throw new Error('Edit target was not found')
         // A replacer function keeps `$&` and friends in the new text literal.
         const next = current.replace(oldText, () => String(args.newText ?? ''))
-        await writeFile(target, next, 'utf8')
-        operation.output = `Edited ${displayPath(context.cwd, target)}`
+        if (!cancelled()) {
+          await writeFile(target, next, 'utf8')
+          operation.output = `Edited ${displayPath(context.cwd, target)}`
+        }
       } else if (type === 'list') {
         const target = path.resolve(context.cwd, typeof args.path === 'string' && args.path ? args.path : '.')
         operation.output = (await readdir(target, { withFileTypes: true })).map((entry) => `${entry.isDirectory() ? 'd' : '-'} ${entry.name}`).join('\n')
