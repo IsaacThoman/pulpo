@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { and, eq, sql } from 'drizzle-orm'
 import {
   DEFAULT_USAGE_VISIBILITY,
+  INSTANCE_COLOR_THEMES_SETTING_KEY,
   agentSettingsSchema,
   authSettingsSchema,
   instanceOcrSettingsSchema,
@@ -34,6 +35,7 @@ import {
   parseWebToolsSettings,
 } from '../settings/application-settings.js'
 import { preferencesWithModelDefaults } from '../settings/model-preferences.js'
+import { parseInstanceColorThemes } from '../settings/instance-color-themes.js'
 import { firstUnavailableModelReference, newAccountModelReferenceIds } from '../settings/new-account-defaults.js'
 import { reconcileDetailedPayloadRetention } from '../logging/detailed-payload-retention.js'
 import { getConfig } from '../config.js'
@@ -89,6 +91,7 @@ export async function loadManagementSettings(userId: string, database: typeof db
   })
   const storedWebTools = parseWebToolsSettings(byKey.get('webTools'))
   const instance = {
+    colorThemes: parseInstanceColorThemes(byKey.get(INSTANCE_COLOR_THEMES_SETTING_KEY)),
     auth: parseAuthSettings(byKey.get('auth')),
     interface: parseInterfaceSettings(byKey.get('interface')),
     personalization: parsePersonalizationSettings(byKey.get('personalization')),
@@ -165,7 +168,11 @@ export async function planManagementSettings(
 ) {
   const current = await loadManagementSettings(userId)
   const parsed = managementSettingsDocumentSchema.parse(input)
-  const document = { ...parsed, account: withStoredUsageVisibility(parsed.account, current) }
+  const document = {
+    ...parsed,
+    account: withStoredUsageVisibility(parsed.account, current),
+    instance: { ...parsed.instance, colorThemes: parsed.instance.colorThemes ?? current.instance.colorThemes },
+  }
   await validateModelReferences(document, mode)
   const changes = changesBetween(
     { account: current.account, instance: current.instance },
@@ -253,6 +260,7 @@ export async function applyManagementSettings(
         ? storedWebTools.encryptedKagiApiKey
         : secrets.webToolsApiKey === null ? null : encryptSecret(secrets.webToolsApiKey, getConfig().ENCRYPTION_KEY)
       const groups: Record<string, unknown> = {
+        ...(changedPaths.includes('instance.colorThemes') && { [INSTANCE_COLOR_THEMES_SETTING_KEY]: document.instance.colorThemes }),
         auth,
         interface: iface,
         personalization,

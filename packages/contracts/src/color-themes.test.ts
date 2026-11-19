@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   CUSTOM_THEMES_MAX,
   customThemesSchema,
+  instanceColorThemesSchema,
   managementAccountSettingsSchema,
   pulpoThemeExtensionSchema,
   unsafeThemeCssReason,
@@ -41,6 +42,14 @@ describe('color themes', () => {
     expect(unsafeThemeCssReason('body { background: url("data:image/png;base64,AAAA") }')).toBeNull()
     expect(unsafeThemeCssReason('svg { fill: url(#gradient) }')).toBeNull()
     expect(unsafeThemeCssReason('.app-main { background-image: linear-gradient(red, blue) }')).toBeNull()
+  })
+
+  it('accepts shared palettes and reserves CSS for personal themes', () => {
+    const theme = { id: 'lagoon', name: 'Lagoon', dark: { colors: { 'editor.background': '#102d35' } } }
+    expect(instanceColorThemesSchema.parse([theme])[0]).toMatchObject({ id: 'lagoon', css: '' })
+    expect(instanceColorThemesSchema.safeParse([{ ...theme, css: 'body { color: red }' }]).success).toBe(false)
+    expect(customThemesSchema.safeParse([{ ...theme, css: 'body { color: red }' }]).success).toBe(true)
+    expect(managementAccountSettingsSchema.parse({ username: 'pulpo_user', colorTheme: 'instance:lagoon' }).colorTheme).toBe('instance:lagoon')
   })
 
   it('rejects theme CSS that could reach the network, including escaped forms', () => {

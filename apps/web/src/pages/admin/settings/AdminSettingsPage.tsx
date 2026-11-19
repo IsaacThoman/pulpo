@@ -12,6 +12,7 @@ import {
   Mic,
   BrainCircuit,
   Megaphone,
+  Palette,
 } from 'lucide-react'
 import { AuthenticationSection, GeneralSection, InterfaceSection } from './sections-general'
 import { DatabaseSection } from './sections-data'
@@ -23,6 +24,7 @@ import { InviteCodesSection } from './sections-invites'
 import { DictationSection } from './sections-dictation'
 import { EpisodicMemorySection } from './sections-episodic-memory'
 import { BannersSection } from './sections-banners'
+import { ColorThemesSection } from './sections-color-themes'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
 import { ui } from '@/i18n/ui'
@@ -31,6 +33,7 @@ const SECTIONS = [
   { id: 'general', label: "General", icon: SlidersHorizontal, component: GeneralSection },
   { id: 'auth', label: "Authentication", icon: Lock, component: AuthenticationSection },
   { id: 'interface', label: "Interface", icon: LayoutGrid, component: InterfaceSection },
+  { id: 'color-themes', label: "Color themes", icon: Palette, component: ColorThemesSection },
   { id: 'personalization', label: "Personalization", icon: Sparkles, component: PersonalizationSection },
   { id: 'banners', label: "Banners", icon: Megaphone, component: BannersSection },
   { id: 'ocr', label: "OCR", icon: FileSearch, component: OcrSection },

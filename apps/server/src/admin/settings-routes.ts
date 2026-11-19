@@ -9,7 +9,7 @@ import { registerRestoreUploadRoutes } from './restore-upload-routes.js'
 import { and, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentSettingsSchema, backupSettingsTestInputSchema, DATA_RETENTION_TAGS_SETTING_KEY, dataRetentionTagsSchema, bannerCreateInputSchema, bannerUpdateInputSchema, bannerWindowIsValid, backupSettingsUpdateSchema, dictationSettingsSchema, episodicMemorySettingsSchema, episodicMemoryStatisticsRangeSchema, personalizationSettingsSchema, secretRevealInputSchema, webToolProviderSchema, webToolsSettingsSchema } from '@pulpo/contracts'
+import { agentSettingsSchema, backupSettingsTestInputSchema, DATA_RETENTION_TAGS_SETTING_KEY, INSTANCE_COLOR_THEMES_SETTING_KEY, dataRetentionTagsSchema, bannerCreateInputSchema, bannerUpdateInputSchema, bannerWindowIsValid, backupSettingsUpdateSchema, dictationSettingsSchema, episodicMemorySettingsSchema, episodicMemoryStatisticsRangeSchema, personalizationSettingsSchema, secretRevealInputSchema, webToolProviderSchema, webToolsSettingsSchema } from '@pulpo/contracts'
 import { requireAdmin } from '../auth/service.js'
 import { requireSecretRevealAuth } from '../auth/sensitive-action.js'
 import { db } from '../database/client.js'
@@ -123,6 +123,9 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
   app.patch('/api/admin/settings', async (request) => {
     const admin = requireAdmin(request)
     const values = z.record(z.string().min(1).max(120), z.unknown()).parse(request.body)
+    if (values[INSTANCE_COLOR_THEMES_SETTING_KEY] !== undefined) {
+      throw new AppError(400, 'dedicated_color_themes_endpoint', 'Use /api/admin/settings/color-themes for instance color themes')
+    }
     let loggingSettings: DetailedPayloadLoggingSettings | undefined
     if (values.diagnosticCleanup !== undefined) throw new AppError(400, 'runtime_status_read_only', 'Diagnostic cleanup status is managed by the worker')
     if (values.publicUrl !== undefined) throw new AppError(400, 'deployment_setting_read_only', 'PUBLIC_URL is managed by the deployment environment')
