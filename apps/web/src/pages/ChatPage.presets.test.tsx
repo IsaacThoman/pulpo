@@ -110,6 +110,12 @@ function renderChat(path: InitialEntry = '/') {
     <Route path="/c/:chatId" element={<ChatPage />} />
   </Routes></TooltipProvider></MemoryRouter></Profiler>)
 }
+/** The agent menu stays open after a choice until the user dismisses it, here with Escape. */
+async function closeAgentMenu(view: ReturnType<typeof renderChat>) {
+  const menu = view.queryByRole('menu')
+  if (menu) fireEvent.keyDown(menu, { key: 'Escape' })
+  await waitFor(() => expect(view.queryByRole('menu')).toBeNull())
+}
 async function selectControls(view: ReturnType<typeof renderChat>) {
   for (const choice of ['Low', 'Fast']) {
     fireEvent.keyDown(view.getByRole('button', { name: /^Generation options/ }), { key: 'ArrowDown' })
@@ -117,6 +123,7 @@ async function selectControls(view: ReturnType<typeof renderChat>) {
   }
   fireEvent.keyDown(view.getByRole('button', { name: 'Agent options, Pulpo Agent' }), { key: 'ArrowDown' })
   fireEvent.click(await view.findByRole('menuitemradio', { name: 'Disabled' }))
+  await closeAgentMenu(view)
   await waitFor(() => expect(view.getByRole('button', { name: /^Generation options/ }).textContent).toContain('Low'))
 }
 function expectControls(view: ReturnType<typeof renderChat>, temporary = false) {
@@ -243,6 +250,7 @@ it.each([
   }
   fireEvent.keyDown(view.getByRole('button', { name: `Agent options, ${initialAgentMode ? 'Pulpo Agent' : 'Disabled'}` }), { key: 'ArrowDown' })
   fireEvent.click(await view.findByRole('menuitemradio', { name: initialAgentMode ? 'Disabled' : 'Pulpo Agent' }))
+  await closeAgentMenu(view)
   fireEvent.click(view.getByRole('button', { name: 'Regenerate' }))
   await waitFor(() => expect(requests.some((request) => request.path.endsWith(`/api/messages/${responseId}/regenerate`))).toBe(true))
   const request = requests.find((request) => request.path.endsWith(`/api/messages/${responseId}/regenerate`))!
@@ -291,6 +299,11 @@ it.each([
       } else {
         fireEvent.pointerDown(choice, { pointerType: 'mouse' })
         fireEvent.click(choice)
+      }
+      // The agent menu stays open after a choice; dismissing it is what returns to the draft.
+      if (picker === 'agent') {
+        expect(view.getByRole('menu')).not.toBeNull()
+        fireEvent.keyDown(choice, { key: 'Escape' })
       }
     }
     await waitFor(() => expect(document.activeElement).toBe(composer))
