@@ -2929,6 +2929,7 @@ const esUi: Record<string, string> = {
   "Starting folder": "Carpeta inicial",
   "Remove anyway": "Eliminar de todos modos",
   "This folder is no longer empty.": "Esta carpeta ya no está vacía.",
+  "Pulpo Files": "Archivos de Pulpo",
   "Items you mention": "Elementos que mencionas",
   "All files": "Todos los archivos",
   "Can use the items you mention": "Puede usar los elementos que mencionas",

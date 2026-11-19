@@ -5,7 +5,7 @@ The desktop app can lend the agent the computer it runs on. In the composer's Pu
 - **Files**: the items the chat mentions, or all of the user's Files once that was mentioned or allowed, with **Read only**, **Suggest changes** or **Edit directly**.
 - **This computer**: **Off** (the default), or one of the access modes below. Once it is on, the same submenu offers the folder.
 
-The two are chosen separately, and Files stay available whichever way the computer is used. Outside the desktop app there is no computer to offer, and the Files choices sit in the menu itself.
+The two are chosen separately, and Files stay available whichever way the computer is used. Outside the desktop app there is no computer to offer, so the Files row stands alone. Choosing an option leaves the menu open, showing the choice take; it closes when the user clicks away, clicks the pill again, or presses Escape. Only **Files access…** closes it, because it opens a dialog.
 
 | Access | Folder | What the agent does |
 |---|---|---|
