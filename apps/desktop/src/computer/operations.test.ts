@@ -138,6 +138,33 @@ describe.skipIf(!posix)('Operations that ignore a polite stop', () => {
   })
 })
 
+describe.skipIf(!posix)('Operations when the app quits', () => {
+  it('kills at once a command that was cancelled and is still ignoring the polite stop', async () => {
+    const base = await mkdtemp(path.join(os.tmpdir(), 'pulpo-ops-quit-'))
+    // A grace period far longer than the test: only quitting can kill it in time.
+    const operations = new Operations({ platform: process.platform, savedOutputDir: path.join(base, 'saved'), scriptDir: path.join(base, 'scripts'), killGraceMs: 600_000 })
+    const context: OperationContext = { sessionId: 's1', cwd: base, shell: { path: '/bin/sh', name: 'sh' }, env: async () => ({ PATH: '/usr/bin:/bin' }) }
+    const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
+    try {
+      operations.start(context, 'stubborn', 'bash', { command: 'trap "" TERM; echo shell $$; sleep 60 & wait' })
+      let output = ''
+      for (let attempt = 0; attempt < 50 && !/shell \d+/.test(output); attempt += 1) output = (await operations.get('s1', 'stubborn', 200)).output
+      const shellPid = Number(/shell (\d+)/.exec(output)![1])
+      operations.cancel('s1', 'stubborn')
+      // Ending the session finds the operation already cancelled and leaves it to its grace period.
+      operations.cancelSession('s1')
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      expect(alive(shellPid)).toBe(true)
+      operations.killStopping()
+      for (let attempt = 0; attempt < 50 && alive(shellPid); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(alive(shellPid)).toBe(false)
+    } finally {
+      operations.killStopping()
+      await rm(base, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('outputForAnswer', () => {
   it('leaves short output alone', () => {
     expect(outputForAnswer('hello', 10)).toBe('hello')

@@ -197,6 +197,8 @@ export class ComputerService implements Api {
   /** The app is quitting: nothing it started for the agent keeps running after it. */
   shutdown(): void {
     for (const sessionId of [...this.sessionsById.keys()]) this.endSession(sessionId, { now: true })
+    // Commands cancelled moments ago may still be ignoring the polite signal.
+    this.operations.killStopping()
   }
 
   /**

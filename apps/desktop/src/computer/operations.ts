@@ -80,6 +80,8 @@ function displayPath(cwd: string, target: string): string {
 export class Operations {
   private readonly operations = new Map<string, Operation>()
   private readonly live = new Map<string, LiveOperation>()
+  /** Process groups asked to stop and not yet killed outright, by pid, with the timer that will do it. */
+  private readonly stopping = new Map<number, NodeJS.Timeout>()
   private readonly spawn: Spawn
   private readonly now: () => number
 
@@ -156,9 +158,26 @@ export class Operations {
       killProcessTree(platform, child, options.now ? 'SIGKILL' : 'SIGTERM', this.spawn)
       // A command may ignore the polite signal, or leave something running after its shell is gone.
       if (options.now) forceKillGroup(platform, pid)
-      else setTimeout(() => forceKillGroup(platform, pid), this.options.killGraceMs ?? KILL_GRACE_MS).unref()
+      else if (pid && platform !== 'win32' && !this.stopping.has(pid)) {
+        const timer = setTimeout(() => { this.stopping.delete(pid); forceKillGroup(platform, pid) }, this.options.killGraceMs ?? KILL_GRACE_MS)
+        timer.unref()
+        this.stopping.set(pid, timer)
+      }
     }
     return this.view(key, operation)
+  }
+
+  /**
+   * The app is quitting: whatever was asked to stop and is still within its grace period is killed
+   * now. Those operations already read `cancelled`, so nothing else would reach them, and the timer
+   * that would have killed them dies with the app.
+   */
+  killStopping(): void {
+    for (const [pid, timer] of this.stopping) {
+      clearTimeout(timer)
+      forceKillGroup(this.options.platform, pid)
+    }
+    this.stopping.clear()
   }
 
   /** Ends every running operation of a session whose reply is over. */
