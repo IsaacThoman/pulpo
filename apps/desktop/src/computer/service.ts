@@ -108,6 +108,8 @@ export class ComputerService implements Api {
   private readonly now: () => number
   private readonly root: string
   private filesRelay: Promise<FilesRelay | null> | null = null
+  /** Counts changes of the stored sign-in, so work that began under one can tell it is no longer current. */
+  private signInChanges = 0
   private shuttingDown = false
 
   constructor(private readonly options: ComputerServiceOptions) {
@@ -211,15 +213,20 @@ export class ComputerService implements Api {
     if (typeof value.sessionId !== 'string' || !UUID.test(value.sessionId) || !access.success || (value.folder !== null && typeof value.folder !== 'string')) {
       throw new Error('Invalid computer session.')
     }
-    const account = await this.options.accounts.current()
-    const signIn = await this.options.accounts.signIn()
-    if (!account || !signIn) return { ok: false, reason: 'signed_out' }
+    const signInChanges = this.signInChanges
+    const identity = await this.options.accounts.identity()
+    if (!identity) return { ok: false, reason: 'signed_out' }
+    const { account, signIn } = identity
     const grants = await this.grants.get(account)
     const folder = value.folder === null || value.folder === undefined ? null : path.resolve(value.folder)
     if (folder !== null && (!path.isAbsolute(value.folder!) || !grants.folders.includes(folder))) return { ok: false, reason: 'folder_not_allowed' }
     if (access.data === 'full') {
       if (!grants.fullAccess) return { ok: false, reason: 'full_access_not_allowed' }
     } else if (folder === null) return { ok: false, reason: 'folder_not_allowed' }
+    // The account and its grants were read a moment ago. If someone else signed in meanwhile, they
+    // are not that person's, and the cleanup for the change may already be over. Nothing is awaited
+    // between this check and registering the session.
+    if (await this.options.accounts.signIn() !== signIn || signInChanges !== this.signInChanges) return { ok: false, reason: 'signed_out' }
     this.pruneSessions()
     const existing = this.sessionsById.get(value.sessionId)
     if (existing && (existing.access !== access.data || existing.folder !== folder || accountKey(existing.account) !== accountKey(account))) this.operations.cancelSession(existing.id)
@@ -266,6 +273,7 @@ export class ComputerService implements Api {
    * nor leaves another account's sessions served while an answer is awaited.
    */
   async sessionChanged(): Promise<void> {
+    this.signInChanges += 1
     this.options.accounts.forget()
     const signIn = await this.options.accounts.signIn().catch(() => null)
     for (const session of [...this.sessionsById.values()]) {

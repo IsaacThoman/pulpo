@@ -179,6 +179,50 @@ describe('grants and sessions', () => {
     h.identity.users = known
   })
 
+  it('refuses a session when another account signs in while it is being begun', async () => {
+    const stored = { session: { instanceUrl: server.origin, token: 'a'.repeat(43), expiresAt: '2099-01-01T00:00:00Z' } }
+    let hold: Promise<void> | undefined
+    const accounts = new AccountResolver({
+      loadSession: async () => stored.session,
+      fetchUserId: async (_origin, token) => { await hold; return token === 'a'.repeat(43) ? USER_A : USER_B },
+    })
+    const h = harness(server.origin, { accounts })
+    expect(await h.service.allowFullAccess()).toBe(true)
+
+    // The instance is slow to say whose token this is, and the user switches accounts meanwhile.
+    accounts.forget()
+    let answer!: () => void
+    hold = new Promise<void>((resolve) => { answer = resolve })
+    const sessionId = randomUUID()
+    const begun = h.service.begin({ sessionId, access: 'full', folder: null })
+    stored.session = { ...stored.session, token: 'b'.repeat(43) }
+    await h.service.sessionChanged()
+    answer()
+    // The first account allowed full access; the one now signed in did not.
+    expect(await begun).toEqual({ ok: false, reason: 'signed_out' })
+    expect(await h.service.sessions()).toEqual([])
+    expect((await refused(call(h, sessionId, 'describe', {}))).code).toBe('unknown_session')
+    await expect(h.service.begin({ sessionId, access: 'full', folder: null })).resolves.toEqual({ ok: false, reason: 'full_access_not_allowed' })
+  })
+
+  it('reads the account and its sign-in together', async () => {
+    const stored = { session: { instanceUrl: server.origin, token: 'a'.repeat(43), expiresAt: '2099-01-01T00:00:00Z' } }
+    let answer!: () => void
+    const hold = new Promise<void>((resolve) => { answer = resolve })
+    const accounts = new AccountResolver({
+      loadSession: async () => stored.session,
+      fetchUserId: async (_origin, token) => { await hold; return token === 'a'.repeat(43) ? USER_A : USER_B },
+    })
+    const first = accounts.identity()
+    const signedInAs = await accounts.signIn()
+    stored.session = { ...stored.session, token: 'b'.repeat(43) }
+    answer()
+    // Still the pair that was read, never the first account under the second sign-in.
+    expect(await first).toEqual({ account: { origin: server.origin, userId: USER_A }, signIn: signedInAs })
+    expect(await accounts.signIn()).not.toBe(signedInAs)
+    expect(await accounts.identity()).toEqual({ account: { origin: server.origin, userId: USER_B }, signIn: await accounts.signIn() })
+  })
+
   it('takes back full access and forgets a folder, ending the sessions that used them', async () => {
     const h = harness(server.origin)
     const folder = path.join(home, 'project')

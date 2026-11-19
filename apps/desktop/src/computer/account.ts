@@ -23,7 +23,12 @@ export class AccountResolver {
 
   constructor(private readonly options: AccountResolverOptions) {}
 
-  async current(): Promise<ComputerAccount | null> {
+  /**
+   * The signed-in account together with the sign-in it was read from, or null when nobody is signed
+   * in or the instance did not say who the token belongs to. Both come from one read of the stored
+   * session, so they always belong together even when the session changes while the instance is asked.
+   */
+  async identity(): Promise<{ account: ComputerAccount; signIn: string } | null> {
     const session = await this.options.loadSession()
     if (!session) return null
     const key = tokenKey(session.instanceUrl, session.token)
@@ -34,8 +39,12 @@ export class AccountResolver {
     }
     const userId = await pending
     // A failure (offline, server down) is not remembered, so the next call asks again.
-    if (!userId) { this.userIds.delete(key); return null }
-    return { origin: session.instanceUrl, userId }
+    if (!userId) { if (this.userIds.get(key) === pending) this.userIds.delete(key); return null }
+    return { account: { origin: session.instanceUrl, userId }, signIn: key }
+  }
+
+  async current(): Promise<ComputerAccount | null> {
+    return (await this.identity())?.account ?? null
   }
 
   /**
