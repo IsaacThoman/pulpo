@@ -7,7 +7,7 @@ import { COMPUTER_OPERATION_OUTPUT_MAX_CHARACTERS, type ComputerOperation, type 
 import { readTextFile, resolveReadableVmPath } from '../../../../packages/workspace-daemon/src/read'
 import { saveLargeOutput } from '../../../../packages/workspace-daemon/src/saved-output'
 import { ComputerError } from './errors'
-import { forceKillGroup, killProcessTree, shellInvocation, type CommandShell, type Spawn } from './platform'
+import { forceKillGroup, killProcessTree, shellInvocation, type CommandShell, type Spawn, processGroupAlive, stopGroup } from './platform'
 import { findFiles, grepFiles } from './search'
 
 /**
@@ -104,6 +104,13 @@ export class Operations {
   private readonly live = new Map<string, LiveOperation>()
   /** Process groups asked to stop and not yet killed outright, by pid, with the timer that will do it. */
   private readonly stopping = new Map<number, NodeJS.Timeout>()
+  /**
+   * Process groups of finished commands that left something running (`sleep 60 &`, a dev server),
+   * by session. Once its command is over nothing else holds on to such a group, so it is kept here
+   * and ended with the session: nothing a reply started outlives the reply, the access it ran
+   * under, or the app.
+   */
+  private readonly leftovers = new Map<string, Set<number>>()
   private readonly relayRequests = new Map<string, HeldRelay>()
   /** Set once the relay endpoint listens; until then answers carry no `relay` and requests are refused. */
   private relayEnabled = false
@@ -255,13 +262,18 @@ export class Operations {
       killProcessTree(platform, child, options.now ? 'SIGKILL' : 'SIGTERM', this.spawn)
       // A command may ignore the polite signal, or leave something running after its shell is gone.
       if (options.now) forceKillGroup(platform, pid)
-      else if (pid && platform !== 'win32' && !this.stopping.has(pid)) {
-        const timer = setTimeout(() => { this.stopping.delete(pid); forceKillGroup(platform, pid) }, this.options.killGraceMs ?? KILL_GRACE_MS)
-        timer.unref()
-        this.stopping.set(pid, timer)
-      }
+      else this.killAfterGrace(pid)
     }
     return this.view(key, operation)
+  }
+
+  /** Kills what is left of a process group that was asked to stop, once the grace period is over (or at `killStopping`). */
+  private killAfterGrace(pid: number | undefined): void {
+    const { platform } = this.options
+    if (!pid || platform === 'win32' || this.stopping.has(pid)) return
+    const timer = setTimeout(() => { this.stopping.delete(pid); forceKillGroup(platform, pid) }, this.options.killGraceMs ?? KILL_GRACE_MS)
+    timer.unref()
+    this.stopping.set(pid, timer)
   }
 
   /**
@@ -277,12 +289,18 @@ export class Operations {
     this.stopping.clear()
   }
 
-  /** Ends every running operation of a session whose reply is over. */
+  /** Ends every running operation of a session whose reply is over, and what its finished commands left running. */
   cancelSession(sessionId: string, options: { now?: boolean } = {}): void {
     for (const [key, operation] of this.operations) {
       if (operation.sessionId !== sessionId) continue
       if (operation.status === 'running') this.cancel(sessionId, operation.id, options)
       if (!this.live.has(key)) this.operations.delete(key)
+    }
+    const groups = this.leftovers.get(sessionId)
+    this.leftovers.delete(sessionId)
+    for (const pid of groups ?? []) {
+      if (options.now) forceKillGroup(this.options.platform, pid)
+      else { stopGroup(this.options.platform, pid); this.killAfterGrace(pid) }
     }
   }
 
@@ -381,6 +399,13 @@ export class Operations {
         child.once('error', (error) => { clearTimeout(timer); reject(error) })
         child.once('close', (code, signal) => {
           clearTimeout(timer)
+          // The shell is gone and its output closed, yet something it started may live on in its
+          // group. A cancelled or timed-out command's group was already told to stop.
+          if (invocation.detached && !timedOut && operation.status !== 'cancelled' && processGroupAlive(platform, child.pid)) {
+            const groups = this.leftovers.get(operation.sessionId) ?? new Set<number>()
+            groups.add(child.pid!)
+            this.leftovers.set(operation.sessionId, groups)
+          }
           operation.exitCode = code
           output += decoder.end()
           if (timedOut && operation.status !== 'cancelled') reject(new Error(`Command timed out after ${Math.round(timeoutMs / 1000)} seconds and was stopped`))

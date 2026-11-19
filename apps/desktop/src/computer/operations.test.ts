@@ -178,6 +178,59 @@ describe.skipIf(!posix)('Operations whose shell exits before what it started', (
   })
 })
 
+describe.skipIf(!posix)('Operations whose command left something running', () => {
+  const alive = (pid: number) => { try { process.kill(pid, 0); return true } catch { return false } }
+  const gone = async (pid: number) => { for (let attempt = 0; attempt < 50 && alive(pid); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 100)); return !alive(pid) }
+
+  /** Runs a command that finishes at once and leaves a process behind; returns that process's pid. */
+  async function leaveBehind(operations: Operations, context: OperationContext, base: string, background: string): Promise<number> {
+    const pidFile = path.join(base, `pid-${context.sessionId}`)
+    // Its output goes nowhere, so the command ends as soon as its shell does.
+    operations.start(context, 'bg', 'bash', { command: `${background} >/dev/null 2>&1 & echo $! > ${pidFile}` })
+    let operation = await operations.get(context.sessionId, 'bg', 5_000)
+    for (let attempt = 0; attempt < 10 && operation.status === 'running'; attempt += 1) operation = await operations.get(context.sessionId, 'bg', 2_000)
+    expect(operation.status).toBe('completed')
+    const pid = Number(await readFile(pidFile, 'utf8'))
+    expect(alive(pid)).toBe(true)
+    return pid
+  }
+
+  it('stops it when the session ends, and only that session\'s', async () => {
+    const base = await mkdtemp(path.join(os.tmpdir(), 'pulpo-ops-left-'))
+    const operations = new Operations({ platform: process.platform, savedOutputDir: path.join(base, 'saved'), scriptDir: path.join(base, 'scripts'), killGraceMs: 200 })
+    const context = (sessionId: string): OperationContext => ({ sessionId, cwd: base, shell: { path: '/bin/sh', name: 'sh' }, env: async () => ({ PATH: '/usr/bin:/bin' }) })
+    try {
+      const first = await leaveBehind(operations, context('s1'), base, 'sleep 60')
+      const other = await leaveBehind(operations, context('s2'), base, 'sleep 60')
+      // One that ignores the polite signal is killed once the grace period is over.
+      const stubborn = await leaveBehind(operations, context('s3'), base, '(trap "" TERM; sleep 60; :)')
+      operations.cancelSession('s1')
+      operations.cancelSession('s3')
+      expect(await gone(first)).toBe(true)
+      expect(await gone(stubborn)).toBe(true)
+      expect(alive(other)).toBe(true)
+    } finally {
+      for (const sessionId of ['s1', 's2', 's3']) operations.cancelSession(sessionId, { now: true })
+      await rm(base, { recursive: true, force: true })
+    }
+  })
+
+  it('kills it at once when the app quits', async () => {
+    const base = await mkdtemp(path.join(os.tmpdir(), 'pulpo-ops-left-quit-'))
+    // A grace period far longer than the test: only quitting can kill it in time.
+    const operations = new Operations({ platform: process.platform, savedOutputDir: path.join(base, 'saved'), scriptDir: path.join(base, 'scripts'), killGraceMs: 600_000 })
+    const context: OperationContext = { sessionId: 's1', cwd: base, shell: { path: '/bin/sh', name: 'sh' }, env: async () => ({ PATH: '/usr/bin:/bin' }) }
+    try {
+      const pid = await leaveBehind(operations, context, base, '(trap "" TERM; sleep 60; :)')
+      operations.cancelSession('s1', { now: true })
+      expect(await gone(pid)).toBe(true)
+    } finally {
+      operations.cancelSession('s1', { now: true })
+      await rm(base, { recursive: true, force: true })
+    }
+  })
+})
+
 describe.skipIf(!posix)('Operations when the app quits', () => {
   it('kills at once a command that was cancelled and is still ignoring the polite stop', async () => {
     const base = await mkdtemp(path.join(os.tmpdir(), 'pulpo-ops-quit-'))

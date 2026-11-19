@@ -135,6 +135,18 @@ export function forceKillGroup(platform: NodeJS.Platform, pid: number | undefine
   try { process.kill(-pid, 'SIGKILL') } catch { /* nothing left */ }
 }
 
+/** Whether anything is still running in a command's process group (macOS/Linux; always false on Windows, which has none). */
+export function processGroupAlive(platform: NodeJS.Platform, pid: number | undefined): boolean {
+  if (platform === 'win32' || !pid) return false
+  try { process.kill(-pid, 0); return true } catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM' }
+}
+
+/** Asks a command's process group to stop (macOS/Linux). */
+export function stopGroup(platform: NodeJS.Platform, pid: number | undefined): void {
+  if (platform === 'win32' || !pid) return
+  try { process.kill(-pid, 'SIGTERM') } catch { /* nothing left */ }
+}
+
 const ENV_MARK = '__PULPO_ENV_7f3a__'
 
 /** Parses `env -0` output printed between two marks, ignoring anything the shell's startup files printed around it. */

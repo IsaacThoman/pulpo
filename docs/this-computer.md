@@ -42,6 +42,7 @@ File bytes do not cross the socket unless they are small (up to 256 KiB, inline 
 - Each answer carries at most 200,000 characters of output, cut in the middle; the whole output is saved under `<userData>/computer/tool-output` and named in the result.
 - `find` and `grep` are implemented in Node (users do not have ripgrep) and skip `.git` and `node_modules`.
 - A computer that is not connected fails the reply when it starts, with the workspace step showing why. One that drops mid-run, or whose app was restarted and no longer knows the session, turns the tools off for the rest of the reply. Cancelling sends the command's process group SIGTERM, then SIGKILL after five seconds; quitting the app kills every command it started.
+- On macOS and Linux, what a finished command left running in its process group (`sleep 60 &`, a dev server) is stopped the same way when its session ends: with the reply, when the access is taken back, on sign-out, or when the app quits. The prompt says so, so the agent hands the user the command for anything that should keep running. Windows has no process groups: a program started there with `Start-Process` keeps running.
 
 ### Pulpo Files in full access
 

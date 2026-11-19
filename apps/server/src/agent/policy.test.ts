@@ -119,6 +119,7 @@ describe('agent policy', () => {
       expect(prompt).toContain('macOS 15.1 (arm64)')
       expect(prompt).toContain('Commands run in zsh as the user (the bash tool), starting in `/Users/ada/Pulpo`')
       expect(prompt).toContain('saved in `/Users/ada/Pulpo/.pulpo/attachments`')
+      expect(prompt).toContain('leaves running in the background is stopped when your reply ends')
       expect(prompt).toContain('do not use sudo')
       for (const cloud of ['disposable Ubuntu', '/workspace', 'passwordless sudo', '/opt/pulpo/PACKAGES.md']) expect(prompt).not.toContain(cloud)
       for (const kept of ['Use view_image', 'Use attach_file', 'make one self-contained file', 'Cite source URLs', 'update_memory']) expect(prompt).toContain(kept)
@@ -129,6 +130,8 @@ describe('agent policy', () => {
       const windows = { ...mac, os: 'windows' as const, osVersion: 'Windows 11 (10.0.26100)', shell: 'pwsh', cwd: 'C:\\Users\\Ada\\Pulpo' }
       expect(computerShellToolName(windows)).toBe('powershell')
       expect(computerAgentPrompt(windows)).toContain('Commands run in pwsh as the user (the powershell tool)')
+      // Windows has no process groups to end with the reply, so nothing is promised there.
+      expect(computerAgentPrompt(windows)).not.toContain('in the background')
       const generic = computerAgentPrompt(undefined)
       expect(generic).toContain('the user\'s own computer')
       expect(generic).not.toContain('undefined')
