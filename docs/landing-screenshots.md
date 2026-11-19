@@ -117,4 +117,31 @@ A different device model needs these values measured again.
 
 It needs the Playwright Chromium browser: `npx playwright install chromium`.
 
+## README media
+
+The images in the repository's `README.md` are captured from the landing page too, so retake them whenever the hero demo, the workspaces section, or the app screenshots change. They are in `assets/readme/`, each in a light and a dark version with a transparent background, and the README shows the one that matches the reader's GitHub theme:
+
+| File | What it shows |
+| --- | --- |
+| `demo-{light,dark}.webp` | The hero demo with its scene tabs, playing one full loop as an animation |
+| `workspace-{light,dark}.webp` | The finished agent run from the workspaces section |
+| `apps-{light,dark}.webp` | The three framed phones from the apps section |
+
+1. Start the web dev server: `npm run dev -w @pulpo/web`.
+2. Run the capture, which takes about three minutes:
+
+   ```sh
+   npm run capture:readme-media -w @pulpo/web
+   ```
+
+   `LANDING_URL` sets the page to capture if the dev server isn't on `http://localhost:5173/`.
+3. Review the six files, then commit them.
+
+It needs the Playwright Chromium browser, and `cwebp` and `img2webp` from libwebp (`brew install webp`).
+
+The animation is not a screen recording. The script takes over the page's clock and steps the demo 80 ms at a time, capturing a frame at each step, so the result doesn't depend on how fast the machine is. Two things differ from the page, both to keep each file under 2 MB:
+
+- Scenes cut from one to the next instead of fading.
+- The playing scene's tab is underlined in full instead of filling up as the scene plays. The tabs sit on the transparent background, and a change there on every frame stops the encoder from storing only the part of the frame that changed.
+
 The provider marks in the model grid come from `apps/web/public/ai-icons`.
