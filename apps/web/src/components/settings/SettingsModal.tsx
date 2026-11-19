@@ -1,4 +1,5 @@
 import { ImageGenerationSettings } from '@/features/image-generation/ImageGenerationSettings'
+import { ComputerAccessSettings } from '@/features/computer/ComputerAccessSettings'
 import { SpeechSettings } from '@/features/speech/SpeechSettings'
 import { refreshInstanceFeatures } from '@/lib/instance-features'
 import { DeleteAccountSettings } from './DeleteAccountSettings'
@@ -9,7 +10,7 @@ import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { FILE_ACCESS_MODES, TRASH_RETENTION_VALUES, type FileAccessMode, type InstructionPreset, type UsageVisibility } from '@pulpo/contracts'
-import { accessModeCopy } from '@/features/files/access-modes'
+import { accessModeLabel } from '@/features/files/access-modes'
 import {
   Database,
   Bot,
@@ -1174,13 +1175,14 @@ export function SettingsModal({
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              {FILE_ACCESS_MODES.map((mode) => <SelectItem key={mode} value={mode}>{accessModeCopy(mode).label}</SelectItem>)}
+                              {FILE_ACCESS_MODES.map((mode) => <SelectItem key={mode} value={mode}>{accessModeLabel(mode)}</SelectItem>)}
                             </SelectContent>
                           </Select>
                         )}
                       </Row>
                     </>
                   )}
+                  <ComputerAccessSettings />
                   <Separator className="my-3" />
                   <ImageGenerationSettings />
                 </div>

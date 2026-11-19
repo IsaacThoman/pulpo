@@ -1,3 +1,5 @@
+import type { DesktopComputerApi } from '@pulpo/contracts'
+
 export interface DesktopStoredSession {
   instanceUrl: string
   token: string
@@ -44,6 +46,8 @@ export interface PulpoDesktopApi {
     isMaximized: () => Promise<boolean>
     onMaximizedChanged: (listener: (maximized: boolean) => void) => () => void
   }
+  /** "This computer": lends the agent this computer. Everything runs in the main process. */
+  computer: DesktopComputerApi
 }
 
 declare global {

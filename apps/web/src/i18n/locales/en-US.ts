@@ -90,6 +90,7 @@ const enUS = {
     addFavorite: 'Add to favorites',
     agent: 'Agent',
     agentDisabled: 'Disabled',
+    computerOff: 'Off',
     agentOptions: 'Agent options, {{selection}}',
     attachFiles: 'Attach files',
     dictate: 'Dictate',

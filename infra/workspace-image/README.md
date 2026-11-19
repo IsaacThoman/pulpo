@@ -20,7 +20,7 @@ authenticated Pulpo workspace daemon that executes requested tools.
 - Poppler PDF inspection and rendering tools
 - FFmpeg and ffprobe for audio/video processing and inspection
 - An installed-package inventory at `/opt/pulpo/PACKAGES.md`
-- The `pulpo files` CLI (`/usr/local/bin/pulpo`) for the Files attached to a chat
+- The `pulpo` CLI (`/usr/local/bin/pulpo`): `pulpo files` for the Files attached to a chat, `pulpo computer` for a folder the user shared from their computer
 - Passwordless `sudo` inside the disposable sandbox
 
 The image supports `linux/amd64` and `linux/arm64`. Node.js archives are pinned
@@ -62,6 +62,12 @@ Agents reach the user's Pulpo Files with `pulpo files ls|tree|cat|grep|pull|stat
 inside bash commands (`pulpo files --help` documents it for the model). Pulled
 items land in `/workspace/files`, and `/workspace/.pulpo/files.json` remembers
 what was pulled so `status` and `push` can work out local changes.
+
+`pulpo computer` has the same commands for a folder the user shared from the
+Pulpo desktop app ("This computer" with read only, suggest or edit access). Its
+copies land in `/workspace/computer` with the manifest
+`/workspace/.pulpo/computer.json`, and its relay requests are named
+`computer:<command>`; the server forwards them to the user's desktop app.
 
 No Pulpo credential enters the workspace. The CLI sends each request over the
 daemon's unix socket (`PULPO_RELAY_SOCKET`, default `/tmp/pulpo-relay.sock`),

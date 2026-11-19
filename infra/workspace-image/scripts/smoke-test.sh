@@ -63,10 +63,14 @@ assert_equal pulpo-python-ok "$(python3 "${temporary_directory}/smoke.py")" 'Pyt
 
 pulpo files --help | grep -q 'pulpo files pull'
 pulpo files push --help | grep -q -- '--force'
-if pulpo files ls > /dev/null 2>&1; then
-  echo 'FAIL: pulpo files ran outside an agent bash command' >&2
-  exit 1
-fi
+pulpo computer --help | grep -q 'pulpo computer pull'
+pulpo --help | grep -q 'pulpo computer <command>'
+for group in files computer; do
+  if pulpo "${group}" ls > /dev/null 2>&1; then
+    echo "FAIL: pulpo ${group} ran outside an agent bash command" >&2
+    exit 1
+  fi
+done
 
 # Run `pulpo files` inside a daemon bash operation and answer its relay request as Pulpo would.
 readonly daemon_url='http://127.0.0.1:18787'
@@ -96,6 +100,16 @@ for _ in $(seq 20); do
   if [[ "$(jq -r .status <<< "${operation}")" != running ]]; then relay_output="$(jq -r .output <<< "${operation}")"; break; fi
 done
 assert_equal pulpo-relay-ok "${relay_output}" 'pulpo files prints the answer relayed by the daemon'
+
+# `pulpo computer` uses the same socket with prefixed command names.
+daemon -X POST "${daemon_url}/v1/operations" -d '{"id":"smoke-computer","type":"bash","args":{"command":"pulpo computer cat notes.txt"}}' > /dev/null
+computer_command=''
+for _ in $(seq 20); do
+  computer_command="$(daemon "${daemon_url}/v1/operations/smoke-computer?waitMs=1000" | jq -r '.relay.pending[0].command // empty')"
+  [[ -n "${computer_command}" ]] && break
+done
+assert_equal computer:cat "${computer_command}" 'pulpo computer relays prefixed commands'
+daemon -X POST "${daemon_url}/v1/relay/$(daemon "${daemon_url}/v1/operations/smoke-computer" | jq -r '.relay.pending[0].id')" -d '{"ok":true,"output":"done"}' > /dev/null
 
 if [[ -e /var/run/secrets/kubernetes.io/serviceaccount/token ]]; then
   echo 'FAIL: Kubernetes service-account token is mounted' >&2

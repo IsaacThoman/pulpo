@@ -11,7 +11,7 @@ import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messag
 import { mistralConversationsApi } from '@earendil-works/pi-ai/api/mistral-conversations.lazy'
 import { anthropicAgentReasoning, chatCompletionsSamplingParameters, explicitReasoningEffort, mistralAgentPayload, piModelForProvider } from '../upstream/pi-model.js'
 import type { Api, AssistantMessage, Context, Message, Model, SimpleStreamOptions, ThinkingLevel, ToolChoice } from '@earendil-works/pi-ai'
-import { agentCostLimitMicros, findCostLimitItem, findCostLimitItems, findFilesPermissionItems, toolImagePreviewSchema, type ClientFeature, type FilesPermissionItem, type ToolImagePreview, type CompactionItem, type CostLimitItem, type FileChangesItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
+import { agentCostLimitMicros, findCostLimitItem, findCostLimitItems, findFilesPermissionItems, isComputerFolderMode, toolImagePreviewSchema, type ClientFeature, type FilesPermissionItem, type ToolImagePreview, type CompactionItem, type ComputerChangesItem, type CostLimitItem, type FileChangesItem, type RecallItem, type ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
@@ -25,15 +25,19 @@ import { toSnapshot } from '../responses/service.js'
 import { persistResponseItems } from '../responses/storage.js'
 import { extendBudgetReservationFixedCost, getActivePricing, releaseBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from '../accounting/service.js'
 import { WorkspaceManager } from './controller.js'
+import { COMPUTER_UNAVAILABLE_MESSAGE, COMPUTER_UNAVAILABLE_USER_MESSAGE, ComputerWorkspace, describeComputer } from './computer-workspace.js'
+import { computerChangesItem as buildComputerChangesItem, routeRelayRequests } from './computer-relay.js'
+import { createComputerFolderRelay, describeComputerFolder } from '../computer/folder-relay.js'
+import type { AgentWorkspace, WorkspaceLeaseEvent } from './workspace.js'
 import { createWorkspaceTools } from './tools.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
-import { buildAgentSystemPrompt, buildAgentUserPrompt, buildToolsDisabledSystemPrompt, withoutAgentTools } from './policy.js'
+import { buildAgentSystemPrompt, buildAgentUserPrompt, buildToolsDisabledSystemPrompt, computerAgentPrompt, withoutAgentTools } from './policy.js'
 import { runPostResponseTasks, type PostResponseTaskResult } from '../responses/post-tasks.js'
 import { calculateCostMicros, workspaceBillableMinutes, workspaceHoldMicros, workspaceUsageMicros } from '../accounting/pricing.js'
 import { truncateUtf8 } from './output.js'
 import { buildAgentOutput, nextAgentDisplayTurn, type ToolTimelineItem } from './timeline.js'
 import { messagesForPersistence } from './context.js'
-import { basename } from 'node:path'
+import { basename, win32 } from 'node:path'
 import { storeToolImagePreview } from '../attachments/tool-image-preview.js'
 import { storeGeneratedAttachment } from '../attachments/generated.js'
 import type { AttachmentTimelineItem } from './timeline.js'
@@ -56,6 +60,7 @@ import { responseInputText } from '../messages/input.js'
 import { createGenerationMemoryTools } from './memory-tools.js'
 import { describeFileScope } from '../files/agent/prompt.js'
 import { createFilesRelay } from '../files/agent/relay.js'
+import { replyFilesAccess } from './reply-files.js'
 import { loadChatFileScope } from '../files/agent/scope.js'
 import { filesPermissionRequest, redisFilesPermissionAnswers, waitForFilesPermissionDecision } from '../files/agent/permission.js'
 import { readEpisodicMemorySettings } from '../episodic-memory/settings.js'
@@ -176,15 +181,32 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     parsePersonalizationSettings(personalizationRow?.value),
     preferenceValues,
   )
+  // "This computer": with full access the tools run on the user's computer instead of a cloud
+  // workspace; the folder modes keep the cloud workspace and reach the folder through `pulpo computer`.
+  const computerSelection = record.response.computer ?? null
+  if (computerSelection && !settings.computerAccess) throw new Error('Using this computer is turned off for Pulpo Agent')
+  const computerSession = computerSelection ? { userId: record.response.userId, sessionId: computerSelection.sessionId } : undefined
+  const computerFolderMode = computerSelection && isComputerFolderMode(computerSelection.access) ? computerSelection.access : undefined
+  // Asked before the prompt is written, since it names the computer's shell and folders. A computer
+  // that does not answer fails the reply as soon as it starts (see ensureLease below).
+  const computerDescribed = computerSelection?.access === 'full' && computerSession ? describeComputer(computerSession) : undefined
+  const computerDescription = await computerDescribed?.catch(() => undefined)
+  const computerFullAccess = computerDescribed !== undefined
   const [chatState] = await db.select({ temporary: chats.temporary, fileScopeIds: chats.fileScopeIds }).from(chats)
     .where(eq(chats.id, record.response.chatId)).limit(1)
-  // Files attached to the chat, reached only through `pulpo files` in bash and only while Files is
-  // on. Turns sent through admin chat access never reach the owner's Files; temporary chats have none.
-  const filesAllowed = parseAuthSettings(attachmentSettingsRow?.value).filesEnabled && record.response.origin !== 'admin_chat' && !chatState?.temporary
+  // Files attached to the chat, reached only through `pulpo files` in the shell and only while Files
+  // is on; a full-access reply has them when the computer's app can run `pulpo files`.
+  const filesAccess = replyFilesAccess({
+    filesEnabled: parseAuthSettings(attachmentSettingsRow?.value).filesEnabled,
+    adminChat: record.response.origin === 'admin_chat',
+    temporary: Boolean(chatState?.temporary),
+    computer: computerFullAccess ? { description: computerDescription } : undefined,
+  })
+  const filesAllowed = filesAccess.allowed
   const fileScope = filesAllowed ? await loadChatFileScope(record.response.userId, record.response.chatId) : null
   // Only an app that said it can show the request is asked; otherwise the reply would wait for nobody.
   const canAskToBrowseFiles = record.response.clientFeatures.includes('files-permission' satisfies ClientFeature)
-  const fileScopeContext = fileScope ? describeFileScope(fileScope, { canAskToBrowse: canAskToBrowseFiles }) : ''
+  const fileScopeContext = fileScope ? describeFileScope(fileScope, { canAskToBrowse: canAskToBrowseFiles, mirror: filesAccess.mirror }) : ''
   const memory = await loadGenerationMemory({
     chat: chatState,
     memoryEnabled: preferenceValues.memoryEnabled,
@@ -205,8 +227,12 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     record.model.agentInstructions,
     customInstructions,
     memoryContext,
+    computerFullAccess ? computerAgentPrompt(computerDescription) : undefined,
   )
-  const currentAgentSystemPrompt = [baseAgentSystemPrompt, fileScopeContext, recallContext].filter(Boolean).join('\n\n')
+  const computerFolderContext = computerFolderMode && computerSelection?.folder
+    ? describeComputerFolder({ folder: computerSelection.folder, mode: computerFolderMode })
+    : ''
+  const currentAgentSystemPrompt = [baseAgentSystemPrompt, fileScopeContext, computerFolderContext, recallContext].filter(Boolean).join('\n\n')
   if (!settings.enabled || !record.model.agentEnabled) throw new Error('Agent mode is no longer available')
   const allHistory = await db.select().from(responses).where(and(
     eq(responses.chatId, record.response.chatId),
@@ -405,6 +431,9 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   let fileChangesItem = (record.response.output as unknown[]).find((raw): raw is FileChangesItem => (
     (raw as { type?: string } | null)?.type === 'pulpo_file_changes'
   ))
+  let computerChangesItem = (record.response.output as unknown[]).find((raw): raw is ComputerChangesItem => (
+    (raw as { type?: string } | null)?.type === 'pulpo_computer_changes'
+  ))
   let workspaceItem: Record<string, unknown> | undefined
   let workspaceStartedAtMs: number | undefined
   let workspaceReadyAtMs: number | undefined
@@ -481,6 +510,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         costLimitItems,
         filesPermissionItems,
         fileChangesItem,
+        computerChangesItem,
         turnDurationsMs,
         streaming: false,
         terminal: true,
@@ -702,18 +732,19 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     promptRecorded = true
   }
   const nextDisplayTurn = () => nextAgentDisplayTurn([...archivedDisplayMessages, ...agent.state.messages.slice(skipMessageCount)])
-  let manager!: WorkspaceManager
+  let manager!: AgentWorkspace
   const disableAgentTools = () => {
     toolsDisabled = true
     agentSystemPrompt = toolsDisabledSystemPrompt()
     agent.state.systemPrompt = agentSystemPrompt
     agent.state.tools = []
   }
-  manager = new WorkspaceManager(responseId, record.response.chatId, record.response.userId, async (state, details = {}) => {
+  const onWorkspaceLease: WorkspaceLeaseEvent = async (state, details = {}) => {
     if ((state === 'waiting' || state === 'provisioning') && workspaceStartedAtMs === undefined) {
       workspaceStartedAtMs = Date.now()
     }
-    if (state === 'ready' && settings.billWorkspaces && workspaceReadyAtMs === undefined) {
+    // The user's own computer costs nothing: no hold, and workspaceReadyAtMs stays unset, so no workspace minutes either.
+    if (state === 'ready' && settings.billWorkspaces && workspaceReadyAtMs === undefined && manager.kind === 'cloud') {
       const hold = workspaceHoldMicros(settings.responseTimeoutSeconds, settings.workspacePricePerMinuteMicros)
       if (hold > 0) {
         try {
@@ -740,11 +771,18 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       state,
       ...(workspaceStartedAtMs !== undefined ? { startedAt: new Date(workspaceStartedAtMs).toISOString() } : {}),
       ...(durationMs !== undefined ? { durationMs } : {}),
+      ...(manager.kind === 'computer' ? { computer: true } : {}),
       ...details,
     }
     await emit(`pulpo.agent.workspace.${state}`, workspaceItem)
     await snapshotIfDue()
-  })
+  }
+  manager = computerDescribed && computerSession
+    ? new ComputerWorkspace({
+      responseId, chatId: record.response.chatId, userId: record.response.userId,
+      session: computerSession, described: computerDescribed, onLeaseEvent: onWorkspaceLease,
+    })
+    : new WorkspaceManager(responseId, record.response.chatId, record.response.userId, onWorkspaceLease)
   const markToolStarted = async (operationId: string) => {
     const item = toolItems.get(operationId)
     if (!item || item.startedAt) return
@@ -795,7 +833,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       ? { id: existing.id, name: existing.originalName, mimeType: existing.mimeType, sizeBytes: existing.sizeBytes }
       : await manager.exportFile(path, signal, () => markToolStarted(operationId)).then((file) => storeGeneratedAttachment({
         responseId, toolCallId: operationId, userId: record.response.userId, chatId: record.response.chatId,
-        path, requestedName: name ?? basename(path), data: file.data,
+        path, requestedName: name ?? (computerDescription?.os === 'windows' ? win32.basename(path) : basename(path)), data: file.data,
       }))
     const item: AttachmentTimelineItem = {
       type: 'pulpo_attachment', attachment_id: stored.id, name: stored.name,
@@ -845,6 +883,22 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       return status === 'allowed' || status === 'always_allowed' ? 'allowed' : status
     },
   }) : undefined
+  // `pulpo computer` commands from bash, against the folder the user shared; Files keeps the rest.
+  const computerFolderRelay = computerFolderMode && computerSession && computerSelection?.folder ? createComputerFolderRelay({
+    session: computerSession,
+    responseId,
+    mode: computerFolderMode,
+    folder: computerSelection.folder,
+    workspace: manager,
+    maxOutputBytes: settings.maxToolOutputBytes,
+    onChanged: async (totals) => {
+      if (!totals.applied && !totals.suggested && !computerChangesItem) return
+      computerChangesItem = buildComputerChangesItem(responseId, computerSession.sessionId, totals)
+      await emit('pulpo.agent.computer.changed', { ...computerChangesItem })
+      await snapshotIfDue()
+    },
+  }) : undefined
+  const relay = routeRelayRequests(computerFolderRelay, filesRelay)
   let agentAbortReason: 'response_timeout' | 'cancellation' | 'turn_limit' | undefined
   const abortTimer = setTimeout(() => {
     agentAbortReason ??= 'response_timeout'
@@ -870,7 +924,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
           })
           imagePreviews.set(toolCallId, preview)
           return preview
-        }, filesRelay),
+        }, relay, manager.kind === 'computer' ? computerDescription ?? null : undefined),
         ...configuredWebTools,
         ...imageTools,
         ...memoryTools,
@@ -946,6 +1000,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     },
     toolExecution: 'sequential',
     beforeToolCall: async (_context, signal) => {
+      if (manager.kind === 'computer' && manager.continuedWithoutAgent) return { block: true, reason: COMPUTER_UNAVAILABLE_MESSAGE }
       if (toolsDisabled || manager.continuedWithoutAgent) return { block: true, reason: 'Agent tools were disabled at the user’s request' }
       if (toolCalls >= settings.maxToolCalls) return { block: true, reason: `Tool call limit (${settings.maxToolCalls}) reached` }
       return await waitAtCostLimit(signal) ? undefined : { block: true, reason: 'Stopped at the cost limit' }
@@ -1159,7 +1214,15 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     await emit('pulpo.agent.started', { runId })
     // A compaction cut short by a crash never finishes; close it before the run goes on.
     for (const item of interruptedCompactionItems(compactionItems)) await updateCompaction(item)
-    const initialPrompt = buildAgentUserPrompt(record.response.input, attachedFiles) || 'How can I help?'
+    // Connecting is cheap and says at once whether the computer is there: one that is not fails the
+    // reply here, with the workspace step showing why, before any model turn is spent on it.
+    if (manager.kind === 'computer') {
+      await manager.ensureLease().catch((error: unknown) => {
+        // What the workspace says is written for the agent; the user gets it in their own terms.
+        throw manager.continuedWithoutAgent ? new Error(COMPUTER_UNAVAILABLE_USER_MESSAGE) : error
+      })
+    }
+    const initialPrompt = buildAgentUserPrompt(record.response.input, attachedFiles, manager.paths.attachment) || 'How can I help?'
     const promptImages = await loadAgentPromptImages(attachedFiles, undefined, parseAuthSettings(attachmentSettingsRow?.value).maxInlineImages)
     const initialMessage: AgentMessage = {
       role: 'user',

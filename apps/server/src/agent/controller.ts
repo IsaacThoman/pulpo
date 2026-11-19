@@ -1,13 +1,12 @@
 import { stageWorkspaceAttachments } from './stage-attachments.js'
 import { and, asc, eq, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm'
 import { parseAgentSettings } from '../settings/application-settings.js'
-import { applicationSettings, attachments, chats, responses, workspaceLeases } from '../database/schema.js'
+import { applicationSettings, chats, responses, workspaceLeases } from '../database/schema.js'
 import { db } from '../database/client.js'
 import { getConfig } from '../config.js'
 import { getBlobStore } from '../storage/index.js'
 import { newId } from '../lib/ids.js'
-import { workspaceAttachments } from './workspace-attachments.js'
-import { lineageFromLeaf } from '../messages/branching.js'
+import { loadWorkspaceAttachments } from './attachment-manifest.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
 import { workspaceContinueWithoutAgentAvailableAt, workspaceQueuePosition } from './capacity.js'
 import { workspaceControllerRequest } from './controller-http.js'
@@ -15,9 +14,8 @@ import type { RequestInit } from 'undici'
 import { posix } from 'node:path'
 import { detectImageMime } from './images.js'
 import { attemptWorkspaceLease, ControllerRequestError } from './lease-acquisition.js'
+import { cloudLocalPath, cloudWorkspacePaths, MAX_EXPORT_FILE_BYTES, MAX_VIEW_IMAGE_BYTES, type AgentWorkspace, type RelayRequest, type RelayResult, type WorkspaceFile, type WorkspaceImage, type WorkspaceLeaseEvent, type WorkspaceOperation } from './workspace.js'
 
-const MAX_VIEW_IMAGE_BYTES = 20 * 1024 * 1024
-const MAX_EXPORT_FILE_BYTES = 25 * 1024 * 1024
 const POLL_INTERVAL_MS = 250
 const LONG_POLL_WAIT_MS = 10_000
 const POLL_ATTEMPTS = 3
@@ -26,32 +24,7 @@ const RELAY_ANSWER_TIMEOUT_MS = 10_000
 /** How often a lease is touched while an answer is being worked out; well under the shortest idle timeout (60 s). */
 const RELAY_KEEPALIVE_MS = 20_000
 
-/** A `pulpo files` call from a bash command, held by the workspace daemon until Pulpo answers. Agent-controlled input. */
-export interface RelayRequest { id: string; command: string; args: unknown }
-/** `output` is what the CLI prints; `data` carries command-specific results such as pulled or pushed files. */
-export type RelayResult = { ok: true; output: string; data?: unknown } | { ok: false; error: string }
-
-export interface WorkspaceOperation {
-  id: string
-  status: 'running' | 'completed' | 'failed' | 'cancelled'
-  output: string
-  exitCode: number | null
-  error?: string
-  details?: Record<string, unknown>
-  /** Present on daemons that relay `pulpo files` and support long-polls; absent on older images. */
-  relay?: { version: number; pending: RelayRequest[] }
-}
-
-export interface WorkspaceImage {
-  data: string
-  mimeType: string
-  sizeBytes: number
-}
-
-export interface WorkspaceFile {
-  data: Uint8Array
-  sizeBytes: number
-}
+export type { RelayRequest, RelayResult, WorkspaceFile, WorkspaceImage, WorkspaceOperation } from './workspace.js'
 
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds))
 
@@ -71,7 +44,9 @@ function workspaceFailure(action: string, error: unknown): Error {
 
 const byteLimit = (bytes: number) => bytes % 1_048_576 === 0 ? `${bytes / 1_048_576} MiB` : `${bytes} byte`
 
-export class WorkspaceManager {
+export class WorkspaceManager implements AgentWorkspace {
+  readonly kind = 'cloud' as const
+  readonly paths = cloudWorkspacePaths
   private controllerLeaseId?: string
   private localLeaseId?: string
   private staged = false
@@ -109,22 +84,15 @@ export class WorkspaceManager {
     return `[Pulpo workspace context] This execution has a fresh workspace. Historical tool results describe an earlier environment. Scratch files, installed packages, and background processes are not restored. Saved files available on first workspace access:\n${files.length ? files.map(file => JSON.stringify(file.path)).join('\n') : '(none)'}`
   }
 
-  private async attachmentManifest() {
-    const turns = await db.select().from(responses).where(and(
-      eq(responses.chatId, this.chatId), eq(responses.userId, this.userId), isNull(responses.deletedAt),
-    )).orderBy(asc(responses.createdAt), asc(responses.id))
-    const lineage = lineageFromLeaf(turns, this.responseId)
-    const rows = await db.select().from(attachments).where(and(
-      eq(attachments.userId, this.userId), eq(attachments.chatId, this.chatId), eq(attachments.status, 'ready'),
-    )).orderBy(asc(attachments.createdAt), asc(attachments.id))
-    return workspaceAttachments(lineage, rows)
+  private attachmentManifest() {
+    return loadWorkspaceAttachments({ responseId: this.responseId, chatId: this.chatId, userId: this.userId })
   }
 
   constructor(
     private readonly responseId: string,
     private readonly chatId: string,
     private readonly userId: string,
-    private readonly onLeaseEvent?: (state: 'waiting' | 'provisioning' | 'ready' | 'expired' | 'unavailable' | 'continuing_without_agent', details?: Record<string, unknown>) => Promise<void>,
+    private readonly onLeaseEvent?: WorkspaceLeaseEvent,
   ) {}
 
   private async request(path: string, init: RequestInit = {}): Promise<Response> {
@@ -321,6 +289,8 @@ export class WorkspaceManager {
     if (this.toolsDisabled || !this.controllerLeaseId) throw new Error('The workspace is not available')
     return this.controllerLeaseId
   }
+
+  localPath(value: string): string { return cloudLocalPath(value) }
 
   /** Writes bytes into the current workspace (used by `pulpo files pull`). */
   async writeWorkspaceFile(path: string, body: Uint8Array | NodeJS.ReadableStream, sizeBytes: number, signal?: AbortSignal): Promise<void> {

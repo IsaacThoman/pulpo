@@ -1,5 +1,6 @@
 import { parseArgs, type ParseArgsConfig } from 'node:util'
-import { COMMAND_HELP, FILES_HELP, type CommandName } from './cli-help.js'
+import { COMMAND_HELP, COMPUTER_COMMAND_HELP, COMPUTER_HELP, FILES_HELP, type CommandName } from './cli-help.js'
+import { CLI_STORES, FILES_STORE, isGroup, type CliStore } from './cli-store.js'
 
 export type Invocation =
   | { command: 'help'; topic?: CommandName }
@@ -48,15 +49,25 @@ const isCommand = (value: string | undefined): value is CommandName => value !==
 
 /** Parses `pulpo …` arguments (the wrapper passes everything after `pulpo`). */
 export function parseCli(argv: string[]): Invocation {
+  return parseInvocation(argv).invocation
+}
+
+/** Like parseCli, with the group's store; no store for the top-level help. */
+export function parseInvocation(argv: string[]): { store?: CliStore; invocation: Invocation } {
   const [group, name, ...rest] = argv
-  if (isHelp(group)) return { command: 'help' }
-  if (group === undefined) throw new UsageError('missing command. Use `pulpo files <command>`.', undefined, true)
-  if (group !== 'files') throw new UsageError(`unknown command "${group}". Only \`pulpo files <command>\` is available.`, undefined, true)
+  if (isHelp(group)) return { invocation: { command: 'help' } }
+  if (group === undefined) throw new UsageError('missing command. Use `pulpo files <command>` or `pulpo computer <command>`.', undefined, true)
+  if (!isGroup(group)) throw new UsageError(`unknown command "${group}". Only \`pulpo files <command>\` and \`pulpo computer <command>\` are available.`, undefined, true)
+  const store = CLI_STORES[group]
+  return { store, invocation: parseCommand(store, name, rest) }
+}
+
+function parseCommand(store: CliStore, name: string | undefined, rest: string[]): Invocation {
   if (isHelp(name)) return { command: 'help', topic: isCommand(rest[0]) ? rest[0] : undefined }
   if (name === undefined) throw new UsageError('missing command.')
   if (!isCommand(name)) {
     const suggestion = SUGGESTIONS[name.toLowerCase()]
-    throw new UsageError(`unknown command "${name}".${suggestion ? ` Did you mean \`pulpo files ${suggestion}\`?` : ''}`)
+    throw new UsageError(`unknown command "${name}".${suggestion ? ` Did you mean \`pulpo ${store.group} ${suggestion}\`?` : ''}`)
   }
   const spec = COMMANDS[name]
   let parsed: ReturnType<typeof parseArgs>
@@ -91,7 +102,7 @@ export function parseCli(argv: string[]): Invocation {
     case 'pull': return { command: 'pull', path: operands[0]!, dest: operands[1] }
     case 'status': return { command: 'status' }
     case 'push': {
-      if (values.to !== undefined && (typeof values.to !== 'string' || !values.to.trim())) throw new UsageError('--to needs a Files path.', name)
+      if (values.to !== undefined && (typeof values.to !== 'string' || !values.to.trim())) throw new UsageError(`--to needs a ${store.pathNoun}.`, name)
       return { command: 'push', locals: operands, to: values.to as string | undefined, force: Boolean(values.force) }
     }
     case 'mkdir': return { command: 'mkdir', paths: operands, parents: Boolean(values.parents) }
@@ -100,6 +111,7 @@ export function parseCli(argv: string[]): Invocation {
   }
 }
 
-export function helpText(topic?: CommandName): string {
+export function helpText(topic?: CommandName, store: CliStore = FILES_STORE): string {
+  if (store.group === 'computer') return topic ? COMPUTER_COMMAND_HELP[topic] : COMPUTER_HELP
   return topic ? COMMAND_HELP[topic] : FILES_HELP
 }

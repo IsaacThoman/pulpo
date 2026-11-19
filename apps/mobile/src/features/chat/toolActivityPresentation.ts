@@ -31,6 +31,8 @@ const presentations: Record<string, ToolActivityPresentation> = {
   generate_image: { icon: Image, label: 'Generating an image…' },
   view_image: { icon: Image, label: 'Viewing an image…' },
   bash: { icon: Terminal, label: 'Running bash…' },
+  // A full-access run on a Windows computer names its shell tool `powershell`.
+  powershell: { icon: Terminal, label: 'Running PowerShell…' },
   write: { icon: FilePlus, label: 'Writing a file…' },
   edit: { icon: FilePenLine, label: 'Editing a file…' },
   ls: { icon: List, label: 'Listing files…' },

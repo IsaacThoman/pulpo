@@ -21,11 +21,20 @@ export function parseClientPlatformHeader(value: string | null | undefined): { p
  * The server reads it so a reply never waits on a prompt the app that sent the message cannot show.
  */
 export const CLIENT_FEATURES_HEADER = 'x-pulpo-client-features'
-/** `files-permission`: shows and answers an Agent reply's request to browse Files. */
-export const CLIENT_FEATURES = ['files-permission'] as const
+/**
+ * `files-permission`: shows and answers an Agent reply's request to browse Files.
+ * `computer`: a desktop app that can lend the agent the computer it runs on.
+ */
+export const CLIENT_FEATURES = ['files-permission', 'computer'] as const
 export type ClientFeature = typeof CLIENT_FEATURES[number]
+/** What every client built from this code can do. A client adds the features only it has. */
+const COMMON_CLIENT_FEATURES: readonly ClientFeature[] = ['files-permission']
 /** The header value for a client built from this code. */
-export const CLIENT_FEATURES_HEADER_VALUE = CLIENT_FEATURES.join(',')
+export const CLIENT_FEATURES_HEADER_VALUE = COMMON_CLIENT_FEATURES.join(',')
+/** The header value for a client that also has `extra` features. */
+export function clientFeaturesHeaderValue(extra: readonly ClientFeature[] = []): string {
+  return [...new Set([...COMMON_CLIENT_FEATURES, ...extra])].join(',')
+}
 
 /** The known features a client listed; unknown ones (from a newer client) are dropped. */
 export function parseClientFeaturesHeader(value: string | null | undefined): ClientFeature[] {

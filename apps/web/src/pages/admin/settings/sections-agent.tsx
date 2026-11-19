@@ -27,6 +27,7 @@ const defaults: AgentSettings = {
   idleTimeoutSeconds: 1800, hardTimeoutSeconds: 14400, workspaceWaitTimeoutSeconds: 900, maxModelTurns: 30, maxToolCalls: 100,
   responseTimeoutSeconds: 1800, commandTimeoutSeconds: 600, maxToolOutputBytes: 100000,
   billWorkspaces: false, workspacePricePerMinuteMicros: 10_000,
+  computerAccess: true,
 }
 
 const webDefaults: WebToolsForm = {
@@ -171,6 +172,7 @@ export function AgentSection() {
       </div>
       <Toggle label={ui("Bill users for agent workspaces")} hint="Charges from lease ready until the response ends. Queue wait is free." checked={value.billWorkspaces} onChange={(billWorkspaces) => setValue({ ...value, billWorkspaces })} />
       {value.billWorkspaces && <NumField label={ui("Price per workspace minute")} value={value.workspacePricePerMinuteMicros / 1_000_000} onChange={(usd) => setValue({ ...value, workspacePricePerMinuteMicros: Math.round(usd * 1_000_000) })} min={0} step={0.001} decimals={4} suffix="USD" />}
+      <Toggle label={ui("Let desktop apps use the user's computer")} hint={ui("Shows This computer in the Pulpo Agent menu of the desktop app.")} checked={value.computerAccess} onChange={(computerAccess) => setValue({ ...value, computerAccess })} />
       <div className="flex items-center gap-2 text-sm">
         {health.healthy ? <CheckCircle2 className="size-4 text-emerald-600" /> : <AlertCircle className="size-4 text-amber-600" />}
         <span>{health.healthy ? ui("Workspace controller is healthy") : health.configured ? health.detail ?? ui("Workspace controller is unavailable") : ui("Controller URL and token are not configured in deployment secrets")}</span>

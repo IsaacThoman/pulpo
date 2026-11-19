@@ -19,7 +19,7 @@ import {
   Trash2,
   Wrench,
 } from 'lucide-react'
-import { pulpoFilesCommand, toolActivityPresentation } from './tool-activity-presentation'
+import { isShellTool, pulpoComputerCommand, pulpoFilesCommand, toolActivityPresentation } from './tool-activity-presentation'
 
 describe('toolActivityPresentation', () => {
   it.each([
@@ -27,6 +27,7 @@ describe('toolActivityPresentation', () => {
     ['view_image', 'Viewing an image…', Image],
     ['generate_image', 'Generating an image…', Image],
     ['bash', 'Running bash…', Terminal],
+    ['powershell', 'Running PowerShell…', Terminal],
     ['write', 'Writing a file…', FilePlus],
     ['edit', 'Editing a file…', FilePenLine],
     ['ls', 'Listing files…', List],
@@ -64,6 +65,32 @@ describe('toolActivityPresentation', () => {
   })
 
   it.each([
+    ['pulpo computer ls', 'Looking through your folder…', FolderOpen],
+    ['pulpo computer tree src --depth 2', 'Looking through your folder…', FolderOpen],
+    ['pulpo computer cat "src/App Shell.tsx"', 'Reading App Shell.tsx…', FileText],
+    ['pulpo computer cat', 'Reading a file…', FileText],
+    ['pulpo computer grep -i todo src', 'Searching your folder…', Search],
+    ['cd /workspace/computer && pulpo computer pull src/app.ts', 'Copying from your computer…', FolderDown],
+    ['pulpo computer push src/app.ts', 'Saving to your computer…', FolderUp],
+    ['pulpo computer status', 'Checking for changes…', FileDiff],
+    ['pulpo computer mkdir -p docs/2026', 'Creating a folder…', FolderPlus],
+    ['pulpo computer mv notes.md archive/', 'Moving notes.md…', FolderInput],
+    ['pulpo computer rm -r build/', 'Moving build to the trash…', Trash2],
+    ['pulpo computer --help', 'Working with your folder…', FolderOpen],
+  ])('labels the computer folder command %s', (command, label, icon) => {
+    expect(toolActivityPresentation('bash', { command })).toEqual({ label, icon })
+  })
+
+  it('keeps the plain shell label for PowerShell commands and for mixed CLI groups', () => {
+    expect(toolActivityPresentation('powershell', { command: 'Get-ChildItem' })).toEqual({ label: 'Running PowerShell…', icon: Terminal })
+    expect(toolActivityPresentation('bash', { command: 'pulpo computer pull a.md && pulpo files push a.md' })).toEqual({ label: 'Running bash…', icon: Terminal })
+  })
+
+  it('treats bash and powershell as shell tools', () => {
+    expect([isShellTool('bash'), isShellTool('powershell'), isShellTool('read'), isShellTool()]).toEqual([true, true, false, false])
+  })
+
+  it.each([
     'ls /workspace/files',
     'pulpo files pull Plan.md && python3 summarize.py',
     'echo pulpo files ls',
@@ -78,5 +105,7 @@ describe('pulpoFilesCommand', () => {
     expect(pulpoFilesCommand('/usr/local/bin/pulpo files push --to "My Reports/q3.pdf" ./q3.pdf')).toEqual({ subcommand: 'push', path: './q3.pdf' })
     expect(pulpoFilesCommand('cd "/workspace/my files" && pulpo files cat Notes\\ 2026.md')).toEqual({ subcommand: 'cat', path: 'Notes 2026.md' })
     expect(pulpoFilesCommand('pulpo files ls')).toEqual({ subcommand: 'ls', path: undefined })
+    expect(pulpoFilesCommand('pulpo computer ls')).toBeNull()
+    expect(pulpoComputerCommand('pulpo computer cat a/b.md')).toEqual({ subcommand: 'cat', path: 'a/b.md' })
   })
 })

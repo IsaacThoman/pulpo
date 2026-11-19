@@ -1,6 +1,6 @@
 import { resolveClientIp } from '../lib/client-ip.js'
 import { accessComposer } from '../composer/service.js'
-import { composerDraftIdSchema, composerWriteSchema, type ComposerAck, type ComposerSnapshot } from '@pulpo/contracts'
+import { composerDraftIdSchema, composerWriteSchema, computerHostSchema, computerResponseSchema, type ComposerAck, type ComposerSnapshot } from '@pulpo/contracts'
 import type { Server as HttpServer } from 'node:http'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { Server } from 'socket.io'
@@ -26,6 +26,8 @@ import { accessibleChatCondition } from '../chats/temporary.js'
 import { DOC_CLOSED_CHANNEL, DOC_UPDATE_CHANNEL } from '../files/doc-events.js'
 import { bindDocSocket, closeDocsLocally, relayDocUpdateLocally } from '../files/doc-socket.js'
 import { MAX_DOC_UPDATE_BYTES } from '../files/doc-store.js'
+import { COMPUTER_REQUESTS_CHANNEL } from '../redis-keys.js'
+import { computerRequestMessageSchema, computerRoom, publishComputerResponse, refreshComputerHost, releaseComputerHost } from '../computer/host.js'
 
 export interface SocketData {
   composerSyncEnabled: boolean
@@ -298,6 +300,37 @@ export async function createSocketServer(httpServer: HttpServer) {
       if (!adminChatAccess && user.role === 'admin') void socket.join('admin:usage')
     })
     socket.on('admin.usage.unsubscribe', () => void socket.leave('admin:usage'))
+
+    // "This computer": the desktop app lists the sessions it serves (and repeats it as a heartbeat);
+    // the socket joins their rooms so requests reach it, and only answers from those rooms count.
+    // Admin chat access borrows the owner's identity, so it may neither host nor answer.
+    const computerSessions = new Set<string>()
+    socket.on('computer.host', (raw) => {
+      if (adminChatAccess) return
+      const input = computerHostSchema.safeParse(raw)
+      if (!input.success) return
+      const listed = new Set(input.data.sessionIds)
+      const removed = [...computerSessions].filter((sessionId) => !listed.has(sessionId))
+      for (const sessionId of removed) {
+        computerSessions.delete(sessionId)
+        void socket.leave(computerRoom(user.id, sessionId))
+      }
+      for (const sessionId of listed) {
+        computerSessions.add(sessionId)
+        void socket.join(computerRoom(user.id, sessionId))
+      }
+      runSocketTask('computer.host', () => refreshComputerHost(user.id, socket.id, [...listed], removed))
+    })
+    socket.on('computer.response', (raw) => {
+      if (adminChatAccess) return
+      const input = computerResponseSchema.safeParse(raw)
+      if (!input.success || !socket.rooms.has(computerRoom(user.id, input.data.sessionId))) return
+      runSocketTask('computer.response', () => publishComputerResponse(user.id, input.data).then(() => undefined))
+    })
+    socket.on('disconnect', () => {
+      // Only this socket's claim goes; another socket may still host the session.
+      if (computerSessions.size) runSocketTask('computer.release', () => releaseComputerHost(user.id, socket.id, [...computerSessions]))
+    })
     bindDocSocket(socket)
   })
 
@@ -306,7 +339,7 @@ export async function createSocketServer(httpServer: HttpServer) {
       .from(responses).where(eq(responses.id, responseId)).limit(1)
       .then((rows) => rows[0]))
 
-  await subscriber.subscribe('pulpo:chat-started', 'pulpo:composer-changes', 'pulpo:response-events', 'pulpo:response-snapshots', 'pulpo:state-changes', 'pulpo:session-revocations', 'pulpo:admin-usage', DOC_CLOSED_CHANNEL, DOC_UPDATE_CHANNEL)
+  await subscriber.subscribe('pulpo:chat-started', 'pulpo:composer-changes', 'pulpo:response-events', 'pulpo:response-snapshots', 'pulpo:state-changes', 'pulpo:session-revocations', 'pulpo:admin-usage', DOC_CLOSED_CHANNEL, DOC_UPDATE_CHANNEL, COMPUTER_REQUESTS_CHANNEL)
   subscriber.on('message', (channel: string, message: string) => {
     if (channel === 'pulpo:composer-changes') {
       const change = JSON.parse(message)
@@ -324,6 +357,10 @@ export async function createSocketServer(httpServer: HttpServer) {
       closeDocsLocally(io, JSON.parse(message))
     } else if (channel === DOC_UPDATE_CHANNEL) {
       relayDocUpdateLocally(io, JSON.parse(message))
+    } else if (channel === COMPUTER_REQUESTS_CHANNEL) {
+      const parsed = computerRequestMessageSchema.safeParse(JSON.parse(message))
+      // Every instance subscribes; each delivers to its own sockets in the session's room.
+      if (parsed.success) io.to(computerRoom(parsed.data.userId, parsed.data.request.sessionId)).local.emit('computer.request', parsed.data.request)
     } else if (channel === 'pulpo:admin-usage') {
       io.to('admin:usage').emit('admin.usage.upsert', JSON.parse(message))
     } else if (channel === 'pulpo:response-events') {
