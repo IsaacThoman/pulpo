@@ -83,6 +83,8 @@ const config: ForgeConfig = {
     build: [
       { entry: 'src/main.ts', config: 'vite.main.config.mjs', target: 'main' },
       { entry: 'src/preload.ts', config: 'vite.preload.config.mjs', target: 'preload' },
+      // `pulpo files` for full-access commands on the user's computer: the workspace daemon's CLI as one file, .vite/build/pulpo-cli.cjs.
+      { entry: 'src/computer/pulpo-cli.ts', config: 'vite.cli.config.mjs', target: 'main' },
     ],
     renderer: [{ name: 'main_window', config: 'vite.renderer.config.mjs' }],
   })],

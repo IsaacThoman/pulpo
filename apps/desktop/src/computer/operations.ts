@@ -1,9 +1,9 @@
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
-import { COMPUTER_OPERATION_OUTPUT_MAX_CHARACTERS, type ComputerOperation, type ComputerOperationType } from '@pulpo/contracts'
+import { COMPUTER_OPERATION_OUTPUT_MAX_CHARACTERS, type ComputerOperation, type ComputerOperationType, type ComputerRelayRequest, type ComputerRelayResult } from '@pulpo/contracts'
 import { readTextFile, resolveReadableVmPath } from '../../../../packages/workspace-daemon/src/read'
 import { saveLargeOutput } from '../../../../packages/workspace-daemon/src/saved-output'
 import { ComputerError } from './errors'
@@ -15,6 +15,10 @@ import { findFiles, grepFiles } from './search'
  * semantics (packages/workspace-daemon/src/index.ts): `start` is idempotent by id and returns at
  * once, `get` long-polls for a change, output is cumulative and capped, `cancel` ends the whole
  * process tree. Operations live in memory only; an app restart forgets them.
+ *
+ * `pulpo files` in a command reaches the server the same way as in the daemon: the CLI's request
+ * (relay.ts) is held here, listed on the operation as `relay.pending`, and settled when the server
+ * answers with `operation.relay`.
  */
 
 const MAX_COMMAND_OUTPUT_BYTES = 10_000_000
@@ -26,13 +30,29 @@ const OUTPUT_POLL_INTERVAL_MS = 250
 const KILL_GRACE_MS = 5_000
 /** Finished operations are kept this long for a final poll, then forgotten. */
 const FINISHED_RETENTION_MS = 30 * 60_000
+/** The daemon's relay limits: an unanswered request fails after 15 minutes, and after 5 seconds when nobody long-polls. */
+const RELAY_TIMEOUT_MS = 900_000
+const RELAY_HANDSHAKE_MS = 5_000
+/** The contract lists at most this many pending requests on one operation. */
+const MAX_PENDING_RELAY = 100
+/** The daemon's words, so the agent reads the same thing on the computer as in the cloud. */
+export const RELAY_UNAVAILABLE = 'pulpo files only works while the bash command that started it is running'
 
 interface Operation extends ComputerOperation {
   sessionId: string
   completedAt?: number
 }
 
-interface LiveOperation { outputRevision: number; servedRevision: number; wake: Set<() => void>; child?: ChildProcess }
+/** `longPolled`: only servers that relay `pulpo files` long-poll, so it tells whether anyone will answer. */
+interface LiveOperation { outputRevision: number; servedRevision: number; longPolled: boolean; wake: Set<() => void>; child?: ChildProcess }
+
+/** A `pulpo` command's request, held until the server answers or the command stops. */
+interface HeldRelay extends ComputerRelayRequest {
+  key: string
+  sessionId: string
+  /** Answers the CLI once; false when it was already answered. */
+  settle: (status: number, value: unknown) => boolean
+}
 
 export interface OperationContext {
   sessionId: string
@@ -52,6 +72,8 @@ export interface OperationsOptions {
   now?: () => number
   /** How long a cancelled command gets to stop before it is killed; KILL_GRACE_MS unless a test shortens it. */
   killGraceMs?: number
+  relayTimeoutMs?: number
+  relayHandshakeMs?: number
 }
 
 function operationKey(sessionId: string, id: string): string { return `${sessionId}\0${id}` }
@@ -82,6 +104,9 @@ export class Operations {
   private readonly live = new Map<string, LiveOperation>()
   /** Process groups asked to stop and not yet killed outright, by pid, with the timer that will do it. */
   private readonly stopping = new Map<number, NodeJS.Timeout>()
+  private readonly relayRequests = new Map<string, HeldRelay>()
+  /** Set once the relay endpoint listens; until then answers carry no `relay` and requests are refused. */
+  private relayEnabled = false
   private readonly spawn: Spawn
   private readonly now: () => number
 
@@ -92,10 +117,81 @@ export class Operations {
 
   private wake(key: string): void { for (const check of [...this.live.get(key)?.wake ?? []]) check() }
 
+  private pendingRelay(key: string): HeldRelay[] { return [...this.relayRequests.values()].filter((request) => request.key === key) }
+
+  /** Held requests fail once their command stops, and long-polls return at once. */
+  private stopped(key: string): void {
+    for (const request of this.pendingRelay(key)) request.settle(409, { ok: false, error: RELAY_UNAVAILABLE })
+    this.wake(key)
+  }
+
   private view(key: string, operation: Operation): ComputerOperation {
     const state = this.live.get(key); if (state) state.servedRevision = state.outputRevision
     const { id, status, output, exitCode, error, details } = operation
-    return { id, status, output: outputForAnswer(output), exitCode, ...(error !== undefined ? { error } : {}), ...(details ? { details } : {}) }
+    return {
+      id, status, output: outputForAnswer(output), exitCode, ...(error !== undefined ? { error } : {}), ...(details ? { details } : {}),
+      ...(this.relayEnabled ? { relay: { version: 1, pending: this.pendingRelay(key).map(({ id: requestId, command, args }) => ({ id: requestId, command, args })) } } : {}),
+    }
+  }
+
+  /** The relay endpoint is up (or gone): answers say so, and requests are accepted. */
+  enableRelay(enabled: boolean): void {
+    this.relayEnabled = enabled
+    if (!enabled) this.failRelay()
+  }
+
+  /** Fails every held request: the app is quitting or the endpoint closed. */
+  failRelay(): void { for (const request of [...this.relayRequests.values()]) request.settle(409, { ok: false, error: RELAY_UNAVAILABLE }) }
+
+  /**
+   * The command running under this operation id, whatever session it belongs to: the CLI sends only
+   * the id. Ids are unique per tool call, so two sessions running the same one means something is
+   * wrong, and then neither is chosen.
+   */
+  private runningCommand(operationId: string): { key: string; operation: Operation } | null {
+    let found: { key: string; operation: Operation } | null = null
+    for (const [key, operation] of this.operations) {
+      if (operation.id !== operationId || operation.status !== 'running') continue
+      const child = this.live.get(key)?.child
+      if (!child || child.exitCode !== null || child.signalCode !== null) continue
+      if (found) return null
+      found = { key, operation }
+    }
+    return found
+  }
+
+  /**
+   * Holds a `pulpo` command's request until the server answers it (`answerRelay`), its command
+   * stops, or it times out; `respond` is called exactly once with the HTTP status and body the CLI
+   * gets. Returns what to call when the CLI hangs up first.
+   */
+  holdRelay(input: { operationId: string; command: string; args: unknown }, respond: (status: number, value: unknown) => void): () => void {
+    const target = this.relayEnabled ? this.runningCommand(input.operationId) : null
+    if (!target) { respond(409, { ok: false, error: RELAY_UNAVAILABLE }); return () => undefined }
+    const { key, operation } = target
+    if (this.pendingRelay(key).length >= MAX_PENDING_RELAY) { respond(429, { ok: false, error: 'Too many pulpo commands are waiting at once' }); return () => undefined }
+    const state = this.live.get(key)!
+    const id = randomUUID()
+    const timer = setTimeout(() => settle(504, { ok: false, error: 'Pulpo did not answer in time' }), this.options.relayTimeoutMs ?? RELAY_TIMEOUT_MS)
+    // As in the daemon: a server that never long-polls will never answer, so fail fast rather than hold the CLI for the full timeout.
+    const handshake = state.longPolled ? undefined : setTimeout(() => {
+      if (!state.longPolled) settle(503, { ok: false, error: 'This Pulpo server does not support pulpo files yet' })
+    }, this.options.relayHandshakeMs ?? RELAY_HANDSHAKE_MS)
+    const forget = () => { clearTimeout(timer); clearTimeout(handshake); return this.relayRequests.delete(id) }
+    const settle = (status: number, value: unknown) => {
+      if (!this.relayRequests.has(id)) return false
+      forget(); respond(status, value); return true
+    }
+    this.relayRequests.set(id, { id, key, sessionId: operation.sessionId, command: input.command, args: input.args, settle })
+    this.wake(key)
+    return () => { forget() }
+  }
+
+  /** The server's answer to a held request. Only the session whose command made the request may answer it. */
+  answerRelay(sessionId: string, requestId: string, result: ComputerRelayResult): boolean {
+    const request = this.relayRequests.get(requestId)
+    if (!request || request.sessionId !== sessionId) return false
+    return request.settle(200, result)
   }
 
   private find(sessionId: string, id: string): Operation {
@@ -116,24 +212,25 @@ export class Operations {
     if (existing) return this.view(key, existing)
     const operation: Operation = { id, sessionId: context.sessionId, status: 'running', output: '', exitCode: null }
     this.operations.set(key, operation)
-    this.live.set(key, { outputRevision: 0, servedRevision: 0, wake: new Set() })
+    this.live.set(key, { outputRevision: 0, servedRevision: 0, longPolled: false, wake: new Set() })
     void this.finish(key, operation, context, type, args)
     return this.view(key, operation)
   }
 
-  /** Waits until the operation stops, unseen output is 250 ms into this poll, or waitMs passes. */
+  /** Waits until the operation stops, a relay request arrives, unseen output is 250 ms into this poll, or waitMs passes. */
   async get(sessionId: string, id: string, waitMs = 0): Promise<ComputerOperation> {
     const key = operationKey(sessionId, id)
     const operation = this.find(sessionId, id)
     const state = this.live.get(key)
     const wait = Math.min(Math.max(0, waitMs), MAX_POLL_WAIT_MS)
-    if (wait > 0 && state && operation.status === 'running') {
+    if (wait > 0 && state) state.longPolled = true
+    if (wait > 0 && state && operation.status === 'running' && !this.pendingRelay(key).length) {
       const startedAt = this.now()
       await new Promise<void>((done) => {
         let outputTimer: NodeJS.Timeout | undefined
         const finish = () => { clearTimeout(deadline); clearTimeout(outputTimer); state.wake.delete(check); done() }
         const check = () => {
-          if (operation.status !== 'running') return finish()
+          if (operation.status !== 'running' || this.pendingRelay(key).length) return finish()
           if (state.outputRevision !== state.servedRevision && !outputTimer) outputTimer = setTimeout(finish, Math.max(0, OUTPUT_POLL_INTERVAL_MS - (this.now() - startedAt)))
         }
         const deadline = setTimeout(finish, wait)
@@ -150,7 +247,7 @@ export class Operations {
     const operation = this.find(sessionId, id)
     // As in the daemon: a cancelled operation reports `cancelled` whatever it was doing.
     operation.status = 'cancelled'
-    this.wake(key)
+    this.stopped(key)
     const child = this.live.get(key)?.child
     if (child) {
       const { platform } = this.options
@@ -237,7 +334,7 @@ export class Operations {
       operation.error = error instanceof Error ? error.message : String(error)
     }
     operation.completedAt = this.now()
-    this.wake(key)
+    this.stopped(key)
     this.live.delete(key)
   }
 

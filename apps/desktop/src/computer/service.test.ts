@@ -5,7 +5,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { COMPUTER_INLINE_MAX_BYTES, type ComputerMethod, type ComputerResponse } from '@pulpo/contracts'
 import { AccountResolver } from './account'
-import { ComputerService } from './service'
+import { ComputerService, type ComputerServiceOptions } from './service'
 import { startTransferServer, type TransferServer } from './test-helpers'
 
 const USER_A = '00000000-0000-4000-8000-00000000000a'
@@ -27,7 +27,7 @@ let base: string
 let home: string
 let server: TransferServer
 
-function harness(origin: string): Harness {
+function harness(origin: string, extra: Partial<ComputerServiceOptions> = {}): Harness {
   const identity: Harness['identity'] = { session: { instanceUrl: origin, token: 'a'.repeat(43), expiresAt: '2099-01-01T00:00:00Z' }, users: { ['a'.repeat(43)]: USER_A, ['b'.repeat(43)]: USER_B } }
   const chooseFolder = vi.fn(async () => null as string | null)
   const confirm = vi.fn(async () => true)
@@ -49,6 +49,7 @@ function harness(origin: string): Harness {
     onChangesChanged: changed,
     env: { PATH: '/usr/bin:/bin', SHELL: '/bin/sh' },
     now: () => clock.now,
+    ...extra,
   })
   return { service, identity, chooseFolder, confirm, trash, changed, clock }
 }
@@ -96,7 +97,7 @@ describe('grants and sessions', () => {
     expect(await h.service.allowFullAccess()).toBe(true)
     expect(h.confirm).toHaveBeenCalledTimes(1)
     expect(h.confirm.mock.calls[0]![0]).toMatch(/^Let Pulpo Agent run commands on this (Mac|PC|computer)\?$/)
-    expect(await h.service.status()).toEqual({ fullAccess: true, folders: [{ path: folder, name: 'project' }], defaultFolder: { path: path.join(home, 'Pulpo'), name: 'Pulpo' } })
+    expect(await h.service.status()).toEqual({ fullAccess: true, folders: [{ path: folder, name: 'project' }], defaultFolder: { path: path.join(home, 'Pulpo'), name: 'Pulpo' }, signedIn: true })
     await expect(stat(path.join(home, 'Pulpo'))).rejects.toMatchObject({ code: 'ENOENT' })
 
     h.identity.session = { ...h.identity.session!, token: 'b'.repeat(43) }
@@ -108,7 +109,7 @@ describe('grants and sessions', () => {
     expect(await h.service.status()).toMatchObject({ fullAccess: false, folders: [] })
 
     h.identity.session = null
-    expect(await h.service.status()).toMatchObject({ fullAccess: false, folders: [] })
+    expect(await h.service.status()).toMatchObject({ fullAccess: false, folders: [], signedIn: false })
     await expect(h.service.begin({ sessionId: randomUUID(), access: 'full', folder: null })).resolves.toEqual({ ok: false, reason: 'signed_out' })
     expect(await h.service.chooseFolder()).toBeNull()
     expect(await h.service.allowFullAccess()).toBe(false)
@@ -215,7 +216,10 @@ describe('handle', () => {
     await expect(h.service.handle({ id: randomUUID(), sessionId: full, method: 'exec', params: {}, timeoutMs: 1 })).resolves.toMatchObject({ ok: false, code: 'invalid_request' })
     expect((await refused(call(h, randomUUID(), 'describe', {}))).code).toBe('unknown_session')
     for (const method of ['folder.list', 'folder.read', 'folder.change'] as const) expect((await refused(call(h, full, method, { path: '' }))).code).toBe('not_allowed')
-    for (const method of ['describe', 'operation.start', 'file.send', 'file.receive', 'file.missing'] as const) expect((await refused(call(h, read, method, {}))).code).toBe('not_allowed')
+    for (const method of ['describe', 'operation.start', 'operation.relay', 'file.send', 'file.receive', 'file.missing'] as const) expect((await refused(call(h, read, method, {}))).code).toBe('not_allowed')
+    // Full access may answer relay requests, though only ones its own commands made.
+    expect(await ok(call(h, full, 'operation.relay', { requestId: 'nobody', result: { ok: true, output: '' } }))).toEqual({ delivered: false })
+    expect((await refused(call(h, full, 'operation.relay', { requestId: 'nobody', result: { ok: 'yes' } }))).code).toBe('invalid_request')
     expect(await refused(call(h, read, 'folder.list', { path: '', depth: 0, limit: 1 }))).toMatchObject({ code: 'invalid_request', message: expect.stringContaining('depth') })
   })
 
@@ -232,6 +236,8 @@ describe('handle', () => {
       shell: process.platform === 'win32' ? expect.stringMatching(/^(pwsh|powershell)$/) : 'sh',
       home, cwd: path.join(home, 'Pulpo'), attachmentsDir: path.join(base, 'userData', 'computer', 'attachments'),
     })
+    // Without the CLI to run, Files are not offered.
+    expect(description).not.toHaveProperty('filesDir')
     expect((await stat(path.join(home, 'Pulpo'))).isDirectory()).toBe(true)
     expect((await stat(description.attachmentsDir as string)).isDirectory()).toBe(true)
   })
@@ -575,5 +581,76 @@ describe('folder modes', () => {
     expect(await h.service.getChange(id!)).toBeNull()
     expect(await h.service.acceptChanges([id!])).toEqual([])
     await expect(stat(path.join(folder, 'x.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+})
+
+describe.skipIf(process.platform === 'win32')('pulpo files in a full-access command', () => {
+  let cliSource: string
+
+  beforeEach(async () => {
+    // What the Forge build makes of pulpo-cli.ts, bundled the same way.
+    const { build } = await import('esbuild')
+    cliSource = path.join(base, 'bundle', 'pulpo-cli.cjs')
+    await build({ entryPoints: [path.join(import.meta.dirname, 'pulpo-cli.ts')], bundle: true, platform: 'node', format: 'cjs', outfile: cliSource, logLevel: 'silent' })
+  })
+
+  async function poll(h: Harness, sessionId: string, id: string, until: (operation: Record<string, any>) => boolean): Promise<Record<string, any>> {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const operation = await ok<Record<string, any>>(call(h, sessionId, 'operation.get', { id, waitMs: 2_000 }))
+      if (until(operation)) return operation
+      if (operation.status !== 'running') throw new Error(`stopped early: ${JSON.stringify(operation)}`)
+    }
+    throw new Error('gave up polling')
+  }
+
+  it('runs the CLI through the launcher, holds its request and delivers the server\'s answer', async () => {
+    // Plain node stands in for the app's executable.
+    const h = harness(server.origin, { pulpoCli: { executable: process.execPath, source: cliSource } })
+    try {
+      await h.service.allowFullAccess()
+      const sessionId = randomUUID(); const other = randomUUID()
+      await h.service.begin({ sessionId, access: 'full', folder: null })
+      await h.service.begin({ sessionId: other, access: 'full', folder: null })
+      const description = await ok(call(h, sessionId, 'describe', {}))
+      const workspaceRoot = path.dirname(description.filesDir as string)
+      expect(description.filesDir).toMatch(/[/\\]computer[/\\]workspaces[/\\][0-9a-f]{32}[/\\]files$/)
+      expect((await stat(description.filesDir as string)).isDirectory()).toBe(true)
+
+      const command = 'printf "%s|%s|%s\\n" "$PULPO_WORKSPACE_ROOT" "${ELECTRON_RUN_AS_NODE-unset}" "$(command -v pulpo)"; pulpo files ls notes'
+      const started = await ok(call(h, sessionId, 'operation.start', { id: 'op-files', type: 'bash', args: { command } }))
+      expect(started).toMatchObject({ status: 'running', relay: { version: 1, pending: [] } })
+      const waiting = await poll(h, sessionId, 'op-files', (operation) => operation.relay?.pending.length > 0)
+      expect(waiting.relay.pending).toEqual([{ id: expect.any(String), command: 'ls', args: { path: 'notes' } }])
+      const [line] = (waiting.output as string).split('\n')
+      expect(line).toBe(`${workspaceRoot}|unset|${path.join(base, 'userData', 'computer', 'bin', 'pulpo')}`)
+
+      const requestId = waiting.relay.pending[0].id as string
+      // Another session cannot answer for this command.
+      expect(await ok(call(h, other, 'operation.relay', { requestId, result: { ok: true, output: 'wrong' } }))).toEqual({ delivered: false })
+      expect(await ok(call(h, sessionId, 'operation.relay', { requestId, result: { ok: true, output: 'notes/plan.md\nnotes/todo.txt' } }))).toEqual({ delivered: true })
+      const finished = await poll(h, sessionId, 'op-files', (operation) => operation.status !== 'running')
+      expect(finished).toMatchObject({ status: 'completed', exitCode: 0, output: `${line}\nnotes/plan.md\nnotes/todo.txt\n`, relay: { version: 1, pending: [] } })
+      expect(await ok(call(h, sessionId, 'operation.relay', { requestId, result: { ok: true, output: 'late' } }))).toEqual({ delivered: false })
+
+      // A refusal is the command's failure, as in the cloud.
+      await ok(call(h, sessionId, 'operation.start', { id: 'op-refused', type: 'bash', args: { command: 'pulpo files cat missing.txt' } }))
+      const refusedRequest = await poll(h, sessionId, 'op-refused', (operation) => operation.relay?.pending.length > 0)
+      await ok(call(h, sessionId, 'operation.relay', { requestId: refusedRequest.relay.pending[0].id, result: { ok: false, error: 'No such file in Files' } }))
+      expect(await poll(h, sessionId, 'op-refused', (operation) => operation.status !== 'running'))
+        .toMatchObject({ status: 'completed', exitCode: 1, output: 'pulpo files cat: No such file in Files\n' })
+    } finally {
+      await h.service.shutdown()
+    }
+  })
+
+  it('offers no Files when the CLI cannot be installed', async () => {
+    const errors: unknown[] = []
+    const h = harness(server.origin, { pulpoCli: { executable: process.execPath, source: path.join(base, 'missing.cjs') }, onError: (_message, error) => errors.push(error) })
+    await h.service.allowFullAccess()
+    const sessionId = randomUUID()
+    await h.service.begin({ sessionId, access: 'full', folder: null })
+    expect(await ok(call(h, sessionId, 'describe', {}))).not.toHaveProperty('filesDir')
+    expect(errors).toHaveLength(1)
+    await h.service.shutdown()
   })
 })

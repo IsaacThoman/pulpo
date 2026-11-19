@@ -238,6 +238,9 @@ function createComputerService(): ComputerService {
     },
     trash: (target) => shell.trashItem(target),
     onChangesChanged: () => mainWindow?.webContents.send(COMPUTER_CHANGES_CHANGED_CHANNEL),
+    // Built beside main.cjs by the Forge Vite build (forge.config.ts); the launchers run it with this executable as Node.
+    pulpoCli: { executable: process.execPath, source: path.join(__dirname, 'pulpo-cli.cjs') },
+    onError: (message, error) => log.warn(message, error),
   })
 }
 
@@ -469,7 +472,7 @@ if (hasSingleInstanceLock) {
     computer = createComputerService()
     void computer.cleanup().catch((error) => log.warn('Computer cleanup failed', error))
     // Commands the agent started must not outlive the app that answers for them.
-    app.on('before-quit', () => computer?.shutdown())
+    app.on('before-quit', () => { void computer?.shutdown() })
     registerIpc()
     updateApplicationMenu()
     await createMainWindow()

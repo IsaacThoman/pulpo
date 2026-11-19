@@ -1,4 +1,5 @@
 import { mkdir, readdir, realpath, rm, stat } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import {
   computerAccessSchema,
@@ -20,9 +21,11 @@ import { ChangesStore } from './changes'
 import { ComputerError, computerErrorOf } from './errors'
 import { missingFiles, receiveFile, sendFile } from './files'
 import { FolderService, type FolderSession } from './folder'
-import { accountKey, GrantsStore, type ComputerAccount } from './grants'
+import { accountDirectoryName, accountKey, GrantsStore, type ComputerAccount } from './grants'
+import { installPulpoCli, withPulpoCli } from './launcher'
 import { Operations, type OperationContext } from './operations'
 import { commandShell, computerNoun, computerOs, osVersionLabel, resolveShellEnvironment, type CommandShell, type Spawn } from './platform'
+import { startRelayServer, type RelayServer } from './relay'
 
 /**
  * The main process's side of "This computer" and its policy point. The renderer and the server
@@ -38,7 +41,7 @@ const TOOL_OUTPUT_RETENTION_MS = 7 * 24 * 60 * 60_000
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const NO_ID = '00000000-0000-0000-0000-000000000000'
 
-const FULL_METHODS = new Set<ComputerMethod>(['describe', 'operation.start', 'operation.get', 'operation.cancel', 'file.send', 'file.receive', 'file.missing'])
+const FULL_METHODS = new Set<ComputerMethod>(['describe', 'operation.start', 'operation.get', 'operation.cancel', 'operation.relay', 'file.send', 'file.receive', 'file.missing'])
 const FOLDER_METHODS = new Set<ComputerMethod>(['folder.list', 'folder.read', 'folder.search', 'folder.send', 'folder.change'])
 
 interface Session {
@@ -72,7 +75,23 @@ export interface ComputerServiceOptions {
   env?: NodeJS.ProcessEnv
   spawn?: Spawn
   now?: () => number
+  /**
+   * `pulpo files` for full-access commands: the executable the launchers run as Node (the app's
+   * own, with ELECTRON_RUN_AS_NODE; plain `node` in tests) and the bundled CLI to copy. Without it
+   * full access works but offers no Files.
+   */
+  pulpoCli?: { executable: string; source: string }
+  /** For the relay socket when the usual path is too long; os.tmpdir() by default. */
+  tmpdir?: string
+  /** Tests shorten the daemon's relay limits. */
+  relayTimeoutMs?: number
+  relayHandshakeMs?: number
+  /** Something went wrong that costs the agent a feature but fails nothing. */
+  onError?: (message: string, error: unknown) => void
 }
+
+/** What full-access commands need for `pulpo files`, once the launchers are written and the relay listens. */
+interface FilesRelay { binDir: string; relay: RelayServer }
 
 type Api = Omit<DesktopComputerApi, 'changes'>
 
@@ -86,6 +105,8 @@ export class ComputerService implements Api {
   private shellEnvironment: Promise<NodeJS.ProcessEnv> | null = null
   private readonly now: () => number
   private readonly root: string
+  private filesRelay: Promise<FilesRelay | null> | null = null
+  private shuttingDown = false
 
   constructor(private readonly options: ComputerServiceOptions) {
     this.now = options.now ?? Date.now
@@ -106,6 +127,8 @@ export class ComputerService implements Api {
       scriptDir: path.join(this.root, 'scripts'),
       spawn: options.spawn,
       now: this.now,
+      relayTimeoutMs: options.relayTimeoutMs,
+      relayHandshakeMs: options.relayHandshakeMs,
     })
     this.shell = commandShell(options.platform, options.env ?? process.env)
   }
@@ -116,10 +139,39 @@ export class ComputerService implements Api {
 
   private folderOf(folder: string): ComputerFolder { return { path: folder, name: path.basename(folder) || folder } }
 
-  async status(): Promise<{ fullAccess: boolean; folders: ComputerFolder[]; defaultFolder: ComputerFolder }> {
+  async status(): Promise<{ fullAccess: boolean; folders: ComputerFolder[]; defaultFolder: ComputerFolder; signedIn: boolean }> {
     const account = await this.options.accounts.current()
     const grants = account ? await this.grants.get(account) : { fullAccess: false, folders: [] }
-    return { fullAccess: grants.fullAccess, folders: grants.folders.map((folder) => this.folderOf(folder)), defaultFolder: this.defaultFolder() }
+    return { fullAccess: grants.fullAccess, folders: grants.folders.map((folder) => this.folderOf(folder)), defaultFolder: this.defaultFolder(), signedIn: account !== null }
+  }
+
+  /**
+   * Per account, what `/workspace` is to the CLI in the cloud: its copies of Files in `files` and
+   * its manifest in `.pulpo`. Kept apart so one account's copies never answer for another's.
+   */
+  private workspaceRoot(account: ComputerAccount): string { return path.join(this.root, 'workspaces', accountDirectoryName(account)) }
+
+  /**
+   * Writes the launchers and starts the relay endpoint on first use by a full-access session. Null
+   * when either fails; the next session tries again.
+   */
+  private pulpoFiles(): Promise<FilesRelay | null> {
+    const cli = this.options.pulpoCli
+    if (!cli || this.shuttingDown) return Promise.resolve(null)
+    this.filesRelay ??= (async () => {
+      const binDir = path.join(this.root, 'bin')
+      await installPulpoCli({ platform: this.options.platform, binDir, executable: cli.executable, source: cli.source })
+      const relay = await startRelayServer({ platform: this.options.platform, computerDir: this.root, tmpdir: this.options.tmpdir ?? os.tmpdir(), operations: this.operations })
+      // Quitting began while the endpoint was starting.
+      if (this.shuttingDown) { await relay.close(); return null }
+      this.operations.enableRelay(true)
+      return { binDir, relay }
+    })().catch((error: unknown) => {
+      this.options.onError?.('pulpo files is unavailable on this computer', error)
+      this.filesRelay = null
+      return null
+    })
+    return this.filesRelay
   }
 
   async chooseFolder(): Promise<ComputerFolder | null> {
@@ -195,10 +247,15 @@ export class ComputerService implements Api {
   }
 
   /** The app is quitting: nothing it started for the agent keeps running after it. */
-  shutdown(): void {
+  shutdown(): Promise<void> {
+    this.shuttingDown = true
     for (const sessionId of [...this.sessionsById.keys()]) this.endSession(sessionId, { now: true })
     // Commands cancelled moments ago may still be ignoring the polite signal.
     this.operations.killStopping()
+    this.operations.enableRelay(false)
+    const filesRelay = this.filesRelay
+    this.filesRelay = null
+    return (filesRelay ?? Promise.resolve(null)).then((value) => value?.relay.close())
   }
 
   /**
@@ -298,7 +355,15 @@ export class ComputerService implements Api {
   }
 
   private async operationContext(session: Session): Promise<OperationContext> {
-    return { sessionId: session.id, cwd: await this.sessionCwd(session), shell: this.shell, env: () => this.environment() }
+    const cwd = await this.sessionCwd(session)
+    const files = await this.pulpoFiles()
+    const workspaceRoot = this.workspaceRoot(session.account)
+    return {
+      sessionId: session.id, cwd, shell: this.shell,
+      env: async () => files
+        ? withPulpoCli(this.options.platform, await this.environment(), { binDir: files.binDir, relayEndpoint: files.relay.endpoint, workspaceRoot })
+        : this.environment(),
+    }
   }
 
   private async run(session: Session, method: ComputerMethod, input: unknown): Promise<unknown> {
@@ -309,6 +374,9 @@ export class ComputerService implements Api {
       case 'describe': {
         const cwd = await this.sessionCwd(session)
         await mkdir(this.attachmentsDir, { recursive: true })
+        // Offered only when commands can really run `pulpo files`.
+        const filesDir = await this.pulpoFiles() ? path.join(this.workspaceRoot(session.account), 'files') : null
+        if (filesDir) await mkdir(filesDir, { recursive: true })
         return {
           os: computerOs(this.options.platform),
           osVersion: osVersionLabel(this.options.platform, this.options.osVersion()).slice(0, 100),
@@ -317,11 +385,13 @@ export class ComputerService implements Api {
           home: this.options.home,
           cwd,
           attachmentsDir: this.attachmentsDir,
+          ...(filesDir ? { filesDir } : {}),
         }
       }
       case 'operation.start': { const { id, type, args } = params<'operation.start'>(); return this.operations.start(await this.operationContext(session), id, type, args) }
       case 'operation.get': { const { id, waitMs } = params<'operation.get'>(); return this.operations.get(session.id, id, waitMs) }
       case 'operation.cancel': return this.operations.cancel(session.id, params<'operation.cancel'>().id)
+      case 'operation.relay': { const { requestId, result } = params<'operation.relay'>(); return { delivered: this.operations.answerRelay(session.id, requestId, result) } }
       case 'file.send': return sendFile(files, params<'file.send'>())
       case 'file.receive': return receiveFile(files, params<'file.receive'>())
       case 'file.missing': return missingFiles(files, params<'file.missing'>())
