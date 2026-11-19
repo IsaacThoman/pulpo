@@ -1,0 +1,157 @@
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { Operations, outputForAnswer, type OperationContext } from './operations'
+
+const posix = process.platform !== 'win32'
+
+describe.skipIf(!posix)('Operations', () => {
+  let base: string
+  let operations: Operations
+  let context: OperationContext
+
+  beforeEach(async () => {
+    base = await mkdtemp(path.join(os.tmpdir(), 'pulpo-ops-'))
+    operations = new Operations({ platform: process.platform, savedOutputDir: path.join(base, 'saved'), scriptDir: path.join(base, 'scripts') })
+    context = { sessionId: 's1', cwd: base, shell: { path: '/bin/sh', name: 'sh' }, env: async () => ({ PATH: '/usr/bin:/bin' }) }
+  })
+
+  afterEach(async () => {
+    operations.cancelSession('s1')
+    await rm(base, { recursive: true, force: true })
+  })
+
+  const until = async (id: string, sessionId = 's1') => {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const operation = await operations.get(sessionId, id, 5_000)
+      if (operation.status !== 'running') return operation
+    }
+    throw new Error('operation never finished')
+  }
+
+  it('starts at once, runs in the session folder and reports the exit code', async () => {
+    const started = operations.start(context, 'op-1', 'bash', { command: 'pwd; echo err >&2; exit 3' })
+    expect(started).toEqual({ id: 'op-1', status: 'running', output: '', exitCode: null })
+    const finished = await until('op-1')
+    expect(finished.status).toBe('completed')
+    expect(finished.exitCode).toBe(3)
+    expect(finished.output).toContain(await realpath(base))
+    expect(finished.output).toContain('err')
+  })
+
+  it('is idempotent by id and keeps sessions apart', async () => {
+    operations.start(context, 'same', 'bash', { command: 'echo first' })
+    const again = operations.start(context, 'same', 'bash', { command: 'echo second' })
+    expect(again.id).toBe('same')
+    expect((await until('same')).output).toBe('first\n')
+    await expect(operations.get('other-session', 'same')).rejects.toMatchObject({ code: 'not_found' })
+  })
+
+  it('returns early from a long poll once new output has waited about 250 ms', async () => {
+    operations.start(context, 'stream', 'bash', { command: 'echo one; sleep 5; echo two' })
+    const startedAt = Date.now()
+    const first = await operations.get('s1', 'stream', 10_000)
+    expect(Date.now() - startedAt).toBeLessThan(2_000)
+    expect(first).toMatchObject({ status: 'running', output: 'one\n' })
+    const cancelled = operations.cancel('s1', 'stream')
+    expect(cancelled.status).toBe('cancelled')
+    expect((await until('stream')).status).toBe('cancelled')
+  })
+
+  it('kills the whole process tree on cancel', async () => {
+    const marker = path.join(base, 'survived')
+    operations.start(context, 'tree', 'bash', { command: `(sleep 1; touch ${marker}) & sleep 30` })
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    operations.cancel('s1', 'tree')
+    await until('tree')
+    await new Promise((resolve) => setTimeout(resolve, 1_300))
+    await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('stops a command at its timeout', async () => {
+    operations.start(context, 'slow', 'bash', { command: 'sleep 10', timeoutMs: 300 })
+    const finished = await until('slow')
+    expect(finished.status).toBe('failed')
+    expect(finished.error).toMatch(/timed out/)
+  })
+
+  it('fails plainly for a missing working directory', async () => {
+    operations.start(context, 'nowhere', 'bash', { command: 'true', cwd: 'missing' })
+    expect((await until('nowhere')).error).toMatch(/Working directory does not exist/)
+  })
+
+  it('saves large output for paging', async () => {
+    operations.start(context, 'big', 'bash', { command: 'i=0; while [ $i -lt 3000 ]; do echo "line $i of a long output"; i=$((i+1)); done' })
+    const finished = await until('big')
+    expect(finished.details).toMatchObject({ fullOutputComplete: true })
+    expect(String(finished.details?.fullOutputPath)).toContain(path.join(base, 'saved'))
+  })
+
+  it('reads, writes, edits and lists relative to the session folder or anywhere absolute', async () => {
+    operations.start(context, 'w', 'write', { path: 'notes/a.txt', content: 'hello $world' })
+    expect((await until('w')).output).toBe(`Wrote ${path.join('notes', 'a.txt')}`)
+    operations.start(context, 'e', 'edit', { path: 'notes/a.txt', oldText: '$world', newText: '$& there' })
+    expect((await until('e')).status).toBe('completed')
+    expect(await readFile(path.join(base, 'notes', 'a.txt'), 'utf8')).toBe('hello $& there')
+    operations.start(context, 'r', 'read', { path: path.join(base, 'notes', 'a.txt') })
+    const read = await until('r')
+    expect(read.output).toContain('1: hello $& there')
+    expect(read.details).toMatchObject({ kind: 'bounded_read', eof: true })
+    operations.start(context, 'l', 'list', {})
+    expect((await until('l')).output).toBe('d notes')
+    operations.start(context, 'missing-edit', 'edit', { path: 'notes/a.txt', oldText: 'absent', newText: 'x' })
+    expect(await until('missing-edit')).toMatchObject({ status: 'failed', error: 'Edit target was not found' })
+  })
+
+  it('finds and greps without ripgrep', async () => {
+    await writeFile(path.join(base, 'a.md'), 'needle\n')
+    operations.start(context, 'f', 'find', { pattern: '*.md' })
+    expect(await until('f')).toMatchObject({ output: 'a.md', exitCode: 0 })
+    operations.start(context, 'g', 'grep', { pattern: 'needle' })
+    expect(await until('g')).toMatchObject({ output: 'a.md:1:needle', exitCode: 0 })
+  })
+})
+
+describe('outputForAnswer', () => {
+  it('leaves short output alone', () => {
+    expect(outputForAnswer('hello', 10)).toBe('hello')
+  })
+
+  it('keeps the start and end of long output and says how much is missing', () => {
+    const output = `${'a'.repeat(50)}${'b'.repeat(100)}${'c'.repeat(50)}`
+    const cut = outputForAnswer(output, 100)
+    expect(cut.startsWith('a'.repeat(50))).toBe(true)
+    expect(cut.endsWith('c'.repeat(50))).toBe(true)
+    expect(cut).toContain('[… 100 characters left out here …]')
+  })
+
+  it('never splits a surrogate pair', () => {
+    const cut = outputForAnswer('😀'.repeat(60), 61)
+    // A lone surrogate does not survive a round trip through UTF-8.
+    expect(Buffer.from(cut, 'utf8').toString('utf8')).toBe(cut)
+  })
+})
+
+describe.skipIf(!posix)('Operations with long output', () => {
+  it('answers with a cut output but saves the whole of it', async () => {
+    const base = await mkdtemp(path.join(os.tmpdir(), 'pulpo-ops-long-'))
+    const operations = new Operations({ platform: process.platform, savedOutputDir: path.join(base, 'saved'), scriptDir: path.join(base, 'scripts') })
+    const context: OperationContext = { sessionId: 's1', cwd: base, shell: { path: '/bin/sh', name: 'sh' }, env: async () => ({ PATH: '/usr/bin:/bin' }) }
+    try {
+      operations.start(context, 'long', 'bash', { command: 'head -c 300000 /dev/zero | tr "\\0" x; echo END' })
+      let operation = await operations.get('s1', 'long', 5_000)
+      for (let attempt = 0; attempt < 100 && operation.status === 'running'; attempt += 1) operation = await operations.get('s1', 'long', 5_000)
+      expect(operation.status).toBe('completed')
+      expect(operation.output.length).toBeLessThan(210_000)
+      expect(operation.output).toContain('characters left out here')
+      expect(operation.output.endsWith('END\n')).toBe(true)
+      const saved = operation.details as { fullOutputPath: string; fullOutputBytes: number }
+      expect(saved.fullOutputBytes).toBe(300_004)
+      expect((await readFile(saved.fullOutputPath, 'utf8')).length).toBe(300_004)
+    } finally {
+      operations.cancelSession('s1')
+      await rm(base, { recursive: true, force: true })
+    }
+  })
+})

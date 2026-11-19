@@ -34,6 +34,9 @@ import { DesktopUpdater, type ManualUpdateCheckResult } from './updater'
 import { desktopUpdatesSupported } from './update-support'
 import { prepareDesktopDownload } from './downloads'
 import { fileMenuItems } from './file-menu'
+import { AccountResolver, userIdFromMe } from './computer/account'
+import { COMPUTER_CHANGES_CHANGED_CHANNEL, registerComputerIpc } from './computer/ipc'
+import { ComputerService } from './computer/service'
 
 const WINDOWS_APP_USER_MODEL_ID = 'com.squirrel.Pulpo.Pulpo'
 
@@ -47,6 +50,7 @@ let rendererReady = false
 /** Whether the page shows Files tabs, which take over Cmd/Ctrl+W (see file-menu). */
 let filesTabsShown = false
 let desktopUpdater: DesktopUpdater | null = null
+let computer: ComputerService | null = null
 
 log.initialize({ preload: false })
 
@@ -202,6 +206,41 @@ function validSignedInAccounts(value: unknown): DesktopSignedInAccounts {
   return { instanceUrl: validInstanceOrigin(candidate.instanceUrl), accounts }
 }
 
+/** Asks the instance which account a stored token belongs to; the stored session does not say. */
+async function fetchComputerUserId(origin: string, token: string): Promise<string | null> {
+  const response = await net.fetch(new URL('/api/mobile/me', origin).toString(), {
+    headers: { authorization: `Bearer ${token}` },
+    credentials: 'omit',
+    bypassCustomProtocolHandlers: true,
+    signal: AbortSignal.timeout(15_000),
+  })
+  return response.ok ? userIdFromMe(await response.json()) : null
+}
+
+function createComputerService(): ComputerService {
+  return new ComputerService({
+    userData: app.getPath('userData'),
+    home: app.getPath('home'),
+    platform: process.platform,
+    arch: process.arch,
+    osVersion: () => process.getSystemVersion(),
+    allowHttpLocalhost: !app.isPackaged,
+    accounts: new AccountResolver({ loadSession: loadStoredSession, fetchUserId: fetchComputerUserId }),
+    chooseFolder: async () => {
+      const options: Electron.OpenDialogOptions = { title: 'Choose a folder for Pulpo Agent', buttonLabel: 'Choose', properties: ['openDirectory', 'createDirectory'] }
+      const result = mainWindow && !mainWindow.isDestroyed() ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
+      return result.canceled ? null : result.filePaths[0] ?? null
+    },
+    confirm: async (message, detail) => {
+      const options: Electron.MessageBoxOptions = { type: 'warning', message, detail, buttons: ['Allow', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true }
+      const result = mainWindow && !mainWindow.isDestroyed() ? await dialog.showMessageBox(mainWindow, options) : await dialog.showMessageBox(options)
+      return result.response === 0
+    },
+    trash: (target) => shell.trashItem(target),
+    onChangesChanged: () => mainWindow?.webContents.send(COMPUTER_CHANGES_CHANGED_CHANNEL),
+  })
+}
+
 function registerIpc(): void {
   ipcMain.handle('desktop:session:load', async (event) => {
     assertTrustedSender(event)
@@ -210,10 +249,12 @@ function registerIpc(): void {
   ipcMain.handle('desktop:session:store', async (event, value: unknown) => {
     assertTrustedSender(event)
     await storeSession(validStoredSession(value))
+    void computer?.sessionChanged()
   })
   ipcMain.handle('desktop:session:clear', async (event) => {
     assertTrustedSender(event)
     await clearStoredSession()
+    void computer?.sessionChanged()
   })
   ipcMain.handle('desktop:accounts:load', async (event) => {
     assertTrustedSender(event)
@@ -252,6 +293,7 @@ function registerIpc(): void {
     filesTabsShown = shown
     updateApplicationMenu()
   })
+  if (computer) registerComputerIpc(ipcMain, computer, assertTrustedSender)
 }
 
 function deliverProtocolUrl(value: string): void {
@@ -424,6 +466,10 @@ if (hasSingleInstanceLock) {
     registerRendererProtocol()
     configureSession()
     initializeDesktopUpdater()
+    computer = createComputerService()
+    void computer.cleanup().catch((error) => log.warn('Computer cleanup failed', error))
+    // Commands the agent started must not outlive the app that answers for them.
+    app.on('before-quit', () => computer?.shutdown())
     registerIpc()
     updateApplicationMenu()
     await createMainWindow()
