@@ -12,8 +12,9 @@ import ApplicationServices
 /// or loses the focus. Sent with `SLPSPostEventRecordTo`, they reach only the target process: the
 /// app believes it is active and its window key, while the window server's own front process (and
 /// with it where the user's keyboard goes) and the order of windows stay as they were. The helper
-/// sends "activated" just before a left click or drag and "deactivated" right after, so the app
-/// believes it is active only for the moment of the click. This is the pair yabai uses to focus a
+/// sends "activated" just before a left click, a drag or keys and "deactivated" right after, so the
+/// app believes it is active only while the agent's input arrives. The same records decide which
+/// of the app's windows posted keys land in. This is the pair yabai uses to focus a
 /// window without raising it, minus its call that makes the process frontmost.
 enum Focus {
   static var isAvailable: Bool { Private.postEventRecordTo != nil && Private.getProcessForPID != nil }

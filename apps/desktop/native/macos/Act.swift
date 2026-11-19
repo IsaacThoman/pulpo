@@ -1,3 +1,4 @@
+import AppKit
 import ApplicationServices
 import Foundation
 
@@ -150,19 +151,51 @@ enum Act {
     let text = try action.requireString("text")
     guard !text.isEmpty else { return nil }
     AgentPointer.shared.touch()
-    try Input.type(text, pid: target.pid, context: context)
+    try withKeyboard(in: target) {
+      try Input.type(text, pid: target.pid, context: context)
+    }
     return nil
   }
 
   private static func key(_ action: JSON, target: Target) throws -> String? {
     let chord = try Keys.parse(try action.requireString("keys"))
     AgentPointer.shared.touch()
-    // An inactive app has no main window, so a shortcut that acts on the current document (Save,
-    // Close, Find) finds none. While the app believes it is active, the window is its main window.
-    Focus.simulated(pid: target.pid, window: target.window.id) {
+    try withKeyboard(in: target) {
       Input.press(chord, pid: target.pid)
     }
     return nil
+  }
+
+  /// Runs `body`, which posts keys to the app, so that they land in the target window.
+  ///
+  /// Keys posted to a process go to whichever of its windows the app takes for key, and an app with
+  /// several documents open has one the agent may not be looking at. While the app believes it is
+  /// active with this window key (see Focus.swift), the keys go here; an inactive app also has no
+  /// main window without that, so a shortcut that acts on the current document (Save, Close, Find)
+  /// would find none.
+  ///
+  /// When the user is working in the app themselves, nothing is simulated: the keyboard is where
+  /// they have it. Keys for another of its windows would land in theirs, and moving the keyboard
+  /// would take it from them, so that is refused.
+  private static func withKeyboard<T>(in target: Target, _ body: () throws -> T) throws -> T {
+    let userIsInApp = onMain { NSWorkspace.shared.frontmostApplication?.processIdentifier } == target.pid
+    if userIsInApp || !Focus.isAvailable {
+      if let focused = keyWindow(of: target.pid), focused != target.window.id {
+        throw ControlError.unsupported(userIsInApp
+          ? "The user is working in this app and has the keyboard in another of its windows. Keys sent now would land there, not in the window you were shown. Wait until they have left the app, or ask them to switch to that window."
+          : "The app has the keyboard in another of its windows, and this macOS does not let Pulpo move it without bringing the app forward. Click in the window first, or ask the user to switch to it.")
+      }
+      return try body()
+    }
+    return try Focus.simulated(pid: target.pid, window: target.window.id, body)
+  }
+
+  /// The window the app has the keyboard in, when accessibility says (it does not while the screen is locked).
+  private static func keyWindow(of pid: pid_t) -> CGWindowID? {
+    let app = AX.application(pid)
+    guard let window = AX.element(app, kAXFocusedWindowAttribute) ?? AX.element(app, kAXMainWindowAttribute),
+          AX.string(window, kAXRoleAttribute) == kAXWindowRole else { return nil }
+    return AX.windowID(window)
   }
 
   private static func scroll(_ action: JSON, target: Target) throws -> String? {
