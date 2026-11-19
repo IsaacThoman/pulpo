@@ -2927,6 +2927,8 @@ const esUi: Record<string, string> = {
   "Full access": "Acceso completo",
   "Can run commands anywhere on this computer": "Puede ejecutar comandos en cualquier parte de este ordenador",
   "Changes apply right away": "Los cambios se aplican al momento",
+  "What the agent may use on this computer.": "Lo que el agente puede usar en este ordenador.",
+  "Turn off": "Desactivar",
   "1 more color is set in Advanced.": "1 color más está definido en Avanzado.",
   "Action": "Acción",
   "Advanced": "Avanzado",
