@@ -1,5 +1,6 @@
 import {
   DEFAULT_COLOR_THEME_ID,
+  INSTANCE_COLOR_THEME_PREFIX,
   pulpoThemeExtensionSchema,
   unsafeThemeCssReason,
   type CustomTheme,
@@ -258,13 +259,17 @@ export function customToColorTheme(theme: CustomTheme): ColorTheme {
 }
 
 /** Every theme the user can pick, built-ins first. */
-export function allColorThemes(customThemes: readonly CustomTheme[]): ColorTheme[] {
-  return [...BUILT_IN_THEMES, ...customThemes.map(customToColorTheme)]
+export function allColorThemes(customThemes: readonly CustomTheme[], instanceThemes: readonly CustomTheme[] = []): ColorTheme[] {
+  return [
+    ...BUILT_IN_THEMES,
+    ...instanceThemes.map((theme) => customToColorTheme({ ...theme, id: INSTANCE_COLOR_THEME_PREFIX + theme.id })),
+    ...customThemes.map(customToColorTheme),
+  ]
 }
 
 /** The selected theme, falling back to Pulpo when the id is unknown (a deleted or unsynced theme). */
-export function findColorTheme(id: string, customThemes: readonly CustomTheme[]): ColorTheme {
-  return allColorThemes(customThemes).find((theme) => theme.id === id) ?? BUILT_IN_THEMES[0]!
+export function findColorTheme(id: string, customThemes: readonly CustomTheme[], instanceThemes?: readonly CustomTheme[]): ColorTheme {
+  return allColorThemes(customThemes, instanceThemes).find((theme) => theme.id === id) ?? BUILT_IN_THEMES[0]!
 }
 
 /** How an unset color follows the colors before it, so a theme can start from three colors. */

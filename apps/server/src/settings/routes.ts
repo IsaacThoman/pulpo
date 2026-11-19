@@ -13,6 +13,7 @@ import { normalizedPreferencePatch, preferencesWithModelDefaults } from './model
 import { automaticChatExpirationValues, parseAutomaticChatExpiration } from '../chats/expiration.js'
 import { parseAuthSettings, parsePersonalizationSettings } from './application-settings.js'
 import { withNewAccountModelDefaults } from './new-account-defaults.js'
+import { registerInstanceColorThemeRoutes } from './instance-color-themes.js'
 import { deleteUserEpisodicMemory } from '../episodic-memory/indexer.js'
 import { scheduleUserIndex } from '../episodic-memory/queue.js'
 import {
@@ -26,6 +27,8 @@ import {
 const preferencesSchema = z.record(z.string(), z.unknown())
 
 export async function registerSettingsRoutes(app: FastifyInstance): Promise<void> {
+  registerInstanceColorThemeRoutes(app)
+
   app.get('/api/settings', async (request) => {
     const user = requireUser(request)
     const [[row], [authSetting], [personalizationSetting]] = await Promise.all([

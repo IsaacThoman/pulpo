@@ -12,6 +12,7 @@ import { useModels } from '@/stores/models'
 import { DEFAULT_SETTINGS, normalizeColorThemeId, normalizeCustomThemes, normalizeLanguage, useSettings, type SettingsState } from '@/stores/settings'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { normalizeAnimationSpeed } from '@/lib/animation-speed'
+import { instanceColorThemesQuery } from './instance-color-themes'
 
 const persistedKeys = [
   'imageGeneration', 'speech', 'composerSyncEnabled', 'theme', 'colorTheme', 'customThemes', 'language', 'sendWithEnter', 'doubleShiftSearch', 'streamResponses', 'showPromptSuggestions', 'showModelWarnings', 'modelWarningDismissals', 'showReasoning', 'showResponseCost',
@@ -106,6 +107,10 @@ export function SettingsBridge() {
     queryFn: () => apiRequest<SettingsDocument>('/api/settings'),
     enabled: Boolean(networkReady && userId),
   })
+  const { data: instanceColorThemes } = useQuery({
+    ...instanceColorThemesQuery(userId),
+    enabled: Boolean(networkReady && userId),
+  })
 
   useEffect(() => {
     if (!userId) return
@@ -126,6 +131,11 @@ export function SettingsBridge() {
   }, [userId])
 
   useEffect(() => {
+    useSettings.setState({ instanceThemes: instanceColorThemes?.themes ?? [] })
+  }, [instanceColorThemes, userId])
+  useEffect(() => () => { useSettings.setState({ instanceThemes: [] }) }, [])
+
+  useEffect(() => {
     if (userId) void enforceAttachmentQuota(userId, attachmentCacheMb)
   }, [userId, attachmentCacheMb])
 
@@ -142,6 +152,7 @@ export function SettingsBridge() {
         sidebarPins: normalizeSidebarPins(remote.values.sidebarPins),
         colorTheme: normalizeColorThemeId(remote.values.colorTheme),
         customThemes: normalizeCustomThemes(remote.values.customThemes),
+        instanceThemes: local.instanceThemes,
         ownerUserId: userId,
       }
       for (const key of dirtyKeys.current) {
@@ -190,9 +201,14 @@ export function SettingsBridge() {
     const pendingKeys = dirtyKeys.current
     const unsubscribe = useSettings.subscribe((state, previous) => {
       if (!hydrated.current || applyingRemote.current) return
+      let changed = false
       for (const key of persistedKeys) {
-        if (!sameSetting(state[key], previous[key])) pendingKeys.add(key)
+        if (!sameSetting(state[key], previous[key])) {
+          pendingKeys.add(key)
+          changed = true
+        }
       }
+      if (!changed) return
       window.clearTimeout(timer)
       timer = window.setTimeout(() => {
         const body = settingsSnapshot(pendingKeys)

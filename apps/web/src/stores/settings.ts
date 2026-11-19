@@ -34,9 +34,10 @@ export interface SettingsState {
   speech: SpeechPreferences
   ownerUserId: string | null
   theme: Theme
-  /** The selected color theme's id: a built-in theme or one of `customThemes`. */
+  /** The selected built-in, personal, or instance color theme. */
   colorTheme: string
   customThemes: CustomTheme[]
+  instanceThemes: CustomTheme[]
   language: Language
   composerSyncEnabled: boolean
   sendWithEnter: boolean
@@ -90,6 +91,7 @@ export const DEFAULT_SETTINGS = {
   theme: 'system' as Theme,
   colorTheme: DEFAULT_COLOR_THEME_ID as string,
   customThemes: [] as CustomTheme[],
+  instanceThemes: [] as CustomTheme[],
   language: 'en-US' as Language,
   composerSyncEnabled: true,
   sendWithEnter: true,
@@ -148,6 +150,7 @@ export const useSettings = create<SettingsState>()(
     }),
     {
       name: 'pulpo-settings',
+      partialize: ({ instanceThemes: _instanceThemes, ...state }) => state,
       merge: (persisted, current) => {
         const saved = persisted as Partial<SettingsState>
         return {
@@ -214,8 +217,8 @@ export function applyTheme(theme: Theme) {
 let appliedColorStylesheet = ''
 
 /** Applies the selected color theme. Signed-out screens keep Pulpo's colors, like they keep the system theme. */
-export function applyColorTheme({ colorTheme, customThemes }: Pick<SettingsState, 'colorTheme' | 'customThemes'>) {
-  const stylesheet = signedIn() ? colorThemeStylesheet(findColorTheme(colorTheme, customThemes)) : ''
+export function applyColorTheme({ colorTheme, customThemes, instanceThemes }: Pick<SettingsState, 'colorTheme' | 'customThemes' | 'instanceThemes'>) {
+  const stylesheet = signedIn() ? colorThemeStylesheet(findColorTheme(colorTheme, customThemes, instanceThemes)) : ''
   if (stylesheet === appliedColorStylesheet) return
   appliedColorStylesheet = stylesheet
   withoutTransitions(() => applyColorThemeStylesheet(stylesheet))
@@ -232,7 +235,9 @@ applyLanguage(normalizeLanguage(useSettings.getState().language))
 startAnimationSpeedController(useSettings.getState().animationSpeed)
 useSettings.subscribe((state, previous) => {
   if (state.theme !== previous.theme) applyTheme(state.theme)
-  if (state.colorTheme !== previous.colorTheme || state.customThemes !== previous.customThemes) applyColorTheme(state)
+  if (state.colorTheme !== previous.colorTheme || state.customThemes !== previous.customThemes || state.instanceThemes !== previous.instanceThemes) {
+    applyColorTheme(state)
+  }
   if (state.language !== previous.language) applyLanguage(normalizeLanguage(state.language))
   if (state.animationSpeed !== previous.animationSpeed) applyAnimationSpeed(state.animationSpeed)
 })
