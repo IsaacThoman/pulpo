@@ -75,7 +75,7 @@ jobs:
 
       - name: Install speech audio tools
         if: matrix.name == 'Test'
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        run: bash .github/scripts/setup-ffmpeg.sh
 
       - name: ${{ matrix.name }}
         run: ${{ matrix.command }}
@@ -173,7 +173,7 @@ jobs:
       - name: Create disposable migration recovery database
         run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_migration_test"); await sql.end();'
       - name: Install speech audio tools
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        run: bash .github/scripts/setup-ffmpeg.sh
       - name: Create disposable budget database
         run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_budget_test"); await sql.end();'
       - name: Verify budget reservations and concurrency against PostgreSQL
