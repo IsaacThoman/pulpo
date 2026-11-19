@@ -26,42 +26,144 @@ const SKIPPED = new Set<string>(COMPUTER_SKIPPED_FOLDERS)
 
 export function isSkippedFolder(name: string): boolean { return SKIPPED.has(name) }
 
-/** Converts a glob (`*`, `**`, `?`, `[…]`, `{a,b}`) to a regular expression over `/`-separated paths. */
-export function globToRegExp(glob: string, ignoreCase = false): RegExp {
-  let source = ''
-  let braces = 0
-  for (let index = 0; index < glob.length; index += 1) {
-    const character = glob[index]!
-    if (character === '*') {
-      if (glob[index + 1] === '*') {
-        const slashAfter = glob[index + 2] === '/'
-        const atSegmentStart = index === 0 || glob[index - 1] === '/'
-        index += slashAfter && atSegmentStart ? 2 : 1
-        source += slashAfter && atSegmentStart ? '(?:.*/)?' : '.*'
-      } else source += '[^/]*'
-    } else if (character === '?') source += '[^/]'
-    else if (character === '[') {
-      const close = glob.indexOf(']', index + 1)
-      if (close < 0) source += '\\['
-      else {
+/** The longest glob accepted, and how many `{a,b}` combinations and pattern steps it may come to. */
+const GLOB_MAX_LENGTH = 1_000
+const GLOB_MAX_ALTERNATIVES = 100
+const GLOB_MAX_TOKENS = 2_000
+
+type GlobToken =
+  | { kind: 'literal'; character: string }
+  /** `?`: one character other than `/`. */
+  | { kind: 'one' }
+  | { kind: 'class'; expression: RegExp }
+  /** `*`: any run of characters other than `/`. */
+  | { kind: 'star' }
+  /** `**`: any run of characters. */
+  | { kind: 'globstar' }
+  // Opens a `**` with its slash at the start of a segment, which may also match nothing: matching may jump to `to`.
+  | { kind: 'skip'; to: number }
+
+/** A glob as it is written: tokens, `**` with its slash at the start of a segment, and `{a,b}` alternatives. */
+type GlobPiece = Exclude<GlobToken, { kind: 'skip' }> | { kind: 'folders' } | { kind: 'alternatives'; options: GlobPiece[][] }
+
+function parseGlob(glob: string, ignoreCase: boolean): GlobPiece[] {
+  let index = 0
+  // A sequence ends with the glob or, inside braces, at the `,` or `}` that closes it.
+  const sequence = (inBraces: boolean): GlobPiece[] => {
+    const pieces: GlobPiece[] = []
+    for (; index < glob.length; index += 1) {
+      const character = glob[index]!
+      if (inBraces && (character === ',' || character === '}')) break
+      if (character === '*') {
+        if (glob[index + 1] !== '*') { pieces.push({ kind: 'star' }); continue }
+        const startsSegment = (index === 0 || glob[index - 1] === '/') && glob[index + 2] === '/'
+        // `**/` at the start of a segment: any folders, or none at all.
+        pieces.push({ kind: startsSegment ? 'folders' : 'globstar' })
+        index += startsSegment ? 2 : 1
+      } else if (character === '?') pieces.push({ kind: 'one' })
+      else if (character === '[' && glob.indexOf(']', index + 1) >= 0) {
+        const close = glob.indexOf(']', index + 1)
         const body = glob.slice(index + 1, close).replace(/\\/g, '\\\\').replace(/^!/, '^')
-        source += `[${body}]`
+        // Tested against one character at a time, so it cannot take long whatever it holds.
+        try { pieces.push({ kind: 'class', expression: new RegExp(`^[${body}]$`, ignoreCase ? 'i' : '') }) } catch {
+          throw new ComputerError('invalid_request', `Invalid character class [${body.slice(0, 50)}] in the glob`)
+        }
         index = close
-      }
-    } else if (character === '{') { braces += 1; source += '(?:' }
-    else if (character === '}' && braces > 0) { braces -= 1; source += ')' }
-    else if (character === ',' && braces > 0) source += '|'
-    else source += character.replace(/[.+^$()|\\]/g, '\\$&')
+      } else if (character === '{') {
+        const options: GlobPiece[][] = []
+        do {
+          index += 1
+          options.push(sequence(true))
+          if (index >= glob.length) throw new ComputerError('invalid_request', `Unbalanced braces in glob "${glob.slice(0, 100)}"`)
+        } while (glob[index] === ',')
+        pieces.push({ kind: 'alternatives', options })
+      } else pieces.push({ kind: 'literal', character: ignoreCase ? character.toLowerCase() : character })
+    }
+    return pieces
   }
-  if (braces > 0) throw new ComputerError('invalid_request', `Unbalanced braces in glob "${glob}"`)
-  return new RegExp(`^${source}$`, ignoreCase ? 'i' : '')
+  return sequence(false)
+}
+
+/** Writes out every combination of the `{a,b}` alternatives as its own run of tokens. */
+function expandGlob(pieces: GlobPiece[], glob: string): Array<Array<Exclude<GlobPiece, { kind: 'alternatives' }>>> {
+  let results: Array<Array<Exclude<GlobPiece, { kind: 'alternatives' }>>> = [[]]
+  for (const piece of pieces) {
+    const options = piece.kind === 'alternatives' ? piece.options.flatMap((option) => expandGlob(option, glob)) : [[piece]]
+    if (results.length * options.length > GLOB_MAX_ALTERNATIVES) throw new ComputerError('invalid_request', `The glob "${glob.slice(0, 100)}" has too many {a,b} alternatives`)
+    results = results.flatMap((left) => options.map((right) => [...left, ...right]))
+  }
+  return results
+}
+
+function tokensOf(pieces: Array<Exclude<GlobPiece, { kind: 'alternatives' }>>): GlobToken[] {
+  const tokens: GlobToken[] = []
+  for (const piece of pieces) {
+    if (piece.kind === 'folders') tokens.push({ kind: 'skip', to: tokens.length + 3 }, { kind: 'globstar' }, { kind: 'literal', character: '/' })
+    else tokens.push(piece)
+  }
+  return tokens
+}
+
+/**
+ * A matcher for one plain glob that follows every way the pattern could match at once, a character
+ * at a time. It never backtracks, so its cost is at most the pattern's length times the path's:
+ * a pattern like `*a*a*a…b`, which makes a regular expression take forever, cannot freeze the app.
+ */
+function tokenMatcher(tokens: GlobToken[], ignoreCase: boolean): (text: string) => boolean {
+  const size = tokens.length
+  let active = new Uint8Array(size + 1)
+  let next = new Uint8Array(size + 1)
+  // What can be reached without reading anything; these steps only ever lead forward.
+  const reach = (states: Uint8Array) => {
+    for (let position = 0; position < size; position += 1) {
+      if (!states[position]) continue
+      const token = tokens[position]!
+      if (token.kind === 'star' || token.kind === 'globstar') states[position + 1] = 1
+      else if (token.kind === 'skip') { states[position + 1] = 1; states[token.to] = 1 }
+    }
+  }
+  return (text) => {
+    active.fill(0)
+    active[0] = 1
+    reach(active)
+    for (let index = 0; index < text.length; index += 1) {
+      const character = text[index]!
+      const compared = ignoreCase ? character.toLowerCase() : character
+      next.fill(0)
+      let alive = false
+      for (let position = 0; position < size; position += 1) {
+        if (!active[position]) continue
+        const token = tokens[position]!
+        let to = -1
+        if (token.kind === 'literal') { if (token.character === compared) to = position + 1 }
+        else if (token.kind === 'one') { if (character !== '/') to = position + 1 }
+        else if (token.kind === 'class') { if (token.expression.test(character)) to = position + 1 }
+        else if (token.kind === 'star') { if (character !== '/') to = position }
+        else if (token.kind === 'globstar') to = position
+        if (to >= 0) { next[to] = 1; alive = true }
+      }
+      if (!alive) return false
+      reach(next)
+      const swap = active; active = next; next = swap
+    }
+    return active[size] === 1
+  }
+}
+
+/** Compiles a glob (`*`, `**`, `?`, `[…]`, `{a,b}`) into a test over `/`-separated paths. */
+export function compileGlob(glob: string, ignoreCase = false): (text: string) => boolean {
+  if (glob.length > GLOB_MAX_LENGTH) throw new ComputerError('invalid_request', `The glob is longer than ${GLOB_MAX_LENGTH} characters`)
+  const alternatives = expandGlob(parseGlob(glob, ignoreCase), glob).map(tokensOf)
+  if (alternatives.reduce((total, tokens) => total + tokens.length, 0) > GLOB_MAX_TOKENS) throw new ComputerError('invalid_request', 'The glob is too long once its {a,b} alternatives are written out')
+  const matchers = alternatives.map((tokens) => tokenMatcher(tokens, ignoreCase))
+  return (text) => matchers.some((matches) => matches(text))
 }
 
 /** Matches a glob the way ripgrep's `--glob` does: a pattern without `/` matches the file name at any depth. */
 export function globMatcher(glob: string, ignoreCase = false): (relativePath: string) => boolean {
   const pattern = glob.replace(/^\.\//, '').replace(/^\//, '')
-  const expression = globToRegExp(pattern, ignoreCase)
-  return pattern.includes('/') ? (relativePath) => expression.test(relativePath) : (relativePath) => expression.test(relativePath.slice(relativePath.lastIndexOf('/') + 1))
+  const matches = compileGlob(pattern, ignoreCase)
+  return pattern.includes('/') ? matches : (relativePath) => matches(relativePath.slice(relativePath.lastIndexOf('/') + 1))
 }
 
 export interface LineMatch { line: number; text: string }

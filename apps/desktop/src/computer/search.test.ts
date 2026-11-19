@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { createLineMatcher, findFiles, globMatcher, grepFiles, SEARCH_TIME_BUDGET_MS } from './search'
+import { compileGlob as compileGlobForTest, createLineMatcher, findFiles, globMatcher, grepFiles, SEARCH_TIME_BUDGET_MS } from './search'
 
 describe('globMatcher', () => {
   it('matches like ripgrep --glob', () => {
@@ -18,6 +18,83 @@ describe('globMatcher', () => {
     expect(globMatcher('a.b')('axb')).toBe(false)
     expect(globMatcher('*.TS', true)('a.ts')).toBe(true)
     expect(() => globMatcher('{a,b')).toThrow(/Unbalanced/)
+  })
+
+  it('handles alternatives, classes and the edges of ** and *', () => {
+    expect(globMatcher('**/a.ts')('a.ts')).toBe(true)
+    expect(globMatcher('**/a.ts')('x/y/a.ts')).toBe(true)
+    expect(globMatcher('**/a.ts')('xa.ts')).toBe(false)
+    expect(globMatcher('src/**')('src/x/y.ts')).toBe(true)
+    expect(globMatcher('a/*/c')('a/b/c')).toBe(true)
+    expect(globMatcher('a/*/c')('a/b/x/c')).toBe(false)
+    expect(globMatcher('a/?/c')('a///c')).toBe(false)
+    expect(globMatcher('{src,lib}/{a,b{1,2}}.ts')('lib/b2.ts')).toBe(true)
+    expect(globMatcher('{src,lib}/{a,b{1,2}}.ts')('lib/b3.ts')).toBe(false)
+    expect(globMatcher('[{,]x')('{x')).toBe(true)
+    expect(globMatcher('a,b}')('a,b}')).toBe(true)
+    expect(globMatcher('[abc')('[abc')).toBe(true)
+    expect(globMatcher('[a-c]1')('b1')).toBe(true)
+    expect(globMatcher('SRC/*.Ts', true)('src/A.tS')).toBe(true)
+    expect(globMatcher('')('')).toBe(true)
+    expect(globMatcher('')('a')).toBe(false)
+    expect(() => globMatcher('[z-a]')).toThrow(/character class/)
+    expect(() => globMatcher('a'.repeat(1_001))).toThrow(/longer than/)
+    expect(() => globMatcher('{a,b}'.repeat(8))).toThrow(/too many/)
+  })
+
+  it('answers at once for a pattern that would make a regular expression take forever', () => {
+    const startedAt = Date.now()
+    const matches = globMatcher(`${'*a'.repeat(20)}b`)
+    expect(matches('a'.repeat(80))).toBe(false)
+    expect(matches(`${'a'.repeat(80)}b`)).toBe(true)
+    expect(globMatcher(`${'**a'.repeat(30)}/x`)(`${'a/'.repeat(200)}y`)).toBe(false)
+    expect(Date.now() - startedAt).toBeLessThan(500)
+  })
+
+  it('agrees with the regular expression it replaced', () => {
+    // The translation this matcher took over from, kept here as the reference.
+    const reference = (glob: string): RegExp => {
+      let source = ''
+      let braces = 0
+      for (let index = 0; index < glob.length; index += 1) {
+        const character = glob[index]!
+        if (character === '*') {
+          if (glob[index + 1] === '*') {
+            const slashAfter = glob[index + 2] === '/'
+            const atSegmentStart = index === 0 || glob[index - 1] === '/'
+            index += slashAfter && atSegmentStart ? 2 : 1
+            source += slashAfter && atSegmentStart ? '(?:.*/)?' : '.*'
+          } else source += '[^/]*'
+        } else if (character === '?') source += '[^/]'
+        else if (character === '[') {
+          const close = glob.indexOf(']', index + 1)
+          if (close < 0) source += '\\['
+          else { source += `[${glob.slice(index + 1, close).replace(/^!/, '^')}]`; index = close }
+        } else if (character === '{') { braces += 1; source += '(?:' }
+        else if (character === '}' && braces > 0) { braces -= 1; source += ')' }
+        else if (character === ',' && braces > 0) source += '|'
+        else source += character.replace(/[.+^$()|\\]/g, '\\$&')
+      }
+      return new RegExp(`^${source}$`)
+    }
+    // A fixed seed: the same thousands of cases every run.
+    let seed = 0x5eed
+    const random = (below: number) => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed % below }
+    const pick = <T,>(items: readonly T[]) => items[random(items.length)]!
+    const pieces = ['a', 'b', '.', '/', '*', '**', '**/', '?', '[ab]', '[!a]', '{a,b}', '{a,bb}', '{a,}'] as const
+    const letters = ['a', 'b', '.', '/'] as const
+    let compared = 0
+    for (let round = 0; round < 4_000; round += 1) {
+      const glob = Array.from({ length: 1 + random(6) }, () => pick(pieces)).join('')
+      const expected = reference(glob)
+      const matches = compileGlobForTest(glob)
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        const text = Array.from({ length: random(7) }, () => pick(letters)).join('')
+        if (matches(text) !== expected.test(text)) throw new Error(`glob ${JSON.stringify(glob)} against ${JSON.stringify(text)}: expected ${expected.test(text)}`)
+        compared += 1
+      }
+    }
+    expect(compared).toBe(48_000)
   })
 })
 

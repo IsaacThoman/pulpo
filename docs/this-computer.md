@@ -40,7 +40,7 @@ File bytes do not cross the socket unless they are small (up to 256 KiB, inline 
 
 - Commands run in the user's login shell on macOS, with the environment that shell would have in a terminal, and in PowerShell on Windows (PowerShell 7 when installed), where the shell tool is named `powershell` instead of `bash`.
 - Each answer carries at most 200,000 characters of output, cut in the middle; the whole output is saved under `<userData>/computer/tool-output` and named in the result.
-- `find` and `grep` are implemented in Node (users do not have ripgrep) and skip `.git` and `node_modules`.
+- `find` and `grep` are implemented in Node (users do not have ripgrep) and skip `.git` and `node_modules`. They run on the main process, so neither can be made to hang it: `find` matches its glob without backtracking, and `grep` runs its regular expression with a time limit.
 - A computer that is not connected fails the reply when it starts, with the workspace step showing why. One that drops mid-run, or whose app was restarted and no longer knows the session, turns the tools off for the rest of the reply. Cancelling sends the command's process group SIGTERM, then SIGKILL after five seconds; quitting the app kills every command it started.
 - On macOS and Linux, what a finished command left running in its process group (`sleep 60 &`, a dev server) is stopped the same way when its session ends: with the reply, when the access is taken back, on sign-out, or when the app quits. The prompt says so, so the agent hands the user the command for anything that should keep running. Windows has no process groups: a program started there with `Start-Process` keeps running.
 
