@@ -79,6 +79,7 @@ export function findWindow(app: ControlApp, query: string | undefined): ControlW
   return found[0]!
 }
 
+const grantKey = (account: string, appId: string) => `${account}\0${lower(appId)}`
 const windowKey = (app: ControlApp, window: ControlWindow) => `${app.pid}:${window.id}`
 const titles = (app: ControlApp) => app.windows.slice(0, 50).map((window) => String(window.title ?? '').slice(0, 500))
 
@@ -142,8 +143,10 @@ export class AppControl {
   private readonly sessions = new Map<string, SessionState>()
   /** One question per app at a time, however many requests want it answered. */
   private readonly questions = new Map<string, Question>()
-  /** Replies with an action being carried out by the helper right now, and how many. */
-  private readonly acting = new Map<string, number>()
+  /** Replies with an action being carried out by the helper right now: how many, and in which app of whose. */
+  private readonly acting = new Map<string, { count: number; grant: string }>()
+  /** How often each account's use of each app was taken back, so work begun under an approval can tell it is gone. */
+  private readonly takenBack = new Map<string, number>()
   /**
    * Per window, the reply that last had it pictured. The helper keeps one list of elements per
    * window, the latest; a number means what a reply saw only while that list is its own.
@@ -270,6 +273,12 @@ export class AppControl {
     const state = this.state(session.sessionId)
     const appKey = lower(app.id)
     const { action } = input
+    // The approval this request runs under. Taken back while the request waits or runs, it no
+    // longer covers it: Remove in Settings stops what the agent is doing in that app.
+    const grant = grantKey(session.account, app.id)
+    const approvals = this.takenBack.get(grant) ?? 0
+    const allowedStill = () => (this.takenBack.get(grant) ?? 0) === approvals
+    const takenBack = () => new ComputerError('not_allowed', `The user took back Pulpo Agent's use of ${app.name} while this was under way. Do not try again in this reply unless they ask.`)
     let window: ControlWindow
     if (action.type === 'view') window = findWindow(app, input.window)
     else {
@@ -283,20 +292,24 @@ export class AppControl {
     let after = app
     if (action.type !== 'view') {
       if (!session.active()) throw gone()
-      // Counted while the helper works, so a reply that ends meanwhile can have its action stopped.
-      this.acting.set(session.sessionId, (this.acting.get(session.sessionId) ?? 0) + 1)
+      // Counted while the helper works, so a reply that ends meanwhile, or an app taken back, can have the action stopped.
+      this.acting.set(session.sessionId, { count: (this.acting.get(session.sessionId)?.count ?? 0) + 1, grant })
       let done
       try {
-        // The request may wait behind another reply's; by its turn this reply may be over.
-        done = await this.ask(() => this.options.helper.call('act', { pid: app.pid, windowId: window.id, action: action as ControlAction }, { timeoutMs: HELPER_ACT_TIMEOUT_MS, stillWanted: session.active }))
+        // The request may wait behind another reply's; by its turn this reply may be over or the app taken back.
+        done = await this.ask(() => this.options.helper.call('act', { pid: app.pid, windowId: window.id, action: action as ControlAction }, {
+          timeoutMs: HELPER_ACT_TIMEOUT_MS, stillWanted: () => session.active() && allowedStill(),
+        }))
       } catch (error) {
         if (!session.active()) throw gone()
+        if (!allowedStill()) throw takenBack()
         throw error
       } finally {
-        const left = (this.acting.get(session.sessionId) ?? 1) - 1
-        if (left > 0) this.acting.set(session.sessionId, left)
+        const left = (this.acting.get(session.sessionId)?.count ?? 1) - 1
+        if (left > 0) this.acting.set(session.sessionId, { count: left, grant })
         else this.acting.delete(session.sessionId)
       }
+      if (!allowedStill()) throw takenBack()
       note = limited(typeof done?.note === 'string' ? done.note : undefined, 800)
       await this.wait(action.type === 'type' ? SETTLE_TYPING_MS : SETTLE_MS)
       const now = (await this.running()).find((candidate) => candidate.pid === app.pid)
@@ -314,6 +327,11 @@ export class AppControl {
     }
     const snapshot = await this.ask(() => this.options.helper.call('snapshot', { pid: app.pid, windowId: window.id, maxElements: COMPUTER_APP_MAX_ELEMENTS }))
     if (!session.active()) throw gone()
+    // Its picture is not handed over either.
+    if (!allowedStill()) {
+      await rm(path.resolve(String(snapshot.image?.path ?? '')), { force: true }).catch(() => undefined)
+      throw takenBack()
+    }
     state.shown.set(appKey, window.id)
     this.picturedFor.set(windowKey(app, window), session.sessionId)
     const elements = (Array.isArray(snapshot.elements) ? snapshot.elements : []).flatMap((raw) => { const one = element(raw); return one ? [one] : [] }).slice(0, 1_000)
@@ -346,6 +364,17 @@ export class AppControl {
     this.sessions.delete(sessionId)
     for (const file of state.images) void rm(file, { force: true }).catch(() => undefined)
     if (!acting && !this.sessions.size && this.options.helper.started) void this.options.helper.call('release', {}).catch(() => undefined)
+  }
+
+  /**
+   * The user took an app back in Settings. What a reply is doing in it right now is stopped (by
+   * stopping the helper, as when a reply ends), and requests begun under the approval do not go on;
+   * the next one asks the user again.
+   */
+  revoke(account: string, id: string): void {
+    const grant = grantKey(account, id)
+    this.takenBack.set(grant, (this.takenBack.get(grant) ?? 0) + 1)
+    if ([...this.acting.values()].some((action) => action.grant === grant)) this.options.helper.stop()
   }
 
   shutdown(): void {

@@ -341,11 +341,13 @@ export class ComputerService implements Api {
     }
   }
 
-  /** Forgets an app the user allowed; the agent must ask again to use it, in running replies too. */
+  /** Forgets an app the user allowed: what a reply is doing in it stops, and the agent must ask again to use it. */
   async forgetApp(id: string): Promise<void> {
     if (typeof id !== 'string' || !id) return
     const account = await this.options.accounts.current()
-    if (account) await this.grants.removeApp(account, id)
+    if (!account) return
+    await this.grants.removeApp(account, id)
+    this.apps?.revoke(accountKey(account), id)
   }
 
   async handle(raw: unknown): Promise<ComputerResponse> {

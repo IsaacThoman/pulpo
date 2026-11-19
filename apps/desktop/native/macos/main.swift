@@ -93,15 +93,21 @@ final class Server: @unchecked Sendable {
     thread.start()
 
     var answer: JSON
+    var abandonedAction = false
     if done.wait(timeout: .now() + timeout) == .timedOut {
       context.abandon()
       log("\(method) did not finish in \(Int(timeout)) s")
       answer = ["ok": false, "code": "failed", "message": "The request took too long; the app may not be responding."]
+      abandonedAction = method == "act"
     } else {
       answer = box.answer
     }
     answer["id"] = id
     output.send(answer)
+    // An action that did not finish is still on its thread, stuck in the app, and would carry on
+    // (press the button, post the keys) whenever the app answers, after the agent was told it
+    // failed. The helper leaves instead; the app starts another for the next request.
+    if abandonedAction { _exit(0) }
   }
 
   private static func timeout(for method: String, params: JSON) -> TimeInterval {

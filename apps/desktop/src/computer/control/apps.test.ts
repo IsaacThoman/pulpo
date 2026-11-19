@@ -289,6 +289,32 @@ describe('app control', () => {
     expect(options?.stillWanted?.()).toBe(false)
   })
 
+  it('stops what it is doing in an app the user takes back, and does not go on under the old approval', async () => {
+    const h = harness()
+    await h.control.act(h.session, view(), 210_000)
+    let finish!: () => void
+    h.state.hold = new Promise<void>((resolve) => { finish = resolve })
+    const typing = h.control.act(h.session, { app: 'TextEdit', action: { type: 'type', text: 'a long text' } }, 210_000)
+    await vi.waitFor(() => expect(h.asked.at(-1)?.method).toBe('act'))
+    // Remove in Settings: the grant goes (the service does that) and the control is told.
+    h.allowed.length = 0
+    h.control.revoke(h.session.account, 'com.apple.textedit')
+    expect(h.state.stopped).toBe(1)
+    const stillWanted = h.state.options[h.asked.findIndex((request) => request.method === 'act')]?.stillWanted
+    expect(stillWanted?.()).toBe(false)
+    finish()
+    expect(await refusal(typing)).toMatchObject({ code: 'not_allowed', message: expect.stringContaining('took back Pulpo Agent\'s use of TextEdit') })
+    // No picture of the app follows, and the next use asks the user again.
+    expect(h.asked.filter((request) => request.method === 'snapshot')).toHaveLength(1)
+    h.state.hold = undefined
+    await h.control.act(h.session, view(), 210_000)
+    expect(h.confirm).toHaveBeenCalledTimes(2)
+    // Taking back another app touches nothing here.
+    const before = h.state.stopped
+    h.control.revoke(h.session.account, 'com.apple.Safari')
+    expect(h.state.stopped).toBe(before)
+  })
+
   it('takes a number only from the picture this reply was shown, not one taken for another reply since', async () => {
     const h = harness()
     const other: AppControlSession = { ...h.session, sessionId: 's2' }

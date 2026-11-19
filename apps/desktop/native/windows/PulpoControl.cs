@@ -67,6 +67,14 @@ namespace Pulpo.Control
         /// <summary>How long an action still running when input closed gets to end by itself.</summary>
         const int ClosingGraceMs = 1000;
 
+        /// <summary>
+        /// Set when an action was answered `failed` because it did not finish in time. Its thread is
+        /// still stuck in the app and would carry on (press the button, send the keys) whenever the
+        /// app answers, long after the agent was told it failed. The helper leaves instead, taking
+        /// the thread with it; the app starts another for the next request.
+        /// </summary>
+        static bool leaveAfterAnswer;
+
         static Stream errorStream;
         static readonly UTF8Encoding Utf8 = new UTF8Encoding(false);
 
@@ -115,6 +123,7 @@ namespace Pulpo.Control
                     output.Flush();
                 }
                 catch (IOException) { break; }
+                if (leaveAfterAnswer) break;
             }
             Pointer.Shutdown();
             return 0;
@@ -182,6 +191,7 @@ namespace Pulpo.Control
                 if (waited.ElapsedMilliseconds > timeout)
                 {
                     Log(method + " did not finish within " + (timeout / 1000) + " s");
+                    if (method == "act") leaveAfterAnswer = true;
                     return Failure(id, "failed", "The window did not respond in time.");
                 }
             }
