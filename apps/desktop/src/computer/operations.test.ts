@@ -138,6 +138,28 @@ describe.skipIf(!posix)('Operations that ignore a polite stop', () => {
   })
 })
 
+describe.skipIf(!posix)('Operations whose shell exits before what it started', () => {
+  it('ends at the timeout when a background process still holds the output open', async () => {
+    const base = await mkdtemp(path.join(os.tmpdir(), 'pulpo-ops-bg-'))
+    const operations = new Operations({ platform: process.platform, savedOutputDir: path.join(base, 'saved'), scriptDir: path.join(base, 'scripts') })
+    const context: OperationContext = { sessionId: 's1', cwd: base, shell: { path: '/bin/sh', name: 'sh' }, env: async () => ({ PATH: '/usr/bin:/bin' }) }
+    try {
+      // The shell is gone at once; the sleep it left behind inherits stdout, so the command never "closes" by itself.
+      operations.start(context, 'background', 'bash', { command: 'sleep 30 & echo started', timeoutMs: 600 })
+      const startedAt = Date.now()
+      let operation = await operations.get('s1', 'background', 5_000)
+      for (let attempt = 0; attempt < 10 && operation.status === 'running'; attempt += 1) operation = await operations.get('s1', 'background', 2_000)
+      expect(operation.status).toBe('failed')
+      expect(operation.error).toMatch(/timed out/)
+      expect(operation.output).toContain('started')
+      expect(Date.now() - startedAt).toBeLessThan(10_000)
+    } finally {
+      operations.cancelSession('s1', { now: true })
+      await rm(base, { recursive: true, force: true })
+    }
+  })
+})
+
 describe.skipIf(!posix)('Operations when the app quits', () => {
   it('kills at once a command that was cancelled and is still ignoring the polite stop', async () => {
     const base = await mkdtemp(path.join(os.tmpdir(), 'pulpo-ops-quit-'))

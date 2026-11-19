@@ -94,6 +94,18 @@ describe('killProcessTree', () => {
     expect(kill).toHaveBeenCalledWith(-4321, 'SIGTERM')
     kill.mockRestore()
   })
+
+  it('still signals the group after the shell itself has exited, since what it started may live on', () => {
+    const exited = () => Object.assign(fakeChild(), { exitCode: 0 })
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => true)
+    killProcessTree('darwin', exited(), 'SIGKILL')
+    expect(kill).toHaveBeenCalledWith(-4321, 'SIGKILL')
+    kill.mockRestore()
+    // Windows reaches the tree through the parent, which is gone.
+    const spawn = vi.fn(() => fakeChild(1))
+    killProcessTree('win32', exited(), 'SIGKILL', spawn)
+    expect(spawn).not.toHaveBeenCalled()
+  })
 })
 
 describe('shell environment', () => {

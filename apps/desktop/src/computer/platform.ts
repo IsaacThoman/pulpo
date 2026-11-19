@@ -107,16 +107,21 @@ export function shellInvocation(platform: NodeJS.Platform, shell: CommandShell, 
 
 /** Ends a command and everything it started. */
 export function killProcessTree(platform: NodeJS.Platform, child: ChildProcess, signal: NodeJS.Signals, spawn: Spawn = nodeSpawn): void {
-  if (!child.pid || child.exitCode !== null || child.signalCode !== null) return
+  if (!child.pid) return
+  const exited = child.exitCode !== null || child.signalCode !== null
   if (platform === 'win32') {
+    // taskkill finds the tree through the parent, so there is nothing to ask once that is gone.
+    if (exited) return
     try {
       const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
       killer.on('error', () => child.kill())
     } catch { child.kill() }
     return
   }
+  // The shell may be gone while something it started lives on in its process group, holding the
+  // output pipes open so the command never ends: signal the group whatever became of the shell.
   try { process.kill(-child.pid, signal) } catch {
-    try { child.kill(signal) } catch { /* already exited */ }
+    if (!exited) { try { child.kill(signal) } catch { /* already exited */ } }
   }
 }
 
