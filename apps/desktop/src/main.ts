@@ -35,6 +35,7 @@ import { desktopUpdatesSupported } from './update-support'
 import { prepareDesktopDownload } from './downloads'
 import { fileMenuItems } from './file-menu'
 import { AccountResolver, userIdFromMe } from './computer/account'
+import { controlHelperCommand } from './computer/control/helper'
 import { COMPUTER_CHANGES_CHANGED_CHANNEL, registerComputerIpc } from './computer/ipc'
 import { ComputerService } from './computer/service'
 
@@ -217,7 +218,34 @@ async function fetchComputerUserId(origin: string, token: string): Promise<strin
   return response.ok ? userIdFromMe(await response.json()) : null
 }
 
+/** Shows a native question on the main window when there is one. */
+function showMessageBox(options: Electron.MessageBoxOptions): Promise<Electron.MessageBoxReturnValue> {
+  return mainWindow && !mainWindow.isDestroyed() ? dialog.showMessageBox(mainWindow, options) : dialog.showMessageBox(options)
+}
+
+/**
+ * The agent's question about an app arrives while the user may be working elsewhere. The app asks
+ * for attention the way the system offers (a bouncing Dock icon, a flashing taskbar button) and
+ * does not take the focus itself. Returns what stops asking.
+ */
+function requestAttention(): () => void {
+  if (process.platform === 'darwin') {
+    const bounce = app.dock?.bounce('critical')
+    return () => { if (bounce !== undefined) app.dock?.cancelBounce(bounce) }
+  }
+  const window = mainWindow
+  if (!window || window.isDestroyed() || window.isFocused()) return () => undefined
+  window.flashFrame(true)
+  return () => { if (!window.isDestroyed()) window.flashFrame(false) }
+}
+
 function createComputerService(): ComputerService {
+  // The helper that sees and controls other apps (forge.config.ts puts it among the app's
+  // resources): one binary on macOS, a folder of sources on Windows. A checkout runs it from `native`.
+  const controlHelperDirectory = process.platform === 'darwin'
+    ? (app.isPackaged ? process.resourcesPath : path.join(app.getAppPath(), 'native', 'build', 'macos'))
+    : (app.isPackaged ? path.join(process.resourcesPath, 'pulpo-control') : path.join(app.getAppPath(), 'native', 'windows'))
+  const controlHelper = controlHelperCommand(process.platform, controlHelperDirectory, process.env)
   return new ComputerService({
     userData: app.getPath('userData'),
     home: app.getPath('home'),
@@ -232,10 +260,24 @@ function createComputerService(): ComputerService {
       return result.canceled ? null : result.filePaths[0] ?? null
     },
     confirm: async (message, detail) => {
-      const options: Electron.MessageBoxOptions = { type: 'warning', message, detail, buttons: ['Allow', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true }
-      const result = mainWindow && !mainWindow.isDestroyed() ? await dialog.showMessageBox(mainWindow, options) : await dialog.showMessageBox(options)
+      const result = await showMessageBox({ type: 'warning', message, detail, buttons: ['Allow', 'Cancel'], defaultId: 1, cancelId: 1, noLink: true })
       return result.response === 0
     },
+    ...(controlHelper ? {
+      appControl: {
+        helper: controlHelper,
+        // Every window of the app belongs to this process; the agent is never shown them.
+        excludePids: [process.pid],
+        confirmApp: async (message, detail, signal) => {
+          const settled = requestAttention()
+          try {
+            // An aborted question closes with its cancel button.
+            const result = await showMessageBox({ type: 'question', message, detail, buttons: ['Allow', 'Don’t Allow'], defaultId: 1, cancelId: 1, noLink: true, signal })
+            return result.response === 0 && !signal.aborted
+          } finally { settled() }
+        },
+      },
+    } : {}),
     trash: (target) => shell.trashItem(target),
     onChangesChanged: () => mainWindow?.webContents.send(COMPUTER_CHANGES_CHANGED_CHANNEL),
     // Built beside main.cjs by the Forge Vite build (forge.config.ts); the launchers run it with this executable as Node.
