@@ -97,6 +97,10 @@ export async function buildApp() {
   await app.register(cookie)
   await app.register(cors, {
     origin: (origin, callback) => callback(null, !origin || isAllowedOrigin(origin, config)),
+    // The desktop app's page has its own origin, so every request it makes is cross-origin and is
+    // preflighted. The plugin allows only GET, HEAD and POST unless told otherwise, which silently
+    // stops every save, rename and delete there.
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
     credentials: true,
     exposedHeaders: ['x-speech-duration-seconds', 'retry-after'],
   })
