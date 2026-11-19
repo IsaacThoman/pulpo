@@ -111,20 +111,20 @@ it('keeps Files behind the Access section, where the agent’s reach and what it
   expect((await screen.findAllByRole('menuitemradio')).map((option) => option.textContent)).toEqual(['Pulpo Agent', 'Disabled'])
   const access = screen.getByRole('group', { name: 'Access' })
   const row = within(access).getByRole('menuitem')
-  expect(row.textContent).toBe('FilesItems you mention · Suggest changes')
+  expect(row.textContent).toBe('Pulpo FilesItems you mention · Suggest changes')
 
   fireEvent.keyDown(row, { key: 'ArrowRight' })
   const modes = await screen.findByRole('group', { name: 'Changes to Files' })
   expect(within(modes).getAllByRole('menuitemradio').map((option) => option.textContent)).toEqual([
-    'Read onlyThe agent can look but not change anything',
-    'Suggest changesYou accept or reject each change',
-    'Edit directlyChanges apply right away, and you can undo them',
+    'Read only',
+    'Suggest changes',
+    'Edit directly',
   ])
   fireEvent.click(within(modes).getByRole('menuitemradio', { name: /Edit directly/ }))
   expect(onModeChange).toHaveBeenCalledExactlyOnceWith('write')
   // Still open, with the new choice checked and the row saying so.
   expect(within(modes).getByRole('menuitemradio', { name: /Edit directly/ }).getAttribute('aria-checked')).toBe('true')
-  expect(row.textContent).toBe('FilesItems you mention · Edit directly')
+  expect(row.textContent).toBe('Pulpo FilesItems you mention · Edit directly')
 
   // Files access opens a dialog, so that one does close the menu.
   fireEvent.click(screen.getByRole('menuitem', { name: 'Files access…' }))

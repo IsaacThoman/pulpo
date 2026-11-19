@@ -106,7 +106,7 @@ describe('Access in the agent menu', () => {
       await openMenu()
       expect(screen.queryByRole('menuitem', { name: /This computer/ })).toBeNull()
       // Files keep their row under Access, as on the web.
-      expect(within(screen.getByRole('group', { name: 'Access' })).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['FilesItems you mention · Suggest changes'])
+      expect(within(screen.getByRole('group', { name: 'Access' })).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Pulpo FilesItems you mention · Suggest changes'])
       view.unmount()
       window.pulpoDesktop = { platform: 'desktop', computer } as unknown as typeof window.pulpoDesktop
       useCatalog.setState({ computerAccess: true })
@@ -116,17 +116,17 @@ describe('Access in the agent menu', () => {
 
   it('says for Files and for This computer what the agent can reach and what it may do', async () => {
     const view = render(<Harness />)
-    expect(await accessRows()).toEqual(['FilesItems you mention · Suggest changes', 'This computerOff'])
-    fireEvent.keyDown(screen.getByRole('menuitem', { name: /^Files/ }), { key: 'ArrowRight' })
+    expect(await accessRows()).toEqual(['Pulpo FilesItems you mention · Suggest changes', 'This computerOff'])
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: /^Pulpo Files/ }), { key: 'ArrowRight' })
     const files = await screen.findByRole('group', { name: 'Changes to Files' })
-    expect(files.textContent).toContain('Can use the items you mention')
-    expect(checked(files)).toEqual(['Suggest changesYou accept or reject each change'])
+    expect(files.textContent).toBe('Read onlySuggest changesEdit directly')
+    expect(checked(files)).toEqual(['Suggest changes'])
     view.unmount()
 
     render(<Harness reach="all" />)
-    expect(await accessRows()).toEqual(['FilesAll files · Suggest changes', 'This computerOff'])
-    fireEvent.keyDown(screen.getByRole('menuitem', { name: /^Files/ }), { key: 'ArrowRight' })
-    expect((await screen.findByRole('group', { name: 'Changes to Files' })).textContent).toContain('Can look through all of your Files')
+    expect(await accessRows()).toEqual(['Pulpo FilesAll files · Suggest changes', 'This computerOff'])
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: /^Pulpo Files/ }), { key: 'ArrowRight' })
+    expect((await screen.findByRole('group', { name: 'Changes to Files' })).textContent).toBe('Read onlySuggest changesEdit directly')
   })
 
   it('starts with This computer Off, and offers a folder only once it is on', async () => {
@@ -134,10 +134,10 @@ describe('Access in the agent menu', () => {
     const options = await openComputer()
     expect(within(options).getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual([
       'Off',
-      'Full accessCan run commands anywhere on this computer',
-      'Read onlyThe agent can look but not change anything',
-      'Suggest changesYou accept or reject each change',
-      'Edit directlyChanges apply right away',
+      'Full access',
+      'Read only',
+      'Suggest changes',
+      'Edit directly',
     ])
     expect(checked(options)).toEqual(['Off'])
     expect(screen.queryByRole('group', { name: 'Folder' })).toBeNull()
@@ -157,12 +157,12 @@ describe('Access in the agent menu', () => {
     await waitFor(() => expect(computerChoice(owner, 'chat-a')).toEqual({ enabled: true, access: 'read', folder: project }))
     expect(onEnable).toHaveBeenCalledOnce()
     // The submenu is still open and shows the choice, with the folder it now works in.
-    expect(checked(screen.getByRole('group', { name: 'This computer' }))).toEqual(['Read onlyThe agent can look but not change anything'])
+    expect(checked(screen.getByRole('group', { name: 'This computer' }))).toEqual(['Read only'])
     expect(checked(screen.getByRole('group', { name: 'Folder' }))).toEqual(['project'])
     await closeMenu()
     const trigger = screen.getByRole('button', { name: 'Agent options, This computer' })
     expect(trigger.querySelector('.lucide-laptop')).not.toBeNull()
-    expect(await accessRows()).toEqual(['FilesItems you mention · Suggest changes', 'This computerproject · Read only'])
+    expect(await accessRows()).toEqual(['Pulpo FilesItems you mention · Suggest changes', 'This computerproject · Read only'])
     // New chats start from the last choice.
     expect(computerChoice(owner, null)).toEqual({ enabled: true, access: 'read', folder: project })
   })
@@ -178,9 +178,9 @@ describe('Access in the agent menu', () => {
 
     fireEvent.click(within(await openComputer()).getByRole('menuitemradio', { name: /Full access/ }))
     await waitFor(() => expect(computerChoice(owner, 'chat-a')).toEqual({ enabled: true, access: 'full', folder: null }))
-    expect(await accessRows()).toEqual(['FilesItems you mention · Suggest changes', 'This computerFull access'])
+    expect(await accessRows()).toEqual(['Pulpo FilesItems you mention · Suggest changes', 'This computerFull access'])
     fireEvent.keyDown(screen.getByRole('menuitem', { name: /This computer/ }), { key: 'ArrowRight' })
-    expect(checked(await screen.findByRole('group', { name: 'This computer' }))).toEqual(['Full accessCan run commands anywhere on this computer'])
+    expect(checked(await screen.findByRole('group', { name: 'This computer' }))).toEqual(['Full access'])
     expect(checked(screen.getByRole('group', { name: 'Folder' }))).toEqual(['No folder'])
   })
 
@@ -207,7 +207,7 @@ describe('Access in the agent menu', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Choose folder…' }))
     await waitFor(() => expect(computerChoice(owner, 'chat-a')).toEqual({ enabled: true, access: 'full', folder: project }))
 
-    expect(checked(await openComputer())).toEqual(['Full accessCan run commands anywhere on this computer'])
+    expect(checked(await openComputer())).toEqual(['Full access'])
     const folder = screen.getByRole('group', { name: 'Folder' })
     expect(checked(folder)).toEqual(['project'])
     fireEvent.click(within(folder).getByRole('menuitemradio', { name: 'No folder' }))
@@ -219,7 +219,7 @@ describe('Access in the agent menu', () => {
     expect(screen.queryByRole('group', { name: 'Folder' })).toBeNull()
     await closeMenu()
     expect(screen.getByRole('button', { name: 'Agent options, Pulpo Agent' })).not.toBeNull()
-    expect(await accessRows()).toEqual(['FilesItems you mention · Suggest changes', 'This computerOff'])
+    expect(await accessRows()).toEqual(['Pulpo FilesItems you mention · Suggest changes', 'This computerOff'])
   })
 
   it('applies a folder to the choice as it stands when the folder dialog closes', async () => {

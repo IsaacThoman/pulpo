@@ -8,7 +8,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
   DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ACCESS_ICONS, accessModeCopy } from '@/features/files/access-modes'
+import { ACCESS_ICONS, accessModeLabel } from '@/features/files/access-modes'
 import { useMenuTriggerFocus } from './use-menu-trigger-focus'
 
 /** Files in the menu: which of them the agent can reach, what it may change, and the chat's Files access. */
@@ -38,25 +38,18 @@ export interface AgentComputerControls {
 
 const COMPUTER_ACCESS_ICONS: Record<ComputerAccess, LucideIcon> = { full: SquareTerminal, ...ACCESS_ICONS }
 
-function computerAccessCopy(access: ComputerAccess): { label: string; description: string } {
-  if (access === 'full') return { label: ui("Full access"), description: ui("Can run commands anywhere on this computer") }
-  // Changes on the computer are not undone the way Files changes are.
-  if (access === 'write') return { label: accessModeCopy(access).label, description: ui("Changes apply right away") }
-  return accessModeCopy(access)
+function computerAccessLabel(access: ComputerAccess): string {
+  return access === 'full' ? ui("Full access") : accessModeLabel(access)
 }
 
-/** A choice with an icon, an optional description, and a check when chosen. */
-function ChoiceRow({ icon: Icon, label, description, checked }: { icon: LucideIcon; label: string; description?: string; checked: boolean }) {
+function ChoiceRow({ icon: Icon, label, checked }: { icon: LucideIcon; label: string; checked: boolean }) {
   return (
     <>
-      <span className="flex min-w-0 items-start gap-1.5">
-        <Icon className="mt-0.5 size-4 opacity-70" />
-        <span className="flex min-w-0 flex-col">
-          <span className="truncate">{label}</span>
-          {description && <span className="text-xs text-muted-foreground">{description}</span>}
-        </span>
+      <span className="flex min-w-0 items-center gap-1.5">
+        <Icon className="size-4 opacity-70" />
+        <span className="truncate">{label}</span>
       </span>
-      {checked && <Check className="mt-0.5 size-3.5 shrink-0" />}
+      {checked && <Check className="size-3.5 shrink-0" />}
     </>
   )
 }
@@ -116,21 +109,16 @@ export function AgentMenu({ ref, enabled, disabled, compact = false, files, comp
     action()
   }
   const radio = (key: string, checked: boolean, action: () => void, row: ReactNode, title?: string) => (
-    <DropdownMenuItem key={key} role="menuitemradio" aria-checked={checked} disabled={disabled} title={title} onSelect={choose(action)} className="items-start justify-between">
+    <DropdownMenuItem key={key} role="menuitemradio" aria-checked={checked} disabled={disabled} title={title} onSelect={choose(action)} className="justify-between">
       {row}
     </DropdownMenuItem>
   )
-  /** What the agent may change in Files, under a line that says which of them it can reach. */
   const fileModes = (files: AgentFilesControls) => (
     <DropdownMenuGroup aria-label={ui("Changes to Files")}>
-      <DropdownMenuLabel className={mutedLabel}>
-        {files.reach === 'all' ? ui("Can look through all of your Files") : ui("Can use the items you mention")}
-      </DropdownMenuLabel>
       {FILE_ACCESS_MODES.map((mode) => {
-        const copy = accessModeCopy(mode)
         const checked = files.mode === mode
         return radio(mode, checked, () => { if (!checked) files.onModeChange(mode) },
-          <ChoiceRow icon={ACCESS_ICONS[mode]} label={copy.label} description={copy.description} checked={checked} />)
+          <ChoiceRow icon={ACCESS_ICONS[mode]} label={accessModeLabel(mode)} checked={checked} />)
       })}
     </DropdownMenuGroup>
   )
@@ -145,13 +133,13 @@ export function AgentMenu({ ref, enabled, disabled, compact = false, files, comp
   )
 
   const filesSummary = files
-    ? `${files.reach === 'all' ? ui("All files") : ui("Items you mention")} · ${accessModeCopy(files.mode).label}`
+    ? `${files.reach === 'all' ? ui("All files") : ui("Items you mention")} · ${accessModeLabel(files.mode)}`
     : ''
   const computerSummary = !computer?.active
     ? t('chat.computerOff')
     : computer.access === 'full' || !computer.folder
-      ? computerAccessCopy(computer.access).label
-      : `${computer.folder.name} · ${computerAccessCopy(computer.access).label}`
+      ? computerAccessLabel(computer.access)
+      : `${computer.folder.name} · ${computerAccessLabel(computer.access)}`
 
   return (
     <DropdownMenu>
@@ -203,7 +191,7 @@ export function AgentMenu({ ref, enabled, disabled, compact = false, files, comp
               {files && (
                 <DropdownMenuSub onOpenChange={fitSubmenu}>
                   <DropdownMenuSubTrigger disabled={disabled} className="items-start">
-                    <AccessRow icon={Folder} label={ui("Files")} summary={filesSummary} />
+                    <AccessRow icon={Folder} label={ui("Pulpo Files")} summary={filesSummary} />
                   </DropdownMenuSubTrigger>
                   <DropdownMenuSubContent sideOffset={submenuOffset} className={submenuClass}>
                     {fileModes(files)}
@@ -222,10 +210,9 @@ export function AgentMenu({ ref, enabled, disabled, compact = false, files, comp
                       {radio('off', !computer.active, () => { if (computer.active) computer.onOff() },
                         <ChoiceRow icon={CircleOff} label={t('chat.computerOff')} checked={!computer.active} />)}
                       {COMPUTER_ACCESS_MODES.map((access) => {
-                        const copy = computerAccessCopy(access)
                         const checked = computer.active && computer.access === access
                         return radio(access, checked, () => { if (!checked) computer.onAccess(access) },
-                          <ChoiceRow icon={COMPUTER_ACCESS_ICONS[access]} label={copy.label} description={copy.description} checked={checked} />)
+                          <ChoiceRow icon={COMPUTER_ACCESS_ICONS[access]} label={computerAccessLabel(access)} checked={checked} />)
                       })}
                     </DropdownMenuGroup>
                     {/* A folder only means something once the computer is in use, so it is offered then. */}
