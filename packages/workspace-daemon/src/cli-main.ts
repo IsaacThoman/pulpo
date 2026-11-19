@@ -42,6 +42,18 @@ export function defaultContext(): CliContext {
   }
 }
 
+/**
+ * Help names the cloud workspace's paths. Where the CLI runs somewhere else (the user's own
+ * computer, for a reply with full access to it), the same paths are shown as they are there.
+ */
+export function localHelp(text: string, context: Pick<CliContext, 'mirrorRoot'>): string {
+  const root = dirname(context.mirrorRoot)
+  if (root === '/workspace') return text
+  return text.replace(/\/workspace((?:\/[\w.<>-]+)*)(\/?)/g, (_match, rest: string, trailing: string) => (
+    `${join(root, ...rest.split('/').filter(Boolean))}${trailing ? sep : ''}`
+  ))
+}
+
 const line = (text: string) => text.endsWith('\n') ? text : `${text}\n`
 const print = (context: StoreContext, text: string | undefined) => { if (text) context.stdout(line(text)) }
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
@@ -71,11 +83,11 @@ export async function runCli(argv: string[], cliContext: CliContext): Promise<nu
     if (!(error instanceof UsageError)) throw error
     return usage(storeContext(cliContext, isGroup(argv[0]) ? CLI_STORES[argv[0]] : FILES_STORE), error)
   }
-  if (!store) { cliContext.stdout(TOP_HELP); return 0 }
+  if (!store) { cliContext.stdout(localHelp(TOP_HELP, cliContext)); return 0 }
   const context = storeContext(cliContext, store)
   try {
     switch (invocation.command) {
-      case 'help': context.stdout(helpText(invocation.topic, store)); return 0
+      case 'help': context.stdout(localHelp(helpText(invocation.topic, store), cliContext)); return 0
       case 'status': return await status(context)
       case 'pull': return await pull(invocation, context)
       case 'push': return await push(invocation, context)

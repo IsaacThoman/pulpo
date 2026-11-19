@@ -2,9 +2,10 @@ import { createHash } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { runCli, type CliContext } from './cli-main.js'
+import { FILES_HELP } from './cli-help.js'
+import { localHelp, runCli, type CliContext } from './cli-main.js'
 
 type RelayCall = { operationId: string; command: string; args: Record<string, unknown> }
 type Reply = { status?: number; body: unknown }
@@ -53,6 +54,25 @@ const pullPlan = (text = '# Plan\n') => async ({ args }: RelayCall): Promise<Rep
   await mkdir(dirname(local), { recursive: true }); await writeFile(local, text)
   return { body: { ok: true, output: `Pulled Projects/Plan.md to ${local}`, data: { files: [{ remote: 'Projects/Plan.md', local, nodeId: 'node-1', version: 'v1', kind: 'doc', sizeBytes: text.length }] } } }
 }
+
+describe('help outside the cloud workspace', () => {
+  it('is unchanged in a cloud workspace', () => {
+    expect(localHelp(FILES_HELP, { mirrorRoot: '/workspace/files' })).toBe(FILES_HELP)
+  })
+
+  it('names the local copies where they really are', async () => {
+    const { run, context } = await harness(() => ({ body: { ok: true } }))
+    const files = context.mirrorRoot
+    const help = (await run('--help')).stdout
+    expect(help).not.toContain('/workspace')
+    expect(help).toContain(`copy into ${join(files, '<path>')} (or dest)`)
+    expect(help).toContain(`(edit ${join(files, 'Projects', 'Plan.md')} with your usual tools)`)
+    expect(help).toContain(`write it under ${join(files, '<folder>')}${sep} and run`)
+    const push = (await run('push', '--help')).stdout
+    expect(push).not.toContain('/workspace')
+    expect(push).toContain(`pulpo files push ${join(files, 'Projects', 'Plan.md')}`)
+  })
+})
 
 describe('pulpo files over the relay socket', () => {
   it('passes commands through, normalizing Files paths, and prints the answer', async () => {
