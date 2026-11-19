@@ -15,10 +15,11 @@ Contracts are in `packages/contracts/src/computer.ts`: the access modes, the sel
 
 The desktop **main process** is the policy point. It treats the server and its own renderer as untrusted.
 
-- A folder is usable only after the user picked it in the native folder dialog; full access only after the native confirmation ("Let Pulpo Agent run commands on this Mac?"). Both are stored per instance origin and account in `<userData>/computer/grants.json`. The account id is asked of the instance with the stored token (`GET /api/mobile/me`), never of the renderer.
-- Before a message is sent, the renderer registers a **session** for it (`begin({ sessionId, access, folder })`). The main process accepts it only if the grants cover it, and serves requests only for sessions it knows, only with the methods the session's access allows (`full`: `describe`, `operation.*`, `file.*`; folder modes: `folder.*`). Sessions live in memory, end with their reply, and expire after a day idle.
-- Folder modes never execute anything. Every path is relative to the session's folder and resolved through `realpath`; absolute paths, `..`, drive letters, reserved Windows names and symlinks leading out are refused (`apps/desktop/src/computer/paths.ts`).
-- No IPC channel runs a command or reads a file directly. The renderer can only pass a server request to `handle`, open the native dialogs, and review changes.
+- A folder is usable only after the user picked it in the native folder dialog; full access only after the native confirmation ("Let Pulpo Agent run commands on this Mac?"). Both are stored per instance origin and account in `<userData>/computer/grants.json`. The account id is asked of the instance with the stored token (`GET /api/mobile/me`), never of the renderer. Settings → Agent lists what was allowed, with **Turn off** for full access and **Remove** per folder; taking something back ends the replies using it.
+- Before a message is sent, the renderer registers a **session** for it (`begin({ sessionId, access, folder })`). The main process accepts it only if the grants cover it, and serves requests only for sessions it knows, only with the methods the session's access allows (`full`: `describe`, `operation.*`, `file.*`; folder modes: `folder.*`). Sessions live in memory, end with their reply or with the sign-in they were begun under, and expire after a day idle.
+- Folder modes never execute anything. Every path is relative to the session's folder and resolved through `realpath`; absolute paths, `..`, drive letters, reserved Windows names and symlinks leading out are refused (`apps/desktop/src/computer/paths.ts`). A change (`resolveForChange`) is refused as well when it names the folder itself, anything inside `.git` (a config or hook there would make git run things), or a path that is or goes through a symbolic link, so removing a link can never remove what it points at.
+- No IPC channel runs a command or reads a file directly. The renderer can only pass a server request to `handle`, open the native dialogs, review changes, and take access back.
+- Choosing a folder allows the agent that folder; the access mode is how the user wants it used in a chat, not a limit the main process holds against its own renderer. Code running in the renderer could begin an edit session on any allowed folder, or a full-access one once that was confirmed, which is why access can be taken back.
 
 On the server, the sandbox and other users are untrusted: the realtime room is `computer:<userId>:<sessionId>`, so only the user's own app hears a request or may answer it, and the relay validates every `pulpo computer` argument. A `computer` selection is accepted only on an Agent reply sent by a desktop app that lists the `computer` client feature; otherwise the request fails with `computer_unavailable` rather than running in the cloud. The folder path is never included in chat output; replies expose only `computerSessionId` to their owner.
 
@@ -35,13 +36,14 @@ File bytes do not cross the socket unless they are small (up to 256 KiB, inline 
 - Commands run in the user's login shell on macOS, with the environment that shell would have in a terminal, and in PowerShell on Windows (PowerShell 7 when installed), where the shell tool is named `powershell` instead of `bash`.
 - Each answer carries at most 200,000 characters of output, cut in the middle; the whole output is saved under `<userData>/computer/tool-output` and named in the result.
 - `find` and `grep` are implemented in Node (users do not have ripgrep) and skip `.git` and `node_modules`.
-- A computer that is not connected fails the reply when it starts, with the workspace step showing why. One that drops mid-run turns the tools off for the rest of the reply. Quitting the app stops every command it started.
+- A computer that is not connected fails the reply when it starts, with the workspace step showing why. One that drops mid-run, or whose app was restarted and no longer knows the session, turns the tools off for the rest of the reply. Cancelling sends the command's process group SIGTERM, then SIGKILL after five seconds; quitting the app kills every command it started.
 
 ## Folder modes
 
 `pulpo computer ls|tree|cat|grep|pull|status|push|mkdir|mv|rm` (`packages/workspace-daemon`, same code as `pulpo files` with a second store) mirrors the folder at `/workspace/computer` with the manifest `/workspace/.pulpo/computer.json`. Its relay requests are named `computer:<command>` and served by `apps/server/src/computer/folder-relay.ts` through `folder.list`, `folder.read`, `folder.search`, `folder.send` and `folder.change`.
 
-- A file's version is the SHA-256 of its bytes; a push names the version it pulled and gets `conflict` when the file changed since.
+- A file's version is the SHA-256 of its bytes; a push names the version it pulled and gets `conflict` when the file changed since, including a save the user makes while the new bytes are still arriving. A replaced file keeps its permissions.
+- Listings and searches run on the main process and stop, marked incomplete, after 20 and 15 seconds.
 - Folders named `.git` and `node_modules` are left out of pulls, searches and listings deeper than one level, and the output says so.
 - **Read only** refuses every change, on the server and in the app.
 - **Edit directly** applies changes at once and records them. Removed items go to the system trash.
