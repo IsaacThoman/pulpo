@@ -18,10 +18,10 @@ enum Outline {
   private static let attributes = [
     kAXRoleAttribute, kAXSubroleAttribute, kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute,
     kAXPositionAttribute, kAXSizeAttribute, kAXFocusedAttribute, kAXEnabledAttribute, kAXChildrenAttribute,
-    kAXPlaceholderValueAttribute, kAXVisibleRowsAttribute, kAXVisibleChildrenAttribute,
+    kAXPlaceholderValueAttribute, kAXVisibleRowsAttribute, kAXVisibleChildrenAttribute, kAXHelpAttribute,
   ]
   private enum Field: Int {
-    case role, subrole, title, description, value, position, size, focused, enabled, children, placeholder, visibleRows, visibleChildren
+    case role, subrole, title, description, value, position, size, focused, enabled, children, placeholder, visibleRows, visibleChildren, help
   }
 
   /// The words protocol.ts shares between systems; other roles are their AX name without `AX`, in lower case.
@@ -40,14 +40,19 @@ enum Outline {
     "AXTabButton": "tab", "AXSearchField": "textfield", "AXSecureTextField": "textfield", "AXSwitch": "checkbox",
     "AXOutlineRow": "row", "AXTableRow": "row", "AXToggle": "button",
   ]
+  /// A window's own buttons have no title; their subrole says which they are.
+  private static let subroleLabels: [String: String] = [
+    "AXCloseButton": "Close", "AXMinimizeButton": "Minimize", "AXZoomButton": "Zoom", "AXFullScreenButton": "Full screen",
+  ]
   /// Things a person uses, listed even without a label: the agent can still see where they are.
   private static let interactiveRoles: Set<String> = [
     "button", "checkbox", "radio", "textfield", "textarea", "link", "menuitem", "menubutton", "combobox",
     "slider", "stepper", "tab", "disclosure", "colorwell", "datefield", "row",
   ]
   /// Neither listed nor walked: their content is noise (scroll bar parts) or repeated elsewhere
-  /// (a table's columns hold the same cells as its rows; the app's menu bar is not the window's).
-  private static let skippedRoles: Set<String> = ["AXScrollBar", "AXColumn", "AXMenuBar", "AXGrowArea"]
+  /// (a table's columns hold the same cells as its rows; the app's menu bar is not the window's; a
+  /// slider's knob says what the slider says).
+  private static let skippedRoles: Set<String> = ["AXScrollBar", "AXColumn", "AXMenuBar", "AXGrowArea", "AXValueIndicator"]
   private static let checkableRoles: Set<String> = ["checkbox", "radio"]
 
   static func walk(window: AXUIElement, bounds: CGRect, factor: Double, maxElements: Int, context: RequestContext) -> Result {
@@ -103,6 +108,10 @@ enum Outline {
       }
       if label == nil, role == "textfield" || role == "textarea" || role == "combobox" {
         label = clean(AX.asString(value(.placeholder)))
+      }
+      if label == nil, interactiveRoles.contains(role) {
+        // An icon-only button often says what it is only in its tooltip.
+        label = subrole.flatMap { subroleLabels[$0] } ?? clean(AX.asString(value(.help)))
       }
 
       let visible = frame.map { $0.intersection(next.clip) }

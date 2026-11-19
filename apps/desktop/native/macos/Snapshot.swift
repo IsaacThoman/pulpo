@@ -87,18 +87,27 @@ enum Snapshot {
     ]
   }
 
-  /// Un-minimizes through AX, which does not activate the app, and waits for the window server to
-  /// show the window again (the Dock animates it back).
+  /// Un-minimizes through AX, which does not activate the app, and waits until the Dock has finished
+  /// animating the window back.
   private static func restore(_ element: AXUIElement, target: Target, context: RequestContext) throws {
     let error = AX.set(element, kAXMinimizedAttribute, kCFBooleanFalse)
     guard error == .success else { throw ControlError.unsupported("The window is minimized and could not be restored.") }
-    let until = Date().addingTimeInterval(2)
+    // The window is on screen as soon as the Dock's animation starts, and until it ends the window
+    // server reports the frame of the moment, not the window's own. A picture sized by that frame
+    // would be stretched and its coordinates wrong, so wait until the frame is the size the app
+    // says its window has and has stopped changing.
+    let until = Date().addingTimeInterval(3)
+    var last: CGRect?
+    var steady = 0
     while Date() < until && !context.expired {
-      if let window = Windows.info(target.window.id), window.onScreen { break }
       Thread.sleep(forTimeInterval: 0.05)
+      guard let window = Windows.info(target.window.id), window.onScreen else { continue }
+      let own = AX.frame(element)
+      let matches = own.map { abs($0.width - window.bounds.width) <= 2 && abs($0.height - window.bounds.height) <= 2 } ?? true
+      steady = matches && window.bounds == last ? steady + 1 : 0
+      last = window.bounds
+      if steady >= 3 { break }
     }
-    // The window is on screen as soon as the animation starts; let it finish so the picture is whole.
-    Thread.sleep(forTimeInterval: 0.35)
   }
 
   private static func nextFileName(_ window: CGWindowID) -> String {
