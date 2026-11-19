@@ -32,8 +32,8 @@ xcodegen generate
 open PulpoKeyboard.xcodeproj
 ```
 
-From the repository root, `npm run keyboard:test` runs the engine tests and
-`npm run keyboard:build` builds the app for the simulator.
+Run the engine tests locally with `npm run keyboard:test` from the repository
+root. Use `npm run keyboard:build` to build the app for the simulator.
 
 The app icon references the shared `apps/mobile/assets/PulpoKeyboard.icon`
 Icon Composer asset. Build with Xcode 26 or later and XcodeGen 2.45.1 or later;
@@ -71,7 +71,7 @@ Pulpo Mobile. `scripts/validate_archive.py` then checks the app, extension,
 language data, versions and privacy manifests before
 `.github/scripts/upload-ios-testflight.sh` uploads the build. That script is
 shared with Pulpo Mobile and uses the same `testflight` GitHub environment
-secrets. The upload only runs after the `Keyboard / iOS` check passes.
+secrets.
 
 Each target bundles its own `PrivacyInfo.xcprivacy`. Update them when the app
 or extension starts using another

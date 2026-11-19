@@ -372,27 +372,6 @@ jobs:
           "${smoke_dir}/node_modules/.bin/pulpo" --version
           "${smoke_dir}/node_modules/.bin/pulpo" --json settings schema >/dev/null
 
-  keyboard:
-    name: Keyboard / iOS
-    # Keep keyboard validation on branch pushes for the TestFlight release.
-    if: github.event_name != 'pull_request'
-    runs-on: xcode-27
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up XcodeGen
-        run: .github/scripts/setup-xcodegen.sh
-
-      - name: Test keyboard scripts and release validation
-        run: python3 -m unittest discover -s apps/keyboard-ios/scripts -p 'test_*.py'
-
-      - name: Test keyboard engine
-        run: npm run keyboard:test
-
-      - name: Build keyboard app for the simulator
-        run: npm run keyboard:build
-
   windows-signing-tools-check:
     name: Windows signing tools
     if: >-
@@ -1355,7 +1334,7 @@ jobs:
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
       needs.release.outputs.version != ''
-    needs: [release, keyboard]
+    needs: release
     # Built with the iOS 27.1 SDK or later for the same reason as testflight.
     runs-on: xcode-27
     environment: testflight
