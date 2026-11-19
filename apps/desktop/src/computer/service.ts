@@ -41,6 +41,8 @@ const TOOL_OUTPUT_RETENTION_MS = 7 * 24 * 60 * 60_000
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const NO_ID = '00000000-0000-0000-0000-000000000000'
 
+const UNKNOWN_SESSION = 'The Pulpo app on the user\'s computer does not know this session: it was restarted, or the reply that began it is over. Ask the user to send the message again.'
+
 const FULL_METHODS = new Set<ComputerMethod>(['describe', 'operation.start', 'operation.get', 'operation.cancel', 'operation.relay', 'file.send', 'file.receive', 'file.missing'])
 const FOLDER_METHODS = new Set<ComputerMethod>(['folder.list', 'folder.read', 'folder.search', 'folder.send', 'folder.change'])
 
@@ -303,7 +305,7 @@ export class ComputerService implements Api {
       if (!request.success) return fail('invalid_request', 'The request is malformed.')
       this.pruneSessions()
       const session = this.sessionsById.get(request.data.sessionId)
-      if (!session) return fail('unknown_session', 'The Pulpo app on the user\'s computer does not know this session: it was restarted, or the reply that began it is over. Ask the user to send the message again.')
+      if (!session) return fail('unknown_session', UNKNOWN_SESSION)
       const { method } = request.data
       const allowed = session.access === 'full' ? FULL_METHODS.has(method) : FOLDER_METHODS.has(method)
       if (!allowed) return fail('not_allowed', session.access === 'full'
@@ -388,7 +390,15 @@ export class ComputerService implements Api {
           ...(filesDir ? { filesDir } : {}),
         }
       }
-      case 'operation.start': { const { id, type, args } = params<'operation.start'>(); return this.operations.start(await this.operationContext(session), id, type, args) }
+      case 'operation.start': {
+        const { id, type, args } = params<'operation.start'>()
+        const context = await this.operationContext(session)
+        // The reply may have ended, or access been taken back, while that was prepared. Ending a
+        // session cancels the operations it has, and this one is not among them yet: started now,
+        // it would run with nothing left that could stop it.
+        if (this.sessionsById.get(session.id) !== session) throw new ComputerError('unknown_session', UNKNOWN_SESSION)
+        return this.operations.start(context, id, type, args)
+      }
       case 'operation.get': { const { id, waitMs } = params<'operation.get'>(); return this.operations.get(session.id, id, waitMs) }
       case 'operation.cancel': return this.operations.cancel(session.id, params<'operation.cancel'>().id)
       case 'operation.relay': { const { requestId, result } = params<'operation.relay'>(); return { delivered: this.operations.answerRelay(session.id, requestId, result) } }

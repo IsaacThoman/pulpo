@@ -223,6 +223,23 @@ describe('handle', () => {
     expect(await refused(call(h, read, 'folder.list', { path: '', depth: 0, limit: 1 }))).toMatchObject({ code: 'invalid_request', message: expect.stringContaining('depth') })
   })
 
+  it('does not start a command whose session ended while it was being prepared', async () => {
+    const spawn = vi.fn()
+    const h = harness(server.origin, { spawn: spawn as never })
+    await h.service.allowFullAccess()
+    const sessionId = randomUUID()
+    await h.service.begin({ sessionId, access: 'full', folder: null })
+    // The request is past its session check and waiting on the folder when the reply ends.
+    const started = call(h, sessionId, 'operation.start', { id: 'late', type: 'bash', args: { command: 'echo late' } })
+    await h.service.end(sessionId)
+    expect((await refused(started)).code).toBe('unknown_session')
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(spawn).not.toHaveBeenCalled()
+    // Nothing was registered either, so the session's id cannot be used to reach it later.
+    await h.service.begin({ sessionId, access: 'full', folder: null })
+    expect((await refused(call(h, sessionId, 'operation.get', { id: 'late' }))).code).toBe('not_found')
+  })
+
   it('describes the computer and creates the default folder on first use', async () => {
     const h = harness(server.origin)
     await h.service.allowFullAccess()
