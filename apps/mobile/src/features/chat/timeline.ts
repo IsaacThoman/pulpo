@@ -22,6 +22,8 @@ export type WorkspaceItem = {
   startedAt?: string
   durationMs?: number
   continueWithoutAgentAvailableAt?: string
+  /** A full-access run from the desktop app: the user's computer is the workspace. */
+  computer?: boolean
 }
 
 export type TimelineStep =
@@ -74,6 +76,14 @@ type LegacyMessageTimelineInput = {
   streaming: boolean
   showReasoning: boolean
   reasoningDurationMs?: number
+}
+
+/** The step of a run that uses the user's computer, which the phone can only name, or null for a cloud workspace. */
+export function computerWorkspaceLabel(workspace: WorkspaceItem): string | null {
+  if (!workspace.computer) return null
+  if (workspace.state === 'provisioning') return 'Connecting to your computer…'
+  if (workspace.state === 'expired' || workspace.state === 'unavailable') return "Your computer isn't connected"
+  return 'Using your computer'
 }
 
 export function workspaceIsActive(state?: string): boolean {

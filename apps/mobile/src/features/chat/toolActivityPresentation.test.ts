@@ -30,6 +30,7 @@ describe('toolActivityPresentation', () => {
     ['view_image', 'Viewing an image…', icons.Image],
     ['generate_image', 'Generating an image…', icons.Image],
     ['bash', 'Running bash…', icons.Terminal],
+    ['powershell', 'Running PowerShell…', icons.Terminal],
     ['write', 'Writing a file…', icons.FilePlus],
     ['edit', 'Editing a file…', icons.FilePenLine],
     ['ls', 'Listing files…', icons.List],

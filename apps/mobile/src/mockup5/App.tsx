@@ -330,7 +330,7 @@ import {
   type HistoryChatExpiryMenuAction,
   type HistoryChatSummary,
 } from '../features/chat/history';
-import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, filesPermissionLabel, filesPermissionPlace, pendingFilesPermission, timelineActivityIsActive, workspaceIsActive, type TimelineSegment, type TimelineStep } from '../features/chat/timeline';
+import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, computerWorkspaceLabel, filesPermissionLabel, filesPermissionPlace, pendingFilesPermission, timelineActivityIsActive, workspaceIsActive, type TimelineSegment, type TimelineStep } from '../features/chat/timeline';
 import { toolActivityPresentation } from '../features/chat/toolActivityPresentation';
 import { CHAT_RESUME_FOLLOW_THRESHOLD, CHAT_SCROLL_TO_BOTTOM_THRESHOLD, type ChatViewportMetrics, chatBottomDistance, chatLandingKeyboardTranslation, chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent, shouldResumeChatFollow } from '../features/chat/viewport';
 import {
@@ -3859,6 +3859,8 @@ function workLabel(steps: TimelineStep[], active: boolean, durationMs?: number):
   }
   const workspace = steps.find((step) => step.kind === 'workspace');
   if (workspace?.kind === 'workspace') {
+    const computer = computerWorkspaceLabel(workspace.workspace);
+    if (computer && (workspaceIsActive(workspace.workspace.state) || ['expired', 'unavailable'].includes(workspace.workspace.state ?? ''))) return computer;
     if (workspace.workspace.state === 'waiting') return `Waiting for workspace${typeof workspace.workspace.position === 'number' ? ` · queue #${workspace.workspace.position}` : ''}`;
     if (workspace.workspace.state === 'provisioning') return 'Starting workspace…';
     if (['expired', 'unavailable'].includes(workspace.workspace.state ?? '')) return `Workspace ${workspace.workspace.state}`;
@@ -3881,7 +3883,7 @@ function toolStepSummary(step: Extract<TimelineStep, { kind: 'tool' }>['tool']):
   const command = typeof record.command === 'string' ? record.command : undefined;
   const pattern = typeof record.pattern === 'string' ? record.pattern : undefined;
   const query = typeof record.query === 'string' ? record.query : undefined;
-  if (step.tool === 'bash' && command) {
+  if ((step.tool === 'bash' || step.tool === 'powershell') && command) {
     const oneLine = command.replace(/\s+/g, ' ').trim();
     return oneLine.length > 72 ? `${oneLine.slice(0, 72)}…` : oneLine;
   }
@@ -4027,9 +4029,10 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
               return <SafeMarkdown selectable={Platform.OS !== 'android'} compact key={`message:${index}`}>{step.text}</SafeMarkdown>;
             }
             if (step.kind === 'workspace') {
-              const detail = step.workspace.error ?? step.workspace.state?.replaceAll('_', ' ') ?? 'Workspace';
+              const computer = computerWorkspaceLabel(step.workspace);
+              const detail = step.workspace.error ?? computer ?? step.workspace.state?.replaceAll('_', ' ') ?? 'Workspace';
               const failed = ['expired', 'unavailable'].includes(step.workspace.state ?? '');
-              return <View accessible accessibilityLabel={failed ? `Workspace failed: ${detail}` : `Workspace: ${detail}`} key={`workspace:${index}`} style={styles.workRow}>{failed ? <XCircle color={COLORS.critical} size={13} /> : <Server color={COLORS.muted} size={13} />}<Text style={styles.workRowText}>{detail}</Text></View>;
+              return <View accessible accessibilityLabel={computer ? (step.workspace.error ? `${computer}: ${detail}` : computer) : failed ? `Workspace failed: ${detail}` : `Workspace: ${detail}`} key={`workspace:${index}`} style={styles.workRow}>{failed ? <XCircle color={COLORS.critical} size={13} /> : <Server color={COLORS.muted} size={13} />}<Text style={styles.workRowText}>{detail}</Text></View>;
             }
             if (step.kind === 'compaction') {
               return <CompactionStepContent key={step.compaction.id} step={step} />;
@@ -4097,7 +4100,7 @@ function FilesPermissionPrompt({ responseId, item }: { responseId: string; item:
 }
 
 function otherOutputItems(outputItems?: unknown[]): Array<Record<string, unknown>> {
-  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit', 'pulpo_files_permission', 'pulpo_file_changes']);
+  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit', 'pulpo_files_permission', 'pulpo_file_changes', 'pulpo_computer_changes']);
   return (outputItems ?? []).filter((item): item is Record<string, unknown> => {
     const type = (item as { type?: unknown }).type;
     return typeof type === 'string' && !known.has(type);

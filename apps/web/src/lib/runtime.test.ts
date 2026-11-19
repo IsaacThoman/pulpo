@@ -5,6 +5,7 @@ import {
   runtimeAccountKey,
   runtimeApiUrl,
   runtimeAuthorizationHeaders,
+  runtimeClientHeaders,
   runtimeResourceUrl,
   runtimeUrlTargetsInstance,
 } from './runtime'
@@ -50,6 +51,16 @@ describe('desktop runtime transport', () => {
     installDesktopWindow()
     configureDesktopRuntime({ instanceUrl: 'https://one.example', token: null })
     expect(runtimeAccountKey('user-1')).toBe('https://one.example|user-1')
+  })
+})
+
+describe('client features', () => {
+  it('lists the computer only where the desktop bridge has it', () => {
+    installDesktopWindow()
+    configureDesktopRuntime({ instanceUrl: 'https://one.example', token: null })
+    expect(runtimeClientHeaders('/api/chats')['x-pulpo-client-features']).toBe('files-permission')
+    ;(window as { pulpoDesktop?: object }).pulpoDesktop = { platform: 'desktop', computer: {} }
+    expect(runtimeClientHeaders('/api/chats')['x-pulpo-client-features']).toBe('files-permission,computer')
   })
 })
 

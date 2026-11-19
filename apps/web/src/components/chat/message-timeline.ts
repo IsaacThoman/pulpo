@@ -1,4 +1,5 @@
 import type { CompactionItem, CostLimitItem, FilesPermissionItem, RecallItem, ToolImagePreview } from '@pulpo/contracts'
+import { ui } from '@/i18n/ui'
 
 export type ToolItem = {
   type: 'pulpo_tool'
@@ -21,6 +22,8 @@ export type WorkspaceItem = {
   startedAt?: string
   durationMs?: number
   continueWithoutAgentAvailableAt?: string
+  /** A full-access run: the user's computer is the workspace, so there is no queue or cloud pod. */
+  computer?: boolean
 }
 
 export type ReasoningStep = {
@@ -82,6 +85,37 @@ export type TimelineSegment = ActivitySegment | TextSegment
 
 export function workspaceIsActive(state?: string) {
   return state === 'waiting' || state === 'provisioning'
+}
+
+export function workspaceIsQuiet(state?: string) {
+  return state === 'ready' || state === 'running'
+}
+
+export function workspaceIsFailed(state?: string) {
+  return state === 'expired' || state === 'unavailable'
+}
+
+/**
+ * The workspace step's label. A full-access run names the user's computer: "this computer" in the
+ * desktop app that can lend one (`thisComputer`), "your computer" anywhere else, such as a browser.
+ */
+export function workspaceLabel(item: WorkspaceItem, thisComputer = false): string {
+  if (item.computer) {
+    if (item.state === 'provisioning') return thisComputer ? ui("Connecting to this computer…") : ui("Connecting to your computer…")
+    if (workspaceIsFailed(item.state)) return thisComputer ? ui("This computer isn't connected") : ui("Your computer isn't connected")
+    return thisComputer ? ui("Using this computer") : ui("Using your computer")
+  }
+  if (item.state === 'waiting') {
+    return typeof item.position === 'number'
+      ? ui('Waiting for workspace · queue #{{position}}', { position: item.position })
+      : ui('Waiting for workspace')
+  }
+  if (item.state === 'provisioning') return ui("Starting workspace…")
+  if (item.state === 'continuing_without_agent') return ui("Continuing without agent tools")
+  if (item.state === 'expired') return ui('Workspace expired')
+  if (item.state === 'unavailable') return ui('Workspace unavailable')
+  if (workspaceIsQuiet(item.state)) return ui("Started workspace")
+  return ui("Workspace")
 }
 
 function reasoningFromItem(item: unknown): string {
