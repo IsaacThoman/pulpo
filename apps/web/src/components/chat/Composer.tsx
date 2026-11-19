@@ -12,7 +12,7 @@ import { useFollowStartedChat } from './use-follow-started-chat'
 import { useMenuTriggerFocus } from './use-menu-trigger-focus'
 import { appendToDraft, registerComposerFocus, registerComposerInsert } from './composer-focus'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
-import { MAX_MESSAGE_ATTACHMENTS, type ComposerState, type ComputerSelection, type FileNode, type FileReference } from '@pulpo/contracts'
+import { FILE_SCOPE_ROOT, MAX_MESSAGE_ATTACHMENTS, type ComposerState, type ComputerSelection, type FileNode, type FileReference } from '@pulpo/contracts'
 import { useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore, type Ref, type DragEvent as ReactDragEvent } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
@@ -323,6 +323,12 @@ export function Composer({
   const chatFileChangeMode = useChat((state) => chatId ? state.chats.find((chat) => chat.id === chatId)?.fileChangeMode : undefined)
   const defaultFileChangeMode = useSettings((state) => state.agentFileChangeMode)
   const fileChangeMode = chatId ? chatFileChangeMode ?? 'suggest' : defaultFileChangeMode
+  // The agent uses what the chat mentions, and all of Files once that was mentioned or allowed.
+  const filesBrowseOpen = useChat((state) => {
+    const chat = chatId ? state.chats.find((item) => item.id === chatId) : undefined
+    return Boolean(chat?.filesBrowseAllowed || chat?.fileScopeIds?.includes(FILE_SCOPE_ROOT))
+  })
+  const filesAskBeforeBrowsing = useSettings((state) => state.agentFilesAskBeforeBrowsing)
   const instanceReady = useAuth((s) => s.instanceReady)
   const desktopCanMutate = !isDesktopRuntime() || instanceReady
   uploadsRef.current = uploads
@@ -1506,6 +1512,7 @@ export function Composer({
             computer={canUseAgent ? computer.controls : undefined}
             files={canScopeFiles ? {
               mode: fileChangeMode,
+              reach: filesBrowseOpen || !filesAskBeforeBrowsing || references.some((reference) => reference.id === FILE_SCOPE_ROOT) ? 'all' : 'mentioned',
               onModeChange: (mode) => {
                 if (chatId) useChat.getState().setChatFileChangeMode(chatId, mode)
                 // New chats start with the account's choice.

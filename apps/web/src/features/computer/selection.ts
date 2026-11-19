@@ -2,7 +2,7 @@ import { COMPUTER_ACCESS_MODES, COMPUTER_PATH_MAX_LENGTH, type ComputerAccess, t
 import { useSyncExternalStore } from 'react'
 
 /**
- * What the user chose in the Workspace menu: Cloud, or This computer with an access mode and a
+ * What the user chose for This computer in the agent menu: off, or on with an access mode and a
  * folder. It names folders on this device only, so it stays in this device's storage, per signed-in
  * instance + account, and is never synced or part of the shared composer state. New chats start
  * from the last choice made here; a chat keeps its own once it has one.

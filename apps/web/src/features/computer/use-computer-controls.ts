@@ -3,10 +3,11 @@ import { isComputerFolderMode, type ComputerAccess, type ComputerFolder } from '
 import type { AgentComputerControls } from '@/components/chat/AgentMenu'
 import { adminChatAccessActive, subscribeAdminChatGrant } from '@/features/admin-chat/access'
 import { useFileToasts } from '@/features/files/browser/toasts'
+import { ui } from '@/i18n/ui'
 import { desktopComputerApi, runtimeAccountKey } from '@/lib/runtime'
 import { useAuth } from '@/stores/auth'
 import { useCatalog } from '@/stores/catalog'
-import { chooseComputer, keepComputerChoice, useComputerChoice, type ComputerChoice } from './selection'
+import { chooseComputer, computerChoice, keepComputerChoice, useComputerChoice, type ComputerChoice } from './selection'
 import { prepareComputerSend, type ComputerSendPreparation } from './sessions'
 
 const NOT_USED: ComputerSendPreparation = { ok: true, selection: undefined }
@@ -16,7 +17,7 @@ const RECENT_FOLDERS = 4
 /**
  * This computer in a composer: whether it is offered (the desktop app has the bridge, the instance
  * allows it, and this is the user's own chat rather than admin access), the chat's choice, the
- * Workspace menu's actions, and registering a session before a message is sent.
+ * menu's actions, and registering a session before a message is sent.
  */
 export function useComputerControls({ chatId, onEnable }: {
   chatId: string | null
@@ -37,26 +38,40 @@ export function useComputerControls({ chatId, onEnable }: {
   }, [api, owner])
   useEffect(refreshAllowedFolders, [refreshAllowedFolders])
 
-  const set = (next: ComputerChoice) => { if (owner) chooseComputer(owner, chatId, next) }
+  // An action waits on a native dialog, and the choice may change meanwhile, so each one starts
+  // from the choice as it stands when it is applied rather than as it was when the menu rendered.
+  const change = (apply: (current: ComputerChoice) => ComputerChoice) => {
+    if (owner) chooseComputer(owner, chatId, apply(computerChoice(owner, chatId)))
+  }
+  /**
+   * A dialog that comes back empty was either cancelled, which needs no words, or never shown
+   * because the app could not tell who is signed in. Only the app knows which, so it is asked.
+   */
+  const explainIfUnavailable = async () => {
+    let available = true
+    try { available = (await api?.status())?.signedIn !== false } catch { available = false }
+    if (!available) useFileToasts.getState().show({ message: ui("Can't use this computer right now. Check your connection and try again."), tone: 'error' })
+  }
   const pickFolder = async (): Promise<ComputerFolder | null> => {
-    try {
-      const folder = await api?.chooseFolder() ?? null
-      if (folder) refreshAllowedFolders()
-      return folder
-    } catch { return null }
+    let folder: ComputerFolder | null = null
+    try { folder = await api?.chooseFolder() ?? null } catch { /* told below */ }
+    if (folder) refreshAllowedFolders()
+    else await explainIfUnavailable()
+    return folder
   }
   const selectAccess = async (access: ComputerAccess) => {
-    if (!api) return
-    let folder = choice.folder
+    if (!api || !owner) return
     if (access === 'full') {
       let allowed = false
-      try { allowed = await api.allowFullAccess() } catch { /* treated as declined */ }
-      if (!allowed) return
-    } else if (isComputerFolderMode(access) && !folder) {
-      folder = await pickFolder()
+      try { allowed = await api.allowFullAccess() } catch { /* told below */ }
+      if (!allowed) { await explainIfUnavailable(); return }
+      change((current) => ({ ...current, enabled: true, access }))
+    } else if (isComputerFolderMode(access)) {
+      // These modes work in one folder, so the first use asks for it.
+      const folder = computerChoice(owner, chatId).folder ?? await pickFolder()
       if (!folder) return
+      change(() => ({ enabled: true, access, folder }))
     }
-    set({ enabled: true, access, folder })
     onEnable?.()
   }
 
@@ -65,11 +80,12 @@ export function useComputerControls({ chatId, onEnable }: {
     access: choice.access,
     folder: choice.folder,
     recentFolders: allowedFolders.filter((folder) => folder.path !== choice.folder?.path).slice(0, RECENT_FOLDERS),
-    // The folder and access stay for the next time This computer is chosen.
-    onCloud: () => set({ ...choice, enabled: false }),
+    // The access and folder stay for the next time This computer is turned on.
+    onOff: () => change((current) => ({ ...current, enabled: false })),
     onAccess: (access) => { void selectAccess(access) },
-    onChooseFolder: () => { void pickFolder().then((folder) => { if (folder) set({ ...choice, folder }) }) },
-    onFolder: (folder) => set({ ...choice, folder }),
+    onChooseFolder: () => { void pickFolder().then((folder) => { if (folder) change((current) => ({ ...current, folder })) }) },
+    // Only full access works without a folder.
+    onFolder: (folder) => change((current) => folder || current.access === 'full' ? { ...current, folder } : current),
   } : undefined
 
   return {
@@ -84,7 +100,10 @@ export function useComputerControls({ chatId, onEnable }: {
       if (!owner || !agentMode || !choice.enabled) return NOT_USED
       const prepared = await prepareComputerSend(choice)
       if (!prepared.ok) useFileToasts.getState().show({ message: prepared.message, tone: 'error' })
-      else if (prepared.folder) set({ ...choice, folder: prepared.folder })
+      else if (prepared.folder) {
+        const folder = prepared.folder
+        change((current) => ({ ...current, folder }))
+      }
       return prepared
     },
     /** A chat that was sent a message keeps the choice it was sent with. */

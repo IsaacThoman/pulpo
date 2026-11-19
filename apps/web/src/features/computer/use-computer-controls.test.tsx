@@ -6,7 +6,8 @@ import { AgentMenu } from '@/components/chat/AgentMenu'
 import { clearAdminChatGrant, setAdminChatGrant, type AdminChatGrant } from '@/features/admin-chat/access'
 import { useAuth } from '@/stores/auth'
 import { useCatalog } from '@/stores/catalog'
-import { computerChoice, resetComputerChoicesForTests } from './selection'
+import { useFileToasts } from '@/features/files/browser/toasts'
+import { chooseComputer, computerChoice, resetComputerChoicesForTests } from './selection'
 import { resetComputerSessionsForTests } from './sessions'
 import { useComputerControls } from './use-computer-controls'
 
@@ -22,14 +23,14 @@ let computer: { status: ReturnType<typeof vi.fn>; chooseFolder: ReturnType<typeo
 let allowedFolders: Array<{ path: string; name: string }> = []
 const onEnable = vi.fn()
 
-function Harness({ chatId = 'chat-a', files = true }: { chatId?: string | null; files?: boolean }) {
+function Harness({ chatId = 'chat-a', files = true, reach }: { chatId?: string | null; files?: boolean; reach?: 'mentioned' | 'all' }) {
   const controls = useComputerControls({ chatId, onEnable })
   return (
     <AgentMenu
       enabled
       disabled={false}
       computer={controls.controls}
-      files={files ? { mode: 'suggest', onModeChange: vi.fn() } : undefined}
+      files={files ? { mode: 'suggest', reach, onModeChange: vi.fn() } : undefined}
       onSelect={vi.fn()}
     />
   )
@@ -45,14 +46,25 @@ async function openComputer() {
   await openMenu()
   const trigger = screen.getByRole('menuitem', { name: /This computer/ })
   fireEvent.keyDown(trigger, { key: 'ArrowRight' })
-  return screen.findByRole('group', { name: 'Access' })
+  return screen.findByRole('group', { name: 'This computer' })
 }
+
+/** The rows under Access, as they read. */
+async function accessRows() {
+  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+  await openMenu()
+  return within(screen.getByRole('group', { name: 'Access' })).getAllByRole('menuitem').map((item) => item.textContent)
+}
+
+const checked = (group: HTMLElement) => within(group).getAllByRole('menuitemradio')
+  .filter((item) => item.getAttribute('aria-checked') === 'true').map((item) => item.textContent)
 
 beforeEach(() => {
   localStorage.clear()
   resetComputerChoicesForTests()
   resetComputerSessionsForTests()
   allowedFolders = []
+  useFileToasts.setState({ toasts: [] })
   computer = {
     status: vi.fn(async () => ({ fullAccess: false, folders: allowedFolders, defaultFolder: { path: '/Users/me/Pulpo', name: 'Pulpo' } })),
     chooseFolder: vi.fn(async () => project), allowFullAccess: vi.fn(async () => true), begin: vi.fn(async () => ({ ok: true })),
@@ -68,11 +80,11 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-describe('Workspace menu', () => {
-  it('is offered only with the bridge, the instance allowing it, and the user’s own chat', async () => {
+describe('Access in the agent menu', () => {
+  it('offers This computer only with the bridge, the instance allowing it, and the user’s own chat', async () => {
     const { unmount } = render(<Harness />)
     await openMenu()
-    expect(screen.getByRole('group', { name: 'Workspace' })).not.toBeNull()
+    expect(screen.getByRole('menuitem', { name: /This computer/ })).not.toBeNull()
     unmount()
 
     for (const setup of [
@@ -83,7 +95,10 @@ describe('Workspace menu', () => {
       setup()
       const view = render(<Harness />)
       await openMenu()
-      expect(screen.queryByRole('group', { name: 'Workspace' })).toBeNull()
+      expect(screen.queryByRole('menuitem', { name: /This computer/ })).toBeNull()
+      // Files are then chosen in the menu itself, as everywhere else.
+      expect(screen.queryByRole('group', { name: 'Access' })).toBeNull()
+      expect(screen.getByRole('group', { name: 'Changes to Files' })).not.toBeNull()
       view.unmount()
       window.pulpoDesktop = { platform: 'desktop', computer } as unknown as typeof window.pulpoDesktop
       useCatalog.setState({ computerAccess: true })
@@ -91,61 +106,88 @@ describe('Workspace menu', () => {
     }
   })
 
-  it('lays out Cloud, This computer with Folder and Access, then Files', async () => {
+  it('says for Files and for This computer what the agent can reach and what it may do', async () => {
+    const view = render(<Harness />)
+    expect(await accessRows()).toEqual(['FilesItems you mention · Suggest changes', 'This computerOff'])
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: /^Files/ }), { key: 'ArrowRight' })
+    const files = await screen.findByRole('group', { name: 'Changes to Files' })
+    expect(files.textContent).toContain('Can use the items you mention')
+    expect(checked(files)).toEqual(['Suggest changesYou accept or reject each change'])
+    view.unmount()
+
+    render(<Harness reach="all" />)
+    expect(await accessRows()).toEqual(['FilesAll files · Suggest changes', 'This computerOff'])
+    fireEvent.keyDown(screen.getByRole('menuitem', { name: /^Files/ }), { key: 'ArrowRight' })
+    expect((await screen.findByRole('group', { name: 'Changes to Files' })).textContent).toContain('Can look through all of your Files')
+  })
+
+  it('starts with This computer Off, and offers a folder only once it is on', async () => {
     render(<Harness />)
-    await openMenu()
-    const workspace = screen.getByRole('group', { name: 'Workspace' })
-    expect(within(workspace).getByRole('menuitemradio', { name: 'Cloud' }).getAttribute('aria-checked')).toBe('true')
-    expect(screen.getByRole('group', { name: 'Changes to Files' })).not.toBeNull()
-    fireEvent.keyDown(screen.getByRole('menuitem', { name: /This computer/ }), { key: 'ArrowRight' })
-    const access = await screen.findByRole('group', { name: 'Access' })
-    expect(within(access).getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual([
+    const options = await openComputer()
+    expect(within(options).getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual([
+      'Off',
       'Full accessCan run commands anywhere on this computer',
       'Read onlyThe agent can look but not change anything',
       'Suggest changesYou accept or reject each change',
       'Edit directlyChanges apply right away',
     ])
-    const folder = screen.getByRole('group', { name: 'Folder' })
-    expect(within(folder).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Choose folder…'])
+    expect(checked(options)).toEqual(['Off'])
+    expect(screen.queryByRole('group', { name: 'Folder' })).toBeNull()
   })
 
-  it('turns on a folder mode by choosing a folder first, and cancelling changes nothing', async () => {
+  it('turns on a folder mode by choosing a folder first, and cancelling leaves it Off', async () => {
     computer.chooseFolder.mockResolvedValueOnce(null)
     render(<Harness />)
     fireEvent.click(within(await openComputer()).getByRole('menuitemradio', { name: /Read only/ }))
     await waitFor(() => expect(computer.chooseFolder).toHaveBeenCalledOnce())
     expect(computerChoice(owner, 'chat-a').enabled).toBe(false)
+    expect(checked(await openComputer())).toEqual(['Off'])
+    // Cancelling the dialog needs no explanation.
+    expect(useFileToasts.getState().toasts).toEqual([])
 
-    fireEvent.click(within(await openComputer()).getByRole('menuitemradio', { name: /Read only/ }))
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Read only/ }))
     await waitFor(() => expect(computerChoice(owner, 'chat-a')).toEqual({ enabled: true, access: 'read', folder: project }))
     expect(onEnable).toHaveBeenCalledOnce()
     const trigger = screen.getByRole('button', { name: 'Agent options, This computer' })
     expect(trigger.querySelector('.lucide-laptop')).not.toBeNull()
+    expect(await accessRows()).toEqual(['FilesItems you mention · Suggest changes', 'This computerproject · Read only'])
     // New chats start from the last choice.
     expect(computerChoice(owner, null)).toEqual({ enabled: true, access: 'read', folder: project })
   })
 
-  it('asks before Full access, changes nothing when declined, and hides Files once on', async () => {
+  it('asks before Full access, stays Off when declined, and keeps Files once on', async () => {
     computer.allowFullAccess.mockResolvedValueOnce(false)
     render(<Harness />)
     fireEvent.click(within(await openComputer()).getByRole('menuitemradio', { name: /Full access/ }))
     await waitFor(() => expect(computer.allowFullAccess).toHaveBeenCalledOnce())
     expect(computerChoice(owner, 'chat-a').enabled).toBe(false)
     expect(computer.chooseFolder).not.toHaveBeenCalled()
+    expect(useFileToasts.getState().toasts).toEqual([])
 
     fireEvent.click(within(await openComputer()).getByRole('menuitemradio', { name: /Full access/ }))
     await waitFor(() => expect(computerChoice(owner, 'chat-a')).toEqual({ enabled: true, access: 'full', folder: null }))
-    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
-    await openMenu()
-    expect(screen.queryByRole('group', { name: 'Changes to Files' })).toBeNull()
+    expect(await accessRows()).toEqual(['FilesItems you mention · Suggest changes', 'This computerFull access'])
     fireEvent.keyDown(screen.getByRole('menuitem', { name: /This computer/ }), { key: 'ArrowRight' })
-    const access = await screen.findByRole('group', { name: 'Access' })
-    expect(within(access).getByRole('menuitemradio', { name: /Full access/ }).getAttribute('aria-checked')).toBe('true')
-    const folder = screen.getByRole('group', { name: 'Folder' })
-    expect(within(folder).getByRole('menuitemradio', { name: 'No folder' }).getAttribute('aria-checked')).toBe('true')
+    expect(checked(await screen.findByRole('group', { name: 'This computer' }))).toEqual(['Full accessCan run commands anywhere on this computer'])
+    expect(checked(screen.getByRole('group', { name: 'Folder' }))).toEqual(['No folder'])
   })
 
-  it('chooses a folder without changing anything else, and Cloud remembers it', async () => {
+  it('says so when the app cannot be used, instead of doing nothing', async () => {
+    computer.status.mockResolvedValue({ fullAccess: false, folders: [], defaultFolder: { path: '/Users/me/Pulpo', name: 'Pulpo' }, signedIn: false })
+    computer.allowFullAccess.mockResolvedValue(false)
+    computer.chooseFolder.mockResolvedValue(null)
+    render(<Harness />)
+    fireEvent.click(within(await openComputer()).getByRole('menuitemradio', { name: /Full access/ }))
+    await waitFor(() => expect(useFileToasts.getState().toasts.map((toast) => toast.message)).toEqual(["Can't use this computer right now. Check your connection and try again."]))
+    expect(computerChoice(owner, 'chat-a').enabled).toBe(false)
+
+    useFileToasts.setState({ toasts: [] })
+    fireEvent.click(within(await openComputer()).getByRole('menuitemradio', { name: /Edit directly/ }))
+    await waitFor(() => expect(useFileToasts.getState().toasts).toHaveLength(1))
+    expect(checked(await openComputer())).toEqual(['Off'])
+  })
+
+  it('keeps Full access on while a folder is chosen or cleared, and Off remembers both', async () => {
     render(<Harness />)
     fireEvent.click(within(await openComputer()).getByRole('menuitemradio', { name: /Full access/ }))
     await waitFor(() => expect(computerChoice(owner, 'chat-a').enabled).toBe(true))
@@ -153,37 +195,54 @@ describe('Workspace menu', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Choose folder…' }))
     await waitFor(() => expect(computerChoice(owner, 'chat-a')).toEqual({ enabled: true, access: 'full', folder: project }))
 
-    await openComputer()
+    expect(checked(await openComputer())).toEqual(['Full accessCan run commands anywhere on this computer'])
     const folder = screen.getByRole('group', { name: 'Folder' })
-    expect(within(folder).getByRole('menuitemradio', { name: 'project' }).getAttribute('aria-checked')).toBe('true')
-    expect(within(folder).getByRole('menuitemradio', { name: 'No folder' }).getAttribute('aria-checked')).toBe('false')
+    expect(checked(folder)).toEqual(['project'])
     fireEvent.click(within(folder).getByRole('menuitemradio', { name: 'No folder' }))
-    await waitFor(() => expect(computerChoice(owner, 'chat-a').folder).toBeNull())
+    await waitFor(() => expect(computerChoice(owner, 'chat-a')).toEqual({ enabled: true, access: 'full', folder: null }))
 
-    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
-    await openMenu()
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Cloud' }))
+    fireEvent.click(within(await openComputer()).getByRole('menuitemradio', { name: 'Off' }))
     await waitFor(() => expect(computerChoice(owner, 'chat-a')).toEqual({ enabled: false, access: 'full', folder: null }))
     expect(screen.getByRole('button', { name: 'Agent options, Pulpo Agent' })).not.toBeNull()
+    expect(await accessRows()).toEqual(['FilesItems you mention · Suggest changes', 'This computerOff'])
+  })
+
+  it('applies a folder to the choice as it stands when the folder dialog closes', async () => {
+    const earlier = { path: '/Users/me/earlier', name: 'earlier' }
+    render(<Harness />)
+    fireEvent.click(within(await openComputer()).getByRole('menuitemradio', { name: /Read only/ }))
+    await waitFor(() => expect(computerChoice(owner, 'chat-a').enabled).toBe(true))
+    let close!: (folder: ComputerFolder) => void
+    computer.chooseFolder.mockReturnValueOnce(new Promise<ComputerFolder>((resolve) => { close = resolve }))
+    await openComputer()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Choose folder…' }))
+    // The access changes while the dialog is still open.
+    act(() => chooseComputer(owner, 'chat-a', { enabled: true, access: 'full', folder: project }))
+    await act(async () => close(earlier))
+    await waitFor(() => expect(computerChoice(owner, 'chat-a')).toEqual({ enabled: true, access: 'full', folder: earlier }))
   })
 
   it('offers folders allowed earlier, so one can be chosen without the folder dialog', async () => {
     const earlier = { path: '/Users/me/earlier', name: 'earlier' }
     allowedFolders = [project, earlier]
     render(<Harness />)
+    fireEvent.click(within(await openComputer()).getByRole('menuitemradio', { name: /Full access/ }))
+    await waitFor(() => expect(computerChoice(owner, 'chat-a').enabled).toBe(true))
     await openComputer()
     let folder = screen.getByRole('group', { name: 'Folder' })
-    expect(within(folder).getByRole('menuitemradio', { name: 'project' }).getAttribute('aria-checked')).toBe('false')
+    expect(within(folder).getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual(['project', 'earlier', 'No folder'])
     fireEvent.click(within(folder).getByRole('menuitemradio', { name: 'earlier' }))
-    await waitFor(() => expect(computerChoice(owner, 'chat-a').folder).toEqual(earlier))
+    await waitFor(() => expect(computerChoice(owner, 'chat-a')).toEqual({ enabled: true, access: 'full', folder: earlier }))
     expect(computer.chooseFolder).not.toHaveBeenCalled()
-    // Choosing a folder alone does not turn This computer on.
-    expect(computerChoice(owner, 'chat-a').enabled).toBe(false)
 
     await openComputer()
     folder = screen.getByRole('group', { name: 'Folder' })
-    expect(within(folder).getByRole('menuitemradio', { name: 'earlier' }).getAttribute('aria-checked')).toBe('true')
-    expect(within(folder).getByRole('menuitemradio', { name: 'project' }).getAttribute('aria-checked')).toBe('false')
+    expect(checked(folder)).toEqual(['earlier'])
+    // A folder mode needs a folder, so none is not offered there.
+    fireEvent.click(screen.getByRole('menuitemradio', { name: /Suggest changes/ }))
+    await waitFor(() => expect(computerChoice(owner, 'chat-a').access).toBe('suggest'))
+    await openComputer()
+    expect(within(screen.getByRole('group', { name: 'Folder' })).queryByRole('menuitemradio', { name: 'No folder' })).toBeNull()
   })
 
   it('keeps each chat’s own choice', async () => {
@@ -194,8 +253,7 @@ describe('Workspace menu', () => {
     render(<Harness chatId="chat-b" />)
     await act(async () => undefined)
     expect(screen.getByRole('button', { name: 'Agent options, This computer' })).not.toBeNull()
-    await openMenu()
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Cloud' }))
+    fireEvent.click(within(await openComputer()).getByRole('menuitemradio', { name: 'Off' }))
     await waitFor(() => expect(computerChoice(owner, 'chat-b').enabled).toBe(false))
     expect(computerChoice(owner, 'chat-a').enabled).toBe(true)
   })
@@ -207,9 +265,9 @@ describe('Workspace menu', () => {
     const sub = await screen.findByRole('menuitem', { name: /This computer/ })
     sub.focus()
     fireEvent.keyDown(sub, { key: 'ArrowRight' })
-    const chooseFolder = await screen.findByRole('menuitem', { name: 'Choose folder…' })
-    await waitFor(() => expect(document.activeElement).toBe(chooseFolder))
-    fireEvent.keyDown(chooseFolder, { key: 'ArrowLeft' })
+    const off = await screen.findByRole('menuitemradio', { name: 'Off' })
+    await waitFor(() => expect(document.activeElement).toBe(off))
+    fireEvent.keyDown(off, { key: 'ArrowLeft' })
     await waitFor(() => expect(document.activeElement).toBe(sub))
     fireEvent.keyDown(sub, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
