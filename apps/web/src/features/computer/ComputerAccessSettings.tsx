@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { ui, uit } from '@/i18n/ui'
 import { desktopComputerApi } from '@/lib/runtime'
+import { computerPathTail } from './changes/bridge'
 
 interface Allowed { fullAccess: boolean; folders: ComputerFolder[] }
 
@@ -43,7 +44,8 @@ export function ComputerAccessSettings() {
             <li key={folder.path} className={rowClass}>
               <span className="flex min-w-0 items-center gap-2">
                 <Folder className="size-4 shrink-0 opacity-70" />
-                <span className="truncate" title={folder.path}>{folder.path}</span>
+                {/* The end of a path tells folders apart, so a long one loses its start. */}
+                <span className="truncate" title={folder.path}>{computerPathTail(folder.path, 48)}</span>
               </span>
               <Button variant="outline" size="sm" aria-label={uit`Remove ${folder.name}`} onClick={() => { void api.forgetFolder(folder.path).then(refresh, refresh) }}>{ui("Remove")}</Button>
             </li>
