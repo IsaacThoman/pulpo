@@ -1,10 +1,20 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, realpath, rm, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChangesStore } from './changes'
+
+/** Lets a test act at the moment a suggested file has been copied beside its target, before it takes its place. */
+const copies = vi.hoisted(() => ({ afterCopy: undefined as (() => Promise<void>) | undefined }))
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    copyFile: async (...args: Parameters<typeof actual.copyFile>) => { await actual.copyFile(...args); await copies.afterCopy?.() },
+  }
+})
 
 const account = { origin: 'https://pulpo.example', userId: '00000000-0000-4000-8000-00000000000a' }
 const sha = (value: string) => createHash('sha256').update(value).digest('hex')
@@ -27,7 +37,7 @@ describe('ChangesStore', () => {
     store = new ChangesStore({ root: path.join(base, 'changes'), onChanged, folderGranted: async () => granted, trash: async () => undefined, now: () => clock })
   })
 
-  afterEach(async () => { await rm(base, { recursive: true, force: true }) })
+  afterEach(async () => { copies.afterCopy = undefined; await rm(base, { recursive: true, force: true }) })
 
   const suggestFile = (file: string, content: string) => store.suggest(account, { sessionId: randomUUID(), responseId: randomUUID(), folder, path: file, kind: 'create', sizeBytes: content.length }, {
     source: Readable.from([Buffer.from(content)]), sha256: sha(content), sizeBytes: content.length, diskBase: null,
@@ -49,6 +59,24 @@ describe('ChangesStore', () => {
     await expect(store.accept(account, [change.id])).rejects.toThrow(/no longer allowed/)
     await expect(stat(path.join(folder, 'a.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
     expect((await store.list(account))[0]!.status).toBe('pending')
+  })
+
+  it('reports a conflict when the user saves the file while an accepted suggestion is being copied in', async () => {
+    const target = path.join(folder, 'a.txt')
+    await writeFile(target, 'original')
+    const change = await store.suggest(account, { sessionId: randomUUID(), responseId: randomUUID(), folder, path: 'a.txt', kind: 'update', sizeBytes: 9 }, {
+      source: Readable.from([Buffer.from('suggested')]), sha256: sha('suggested'), sizeBytes: 9, diskBase: sha('original'),
+    })
+    copies.afterCopy = async () => { await writeFile(target, 'saved meanwhile') }
+    expect((await store.accept(account, [change.id]))[0]).toMatchObject({ id: change.id, status: 'conflict' })
+    expect(await readFile(target, 'utf8')).toBe('saved meanwhile')
+    // Nothing is left behind beside the file.
+    expect(await readdir(folder)).toEqual(['a.txt'])
+
+    // Overwriting is the user's own choice, whatever is there by then.
+    copies.afterCopy = async () => { await writeFile(target, 'saved again') }
+    expect((await store.accept(account, [change.id], { overwrite: true }))[0]).toMatchObject({ status: 'accepted' })
+    expect(await readFile(target, 'utf8')).toBe('suggested')
   })
 
   it('refuses a suggestion whose bytes do not match', async () => {

@@ -261,6 +261,11 @@ export class ChangesStore {
       const temporary = temporarySibling(target.absolute)
       try {
         await copyFile(this.blobPath(account, change.id), temporary)
+        // Copying took a while; a save the user made meanwhile must not be lost.
+        if (!overwrite && await versionIfFile(target.absolute) !== current) {
+          await rm(temporary, { force: true })
+          return 'conflict'
+        }
         // The new file takes the place of the old one, so it keeps its permissions.
         if (existing) await chmod(temporary, existing.mode & 0o7777)
         await rename(temporary, target.absolute)
