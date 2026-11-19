@@ -5,6 +5,8 @@ import { z } from 'zod'
  *
  * - `full`: the computer is the agent's workspace. Its tools (shell, read, write, …) run there,
  *   starting in the chosen folder or a default one, and may leave it. No cloud workspace is used.
+ *   Where the app can, the agent may also see and work in other apps' windows, one app at a time
+ *   and only after the user allowed that app (the `app.*` requests below).
  * - `read` / `suggest` / `write`: the agent keeps its cloud workspace and reaches one chosen folder
  *   through `pulpo computer` in bash, the way it reaches Files through `pulpo files`. Nothing runs
  *   on the computer. The three modes mean what they mean for Files.
@@ -66,6 +68,14 @@ export const computerDescriptionSchema = z.object({
    * for the agent's commands, and then Files are not offered in a full-access reply.
    */
   filesDir: z.string().max(COMPUTER_PATH_MAX_LENGTH).optional(),
+  /**
+   * Present when the app can show the agent other apps' windows and act in them (`app.list`,
+   * `app.act`); absent from apps that cannot, and then the app tools are not offered.
+   * `background`: what the agent does reaches an app without moving the user's pointer, taking
+   * their keyboard or bringing the app forward (macOS). False where the app comes to the front and
+   * the user's own pointer and keyboard are used (Windows).
+   */
+  apps: z.object({ version: z.number().int(), background: z.boolean() }).optional(),
 })
 export type ComputerDescription = z.infer<typeof computerDescriptionSchema>
 
@@ -178,6 +188,120 @@ export const computerFolderChangeResultSchema = z.object({
 export type ComputerFolderChangeResult = z.infer<typeof computerFolderChangeResultSchema>
 
 // ---------------------------------------------------------------------------------------------
+// Full access: seeing and working in other apps' windows.
+// ---------------------------------------------------------------------------------------------
+
+/** An app that is running with a window open, as `app.list` reports it. */
+export const computerAppSchema = z.object({
+  /** As the user knows it: `TextEdit`, `Notepad`. The agent names an app by this. */
+  name: z.string().max(200),
+  /** Whether the user already let the agent use it. Using any other app asks them first. */
+  allowed: z.boolean(),
+  /** The app the user is working in. */
+  frontmost: z.boolean(),
+  /** Its windows' titles, front to back. Left out for an app the user has not allowed. */
+  windows: z.array(z.string().max(500)).max(50),
+})
+export type ComputerApp = z.infer<typeof computerAppSchema>
+
+/** A coordinate in a window's picture, in that picture's pixels. */
+const appCoordinate = z.number().finite().min(0).max(100_000)
+const appElementIndex = z.number().int().min(1).max(100_000)
+
+/**
+ * One thing to do in an app's window. `view` only looks. Coordinates and element numbers are those
+ * of the last answer about that window: every answer carries its picture and elements anew.
+ */
+export const computerAppActionSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('view') }),
+  /** A click on an element, or at a point when no element is named. */
+  z.object({
+    type: z.literal('click'),
+    element: appElementIndex.optional(),
+    x: appCoordinate.optional(),
+    y: appCoordinate.optional(),
+    button: z.enum(['left', 'right', 'middle']).default('left'),
+    count: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(1),
+  }).refine((value) => value.element !== undefined || (value.x !== undefined && value.y !== undefined), 'Name an element or give both x and y'),
+  /** Types text into whatever has the keyboard focus in the window. */
+  z.object({ type: z.literal('type'), text: z.string().min(1).max(4_000) }),
+  /** One key or chord: `enter`, `escape`, `cmd+s`, `ctrl+shift+t`. */
+  z.object({ type: z.literal('key'), keys: z.string().min(1).max(100) }),
+  /** Scrolls at an element, at a point, or in the middle of the window, by lines; positive `dy` moves down the page. */
+  z.object({
+    type: z.literal('scroll'),
+    element: appElementIndex.optional(),
+    x: appCoordinate.optional(),
+    y: appCoordinate.optional(),
+    dx: z.number().int().min(-100).max(100).default(0),
+    dy: z.number().int().min(-100).max(100).default(0),
+  }).refine((value) => value.dx !== 0 || value.dy !== 0, 'Scroll by at least one line'),
+  z.object({ type: z.literal('drag'), fromX: appCoordinate, fromY: appCoordinate, toX: appCoordinate, toY: appCoordinate }),
+  /** Sets what an element holds without typing: a field's text, a slider's number. */
+  z.object({ type: z.literal('set_value'), element: appElementIndex, value: z.string().max(10_000) }),
+])
+export type ComputerAppAction = z.infer<typeof computerAppActionSchema>
+export type ComputerAppActionInput = z.input<typeof computerAppActionSchema>
+
+/** One element of a window. Its box is in the pixels of the picture it came with. */
+export const computerAppElementSchema = z.object({
+  /** What the agent names it by in its next action on this window. */
+  index: appElementIndex,
+  /** How deep it sits below the elements listed before it. */
+  depth: z.number().int().min(0).max(100),
+  /** `button`, `textfield`, `checkbox`, `link`, `menuitem`, `text`, … */
+  role: z.string().max(40),
+  label: z.string().max(200).optional(),
+  value: z.string().max(200).optional(),
+  x: z.number().finite(),
+  y: z.number().finite(),
+  width: z.number().finite().nonnegative(),
+  height: z.number().finite().nonnegative(),
+  focused: z.boolean().optional(),
+  enabled: z.boolean().optional(),
+})
+export type ComputerAppElement = z.infer<typeof computerAppElementSchema>
+
+/** The most elements one answer lists; a window with more says so in `truncated`. */
+export const COMPUTER_APP_MAX_ELEMENTS = 300
+/** No picture of a window is wider or taller than this, in pixels. */
+export const COMPUTER_APP_IMAGE_MAX_EDGE = 1_280
+/**
+ * How long the desktop app waits for the user to answer when the agent wants an app they have not
+ * allowed yet. Unanswered, the app is not used.
+ */
+export const COMPUTER_APP_APPROVAL_TIMEOUT_MS = 120_000
+/** How long the desktop app may take to do one thing in a window and look at it again. */
+export const COMPUTER_APP_ACT_TIMEOUT_MS = 60_000
+
+/**
+ * A window after `app.act`: its picture and what is in it. The picture shows that window alone,
+ * never the rest of the screen. It rides inline when it is small (`data`); otherwise `path` names
+ * it on the computer and the server fetches it with `file.send`.
+ */
+export const computerAppStateSchema = z.object({
+  app: z.string().max(200),
+  /** The title of the window shown. After an action that opened a window (a dialog), that one. */
+  window: z.string().max(500),
+  /** The titles of all the app's windows now, front to back, so one that opened or closed is noticed. */
+  windows: z.array(z.string().max(500)).max(50).optional(),
+  /** What the action did, when that is worth saying ("Pressed the Save button"). */
+  note: z.string().max(1_000).optional(),
+  image: z.object({
+    mimeType: z.enum(['image/jpeg', 'image/png']),
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    sizeBytes: z.number().int().nonnegative(),
+    data: inlineData.optional(),
+    path: z.string().min(1).max(COMPUTER_PATH_MAX_LENGTH).optional(),
+  }).refine((value) => (value.data === undefined) !== (value.path === undefined), 'Send the picture inline or name its file, not both'),
+  elements: z.array(computerAppElementSchema).max(1_000),
+  /** The window has more elements than were listed. */
+  truncated: z.boolean(),
+})
+export type ComputerAppState = z.infer<typeof computerAppStateSchema>
+
+// ---------------------------------------------------------------------------------------------
 // The requests the server sends to the desktop app.
 // ---------------------------------------------------------------------------------------------
 
@@ -221,6 +345,21 @@ export const computerMethods = {
   'file.missing': {
     params: z.object({ files: z.array(z.object({ path: absolutePath, sizeBytes: z.number().int().nonnegative(), sha256: z.string().nullable() })).max(500) }),
     result: z.object({ missing: z.array(z.string()) }),
+  },
+
+  /** The apps running with a window open (full access, on apps that describe `apps`). */
+  'app.list': { params: z.object({}), result: z.object({ apps: z.array(computerAppSchema).max(200) }) },
+  /**
+   * Does one thing in an app's window and answers with the window as it is afterwards. `app` is a
+   * name from `app.list`; `window` picks one of its windows by part of its title, else the front
+   * one for `view` and the one last shown for anything else (a click means something only in the
+   * picture the agent saw). An app the user has not allowed yet is asked about first, in a native
+   * dialog, and the request waits for the answer (`COMPUTER_APP_APPROVAL_TIMEOUT_MS`): refused, it
+   * fails with `not_allowed`.
+   */
+  'app.act': {
+    params: z.object({ app: z.string().min(1).max(200), window: z.string().min(1).max(500).optional(), action: computerAppActionSchema }),
+    result: computerAppStateSchema,
   },
 
   // Folder modes only. Paths are relative to the session's folder.
@@ -397,6 +536,9 @@ export interface ComputerChangeDetail extends ComputerChange {
   binary: boolean
 }
 
+/** An app the user let the agent see and work in. `id` is the system's own name for it (a bundle identifier, an executable's name). */
+export interface ComputerAllowedApp { id: string; name: string }
+
 /** What `window.pulpoDesktop.computer` offers the web code. Everything here runs in the main process. */
 export interface DesktopComputerApi {
   /**
@@ -404,7 +546,14 @@ export interface DesktopComputerApi {
    * could not tell which account is signed in (it asks the instance), and then nothing can be
    * allowed or used; absent from apps that predate it.
    */
-  status(): Promise<{ fullAccess: boolean; folders: ComputerFolder[]; defaultFolder: ComputerFolder; signedIn?: boolean }>
+  status(): Promise<{
+    fullAccess: boolean
+    folders: ComputerFolder[]
+    defaultFolder: ComputerFolder
+    signedIn?: boolean
+    /** The apps the user let the agent see and work in, most recently allowed first; absent from apps that cannot do that. */
+    apps?: ComputerAllowedApp[]
+  }>
   /** Opens the native folder dialog; the chosen folder becomes usable. Null when the user cancels. */
   chooseFolder(): Promise<ComputerFolder | null>
   /** Asks, in a native dialog the first time, whether the agent may run commands on this computer. */
@@ -413,6 +562,8 @@ export interface DesktopComputerApi {
   revokeFullAccess(): Promise<void>
   /** Forgets a folder the user allowed: sessions using it end, and it must be chosen again to be used. */
   forgetFolder(path: string): Promise<void>
+  /** Forgets an app the user allowed: the agent must ask again to use it. Absent from apps that cannot control apps. */
+  forgetApp?(id: string): Promise<void>
   /** Registers what a message's session may do. Refused unless the folder and access were allowed above. */
   begin(session: { sessionId: string; access: ComputerAccess; folder: string | null }): Promise<{ ok: true } | { ok: false; reason: 'folder_not_allowed' | 'full_access_not_allowed' | 'signed_out' }>
   /** The session's reply is over; later requests for it are refused. */
