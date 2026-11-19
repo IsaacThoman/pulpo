@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { changeMode, stricterMode, workspacePath } from './command-context.js'
+import { changeMode, localWorkspacePath, stricterMode, workspacePath } from './command-context.js'
 import { createLineMatcher } from './matcher.js'
 import { FilesCommandError, splitPath } from './scope.js'
 
@@ -18,6 +18,24 @@ describe('Files paths', () => {
     for (const path of ['/workspace', '/workspace/', 'workspace/a', '/etc/passwd', '/workspace/../etc', '/workspace/a/./b', '/workspace//a', '/workspace/a\0']) {
       expect(() => workspacePath(path), path).toThrow(FilesCommandError)
     }
+  })
+})
+
+describe('local paths', () => {
+  const files = { writeWorkspaceFile: async () => undefined, readWorkspaceFile: async () => new Uint8Array() }
+
+  it('keeps the /workspace rule for a workspace that names none, and for the cloud', async () => {
+    const { cloudLocalPath } = await import('../../agent/workspace.js')
+    expect(localWorkspacePath(files, '/workspace/files/a.md/')).toBe('/workspace/files/a.md')
+    expect(() => localWorkspacePath(files, '/etc/passwd')).toThrow(new FilesCommandError('"/etc/passwd" is not an absolute path inside /workspace'))
+    expect(() => localWorkspacePath({ ...files, localPath: cloudLocalPath }, '/etc/passwd')).toThrow(new FilesCommandError('"/etc/passwd" is not an absolute path inside /workspace'))
+    expect(localWorkspacePath({ ...files, localPath: cloudLocalPath }, '/workspace/files/x')).toBe('/workspace/files/x')
+  })
+
+  it('asks the workspace when it has its own rule, and words its refusal for the agent', () => {
+    const computer = { ...files, localPath: (value: string) => { if (!value.startsWith('C:')) throw new Error(`"${value}" is not an absolute path on the user's computer`); return value.replaceAll('/', '\\') } }
+    expect(localWorkspacePath(computer, 'C:/Users/Ada/Pulpo Files/a.md')).toBe('C:\\Users\\Ada\\Pulpo Files\\a.md')
+    expect(() => localWorkspacePath(computer, '/workspace/files/a.md')).toThrow(FilesCommandError)
   })
 })
 

@@ -14,11 +14,12 @@ import {
 import { DOC_SCHEMA_VERSION } from '@pulpo/client-core/doc-schema'
 import { db } from '../database/client.js'
 import { applicationSettings, passwordCredentials, users } from '../database/schema.js'
+import { getWhisperConnection } from '../dictation/whisper.js'
 import { getConfig } from '../config.js'
 import { acceptedAppStoreEnvironments } from '../billing/app-store.js'
 import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
-import { parseAuthSettings, parseDictationSettings, parseWebToolsSettings } from '../settings/application-settings.js'
+import { dictationProviderConfigured, parseAuthSettings, parseDictationSettings, parseWebToolsSettings } from '../settings/application-settings.js'
 import { webExtractAvailable } from '../agent/web-tools.js'
 import { newUserStorageLimit } from '../billing/storage-entitlements.js'
 import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
@@ -72,7 +73,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
       },
       limits: { maxAttachmentBytes: auth.maxAttachmentBytes, maxInlineImages: auth.maxInlineImages },
       capabilities: {
-        dictation: dictation.enabled && Boolean(dictation.encryptedGroqApiKey),
+        dictation: dictation.enabled && dictationProviderConfigured(dictation, Boolean(getWhisperConnection(config))),
         bearerSessions: true,
         realtime: true,
         chatDuplication: true,

@@ -2,7 +2,7 @@ import { historyPageQuery, loadHistoryPage } from '../chats/history-page.js'
 import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { editMessageSchema, idSchema, timeZoneSchema } from '@pulpo/contracts'
+import { computerSelectionSchema, editMessageSchema, idSchema, timeZoneSchema } from '@pulpo/contracts'
 import { billingUserForRequest, requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { chats, requestLogs, responses, usageEvents, users } from '../database/schema.js'
@@ -78,6 +78,8 @@ const generationSelectionSchema = z.object({
   modelId: z.string().trim().min(1).optional(),
   presetSelections: z.record(z.string(), z.string()).optional(),
   agentMode: z.boolean().optional(),
+  /** Never inherited: the original reply's session belonged to its own message. */
+  computer: computerSelectionSchema.optional(),
 })
 
 export async function registerMessageRoutes(app: FastifyInstance): Promise<void> {
@@ -109,6 +111,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
         presetSelections: generation.presetSelections,
         attachmentIds,
         agentMode: generation.agentMode,
+        computer: selection.computer,
       },
     })
     await bumpRevision(user.id, original.chatId)
@@ -129,6 +132,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       presetSelections,
       attachmentIds: selectedAttachmentIds,
       agentMode: selectedAgentMode,
+      computer,
     } = editMessageSchema.parse(request.body)
     const idempotencyKey = request.headers['idempotency-key'] as string | undefined
     if (id.endsWith(':input')) {
@@ -161,6 +165,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
           presetSelections: generation.presetSelections,
           attachmentIds,
           agentMode: generation.agentMode,
+          computer,
         },
       })
       await bumpRevision(user.id, original.chatId)

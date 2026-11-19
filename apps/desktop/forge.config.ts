@@ -32,6 +32,12 @@ const config: ForgeConfig = {
         LSMinimumSystemVersion: '13.0',
         NSAppTransportSecurity: { NSAllowsArbitraryLoads: false },
         NSMicrophoneUsageDescription: 'Allow Pulpo to use the microphone for dictation.',
+        // "This computer": the agent works with files in folders the user chooses, or anywhere with Full access.
+        NSDesktopFolderUsageDescription: 'Pulpo Agent works with files in folders you choose.',
+        NSDocumentsFolderUsageDescription: 'Pulpo Agent works with files in folders you choose.',
+        NSDownloadsFolderUsageDescription: 'Pulpo Agent works with files in folders you choose.',
+        NSRemovableVolumesUsageDescription: 'Pulpo Agent works with files on drives you choose.',
+        NSNetworkVolumesUsageDescription: 'Pulpo Agent works with files on network drives you choose.',
         CFBundleURLTypes: [{
           CFBundleURLName: 'Pulpo authentication',
           CFBundleURLSchemes: ['pulpo'],
@@ -77,6 +83,8 @@ const config: ForgeConfig = {
     build: [
       { entry: 'src/main.ts', config: 'vite.main.config.mjs', target: 'main' },
       { entry: 'src/preload.ts', config: 'vite.preload.config.mjs', target: 'preload' },
+      // `pulpo files` for full-access commands on the user's computer: the workspace daemon's CLI as one file, .vite/build/pulpo-cli.cjs.
+      { entry: 'src/computer/pulpo-cli.ts', config: 'vite.cli.config.mjs', target: 'main' },
     ],
     renderer: [{ name: 'main_window', config: 'vite.renderer.config.mjs' }],
   })],

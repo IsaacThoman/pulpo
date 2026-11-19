@@ -4,12 +4,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   settings: { enabled: false, encryptedGroqApiKey: null } as {
     enabled: boolean
+    provider?: 'groq' | 'whisper'
     encryptedGroqApiKey: string | null
     billUsers?: boolean
     pricePerMinuteMicros?: number
   },
   requireUser: vi.fn(),
   transcribeWithGroq: vi.fn(),
+  transcribeWithWhisper: vi.fn(),
+  whisperConfig: {} as { PULPO_DICTATION_WHISPER_URL?: string; PULPO_DICTATION_WHISPER_TOKEN?: string },
   chargeMeteredUsage: vi.fn(),
 }))
 
@@ -23,7 +26,7 @@ vi.mock('../database/client.js', () => ({
   },
 }))
 vi.mock('../auth/service.js', () => ({ requireUser: mocks.requireUser }))
-vi.mock('../config.js', () => ({ getConfig: () => ({ ENCRYPTION_KEY: 'encryption-key' }) }))
+vi.mock('../config.js', () => ({ getConfig: () => ({ ENCRYPTION_KEY: 'encryption-key', ...mocks.whisperConfig }) }))
 vi.mock('../lib/crypto.js', () => ({ decryptSecret: () => 'groq-secret' }))
 vi.mock('../accounting/service.js', () => ({ chargeMeteredUsage: mocks.chargeMeteredUsage }))
 vi.mock('./groq.js', () => ({
@@ -31,6 +34,12 @@ vi.mock('./groq.js', () => ({
   transcribeWithGroq: mocks.transcribeWithGroq,
 }))
 
+vi.mock('./whisper.js', async (importOriginal) => ({
+  ...await importOriginal<typeof import('./whisper.js')>(),
+  transcribeWithWhisper: mocks.transcribeWithWhisper,
+}))
+
+import { WhisperTranscriptionError } from './whisper.js'
 import { registerDictationRoutes } from './routes.js'
 
 type Handler = (request: FastifyRequest) => Promise<unknown>
@@ -60,6 +69,8 @@ describe('dictation route', () => {
     mocks.requireUser.mockReset()
     mocks.requireUser.mockReturnValue({ id: '11111111-1111-4111-8111-111111111111' })
     mocks.transcribeWithGroq.mockReset().mockResolvedValue({ text: 'Transcribed draft', durationSeconds: 12.1 })
+    mocks.whisperConfig = {}
+    mocks.transcribeWithWhisper.mockReset()
     mocks.chargeMeteredUsage.mockReset().mockResolvedValue(undefined)
   })
 
@@ -73,6 +84,34 @@ describe('dictation route', () => {
       type: 'dictation',
       metadata: expect.objectContaining({ durationSeconds: 12.1, billedSeconds: 13, pricePerMinuteMicros: 10_000 }),
     })
+  })
+
+  it('uses the configured Whisper service and bills decoded audio duration without a Groq key', async () => {
+    mocks.whisperConfig = { PULPO_DICTATION_WHISPER_URL: 'https://whisper.example.ts.net', PULPO_DICTATION_WHISPER_TOKEN: 'token' }
+    mocks.settings = { enabled: true, provider: 'whisper', encryptedGroqApiKey: null, billUsers: true }
+    const segments = [{ start: 0.5, end: 2, text: 'Draft' }]
+    mocks.transcribeWithWhisper.mockResolvedValue({ text: 'Draft', segments, durationSeconds: 3.25 })
+    const handler = await routeHandler()
+
+    await expect(handler(request())).resolves.toEqual({ text: 'Draft', segments })
+    expect(mocks.transcribeWithWhisper).toHaveBeenCalledWith(expect.objectContaining({
+      connection: { url: 'https://whisper.example.ts.net', token: 'token' }, audio: Buffer.from([1, 2, 3]),
+    }))
+    expect(mocks.chargeMeteredUsage).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ provider: 'whisper', durationSeconds: 3.25, billedSeconds: 4 }),
+    }))
+    expect(mocks.transcribeWithGroq).not.toHaveBeenCalled()
+  })
+
+  it('keeps Whisper failures on the selected provider and does not charge the user', async () => {
+    mocks.whisperConfig = { PULPO_DICTATION_WHISPER_URL: 'https://whisper.example.ts.net', PULPO_DICTATION_WHISPER_TOKEN: 'token' }
+    mocks.settings = { enabled: true, provider: 'whisper', encryptedGroqApiKey: 'saved-groq-key', billUsers: true }
+    mocks.transcribeWithWhisper.mockRejectedValue(new WhisperTranscriptionError(503))
+    const handler = await routeHandler()
+
+    await expect(handler(request())).rejects.toMatchObject({ statusCode: 429, code: 'dictation_provider_rate_limited' })
+    expect(mocks.transcribeWithGroq).not.toHaveBeenCalled()
+    expect(mocks.chargeMeteredUsage).not.toHaveBeenCalled()
   })
 
   it('authenticates before rejecting a disabled feature', async () => {

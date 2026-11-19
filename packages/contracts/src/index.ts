@@ -1,7 +1,10 @@
 import { imageGenerationPreferencesSchema } from './image-generation.js'
+import { computerSelectionSchema, type ComputerHost, type ComputerRequest, type ComputerResponse } from './computer.js'
 export * from './image-generation.js'
 import { speechPreferencesSchema } from './speech.js'
 export * from './speech.js'
+import { colorThemeIdSchema, customThemesSchema, DEFAULT_COLOR_THEME_ID, instanceColorThemesSchema } from './color-themes.js'
+export * from './color-themes.js'
 import { eventHasAssistantReplyText } from './response-timing.js'
 export * from './avatar-crop.js'
 export * from './response-timing.js'
@@ -956,6 +959,9 @@ function applyAgentEventOutput(output: unknown[], event: ResponseEvent): unknown
   if (event.type === 'pulpo.agent.files.changed') {
     return upsertOutputItem(output, (item) => item.type === 'pulpo_file_changes', payload)
   }
+  if (event.type === 'pulpo.agent.computer.changed') {
+    return upsertOutputItem(output, (item) => item.type === 'pulpo_computer_changes', payload)
+  }
   if (event.type === 'pulpo.agent.attachment.created' && typeof payload.attachment_id === 'string') {
     return upsertOutputItem(output, (item) => item.type === 'pulpo_attachment' && item.attachment_id === payload.attachment_id, payload)
   }
@@ -1381,6 +1387,8 @@ export const agentSettingsSchema = z.object({
   commandTimeoutSeconds: z.number().int().min(1).max(3_600).default(600),
   maxToolOutputBytes: z.number().int().min(1_024).max(10_000_000).default(100_000),
   billWorkspaces: z.boolean().default(false),
+  /** Lets desktop apps lend the agent the computer they run on ("This computer"). */
+  computerAccess: z.boolean().default(true),
   workspacePricePerMinuteMicros: z.number().int().min(0).max(1_000_000_000).default(10_000),
 })
 export type AgentSettings = z.infer<typeof agentSettingsSchema>
@@ -1765,6 +1773,9 @@ export const managementAccountSettingsSchema = z.object({
   imageGeneration: imageGenerationPreferencesSchema,
   speech: speechPreferencesSchema,
   theme: z.enum(['light', 'dark', 'system']).default('system'),
+  /** The selected color theme: a built-in theme id or one of `customThemes`. */
+  colorTheme: colorThemeIdSchema.default(DEFAULT_COLOR_THEME_ID),
+  customThemes: customThemesSchema.default([]),
   language: z.string().min(1).max(32).default('en-US'),
   composerSyncEnabled: z.boolean().default(true),
   sendWithEnter: z.boolean().default(true),
@@ -1825,6 +1836,7 @@ export const managementWebToolsSettingsSchema = webToolsSettingsSchema.extend({
 })
 
 export const managementInstanceSettingsSchema = z.object({
+  colorThemes: instanceColorThemesSchema.optional(),
   auth: authSettingsSchema.default(() => authSettingsSchema.parse({})),
   interface: interfaceSettingsSchema.default(() => interfaceSettingsSchema.parse({})),
   personalization: personalizationSettingsSchema.default(() => personalizationSettingsSchema.parse({})),
@@ -2134,6 +2146,8 @@ export const createChatResponseSchema = z.object({
   presetSelections: z.record(z.string(), z.string()).default({}),
   attachmentIds: attachmentIdListSchema.default([]),
   agentMode: z.boolean().default(false),
+  /** The sender's computer, when the desktop app lends it to the agent for this message. */
+  computer: computerSelectionSchema.optional(),
   /** Analytics only: whether dictation produced any of the message text. */
   usedDictation: z.boolean().optional(),
 }).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
@@ -2150,6 +2164,7 @@ export const editMessageSchema = z.object({
   presetSelections: z.record(z.string(), z.string()).optional(),
   attachmentIds: attachmentIdListSchema.optional(),
   agentMode: z.boolean().optional(),
+  computer: computerSelectionSchema.optional(),
 })
 export type EditMessageInput = z.infer<typeof editMessageSchema>
 
@@ -2171,6 +2186,8 @@ export const queuedMessageSchema = z.object({
   modelId: z.string(),
   presetSelections: z.record(z.string(), z.string()),
   agentMode: z.boolean(),
+  /** Absent from servers that predate it. */
+  computer: computerSelectionSchema.nullable().optional(),
   position: z.number().int().nonnegative(),
   status: queuedMessageStatusSchema,
   error: z.string().nullable(),
@@ -2188,6 +2205,8 @@ export const createQueuedMessageSchema = z.object({
   presetSelections: z.record(z.string(), z.string()).default({}),
   attachmentIds: attachmentIdListSchema.default([]),
   agentMode: z.boolean().default(false),
+  /** The sender's computer, when the desktop app lends it to the agent for this message. */
+  computer: computerSelectionSchema.optional(),
   /** Analytics only: whether dictation produced any of the message text. */
   usedDictation: z.boolean().optional(),
 }).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
@@ -2207,6 +2226,7 @@ export const updateQueuedMessageSchema = z.discriminatedUnion('action', [
     presetSelections: z.record(z.string(), z.string()).default({}),
     attachmentIds: attachmentIdListSchema.default([]),
     agentMode: z.boolean().default(false),
+    computer: computerSelectionSchema.optional(),
   }).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
     message: 'Message must include text or attachments',
     path: ['input'],
@@ -2260,6 +2280,9 @@ export interface ClientToServerEvents {
   'doc.leave': (input: { docId: string }) => void
   'doc.update': (input: DocUpdateMessage, ack: (result: DocAck) => void) => void
   'doc.awareness': (input: DocUpdateMessage) => void
+  /** "This computer": the sessions a desktop app serves, and its answers to `computer.request`. */
+  'computer.host': (input: ComputerHost) => void
+  'computer.response': (input: ComputerResponse) => void
 }
 
 export interface ChatStartedEvent {
@@ -2284,10 +2307,13 @@ export interface ServerToClientEvents {
   'doc.awareness-query': (event: { docId: string }) => void
   'doc.peer-left': (event: { docId: string; clientIds: number[] }) => void
   'doc.closed': (event: DocClosedEvent) => void
+  /** "This computer": sent only to the desktop app sockets that announced the session. */
+  'computer.request': (request: ComputerRequest) => void
 }
 
 export * from "./shelf.js"
 export * from "./files.js"
+export * from "./computer.js"
 export * from "./trash.js"
 export * from "./message-reports.js"
 export * from "./audio-transcription.js"

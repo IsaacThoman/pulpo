@@ -1,4 +1,5 @@
 import { ImageGenerationSettings } from '@/features/image-generation/ImageGenerationSettings'
+import { ComputerAccessSettings } from '@/features/computer/ComputerAccessSettings'
 import { SpeechSettings } from '@/features/speech/SpeechSettings'
 import { refreshInstanceFeatures } from '@/lib/instance-features'
 import { DeleteAccountSettings } from './DeleteAccountSettings'
@@ -9,7 +10,7 @@ import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { FILE_ACCESS_MODES, TRASH_RETENTION_VALUES, type FileAccessMode, type InstructionPreset, type UsageVisibility } from '@pulpo/contracts'
-import { accessModeCopy } from '@/features/files/access-modes'
+import { accessModeLabel } from '@/features/files/access-modes'
 import {
   Database,
   Bot,
@@ -24,6 +25,7 @@ import {
   Plug,
   Monitor,
   Moon,
+  Palette,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
@@ -75,8 +77,10 @@ import { AvatarCropEditor } from './AvatarCropEditor'
 import { DEFAULT_AVATAR_CROP, prepareAvatarUpload } from './avatar-crop'
 import { SETTINGS_SECTION_IDS, type SettingsSectionId } from './settings-dialog'
 import { InstructionPresetButtons } from './InstructionPresetButtons'
+import { AppDownloads } from './AppDownloads'
 import { DesktopAppVersion } from './DesktopAppVersion'
 import { AnimationSpeedInput } from './AnimationSpeedInput'
+import { ColorThemeSettings } from './ColorThemeSettings'
 import { CostLimitInput } from './CostLimitInput'
 import { chatImportFileIsTooLarge } from './chat-import'
 import { ui, uit } from '@/i18n/ui'
@@ -92,6 +96,7 @@ const SECTION_CONFIG = {
   devices: { labelKey: 'settings.sections.devices', icon: Laptop },
   connections: { labelKey: 'settings.sections.connections', icon: Plug },
   personalization: { labelKey: 'settings.sections.personalization', icon: Sparkles },
+  appearance: { labelKey: 'settings.sections.appearance', icon: Palette },
   interface: { labelKey: 'settings.sections.interface', icon: Monitor },
   agent: { labelKey: 'settings.sections.agent', icon: Bot },
   billing: { labelKey: 'settings.sections.billing', icon: CreditCard },
@@ -752,9 +757,6 @@ export function SettingsModal({
                 <div>
                   <h2 className="text-base font-semibold">{t('settings.general.title')}</h2>
                   <Separator className="my-3" />
-                  <Row label={t('settings.general.theme')} hint={t('settings.general.themeHint')} group>
-                    {(control) => <ThemePicker labelId={control.labelId} describedBy={control['aria-describedby']} />}
-                  </Row>
                   <Row label={t('settings.general.language')}>
                     {(control) => (
                       <Select value={s.language} onValueChange={(value) => s.set('language', normalizeLanguage(value))}>
@@ -1035,6 +1037,17 @@ export function SettingsModal({
                 </div>
               )}
 
+              {section === 'appearance' && (
+                <div>
+                  <h2 className="text-base font-semibold">{t('settings.sections.appearance')}</h2>
+                  <Separator className="my-3" />
+                  <Row label={t('settings.general.theme')} hint={t('settings.general.themeHint')} group>
+                    {(control) => <ThemePicker labelId={control.labelId} describedBy={control['aria-describedby']} />}
+                  </Row>
+                  <ColorThemeSettings />
+                </div>
+              )}
+
               {section === 'interface' && (
                 <div>
                   <h2 className="text-base font-semibold">{ui("Interface")}</h2>
@@ -1162,13 +1175,14 @@ export function SettingsModal({
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              {FILE_ACCESS_MODES.map((mode) => <SelectItem key={mode} value={mode}>{accessModeCopy(mode).label}</SelectItem>)}
+                              {FILE_ACCESS_MODES.map((mode) => <SelectItem key={mode} value={mode}>{accessModeLabel(mode)}</SelectItem>)}
                             </SelectContent>
                           </Select>
                         )}
                       </Row>
                     </>
                   )}
+                  <ComputerAccessSettings />
                   <Separator className="my-3" />
                   <ImageGenerationSettings />
                 </div>
@@ -1288,6 +1302,8 @@ export function SettingsModal({
                       <span className="font-mono text-xs">{location.origin}{ui("/v1")}</span>
                     </div>
                   </div>
+                  <Separator className="my-3" />
+                  <AppDownloads />
                 </div>
               )}
             </div>

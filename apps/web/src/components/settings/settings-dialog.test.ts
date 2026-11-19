@@ -10,6 +10,7 @@ describe('settings dialog sections', () => {
       'devices',
       'connections',
       'personalization',
+      'appearance',
       'interface',
       'agent',
       'billing',

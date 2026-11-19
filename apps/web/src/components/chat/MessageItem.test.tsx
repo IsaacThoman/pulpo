@@ -562,6 +562,81 @@ describe('Spanish activity summaries', () => {
   })
 })
 
+describe('a full-access run on the user\'s computer', () => {
+  const connecting = assistant({
+    done: false,
+    outputItems: [{
+      type: 'pulpo_workspace', state: 'provisioning', computer: true, position: 4, startedAt: '2000-01-01T00:00:00.000Z',
+      continueWithoutAgentAvailableAt: '2000-01-01T00:00:15.000Z',
+    }],
+  })
+
+  function withBridge() {
+    const desktop = { computer: { changes: { list: async () => [], onChanged: () => () => undefined } } }
+    Object.defineProperty(window, 'pulpoDesktop', { configurable: true, value: desktop })
+    onTestFinished(() => { delete (window as { pulpoDesktop?: unknown }).pulpoDesktop })
+  }
+
+  it('says "this computer" in the desktop app, without a queue or Continue without agent', async () => {
+    withBridge()
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem chat={chat} message={connecting} streaming onRegenerate={() => undefined} />)
+
+    expect(markup).toContain('Connecting to this computer…')
+    expect(markup).not.toContain('queue')
+    expect(markup).not.toContain('Continue without agent')
+  })
+
+  it('says "your computer" where the bridge is missing', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const connectingMarkup = renderToStaticMarkup(<MessageItem chat={chat} message={connecting} streaming onRegenerate={() => undefined} />)
+    const failed = renderToStaticMarkup(<MessageItem
+      chat={chat}
+      message={assistant({ outputItems: [{ type: 'pulpo_workspace', state: 'unavailable', computer: true }] })}
+      streaming={false}
+      onRegenerate={() => undefined}
+    />)
+
+    expect(connectingMarkup).toContain('Connecting to your computer…')
+    expect(failed).toContain('Your computer isn&#x27;t connected')
+  })
+
+  it('summarizes a PowerShell command like a bash one', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const view = render(<MessageItem
+      chat={chat}
+      message={assistant({
+        outputItems: [
+          { type: 'pulpo_workspace', state: 'ready', computer: true },
+          { type: 'pulpo_tool', id: 't1', tool: 'powershell', status: 'completed', arguments: { command: 'Get-ChildItem\n  -Recurse' } },
+        ],
+      })}
+      streaming={false}
+      onRegenerate={() => undefined}
+    />)
+    fireEvent.click(view.getByRole('button', { name: /Worked/ }))
+
+    expect(view.getByText('Get-ChildItem -Recurse')).toBeTruthy()
+    expect(view.getByText('Using your computer')).toBeTruthy()
+  })
+
+  it('shows its changes item as a line under the reply, not as raw output', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem
+      chat={chat}
+      message={assistant({
+        content: 'Done',
+        outputItems: [{ type: 'pulpo_computer_changes', id: 'cc', session_id: '00000000-0000-4000-8000-000000000001', applied: 0, suggested: 2 }],
+      })}
+      streaming={false}
+      onRegenerate={() => undefined}
+    />)
+
+    expect(markup).toContain('Suggested 2 changes on your computer')
+    expect(markup).not.toContain('pulpo computer changes')
+  })
+})
+
 describe('workspace continue timing', () => {
   it('shows the action immediately when the server eligibility time has passed', async () => {
     const { MessageItem } = await import('./MessageItem')

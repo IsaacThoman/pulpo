@@ -1,12 +1,14 @@
-import { posix } from 'node:path'
 import type { FileAccessMode } from '@pulpo/contracts'
-import type { WorkspaceManager } from '../../agent/controller.js'
+import { cloudLocalPath, type AgentWorkspace } from '../../agent/workspace.js'
 import type { FileExecutor } from '../access.js'
 import type { ReplyContext } from './changes.js'
 import { assertScopeCurrent, FilesCommandError, FilesPermissionNeeded, type FileScope } from './scope.js'
 
-/** What Pulpo needs from the agent's workspace: files written into it (pull) and read from it (push). */
-export type FilesWorkspace = Pick<WorkspaceManager, 'writeWorkspaceFile' | 'readWorkspaceFile'>
+/**
+ * What Pulpo needs from the agent's workspace: files written into it (pull) and read from it
+ * (push), and which local paths it accepts. A workspace that does not say is a cloud one.
+ */
+export type FilesWorkspace = Pick<AgentWorkspace, 'writeWorkspaceFile' | 'readWorkspaceFile'> & Partial<Pick<AgentWorkspace, 'localPath'>>
 
 /** One relayed `pulpo files` command, with the scope loaded for it. */
 export interface CommandContext extends ReplyContext {
@@ -22,16 +24,17 @@ export interface CommandOutput {
   data?: unknown
 }
 
-/**
- * A local path the agent named. The daemon checks too, but the sandbox is the agent's, so the
- * server never lets a path leave /workspace/ or hide `..` segments.
- */
+const commandError = (error: unknown) => error instanceof FilesCommandError ? error : new FilesCommandError(error instanceof Error ? error.message : String(error))
+
+/** A local path in a cloud workspace, confined to /workspace/ (see `cloudLocalPath`). */
 export function workspacePath(value: string): string {
-  const path = value.replace(/\/+$/, '')
-  if (!path.startsWith('/workspace/') || posix.normalize(path) !== path || path.includes('\0')) {
-    throw new FilesCommandError(`"${value}" is not an absolute path inside /workspace`)
-  }
-  return path
+  try { return cloudLocalPath(value) } catch (error) { throw commandError(error) }
+}
+
+/** A local path the agent named, as the reply's workspace accepts it: /workspace/ in the cloud, anywhere on a computer. */
+export function localWorkspacePath(workspace: FilesWorkspace, value: string): string {
+  if (!workspace.localPath) return workspacePath(value)
+  try { return workspace.localPath(value) } catch (error) { throw commandError(error) }
 }
 
 export function readOnlyMessage(path: string): string {

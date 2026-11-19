@@ -20,6 +20,7 @@ import {
 } from '@pulpo/contracts'
 import { z } from 'zod'
 import { db } from '../database/client.js'
+import { getWhisperConnection } from '../dictation/whisper.js'
 import { getConfig } from '../config.js'
 import { hasDatabaseErrorCode } from '../database/errors.js'
 import { applicationSettings, auditEvents, passwordCredentials, passwordResetTokens, sessions, users } from '../database/schema.js'
@@ -27,7 +28,7 @@ import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { sendPasswordReset } from '../lib/mail.js'
-import { parseAuthSettings, parseCodexSettings, parseDictationSettings, parseWebToolsSettings } from '../settings/application-settings.js'
+import { dictationProviderConfigured, parseAuthSettings, parseCodexSettings, parseDictationSettings, parseWebToolsSettings } from '../settings/application-settings.js'
 import { webExtractAvailable } from '../agent/web-tools.js'
 import { newUserStorageLimit } from '../billing/storage-entitlements.js'
 import { poolPeerIds } from '../pools/service.js'
@@ -102,7 +103,8 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     const byKey = new Map(rows.map((row) => [row.key, row.value]))
     const { accountDeletionEnabled, signupEnabled, pendingDetails, adminEmail, pendingMessage, apiKeysEnabled, filesEnabled, maxAttachmentBytes, maxInlineImages, inviteCodesEnabled, messageReportsEnabled } = parseAuthSettings(byKey.get('auth'))
     const dictation = parseDictationSettings(byKey.get('dictation'))
-    const billingEnabled = getConfig().PULPO_BILLING_ENABLED
+    const config = getConfig()
+    const billingEnabled = config.PULPO_BILLING_ENABLED
     return {
       accountDeletionEnabled,
       codexEnabled: parseCodexSettings(byKey.get('codex')).enabled,
@@ -117,7 +119,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       billingEnabled,
       inviteCodesEnabled: billingEnabled && inviteCodesEnabled,
       messageReportsEnabled,
-      dictationEnabled: dictation.enabled && Boolean(dictation.encryptedGroqApiKey),
+      dictationEnabled: dictation.enabled && dictationProviderConfigured(dictation, Boolean(getWhisperConnection(config))),
       urlImportEnabled: filesEnabled && webExtractAvailable(parseWebToolsSettings(byKey.get('webTools'))),
     }
   })

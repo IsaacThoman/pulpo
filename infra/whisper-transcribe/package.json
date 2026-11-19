@@ -1,0 +1,11 @@
+{
+  "name": "pulpo-whisper-transcribe",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "transcribe-cpp": "0.4.1"
+  }
+}

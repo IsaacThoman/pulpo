@@ -33,6 +33,7 @@ import { registerCatalogRoutes } from '../catalog/routes.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
 import { agentSettlementAmounts } from '../agent/settlement.js'
 import { WorkspaceManager } from '../agent/controller.js'
+import { cloudWorkspacePaths } from '../agent/workspace.js'
 
 const enabled = process.env.PULPO_IMAGE_POSTGRES_TEST === '1'
 if (enabled && new URL(process.env.DATABASE_URL ?? 'http://invalid').pathname !== '/pulpo_image_test') throw new Error('Use the disposable pulpo_image_test database')
@@ -40,7 +41,7 @@ const providerId = randomUUID(), userId = randomUUID(), chatId = randomUUID(), c
 const config: ImageModel = { ...META_MUSE_IMAGE_PRESET, id: 'muse-test', providerConnectionId: providerId, enabled: true, billUsers: true, imagePriceMicros: 10_000 }
 const workspaceFiles = new Map<string, Uint8Array>()
 const exportFile = vi.fn(), ensureLease = vi.fn(), saveGeneratedFile = vi.fn(), readGeneratedFile = vi.fn()
-const manager = { exportFile, ensureLease, saveGeneratedFile, readGeneratedFile, continuedWithoutAgent: false } as unknown as WorkspaceManager
+const manager = { kind: 'cloud', paths: cloudWorkspacePaths, exportFile, ensureLease, saveGeneratedFile, readGeneratedFile, continuedWithoutAgent: false } as unknown as WorkspaceManager
 let server: FastifyInstance, role: 'admin' | 'user' | null = 'admin', image: Buffer, fetcher: ReturnType<typeof vi.fn<typeof fetch>>
 async function turn() {
   const responseId = randomUUID(), runId = randomUUID(), operationId = `image-${randomUUID()}`

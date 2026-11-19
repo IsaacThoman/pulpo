@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { recalledChatLabel } from './recall-label'
-import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, filesPermissionLabel, filesPermissionPlace, pendingFilesPermission, timelineActivityIsActive } from './timeline'
+import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, computerWorkspaceLabel, filesPermissionLabel, filesPermissionPlace, pendingFilesPermission, timelineActivityIsActive } from './timeline'
 
 describe('buildMessageTimeline', () => {
   it('ignores empty active reasoning while ordinary answer text streams', () => {
@@ -302,5 +302,21 @@ describe('Files permission requests', () => {
     expect(filesPermissionPlace({ path: '' })).toBe('My files')
     expect(filesPermissionPlace({ path: '/' })).toBe('My files')
     expect(filesPermissionPlace({ path: 'Projects/Plans/' })).toBe('“Projects/Plans”')
+  })
+})
+
+describe('computerWorkspaceLabel', () => {
+  it('names the user\'s computer for a full-access run and nothing for a cloud workspace', () => {
+    expect(computerWorkspaceLabel({ type: 'pulpo_workspace', state: 'provisioning', computer: true })).toBe('Connecting to your computer…')
+    expect(computerWorkspaceLabel({ type: 'pulpo_workspace', state: 'ready', computer: true })).toBe('Using your computer')
+    expect(computerWorkspaceLabel({ type: 'pulpo_workspace', state: 'unavailable', computer: true })).toBe("Your computer isn't connected")
+    expect(computerWorkspaceLabel({ type: 'pulpo_workspace', state: 'ready' })).toBeNull()
+  })
+
+  it('ignores a computer changes item in the timeline', () => {
+    expect(buildMessageTimeline([
+      { type: 'pulpo_computer_changes', id: 'cc', session_id: 's', applied: 1, suggested: 0 },
+      { type: 'message', content: [{ text: 'Done' }] },
+    ], true)).toEqual([{ kind: 'text', text: 'Done' }])
   })
 })

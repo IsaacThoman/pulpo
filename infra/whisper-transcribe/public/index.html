@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f4f6f1">
+  <title>Whisper Transcribe</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <p class="model"><span class="dot"></span> Whisper Large V3 Turbo</p>
+      <h1>Whisper Transcribe</h1>
+      <p>Turn an audio or video file into text. Files are processed on the host running Whisper.</p>
+    </header>
+
+    <form class="panel" id="upload-form">
+      <label class="dropzone" id="dropzone" for="media">
+        <input class="visually-hidden" id="media" type="file"
+          accept="audio/*,video/*,.m4a,.mp3,.wav,.mp4,.aac,.flac,.ogg,.opus,.webm,.aif,.aiff,.caf,.mkv,.mov">
+        <span class="file-icon" aria-hidden="true">↑</span>
+        <strong id="file-heading">Choose a file or drop it here</strong>
+        <span id="file-detail">Audio or video · Up to 512 MB and 2 hours</span>
+      </label>
+      <div class="controls">
+        <div class="status">
+          <p id="status" role="status"></p>
+          <progress id="progress" aria-label="Upload or transcription progress" max="100" hidden></progress>
+        </div>
+        <button id="submit" type="submit" disabled>Transcribe file</button>
+      </div>
+    </form>
+
+    <section class="panel result" id="result" aria-labelledby="transcript-heading" hidden>
+      <div class="result-header">
+        <div>
+          <h2 id="transcript-heading" tabindex="-1">Transcript</h2>
+          <p id="result-meta"></p>
+        </div>
+        <div class="result-actions">
+          <button class="secondary" id="download" type="button">Download .txt</button>
+          <button id="copy" type="button">Copy transcript</button>
+        </div>
+      </div>
+      <div id="view-controls" class="view-controls" role="group" aria-label="Transcript view" hidden>
+        <button type="button" id="plain-view" aria-controls="plain" aria-pressed="true">Plain text</button>
+        <button type="button" id="timed-view" aria-controls="timed" aria-pressed="false">Approximate timestamps</button>
+      </div>
+      <p id="plain"></p>
+      <ol id="timed" aria-label="Timestamped transcript" hidden></ol>
+      <p class="visually-hidden" role="status" id="copy-status"></p>
+    </section>
+  </main>
+</body>
+</html>

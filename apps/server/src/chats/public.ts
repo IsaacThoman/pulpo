@@ -27,6 +27,11 @@ export interface PublicChatResponse {
   createdAt: string
   completedAt: string | null
   agentMode: boolean
+  /**
+   * The "This computer" session the reply uses, so the desktop app that began it can tell when the
+   * reply is over. Only the id: the selection also holds a folder path on the user's computer.
+   */
+  computerSessionId: string | null
   snapshot: ResponseSnapshot | EmbeddedResponseSnapshot
   branches: ReturnType<typeof metadataForTurn>
   detailAvailable: boolean
@@ -58,6 +63,7 @@ export function toPublicChatResponse(
     createdAt: response.createdAt.toISOString(),
     completedAt: response.completedAt?.toISOString() ?? null,
     agentMode: response.agentMode,
+    computerSessionId: response.computer?.sessionId ?? null,
     snapshot: options.compact ? snapshotMarker : snapshot,
     branches: options.branches ?? metadataForTurn(allTurns, response),
     detailAvailable: true,

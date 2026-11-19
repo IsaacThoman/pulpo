@@ -20,6 +20,7 @@ import { cleanupRestoreUploads } from './admin/restore-uploads.js'
 import { deleteExpiredBackupObjects } from './admin/backup-retention.js'
 import { deleteUnlockedOffsiteBackups } from './admin/backup-scheduler.js'
 import { backupSettingsForExport } from './admin/backup-settings.js'
+import { sweepComputerTransfers } from './computer/transfers.js'
 
 const RESPONSE_CONTEXT_SCRUB_BATCH_SIZE = 100
 
@@ -141,6 +142,7 @@ export async function runCleanup(): Promise<void> {
   if (deletedBackupIds.length) await db.delete(backupJobs).where(inArray(backupJobs.id, deletedBackupIds))
   await deleteUnlockedOffsiteBackups(now)
   await cleanupRestoreUploads()
+  await sweepComputerTransfers()
   await reconcileWorkspaceLeases()
   await purgePendingChats()
 }

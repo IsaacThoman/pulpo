@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   state: {
     preferences: null as { values: Record<string, unknown> } | null,
     profile: { username: 'pulpo_user', profileColor: null as string | null, usageVisibility: 'friends' as UsageVisibility },
+    settings: new Map<string, { key: string; value: unknown; updatedAt: Date }>(),
   },
   updates: [] as Record<string, unknown>[],
   friendPeerIds: vi.fn(),
@@ -20,7 +21,7 @@ vi.mock('../database/client.js', async () => {
   const rowsFor = (table: unknown) => {
     if (table === userPreferences) return mocks.state.preferences ? [mocks.state.preferences] : []
     if (table === users) return [{ ...mocks.state.profile }]
-    if (table === applicationSettings) return []
+    if (table === applicationSettings) return [...mocks.state.settings.values()]
     return []
   }
   const database = {
@@ -36,9 +37,14 @@ vi.mock('../database/client.js', async () => {
     }),
     execute: async () => undefined,
     insert: (table: unknown) => ({
-      values: (row: { values?: Record<string, unknown> }) => {
+      values: (row: { key?: string; value?: unknown; values?: Record<string, unknown> }) => {
         if (table === userPreferences) mocks.state.preferences = { values: row.values! }
-        return Object.assign(Promise.resolve(), { onConflictDoUpdate: async () => undefined })
+        if (table === applicationSettings) {
+          mocks.state.settings.set(row.key!, { key: row.key!, value: row.value, updatedAt: new Date() })
+        }
+        return Object.assign(Promise.resolve(), {
+          onConflictDoUpdate: () => Object.assign(Promise.resolve(), { returning: async () => [row] }),
+        })
       },
     }),
     update: () => ({
@@ -65,6 +71,7 @@ vi.mock('../jobs.js', () => ({ queueTrashPurge: vi.fn() }))
 
 import { applyManagementSettings, loadManagementSettings, planManagementSettings, withStoredUsageVisibility } from './settings.js'
 import { registerManagementRoutes } from './routes.js'
+import { registerInstanceColorThemeRoutes } from '../settings/instance-color-themes.js'
 
 /** What a client built before usageVisibility existed sends: the field stripped as unknown. */
 function withoutUsageVisibility(document: ManagementSettingsDocument): ManagementSettingsDocument {
@@ -76,10 +83,69 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.updates.length = 0
   mocks.state.preferences = null
+  mocks.state.settings.clear()
   mocks.state.profile = { username: 'pulpo_user', profileColor: null, usageVisibility: 'friends' }
   mocks.friendPeerIds.mockResolvedValue(['friend'])
   mocks.poolPeerIds.mockResolvedValue(['pool-peer'])
   mocks.bumpAccountRevisions.mockImplementation(async (_tx: unknown, ids: string[]) => ids.map((userId) => ({ userId, revision: 3 })))
+})
+
+describe('instance color theme settings', () => {
+  const input = { id: 'lagoon', name: 'Lagoon', light: { colors: { 'button.background': '#0E7490' } } }
+
+  it('publishes CLI changes for members and rejects an admin editor based on a stale catalog', async () => {
+    const app = Fastify()
+    app.addHook('preHandler', async (request) => {
+      if (!request.headers['test-role']) return
+      request.user = { id: 'me', role: request.headers['test-role'], blocked: false } as FastifyRequest['user']
+      request.managementTokenId = 'token'
+      request.managementScopes = ['instance:read', 'instance:write']
+    })
+    registerInstanceColorThemeRoutes(app)
+    await registerManagementRoutes(app)
+    const catalogUrl = '/api/interface/color-themes'
+    const editorUrl = '/api/admin/settings/color-themes'
+    const cliUrl = '/api/management/v1/settings/instance'
+    const admin = { 'test-role': 'admin' }
+    const member = { 'test-role': 'user' }
+    try {
+      expect((await app.inject(catalogUrl)).statusCode).toBe(401)
+      const empty = (await app.inject({ url: catalogUrl, headers: member })).json()
+      expect(empty.themes).toEqual([])
+      const cli = (await app.inject({ url: cliUrl, headers: admin })).json()
+      expect(cli.instance.colorThemes).toEqual([])
+      const document = { ...cli, instance: { ...cli.instance, colorThemes: [input] } }
+      const plan = await app.inject({ method: 'POST', url: `${cliUrl}/plan`, headers: admin, payload: { document } })
+      expect(plan.statusCode).toBe(200)
+      expect(plan.json().changes.map((change: { path: string }) => change.path)).toEqual(['instance.colorThemes'])
+      const applied = await app.inject({
+        method: 'POST', url: `${cliUrl}/apply`, headers: admin, payload: { document, revision: plan.json().revision },
+      })
+      expect(applied.statusCode).toBe(200)
+      const published = (await app.inject({ url: catalogUrl, headers: member })).json()
+      expect(published.themes).toMatchObject([{ id: 'lagoon', light: { colors: { 'button.background': '#0e7490' } } }])
+      expect((await app.inject({ method: 'PUT', url: editorUrl, headers: member, payload: published })).statusCode).toBe(403)
+      expect((await app.inject({ method: 'PUT', url: editorUrl, headers: admin, payload: empty })).statusCode).toBe(409)
+      const deleted = await app.inject({ method: 'PUT', url: editorUrl, headers: admin, payload: { ...published, themes: [] } })
+      expect(deleted.statusCode).toBe(200)
+      expect((await app.inject({ url: cliUrl, headers: admin })).json().instance.colorThemes).toEqual([])
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('preserves the catalog when an older settings document omits it', async () => {
+    const current = await loadManagementSettings('me')
+    const { revision, instance } = await applyManagementSettings('me', 'me', {
+      ...current, instance: { ...current.instance, colorThemes: [input] },
+    }, current.revision, {}, 'instance')
+    const { colorThemes: _colorThemes, ...olderInstance } = instance
+    const document = { ...current, revision, instance: { ...olderInstance, interface: { ...instance.interface, title: false } } }
+    const plan = await planManagementSettings('me', document, {}, 'instance')
+    expect(plan.changes.map((change) => change.path)).toEqual(['instance.interface.title'])
+    const applied = await applyManagementSettings('me', 'me', document, revision, {}, 'instance')
+    expect(applied.instance.colorThemes).toEqual(instance.colorThemes)
+  })
 })
 
 describe('management account usage visibility', () => {

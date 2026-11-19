@@ -4,7 +4,8 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { PROFILE_CHANGE_EVENT } from '@/lib/profile-events'
 import { runtimeProfileKey } from '@/lib/runtime'
-import { DEFAULT_TRASH_COLOR, trashColorSchema, type FileColor, type ModelWarningDismissals, type SidebarPins } from '@pulpo/contracts'
+import { colorThemeIdSchema, customThemesSchema, DEFAULT_COLOR_THEME_ID, DEFAULT_TRASH_COLOR, trashColorSchema, type CustomTheme, type FileColor, type ModelWarningDismissals, type SidebarPins } from '@pulpo/contracts'
+import { applyColorThemeStylesheet, colorThemeStylesheet, findColorTheme } from '@/lib/color-themes'
 import {
   applyAnimationSpeed,
   DEFAULT_ANIMATION_SPEED,
@@ -33,6 +34,10 @@ export interface SettingsState {
   speech: SpeechPreferences
   ownerUserId: string | null
   theme: Theme
+  /** The selected built-in, personal, or instance color theme. */
+  colorTheme: string
+  customThemes: CustomTheme[]
+  instanceThemes: CustomTheme[]
   language: Language
   composerSyncEnabled: boolean
   sendWithEnter: boolean
@@ -84,6 +89,9 @@ export const DEFAULT_SETTINGS = {
   imageGeneration: imageGenerationPreferencesSchema.parse(undefined),
   speech: speechPreferencesSchema.parse(undefined),
   theme: 'system' as Theme,
+  colorTheme: DEFAULT_COLOR_THEME_ID as string,
+  customThemes: [] as CustomTheme[],
+  instanceThemes: [] as CustomTheme[],
   language: 'en-US' as Language,
   composerSyncEnabled: true,
   sendWithEnter: true,
@@ -142,6 +150,7 @@ export const useSettings = create<SettingsState>()(
     }),
     {
       name: 'pulpo-settings',
+      partialize: ({ instanceThemes: _instanceThemes, ...state }) => state,
       merge: (persisted, current) => {
         const saved = persisted as Partial<SettingsState>
         return {
@@ -153,6 +162,8 @@ export const useSettings = create<SettingsState>()(
           animationSpeed: normalizeAnimationSpeed(saved.animationSpeed),
           sidebarPins: normalizeSidebarPins(saved.sidebarPins),
           trashColor: trashColorSchema.catch(DEFAULT_TRASH_COLOR).parse(saved.trashColor),
+          colorTheme: normalizeColorThemeId(saved.colorTheme),
+          customThemes: normalizeCustomThemes(saved.customThemes),
         }
       },
     }
@@ -165,12 +176,31 @@ export function normalizeLanguage(value: unknown): Language {
     : DEFAULT_SETTINGS.language
 }
 
+export function normalizeColorThemeId(value: unknown): string {
+  return colorThemeIdSchema.catch(DEFAULT_COLOR_THEME_ID).parse(value)
+}
+
+export function normalizeCustomThemes(value: unknown): CustomTheme[] {
+  return customThemesSchema.catch([]).parse(value)
+}
+
 function signedIn(): boolean {
   try {
     return localStorage.getItem(runtimeProfileKey()) !== null
   } catch {
     return false
   }
+}
+
+/** Swaps colors instantly. Otherwise every `transition-colors` element animates at once,
+ * which repaints the whole page for several frames on large chats. */
+function withoutTransitions(change: () => void) {
+  const pauseTransitions = document.createElement('style')
+  pauseTransitions.textContent = '*,*::before,*::after{transition:none!important}'
+  document.head.appendChild(pauseTransitions)
+  change()
+  void getComputedStyle(document.body).color
+  pauseTransitions.remove()
 }
 
 /** Signed-out screens follow the system theme; a saved theme belongs to whoever last signed in on this device. */
@@ -180,14 +210,18 @@ export function applyTheme(theme: Theme) {
     effective === 'dark' || (effective === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
   const root = document.documentElement
   if (root.classList.contains('dark') === dark) return
-  // Swap colors instantly. Otherwise every `transition-colors` element animates at once,
-  // which repaints the whole page for several frames on large chats.
-  const pauseTransitions = document.createElement('style')
-  pauseTransitions.textContent = '*,*::before,*::after{transition:none!important}'
-  document.head.appendChild(pauseTransitions)
-  root.classList.toggle('dark', dark)
-  void getComputedStyle(document.body).color
-  pauseTransitions.remove()
+  withoutTransitions(() => root.classList.toggle('dark', dark))
+}
+
+// Nothing is applied until a theme other than Pulpo is selected.
+let appliedColorStylesheet = ''
+
+/** Applies the selected color theme. Signed-out screens keep Pulpo's colors, like they keep the system theme. */
+export function applyColorTheme({ colorTheme, customThemes, instanceThemes }: Pick<SettingsState, 'colorTheme' | 'customThemes' | 'instanceThemes'>) {
+  const stylesheet = signedIn() ? colorThemeStylesheet(findColorTheme(colorTheme, customThemes, instanceThemes)) : ''
+  if (stylesheet === appliedColorStylesheet) return
+  appliedColorStylesheet = stylesheet
+  withoutTransitions(() => applyColorThemeStylesheet(stylesheet))
 }
 
 export function applyLanguage(language: Language) {
@@ -196,13 +230,20 @@ export function applyLanguage(language: Language) {
 
 // Apply on load + react to system changes
 applyTheme(useSettings.getState().theme)
+applyColorTheme(useSettings.getState())
 applyLanguage(normalizeLanguage(useSettings.getState().language))
 startAnimationSpeedController(useSettings.getState().animationSpeed)
 useSettings.subscribe((state, previous) => {
   if (state.theme !== previous.theme) applyTheme(state.theme)
+  if (state.colorTheme !== previous.colorTheme || state.customThemes !== previous.customThemes || state.instanceThemes !== previous.instanceThemes) {
+    applyColorTheme(state)
+  }
   if (state.language !== previous.language) applyLanguage(normalizeLanguage(state.language))
   if (state.animationSpeed !== previous.animationSpeed) applyAnimationSpeed(state.animationSpeed)
 })
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyTheme(useSettings.getState().theme))
 // Re-apply on sign-in and sign-out. Some tests stub window without event methods.
-window.addEventListener?.(PROFILE_CHANGE_EVENT, () => applyTheme(useSettings.getState().theme))
+window.addEventListener?.(PROFILE_CHANGE_EVENT, () => {
+  applyTheme(useSettings.getState().theme)
+  applyColorTheme(useSettings.getState())
+})
