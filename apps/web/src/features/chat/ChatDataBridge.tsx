@@ -26,6 +26,7 @@ import { coalesceResponseEvents, groupResponseEvents, outboxInvalidationQueryKey
 import { isDesktopRuntime, runtimeInstanceUrl, runtimeSessionToken } from '@/lib/runtime'
 import { createSyncScheduler } from './sync-scheduler'
 import { adminAccessRequiredChatId } from '@/features/admin-chat/route-access'
+import { ComputerBridge } from '@/features/computer/ComputerBridge'
 
 
 function tabId(): string {
@@ -327,5 +328,6 @@ export function ChatDataBridge() {
     return () => { socket.emit('chat.unsubscribe', { chatId }) }
   }, [chatId])
 
-  return null
+  // Shares this socket, which it reads from useRealtimeSocket.
+  return <ComputerBridge />
 }

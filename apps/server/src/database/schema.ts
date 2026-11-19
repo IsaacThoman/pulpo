@@ -522,6 +522,8 @@ export const responses = pgTable('responses', {
   origin: text('origin').notNull().default('web'),
   // What the app that sent the message can do (CLIENT_FEATURES), e.g. answer a Files permission request.
   clientFeatures: jsonb('client_features').$type<string[]>().notNull().default([]),
+  // The sender's computer, when its desktop app lends it to the agent for this reply ("This computer").
+  computer: jsonb('computer').$type<import('@pulpo/contracts').ComputerSelection>(),
   pricingVersionId: uuid('pricing_version_id').references(() => modelPricingVersions.id),
   openaiResponseId: text('openai_response_id'),
   previousResponseId: uuid('previous_response_id'),
@@ -574,6 +576,8 @@ export const queuedMessages = pgTable('queued_messages', {
   clientPlatform: text('client_platform'),
   clientVersion: text('client_version'),
   clientFeatures: jsonb('client_features').$type<string[]>().notNull().default([]),
+  // Carried to the reply when the message dispatches; see responses.computer.
+  computer: jsonb('computer').$type<import('@pulpo/contracts').ComputerSelection>(),
   usedDictation: boolean('used_dictation'),
   position: integer('position').notNull(),
   status: text('status').notNull().default('pending'),

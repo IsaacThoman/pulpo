@@ -1,0 +1,108 @@
+import { createHash } from 'node:crypto'
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import path from 'node:path'
+
+/**
+ * What the user allowed, per signed-in instance + account: folders picked in the native folder
+ * dialog, and whether they confirmed full access in the native prompt. Nothing else can add to it.
+ */
+
+export interface ComputerAccount {
+  /** Instance origin the account signed in to. */
+  origin: string
+  userId: string
+}
+
+export function accountKey(account: ComputerAccount): string { return `${account.origin} ${account.userId}` }
+/** A file-name-safe stand-in for an account key. */
+export function accountDirectoryName(account: ComputerAccount): string {
+  return createHash('sha256').update(accountKey(account)).digest('hex').slice(0, 32)
+}
+
+export interface AccountGrants {
+  fullAccess: boolean
+  /** Absolute paths, most recently chosen first. */
+  folders: string[]
+}
+
+interface GrantsFile { version: 1; accounts: Record<string, AccountGrants> }
+
+const MAX_FOLDERS = 30
+
+function validGrants(value: unknown): AccountGrants | null {
+  if (!value || typeof value !== 'object') return null
+  const candidate = value as Partial<AccountGrants>
+  if (!Array.isArray(candidate.folders)) return null
+  return {
+    fullAccess: candidate.fullAccess === true,
+    folders: candidate.folders.filter((folder): folder is string => typeof folder === 'string' && path.isAbsolute(folder)).slice(0, MAX_FOLDERS),
+  }
+}
+
+export class GrantsStore {
+  private cache: GrantsFile | null = null
+  private queue: Promise<unknown> = Promise.resolve()
+
+  constructor(private readonly file: string) {}
+
+  private async load(): Promise<GrantsFile> {
+    if (this.cache) return this.cache
+    let accounts: Record<string, AccountGrants> = {}
+    try {
+      const parsed = JSON.parse(await readFile(this.file, 'utf8')) as Partial<GrantsFile>
+      if (parsed.version === 1 && parsed.accounts && typeof parsed.accounts === 'object') {
+        for (const [key, value] of Object.entries(parsed.accounts)) {
+          const grants = validGrants(value)
+          if (grants) accounts[key] = grants
+        }
+      }
+    } catch { accounts = {} }
+    this.cache = { version: 1, accounts }
+    return this.cache
+  }
+
+  private async save(value: GrantsFile): Promise<void> {
+    await mkdir(path.dirname(this.file), { recursive: true })
+    const temporary = `${this.file}.tmp`
+    await writeFile(temporary, `${JSON.stringify(value)}\n`, { mode: 0o600 })
+    await rename(temporary, this.file)
+  }
+
+  private update(account: ComputerAccount, change: (grants: AccountGrants) => void): Promise<AccountGrants> {
+    const next = this.queue.then(async () => {
+      const file = await this.load()
+      const key = accountKey(account)
+      const grants = file.accounts[key] ?? { fullAccess: false, folders: [] }
+      change(grants)
+      file.accounts[key] = grants
+      await this.save(file)
+      return { ...grants, folders: [...grants.folders] }
+    })
+    this.queue = next.catch(() => undefined)
+    return next
+  }
+
+  async get(account: ComputerAccount): Promise<AccountGrants> {
+    await this.queue
+    const grants = (await this.load()).accounts[accountKey(account)]
+    return grants ? { ...grants, folders: [...grants.folders] } : { fullAccess: false, folders: [] }
+  }
+
+  addFolder(account: ComputerAccount, folder: string): Promise<AccountGrants> {
+    return this.update(account, (grants) => {
+      grants.folders = [folder, ...grants.folders.filter((existing) => existing !== folder)].slice(0, MAX_FOLDERS)
+    })
+  }
+
+  allowFullAccess(account: ComputerAccount): Promise<AccountGrants> {
+    return this.update(account, (grants) => { grants.fullAccess = true })
+  }
+
+  revokeFullAccess(account: ComputerAccount): Promise<AccountGrants> {
+    return this.update(account, (grants) => { grants.fullAccess = false })
+  }
+
+  removeFolder(account: ComputerAccount, folder: string): Promise<AccountGrants> {
+    return this.update(account, (grants) => { grants.folders = grants.folders.filter((existing) => existing !== folder) })
+  }
+}

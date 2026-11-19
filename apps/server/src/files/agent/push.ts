@@ -5,7 +5,7 @@ import { db } from '../../database/client.js'
 import { applicationSettings } from '../../database/schema.js'
 import { parseAuthSettings } from '../../settings/application-settings.js'
 import type { FileNodeRow } from '../access.js'
-import { guardedReply, readOnlyMessage, workspacePath, type CommandContext, type CommandOutput } from './command-context.js'
+import { guardedReply, localWorkspacePath, readOnlyMessage, type CommandContext, type CommandOutput } from './command-context.js'
 import { createBlobChange, createDocChange, updateBlobChange, updateDocChange, type ContentResult } from './mutations.js'
 import { failureMessage } from './failures.js'
 import { FilesCommandError, locateParent, locateOptional, modeFor } from './scope.js'
@@ -137,7 +137,7 @@ async function pushNew(ctx: CommandContext, local: string, item: PushItem, limit
 async function pushOne(ctx: CommandContext, item: PushItem, limits: PushLimits): Promise<PushResult> {
   const result = { local: item.local, remote: item.remote }
   try {
-    const local = workspacePath(item.local)
+    const local = localWorkspacePath(ctx.workspace, item.local)
     const located = await locateOptional(ctx.scope, item.remote)
     if (located && !located.node) throw new FilesCommandError('Give the path of a file, not the top of My files')
     const outcome = located?.node

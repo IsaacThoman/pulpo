@@ -31,6 +31,13 @@ describe('agent web-tool settings', () => {
     expect(markup).toContain('Bill users for agent workspaces')
   })
 
+  it('offers the This computer switch, on by default', () => {
+    const markup = renderToStaticMarkup(<AgentSection />)
+    const row = markup.slice(markup.indexOf('Let desktop apps use the user&#x27;s computer'))
+    expect(row).toContain('Shows This computer in the Pulpo Agent menu of the desktop app.')
+    expect(row.match(/role="switch"[^>]*/)?.[0]).toContain('aria-checked="true"')
+  })
+
   it('reorders providers without mutating the original value', () => {
     const original = ['kagi', 'firecrawl'] as const
     expect(moveWebProvider([...original], 0, 1)).toEqual(['firecrawl', 'kagi'])

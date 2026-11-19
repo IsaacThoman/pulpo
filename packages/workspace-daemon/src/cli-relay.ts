@@ -4,12 +4,14 @@ import { request } from 'node:http'
 export interface RelayAnswer { ok: boolean; output?: string; data?: unknown; error?: string }
 
 export const DEFAULT_RELAY_SOCKET = '/tmp/pulpo-relay.sock'
-export const OUTSIDE_AGENT_BASH = 'pulpo files only works inside bash commands run by the Pulpo agent tool (PULPO_OPERATION_ID is not set). If you used sudo or env -i, run it without them.'
+/** `name` is the command group the agent ran, e.g. `pulpo files`. */
+export const outsideAgentBash = (name: string) => `${name} only works inside bash commands run by the Pulpo agent tool (PULPO_OPERATION_ID is not set). If you used sudo or env -i, run it without them.`
+export const OUTSIDE_AGENT_BASH = outsideAgentBash('pulpo files')
 
 export class RelayUnavailableError extends Error {}
 
 /** One request on the daemon's socket. The daemon holds it until Pulpo answers, so there is no client timeout. */
-export function sendRelayRequest(socketPath: string, operationId: string, command: string, args: Record<string, unknown>): Promise<RelayAnswer> {
+export function sendRelayRequest(socketPath: string, operationId: string, command: string, args: Record<string, unknown>, name = 'pulpo files'): Promise<RelayAnswer> {
   const payload = JSON.stringify({ operationId, command, args })
   return new Promise((resolveAnswer, reject) => {
     const outgoing = request({
@@ -28,7 +30,7 @@ export function sendRelayRequest(socketPath: string, operationId: string, comman
     })
     outgoing.once('error', (error: NodeJS.ErrnoException) => {
       reject(['ENOENT', 'ECONNREFUSED', 'ENOTSOCK', 'EACCES'].includes(error.code ?? '')
-        ? new RelayUnavailableError(`cannot reach the workspace daemon at ${socketPath} (${error.code}). pulpo files only works inside bash commands run by the Pulpo agent tool.`)
+        ? new RelayUnavailableError(`cannot reach the workspace daemon at ${socketPath} (${error.code}). ${name} only works inside bash commands run by the Pulpo agent tool.`)
         : error)
     })
     outgoing.end(payload)

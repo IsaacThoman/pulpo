@@ -1,6 +1,6 @@
 import { attachmentBatchRequiresAgent } from '@/lib/attachments'
 import { localComposerDraftId } from '@pulpo/client-core'
-import type { ComposerState, FileAccessMode } from '@pulpo/contracts'
+import type { ComposerState, ComputerSelection, FileAccessMode } from '@pulpo/contracts'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
 import { create } from 'zustand'
 import { attachmentValidationError, createUploadQueue, retryBusyUpload } from '@pulpo/client-core'
@@ -15,6 +15,7 @@ import { useSettings } from '@/stores/settings'
 import { useChat, waitForResponseDispatch } from '@/stores/chat'
 import { optimisticSubmissionPlacement, uploadOutboxHeadAction } from '@/components/chat/composer-upload-policy'
 import { ui } from '@/i18n/ui'
+import { endComputerSession } from '@/features/computer/sessions'
 import {
   updateComposerDraftAttachment,
   runtimeComposerDraft,
@@ -56,6 +57,8 @@ export interface PendingSubmission {
   attachmentIds: string[]
   /** Dictation produced some of the message text (analytics only). */
   usedDictation?: boolean
+  /** The computer session registered for this message before it was staged. */
+  computer?: ComputerSelection
   createdAt: number
   placement: 'bubble' | 'queue'
   status: 'waiting' | 'dispatching' | 'recovery'
@@ -80,6 +83,7 @@ interface SubmissionDraft {
   fileScopeAccess?: Record<string, FileAccessMode>
   attachmentIds: string[]
   usedDictation?: boolean
+  computer?: ComputerSelection
 }
 
 export interface PreservedComposerDraft {
@@ -321,9 +325,11 @@ async function performUploadRecord(localId: string, attempt: number): Promise<vo
 
 function recoverSubmission(submission: PendingSubmission, message?: string): void {
   useChat.getState().removePendingMessage(submission.chatId, submission.responseId)
+  // Sending it again from the composer registers a new session.
+  endComputerSession(submission.computer?.sessionId)
   useUploadOutbox.setState((state) => ({
     submissions: state.submissions.map((item) => item.id === submission.id
-      ? { ...item, status: 'recovery', recoveryError: message }
+      ? { ...item, status: 'recovery', recoveryError: message, computer: undefined }
       : item),
   }))
 }
@@ -402,6 +408,7 @@ async function processChat(chatId: string): Promise<void> {
             presetSelections: submission.presetSelections,
             agentMode: submission.agentMode,
             usedDictation: submission.usedDictation,
+            computer: submission.computer,
           },
         )
         useUploadOutbox.setState((current) => ({
@@ -422,6 +429,7 @@ async function processChat(chatId: string): Promise<void> {
           presetSelections: submission.presetSelections,
           attachmentIds: attachments.map((attachment) => attachment.id),
           agentMode: submission.agentMode,
+          ...(submission.agentMode && submission.computer ? { computer: submission.computer } : {}),
           ...(submission.usedDictation ? { usedDictation: true } : {}),
         }, attachments, submission.responseId)
         const draft = submission.composerDraft
@@ -591,6 +599,7 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
       ...(draft.chatId === null && draft.fileScopeIds?.length ? { fileScopeIds: draft.fileScopeIds, fileScopeAccess: draft.fileScopeAccess } : {}),
       attachmentIds: draft.attachmentIds,
       ...(draft.usedDictation ? { usedDictation: true } : {}),
+      ...(draft.computer ? { computer: draft.computer } : {}),
       createdAt,
       placement,
       status: 'waiting',
@@ -605,8 +614,10 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
     const submission = get().submissions.find((item) => item.id === submissionId)
     if (!submission) return
     const records = draft.attachmentIds.map((id) => get().uploads[id]).filter(Boolean)
+    if (submission.computer?.sessionId !== draft.computer?.sessionId) endComputerSession(submission.computer?.sessionId)
     const resumed = {
       ...submission,
+      computer: draft.computer,
       content: draft.content,
       modelId: draft.modelId,
       presetSelections: draft.presetSelections,
@@ -633,6 +644,7 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
     const submission = get().submissions.find((item) => item.id === submissionId)
     if (!submission) return
     useChat.getState().removePendingMessage(submission.chatId, submission.responseId)
+    endComputerSession(submission.computer?.sessionId)
     set((state) => ({ submissions: state.submissions.filter((item) => item.id !== submissionId) }))
     releaseRecords(submission.attachmentIds, false)
     scheduleChat(submission.chatId)

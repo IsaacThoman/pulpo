@@ -6,6 +6,7 @@ import {
   initialResponseDurationMs,
   mergeResponseSnapshots,
   truncateChatTitle,
+  type ComputerSelection,
   type CreateQueuedMessageInput,
   type EmbeddedResponseSnapshot,
   type FileAccessMode,
@@ -45,6 +46,19 @@ import { useFileToasts } from '@/features/files/browser/toasts'
 import { filesErrorMessage } from '@/features/files/file-display'
 import { adminChatAccessActive, adminChatAccountKey } from '@/features/admin-chat/access'
 import { referencePreviewText, scopedFileAccess } from '@pulpo/client-core/files'
+import {
+  computerResponseStatus,
+  computerSendErrorMessage,
+  endComputerQueued,
+  endComputerSession,
+  linkComputerSessionToQueued,
+  linkComputerSessionToResponse,
+  observeComputerResponses,
+  prepareComputerSend,
+  relinkComputerResponse,
+  withComputerSendError,
+} from '@/features/computer/sessions'
+import { activeComputerChoice } from '@/features/computer/owner'
 
 function applySortOrders(ids: string[]): Map<string, number> {
   return new Map(ids.map((id, index) => [id, index]))
@@ -172,6 +186,8 @@ export interface ServerResponse {
   createdAt: string
   completedAt: string | null
   agentMode?: boolean
+  /** The "This computer" session this reply uses; absent from servers that predate it. */
+  computerSessionId?: string | null
   snapshot: ResponseSnapshot | EmbeddedResponseSnapshot
   branches: {
     user: { ids: string[]; index: number }
@@ -248,6 +264,8 @@ interface StagedSendOptions {
   agentMode: boolean
   /** Dictation produced some of the message text (analytics only). */
   usedDictation?: boolean
+  /** The session the desktop app registered for this message (see `prepareComputerSend`). */
+  computer?: ComputerSelection
 }
 
 export function mergeServerChatDetails(cached: ServerChat | undefined, incoming: ServerChat): ServerChat {
@@ -339,6 +357,7 @@ interface ChatState {
     modelId: string
     attachments: Attachment[]
     agentMode: boolean
+    computer?: ComputerSelection
   }) => Promise<void>
   editAssistantMessage: (chatId: string, messageId: string, content: string) => void
   deleteMessage: (chatId: string, messageId: string) => void
@@ -1058,6 +1077,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     return { chats, ...tracking }
   }),
   setDetailedChat: (incoming) => {
+    if (incoming.responses) observeComputerResponses(incoming.responses)
     const key = chatKey(incoming.id)
     const cached = queryClient.getQueryData<ServerChat>(key)
     let detailed = mergeServerChatDetails(cached, incoming)
@@ -1160,6 +1180,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     snapshot = acceptedSnapshot
     const affectedChatId = get().responseChatIds[snapshot.responseId]
     const terminal = !['queued', 'in_progress'].includes(snapshot.status)
+    computerResponseStatus(snapshot.responseId, snapshot.status)
     if (affectedChatId) persistResponseSnapshot(affectedChatId, snapshot)
     set((state) => {
       const inFlight = ['queued', 'in_progress'].includes(snapshot.status)
@@ -1556,6 +1577,10 @@ export const useChat = create<ChatState>()((set, get) => ({
       modelId,
     )
     const agentMode = staged?.agentMode ?? currentAgentMode(modelId)
+    // Only an Agent reply can use the computer.
+    const computer = agentMode ? staged?.computer : undefined
+    if (staged?.computer && !computer) endComputerSession(staged.computer.sessionId)
+    if (computer) linkComputerSessionToResponse(computer.sessionId, responseId)
     const userMessage: Message = {
       id: `${responseId}:input`,
       role: 'user',
@@ -1638,6 +1663,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         presetSelections: generation.selections,
         attachmentIds: attachments.map((attachment) => attachment.id),
         agentMode,
+        ...(computer ? { computer } : {}),
         ...(staged?.usedDictation ? { usedDictation: true } : {}),
       }
       const path = chatId ? `/api/chats/${id}/responses` : '/api/chats/start'
@@ -1664,6 +1690,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       }))
       const serverId = result?.response?.responseId
       if (serverId && serverId !== responseId) {
+        relinkComputerResponse(responseId, serverId)
         const clientUserId = `${responseId}:input`
         const serverUserId = `${serverId}:input`
         set((state) => {
@@ -1713,11 +1740,12 @@ export const useChat = create<ChatState>()((set, get) => ({
       if (responseDispatches.get(responseId) === trackedDispatch) responseDispatches.delete(responseId)
     })
     void dispatch.catch((error: unknown) => {
+      endComputerSession(computer?.sessionId)
       const expired = error instanceof ApiError
         && (error.code === 'temporary_chat_expired' || (error.status === 404 && get().chats.some((chat) => chat.id === id && chat.temporary)))
       const errorMessage = expired
         ? 'This temporary chat has expired and cannot be recovered.'
-        : error instanceof Error ? error.message : 'Unable to generate a response'
+        : computerSendErrorMessage(error) ?? (error instanceof Error ? error.message : 'Unable to generate a response')
       const failedAt = new Date().toISOString()
       set((state) => ({
         streamingIds: removeStreamingId(state.streamingIds, responseId),
@@ -1761,6 +1789,11 @@ export const useChat = create<ChatState>()((set, get) => ({
 
   enqueueMessage: async (chatId, input, messageAttachments, stagedQueueId) => {
     input = { ...input, timeZone: deviceTimeZone() }
+    // Only an Agent reply can use the computer.
+    if (input.computer && !input.agentMode) {
+      endComputerSession(input.computer.sessionId)
+      input = { ...input, computer: undefined }
+    }
     const now = new Date().toISOString()
     const currentQueue = get().chats.find((chat) => chat.id === chatId)?.queuedMessages ?? []
     const staged = stagedQueueId
@@ -1798,6 +1831,8 @@ export const useChat = create<ChatState>()((set, get) => ({
       const result = await apiRequest<{ queuedMessage: QueuedMessage | null }>(`/api/chats/${chatId}/queued-messages`, {
         method: 'POST', body: input,
       })
+      // Without a queued message the server started the reply at once; observing the chat links it.
+      if (input.computer && result.queuedMessage) linkComputerSessionToQueued(input.computer.sessionId, result.queuedMessage.id)
       pendingOptimisticQueuedMessages.delete(optimistic.id)
       set((state) => ({
         chats: state.chats.map((chat) => chat.id !== chatId ? chat : {
@@ -1811,6 +1846,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       await queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
       await queryClient.invalidateQueries({ queryKey: chatsKey() })
     } catch (error) {
+      endComputerSession(input.computer?.sessionId)
       pendingOptimisticQueuedMessages.delete(optimistic.id)
       set((state) => ({
         chats: state.chats.map((chat) => chat.id !== chatId ? chat : {
@@ -1818,7 +1854,7 @@ export const useChat = create<ChatState>()((set, get) => ({
           queuedMessages: (chat.queuedMessages ?? []).filter((message) => message.id !== optimistic.id),
         }),
       }))
-      throw error
+      throw withComputerSendError(error)
     }
   },
 
@@ -1856,6 +1892,11 @@ export const useChat = create<ChatState>()((set, get) => ({
       const result = await apiRequest<{ queuedMessage: QueuedMessage | null }>(`/api/chats/${chatId}/queued-messages/${messageId}`, {
         method: 'PATCH', body: input,
       })
+      if (input.action === 'save_edit') {
+        // The edit replaces the message's session (or drops it).
+        endComputerQueued(messageId, input.computer?.sessionId)
+        if (input.computer) linkComputerSessionToQueued(input.computer.sessionId, result.queuedMessage?.id ?? messageId)
+      }
       set((state) => ({
         chats: state.chats.map((chat) => chat.id !== chatId ? chat : {
           ...chat,
@@ -1867,10 +1908,11 @@ export const useChat = create<ChatState>()((set, get) => ({
       }))
       await queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
     } catch (error) {
+      if (input.action === 'save_edit') endComputerSession(input.computer?.sessionId)
       set((state) => ({
         chats: state.chats.map((chat) => chat.id !== chatId ? chat : { ...chat, queuedMessages: previous }),
       }))
-      throw error
+      throw withComputerSendError(error)
     }
   },
 
@@ -1917,6 +1959,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     }))
     try {
       await apiRequest(`/api/chats/${chatId}/queued-messages/${messageId}`, { method: 'DELETE' })
+      endComputerQueued(messageId)
       await queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
     } catch (error) {
       set((state) => ({
@@ -1949,13 +1992,27 @@ export const useChat = create<ChatState>()((set, get) => ({
     const selectionVersion = optimistic?.selectionVersion
       ?? branchSelectionIntents.select(chatId, responseId).version
     if (optimistic) get().setDetailedChat(optimistic.chat)
-    void enqueueChatMutation(chatId, () => optimisticRequest('POST', `/api/messages/${messageId}/regenerate`, {
-      timeZone: deviceTimeZone(),
-      clientId: responseId,
-      modelId,
-      presetSelections: generation.selections,
-      agentMode,
-    }, { queueOffline: !get().chats.some((chat) => chat.id === chatId && chat.temporary) })).then((result) => {
+    // A regenerated Agent reply uses the chat's computer like a new message would, with its own session.
+    const computerChoiceForReply = agentMode ? activeComputerChoice(chatId) : null
+    void enqueueChatMutation(chatId, async () => {
+      const prepared = computerChoiceForReply ? await prepareComputerSend(computerChoiceForReply) : undefined
+      if (prepared && !prepared.ok) throw new Error(prepared.message)
+      const computer = prepared?.selection
+      if (computer) linkComputerSessionToResponse(computer.sessionId, responseId)
+      try {
+        return await optimisticRequest('POST', `/api/messages/${messageId}/regenerate`, {
+          timeZone: deviceTimeZone(),
+          clientId: responseId,
+          modelId,
+          presetSelections: generation.selections,
+          agentMode,
+          ...(computer ? { computer } : {}),
+        }, { queueOffline: !computer && !get().chats.some((chat) => chat.id === chatId && chat.temporary) })
+      } catch (error) {
+        endComputerSession(computer?.sessionId)
+        throw withComputerSendError(error)
+      }
+    }).then((result) => {
       if (result === undefined) return
       branchSelectionIntents.clear(chatId, selectionVersion)
       void queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
@@ -1970,7 +2027,9 @@ export const useChat = create<ChatState>()((set, get) => ({
       if (expired) get().markTemporaryExpired(chatId)
     })
   },
-  editUserMessage: async ({ chatId, messageId, content, modelId, attachments: editedAttachments, agentMode }) => {
+  editUserMessage: async ({ chatId, messageId, content, modelId, attachments: editedAttachments, agentMode, computer: requestedComputer }) => {
+    const computer = agentMode ? requestedComputer : undefined
+    if (requestedComputer && !computer) endComputerSession(requestedComputer.sessionId)
     const generation = resolveGeneration(
       chatOptionsFor(getCatalogModel(modelId), useModelConfig.getState().overrides),
       useSettings.getState().generation[modelId],
@@ -1982,6 +2041,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     const rejectedSend = source?.rejectedSend
     const previousActiveLeafId = cached?.activeBranchLeafId ?? cached?.activeResponseId ?? sourceResponseId
     const responseId = crypto.randomUUID()
+    if (computer) linkComputerSessionToResponse(computer.sessionId, responseId)
     const optimistic = cacheOptimisticBranch({
       chatId,
       sourceResponseId,
@@ -2004,6 +2064,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         presetSelections: generation.selections,
         attachmentIds: editedAttachments.map((attachment) => attachment.id),
         agentMode,
+        ...(computer ? { computer } : {}),
       }
       const responseBody = { ...selection, input: content, parentResponseId: source?.parentResponseId ?? null }
       const startChat = rejectedSend?.startChat
@@ -2042,11 +2103,12 @@ export const useChat = create<ChatState>()((set, get) => ({
       branchSelectionIntents.clear(chatId, selectionVersion)
       void queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
     } catch (error: unknown) {
+      endComputerSession(computer?.sessionId)
       const expired = error instanceof ApiError
         && (error.code === 'temporary_chat_expired' || (error.status === 404 && get().chats.some((chat) => chat.id === chatId && chat.temporary)))
       const message = expired
         ? 'This temporary chat has expired and cannot be recovered.'
-        : error instanceof Error ? error.message : 'Unable to save and resend the message'
+        : computerSendErrorMessage(error) ?? (error instanceof Error ? error.message : 'Unable to save and resend the message')
       let failed = failOptimisticResponse(chatId, responseId, previousActiveLeafId, selectionVersion, message)
       if (failed && rejectedSend) {
         pendingOptimisticResponses.delete(responseId)
@@ -2055,7 +2117,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       }
       if (failed) get().setDetailedChat(failed)
       if (expired) get().markTemporaryExpired(chatId)
-      throw error
+      throw withComputerSendError(error)
     }
   },
   editAssistantMessage: (chatId, messageId, content) => {

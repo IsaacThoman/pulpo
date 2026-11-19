@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNull, max, ne, sql } from 'drizzle-orm'
-import type { CreateQueuedMessageInput, QueuedMessage, ReorderQueuedMessageInput, UpdateQueuedMessageInput } from '@pulpo/contracts'
+import type { ComputerSelection, CreateQueuedMessageInput, QueuedMessage, ReorderQueuedMessageInput, UpdateQueuedMessageInput } from '@pulpo/contracts'
 import { clientPlatformSchema, parseClientFeaturesHeader } from '@pulpo/contracts'
 import type { ClientAttribution } from '../analytics/capture.js'
 import { db } from '../database/client.js'
@@ -14,6 +14,7 @@ import { accessibleChatCondition } from './temporary.js'
 import { canPromoteQueueHead, nextQueuePosition, reorderQueueIds } from './message-queue-policy.js'
 import { assertModelsAvailableOnPlatform } from '../catalog/model-platforms.js'
 import { assertModelsAccessibleToUser } from '../catalog/model-access.js'
+import { admitComputer } from '../computer/admission.js'
 
 type QueueRow = typeof queuedMessages.$inferSelect
 
@@ -25,7 +26,14 @@ async function bumpQueueRevision(userId: string, chatId: string): Promise<void> 
   if (updated) await publishStateChange({ userId, revision: updated.revision, chatId })
 }
 
-async function validateQueueInput(userId: string, chatId: string, input: CreateQueuedMessageInput, client?: ClientAttribution | null): Promise<void> {
+/** Checks the message as the reply would, now rather than at dispatch, and returns the computer it may use. */
+async function validateQueueInput(
+  userId: string,
+  chatId: string,
+  input: CreateQueuedMessageInput,
+  client?: ClientAttribution | null,
+  actorUserId?: string | null,
+): Promise<ComputerSelection | null> {
   await assertAccessibleChat(userId, chatId)
 
   const generation = await resolveResponseGeneration(input.modelId, input.presetSelections)
@@ -52,8 +60,14 @@ async function validateQueueInput(userId: string, chatId: string, input: CreateQ
     if (!model.agentEnabled) throw new AppError(400, 'model_not_agent_capable', 'The selected model is not enabled for agent mode')
     const [agentRow] = await db.select({ value: applicationSettings.value })
       .from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1)
-    if (!parseAgentSettings(agentRow?.value).enabled) throw new AppError(503, 'agent_unavailable', 'Agent mode is not enabled')
+    const agentSettings = parseAgentSettings(agentRow?.value)
+    if (!agentSettings.enabled) throw new AppError(503, 'agent_unavailable', 'Agent mode is not enabled')
+    return admitComputer({
+      computer: input.computer, agentMode: true, origin: actorUserId ? 'admin_chat' : 'web',
+      clientFeatures: client?.features, computerAccess: agentSettings.computerAccess,
+    })
   }
+  return null
 }
 
 async function assertAccessibleChat(userId: string, chatId: string): Promise<void> {
@@ -90,6 +104,7 @@ export async function listQueuedMessages(chatId: string, userId: string): Promis
     modelId: row.modelId,
     presetSelections: row.presetSelections,
     agentMode: row.agentMode,
+    computer: row.computer ?? null,
     position: row.position,
     status: row.status as QueuedMessage['status'],
     error: row.error,
@@ -114,7 +129,7 @@ export async function createQueuedMessage(
   attribution: { billingUserId?: string; actorUserId?: string | null; requestReceivedAt?: Date | null; client?: ClientAttribution | null } = {},
 ): Promise<{ queuedMessage: QueuedMessage | null }> {
   const requestReceivedAt = attribution.requestReceivedAt ?? new Date()
-  await validateQueueInput(userId, chatId, input, attribution.client)
+  const computer = await validateQueueInput(userId, chatId, input, attribution.client, attribution.actorUserId)
   const id = input.clientId ?? newId()
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-message-queue:${chatId}`}))`)
@@ -148,6 +163,7 @@ export async function createQueuedMessage(
       modelId: input.modelId,
       presetSelections: input.presetSelections,
       agentMode: input.agentMode,
+      computer,
       attachmentIds: [...new Set(input.attachmentIds)],
       clientPlatform: attribution.client?.platform ?? null,
       clientVersion: attribution.client?.version ?? null,
@@ -172,15 +188,16 @@ export async function updateQueuedMessage(
   attribution: { billingUserId?: string; actorUserId?: string | null; client?: ClientAttribution | null } = {},
 ): Promise<QueuedMessage | null> {
   await assertAccessibleChat(userId, chatId)
-  if (input.action === 'save_edit') {
-    await validateQueueInput(userId, chatId, {
+  const computer = input.action === 'save_edit'
+    ? await validateQueueInput(userId, chatId, {
       input: input.input,
       modelId: input.modelId,
       presetSelections: input.presetSelections,
       attachmentIds: input.attachmentIds,
       agentMode: input.agentMode,
-    }, attribution.client)
-  }
+      computer: input.computer,
+    }, attribution.client, attribution.actorUserId)
+    : null
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-message-queue:${chatId}`}))`)
     const [chat] = await tx.select({ id: chats.id }).from(chats).where(and(
@@ -211,7 +228,14 @@ export async function updateQueuedMessage(
         modelId: input.modelId,
         presetSelections: input.presetSelections,
         agentMode: input.agentMode,
+        computer,
         attachmentIds: [...new Set(input.attachmentIds)],
+        // The edited message is a new request: dispatch admits it with the editing app's features.
+        ...(attribution.client ? {
+          clientPlatform: attribution.client.platform,
+          clientVersion: attribution.client.version,
+          clientFeatures: attribution.client.features ?? [],
+        } : {}),
         billingUserId: attribution.billingUserId ?? userId,
         actorUserId: attribution.actorUserId ?? null,
         status: 'pending',
@@ -327,6 +351,7 @@ export async function advanceMessageQueue(chatId: string): Promise<void> {
           presetSelections: claim.presetSelections,
           attachmentIds: claim.attachmentIds,
           agentMode: claim.agentMode,
+          computer: claim.computer ?? undefined,
           usedDictation: claim.usedDictation ?? undefined,
         },
       })

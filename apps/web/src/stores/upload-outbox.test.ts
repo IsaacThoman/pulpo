@@ -455,3 +455,35 @@ it('recovers a confirmed reservation after a stale pending checkpoint without up
   expect(useUploadOutbox.getState().uploads.recovered?.id).toBe('confirmed-before-reload')
   expect(requests).toHaveLength(1)
 })
+
+describe('upload outbox with this computer', () => {
+  it('sends the session it was staged with', async () => {
+    const sessions = await import('@/features/computer/sessions')
+    sessions.resetComputerSessionsForTests()
+    const computer = { sessionId: crypto.randomUUID(), access: 'full' as const, folder: null }
+    sessions.trackComputerSession(computer.sessionId)
+    useUploadOutbox.getState().stageSubmission({ ...draft([], 'run it'), agentMode: true, computer })
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]).toMatchObject({ path: `/api/chats/${chatId}/responses`, body: expect.objectContaining({ agentMode: true, computer }) })
+    requests[0]!.resolve({})
+    await vi.waitFor(() => expect(useUploadOutbox.getState().submissions).toEqual([]))
+    expect(sessions.activeComputerSessionIds()).toEqual([computer.sessionId])
+  })
+
+  it('ends the session of a submission that is discarded or returned to the composer', async () => {
+    const sessions = await import('@/features/computer/sessions')
+    sessions.resetComputerSessionsForTests()
+    useUploadOutbox.setState({ uploads: { first: upload('first', 'uploading'), second: upload('second', 'uploading') } })
+    const discarded = { sessionId: crypto.randomUUID(), access: 'read' as const, folder: '/tmp/a' }
+    const returned = { sessionId: crypto.randomUUID(), access: 'read' as const, folder: '/tmp/a' }
+    sessions.trackComputerSession(discarded.sessionId)
+    sessions.trackComputerSession(returned.sessionId)
+    const first = useUploadOutbox.getState().stageSubmission({ ...draft(['first'], 'one'), agentMode: true, computer: returned })
+    const second = useUploadOutbox.getState().stageSubmission({ ...draft(['second'], 'two'), agentMode: true, computer: discarded })
+    useUploadOutbox.getState().discardSubmission(second.submissionId)
+    expect(sessions.activeComputerSessionIds()).toEqual([returned.sessionId])
+    useUploadOutbox.getState().returnSubmissionToComposer(first.submissionId)
+    expect(sessions.activeComputerSessionIds()).toEqual([])
+    expect(useUploadOutbox.getState().submissions[0]?.computer).toBeUndefined()
+  })
+})

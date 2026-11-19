@@ -12,7 +12,7 @@ import { useFollowStartedChat } from './use-follow-started-chat'
 import { useMenuTriggerFocus } from './use-menu-trigger-focus'
 import { appendToDraft, registerComposerFocus, registerComposerInsert } from './composer-focus'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
-import { MAX_MESSAGE_ATTACHMENTS, type ComposerState, type FileNode, type FileReference } from '@pulpo/contracts'
+import { FILE_SCOPE_ROOT, MAX_MESSAGE_ATTACHMENTS, type ComposerState, type ComputerSelection, type FileNode, type FileReference } from '@pulpo/contracts'
 import { useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore, type Ref, type DragEvent as ReactDragEvent } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
@@ -50,6 +50,7 @@ import { chatOptionsFor, resolveSelections, useModelConfig } from '@/stores/mode
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { PresetIcon } from '@/components/chat/PresetIcon'
 import { AgentMenu } from '@/components/chat/AgentMenu'
+import { useComputerControls } from '@/features/computer/use-computer-controls'
 import { PendingAttachmentChip } from '@/components/chat/AttachmentImage'
 import { cn } from '@/lib/utils'
 import { downloadAttachment } from '@/lib/local-first/attachment-cache'
@@ -322,6 +323,12 @@ export function Composer({
   const chatFileChangeMode = useChat((state) => chatId ? state.chats.find((chat) => chat.id === chatId)?.fileChangeMode : undefined)
   const defaultFileChangeMode = useSettings((state) => state.agentFileChangeMode)
   const fileChangeMode = chatId ? chatFileChangeMode ?? 'suggest' : defaultFileChangeMode
+  // The agent uses what the chat mentions, and all of Files once that was mentioned or allowed.
+  const filesBrowseOpen = useChat((state) => {
+    const chat = chatId ? state.chats.find((item) => item.id === chatId) : undefined
+    return Boolean(chat?.filesBrowseAllowed || chat?.fileScopeIds?.includes(FILE_SCOPE_ROOT))
+  })
+  const filesAskBeforeBrowsing = useSettings((state) => state.agentFilesAskBeforeBrowsing)
   const instanceReady = useAuth((s) => s.instanceReady)
   const desktopCanMutate = !isDesktopRuntime() || instanceReady
   uploadsRef.current = uploads
@@ -332,8 +339,16 @@ export function Composer({
 
   const [editAgentMode, setEditAgentMode] = useState(false)
   const activeAgentMode = messageEdit ? editAgentMode : agentModeEnabled
+  const computer = useComputerControls({
+    chatId,
+    onEnable: () => {
+      if (!canUseAgent) return
+      if (messageEdit) setEditAgentMode(true)
+      else setDraftAgentMode(true)
+    },
+  })
   const toolbarFit = useComposerToolbarFit(
-    `${activeAgentMode && canUseAgent}:${activePresets.map((preset) => preset.choices.find((c) => c.id === selections[preset.id])?.displayName ?? '').join('|')}`,
+    `${activeAgentMode && canUseAgent}:${computer.active}:${activePresets.map((preset) => preset.choices.find((c) => c.id === selections[preset.id])?.displayName ?? '').join('|')}`,
     activePresets.length > 0,
   )
   const generationSelection: ResponseGenerationSelection = {
@@ -784,7 +799,7 @@ export function Composer({
     size: attachment.size,
   }))
 
-  const stageMessage = (text: string, ids: string[], submittedState?: ComposerState, revision?: number, usedDictation = false) => {
+  const stageMessage = (text: string, ids: string[], submittedState?: ComposerState, revision?: number, usedDictation = false, computerSelection?: ComputerSelection) => {
     const staged = stageSubmission({
       composerDraft: userId && composerSync && submittedState ? { userId, draftId, state: submittedState, revision } : undefined,
       chatId,
@@ -794,7 +809,9 @@ export function Composer({
       autoExpire,
       attachmentIds: ids,
       ...(usedDictation ? { usedDictation: true } : {}),
+      ...(computerSelection ? { computer: computerSelection } : {}),
     })
+    computer.keepFor(staged.chatId)
     if (!chatId && staged.chatId && !temporary) navigate(`/c/${staged.chatId}`)
   }
 
@@ -807,7 +824,14 @@ export function Composer({
       suggestionSubmitted.current = true
       // Suggestions send only their own text. Keep any typed draft and uploads
       // in the new-chat slot, and do not issue a sync clear for that draft.
-      stageMessage(message.trim(), [])
+      if (!computer.active || !generationSelection.agentMode) {
+        stageMessage(message.trim(), [])
+        return
+      }
+      void computer.prepare(generationSelection.agentMode).then((prepared) => {
+        if (prepared.ok) stageMessage(message.trim(), [], undefined, undefined, false, prepared.selection)
+        else suggestionSubmitted.current = false
+      })
     },
   }))
 
@@ -823,6 +847,17 @@ export function Composer({
       attachmentIds: payload.map((attachment) => attachment.id),
     }
     setQueueError(null)
+    // Before anything is sent: the desktop app must accept this message's session. When it does
+    // not, the draft stays and a toast says why.
+    let computerSelection: ComputerSelection | undefined
+    if (computer.active && generationSelection.agentMode) {
+      setSubmitting(true)
+      const prepared = await computer.prepare(generationSelection.agentMode)
+      setSubmitting(false)
+      if (!prepared.ok) return
+      computerSelection = prepared.selection
+    }
+    const withComputer = computerSelection ? { computer: computerSelection } : {}
     if (messageEdit && chatId) {
       setSubmitting(true)
       try {
@@ -833,6 +868,7 @@ export function Composer({
           modelId,
           attachments: payload,
           agentMode: activeAgentMode && canUseAgent,
+          ...withComputer,
         })
         consumeUploads(attachmentIds)
         restorePreservedDraft()
@@ -847,7 +883,7 @@ export function Composer({
     if (editingQueueId && chatId) {
       setSubmitting(true)
       try {
-        await updateQueuedMessage(chatId, editingQueueId, { action: 'save_edit', ...queueInput }, payload)
+        await updateQueuedMessage(chatId, editingQueueId, { action: 'save_edit', ...queueInput, ...withComputer }, payload)
         consumeUploads(attachmentIds)
         restorePreservedDraft()
       } catch (error) {
@@ -865,6 +901,7 @@ export function Composer({
         agentMode: activeAgentMode && canUseAgent,
         attachmentIds,
         ...(usedDictationRef.current ? { usedDictation: true } : {}),
+        ...withComputer,
       })
       clearDraft(false)
       return
@@ -872,7 +909,7 @@ export function Composer({
     setSubmitting(true)
     const submittedRevision = await composerSync?.prepareSubmission(draftId, sharedComposerState)
     setSubmitting(false)
-    stageMessage(text, attachmentIds, sharedComposerState, submittedRevision ?? undefined, usedDictationRef.current)
+    stageMessage(text, attachmentIds, sharedComposerState, submittedRevision ?? undefined, usedDictationRef.current, computerSelection)
     if (valueRef.current === value && attachmentIdsRef.current === attachmentIds) {
       skipNextEdit()
       clearDraft(false)
@@ -1472,8 +1509,10 @@ export function Composer({
             onSelectClose={focusComposer}
             enabled={activeAgentMode}
             disabled={!canUseAgent}
+            computer={canUseAgent ? computer.controls : undefined}
             files={canScopeFiles ? {
               mode: fileChangeMode,
+              reach: filesBrowseOpen || !filesAskBeforeBrowsing || references.some((reference) => reference.id === FILE_SCOPE_ROOT) ? 'all' : 'mentioned',
               onModeChange: (mode) => {
                 if (chatId) useChat.getState().setChatFileChangeMode(chatId, mode)
                 // New chats start with the account's choice.
