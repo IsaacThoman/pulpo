@@ -69,6 +69,7 @@ describe('app control', () => {
     expect(act({ type: 'view' }).success).toBe(true)
     expect(act({ type: 'type', text: 'hello' }).success).toBe(true)
     expect(act({ type: 'type', text: '' }).success).toBe(false)
+    expect(act({ type: 'type', text: 'x'.repeat(2_001) }).success).toBe(false)
     expect(act({ type: 'key', keys: 'cmd+s' }).success).toBe(true)
     expect(act({ type: 'scroll', dy: 3 }).data?.action).toEqual({ type: 'scroll', dx: 0, dy: 3 })
     expect(act({ type: 'scroll' }).success).toBe(false)

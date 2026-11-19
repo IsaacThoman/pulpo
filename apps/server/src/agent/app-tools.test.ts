@@ -132,6 +132,8 @@ describe('app tools', () => {
     await expect(run('app_view', {})).rejects.toThrow('app must name the app')
     await expect(run('app_click', { app: 'TextEdit' })).rejects.toThrow('Name an element, or give x and y')
     await expect(run('app_click', { app: 'TextEdit', x: 3 })).rejects.toThrow('Give both x and y')
+    await expect(run('app_type', { app: 'TextEdit', text: '' })).rejects.toThrow('text must not be empty')
+    await expect(run('app_type', { app: 'TextEdit', text: 'x'.repeat(2_001) })).rejects.toThrow('type at most 2,000 at a time')
     await expect(run('app_scroll', { app: 'TextEdit', direction: 'sideways' })).rejects.toThrow('direction must be')
     await expect(run('app_drag', { app: 'TextEdit', from_x: 1 })).rejects.toThrow('must be numbers')
     await expect(run('app_set_value', { app: 'TextEdit', value: 'x' })).rejects.toThrow('element must be')

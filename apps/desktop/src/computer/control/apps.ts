@@ -39,7 +39,7 @@ export function appNeverAllowed(id: string): boolean { return NEVER_ALLOWED.has(
 /** How long after an action the window is looked at again: menus open and pages change a moment later. */
 const SETTLE_MS = 400
 const SETTLE_TYPING_MS = 150
-/** The helper's share of `COMPUTER_APP_ACT_TIMEOUT_MS`: typing a long text takes a while, and the window is looked at afterwards. */
+/** The helper's share of `COMPUTER_APP_ACT_TIMEOUT_MS`: the longest text takes Windows half a minute to type, and the window is looked at afterwards. */
 const HELPER_ACT_TIMEOUT_MS = 40_000
 /** However little time the server left, the user gets this long to answer. */
 const MIN_APPROVAL_MS = 5_000

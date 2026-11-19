@@ -85,7 +85,18 @@ The seeing and the input are done by a native helper process, one per system, th
 
 `describe.apps.background` tells the server which of the two it is talking to, and the prompt and the approval dialog say it: on macOS the user can keep working while the agent does; on Windows the agent says so before it takes the pointer. The agent's pointer hides a few seconds after its last action and at once when the reply ends.
 
-On macOS, delivering a click to a window that is not in front uses two undocumented parts of the system (an event field that names the target window, and `CGEventSetWindowLocation`). Both are looked up when the helper runs; without them a click at a coordinate fails with an explanation and element actions keep working.
+On macOS, working in a window that is not in front leans on undocumented parts of the system, each looked up when the helper runs and each with a fallback:
+
+- An event field that names the target window, and `CGEventSetWindowLocation`, deliver a click at a point. Without them a click at a coordinate fails with an explanation and element actions keep working.
+- `SLPSPostEventRecordTo` tells the app, for the moment of a left click, a drag or a key chord, that it is active and its window key (the records yabai uses to focus a window without raising it, minus the call that makes the app frontmost). Views that ignore the first click on an inactive window, and shortcuts that act on the current document, need that. The window server's own front app is not changed, so the user's keyboard stays where it was. Without it such clicks are dropped by the app.
+- `_AXUIElementGetWindow` matches an accessibility window to the window server's; without it they are matched by frame and title.
+
+Other things worth knowing:
+
+- While the Mac's screen is locked, macOS answers no accessibility questions about windows. Windows are still pictured, and clicks at coordinates, keys and typing still land, but the element list is empty and minimized windows are not listed.
+- Windows on another Space are listed once the user goes there.
+- Windows types a character at a time, about 60 a second, because its apps drop or reorder faster input; one `app_type` carries at most 2,000 characters.
+- On Windows a dialog or menu that a window owns is drawn into that window's picture and its elements are listed with it. An app running as administrator cannot be seen or controlled, and while one is in front no other window can be brought forward; the error says so.
 
 ## Folder modes
 

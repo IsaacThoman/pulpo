@@ -18,7 +18,7 @@
 export const CONTROL_PROTOCOL_VERSION = 1
 
 export type ControlErrorCode =
-  /** macOS has not given Pulpo Accessibility or Screen Recording; the message names which. */
+  /** macOS has not given Pulpo Accessibility or Screen Recording; the message names which. Never on Windows. */
   | 'permission_denied'
   /** The process or window is gone. */
   | 'not_found'
@@ -67,7 +67,12 @@ export interface ControlElement {
   index: number
   /** How deep it sits below the elements listed before it; 0 for the top. */
   depth: number
-  /** Short and lower case, the same words on both systems where they mean the same: button, checkbox, radio, textfield, textarea, text, link, menu, menuitem, menubutton, combobox, list, row, cell, tab, slider, image, toolbar, group, scrollarea, window, … */
+  /**
+   * Short and lower case, the same words on both systems where they mean the same: button,
+   * checkbox, radio, textfield, textarea, text, link, menu, menubar, menuitem, menubutton, combobox,
+   * list, row, cell, table, tree, tab, tablist, slider, stepper, image, toolbar, titlebar, group,
+   * scrollarea, document, window, … A role with no shared word is the system's own name for it.
+   */
   role: string
   /** Its name or title, at most 160 characters. */
   label?: string
@@ -101,12 +106,17 @@ export type ControlAction =
    * a click there.
    */
   | { type: 'click'; element?: number; x?: number; y?: number; button: 'left' | 'right' | 'middle'; count: 1 | 2 | 3 }
-  /** Types into whatever has the keyboard focus in the window, as text (not as key codes), so any character works. */
+  /**
+   * Types into whatever has the keyboard focus in the window, as text (not as key codes), so any
+   * character works. Windows takes about 15 ms a character (its apps drop or reorder faster input);
+   * macOS sends a few characters per event.
+   */
   | { type: 'type'; text: string }
   /**
    * One key or chord: `enter`, `escape`, `tab`, `space`, `backspace`, `delete`, `up`/`down`/`left`/`right`,
    * `home`, `end`, `pageup`, `pagedown`, `f1`…`f12`, a single character, with any of `cmd`, `ctrl`,
-   * `alt` (`option`), `shift` joined by `+`: `cmd+s`, `ctrl+shift+t`. `cmd` is the Windows key on Windows.
+   * `alt` (`option`), `shift` joined by `+`: `cmd+s`, `ctrl+shift+t`. `cmd` is the Windows key on
+   * Windows. `backspace` deletes backward (the Mac's Delete key) and `delete` forward, on both systems.
    */
   | { type: 'key'; keys: string }
   /** Scrolls at the element's middle or at `x`/`y` (the window's middle with neither) by `dx`/`dy` lines; positive `dy` moves down the page, positive `dx` to the right. */
@@ -134,11 +144,14 @@ interface ControlMethods {
   }
   /** What the system lets the app do. `prompt` shows the system's own request for whatever is missing (macOS); both are always true on Windows. */
   permissions: { params: { prompt?: boolean }; result: { accessibility: boolean; screenRecording: boolean } }
+  /** macOS lists the windows of the Space the user is on, and minimized ones; windows on other Spaces appear once the user goes there. */
   apps: { params: Record<string, never>; result: { apps: ControlApp[] } }
   /**
    * The window as it is now: its picture and, unless `outline` is false, its elements. Element
    * indexes of an earlier snapshot of the same window stop working. A minimized window is restored
-   * first, without bringing its app forward where the system allows.
+   * first, without bringing its app forward where the system allows. On Windows a menu or a dialog
+   * the window owns is not a window of its own in `apps`: it is drawn into this picture where it
+   * floats and its elements are listed here.
    */
   snapshot: { params: { pid: number; windowId: number; outline?: boolean; maxElements?: number }; result: ControlSnapshot }
   /**

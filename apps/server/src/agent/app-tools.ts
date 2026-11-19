@@ -1,4 +1,4 @@
-import type { ComputerApp, ComputerAppActionInput, ComputerAppElement, ComputerDescription, ToolImagePreview } from '@pulpo/contracts'
+import { COMPUTER_APP_TYPE_MAX_CHARACTERS, type ComputerApp, type ComputerAppActionInput, type ComputerAppElement, type ComputerDescription, type ToolImagePreview } from '@pulpo/contracts'
 import { Type } from '@earendil-works/pi-ai'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import type { ComputerAppView, ComputerWorkspace } from './computer-workspace.js'
@@ -161,9 +161,14 @@ export function createAppTools(
           ...(count === 2 || count === 3 ? { count } : {}),
         }
       }),
-    act('app_type', `Type text into whatever has the keyboard focus in an app's window on ${machine} (click a field first to focus it). For Enter, Tab, arrows and shortcuts use app_key. ${shown}`,
-      Type.Object({ app, window, text: Type.String({ description: 'The text to type, at most 4,000 characters.' }) }),
-      (args) => ({ type: 'type', text: String(args.text ?? '') })),
+    act('app_type', `Type text into whatever has the keyboard focus in an app's window on ${machine} (click a field first to focus it). For Enter, Tab, arrows and shortcuts use app_key; to replace a field's whole contents, app_set_value is faster. ${shown}`,
+      Type.Object({ app, window, text: Type.String({ description: `The text to type, at most ${COMPUTER_APP_TYPE_MAX_CHARACTERS.toLocaleString('en-US')} characters; type longer text in several calls.` }) }),
+      (args) => {
+        const text = String(args.text ?? '')
+        if (!text) throw new Error('text must not be empty')
+        if (text.length > COMPUTER_APP_TYPE_MAX_CHARACTERS) throw new Error(`text is ${text.length.toLocaleString('en-US')} characters; type at most ${COMPUTER_APP_TYPE_MAX_CHARACTERS.toLocaleString('en-US')} at a time`)
+        return { type: 'type', text }
+      }),
     act('app_key', `Press one key or shortcut in an app's window on ${machine}: enter, escape, tab, space, backspace, delete, up, down, left, right, home, end, pageup, pagedown, f1 to f12 or a single character, with any of ${computer.os === 'macos' ? 'cmd, ctrl, alt, shift' : 'ctrl, alt, shift, cmd (the Windows key)'} joined by "+", for example "${computer.os === 'macos' ? 'cmd+s' : 'ctrl+s'}". ${shown}`,
       Type.Object({ app, window, keys: Type.String({ description: 'One key or chord, for example "enter" or "ctrl+shift+t".' }) }),
       (args) => ({ type: 'key', keys: String(args.keys ?? '').trim() })),

@@ -204,6 +204,9 @@ export const computerAppSchema = z.object({
 })
 export type ComputerApp = z.infer<typeof computerAppSchema>
 
+/** The most text one `type` action carries; more is typed in several actions, or set with `set_value`. */
+export const COMPUTER_APP_TYPE_MAX_CHARACTERS = 2_000
+
 /** A coordinate in a window's picture, in that picture's pixels. */
 const appCoordinate = z.number().finite().min(0).max(100_000)
 const appElementIndex = z.number().int().min(1).max(100_000)
@@ -223,8 +226,8 @@ export const computerAppActionSchema = z.discriminatedUnion('type', [
     button: z.enum(['left', 'right', 'middle']).default('left'),
     count: z.union([z.literal(1), z.literal(2), z.literal(3)]).default(1),
   }).refine((value) => value.element !== undefined || (value.x !== undefined && value.y !== undefined), 'Name an element or give both x and y'),
-  /** Types text into whatever has the keyboard focus in the window. */
-  z.object({ type: z.literal('type'), text: z.string().min(1).max(4_000) }),
+  /** Types text into whatever has the keyboard focus in the window. Windows types a character at a time (about 60 a second), so the length is bounded by `COMPUTER_APP_ACT_TIMEOUT_MS`. */
+  z.object({ type: z.literal('type'), text: z.string().min(1).max(COMPUTER_APP_TYPE_MAX_CHARACTERS) }),
   /** One key or chord: `enter`, `escape`, `cmd+s`, `ctrl+shift+t`. */
   z.object({ type: z.literal('key'), keys: z.string().min(1).max(100) }),
   /** Scrolls at an element, at a point, or in the middle of the window, by lines; positive `dy` moves down the page. */
