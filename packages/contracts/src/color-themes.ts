@@ -131,16 +131,32 @@ export const customThemeSchema = z.object({
 })
 export type CustomTheme = z.infer<typeof customThemeSchema>
 
-export const customThemesSchema = z.array(customThemeSchema).max(CUSTOM_THEMES_MAX).superRefine((themes, context) => {
+function uniqueThemeIds(themes: CustomTheme[], context: z.RefinementCtx) {
   const seen = new Set<string>()
   themes.forEach((theme, index) => {
     if (seen.has(theme.id)) context.addIssue({ code: 'custom', message: 'Theme ids must be unique', path: [index, 'id'] })
     seen.add(theme.id)
   })
-})
+}
 
-/** The selected color theme: a built-in id or a custom theme's id. Unknown ids fall back to Pulpo. */
-export const colorThemeIdSchema = themeIdSchema
+export const customThemesSchema = z.array(customThemeSchema).max(CUSTOM_THEMES_MAX).superRefine(uniqueThemeIds)
+
+export const INSTANCE_COLOR_THEMES_SETTING_KEY = 'colorThemes'
+const instanceColorThemeSchema = customThemeSchema.extend({
+  css: z.literal('', { error: 'Instance themes cannot include custom CSS.' }).default(''),
+})
+export const instanceColorThemesSchema = z.array(instanceColorThemeSchema).max(CUSTOM_THEMES_MAX).superRefine(uniqueThemeIds)
+
+export const instanceColorThemesSnapshotSchema = z.object({
+  themes: instanceColorThemesSchema,
+  revision: z.string().min(1),
+})
+export type InstanceColorThemesSnapshot = z.infer<typeof instanceColorThemesSnapshotSchema>
+
+export const INSTANCE_COLOR_THEME_PREFIX = 'instance:'
+
+/** Instance selections have a separate namespace from built-in and personal themes. */
+export const colorThemeIdSchema = z.string().regex(/^(?:instance:)?[a-z0-9][a-z0-9-]{0,63}$/)
 
 /**
  * What Pulpo adds to an exported VS Code theme so it can be imported back whole: both appearances

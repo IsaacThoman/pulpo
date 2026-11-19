@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import {
   CUSTOM_THEMES_MAX,
   DEFAULT_COLOR_THEME_ID,
+  INSTANCE_COLOR_THEME_PREFIX,
   THEME_CSS_MAX_LENGTH,
   THEME_NAME_MAX_LENGTH,
   unsafeThemeCssReason,
@@ -20,7 +21,7 @@ import { alphaOf, normalizeHex, solidHex, withAlpha } from '@/lib/color'
 import {
   allColorThemes,
   BASE_ROLES,
-  findColorTheme,
+  customToColorTheme,
   newCustomThemeId,
   parseVsCodeTheme,
   resolvePalette,
@@ -255,9 +256,10 @@ function SegmentedAppearance({ value, onChange, labelledBy }: { value: ThemeAppe
   )
 }
 
-function ThemeEditor({ theme, activeAppearance, onUpdate }: {
+function ThemeEditor({ theme, activeAppearance, allowCss, onUpdate }: {
   theme: CustomTheme
   activeAppearance: ThemeAppearance
+  allowCss: boolean
   onUpdate: (patch: Partial<Omit<CustomTheme, 'id'>>) => void
 }) {
   const id = useId()
@@ -335,7 +337,7 @@ function ThemeEditor({ theme, activeAppearance, onUpdate }: {
       <div className="flex flex-col gap-2 py-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div id={`${id}-appearance`} className="text-sm font-medium">{ui('Appearance')}</div>
-          {appearance !== activeAppearance && (
+          {allowCss && appearance !== activeAppearance && (
             <p className="mt-0.5 text-xs text-muted-foreground">
               {appearance === 'light' ? ui('Switch Theme to Light to preview these colors.') : ui('Switch Theme to Dark to preview these colors.')}
             </p>
@@ -361,6 +363,7 @@ function ThemeEditor({ theme, activeAppearance, onUpdate }: {
           }}
         />
       </div>
+      {!allowCss && <div className="py-2"><ThemePreview theme={customToColorTheme(theme)} appearance={appearance} /></div>}
       {message?.kind === 'error' && <p role="alert" className="text-xs text-destructive">{message.text}</p>}
       <p role="status" className={cn('text-xs text-muted-foreground', message?.kind !== 'status' && 'sr-only')}>
         {message?.kind === 'status' ? message.text : ''}
@@ -419,7 +422,7 @@ function ThemeEditor({ theme, activeAppearance, onUpdate }: {
               : uit`${hiddenOverrides} more colors are set in Advanced.`}
         </p>
       )}
-      <Collapsible open={cssOpen} onOpenChange={setCssOpen} className="pt-3">
+      {allowCss && <Collapsible open={cssOpen} onOpenChange={setCssOpen} className="pt-3">
         <CollapsibleTrigger className="group flex cursor-pointer items-center gap-1.5 text-sm font-medium">
           <ChevronRight className="size-4 transition-transform group-data-[state=open]:rotate-90" aria-hidden />
           {ui('Custom CSS')}
@@ -450,7 +453,7 @@ function ThemeEditor({ theme, activeAppearance, onUpdate }: {
             </span>
           </div>
         </CollapsibleContent>
-      </Collapsible>
+      </Collapsible>}
     </div>
   )
 }
@@ -467,28 +470,52 @@ function downloadVsCodeTheme(theme: ColorTheme, appearance: ThemeAppearance) {
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
-/** Pick, create, import, export, and edit color themes. */
 export function ColorThemeSettings() {
   const colorTheme = useSettings((state) => state.colorTheme)
   const customThemes = useSettings((state) => state.customThemes)
+  const instanceThemes = useSettings((state) => state.instanceThemes)
   const set = useSettings((state) => state.set)
+  return (
+    <ColorThemePicker
+      selectedId={colorTheme}
+      editableThemes={customThemes}
+      instanceThemes={instanceThemes}
+      onSelect={(id) => set('colorTheme', id)}
+      onEdit={(update) => useSettings.setState((state) => ({ customThemes: update(state.customThemes) }))}
+    />
+  )
+}
+
+/** Pick, create, import, export, and edit color themes. */
+export function ColorThemePicker({
+  selectedId, editableThemes, instanceThemes, onSelect, onEdit, scope = 'personal',
+}: {
+  selectedId: string
+  editableThemes: CustomTheme[]
+  instanceThemes?: CustomTheme[]
+  onSelect: (id: string) => void
+  onEdit: (update: (themes: CustomTheme[]) => CustomTheme[]) => void
+  scope?: 'personal' | 'instance'
+}) {
   const activeAppearance = useActiveAppearance()
   const fileInput = useRef<HTMLInputElement>(null)
   const headingId = useId()
   const [message, setMessage] = useState<{ kind: 'error' | 'status'; text: string } | null>(null)
-  const themes = allColorThemes(customThemes)
-  const selected = findColorTheme(colorTheme, customThemes)
-  const selectedCustom = customThemes.find((theme) => theme.id === selected.id)
-  const atLimit = customThemes.length >= CUSTOM_THEMES_MAX
+  const editingInstance = scope === 'instance'
+  const pickerId = (id: string) => editingInstance ? INSTANCE_COLOR_THEME_PREFIX + id : id
+  const themes = editingInstance ? allColorThemes([], editableThemes) : allColorThemes(editableThemes, instanceThemes)
+  const selected = themes.find((theme) => theme.id === selectedId) ?? themes[0]!
+  const selectedCustom = editableThemes.find((theme) => pickerId(theme.id) === selected.id)
+  const atLimit = editableThemes.length >= CUSTOM_THEMES_MAX
 
   const addTheme = (theme: Omit<CustomTheme, 'id'>) => {
     const created = { ...theme, id: newCustomThemeId() }
-    set('customThemes', [...useSettings.getState().customThemes, created])
-    set('colorTheme', created.id)
+    onEdit((themes) => themes.length < CUSTOM_THEMES_MAX ? [...themes, created] : themes)
+    onSelect(pickerId(created.id))
   }
 
   const updateSelected = (patch: Partial<Omit<CustomTheme, 'id'>>) => {
-    set('customThemes', useSettings.getState().customThemes.map((theme) => theme.id === selected.id ? { ...theme, ...patch } : theme))
+    onEdit((themes) => themes.map((theme) => theme.id === selectedCustom?.id ? { ...theme, ...patch } : theme))
   }
 
   const duplicate = () => {
@@ -504,8 +531,8 @@ export function ColorThemeSettings() {
   const remove = () => {
     if (!selectedCustom || !window.confirm(uit`Delete the “${selectedCustom.name}” theme? This can’t be undone.`)) return
     setMessage(null)
-    set('customThemes', customThemes.filter((theme) => theme.id !== selectedCustom.id))
-    set('colorTheme', DEFAULT_COLOR_THEME_ID)
+    onEdit((themes) => themes.filter((theme) => theme.id !== selectedCustom.id))
+    onSelect(DEFAULT_COLOR_THEME_ID)
   }
 
   const importFile = async (file: File) => {
@@ -519,14 +546,17 @@ export function ColorThemeSettings() {
       [result.appearance]: result.pulpo?.[result.appearance] ?? result.variant,
       [other]: result.pulpo?.[other] ?? EMPTY_VARIANT,
     } as Record<ThemeAppearance, ThemeVariant>
-    addTheme({ name: result.name, light: variants.light, dark: variants.dark, css: result.pulpo?.css ?? '' })
+    addTheme({ name: result.name, light: variants.light, dark: variants.dark, css: editingInstance ? '' : result.pulpo?.css ?? '' })
     const both = Boolean(result.pulpo?.light && result.pulpo?.dark)
     const note = both
       ? uit`Imported “${result.name}”.`
       : result.appearance === 'dark'
         ? uit`Imported “${result.name}” as dark colors. Its light colors are Pulpo’s until you import a light theme into it.`
         : uit`Imported “${result.name}” as light colors. Its dark colors are Pulpo’s until you import a dark theme into it.`
-    setMessage({ kind: 'status', text: result.partial ? `${note} ${ui('It builds on another theme file, so some colors may be missing.')}` : note })
+    const notes = [note]
+    if (result.partial) notes.push(ui('It builds on another theme file, so some colors may be missing.'))
+    if (editingInstance && result.pulpo?.css) notes.push(ui('Instance themes import colors only. Custom CSS was omitted.'))
+    setMessage({ kind: 'status', text: notes.join(' ') })
   }
 
   return (
@@ -541,7 +571,7 @@ export function ColorThemeSettings() {
               key={theme.id}
               type="button"
               aria-pressed={isSelected}
-              onClick={() => { setMessage(null); set('colorTheme', theme.id) }}
+              onClick={() => { setMessage(null); onSelect(theme.id) }}
               className={cn(
                 'min-w-0 cursor-pointer rounded-lg border p-1.5 text-left transition-colors hover:bg-accent/60',
                 isSelected && 'ring-2 ring-foreground ring-offset-2 ring-offset-background',
@@ -552,6 +582,9 @@ export function ColorThemeSettings() {
                 <span className="min-w-0 truncate">{theme.name}</span>
                 {isSelected && <Check className="size-3.5 shrink-0" aria-hidden />}
               </span>
+              {!editingInstance && theme.id.startsWith(INSTANCE_COLOR_THEME_PREFIX) && (
+                <span className="block px-0.5 text-xs text-muted-foreground">{ui('Instance theme')}</span>
+              )}
             </button>
           )
         })}
@@ -599,10 +632,16 @@ export function ColorThemeSettings() {
       </p>
       {selectedCustom ? (
         <div className="mt-4 border-t pt-3">
-          <ThemeEditor key={selectedCustom.id} theme={selectedCustom} activeAppearance={activeAppearance} onUpdate={updateSelected} />
+          <ThemeEditor key={selectedCustom.id} theme={selectedCustom} activeAppearance={activeAppearance} allowCss={!editingInstance} onUpdate={updateSelected} />
         </div>
       ) : (
-        <p className="mt-3 text-xs text-muted-foreground">{uit`${selected.name} is built in. Duplicate it to change its colors or add custom CSS.`}</p>
+        <p className="mt-3 text-xs text-muted-foreground">
+          {editingInstance
+            ? ui('Duplicate a built-in theme or import a file to create an instance theme.')
+            : selected.builtIn
+              ? uit`${selected.name} is built in. Duplicate it to change its colors or add custom CSS.`
+              : ui('This theme is managed by your instance admin. Duplicate it to make your own copy.')}
+        </p>
       )}
     </div>
   )

@@ -16,6 +16,26 @@ pulpo model test acme-model "Reply with a short greeting" --no-agent --preset re
 
 Use `pulpo help` or `pulpo <command> --help` for the complete command reference.
 
+### Instance color themes
+
+Admins can publish palettes from **Admin → Settings → Color themes** or through
+the settings CLI. Published themes appear in the web and desktop appearance
+picker for everyone on the instance.
+
+```bash
+pulpo --json settings get instance.colorThemes
+pulpo settings set instance.colorThemes '[{"id":"lagoon","name":"Lagoon","light":{"colors":{"button.background":"#0e7490"}},"dark":{"colors":{"button.background":"#22d3ee"}}}]'
+pulpo settings set account.colorTheme instance:lagoon
+```
+
+Setting `instance.colorThemes` replaces the catalog. To edit a larger catalog,
+export the settings document, update its `instance.colorThemes` array, and use
+`pulpo settings diff --file pulpo-settings.json` and
+`pulpo settings apply --file pulpo-settings.json`. Set the catalog to `[]` to
+remove all shared themes. Each theme can include VS Code workbench colors and
+TextMate token rules for light and dark appearances. Custom CSS is available in
+personal themes.
+
 Rebuild a restorable archive from an encrypted offsite snapshot with
 `pulpo backup assemble`. It runs entirely on your machine, using the age identity
 that Pulpo never sees, and needs no Pulpo context:

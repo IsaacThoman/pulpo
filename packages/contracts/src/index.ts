@@ -2,7 +2,7 @@ import { imageGenerationPreferencesSchema } from './image-generation.js'
 export * from './image-generation.js'
 import { speechPreferencesSchema } from './speech.js'
 export * from './speech.js'
-import { colorThemeIdSchema, customThemesSchema, DEFAULT_COLOR_THEME_ID } from './color-themes.js'
+import { colorThemeIdSchema, customThemesSchema, DEFAULT_COLOR_THEME_ID, instanceColorThemesSchema } from './color-themes.js'
 export * from './color-themes.js'
 import { eventHasAssistantReplyText } from './response-timing.js'
 export * from './avatar-crop.js'
@@ -1830,6 +1830,7 @@ export const managementWebToolsSettingsSchema = webToolsSettingsSchema.extend({
 })
 
 export const managementInstanceSettingsSchema = z.object({
+  colorThemes: instanceColorThemesSchema.optional(),
   auth: authSettingsSchema.default(() => authSettingsSchema.parse({})),
   interface: interfaceSettingsSchema.default(() => interfaceSettingsSchema.parse({})),
   personalization: personalizationSettingsSchema.default(() => personalizationSettingsSchema.parse({})),

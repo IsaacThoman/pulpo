@@ -85,4 +85,21 @@ describe('color themes', () => {
     settings.useSettings.setState({ colorTheme: 'custom-missing' })
     expect(document.getElementById('pulpo-color-theme')).toBeNull()
   })
+
+  it('applies an instance palette once loaded and falls back when it is removed', () => {
+    storage.set('pulpo-profile', '{"id":"u1"}')
+    settings.useSettings.setState({ colorTheme: 'instance:lagoon' })
+    expect(themeStyle()).toBe('')
+    settings.useSettings.setState({
+      instanceThemes: [{
+        id: 'lagoon', name: 'Lagoon', css: '',
+        light: { colors: { 'button.background': '#0e7490' }, tokenColors: [] },
+        dark: { colors: {}, tokenColors: [] },
+      }],
+    })
+    expect(themeStyle()).toContain('--primary:#0e7490;')
+    expect(JSON.parse(storage.get('pulpo-settings')!).state).not.toHaveProperty('instanceThemes')
+    settings.useSettings.setState({ instanceThemes: [] })
+    expect(themeStyle()).toBe('')
+  })
 })

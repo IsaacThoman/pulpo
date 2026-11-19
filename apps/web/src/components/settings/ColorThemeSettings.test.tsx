@@ -3,6 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 Object.defineProperty(window, 'matchMedia', { value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }), configurable: true })
+const storage = new Map<string, string>()
+vi.stubGlobal('localStorage', {
+  getItem: (key: string) => storage.get(key) ?? null,
+  setItem: (key: string, value: string) => { storage.set(key, value) },
+  removeItem: (key: string) => { storage.delete(key) },
+})
 const { useSettings } = await import('@/stores/settings')
 const { ColorThemeSettings } = await import('./ColorThemeSettings')
 
@@ -17,11 +23,25 @@ function themeFile(json: string, name: string) {
 }
 
 beforeEach(() => {
-  useSettings.setState({ theme: 'dark', colorTheme: 'pulpo', customThemes: [] })
+  useSettings.setState({ theme: 'dark', colorTheme: 'pulpo', customThemes: [], instanceThemes: [] })
 })
 afterEach(() => cleanup())
 
 describe('color theme settings', () => {
+  it('selects an instance theme separately from a personal theme with the same id and can duplicate it', () => {
+    const shared = { ...mine({ colors: { 'editor.background': '#112233' }, tokenColors: [] }), name: 'Lagoon' }
+    useSettings.setState({ customThemes: [mine()], instanceThemes: [shared] })
+    render(<ColorThemeSettings />)
+    fireEvent.click(screen.getByRole('button', { name: 'Lagoon Instance theme' }))
+    expect(useSettings.getState().colorTheme).toBe('instance:custom-a')
+    expect(screen.queryByRole('textbox', { name: 'Theme name' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicate' }))
+    expect(useSettings.getState().customThemes[1]).toMatchObject({ name: 'Lagoon copy', dark: shared.dark })
+    expect(useSettings.getState().instanceThemes).toEqual([shared])
+  })
+
   it('selects a built-in theme and duplicates it into an editable copy', () => {
     render(<ColorThemeSettings />)
     const picker = screen.getByRole('group', { name: 'Color theme' })
