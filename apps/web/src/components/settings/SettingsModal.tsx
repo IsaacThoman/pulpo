@@ -76,6 +76,7 @@ import { AvatarCropEditor } from './AvatarCropEditor'
 import { DEFAULT_AVATAR_CROP, prepareAvatarUpload } from './avatar-crop'
 import { SETTINGS_SECTION_IDS, type SettingsSectionId } from './settings-dialog'
 import { InstructionPresetButtons } from './InstructionPresetButtons'
+import { AppDownloads } from './AppDownloads'
 import { DesktopAppVersion } from './DesktopAppVersion'
 import { AnimationSpeedInput } from './AnimationSpeedInput'
 import { ColorThemeSettings } from './ColorThemeSettings'
@@ -1299,6 +1300,8 @@ export function SettingsModal({
                       <span className="font-mono text-xs">{location.origin}{ui("/v1")}</span>
                     </div>
                   </div>
+                  <Separator className="my-3" />
+                  <AppDownloads />
                 </div>
               )}
             </div>
