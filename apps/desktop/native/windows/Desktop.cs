@@ -389,6 +389,39 @@ namespace Pulpo.Control
             return Native.GetAncestor(foreground, Native.GA_ROOTOWNER) == hwnd && Native.ProcessId(foreground) == Native.ProcessId(hwnd);
         }
 
+        /// <summary>The name of the app a window belongs to, for telling the agent what is in the way.</summary>
+        public static string AppNameOf(IntPtr window)
+        {
+            int pid = EffectivePid(window);
+            string path = ProcessPath(pid);
+            return path == null ? "another app" : PackagedName(pid) ?? FriendlyName(path);
+        }
+
+        /// <summary>
+        /// A window of another app drawn over some part of the rectangle, in front of the given
+        /// window; zero when there is none. A copy of the screen there would show that app, which the
+        /// user never let the agent see, so nothing is copied from the screen where this answers one.
+        /// The app's own windows in front (its menus and dialogs) are its own to show, and overlays
+        /// that take no clicks are not another app's window.
+        /// </summary>
+        public static IntPtr CoveringWindow(IntPtr hwnd, int pid, Native.RECT rect)
+        {
+            int process = Native.ProcessId(hwnd);
+            foreach (IntPtr other in TopLevelWindows())
+            {
+                // Front to back: everything from here on is behind the window.
+                if (other == hwnd) break;
+                if (!Native.IsWindowVisible(other) || Native.IsCloaked(other) || Native.IsIconic(other)) continue;
+                int otherProcess = Native.ProcessId(other);
+                if (otherProcess == Host.OwnPid || otherProcess == process || EffectivePid(other) == pid) continue;
+                if ((Native.ExStyle(other) & (Native.WS_EX_TRANSPARENT | Native.WS_EX_LAYERED)) == (Native.WS_EX_TRANSPARENT | Native.WS_EX_LAYERED)) continue;
+                Native.RECT bounds = Native.FrameBounds(other);
+                if (bounds.Width <= 0 || bounds.Height <= 0) continue;
+                if (bounds.Left < rect.Right && bounds.Right > rect.Left && bounds.Top < rect.Bottom && bounds.Bottom > rect.Top) return other;
+            }
+            return IntPtr.Zero;
+        }
+
         /// <summary>
         /// The top-level window that would receive a click at this screen point, so a click never
         /// lands in another app. The agent's pointer takes no clicks; when the hit test finds it

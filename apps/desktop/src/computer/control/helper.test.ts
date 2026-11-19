@@ -90,6 +90,19 @@ describe('the helper that controls apps', () => {
     expect((await helper.call('apps', {})).apps[0]!.pid).not.toBe(before)
   })
 
+  it('does not send a request nobody wants any more by the time its turn comes', async () => {
+    const { helper, requests } = await start()
+    let wanted = true
+    const first = helper.call('apps', {})
+    const second = helper.call('act', { pid: 1, windowId: 2, action: { type: 'type', text: 'never typed' } }, { stillWanted: () => wanted })
+    wanted = false
+    await first
+    await expect(second).rejects.toMatchObject({ code: 'failed', message: expect.stringContaining('withdrawn') })
+    expect((await requests()).map((line) => (JSON.parse(line) as { method: string }).method)).toEqual(['configure', 'apps'])
+    // The helper is still there for the next request.
+    expect((await helper.call('apps', {})).apps).toHaveLength(1)
+  })
+
   it('refuses a helper that speaks another version', async () => {
     const { helper } = await start({}, { FAKE_PROTOCOL: '2' })
     await expect(helper.call('apps', {})).rejects.toMatchObject({ code: 'failed', message: expect.stringContaining('different version') })

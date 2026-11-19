@@ -79,6 +79,7 @@ export function findWindow(app: ControlApp, query: string | undefined): ControlW
   return found[0]!
 }
 
+const windowKey = (app: ControlApp, window: ControlWindow) => `${app.pid}:${window.id}`
 const titles = (app: ControlApp) => app.windows.slice(0, 50).map((window) => String(window.title ?? '').slice(0, 500))
 
 function limited(value: string | undefined, length: number): string | undefined {
@@ -141,6 +142,13 @@ export class AppControl {
   private readonly sessions = new Map<string, SessionState>()
   /** One question per app at a time, however many requests want it answered. */
   private readonly questions = new Map<string, Question>()
+  /** Replies with an action being carried out by the helper right now, and how many. */
+  private readonly acting = new Map<string, number>()
+  /**
+   * Per window, the reply that last had it pictured. The helper keeps one list of elements per
+   * window, the latest; a number means what a reply saw only while that list is its own.
+   */
+  private readonly picturedFor = new Map<string, string>()
   private readonly wait: (milliseconds: number) => Promise<void>
   private permissionsRequested = false
 
@@ -267,15 +275,28 @@ export class AppControl {
     else {
       const shown = state.shown.get(appKey)
       window = input.window ? findWindow(app, input.window) : app.windows.find((candidate) => candidate.id === shown) ?? findWindow(app, undefined)
-      if (needsPicture(action) && window.id !== shown) {
-        throw new ComputerError('invalid_request', `Look at ${app.name}'s window ${JSON.stringify(window.title)} first: element numbers and coordinates are those of the last picture of a window, and this one was not shown yet or has closed since.`)
+      if (needsPicture(action) && (window.id !== shown || this.picturedFor.get(windowKey(app, window)) !== session.sessionId)) {
+        throw new ComputerError('invalid_request', `Look at ${app.name}'s window ${JSON.stringify(window.title)} first: element numbers and coordinates are those of the last picture of a window, and this one was not shown to you yet, has closed since, or was pictured for another reply meanwhile.`)
       }
     }
     let note: string | undefined
     let after = app
     if (action.type !== 'view') {
       if (!session.active()) throw gone()
-      const done = await this.ask(() => this.options.helper.call('act', { pid: app.pid, windowId: window.id, action: action as ControlAction }, { timeoutMs: HELPER_ACT_TIMEOUT_MS }))
+      // Counted while the helper works, so a reply that ends meanwhile can have its action stopped.
+      this.acting.set(session.sessionId, (this.acting.get(session.sessionId) ?? 0) + 1)
+      let done
+      try {
+        // The request may wait behind another reply's; by its turn this reply may be over.
+        done = await this.ask(() => this.options.helper.call('act', { pid: app.pid, windowId: window.id, action: action as ControlAction }, { timeoutMs: HELPER_ACT_TIMEOUT_MS, stillWanted: session.active }))
+      } catch (error) {
+        if (!session.active()) throw gone()
+        throw error
+      } finally {
+        const left = (this.acting.get(session.sessionId) ?? 1) - 1
+        if (left > 0) this.acting.set(session.sessionId, left)
+        else this.acting.delete(session.sessionId)
+      }
       note = limited(typeof done?.note === 'string' ? done.note : undefined, 800)
       await this.wait(action.type === 'type' ? SETTLE_TYPING_MS : SETTLE_MS)
       const now = (await this.running()).find((candidate) => candidate.pid === app.pid)
@@ -294,6 +315,7 @@ export class AppControl {
     const snapshot = await this.ask(() => this.options.helper.call('snapshot', { pid: app.pid, windowId: window.id, maxElements: COMPUTER_APP_MAX_ELEMENTS }))
     if (!session.active()) throw gone()
     state.shown.set(appKey, window.id)
+    this.picturedFor.set(windowKey(app, window), session.sessionId)
     const elements = (Array.isArray(snapshot.elements) ? snapshot.elements : []).flatMap((raw) => { const one = element(raw); return one ? [one] : [] }).slice(0, 1_000)
     return {
       app: app.name.slice(0, 200),
@@ -306,21 +328,30 @@ export class AppControl {
     }
   }
 
-  /** The reply is over: its pictures go, a question only it was waiting on is withdrawn, and the agent's pointer hides once no reply is using apps. */
+  /**
+   * The reply is over, or its access was taken back: its pictures go, a question only it was
+   * waiting on is withdrawn, and the agent's pointer hides once no reply is using apps. An action
+   * the helper is still carrying out for it (a long text being typed) is stopped by stopping the
+   * helper, which ends when its input closes; the next request of another reply starts a new one.
+   */
   endSession(sessionId: string): void {
     for (const question of this.questions.values()) {
       if (question.sessions.delete(sessionId) && !question.sessions.size) question.cancel.abort()
     }
+    for (const [key, owner] of this.picturedFor) if (owner === sessionId) this.picturedFor.delete(key)
+    const acting = this.acting.has(sessionId)
+    if (acting) this.options.helper.stop()
     const state = this.sessions.get(sessionId)
     if (!state) return
     this.sessions.delete(sessionId)
     for (const file of state.images) void rm(file, { force: true }).catch(() => undefined)
-    if (!this.sessions.size && this.options.helper.started) void this.options.helper.call('release', {}).catch(() => undefined)
+    if (!acting && !this.sessions.size && this.options.helper.started) void this.options.helper.call('release', {}).catch(() => undefined)
   }
 
   shutdown(): void {
     for (const question of this.questions.values()) question.cancel.abort()
     this.sessions.clear()
+    this.picturedFor.clear()
     this.options.helper.stop()
   }
 }

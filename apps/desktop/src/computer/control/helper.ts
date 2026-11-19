@@ -27,6 +27,7 @@ const STDERR_KEPT = 2_000
 /** A helper whose input closed gets this long to leave by itself. */
 const EXIT_GRACE_MS = 1_500
 const STOPPED = 'The helper that controls apps stopped.'
+const WITHDRAWN = 'The request was withdrawn before the helper was asked.'
 
 /**
  * Where this system's helper is, or null when there is none: macOS runs the binary built by
@@ -176,9 +177,14 @@ export class ControlHelper {
     this.idleTimer.unref?.()
   }
 
-  /** Asks the helper one thing, starting it when it is not running. Rejects with a `ControlHelperError`. */
-  call<M extends Exclude<ControlMethod, 'configure'>>(method: M, params: ControlParams<M>, options: { timeoutMs?: number } = {}): Promise<ControlResult<M>> {
+  /**
+   * Asks the helper one thing, starting it when it is not running. Rejects with a `ControlHelperError`.
+   * A request waits its turn behind the one before it; `stillWanted` is asked when its turn comes,
+   * and a request nobody wants any more (its reply ended meanwhile) is not sent.
+   */
+  call<M extends Exclude<ControlMethod, 'configure'>>(method: M, params: ControlParams<M>, options: { timeoutMs?: number; stillWanted?: () => boolean } = {}): Promise<ControlResult<M>> {
     const result = this.queue.then(async () => {
+      if (options.stillWanted && !options.stillWanted()) throw new ControlHelperError('failed', WITHDRAWN)
       this.touch()
       if (!this.ready) {
         const ready = this.start()

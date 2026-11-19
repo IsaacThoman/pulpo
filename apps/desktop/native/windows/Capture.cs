@@ -47,13 +47,20 @@ namespace Pulpo.Control
                 Desktop.Foreground(hwnd);
                 Thread.Sleep(200);
                 frame = Native.FrameBounds(hwnd);
+                // Being in front is not being uncovered: a window that stays on top of others may
+                // still lie over this one, and the screen there shows that app, not this one.
+                IntPtr cover = Desktop.CoveringWindow(hwnd, pid, frame);
+                if (cover != IntPtr.Zero)
+                {
+                    throw new ControlException("unsupported", "This window can only be pictured from the screen, and a window of " + Desktop.AppNameOf(cover) + " lies over it. Nothing was pictured; ask the user to move that window away.");
+                }
                 picture = FromScreen(frame);
             }
 
             try
             {
                 List<IntPtr> popups = Desktop.Popups(hwnd, pid);
-                foreach (IntPtr popup in Reverse(popups)) DrawPopup(picture, popup, frame);
+                foreach (IntPtr popup in Reverse(popups)) DrawPopup(picture, popup, frame, pid);
 
                 double scale = Math.Min(1.0, (double)maxEdge / Math.Max(frame.Width, frame.Height));
                 int width = Math.Max(1, (int)Math.Round(frame.Width * scale));
@@ -182,17 +189,20 @@ namespace Pulpo.Control
         /// A menu or dialog of the window drawn where it floats over it. While open it is in front of
         /// everything, so it is copied from the screen, which also gets the rounded corners and shadow
         /// of XAML popups right (PrintWindow paints their transparent parts black). When something
-        /// covers it after all, PrintWindow draws it.
+        /// covers it after all, PrintWindow draws it. The screen is never copied where another app's
+        /// window lies over any part of it: a popup that then draws nothing by itself is left out.
         /// </summary>
-        static void DrawPopup(Bitmap picture, IntPtr popup, Native.RECT frame)
+        static void DrawPopup(Bitmap picture, IntPtr popup, Native.RECT frame, int pid)
         {
             Native.RECT bounds = Native.FrameBounds(popup);
             if (bounds.Width <= 0 || bounds.Height <= 0) return;
             Native.POINT middle = new Native.POINT(bounds.Left + bounds.Width / 2, bounds.Top + bounds.Height / 2);
             IntPtr hit = Native.WindowFromPoint(middle);
+            bool uncovered = Desktop.CoveringWindow(popup, pid, bounds) == IntPtr.Zero;
             Bitmap image = null;
-            if (hit == IntPtr.Zero || Native.GetAncestor(hit, Native.GA_ROOT) != popup) image = PrintedWindow(popup, bounds);
-            if (image == null) image = FromScreen(bounds);
+            if (!uncovered || hit == IntPtr.Zero || Native.GetAncestor(hit, Native.GA_ROOT) != popup) image = PrintedWindow(popup, bounds);
+            if (image == null && uncovered) image = FromScreen(bounds);
+            if (image == null) return;
             using (image)
             using (Graphics g = Graphics.FromImage(picture))
             {

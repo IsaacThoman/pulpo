@@ -4,8 +4,9 @@ import AppKit
 // protocol is apps/desktop/src/computer/control/protocol.ts.
 //
 // The main thread runs AppKit, which the agent's pointer window needs. Requests are read on a
-// thread of their own and handled one at a time, in order, each on a fresh thread, so a request
-// stuck in a hung app can be answered with `failed` and left behind without blocking the next.
+// thread of their own and handled on another, one at a time, in order, each on a fresh thread, so
+// a request stuck in a hung app can be answered with `failed` and left behind without blocking the
+// next, and the end of input is noticed while a request is still running.
 
 let output = Output() // First: from here on, nothing but answers reaches standard output.
 signal(SIGPIPE, SIG_IGN)
@@ -14,13 +15,49 @@ final class Server: @unchecked Sendable {
   /// No request should take longer; typing long text gets more (see `timeout(for:)`).
   static let requestTimeout: TimeInterval = 10
 
+  /// After input closes, a request still running gets this long to end by itself.
+  static let closingGrace: TimeInterval = 1
+
+  private let condition = NSCondition()
+  private var waiting: [String] = []
+  private var closed = false
+  /// The request being handled, so the end of input can tell it to stop.
+  private var current: RequestContext?
+
   func readLoop() {
     while let line = readLine(strippingNewline: true) {
+      condition.lock()
+      waiting.append(line)
+      condition.signal()
+      condition.unlock()
+    }
+    // Input closed: the app is done with the helper (the reply was stopped, its access taken back,
+    // or the app quit). What is running is told to stop where it is, so text being typed does not
+    // run on; what was still waiting is not started.
+    condition.lock()
+    closed = true
+    let running = current
+    condition.signal()
+    condition.unlock()
+    guard let running else { _exit(0) }
+    running.abandon()
+    Thread.sleep(forTimeInterval: Self.closingGrace)
+    _exit(0)
+  }
+
+  func handleLoop() {
+    while true {
+      condition.lock()
+      while waiting.isEmpty && !closed { condition.wait() }
+      if closed {
+        condition.unlock()
+        _exit(0)
+      }
+      let line = waiting.removeFirst()
+      condition.unlock()
       if line.trimmingCharacters(in: .whitespaces).isEmpty { continue }
       handle(line)
     }
-    // Input closed: the app is gone or done with the helper. Nothing is left to finish.
-    _exit(0)
   }
 
   private func handle(_ line: String) {
@@ -36,6 +73,14 @@ final class Server: @unchecked Sendable {
     let params = object.object("params") ?? [:]
     let timeout = Self.timeout(for: method, params: params)
     let context = RequestContext(timeout: timeout)
+    condition.lock()
+    current = context
+    condition.unlock()
+    defer {
+      condition.lock()
+      current = nil
+      condition.unlock()
+    }
 
     final class Box: @unchecked Sendable { var answer: JSON = [:] }
     let box = Box()
@@ -115,4 +160,5 @@ AX.setUp()
 
 let server = Server()
 Thread.detachNewThread { server.readLoop() }
+Thread.detachNewThread { server.handleLoop() }
 application.run()

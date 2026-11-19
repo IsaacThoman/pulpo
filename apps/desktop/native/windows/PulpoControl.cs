@@ -13,6 +13,7 @@
 
 using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -57,6 +58,15 @@ namespace Pulpo.Control
         internal static readonly Dictionary<long, WindowState> Windows = new Dictionary<long, WindowState>();
         internal static readonly int OwnPid = System.Diagnostics.Process.GetCurrentProcess().Id;
 
+        /// <summary>
+        /// Set when standard input has closed: the app is done with the helper (the reply was stopped,
+        /// the access taken back, or the app quit). A long action checks it and stops where it is.
+        /// </summary>
+        internal static volatile bool Closing;
+
+        /// <summary>How long an action still running when input closed gets to end by itself.</summary>
+        const int ClosingGraceMs = 1000;
+
         static Stream errorStream;
         static readonly UTF8Encoding Utf8 = new UTF8Encoding(false);
 
@@ -74,14 +84,37 @@ namespace Pulpo.Control
             Stream output = Console.OpenStandardOutput();
             JavaScriptSerializer json = NewSerializer();
 
-            string line;
-            while ((line = input.ReadLine()) != null)
+            // Requests are read on a thread of their own, so the end of input is noticed while an
+            // action is still running: text being typed stops there, instead of running on for up to
+            // half a minute after the user stopped the reply.
+            BlockingCollection<string> lines = new BlockingCollection<string>();
+            Thread reader = new Thread(delegate ()
             {
+                try
+                {
+                    string read;
+                    while ((read = input.ReadLine()) != null) lines.Add(read);
+                }
+                catch (Exception) { }
+                Closing = true;
+                lines.CompleteAdding();
+            });
+            reader.IsBackground = true;
+            reader.Start();
+
+            foreach (string line in lines.GetConsumingEnumerable())
+            {
+                // What was still waiting when input closed is not wanted any more.
+                if (Closing) break;
                 if (line.Trim().Length == 0) continue;
                 Dictionary<string, object> answer = Answer(json, line);
-                byte[] bytes = Utf8.GetBytes(json.Serialize(answer) + "\n");
-                output.Write(bytes, 0, bytes.Length);
-                output.Flush();
+                try
+                {
+                    byte[] bytes = Utf8.GetBytes(json.Serialize(answer) + "\n");
+                    output.Write(bytes, 0, bytes.Length);
+                    output.Flush();
+                }
+                catch (IOException) { break; }
             }
             Pointer.Shutdown();
             return 0;
@@ -140,10 +173,17 @@ namespace Pulpo.Control
             worker.SetApartmentState(ApartmentState.MTA);
             worker.Start();
             int timeout = TimeoutFor(method, parameters);
-            if (!worker.Join(timeout))
+            System.Diagnostics.Stopwatch waited = System.Diagnostics.Stopwatch.StartNew();
+            long closingSince = -1;
+            while (!worker.Join(50))
             {
-                Log(method + " did not finish within " + (timeout / 1000) + " s");
-                return Failure(id, "failed", "The window did not respond in time.");
+                if (Closing && closingSince < 0) closingSince = waited.ElapsedMilliseconds;
+                if (closingSince >= 0 && waited.ElapsedMilliseconds - closingSince > ClosingGraceMs) return Failure(id, "failed", "The helper is closing.");
+                if (waited.ElapsedMilliseconds > timeout)
+                {
+                    Log(method + " did not finish within " + (timeout / 1000) + " s");
+                    return Failure(id, "failed", "The window did not respond in time.");
+                }
             }
             if (error != null) return FailureFor(id, method, error);
 

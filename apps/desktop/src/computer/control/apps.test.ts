@@ -22,7 +22,7 @@ interface Harness {
   confirm: ReturnType<typeof vi.fn>
   allowed: ComputerAllowedApp[]
   running: { apps: ControlApp[] }
-  state: { active: boolean; imageBytes: number; started: boolean; stopped: number; fail: Partial<Record<ControlMethod, ControlHelperError>>; elements: ControlElement[]; /** What an action does to the windows that are open. */ onAct?: () => void }
+  state: { active: boolean; imageBytes: number; started: boolean; stopped: number; fail: Partial<Record<ControlMethod, ControlHelperError>>; elements: ControlElement[]; /** What an action does to the windows that are open. */ onAct?: () => void; /** Holds an action until it settles, as a long text being typed does. */ hold?: Promise<void>; options: Array<{ timeoutMs?: number; stillWanted?: () => boolean } | undefined> }
 }
 
 let base: string
@@ -31,14 +31,16 @@ function harness(platform: NodeJS.Platform = 'darwin'): Harness {
   const imageDir = path.join(base, 'images')
   const asked: Harness['asked'] = []
   const running = { apps: [safari, textEdit(), pulpo] }
-  const state: Harness['state'] = { active: true, imageBytes: 1_000, started: false, stopped: 0, fail: {}, elements: [{ index: 1, depth: 0, role: 'button', label: 'Save', x: 10.4, y: 20, width: 80, height: 24 }] }
+  const state: Harness['state'] = { active: true, imageBytes: 1_000, started: false, stopped: 0, fail: {}, options: [], elements: [{ index: 1, depth: 0, role: 'button', label: 'Save', x: 10.4, y: 20, width: 80, height: 24 }] }
   let shots = 0
   const helper = {
     get started() { return state.started },
     stop: () => { state.stopped += 1; state.started = false },
-    call: vi.fn(async (method: ControlMethod, params: Record<string, unknown>) => {
+    call: vi.fn(async (method: ControlMethod, params: Record<string, unknown>, options?: { timeoutMs?: number; stillWanted?: () => boolean }) => {
       state.started = true
       asked.push({ method, params })
+      state.options.push(options)
+      if (method === 'act' && state.hold) await state.hold
       const failure = state.fail[method]
       if (failure) throw failure
       if (method === 'apps') return { apps: running.apps }
@@ -266,6 +268,43 @@ describe('app control', () => {
     await h.control.act(h.session, view(), 210_000)
     h.state.fail.act = new ControlHelperError('stale_element', 'Element 9 is not in the window any more.')
     expect(await refusal(h.control.act(h.session, click({ element: 9 }), 210_000))).toMatchObject({ code: 'invalid_request', message: expect.stringContaining('look at it again') })
+  })
+
+  it('stops an action still being carried out when its reply ends', async () => {
+    const h = harness()
+    await h.control.act(h.session, view(), 210_000)
+    let finish!: () => void
+    h.state.hold = new Promise<void>((resolve) => { finish = resolve })
+    const typing = h.control.act(h.session, { app: 'TextEdit', action: { type: 'type', text: 'a long text' } }, 210_000)
+    await vi.waitFor(() => expect(h.asked.at(-1)?.method).toBe('act'))
+    // The user stops the reply: the helper is stopped rather than asked to hide a pointer after the typing.
+    h.state.active = false
+    h.control.endSession('s1')
+    expect(h.state.stopped).toBe(1)
+    expect(h.asked.some((request) => request.method === 'release')).toBe(false)
+    finish()
+    expect(await refusal(typing)).toMatchObject({ code: 'unknown_session' })
+    // The helper is told how to learn that a request waiting its turn is no longer wanted.
+    const options = h.state.options[h.asked.findIndex((request) => request.method === 'act')]
+    expect(options?.stillWanted?.()).toBe(false)
+  })
+
+  it('takes a number only from the picture this reply was shown, not one taken for another reply since', async () => {
+    const h = harness()
+    const other: AppControlSession = { ...h.session, sessionId: 's2' }
+    await h.control.act(h.session, view(), 210_000)
+    // Another reply of the same user looks at the same window: the helper's elements are now that picture's.
+    await h.control.act(other, view(), 210_000)
+    expect(await refusal(h.control.act(h.session, click(), 210_000))).toMatchObject({ code: 'invalid_request', message: expect.stringContaining('pictured for another reply meanwhile') })
+    expect(h.asked.some((request) => request.method === 'act')).toBe(false)
+    // The other reply's numbers are good, and this one's are again once it has looked.
+    await h.control.act(other, click(), 210_000)
+    await h.control.act(h.session, view(), 210_000)
+    await h.control.act(h.session, click(), 210_000)
+    expect(h.asked.filter((request) => request.method === 'act')).toHaveLength(2)
+    // A reply that ended leaves nothing behind that could vouch for a later one.
+    h.control.endSession('s1')
+    expect(await refusal(h.control.act({ ...h.session, sessionId: 's3' }, click(), 210_000))).toMatchObject({ code: 'invalid_request' })
   })
 
   it('does nothing for a reply that is over, and puts the agent\'s pointer away with the last one', async () => {

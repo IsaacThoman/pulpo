@@ -415,9 +415,7 @@ namespace Pulpo.Control
             if (hit == IntPtr.Zero) return;
             int raw = Native.ProcessId(hit);
             if (raw == pid || raw == Native.ProcessId(hwnd) || Desktop.EffectivePid(hit) == pid) return;
-            string other = Desktop.ProcessPath(Desktop.EffectivePid(hit));
-            string name = other == null ? "another app" : Desktop.PackagedName(Desktop.EffectivePid(hit)) ?? Desktop.FriendlyName(other);
-            throw new ControlException("failed", "A window of " + name + " (\u201c" + Native.WindowText(hit) + "\u201d) covers " + what + "; nothing was done.");
+            throw new ControlException("failed", "A window of " + Desktop.AppNameOf(hit) + " (\u201c" + Native.WindowText(hit) + "\u201d) covers " + what + "; nothing was done.");
         }
     }
 
@@ -599,6 +597,8 @@ namespace Pulpo.Control
             text = text.Replace("\r\n", "\n").Replace('\r', '\n');
             for (int i = 0; i < text.Length; i++)
             {
+                // The app closed the helper's input: the reply was stopped or its access taken back.
+                if (Host.Closing) throw new ControlException("failed", "Stopped after " + i + " of " + text.Length + " characters.");
                 if (stillFocused != null && i % 10 == 0 && !stillFocused())
                 {
                     throw new ControlException("failed", "The window lost the keyboard focus after " + i + " of " + text.Length + " characters; nothing more was typed.");
