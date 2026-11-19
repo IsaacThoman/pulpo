@@ -60,6 +60,12 @@ export const computerDescriptionSchema = z.object({
   cwd: z.string().max(COMPUTER_PATH_MAX_LENGTH),
   /** Where files the user sent in the chat are saved for the agent. */
   attachmentsDir: z.string().max(COMPUTER_PATH_MAX_LENGTH),
+  /**
+   * Where `pulpo files` keeps its copies of the user's Files on this computer (what
+   * `/workspace/files` is in a cloud workspace). Absent when the app cannot run `pulpo files`
+   * for the agent's commands, and then Files are not offered in a full-access reply.
+   */
+  filesDir: z.string().max(COMPUTER_PATH_MAX_LENGTH).optional(),
 })
 export type ComputerDescription = z.infer<typeof computerDescriptionSchema>
 
@@ -92,6 +98,25 @@ const oneSourceMessage = 'Send the bytes inline or through a transfer, not both'
 export const COMPUTER_OPERATION_TYPES = ['bash', 'read', 'write', 'edit', 'list', 'find', 'grep'] as const
 export type ComputerOperationType = typeof COMPUTER_OPERATION_TYPES[number]
 
+/**
+ * A `pulpo` command run by the agent's shell command (`pulpo files …`), held by the desktop app
+ * until the server answers it with `operation.relay`, the way the workspace daemon holds one.
+ * Agent-controlled input: the server validates `command` and `args`.
+ */
+export const computerRelayRequestSchema = z.object({
+  id: z.string().min(1).max(200),
+  command: z.string().max(200),
+  args: z.unknown(),
+})
+export type ComputerRelayRequest = z.infer<typeof computerRelayRequestSchema>
+
+/** The server's answer to a relay request, as the `pulpo` command receives it. */
+export const computerRelayResultSchema = z.discriminatedUnion('ok', [
+  z.object({ ok: z.literal(true), output: z.string(), data: z.unknown().optional() }),
+  z.object({ ok: z.literal(false), error: z.string() }),
+])
+export type ComputerRelayResult = z.infer<typeof computerRelayResultSchema>
+
 /** The same shape the workspace daemon answers with; `output` is everything printed so far. */
 export const computerOperationSchema = z.object({
   id: z.string().min(1).max(200),
@@ -100,6 +125,8 @@ export const computerOperationSchema = z.object({
   exitCode: z.number().int().nullable(),
   error: z.string().optional(),
   details: z.record(z.string(), z.unknown()).optional(),
+  /** Relay requests waiting for an answer. Present (version 1) on apps that relay `pulpo files`; a long-poll returns at once when one arrives. */
+  relay: z.object({ version: z.number().int(), pending: z.array(computerRelayRequestSchema).max(100) }).optional(),
 })
 export type ComputerOperation = z.infer<typeof computerOperationSchema>
 /**
@@ -169,6 +196,11 @@ export const computerMethods = {
   /** Returns early when the operation stops or prints something new; otherwise after `waitMs`. */
   'operation.get': { params: z.object({ id: operationId, waitMs: z.number().int().min(0).max(25_000).optional() }), result: computerOperationSchema },
   'operation.cancel': { params: z.object({ id: operationId }), result: computerOperationSchema },
+  /** Answers one pending relay request of a running operation. `delivered` is false when the command no longer waits for it. */
+  'operation.relay': {
+    params: z.object({ requestId: z.string().min(1).max(200), result: computerRelayResultSchema }),
+    result: z.object({ delivered: z.boolean() }),
+  },
   /** Sends a file on the computer to the server (attach_file, view_image): inline when it is small, else through the transfer. */
   'file.send': {
     params: z.object({ path: absolutePath, transfer: computerTransferSchema, maxBytes: z.number().int().positive() }),
@@ -367,8 +399,12 @@ export interface ComputerChangeDetail extends ComputerChange {
 
 /** What `window.pulpoDesktop.computer` offers the web code. Everything here runs in the main process. */
 export interface DesktopComputerApi {
-  /** What the user has allowed so far for the signed-in account. */
-  status(): Promise<{ fullAccess: boolean; folders: ComputerFolder[]; defaultFolder: ComputerFolder }>
+  /**
+   * What the user has allowed so far for the signed-in account. `signedIn` is false when the app
+   * could not tell which account is signed in (it asks the instance), and then nothing can be
+   * allowed or used; absent from apps that predate it.
+   */
+  status(): Promise<{ fullAccess: boolean; folders: ComputerFolder[]; defaultFolder: ComputerFolder; signedIn?: boolean }>
   /** Opens the native folder dialog; the chosen folder becomes usable. Null when the user cancels. */
   chooseFolder(): Promise<ComputerFolder | null>
   /** Asks, in a native dialog the first time, whether the agent may run commands on this computer. */
