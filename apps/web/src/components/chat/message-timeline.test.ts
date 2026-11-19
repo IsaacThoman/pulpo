@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { activityDurationMs } from './activity-timing'
-import { buildTimeline, type ActivitySegment } from './message-timeline'
+import { buildTimeline, workspaceLabel, type ActivitySegment } from './message-timeline'
 
 function reasoning(text: string, options: { active?: boolean; durationMs?: number } = {}) {
   return {
@@ -243,5 +243,24 @@ describe('cost limit pauses in the timeline', () => {
     const activity = timeline[0] as ActivitySegment
     expect(activity.steps.flatMap((step) => step.kind === 'cost_limit' ? [step.costLimit.limit_micros] : []))
       .toEqual([100_000, 200_000, 300_000])
+  })
+})
+
+describe('workspaceLabel', () => {
+  it.each([
+    ['provisioning', 'Connecting to this computer…', 'Connecting to your computer…'],
+    ['ready', 'Using this computer', 'Using your computer'],
+    ['running', 'Using this computer', 'Using your computer'],
+    ['unavailable', "This computer isn't connected", "Your computer isn't connected"],
+  ])('names the computer of a full-access run in state %s', (state, withBridge, withoutBridge) => {
+    expect(workspaceLabel({ type: 'pulpo_workspace', state, computer: true }, true)).toBe(withBridge)
+    expect(workspaceLabel({ type: 'pulpo_workspace', state, computer: true }, false)).toBe(withoutBridge)
+    expect(workspaceLabel({ type: 'pulpo_workspace', state, computer: true })).toBe(withoutBridge)
+  })
+
+  it('keeps the cloud workspace labels, wherever they are read', () => {
+    expect(workspaceLabel({ type: 'pulpo_workspace', state: 'provisioning' }, true)).toBe('Starting workspace…')
+    expect(workspaceLabel({ type: 'pulpo_workspace', state: 'ready' }, true)).toBe('Started workspace')
+    expect(workspaceLabel({ type: 'pulpo_workspace', state: 'waiting', position: 2 })).toBe('Waiting for workspace · queue #2')
   })
 })

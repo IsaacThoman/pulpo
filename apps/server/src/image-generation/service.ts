@@ -14,8 +14,8 @@ import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { assertSafeProviderUrl } from '../lib/url-security.js'
 import { generatedAttachmentMetadata } from '../attachments/generated.js'
-import { restoredAttachmentWorkspacePath, attachmentWorkspacePath } from '../agent/policy.js'
 import { WorkspaceManager } from '../agent/controller.js'
+import type { AgentWorkspace } from '../agent/workspace.js'
 import { imageCost, imageReservation } from './pricing.js'
 import { generateImage, validateImageBytes, validateImageRequest, type ImageReference, type ImageResultMetadata } from './provider.js'
 import { readImageDefaults } from './defaults.js'
@@ -43,17 +43,17 @@ async function attachmentReference(attachment: typeof attachments.$inferSelect, 
   return { data, mimeType, ...(compatible && prior.result?.imageItem ? { priorImageItem: prior.result.imageItem } : {}) }
 }
 
-export async function resolveImageReferences(input: ImageGenerationInput, userId: string, chatId: string, model: ImageModel, manager: WorkspaceManager, signal?: AbortSignal): Promise<ImageReference[]> {
+export async function resolveImageReferences(input: ImageGenerationInput, userId: string, chatId: string, model: ImageModel, manager: AgentWorkspace, signal?: AbortSignal): Promise<ImageReference[]> {
   const references: ImageReference[] = []
   for (const reference of input.referenceImages ?? []) {
     signal?.throwIfAborted()
     // Existing attachments can be read without provisioning a workspace.
     const rows = await db.select().from(attachments).where(and(eq(attachments.userId, userId), eq(attachments.chatId, chatId), eq(attachments.status, 'ready'), ...('attachmentId' in reference ? [eq(attachments.id, reference.attachmentId)] : [])))
-    const attachment = 'attachmentId' in reference ? rows[0] : rows.find(row => restoredAttachmentWorkspacePath(row) === reference.path || attachmentWorkspacePath(row.originalName, row.id) === reference.path)
+    const attachment = 'attachmentId' in reference ? rows[0] : rows.find(row => manager.paths.restoredAttachment(row) === reference.path || manager.paths.attachment(row.originalName, row.id) === reference.path)
     if (attachment) references.push(await attachmentReference(attachment, model))
     else if ('attachmentId' in reference) throw new AppError(404, 'image_reference_missing', 'Reference image is not available in this chat')
     else {
-      if (!reference.path.startsWith('/workspace/')) throw new AppError(400, 'image_reference_path', 'Reference image files must be inside /workspace')
+      if (!manager.paths.readable(reference.path)) throw new AppError(400, 'image_reference_path', manager.kind === 'cloud' ? 'Reference image files must be inside /workspace' : 'Reference image files must be absolute paths on the user\'s computer')
       const file = await manager.exportFile(reference.path, signal).catch(() => {
         signal?.throwIfAborted()
         throw new AppError(400, 'image_reference_unreadable', 'Reference image could not be read from the workspace; check the path or use a chat attachment ID')
@@ -101,7 +101,7 @@ async function recordSavedImage(claim: typeof imageGenerationRequests.$inferSele
 
 // Reconcile both legacy attachment saves and workspace writes interrupted before
 // recording the charge. Only the exact saved bytes in the original lease qualify.
-export async function recoverSavedImageGenerations(responseId: string, runId: string, manager?: WorkspaceManager) {
+export async function recoverSavedImageGenerations(responseId: string, runId: string, manager?: AgentWorkspace) {
   const saved = await db.select({ claim: imageGenerationRequests, attachmentId: attachments.id }).from(imageGenerationRequests)
     .innerJoin(attachments, and(eq(attachments.sourceResponseId, imageGenerationRequests.responseId), eq(attachments.sourceToolCallId, imageGenerationRequests.operationId)))
     .where(and(eq(imageGenerationRequests.responseId, responseId), inArray(imageGenerationRequests.status, ['claimed', 'failed']), eq(attachments.status, 'ready')))
@@ -122,7 +122,7 @@ export async function recoverSavedImageGenerations(responseId: string, runId: st
 
 export async function executeImageGeneration(input: {
   userId: string; chatId: string; responseId: string; requestLogId?: string; runId: string; operationId: string; args: ImageGenerationInput
-  manager: WorkspaceManager; signal?: AbortSignal; reserveCost: (micros: number) => Promise<void>
+  manager: AgentWorkspace; signal?: AbortSignal; reserveCost: (micros: number) => Promise<void>
 }): Promise<ImageExecutionResult> {
   const selection = await selectedImageModel(input.userId)
   if (!selection) throw unavailable()
@@ -148,7 +148,7 @@ export async function executeImageGeneration(input: {
     if (attachment && existing.result) {
       const data = await getBlobStore().get(attachment.objectKey)
       const leaseId = await input.manager.ensureLease(input.signal)
-      const file = { path: restoredAttachmentWorkspacePath(attachment), name: attachment.originalName, mimeType: attachment.mimeType, sizeBytes: data.byteLength, checksum: checksum(data), leaseId }
+      const file = { path: input.manager.paths.restoredAttachment(attachment), name: attachment.originalName, mimeType: attachment.mimeType, sizeBytes: data.byteLength, checksum: checksum(data), leaseId }
       await input.manager.saveGeneratedFile(file.path, data, file.mimeType, leaseId, input.signal)
       return finish(existing, file, attachment.id)
     }
@@ -185,7 +185,7 @@ export async function executeImageGeneration(input: {
     const requested = basename(input.args.filename ?? 'generated-image')
     const rawName = `${requested.slice(0, requested.length - extname(requested).length).slice(0, 180) || 'generated-image'}${extension}`
     const name = generatedAttachmentMetadata(rawName, undefined, data).name
-    const path = `/workspace/generated-${newId()}-${name}`
+    const path = input.manager.paths.file(`generated-${newId()}-${name}`)
     const file: GeneratedWorkspaceImage = { path, name, mimeType, sizeBytes: data.byteLength, checksum: checksum(data), leaseId }
     const savedResult: SavedImageResult = { ...metadata, workspaceFile: file }
     // Persist identity before PUT so a lost acknowledgement or process restart

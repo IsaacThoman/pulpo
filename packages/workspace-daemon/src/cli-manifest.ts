@@ -3,10 +3,11 @@ import { createReadStream } from 'node:fs'
 import { mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { UsageError } from './cli-args.js'
+import { FILES_STORE, type CliStore } from './cli-store.js'
 
 /** What the CLI last pulled or pushed for a local file. The server never trusts any of it. */
 export interface ManifestEntry { remote: string; nodeId: string; version: string; sha256: string }
-/** A local copy whose item was moved (`to`) or trashed (`to: null`) in Files; a plain push must not recreate it. */
+/** A local copy whose item was moved (`to`) or trashed (`to: null`) in the store; a plain push must not recreate it. */
 export interface Tombstone { remote: string; to: string | null }
 export interface Manifest { version: 1; files: Record<string, ManifestEntry>; moved: Record<string, Tombstone> }
 
@@ -51,8 +52,8 @@ async function staleLock(lock: string): Promise<boolean> {
   } catch { return false }
 }
 
-/** Serializes manifest read-modify-write across `pulpo files` processes (background jobs, parallel commands). */
-async function lockManifest(path: string): Promise<() => Promise<void>> {
+/** Serializes manifest read-modify-write across `pulpo` processes (background jobs, parallel commands). */
+async function lockManifest(path: string, store: CliStore): Promise<() => Promise<void>> {
   const lock = `${path}.lock`
   await mkdir(dirname(path), { recursive: true })
   const deadline = Date.now() + LOCK_WAIT_MS
@@ -64,13 +65,13 @@ async function lockManifest(path: string): Promise<() => Promise<void>> {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
     }
     if (await staleLock(lock)) { await rm(lock, { force: true }); continue }
-    if (Date.now() > deadline) throw new Error(`another pulpo files command is still updating ${path}. Try again, or delete ${lock} if none is running.`)
+    if (Date.now() > deadline) throw new Error(`another pulpo ${store.group} command is still updating ${path}. Try again, or delete ${lock} if none is running.`)
     await new Promise((resolve) => setTimeout(resolve, 20 + Math.random() * 30))
   }
 }
 
-export async function updateManifest(path: string, change: (manifest: Manifest) => void | Promise<void>): Promise<void> {
-  const unlock = await lockManifest(path)
+export async function updateManifest(path: string, change: (manifest: Manifest) => void | Promise<void>, store: CliStore = FILES_STORE): Promise<void> {
+  const unlock = await lockManifest(path, store)
   const temporary = `${path}.${randomUUID()}.tmp`
   try {
     const manifest = await readManifest(path)
@@ -102,7 +103,7 @@ export function isInside(path: string, root: string): boolean {
 
 export const sameRemote = (left: string, right: string) => left.toLowerCase() === right.toLowerCase()
 
-/** Accepts Files paths in the forms models type: "/Projects", "./Projects/", or a mirror path. */
+/** Accepts store paths in the forms models type: "/Projects", "./Projects/", or a mirror path. */
 export function remotePath(value: string, mirrorRoot: string): string {
   if (isAbsolute(value) && isInside(resolve(value), mirrorRoot)) return relative(mirrorRoot, resolve(value)).split(sep).join('/')
   const path = value.replace(/^(?:\.?\/)+/, '').replace(/\/+$/, '')
@@ -149,33 +150,33 @@ export async function localStatus(mirrorRoot: string, manifest: Manifest): Promi
   return status
 }
 
-export function detachedMessage({ remote, to }: { remote: string; to: string | null }): string {
+export function detachedMessage({ remote, to }: { remote: string; to: string | null }, store: CliStore = FILES_STORE): string {
   return to === null
-    ? `${remote} was moved to the trash in Files. Push this copy with --to <path> to create it again, or delete it.`
-    : `${remote} was moved in Files (to "${to}"). Pull it from its new path, or push this copy with --to <path>.`
+    ? `${remote} was moved to the trash in ${store.place}. Push this copy with --to <path> to create it again, or delete it.`
+    : `${remote} was moved in ${store.place} (to "${to}"). Pull it from its new path, or push this copy with --to <path>.`
 }
 
 /**
  * Chooses what `push` sends. Without paths: every modified or new file. Named files always go
  * (the server reports "unchanged"); named directories contribute only modified and new files.
- * Copies of items moved or trashed in Files are refused unless --to says where they belong.
+ * Copies of items moved or trashed in the store are refused unless --to says where they belong.
  */
-export async function planPush(input: { mirrorRoot: string; manifest: Manifest; locals: string[]; to?: string; force: boolean }): Promise<PushPlan> {
-  const { mirrorRoot, manifest, force } = input
+export async function planPush(input: { mirrorRoot: string; manifest: Manifest; locals: string[]; to?: string; force: boolean; store?: CliStore }): Promise<PushPlan> {
+  const { mirrorRoot, manifest, force, store = FILES_STORE } = input
   let candidates: Array<{ local: string; sha256: string; explicit: boolean }> = []
   const refused: PushPlan['refused'] = []
   if (!input.locals.length) {
     if (input.to !== undefined) throw new UsageError('--to needs exactly one local file.', 'push')
     const status = await localStatus(mirrorRoot, manifest)
     candidates = [...status.modified, ...status.added].map(({ local, sha256 }) => ({ local, sha256, explicit: false }))
-    refused.push(...status.detached.map((file) => ({ local: file.local, remote: file.remote, message: detachedMessage(file) })))
+    refused.push(...status.detached.map((file) => ({ local: file.local, remote: file.remote, message: detachedMessage(file, store) })))
   } else {
     const seen = new Set<string>()
     const add = async (local: string, explicit: boolean) => {
       if (seen.has(local)) return
       seen.add(local)
       const tombstone = manifest.files[local] ? undefined : manifest.moved[local]
-      if (tombstone && input.to === undefined) { refused.push({ local, remote: tombstone.remote, message: detachedMessage(tombstone) }); return }
+      if (tombstone && input.to === undefined) { refused.push({ local, remote: tombstone.remote, message: detachedMessage(tombstone, store) }); return }
       const sha256 = await sha256File(local)
       if (explicit || manifest.files[local]?.sha256 !== sha256) candidates.push({ local, sha256, explicit })
     }
@@ -196,10 +197,10 @@ export async function planPush(input: { mirrorRoot: string; manifest: Manifest; 
     if (input.to !== undefined) {
       const target = remotePath(input.to, mirrorRoot)
       remote = input.to.endsWith('/') ? [target, basename(local)].filter(Boolean).join('/') : target
-      if (!remote) throw new UsageError('--to needs a Files path.', 'push')
+      if (!remote) throw new UsageError(`--to needs a ${store.pathNoun}.`, 'push')
     } else if (entry) remote = entry.remote
     else if (isInside(local, mirrorRoot) && local !== mirrorRoot) remote = mirrorRemote(local, mirrorRoot)
-    else throw new UsageError(`${local} is outside ${mirrorRoot} and was not pulled, so its place in Files is unknown. Add --to <path>.`, 'push')
+    else throw new UsageError(`${local} is outside ${mirrorRoot} and was not pulled, so its place in ${store.place} is unknown. Add --to <path>.`, 'push')
     const base = !force && entry && sameRemote(entry.remote, remote) ? { nodeId: entry.nodeId, version: entry.version } : null
     return { local, remote, base, ...(force ? { force: true as const } : {}), sha256 }
   })

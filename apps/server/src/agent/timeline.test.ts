@@ -47,6 +47,22 @@ describe('buildAgentOutput', () => {
     expect(output.at(-1)).toEqual(fileChanges)
   })
 
+  it('keeps what the reply changed on the user\'s computer last, after Files', () => {
+    const fileChanges = { type: 'pulpo_file_changes' as const, id: 'file-changes', count: 1 }
+    const computerChanges = { type: 'pulpo_computer_changes' as const, id: 'resp:computer-changes', session_id: 'session', applied: 0, suggested: 2 }
+    const output = buildAgentOutput({
+      messages: [{ role: 'assistant', content: [{ type: 'text', text: 'Suggested two edits.' }] } as never],
+      skipMessageCount: 0,
+      toolItems: new Map(),
+      workspaceItem: { id: 'workspace-run', type: 'pulpo_workspace', state: 'ready' },
+      fileChangesItem: fileChanges,
+      computerChangesItem: computerChanges,
+      terminal: true,
+    }) as Array<{ type?: string }>
+    expect(output.map((item) => item.type)).toEqual(['pulpo_workspace', 'message', 'pulpo_file_changes', 'pulpo_computer_changes'])
+    expect(output.at(-1)).toEqual(computerChanges)
+  })
+
   it('shows a Files permission request after the turn whose command asked', () => {
     const request = {
       id: 'response:files-permission:1', type: 'pulpo_files_permission' as const, status: 'allowed' as const,

@@ -1,4 +1,5 @@
 import { ImageGenerationSettings } from '@/features/image-generation/ImageGenerationSettings'
+import { ComputerAccessSettings } from '@/features/computer/ComputerAccessSettings'
 import { SpeechSettings } from '@/features/speech/SpeechSettings'
 import { refreshInstanceFeatures } from '@/lib/instance-features'
 import { DeleteAccountSettings } from './DeleteAccountSettings'
@@ -1180,6 +1181,7 @@ export function SettingsModal({
                       </Row>
                     </>
                   )}
+                  <ComputerAccessSettings />
                   <Separator className="my-3" />
                   <ImageGenerationSettings />
                 </div>

@@ -96,6 +96,7 @@ const esES = {
     addFavorite: 'Añadir a favoritos',
     agent: 'Agente',
     agentDisabled: 'Desactivado',
+    computerOff: 'Desactivado',
     agentOptions: 'Opciones de agente, {{selection}}',
     attachFiles: 'Adjuntar archivos',
     dictate: 'Dictar',
