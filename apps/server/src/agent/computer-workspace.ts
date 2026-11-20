@@ -2,8 +2,10 @@ import { createHash } from 'node:crypto'
 import { posix, win32 } from 'node:path'
 import type { Readable } from 'node:stream'
 import {
-  COMPUTER_INLINE_MAX_BYTES, COMPUTER_OPERATION_TYPES, COMPUTER_REQUEST_TIMEOUT_MS, COMPUTER_TRANSFER_TIMEOUT_MS, computerTransferTimeoutMs,
-  type ComputerDescription, type ComputerMethod, type ComputerOperationType, type ComputerParams, type ComputerResult,
+  COMPUTER_APP_ACT_TIMEOUT_MS, COMPUTER_APP_APPROVAL_TIMEOUT_MS, COMPUTER_INLINE_MAX_BYTES, COMPUTER_OPERATION_TYPES, COMPUTER_REQUEST_TIMEOUT_MS,
+  COMPUTER_TRANSFER_TIMEOUT_MS, computerTransferTimeoutMs,
+  type ComputerApp, type ComputerAppActionInput, type ComputerAppState, type ComputerDescription, type ComputerMethod, type ComputerOperationType,
+  type ComputerParams, type ComputerResult,
 } from '@pulpo/contracts'
 import {
   computerCall, ComputerRequestError, ComputerUnavailableError, createComputerDownload, createComputerUpload,
@@ -42,6 +44,17 @@ export const COMPUTER_RELAY_OUTPUT_MAX_BYTES = 1_048_576
 const RELAY_TRUNCATED_NOTE = '\n[Output truncated; pull the file or narrow the command to see the rest.]'
 /** `file.missing` takes at most this many files per request. */
 const STAGE_BATCH = 500
+/**
+ * How long one `app.act` may take: the user may first be asked to allow the app, then the action is
+ * carried out and the window looked at again, and the answer travels back.
+ */
+const APP_ACT_TIMEOUT_MS = COMPUTER_APP_APPROVAL_TIMEOUT_MS + COMPUTER_APP_ACT_TIMEOUT_MS + COMPUTER_REQUEST_TIMEOUT_MS
+
+/** An app's window after `useApp`: what the computer said about it, and its picture's bytes. */
+export interface ComputerAppView {
+  state: Omit<ComputerAppState, 'image'>
+  image: WorkspaceImage & { width: number; height: number }
+}
 
 /** For the agent and the user alike: the reply cannot go on using the computer. */
 export const COMPUTER_UNAVAILABLE_MESSAGE = 'The user\'s computer is not connected to Pulpo right now, so nothing can run on it for the rest of this reply. The Pulpo desktop app must be open and signed in on that computer.'
@@ -391,6 +404,35 @@ export class ComputerWorkspace implements AgentWorkspace {
     await onStarted?.()
     const data = await this.fetchFile(computerPath(computer, path), MAX_EXPORT_FILE_BYTES, () => new Error(`File exceeds the ${MAX_EXPORT_FILE_BYTES} byte limit`), signal)
     return { data, sizeBytes: data.byteLength }
+  }
+
+  /** Whether this computer's app can show other apps' windows and act in them. Known once it was described. */
+  get controlsApps(): boolean { return Boolean(this.computer?.apps) }
+
+  /** The apps running on the computer with a window open. */
+  async listApps(signal?: AbortSignal, onStarted?: () => void | Promise<void>): Promise<ComputerApp[]> {
+    await this.ensureLease(signal)
+    this.current()
+    await onStarted?.()
+    return (await this.call('app.list', {}, { signal })).apps
+  }
+
+  /**
+   * Does one thing in an app's window on the computer (`view` only looks) and brings back the
+   * window as it is afterwards. The first use of an app waits for the user to allow it there.
+   */
+  async useApp(input: { app: string; window?: string; action: ComputerAppActionInput }, signal?: AbortSignal, onStarted?: () => void | Promise<void>): Promise<ComputerAppView> {
+    await this.ensureLease(signal)
+    this.current()
+    await onStarted?.()
+    const { image, ...state } = await this.call('app.act', input, { signal, timeoutMs: APP_ACT_TIMEOUT_MS })
+    const tooLarge = () => new Error(`The picture of the window exceeds the ${MAX_VIEW_IMAGE_BYTES} byte limit`)
+    const bytes = image.data !== undefined
+      ? new Uint8Array(Buffer.from(image.data, 'base64'))
+      : await this.fetchFile(image.path!, MAX_VIEW_IMAGE_BYTES, tooLarge, signal)
+    const mimeType = detectImageMime(bytes)
+    if (!mimeType) throw new Error('The computer sent a picture of the window that is not a PNG or JPEG image')
+    return { state, image: { data: Buffer.from(bytes).toString('base64'), mimeType, sizeBytes: bytes.byteLength, width: image.width, height: image.height } }
   }
 
   /**

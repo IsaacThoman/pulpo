@@ -107,10 +107,12 @@ models="$(
     --header "Authorization: Bearer ${provider_key}" \
     https://pulpo.baby/v1/models
 )"
-if ! jq -e 'any(.data[]?; .id == "gpt-5.6-luna")' <<< "${models}" >/dev/null; then
-  echo 'Preview provider key does not allow gpt-5.6-luna.' >&2
-  exit 1
-fi
+for model_id in gpt-5.6-luna gpt-6-luna claude-opus-5.5 claude-haiku-4.5; do
+  if ! jq -e --arg id "${model_id}" 'any(.data[]?; .id == $id)' <<< "${models}" >/dev/null; then
+    echo "Preview provider key does not allow ${model_id}." >&2
+    exit 1
+  fi
+done
 
 postgres_user="$(preview_value SERVICE_USER_POSTGRES)"
 storage_user="$(preview_value SERVICE_USER_S3)"
@@ -124,4 +126,4 @@ if (( ${#postgres_user} < 16 )) ||
   exit 1
 fi
 
-echo "Validated ${#required_variables[@]} preview runtime variables and Luna provider access."
+echo "Validated ${#required_variables[@]} preview runtime variables and preview model access."
