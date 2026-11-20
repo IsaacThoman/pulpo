@@ -11,7 +11,8 @@ final class BounceDictationTests: XCTestCase {
     }
     // Sign in once through the app.
     let app = XCUIApplication()
-    app.launchArguments = ["-PKResetSettings"]
+    // iOS 26 records inside the keyboard; this covers the app's recorder, used before it.
+    app.launchArguments = ["-PKResetSettings", "-PKAppDictation"]
     app.launchEnvironment["PK_TEST_LOGIN"] = "http://127.0.0.1:8091|tester@example.com|correct horse"
     app.launch()
     sleep(3)

@@ -132,7 +132,7 @@ struct HomeView: View {
           } header: {
             Text("Dictation")
           } footer: {
-            Text("Keyboards can't use the microphone, so Pulpo Keyboard briefly opens this app to record. Keeping the microphone ready lets your next dictation start right away without leaving your app. iOS shows the microphone indicator while it's ready, and nothing is recorded until you start a dictation.")
+            Text("On iOS 26 and later, Pulpo Keyboard records right in the keyboard. Otherwise it briefly opens this app to record, and keeping the microphone ready lets your next dictation start without leaving your app. iOS shows the microphone indicator while it's ready, and nothing is recorded until you start a dictation.")
           }
 
           Section {

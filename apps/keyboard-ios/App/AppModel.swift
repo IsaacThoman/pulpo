@@ -62,6 +62,8 @@ final class AppModel {
     // Installed at launch: the host app's name arrives shortly after the keyboard opens us.
     HostAppObserver.shared.start()
     settings = SettingsStore().load()
+    // Sessions saved by older versions move where the keyboard can read them.
+    sessionStore.migrateIfNeeded()
     let stored = sessionStore.load()
     session = stored
     dictation = DictationService()
@@ -110,6 +112,8 @@ final class AppModel {
       refreshStatus()
     }
     AppGroup.defaults?.set(ProcessInfo.processInfo.environment["PK_DEBUG_POPUP"], forKey: "debugPopupKey")
+    // -PKAppDictation makes the keyboard record through the app, for the bounce flow's tests.
+    AppGroup.defaults?.set(arguments.contains("-PKAppDictation"), forKey: "debugAppDictation")
     // PK_TEST_LOGIN=instance|email|password signs in through the real login request.
     if let login = ProcessInfo.processInfo.environment["PK_TEST_LOGIN"]?.split(separator: "|").map(String.init), login.count == 3 {
       Task { try? await signIn(instance: login[0], email: login[1], password: login[2], twoFactorCode: nil) }

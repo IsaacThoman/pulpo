@@ -73,6 +73,36 @@ struct DictationInsertionGuardTests {
     #expect(DictationInsertionGuard(origin: destination).allowsAutomaticInsertion(at: destination))
   }
 
+  @Test func continuouslyObservedFieldWithHiddenContextReceivesAutomatically() {
+    let document = DestinationDocument()
+    document.before = nil
+    document.after = nil
+    let destination = DictationDestination(document: document, traits: InputTraits())
+    #expect(DictationInsertionGuard(origin: destination, observedContinuously: true).allowsAutomaticInsertion(at: destination))
+  }
+
+  @Test func continuousObservationStillNeedsIdentityAnUnchangedFieldAndNoHostChange() {
+    let document = DestinationDocument()
+    document.before = nil
+    document.after = nil
+    let origin = DictationDestination(document: document, traits: InputTraits())
+    var guarder = DictationInsertionGuard(origin: origin, observedContinuously: true)
+    document.after = "typed elsewhere"
+    #expect(!guarder.allowsAutomaticInsertion(at: DictationDestination(document: document, traits: InputTraits())))
+    guarder.invalidate()
+    #expect(!guarder.allowsAutomaticInsertion(at: origin))
+
+    document.documentIdentifier = nil
+    document.after = nil
+    let unidentified = DictationDestination(document: document, traits: InputTraits())
+    #expect(!DictationInsertionGuard(origin: unidentified, observedContinuously: true).allowsAutomaticInsertion(at: unidentified))
+
+    document.documentIdentifier = UUID()
+    document.selection = "word"
+    let selected = DictationDestination(document: document, traits: InputTraits())
+    #expect(!DictationInsertionGuard(origin: selected, observedContinuously: true).allowsAutomaticInsertion(at: selected))
+  }
+
   @Test func originalSelectionCannotBeOverwrittenEvenWithMatchingSnapshots() {
     let document = DestinationDocument()
     document.selection = "world"

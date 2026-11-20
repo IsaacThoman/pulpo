@@ -80,12 +80,19 @@ targets:
     dependencies:
       - package: PulpoKeyboardKit
         product: KeyboardUI
+      - package: PulpoKeyboardKit
+        product: PulpoServices
     info:
       path: Extension/Info.plist
       properties:
         CFBundleDisplayName: Pulpo Keyboard
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Recording happens in WebKit's media process under the app's permission.
+        NSMicrophoneUsageDescription: Pulpo Keyboard records your voice when you tap the microphone key and sends the recording to your Pulpo account to be transcribed.
+        # Like the app: a development instance on localhost may use plain HTTP.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         NSExtension:
           NSExtensionPointIdentifier: com.apple.keyboard-service
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).KeyboardViewController
