@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { and, eq, gt, inArray, isNotNull, isNull, lt, lte, or } from 'drizzle-orm'
+import { and, eq, gt, isNotNull, isNull, lt, or } from 'drizzle-orm'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import {
@@ -8,14 +8,14 @@ import {
   type WorkspaceScreenPresence, type WorkspaceScreenStatus,
 } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { applicationSettings, chats, responses, workspaceLeases } from '../database/schema.js'
+import { agentRuns, applicationSettings, chats, responses, workspaceLeases } from '../database/schema.js'
 import { requireUser } from '../auth/service.js'
 import { AppError, forbidden, notFound } from '../lib/errors.js'
 import { getConfig } from '../config.js'
 import { parseAgentSettings } from '../settings/application-settings.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
-import { chargeMeteredUsage } from '../accounting/service.js'
+import { announceMeteredUsage, chargeMeteredUsageIn } from '../accounting/service.js'
 import { boundedBody } from '../agent/controller.js'
 import { detectImageMime } from '../agent/images.js'
 
@@ -133,36 +133,39 @@ async function screenLease(request: FastifyRequest): Promise<ScreenContext & { l
 
 /**
  * Charges the owner for having the screen open, a minute at a time and each when it starts, on
- * instances that bill for workspaces. A reply at work in the chat pays for the workspace itself
- * (from when it has it until it ends), so nothing is charged meanwhile; and with nobody watching
- * no request comes, so an idle workspace costs nothing. The lease remembers up to when is paid:
- * whichever request finds that passed claims the next minute first, so several at once, in one API
- * process or many, charge it once. A user who cannot pay gets the accounting error (402
- * `insufficient_balance`), the minute is given back, and the request is not carried out.
+ * instances that bill for workspaces. A reply that has the workspace pays for it itself (from when
+ * it has it until it ends), so nothing is charged while one does; and with nobody watching no
+ * request comes, so an idle workspace costs nothing. The lease remembers up to when is paid. The
+ * request that finds that passed locks the lease row, charges and writes the new time in one
+ * transaction: requests arriving together wait on the lock and find the minute paid, or, when the
+ * user cannot pay, each gets the accounting error (402 `insufficient_balance`) and none is carried
+ * out. One transaction, so a burst of requests never holds two connections apiece.
  */
 export async function chargeScreenTime(context: Pick<ScreenContext, 'userId' | 'chatId' | 'pricePerMinuteMicros'> & { lease: ScreenLease }, now = Date.now()): Promise<boolean> {
   const { lease, pricePerMinuteMicros } = context
   if (pricePerMinuteMicros <= 0) return false
   if (lease.screenBilledUntil && lease.screenBilledUntil.getTime() > now) return false
-  const [working] = await db.select({ id: responses.id }).from(responses)
-    .where(and(eq(responses.chatId, context.chatId), inArray(responses.status, ['queued', 'in_progress']))).limit(1)
-  if (working) return false
-  const paidUntil = new Date(now + WORKSPACE_SCREEN_BILLED_MS)
-  const [claimed] = await db.update(workspaceLeases).set({ screenBilledUntil: paidUntil }).where(and(
-    eq(workspaceLeases.id, lease.id), eq(workspaceLeases.status, 'ready'),
-    or(isNull(workspaceLeases.screenBilledUntil), lte(workspaceLeases.screenBilledUntil, new Date(now))),
-  )).returning({ id: workspaceLeases.id })
-  if (!claimed) return false
-  try {
-    await chargeMeteredUsage({
+  // A reply pays once its run has this workspace; one that is queued, or never uses it, does not.
+  const [paying] = await db.select({ id: agentRuns.id }).from(agentRuns).innerJoin(responses, eq(responses.id, agentRuns.responseId))
+    .where(and(eq(agentRuns.workspaceLeaseId, lease.id), eq(agentRuns.status, 'running'), eq(responses.status, 'in_progress'))).limit(1)
+  if (paying) return false
+  const charged = await db.transaction(async (tx) => {
+    const [current] = await tx.select({ screenBilledUntil: workspaceLeases.screenBilledUntil }).from(workspaceLeases)
+      .where(and(eq(workspaceLeases.id, lease.id), eq(workspaceLeases.status, 'ready'))).for('update')
+    // Gone meanwhile (the request finds that out next), or paid by the request that held the lock before this one.
+    if (!current || (current.screenBilledUntil && current.screenBilledUntil.getTime() > now)) return null
+    const changes = await chargeMeteredUsageIn(tx, {
       userId: context.userId, costMicros: pricePerMinuteMicros, type: 'workspace_screen',
       metadata: { chatId: context.chatId, workspaceLeaseId: lease.id, minutes: 1, pricePerMinuteMicros },
     })
-  } catch (error) {
-    await db.update(workspaceLeases).set({ screenBilledUntil: lease.screenBilledUntil })
-      .where(and(eq(workspaceLeases.id, lease.id), eq(workspaceLeases.screenBilledUntil, paidUntil))).catch(() => undefined)
-    throw error
-  }
+    await tx.update(workspaceLeases).set({ screenBilledUntil: new Date(now + WORKSPACE_SCREEN_BILLED_MS) }).where(eq(workspaceLeases.id, lease.id))
+    return changes
+  })
+  if (!charged) return false
+  // After the commit; telling clients must not undo a charge that went through.
+  await announceMeteredUsage(charged).catch((error: unknown) => {
+    console.warn('Workspace screen charge was not announced', { leaseId: lease.id, error: error instanceof Error ? error.message : String(error) })
+  })
   return true
 }
 

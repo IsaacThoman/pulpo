@@ -5,23 +5,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => {
   process.env.WORKSPACE_CONTROLLER_URL = 'http://controller.test'
   process.env.WORKSPACE_CONTROLLER_TOKEN = 'controller-token-'.padEnd(40, 'x')
-  return { selects: [] as unknown[][], updates: [] as Array<Record<string, unknown>>, claims: [] as unknown[][], request: vi.fn(), charge: vi.fn() }
+  return { selects: [] as unknown[][], updates: [] as Array<Record<string, unknown>>, request: vi.fn(), charge: vi.fn(), announce: vi.fn(async () => undefined) }
 })
 
-vi.mock('../database/client.js', () => ({
-  db: {
+vi.mock('../database/client.js', () => {
+  // Each query takes the next queued answer, whether it ends in `limit` or in a row lock.
+  const answer = async () => mocks.selects.shift() ?? []
+  const queries = {
     select: vi.fn(() => {
-      const builder = { from: () => builder, where: () => builder, limit: async () => mocks.selects.shift() ?? [] }
+      const builder = { from: () => builder, innerJoin: () => builder, where: () => builder, limit: answer, for: answer }
       return builder
     }),
-    // Awaited as it is, or asked what it changed: a claim of the next paid minute wins unless a test says otherwise.
-    update: vi.fn(() => ({ set: (values: Record<string, unknown>) => ({ where: () => {
-      mocks.updates.push(values)
-      return Object.assign(Promise.resolve(), { returning: async () => mocks.claims.shift() ?? [{ id: 'lease-row' }] })
-    } }) })),
-  },
-}))
-vi.mock('../accounting/service.js', () => ({ chargeMeteredUsage: mocks.charge }))
+    update: vi.fn(() => ({ set: (values: Record<string, unknown>) => ({ where: async () => { mocks.updates.push(values) } }) })),
+  }
+  return { db: { ...queries, transaction: async (work: (tx: typeof queries) => unknown) => work(queries) } }
+})
+// The charge runs in the transaction that holds the lease row; it is announced after the commit.
+vi.mock('../accounting/service.js', () => ({ chargeMeteredUsageIn: (_tx: unknown, input: unknown) => mocks.charge(input), announceMeteredUsage: mocks.announce }))
 vi.mock('../auth/service.js', () => ({ requireUser: (request: { user: unknown }) => request.user }))
 vi.mock('../agent/controller-http.js', () => ({ workspaceControllerRequest: mocks.request }))
 
@@ -44,10 +44,14 @@ function running(usedMinutesAgo = 5, agent: Record<string, unknown> = {}, lease:
     hardExpiresAt: new Date(lastUsedAt.getTime() + 4 * 3_600_000), screenBilledUntil: null, ...lease,
   }]]
 }
-/** A running workspace on an instance that bills for workspaces; `replyAtWork` answers whether a reply is running in the chat. */
-function billed(lease: Record<string, unknown> = {}, replyAtWork = false) {
+/**
+ * A running workspace on an instance that bills for workspaces. `replyPaying`: a reply's run has the
+ * workspace. `locked`: the lease row as the request finds it once it holds the row's lock.
+ */
+function billed(lease: Record<string, unknown> = {}, replyPaying = false, locked: unknown[] = [{ screenBilledUntil: lease.screenBilledUntil ?? null }]) {
   running(5, { billWorkspaces: true, workspacePricePerMinuteMicros: 1_500 }, lease)
-  mocks.selects.push(replyAtWork ? [{ id: 'response-1' }] : [])
+  mocks.selects.push(replyPaying ? [{ id: 'run-1' }] : [])
+  if (!replyPaying) mocks.selects.push(locked)
 }
 
 type Upstream = { path: string; method: string; body?: unknown; signal?: AbortSignal }
@@ -77,7 +81,7 @@ async function server(): Promise<FastifyInstance> {
   return app
 }
 
-beforeEach(() => { mocks.selects = []; mocks.updates = []; mocks.claims = []; mocks.request.mockReset(); mocks.charge.mockReset(); upstream = [] })
+beforeEach(() => { mocks.selects = []; mocks.updates = []; mocks.request.mockReset(); mocks.charge.mockReset(); mocks.charge.mockResolvedValue({ ownChanges: [] }); mocks.announce.mockClear(); upstream = [] })
 afterEach(async () => { await Promise.all(apps.splice(0).map((app) => app.close())) })
 
 describe('workspace screen access', () => {
@@ -353,6 +357,7 @@ describe('workspace screen billing', () => {
       userId: 'user-1', costMicros: 1_500, type: 'workspace_screen',
       metadata: { chatId, workspaceLeaseId: 'lease-row', minutes: 1, pricePerMinuteMicros: 1_500 },
     })
+    expect(mocks.announce).toHaveBeenCalledTimes(1)
     const paidUntil = (mocks.updates[0] as { screenBilledUntil: Date }).screenBilledUntil.getTime()
     expect(paidUntil).toBeGreaterThanOrEqual(before + WORKSPACE_SCREEN_BILLED_MS)
     expect(paidUntil).toBeLessThanOrEqual(Date.now() + WORKSPACE_SCREEN_BILLED_MS)
@@ -370,7 +375,7 @@ describe('workspace screen billing', () => {
     expect(mocks.charge).toHaveBeenCalledTimes(2)
   })
 
-  it('charges nothing while a reply is at work in the chat, or when another request claimed the minute', async () => {
+  it('charges nothing while a reply has the workspace, or when a request ahead of this one paid for the minute', async () => {
     const app = await server()
     daemon(() => new Response(jpeg, { headers: { 'content-type': 'image/jpeg' } }))
     billed({}, true)
@@ -378,13 +383,19 @@ describe('workspace screen billing', () => {
     expect(mocks.charge).not.toHaveBeenCalled()
     expect(mocks.updates.some((update) => 'screenBilledUntil' in update)).toBe(false)
 
-    billed()
-    mocks.claims = [[]]
+    // Two requests found the minute unpaid; this one waited on the row's lock and finds it paid.
+    billed({}, false, [{ screenBilledUntil: new Date(Date.now() + 50_000) }])
     expect((await app.inject({ url: `${base}/frame` })).statusCode).toBe(200)
+    expect(mocks.charge).not.toHaveBeenCalled()
+    expect(mocks.updates.some((update) => 'screenBilledUntil' in update)).toBe(false)
+
+    // The workspace went while the request waited: nothing to pay for.
+    billed({}, false, [])
+    await app.inject({ url: `${base}/frame` })
     expect(mocks.charge).not.toHaveBeenCalled()
   })
 
-  it('refuses the request, gives the minute back and leaves the workspace alone when the user cannot pay', async () => {
+  it('refuses the request, records no paid minute and leaves the workspace alone when the user cannot pay', async () => {
     const app = await server()
     daemon(() => new Response(jpeg, { headers: { 'content-type': 'image/jpeg' } }))
     mocks.charge.mockRejectedValue(new AppError(402, 'insufficient_balance', 'Insufficient balance for metered usage'))
@@ -394,9 +405,12 @@ describe('workspace screen billing', () => {
     expect(frame.statusCode).toBe(402)
     expect(frame.json()).toMatchObject({ error: { code: 'insufficient_balance' } })
     expect(mocks.request).not.toHaveBeenCalled()
-    // Claimed, then given back; the lease's idle expiry was never moved on.
-    expect(mocks.updates).toHaveLength(2)
-    expect((mocks.updates[1] as { screenBilledUntil: Date }).screenBilledUntil).toEqual(paidBefore)
+    // No minute was recorded as paid, so a request arriving with this one is refused the same way,
+    // and the lease's idle expiry was never moved on.
+    expect(mocks.updates).toEqual([])
+    billed({ screenBilledUntil: paidBefore })
+    expect((await app.inject({ url: `${base}/frame` })).statusCode).toBe(402)
+    expect(mocks.request).not.toHaveBeenCalled()
 
     billed()
     expect((await app.inject({ method: 'POST', url: `${base}/control`, payload: { held: true } })).statusCode).toBe(402)

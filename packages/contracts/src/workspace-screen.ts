@@ -46,7 +46,7 @@ export const workspaceScreenStatusSchema = z.object({
   /**
    * What a minute with the screen open costs the user, in millionths of a dollar; 0 or absent when
    * the instance does not bill for workspaces. A minute is charged when it starts, and none while a
-   * reply is at work in the chat, since the reply pays for the workspace then.
+   * reply has the workspace, since the reply pays for it then.
    */
   pricePerMinuteMicros: z.number().int().nonnegative().optional(),
 })
