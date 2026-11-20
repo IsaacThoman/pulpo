@@ -677,6 +677,8 @@ export const workspaceLeases = pgTable('workspace_leases', {
   expiresAt: timestamp('expires_at', { withTimezone: true }),
   hardExpiresAt: timestamp('hard_expires_at', { withTimezone: true }),
   releasedAt: timestamp('released_at', { withTimezone: true }),
+  // Up to when the chat's owner has paid for having the workspace's screen open; null before they ever did.
+  screenBilledUntil: timestamp('screen_billed_until', { withTimezone: true }),
   ...timestamps,
 }, (table) => [uniqueIndex('workspace_leases_scope_active_unique').on(table.workspaceScopeId).where(sql`${table.status} in ('provisioning', 'ready')`), index('workspace_leases_expiry_idx').on(table.expiresAt), index('workspace_leases_queue_idx').on(table.capacityState, table.createdAt)])
 
