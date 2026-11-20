@@ -48,6 +48,7 @@ import { idSchema, type ComposerState, type FileNode } from '@pulpo/contracts';
 import {
   createContext,
   forwardRef,
+  Fragment,
   memo,
   startTransition,
   useCallback,
@@ -166,6 +167,7 @@ import {
   History,
   Hourglass,
   Minimize2,
+  Monitor,
   Pause,
   Server,
   StepForward,
@@ -330,7 +332,9 @@ import {
   type HistoryChatExpiryMenuAction,
   type HistoryChatSummary,
 } from '../features/chat/history';
-import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, computerWorkspaceLabel, filesPermissionLabel, filesPermissionPlace, pendingFilesPermission, timelineActivityIsActive, workspaceIsActive, type TimelineSegment, type TimelineStep } from '../features/chat/timeline';
+import { activityDurationMs, activityUsesApps, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, computerWorkspaceLabel, filesPermissionLabel, filesPermissionPlace, pendingFilesPermission, timelineActivityIsActive, usedWorkspaceScreen, workspaceIsActive, type TimelineSegment, type TimelineStep } from '../features/chat/timeline';
+import { WorkspaceScreenHost } from '../features/workspace-screen/WorkspaceScreenViewer';
+import { useWorkspaceScreenViewer } from '../features/workspace-screen/store';
 import { toolActivityPresentation } from '../features/chat/toolActivityPresentation';
 import { CHAT_RESUME_FOLLOW_THRESHOLD, CHAT_SCROLL_TO_BOTTOM_THRESHOLD, type ChatViewportMetrics, chatBottomDistance, chatLandingKeyboardTranslation, chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent, shouldResumeChatFollow } from '../features/chat/viewport';
 import {
@@ -4056,6 +4060,24 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
   );
 }
 
+/** Opens the screen of the cloud workspace a reply worked on with the app tools. */
+function OpenScreenButton({ chatId }: { chatId: string }) {
+  const { styles, COLORS } = useChatStyles();
+  const open = useWorkspaceScreenViewer((state) => state.open);
+  return (
+    <Pressable
+      accessibilityHint="Watch the workspace's screen, or take it over"
+      accessibilityRole="button"
+      hitSlop={TEXT_BUTTON_HIT_SLOP}
+      onPress={() => open(chatId)}
+      style={({ pressed }) => [styles.openScreenButton, pressed && styles.navRowPressed]}
+    >
+      <Monitor color={COLORS.muted} size={13} />
+      <Text style={styles.openScreenText}>Open screen</Text>
+    </Pressable>
+  );
+}
+
 const FILES_PERMISSION_FAILURE = 'Couldn’t answer';
 
 /**
@@ -4289,6 +4311,15 @@ const MessageRow = memo(function MessageRow({
     })
     : message.initialResponseDurationMs;
   const activitySegments = timeline.filter((segment) => segment.kind === 'activity');
+  // The owner can watch the cloud workspace a reply worked on with the app tools. The button sits
+  // under the work that shows those steps, or under the reply when the work is hidden.
+  const workspaceScreen = usePrototypeStore((state) => state.workspaceScreen);
+  const screenChatId = message.role === 'assistant' && workspaceScreen && message.chatId && usedWorkspaceScreen(message.outputItems)
+    ? message.chatId
+    : null;
+  const screenActivityIndex = screenChatId
+    ? timeline.reduce((found, segment, index) => segment.kind === 'activity' && activityUsesApps(segment.steps) ? index : found, -1)
+    : -1;
   const firstTextTimelineIndex = timeline.findIndex((segment) => segment.kind === 'text');
   const lastActivityTimelineIndex = timeline.reduce(
     (lastIndex, segment, index) => segment.kind === 'activity' ? index : lastIndex,
@@ -4370,16 +4401,18 @@ const MessageRow = memo(function MessageRow({
                       const useResponseDurationFallback = activitySegments.length === 1
                         && index === lastActivityTimelineIndex
                         && (!streaming || activityFinishedDuringStream);
-                      return <WorkBlock
-                        active={active}
-                        initialWork={initial ? collapsedWork !== undefined || initialActivity.worked : undefined}
-                        durationMs={initial ? initialDurationMs : segmentDurationMs ?? (useResponseDurationFallback
-                          ? streamingFallbackDurationMs ?? elapsedMs
-                          : undefined)}
-                        key={`activity:${index}`}
-                        steps={segment.steps}
-                        onOpenChat={onOpenChat}
-                      />;
+                      return <Fragment key={`activity:${index}`}>
+                        <WorkBlock
+                          active={active}
+                          initialWork={initial ? collapsedWork !== undefined || initialActivity.worked : undefined}
+                          durationMs={initial ? initialDurationMs : segmentDurationMs ?? (useResponseDurationFallback
+                            ? streamingFallbackDurationMs ?? elapsedMs
+                            : undefined)}
+                          steps={segment.steps}
+                          onOpenChat={onOpenChat}
+                        />
+                        {screenChatId && index === screenActivityIndex ? <OpenScreenButton chatId={screenChatId} /> : null}
+                      </Fragment>;
                     }
                     return <AssistantMarkdown selectable={Platform.OS !== 'android'}
                       containerStyle={styles.assistantMarkdown}
@@ -4395,6 +4428,7 @@ const MessageRow = memo(function MessageRow({
                 <ResponseErrorNotice message={message} onRetry={onRegenerate} />
               </MessageContextMenu>
             ) : streaming ? <ResponsePendingIndicator /> : null}
+            {screenChatId && screenActivityIndex < 0 ? <OpenScreenButton chatId={screenChatId} /> : null}
             {showReasoning && extraOutput.map((item, index) => {
               const details = JSON.stringify(item, null, 2).slice(0, 4000);
               return <View key={`${String(item.type)}:${index}`} style={styles.otherOutput}>
@@ -7188,6 +7222,7 @@ function ChatView({
         resolveUri={resolvePreviewImageUri}
         visible={Boolean(imageViewer)}
       />
+      <WorkspaceScreenHost />
     </Reanimated.View>
   );
 }
@@ -8006,6 +8041,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   costLimitRowText: { color: COLORS.muted, fontSize: 12.5, lineHeight: 18, flex: 1 },
   workRowTitle: { color: COLORS.textSoft, fontSize: 12.5, lineHeight: 18, fontWeight: '600', flex: 1 },
   workStep: { gap: 5 },
+  openScreenButton: { alignSelf: 'flex-start', minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 16, paddingHorizontal: 12, backgroundColor: COLORS.fillStrong, marginTop: 2 },
+  openScreenText: { color: COLORS.textSoft, fontSize: 12.5, fontWeight: '600' },
   compactionDetail: { gap: 12 },
   compactionSection: { gap: 6 },
   compactionSectionTitle: { color: COLORS.textSoft, fontSize: 12, fontWeight: '600' },

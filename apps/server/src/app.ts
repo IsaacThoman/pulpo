@@ -12,6 +12,7 @@ import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
 import multipart from '@fastify/multipart'
 import { ZodError } from 'zod'
+import { WORKSPACE_SCREEN_FRAME_HEADER } from '@pulpo/contracts'
 import { getConfig, isAllowedOrigin, isAllowedRequestOrigin } from './config.js'
 import { AppError } from './lib/errors.js'
 import { authenticateSession } from './auth/service.js'
@@ -51,6 +52,7 @@ import { registerInviteCodeRoutes } from './invite-codes/routes.js'
 import { registerDictationRoutes } from './dictation/routes.js'
 import { registerCodexRoutes } from './codex/routes.js'
 import { redactComputerTransferToken, registerComputerRoutes } from './computer/routes.js'
+import { registerWorkspaceScreenRoutes } from './workspace-screen/routes.js'
 import { anthropicErrorBody, isAnthropicApiRequest } from './public-api/anthropic-codec.js'
 
 export async function buildApp() {
@@ -102,7 +104,8 @@ export async function buildApp() {
     // stops every save, rename and delete there.
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
     credentials: true,
-    exposedHeaders: ['x-speech-duration-seconds', 'retry-after'],
+    // The workspace screen's frames name themselves in a header the viewer sends back.
+    exposedHeaders: ['x-speech-duration-seconds', 'retry-after', WORKSPACE_SCREEN_FRAME_HEADER],
   })
   await app.register(rateLimit, {
     max: 300,
@@ -206,6 +209,7 @@ export async function buildApp() {
   await registerAdminChatAccess(app)
   await registerShelfRoutes(app)
   await registerChatRoutes(app)
+  await registerWorkspaceScreenRoutes(app)
   await registerApiKeyRoutes(app)
   await registerSettingsRoutes(app)
   await registerShareRoutes(app)

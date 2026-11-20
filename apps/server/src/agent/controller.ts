@@ -12,6 +12,10 @@ import { workspaceContinueWithoutAgentAvailableAt, workspaceQueuePosition } from
 import { workspaceControllerRequest } from './controller-http.js'
 import type { RequestInit } from 'undici'
 import { posix } from 'node:path'
+import { z } from 'zod'
+import { computerAppActionSchema, computerAppSchema, computerAppStateSchema, type ComputerApp, type ComputerAppActionInput } from '@pulpo/contracts'
+import type { AppHost } from './app-tools.js'
+import type { ComputerAppView } from './computer-workspace.js'
 import { detectImageMime } from './images.js'
 import { attemptWorkspaceLease, ControllerRequestError } from './lease-acquisition.js'
 import { cloudLocalPath, cloudWorkspacePaths, MAX_EXPORT_FILE_BYTES, MAX_VIEW_IMAGE_BYTES, type AgentWorkspace, type RelayRequest, type RelayResult, type WorkspaceFile, type WorkspaceImage, type WorkspaceLeaseEvent, type WorkspaceOperation } from './workspace.js'
@@ -44,7 +48,35 @@ function workspaceFailure(action: string, error: unknown): Error {
 
 const byteLimit = (bytes: number) => bytes % 1_048_576 === 0 ? `${bytes / 1_048_576} MiB` : `${bytes} byte`
 
-export class WorkspaceManager implements AgentWorkspace {
+/** Reads a daemon response's body, refusing more than `maxBytes` before it is all buffered. */
+export async function boundedBody(response: Response, maxBytes: number, tooLarge: () => Error): Promise<Uint8Array> {
+  if (Number(response.headers.get('content-length') ?? 0) > maxBytes) { await response.body?.cancel(); throw tooLarge() }
+  const chunks: Uint8Array[] = []; let size = 0
+  const reader = response.body?.getReader()
+  for (let chunk = await reader?.read(); chunk && !chunk.done; chunk = await reader?.read()) {
+    size += chunk.value.byteLength
+    if (size > maxBytes) { await reader?.cancel(); throw tooLarge() }
+    chunks.push(chunk.value)
+  }
+  return Buffer.concat(chunks)
+}
+
+/** For the agent: the image predates the screen, which only an administrator can change. */
+export const WORKSPACE_NO_SCREEN_MESSAGE = 'This workspace has no screen, so the app tools cannot be used in it: its image does not include the desktop. An administrator has to update the workspace image. Do what you can with commands instead.'
+
+/**
+ * Whether an app operation failed because the workspace has no screen: a daemon from before the
+ * screen does not know the operation, and a newer one in an image without the desktop says so.
+ */
+export function isNoScreenFailure(message: string): boolean {
+  return /^Unknown operation type: app_(?:list|act)$/.test(message) || message.startsWith('This workspace has no screen')
+}
+
+// What the daemon says about the screen is the agent's to forge, so it is read as untrusted.
+const appListResultSchema = z.object({ apps: z.array(computerAppSchema).max(200) })
+const UNREADABLE_APP_RESULT = 'The workspace answered with something that is not a description of its windows. Look again with app_view before doing anything else.'
+
+export class WorkspaceManager implements AgentWorkspace, AppHost {
   readonly kind = 'cloud' as const
   readonly paths = cloudWorkspacePaths
   private controllerLeaseId?: string
@@ -56,6 +88,8 @@ export class WorkspaceManager implements AgentWorkspace {
   private idleTimeoutMs = 1_800_000
   private toolsDisabled = false
   private capacityReservationsSupported?: boolean
+  /** The workspace answered that it has no screen; the app tools fail at once for the rest of the reply. */
+  private screenMissing = false
 
   private async scope(): Promise<string> {
     if (!this.scopeId) {
@@ -315,15 +349,53 @@ export class WorkspaceManager implements AgentWorkspace {
     try { response = await this.request(`/v1/leases/${leaseId}/v1/files?path=${encodeURIComponent(target)}`, { signal }) } catch (error) {
       throw workspaceFailure(`Could not read ${target}`, error)
     }
-    if (Number(response.headers.get('content-length') ?? 0) > maxBytes) { await response.body?.cancel(); throw tooLarge() }
-    const chunks: Uint8Array[] = []; let size = 0
-    const reader = response.body?.getReader()
-    for (let chunk = await reader?.read(); chunk && !chunk.done; chunk = await reader?.read()) {
-      size += chunk.value.byteLength
-      if (size > maxBytes) { await reader?.cancel(); throw tooLarge() }
-      chunks.push(chunk.value)
+    return boundedBody(response, maxBytes, tooLarge)
+  }
+
+  /** Runs one app operation on the workspace's screen and returns what it reported. */
+  private async appOperation(operationId: string, type: 'app_list' | 'app_act', args: Record<string, unknown>, signal?: AbortSignal, onStarted?: () => void | Promise<void>): Promise<unknown> {
+    if (this.screenMissing) throw new Error(WORKSPACE_NO_SCREEN_MESSAGE)
+    let operation: WorkspaceOperation
+    try { operation = await this.execute(operationId, type, args, signal, undefined, onStarted) } catch (error) {
+      if (signal?.aborted || !(error instanceof Error) || !isNoScreenFailure(error.message)) throw error
+      this.screenMissing = true
+      throw new Error(WORKSPACE_NO_SCREEN_MESSAGE, { cause: error })
     }
-    return Buffer.concat(chunks)
+    return operation.details?.result
+  }
+
+  /** The apps with a window open on the workspace's screen. */
+  async listApps(signal: AbortSignal | undefined, onStarted: () => void | Promise<void>, operationId: string): Promise<ComputerApp[]> {
+    const parsed = appListResultSchema.safeParse(await this.appOperation(operationId, 'app_list', {}, signal, onStarted))
+    if (!parsed.success) throw new Error(UNREADABLE_APP_RESULT)
+    return parsed.data.apps
+  }
+
+  /**
+   * Does one thing in an app's window on the workspace's screen (`view` only looks) and brings back
+   * the window as it is afterwards. The picture is a file in the workspace, read right away.
+   */
+  async useApp(
+    input: { app: string; window?: string; action: ComputerAppActionInput },
+    signal: AbortSignal | undefined,
+    onStarted: () => void | Promise<void>,
+    operationId: string,
+  ): Promise<ComputerAppView> {
+    const action = computerAppActionSchema.safeParse(input.action)
+    if (!action.success) throw new Error(action.error.issues[0]?.message ?? 'The action is not valid')
+    const result = computerAppStateSchema.safeParse(await this.appOperation(operationId, 'app_act', { ...input, action: action.data }, signal, onStarted))
+    if (!result.success || !result.data.image.path?.startsWith('/')) throw new Error(UNREADABLE_APP_RESULT)
+    const { image, ...state } = result.data
+    const tooLarge = () => new Error(`The picture of the window exceeds the ${MAX_VIEW_IMAGE_BYTES} byte limit`)
+    if (image.sizeBytes > MAX_VIEW_IMAGE_BYTES) throw tooLarge()
+    let response: Response
+    try { response = await this.request(`/v1/leases/${this.currentLease()}/v1/images?path=${encodeURIComponent(image.path!)}`, { signal }) } catch (error) {
+      throw workspaceFailure('Could not read the picture of the window', error)
+    }
+    const bytes = await boundedBody(response, MAX_VIEW_IMAGE_BYTES, tooLarge)
+    const mimeType = detectImageMime(bytes)
+    if (mimeType !== 'image/jpeg' && mimeType !== 'image/png') throw new Error('The workspace sent a picture of the window that is not a PNG or JPEG image')
+    return { state, image: { data: Buffer.from(bytes).toString('base64'), mimeType, sizeBytes: bytes.byteLength, width: image.width, height: image.height } }
   }
 
   /**

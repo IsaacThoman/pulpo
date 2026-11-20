@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ComputerDescription } from '@pulpo/contracts'
-import { APP_TOOL_NAMES, createAppTools, formatAppList, formatAppView, isAppTool, toolShowsImage } from './app-tools.js'
+import { APP_TOOL_NAMES, createAppTools, formatAppList, formatAppView, isAppTool, toolShowsImage, type AppToolsPlace } from './app-tools.js'
 import type { ComputerAppView } from './computer-workspace.js'
 
 const mac: ComputerDescription = {
@@ -22,7 +22,7 @@ const view = (extra: Partial<ComputerAppView['state']> = {}): ComputerAppView =>
   image: { data: 'aW1hZ2U=', mimeType: 'image/jpeg', sizeBytes: 5, width: 800, height: 600 },
 })
 
-function tools(computer = mac, shown = view()) {
+function tools(computer: AppToolsPlace = mac, shown = view()) {
   const useApp = vi.fn(async () => shown)
   const listApps = vi.fn(async () => [
     { name: 'TextEdit', allowed: true, frontmost: false, windows: ['Notes.txt', 'Untitled'] },
@@ -43,6 +43,39 @@ describe('app tools', () => {
     expect(tools(windows).all.find((tool) => tool.name === 'app_key')!.description).toContain('ctrl+s')
     expect(all.find((tool) => tool.name === 'app_view')!.description).toContain('nothing is brought to the front')
     expect(tools(windows).all.find((tool) => tool.name === 'app_view')!.description).toContain('may be brought to the front')
+  })
+
+  it('describe the workspace\'s screen on a cloud workspace, with nothing about asking the user', () => {
+    const { all } = tools('workspace')
+    expect(all.map((tool) => tool.name)).toEqual([...APP_TOOL_NAMES])
+    for (const tool of all) {
+      expect(tool.description).toContain('the workspace\'s screen')
+      for (const computer of ['the user\'s', 'allowed', 'asked', 'Mac']) expect(tool.description).not.toContain(computer)
+    }
+    const key = all.find((tool) => tool.name === 'app_key')!.description
+    expect(key).toContain('ctrl, alt, shift, cmd (the Super key)')
+    expect(key).toContain('"ctrl+s"')
+    expect(all.find((tool) => tool.name === 'app_view')!.description).toContain('The window is brought to the front to be seen.')
+  })
+
+  it('keep the computer\'s descriptions as they were', () => {
+    const described = Object.fromEntries(tools().all.map((tool) => [tool.name, tool.description]))
+    expect(described.app_list).toBe('List the apps running on the user\'s Mac with a window open, whether the user already allowed you to use each, and the window titles of the ones they allowed.')
+    expect(described.app_view).toBe('Look at one window of an app on the user\'s Mac: a picture of that window alone and a numbered list of what is in it (buttons, fields, text, with their boxes). The first time you use an app, the user is asked on their computer whether you may; the tool waits for their answer. Looking does not disturb the user: nothing is brought to the front.')
+    expect(described.app_key).toBe('Press one key or shortcut in an app\'s window on the user\'s Mac: enter, escape, tab, space, backspace, delete, up, down, left, right, home, end, pageup, pagedown, f1 to f12 or a single character, with any of cmd, ctrl, alt, shift joined by "+", for example "cmd+s". Answers with the window as it is afterwards: its picture and its numbered elements.')
+    expect(tools(windows).all.find((tool) => tool.name === 'app_key')!.description).toContain('ctrl, alt, shift, cmd (the Windows key) joined by "+", for example "ctrl+s"')
+  })
+
+  it('list the windows on the workspace\'s screen without anything the user allowed', async () => {
+    const { run } = tools('workspace')
+    const result = await run('app_list', {})
+    expect(result.content).toEqual([{ type: 'text', text: [
+      'Apps with a window open on the workspace\'s screen:',
+      '- TextEdit: "Notes.txt", "Untitled"',
+      '- Safari (in front)',
+    ].join('\n') }])
+    expect(formatAppList([], 'workspace')).toBe('No app has a window open on the workspace\'s screen. Open a page with `chromium <url or file>`, or start a program with `pulpo-desktop run <command>`.')
+    expect(formatAppList([{ name: 'Chromium', allowed: true, frontmost: true, windows: ['Example'] }], 'workspace')).not.toContain('allowed')
   })
 
   it('know which tools show the agent a picture', () => {
@@ -76,7 +109,8 @@ describe('app tools', () => {
   it('shows a window as its picture and a numbered list, and keeps a preview for the timeline', async () => {
     const { run, useApp, preview } = tools()
     const result = await run('app_view', { app: ' TextEdit ', window: 'Notes' })
-    expect(useApp).toHaveBeenCalledWith({ app: 'TextEdit', window: 'Notes', action: { type: 'view' } }, undefined, expect.any(Function))
+    // The tool call's id is the operation's, so a cloud workspace can run it at most once.
+    expect(useApp).toHaveBeenCalledWith({ app: 'TextEdit', window: 'Notes', action: { type: 'view' } }, undefined, expect.any(Function), 'call-app_view')
     expect(result.content).toEqual([
       { type: 'text', text: [
         'TextEdit, window "Notes.txt"',
@@ -102,6 +136,8 @@ describe('app tools', () => {
     ])
     expect(text).toMatch(/More elements were left out\. For anything not listed, use coordinates from the picture\.$/)
     expect(formatAppView(view({ elements: [] }))).toContain('This window lists no elements; use coordinates from the picture.')
+    // Cut short with nothing listed: the app was busy, so the agent is told to look again rather than that the window is empty.
+    expect(formatAppView(view({ elements: [], truncated: true }))).toContain('was not ready yet. Look again with app_view')
     const many = Array.from({ length: 1_000 }, (_, index) => ({ index: index + 1, depth: 0, role: 'text', label: 'x'.repeat(150), x: 0, y: 0, width: 1, height: 1 }))
     expect(formatAppView(view({ elements: many })).length).toBeLessThan(32_000)
   })

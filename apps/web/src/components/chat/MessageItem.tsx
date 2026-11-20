@@ -65,13 +65,15 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { cn } from '@/lib/utils'
 import { writeClipboardText } from '@/lib/clipboard'
 import { ui, activeLocale } from '@/i18n/ui'
-import { appToolSummary, isShellTool, toolActivityPresentation } from './tool-activity-presentation'
+import { appToolSummary, isAppTool, isShellTool, toolActivityPresentation } from './tool-activity-presentation'
 import { UsageCostBreakdown } from '@/components/usage/UsageCostBreakdown'
 import { FileChangesBar } from '@/features/files/FileChangesBar'
 import { FileReferenceCard } from '@/features/files/FileReferenceCard'
 import { fileChangesItem } from '@/features/files/file-changes'
 import { ComputerChangesBar } from '@/features/computer/changes/ComputerChangesBar'
 import { computerChangesItem, hasComputerBridge } from '@/features/computer/changes/bridge'
+import { OpenScreenButton } from '@/features/workspace-screen/OpenScreenButton'
+import { useWorkspaceScreenOffered } from '@/features/workspace-screen/offered'
 
 function CopyButton({ text }: { text: string }) {
   const { t } = useTranslation()
@@ -458,6 +460,7 @@ function ActivityBlock({
   onContinue,
   capacityPending,
   onOpenChat,
+  screenChatId,
 }: {
   steps: ActivityStep[]
   active: boolean
@@ -469,6 +472,8 @@ function ActivityBlock({
   onContinue: (id: string) => void
   capacityPending: boolean
   onOpenChat: (chatId: string) => void
+  /** The agent used the cloud workspace's screen here, so it can be opened from beside the label. */
+  screenChatId?: string
 }) {
   const workspace = steps.find((step): step is WorkspaceStep => step.kind === 'workspace')?.workspace
   const compaction = steps.find((step) => step.kind === 'compaction')?.compaction
@@ -581,11 +586,14 @@ function ActivityBlock({
   return (
     <div className="space-y-1.5">
       <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
-        <CollapsibleTrigger className="flex max-w-full min-w-0 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
-          {triggerIcon}
-          <span className="min-w-0 truncate">{label}</span>
-          <ChevronRight className={cn('size-3 shrink-0 transition-transform', open && 'rotate-90')} />
-        </CollapsibleTrigger>
+        <div className="flex min-w-0 items-center gap-3">
+          <CollapsibleTrigger className="flex max-w-full min-w-0 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
+            {triggerIcon}
+            <span className="min-w-0 truncate">{label}</span>
+            <ChevronRight className={cn('size-3 shrink-0 transition-transform', open && 'rotate-90')} />
+          </CollapsibleTrigger>
+          {screenChatId && <OpenScreenButton chatId={screenChatId} />}
+        </div>
         <CollapsibleContent>
           <div className="mt-1 space-y-1.5 border-l-2 border-muted py-0.5 pl-2.5">
             {steps.map((step, index) => {
@@ -670,6 +678,7 @@ export const MessageItem = memo(function MessageItem({
   const showResponseCost = useSettings((s) => s.showResponseCost)
   const filesEnabled = useAuth((s) => s.filesEnabled)
   const billingEnabled = useAuth((s) => s.billingEnabled)
+  const screenOffered = useWorkspaceScreenOffered()
   const insufficientBalance = /insufficient balance/i.test(message.error ?? '')
   const [editing, setEditing] = useState(() => editDrafts?.has(message.id) ?? false)
   const [draft, setDraft] = useState(() => editDrafts?.get(message.id) ?? message.content)
@@ -834,6 +843,12 @@ export const MessageItem = memo(function MessageItem({
   const computerChanges = computerChangesItem(outputItems)
   const filesPermission = findFilesPermissionItems(outputItems).findLast((item) => item.status === 'awaiting_decision')
   const lastActivityIndex = activitySegments.length - 1
+  // A reply that used the app tools in a cloud workspace (not on the user's own computer) offers its
+  // screen beside the last activity that used it, while it runs and after.
+  const cloudWorkspace = outputItems.some((item) => (item as WorkspaceItem).type === 'pulpo_workspace' && !(item as WorkspaceItem).computer)
+  const screenTimelineIndex = screenOffered && cloudWorkspace
+    ? timeline.findLastIndex((segment) => segment.kind === 'activity' && segment.steps.some((step) => step.kind === 'tool' && isAppTool(step.tool.tool)))
+    : -1
   const hasVisibleBody = timeline.length > 0 || Boolean(message.error)
   let activityOrdinal = -1
 
@@ -908,6 +923,7 @@ export const MessageItem = memo(function MessageItem({
                       }}
                       capacityPending={capacityActionPending}
                       onOpenChat={onOpenChat}
+                      screenChatId={index === screenTimelineIndex ? chat.id : undefined}
                     />
                   )
                 }

@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# chromium (also chromium-browser, google-chrome): the workspace's browser.
+#
+#   chromium [url…]               opens the URLs in the browser on the workspace's screen, starting
+#                                 the screen and the browser when they are not running; returns at once
+#   chromium --headless[=…] args  runs a headless browser in the foreground, with no screen
+#
+# Both get defaults that make it work in a workspace: the egress proxy from HTTPS_PROXY/HTTP_PROXY
+# (workspaces have no DNS; NO_PROXY and localhost are reached directly), the sandbox only where user
+# namespaces allow it, shared memory off the small /dev/shm, the accessibility tree the screen's
+# helper reads, and no first-run or sign-in prompts. The browser on the screen also listens for the
+# DevTools protocol on 127.0.0.1:9222, so scripts can drive it, e.g. with Playwright's
+# chromium.connectOverCDP('http://127.0.0.1:9222').
+set -euo pipefail
+
+readonly chrome='/opt/pulpo/desktop/chrome'
+readonly debugging_port=9222
+readonly profile="${HOME}/.config/pulpo-chromium"
+
+headless=false
+own_proxy=false
+own_profile=false
+for argument in "$@"; do
+  case "${argument}" in
+    --headless | --headless=*) headless=true ;;
+    --proxy-server=* | --no-proxy-server | --proxy-pac-url=* | --proxy-auto-detect) own_proxy=true ;;
+    --user-data-dir=*) own_profile=true ;;
+  esac
+done
+
+defaults=(
+  --no-first-run
+  --no-default-browser-check
+  --disable-search-engine-choice-screen
+  --disable-sync
+  --password-store=basic
+  --disable-dev-shm-usage
+  --force-renderer-accessibility
+  --disable-background-networking
+  --disable-component-update
+  --disable-breakpad
+  --hide-crash-restore-bubble
+  # Hides Chrome for Testing's "only for automated testing" bar (the build Playwright ships).
+  --disable-infobars
+  --enable-unsafe-swiftshader
+)
+
+# Chromium's sandbox needs unprivileged user namespaces. Where the workspace does not allow them
+# (seccomp, as in a container), it would refuse to start; it runs without one then, and the
+# workspace itself is the boundary.
+if ! unshare --user --map-root-user --pid --net --fork true > /dev/null 2>&1; then
+  # --test-type hides the warning bar about --no-sandbox.
+  defaults+=(--no-sandbox --test-type)
+fi
+
+proxy="${HTTPS_PROXY:-${https_proxy:-${HTTP_PROXY:-${http_proxy:-}}}}"
+no_proxy_list="${NO_PROXY:-${no_proxy:-}}"
+if [[ -n "${proxy}" && "${own_proxy}" == false && "${no_proxy_list}" != '*' ]]; then
+  bypass='localhost;127.0.0.1;[::1]'
+  IFS=',' read -r -a no_proxy_entries <<< "${no_proxy_list}"
+  for entry in "${no_proxy_entries[@]}"; do
+    entry="${entry//[[:space:]]/}"
+    # Chromium wants an IPv6 address in brackets.
+    if [[ "${entry}" == *:*:* && "${entry}" != \[* && "${entry}" != */* ]]; then entry="[${entry}]"; fi
+    if [[ -n "${entry}" && ";${bypass};" != *";${entry};"* ]]; then bypass+=";${entry}"; fi
+  done
+  defaults+=(--proxy-server="${proxy}" --proxy-bypass-list="${bypass}")
+fi
+
+if [[ "${headless}" == true ]]; then
+  if [[ "${own_profile}" == true ]]; then
+    exec "${chrome}" "${defaults[@]}" "$@"
+  fi
+  # A profile of its own, so headless runs neither wait on the screen's browser nor on each other.
+  temporary_profile="$(mktemp -d /tmp/pulpo-chromium-headless.XXXXXX)"
+  "${chrome}" "${defaults[@]}" --user-data-dir="${temporary_profile}" "$@" &
+  browser=$!
+  trap 'kill "${browser}" 2> /dev/null || true' INT TERM
+  status=0
+  wait "${browser}" || status=$?
+  # A signal interrupts the first wait; the browser still has to finish before its profile goes.
+  wait "${browser}" 2> /dev/null || true
+  rm -rf "${temporary_profile}"
+  exit "${status}"
+fi
+
+if [[ "${own_profile}" == false ]]; then
+  defaults+=(--user-data-dir="${profile}")
+fi
+# A browser already running with this profile takes the URLs as new tabs and the new process exits.
+exec pulpo-desktop run "${chrome}" "${defaults[@]}" \
+  --ozone-platform=x11 --class=Chromium --window-position=0,0 --window-size=1280,800 \
+  --remote-debugging-port="${debugging_port}" "$@"

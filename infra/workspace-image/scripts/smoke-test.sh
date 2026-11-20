@@ -111,6 +111,9 @@ done
 assert_equal computer:cat "${computer_command}" 'pulpo computer relays prefixed commands'
 daemon -X POST "${daemon_url}/v1/relay/$(daemon "${daemon_url}/v1/operations/smoke-computer" | jq -r '.relay.pending[0].id')" -d '{"ok":true,"output":"done"}' > /dev/null
 
+# The screen: session, browser, control helper, live frames, headless Chromium and Playwright.
+/usr/bin/python3 -I /opt/pulpo/desktop-smoke-test.py
+
 if [[ -e /var/run/secrets/kubernetes.io/serviceaccount/token ]]; then
   echo 'FAIL: Kubernetes service-account token is mounted' >&2
   exit 1

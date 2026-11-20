@@ -1139,3 +1139,57 @@ describe('Files changes under a reply', () => {
     expect(markup).toContain('Saving to Files…')
   })
 })
+
+describe('the workspace screen on a reply', () => {
+  const appStep = { type: 'pulpo_tool', id: 'tool-1', tool: 'app_click', status: 'completed', arguments: { app: 'Chromium', element: 4 } }
+  const reply = (workspace: Record<string, unknown>, tools: unknown[] = [appStep], overrides: Partial<Message> = {}) => assistant({
+    content: 'Done.',
+    outputItems: [{ type: 'pulpo_workspace', state: 'ready', ...workspace }, ...tools],
+    ...overrides,
+  })
+
+  async function offered(on: boolean) {
+    const { useCatalog } = await import('@/stores/catalog')
+    const { useAuth } = await import('@/stores/auth')
+    const catalog = useCatalog.getState().workspaceScreen
+    const authUser = useAuth.getState().user
+    useCatalog.setState({ workspaceScreen: on })
+    useAuth.setState({ user: { id: 'user-1' } as never })
+    onTestFinished(() => {
+      useCatalog.setState({ workspaceScreen: catalog })
+      useAuth.setState({ user: authUser })
+    })
+  }
+
+  it('offers Open screen on a cloud reply that used the app tools, running or finished', async () => {
+    await offered(true)
+    const { MessageItem } = await import('./MessageItem')
+    const finished = render(<MessageItem chat={chat} message={reply({})} streaming={false} onRegenerate={() => undefined} />)
+    expect(finished.queryByRole('button', { name: 'Open screen' })).toBeTruthy()
+    finished.unmount()
+    const running = render(<MessageItem
+      chat={chat}
+      message={reply({}, [{ ...appStep, status: 'running' }], { content: '', done: false })}
+      streaming
+      onRegenerate={() => undefined}
+    />)
+    expect(running.queryByRole('button', { name: 'Open screen' })).toBeTruthy()
+  })
+
+  it('does not offer it on the user\'s own computer, without app tools, or with the screen turned off', async () => {
+    await offered(true)
+    const { MessageItem } = await import('./MessageItem')
+    const offers = (message: Message) => {
+      const view = render(<MessageItem chat={chat} message={message} streaming={false} onRegenerate={() => undefined} />)
+      const found = Boolean(view.queryByRole('button', { name: 'Open screen' }))
+      view.unmount()
+      return found
+    }
+    expect(offers(reply({}))).toBe(true)
+    expect(offers(reply({ computer: true }))).toBe(false)
+    expect(offers(reply({}, [{ type: 'pulpo_tool', id: 'tool-2', tool: 'bash', status: 'completed', arguments: { command: 'ls' } }]))).toBe(false)
+
+    await act(async () => { await offered(false) })
+    expect(offers(reply({}))).toBe(false)
+  })
+})

@@ -18,6 +18,8 @@ import { mergeCachedChat, persistableChats } from './cache'
 
 export interface ModelCatalog {
   agentAvailable: boolean
+  /** Cloud workspaces have a screen the chat's owner can watch and take over. Older servers leave it out. */
+  workspaceScreen?: boolean
   data: MobileModel[]
 }
 
