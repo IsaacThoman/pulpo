@@ -58,7 +58,7 @@ A full-access reply reaches the user's Files the way a cloud reply does, by runn
 
 ### Apps
 
-With full access the agent can also use the apps on the computer, the way a person would: it is shown a window and clicks and types in it. It has eight tools for that (`apps/server/src/agent/app-tools.ts`), offered only when the desktop app's `describe` answer has `apps`:
+With full access the agent can also use the apps on the computer, the way a person would: it is shown a window and clicks and types in it. It has eight tools for that (`apps/server/src/agent/app-tools.ts`), offered only when the desktop app's `describe` answer has `apps`. Cloud workspaces offer the same tools on a screen of their own when the instance turns that on ([Workspace screen](workspace-screen.md)); this section is about the user's computer.
 
 | Tool | What it does |
 |---|---|
@@ -74,7 +74,7 @@ All of them travel as two requests, `app.list` and `app.act`, which `ComputerSer
 - **Stopping stops it.** When a reply ends, its access is taken back, or the app it is working in is removed in Settings while the helper is still carrying out its action (a long text being typed), the helper is stopped: its input closes, it stops typing where it is and leaves. A helper also leaves after an action that did not finish in time, so the stuck action cannot carry on later. A request still waiting its turn behind another reply's is not sent. Element numbers are good only for the reply the window was last pictured for, so two replies working in one window cannot act on each other's lists.
 - **A window, not the screen.** Pictures are of the one window, at most 1280 pixels on the long edge, JPEG. One that fits in a socket message rides inline; a larger one is written under `<userData>/computer/app-images`, fetched by the server with `file.send`, and deleted when the next is taken or the reply ends. Like `view_image` results, the pictures become part of the chat: the model's context and a small preview in the reply's timeline.
 
-The seeing and the input are done by a native helper process, one per system, that the main process starts on first use and talks to in JSON lines (`control/protocol.ts` is the whole protocol, `control/helper.ts` the client: one request at a time, a helper that does not answer is replaced, an idle one is stopped after ten minutes, and closing its input ends it).
+The seeing and the input are done by a native helper process, one per system, that the main process starts on first use and talks to in JSON lines. The protocol and its client are shared with the workspace daemon, which runs a Linux helper of its own on a cloud workspace's screen, so they live in `packages/workspace-daemon/src/control/`: `protocol.ts` is the whole protocol, `helper.ts` the client (one request at a time, a helper that does not answer is replaced, an idle one is stopped after ten minutes, and closing its input ends it). `apps/desktop/src/computer/control/protocol.ts` and `helper.ts` re-export them, and the latter says where this system's helper is.
 
 | | macOS | Windows |
 |---|---|---|

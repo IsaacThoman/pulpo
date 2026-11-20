@@ -38,6 +38,13 @@ describe('cross-origin requests', () => {
     }
   })
 
+  it('lets a viewer on another origin read the id of a workspace screen frame', async () => {
+    const app = await buildApp()
+    apps.push(app)
+    const response = await app.inject({ url: '/health', headers: { origin: 'https://desktop.pulpo.invalid' } })
+    expect(String(response.headers['access-control-expose-headers']).split(/,\s*/)).toContain('x-pulpo-frame')
+  })
+
   it('still answers no other origin', async () => {
     const app = await buildApp()
     apps.push(app)

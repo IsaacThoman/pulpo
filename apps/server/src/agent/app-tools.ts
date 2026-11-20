@@ -1,13 +1,31 @@
 import { COMPUTER_APP_TYPE_MAX_CHARACTERS, type ComputerApp, type ComputerAppActionInput, type ComputerAppElement, type ComputerDescription, type ToolImagePreview } from '@pulpo/contracts'
 import { Type } from '@earendil-works/pi-ai'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
-import type { ComputerAppView, ComputerWorkspace } from './computer-workspace.js'
+import type { ComputerAppView } from './computer-workspace.js'
 
 /**
- * The app tools: seeing and working in other apps' windows on the user's own computer ("This
- * computer", full access, on desktop apps that describe `apps`). Every tool but `app_list` answers
- * with the window as it is afterwards: its picture and a numbered list of what is in it.
+ * The app tools: seeing and working in apps' windows, on the user's own computer ("This computer",
+ * full access, on desktop apps that describe `apps`) or on a cloud workspace's screen. Every tool
+ * but `app_list` answers with the window as it is afterwards: its picture and a numbered list of
+ * what is in it.
  */
+
+/**
+ * Something the app tools can run on: the user's computer (`ComputerWorkspace`) or a cloud
+ * workspace's screen (`WorkspaceManager`). The tool call's id is the operation id.
+ */
+export interface AppHost {
+  listApps(signal: AbortSignal | undefined, onStarted: () => void | Promise<void>, operationId: string): Promise<ComputerApp[]>
+  useApp(
+    input: { app: string; window?: string; action: ComputerAppActionInput },
+    signal: AbortSignal | undefined,
+    onStarted: () => void | Promise<void>,
+    operationId: string,
+  ): Promise<ComputerAppView>
+}
+
+/** Where the app tools run: the user's computer as it described itself, or the workspace's screen. */
+export type AppToolsPlace = ComputerDescription | 'workspace'
 
 export const APP_TOOL_NAMES = ['app_list', 'app_view', 'app_click', 'app_type', 'app_key', 'app_scroll', 'app_drag', 'app_set_value'] as const
 export type AppToolName = typeof APP_TOOL_NAMES[number]
@@ -65,7 +83,17 @@ export function formatAppView(view: ComputerAppView): string {
   return lines.join('\n')
 }
 
-export function formatAppList(apps: ComputerApp[]): string {
+export function formatAppList(apps: ComputerApp[], place: 'computer' | 'workspace' = 'computer'): string {
+  if (place === 'workspace') {
+    if (!apps.length) return 'No app has a window open on the workspace\'s screen. Open a page with `chromium <url or file>`, or start a program with `pulpo-desktop run <command>`.'
+    return [
+      'Apps with a window open on the workspace\'s screen:',
+      ...apps.map((app) => {
+        const windows = app.windows.length ? `: ${app.windows.map((title) => JSON.stringify(title)).join(', ')}` : ''
+        return `- ${app.name}${app.frontmost ? ' (in front)' : ''}${windows}`
+      }),
+    ].join('\n')
+  }
   if (!apps.length) return 'No app is running with a window open.'
   return [
     'Apps running with a window open:',
@@ -100,14 +128,15 @@ function place(args: Record<string, unknown>): { element?: number; x?: number; y
 }
 
 export function createAppTools(
-  manager: Pick<ComputerWorkspace, 'listApps' | 'useApp'>,
-  computer: ComputerDescription,
+  manager: AppHost,
+  where: AppToolsPlace,
   onOperationStarted?: (operationId: string) => void | Promise<void>,
   /** Stores the window's picture for the reply's timeline; failing costs only the preview. */
   onImagePreview?: (operationId: string, name: string, data: string) => Promise<ToolImagePreview>,
 ): AgentTool[] {
-  const machine = `the user's ${OS_NAMES[computer.os]}`
-  const background = computer.apps?.background === true
+  const computer = where === 'workspace' ? undefined : where
+  const machine = computer ? `the user's ${OS_NAMES[computer.os]}` : 'the workspace\'s screen'
+  const background = computer?.apps?.background === true
   const tool = (name: AppToolName, description: string, parameters: ReturnType<typeof Type.Object>, execute: AgentTool['execute']): AgentTool => ({ name, label: name, description, parameters, executionMode: 'sequential', execute })
   const started = (operationId: string) => () => onOperationStarted?.(operationId)
   const app = Type.String({ description: 'The app\'s name as app_list shows it, for example "TextEdit".' })
@@ -119,8 +148,7 @@ export function createAppTools(
 
   const act = (name: Exclude<AppToolName, 'app_list'>, description: string, parameters: ReturnType<typeof Type.Object>, action: (args: Record<string, unknown>) => ComputerAppActionInput) => tool(name, description, parameters, async (id, rawArgs, signal) => {
     const args = record(rawArgs)
-    const where = target(args)
-    const view = await manager.useApp({ ...where, action: action(args) }, signal, started(id))
+    const view = await manager.useApp({ ...target(args), action: action(args) }, signal, started(id), id)
     let imagePreview: ToolImagePreview | undefined
     if (onImagePreview) {
       try {
@@ -139,11 +167,15 @@ export function createAppTools(
   })
 
   return [
-    tool('app_list', `List the apps running on ${machine} with a window open, whether the user already allowed you to use each, and the window titles of the ones they allowed.`, Type.Object({}), async (id, _args, signal) => {
-      const apps = await manager.listApps(signal, started(id))
-      return { content: [{ type: 'text' as const, text: formatAppList(apps) }], details: { apps: apps.length } }
+    tool('app_list', computer
+      ? `List the apps running on ${machine} with a window open, whether the user already allowed you to use each, and the window titles of the ones they allowed.`
+      : `List the apps with a window open on ${machine}, and their window titles.`, Type.Object({}), async (id, _args, signal) => {
+      const apps = await manager.listApps(signal, started(id), id)
+      return { content: [{ type: 'text' as const, text: formatAppList(apps, computer ? 'computer' : 'workspace') }], details: { apps: apps.length } }
     }),
-    act('app_view', `Look at one window of an app on ${machine}: a picture of that window alone and a numbered list of what is in it (buttons, fields, text, with their boxes). The first time you use an app, the user is asked on their computer whether you may; the tool waits for their answer. ${background ? 'Looking does not disturb the user: nothing is brought to the front.' : 'A window that is covered or minimized may be brought to the front to be seen.'}`,
+    act('app_view', `Look at one window of an app on ${machine}: a picture of that window alone and a numbered list of what is in it (buttons, fields, text, with their boxes). ${computer
+      ? `The first time you use an app, the user is asked on their computer whether you may; the tool waits for their answer. ${background ? 'Looking does not disturb the user: nothing is brought to the front.' : 'A window that is covered or minimized may be brought to the front to be seen.'}`
+      : 'The window is brought to the front to be seen.'}`,
       Type.Object({ app, window }), () => ({ type: 'view' })),
     act('app_click', `Click in an app's window on ${machine}: on a numbered element from the last result for that window, or at x,y in its last picture. ${shown}`,
       Type.Object({
@@ -169,7 +201,7 @@ export function createAppTools(
         if (text.length > COMPUTER_APP_TYPE_MAX_CHARACTERS) throw new Error(`text is ${text.length.toLocaleString('en-US')} characters; type at most ${COMPUTER_APP_TYPE_MAX_CHARACTERS.toLocaleString('en-US')} at a time`)
         return { type: 'type', text }
       }),
-    act('app_key', `Press one key or shortcut in an app's window on ${machine}: enter, escape, tab, space, backspace, delete, up, down, left, right, home, end, pageup, pagedown, f1 to f12 or a single character, with any of ${computer.os === 'macos' ? 'cmd, ctrl, alt, shift' : 'ctrl, alt, shift, cmd (the Windows key)'} joined by "+", for example "${computer.os === 'macos' ? 'cmd+s' : 'ctrl+s'}". ${shown}`,
+    act('app_key', `Press one key or shortcut in an app's window on ${machine}: enter, escape, tab, space, backspace, delete, up, down, left, right, home, end, pageup, pagedown, f1 to f12 or a single character, with any of ${!computer ? 'ctrl, alt, shift, cmd (the Super key)' : computer.os === 'macos' ? 'cmd, ctrl, alt, shift' : 'ctrl, alt, shift, cmd (the Windows key)'} joined by "+", for example "${computer?.os === 'macos' ? 'cmd+s' : 'ctrl+s'}". ${shown}`,
       Type.Object({ app, window, keys: Type.String({ description: 'One key or chord, for example "enter" or "ctrl+shift+t".' }) }),
       (args) => ({ type: 'key', keys: String(args.keys ?? '').trim() })),
     act('app_scroll', `Scroll in an app's window on ${machine}: at a numbered element, at x,y, or in the middle of the window. ${shown}`,

@@ -245,7 +245,9 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const agentAvailable = agentSettings.enabled && Boolean(getConfig().WORKSPACE_CONTROLLER_URL && getConfig().WORKSPACE_CONTROLLER_TOKEN)
     // Whether a desktop app may offer "This computer"; the app still needs its own bridge.
     const computerAccess = agentAvailable && agentSettings.computerAccess
-    return { codexEnabled: codexAvailable, agentAvailable, computerAccess, data: await Promise.all(rows.map(async ({ model, pricing, lab, provider }) => ({
+    // Whether cloud workspaces have a screen the chat's owner can open from a reply.
+    const workspaceScreen = agentAvailable && agentSettings.workspaceDesktop
+    return { codexEnabled: codexAvailable, agentAvailable, computerAccess, workspaceScreen, data: await Promise.all(rows.map(async ({ model, pricing, lab, provider }) => ({
       id: model.id,
       upstreamModelId: model.upstreamModelId,
       name: model.name,

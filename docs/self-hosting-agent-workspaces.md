@@ -302,6 +302,10 @@ Then, in Pulpo:
 3. Turn on **Enable agent mode** and save.
 4. Under **Admin panel → Models**, edit each model that should be able to use a
    workspace and turn on **Enable Pi agent mode**.
+5. Optionally, turn on **Give agent workspaces a screen**. It adds a browser and the app
+   tools to workspaces, and lets a chat's owner watch the screen and take it over, to
+   sign in to a site for example. The image from step 4 must include the desktop; with
+   an older image the app tools fail and say so. See [Workspace screen](workspace-screen.md).
 
 Start a new chat with one of those models, switch on **Agent** in the composer, and
 ask it to run `uname -a`. **Admin panel → Usage → Workspaces** lists active workspaces,
@@ -338,9 +342,17 @@ against the ones nobody has thought of.
 | Pulpo, **Settings → Agent** | **Warm workspaces** | `1` | Idle workspaces kept ready so a chat starts without waiting. |
 | Pulpo, **Settings → Agent** | **CPU**, **Memory**, **Ephemeral disk** | 2 cores, 2048 MiB, 20 GiB | Size of each workspace. |
 | Pulpo, **Settings → Agent** | **Idle timeout**, **Hard timeout** | 30 minutes, 4 hours | When an unused or long-lived workspace is deleted. |
+| Pulpo, **Settings → Agent** | **Give agent workspaces a screen** | Off | Adds a browser and the app tools to workspaces, and lets a chat's owner watch the screen and take it over. Needs a workspace image that includes the desktop. |
 
 A workspace is deleted when it times out. Files a model should keep belong in Pulpo's
 Files, which the agent can read and write.
+
+With the screen on, the display, window manager and browser run inside each workspace's
+own memory. Chromium with a few pages open takes a good part of the default 2048 MiB, so raise
+**Memory** if agents browse much, and size the machine for it. The measured figures are
+in [the workspace image's README](https://github.com/IsaacThoman/pulpo/blob/main/infra/workspace-image/README.md).
+While someone watches a chat's screen, its workspace counts as used and is not deleted
+for being idle; the hard timeout still applies.
 
 ## Updating
 
