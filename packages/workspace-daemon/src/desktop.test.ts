@@ -1,6 +1,6 @@
 import { readdir, rm, stat } from 'node:fs/promises'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { HELD, NO_SCREEN, ScreenInputError, WorkspaceDesktop, findApp, parseInputEvents } from './desktop.js'
+import { HELD, HELD_BEHIND, NO_SCREEN, ScreenInputError, WorkspaceDesktop, findApp, parseInputEvents } from './desktop.js'
 import { alive, chromium, fakeDesktop, terminal, until, type FakeDesktop } from './desktop.fixture.js'
 
 let fake: FakeDesktop
@@ -91,6 +91,10 @@ describe('workspace screen apps', () => {
     expect((await desktop.act(view(), signal())).result.window).toBe('Example Domain')
     expect((await desktop.list(signal())).result.apps).toHaveLength(2)
     expect(await helperCalls('act')).toEqual([])
+    // Only the window in front: showing another would bring it forward under the owner's hands.
+    const shown = (await helperCalls('snapshot')).length
+    expect(await failure(desktop.act(view('XTerm'), signal()))).toBe(HELD_BEHIND)
+    expect(await helperCalls('snapshot')).toHaveLength(shown)
     // Control lapses by itself when it is not renewed.
     now += 20_001
     expect(desktop.control.held).toBe(false)

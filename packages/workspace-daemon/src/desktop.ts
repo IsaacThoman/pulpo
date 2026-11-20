@@ -45,6 +45,7 @@ const STATUS_TIMEOUT_MS = 5_000
 
 export const NO_SCREEN = 'This workspace has no screen: its image does not include the desktop.'
 export const HELD = "The user is using the workspace's screen themselves right now, so nothing was done. Wait until they say they are finished; you can still look with app_view."
+export const HELD_BEHIND = "The user is using the workspace's screen themselves right now, and showing you this window would bring it in front of the one they are working in. You can look at the window in front; for the others, wait until they say they are finished."
 const CANCELLED = 'The request was cancelled.'
 const UNREADABLE = 'The picture of the window could not be read.'
 
@@ -413,8 +414,12 @@ export class WorkspaceDesktop {
       const appKey = lower(app.id)
       const sameApp = (candidate: ControlApp) => candidate.pid === app.pid && candidate.id === app.id
       let window: ControlWindow
-      if (action.type === 'view') window = findWindow(app, input.window)
-      else {
+      if (action.type === 'view') {
+        window = findWindow(app, input.window)
+        // A picture is taken of a window in front. The one already there can be looked at; bringing
+        // another forward would move the owner's keyboard to it in the middle of what they type.
+        if (this.control.held && !(app.frontmost === true && app.windows[0]?.id === window.id)) throw new Error(HELD_BEHIND)
+      } else {
         const shown = this.shown.get(appKey)
         window = input.window ? findWindow(app, input.window) : app.windows.find((candidate) => candidate.id === shown) ?? findWindow(app, undefined)
         if (needsPicture(action) && window.id !== shown) {

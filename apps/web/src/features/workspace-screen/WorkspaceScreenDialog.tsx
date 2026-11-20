@@ -157,11 +157,23 @@ function ScreenViewer({ chatId, touch, control, setControl }: {
     setNotice(ui("Control ended, so you're watching again."))
   }, [setControl])
 
+  // Whether this viewer is still on the page: a take request can come back after it closed.
+  const openRef = useRef(true)
+  useEffect(() => { openRef.current = true; return () => { openRef.current = false } }, [])
+
   const takeControl = async () => {
     setControl('taking')
     setNotice(null)
     try {
-      if (!await setScreenControl(chatId, true)) throw new Error('Control was not given')
+      const held = await setScreenControl(chatId, true)
+      if (!openRef.current) {
+        // Nobody is here to use the control that was given, so it goes straight back, and the
+        // next viewer starts out watching.
+        setControl('watching')
+        if (held) void setScreenControl(chatId, false).catch(() => undefined)
+        return
+      }
+      if (!held) throw new Error('Control was not given')
       senderRef.current = new InputSender(
         (events) => sendScreenInput(chatId, events),
         (error) => { if (lostControl(error)) loseControl(); else setNotice(ui("Some of what you did didn't reach the screen.")) },
@@ -170,6 +182,7 @@ function ScreenViewer({ chatId, touch, control, setControl }: {
       requestAnimationFrame(() => regionRef.current?.focus())
     } catch (error) {
       setControl('watching')
+      if (!openRef.current) return
       if (lostControl(error)) setPhase({ kind: 'none' })
       else setNotice(ui("Couldn't take control. Try again."))
     }

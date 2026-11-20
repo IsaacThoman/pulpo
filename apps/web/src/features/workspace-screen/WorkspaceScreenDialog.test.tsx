@@ -107,6 +107,31 @@ describe('WorkspaceScreenDialog', () => {
     await waitFor(() => expect(requests.filter((request) => request.path.endsWith('/control')).at(-1)?.body).toEqual({ held: false }))
   })
 
+  it('gives control straight back when it arrives after the dialog was closed', async () => {
+    let grant!: (response: Response) => void
+    const requests = serve({
+      control: (_url, init) => JSON.parse(String(init.body)).held
+        ? new Promise<Response>((resolve) => { grant = resolve })
+        : json({ held: false }),
+    })
+    function Reopenable() {
+      const [open, setOpen] = useState(true)
+      return <><button onClick={() => setOpen(true)}>reopen</button><WorkspaceScreenDialog chatId="chat-1" open={open} onOpenChange={setOpen} /></>
+    }
+    render(<Reopenable />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Take control' }))
+    await waitFor(() => expect(requests.some((request) => request.path.endsWith('/control'))).toBe(true))
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    await act(async () => { grant(json({ held: true })) })
+    await waitFor(() => expect(requests.filter((request) => request.path.endsWith('/control')).at(-1)?.body).toEqual({ held: false }))
+    // Opened again, the viewer is watching and can take control afresh.
+    fireEvent.click(screen.getByText('reopen'))
+    const take = await screen.findByRole('button', { name: 'Take control' })
+    expect((take as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.getByRole('status').textContent).toContain('Watching')
+  })
+
   it('goes back to watching and says so when control was lost', async () => {
     serve({ input: () => json({ error: { code: 'workspace_screen_not_controlled', message: 'Not in control' } }, 409) })
     render(<Harness />)
