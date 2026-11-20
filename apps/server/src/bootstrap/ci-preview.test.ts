@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { parseConfig } from '../config.js'
 import {
-  CI_PREVIEW_MODEL,
   CI_PREVIEW_MODEL_ID,
+  CI_PREVIEW_MODELS,
   ciPreviewAgentSettings,
   runBootstrapPreset,
   type BootstrapDependencies,
@@ -13,6 +13,7 @@ import {
 
 const imageDigest = `ghcr.io/isaacthoman/pulpo-agent-workspace@sha256:${'a'.repeat(64)}`
 const strongEncryptionKey = 'preview-encryption-key-that-is-long-enough'
+const previewModelIds = ['gpt-5.6-luna', 'gpt-6-luna', 'claude-opus-5.5', 'claude-haiku-4.5']
 
 function previewConfig(overrides: NodeJS.ProcessEnv = {}) {
   return parseConfig({
@@ -30,7 +31,8 @@ function previewConfig(overrides: NodeJS.ProcessEnv = {}) {
 }
 
 class MemoryBootstrapStore implements BootstrapStore {
-  marker = false
+  version: number | undefined
+  upgrades = 0
   hasUser = false
   encryptedProviderApiKey: string | undefined = undefined
   seeds: CiPreviewSeed[] = []
@@ -43,14 +45,18 @@ class MemoryBootstrapStore implements BootstrapStore {
     await previous
     try {
       return await operation({
-        markerExists: async () => this.marker,
+        markerVersion: async () => this.version,
         seededProviderEncryptedApiKey: async () => this.encryptedProviderApiKey,
         userExists: async () => this.hasUser,
         create: async (seed) => {
           this.seeds.push(seed)
           this.encryptedProviderApiKey = seed.encryptedProviderApiKey
           this.hasUser = true
-          this.marker = true
+          this.version = 2
+        },
+        upgradeModels: async () => {
+          this.upgrades += 1
+          this.version = 2
         },
       })
     } finally {
@@ -59,7 +65,7 @@ class MemoryBootstrapStore implements BootstrapStore {
   }
 }
 
-function dependencies(store: BootstrapStore, models = [CI_PREVIEW_MODEL_ID]): BootstrapDependencies {
+function dependencies(store: BootstrapStore, models = previewModelIds): BootstrapDependencies {
   return {
     store,
     fetch: vi.fn(async () => new Response(JSON.stringify({ data: models.map((id) => ({ id })) }), {
@@ -120,9 +126,9 @@ describe('ci-preview bootstrap preset', () => {
     )).rejects.toThrow('not allowed')
   })
 
-  it('preserves an existing seeded preview without requiring bootstrap secrets again', async () => {
+  it('upgrades a Luna-only preview once using its stored provider key', async () => {
     const store = new MemoryBootstrapStore()
-    store.marker = true
+    store.version = 1
     store.hasUser = true
     store.encryptedProviderApiKey = 'encrypted-provider-key'
     const config = parseConfig({
@@ -133,13 +139,35 @@ describe('ci-preview bootstrap preset', () => {
       PULPO_BOOTSTRAP_PRESET: 'ci-preview',
     })
 
-    await expect(runBootstrapPreset(config, 'pulpo-pr-48.deathgrips.org', dependencies(store))).resolves.toBe('existing')
+    const deps = dependencies(store)
+    await expect(runBootstrapPreset(config, 'pulpo-pr-48.deathgrips.org', deps)).resolves.toBe('existing')
+    await expect(runBootstrapPreset(config, 'pulpo-pr-48.deathgrips.org', deps)).resolves.toBe('existing')
+    expect(store.upgrades).toBe(1)
     expect(store.seeds).toHaveLength(0)
+    expect(deps.fetch).toHaveBeenCalledExactlyOnceWith('https://pulpo.baby/v1/models', {
+      headers: { authorization: 'Bearer provider-key' },
+      signal: expect.any(AbortSignal),
+    })
+  })
+
+  it('can retry an upgrade after the provider key gains access to the remaining models', async () => {
+    const store = new MemoryBootstrapStore()
+    store.version = 1
+    store.encryptedProviderApiKey = 'encrypted-provider-key'
+    await expect(runBootstrapPreset(
+      previewConfig(), 'pulpo-pr-48.deathgrips.org', dependencies(store, [CI_PREVIEW_MODEL_ID]),
+    )).rejects.toThrow('does not allow gpt-6-luna, claude-opus-5.5, claude-haiku-4.5')
+    expect(store.version).toBe(1)
+    expect(store.upgrades).toBe(0)
+    await expect(runBootstrapPreset(
+      previewConfig(), 'pulpo-pr-48.deathgrips.org', dependencies(store),
+    )).resolves.toBe('existing')
+    expect(store.upgrades).toBe(1)
   })
 
   it('rejects existing previews when the runtime encryption key cannot decrypt the seeded provider', async () => {
     const store = new MemoryBootstrapStore()
-    store.marker = true
+    store.version = 2
     store.hasUser = true
     store.encryptedProviderApiKey = 'encrypted-provider-key'
     const deps = dependencies(store)
@@ -186,7 +214,7 @@ describe('ci-preview bootstrap preset', () => {
     expect(store.seeds).toHaveLength(0)
   })
 
-  it('fails atomically for missing secrets, invalid provider access, and missing Luna access', async () => {
+  it('fails atomically for missing secrets, invalid provider access, and missing model access', async () => {
     const missingSecretStore = new MemoryBootstrapStore()
     await expect(runBootstrapPreset(
       previewConfig({ PULPO_PREVIEW_ADMIN_PASSWORD: '' }),
@@ -203,22 +231,27 @@ describe('ci-preview bootstrap preset', () => {
     expect(invalidKeyStore.seeds).toHaveLength(0)
 
     const missingModelStore = new MemoryBootstrapStore()
-    await expect(runBootstrapPreset(previewConfig(), 'pulpo-pr-48.deathgrips.org', dependencies(missingModelStore, ['other-model'])))
-      .rejects.toThrow(`does not allow ${CI_PREVIEW_MODEL_ID}`)
+    const partialCatalog = previewModelIds.filter((id) => id !== 'claude-haiku-4.5')
+    await expect(runBootstrapPreset(previewConfig(), 'pulpo-pr-48.deathgrips.org', dependencies(missingModelStore, partialCatalog)))
+      .rejects.toThrow('does not allow claude-haiku-4.5')
     expect(missingModelStore.seeds).toHaveLength(0)
   })
 
-  it('defines conservative Luna and workspace settings', () => {
-    expect(CI_PREVIEW_MODEL).toMatchObject({
-      id: 'gpt-5.6-luna',
-      upstreamModelId: 'gpt-5.6-luna',
-      contextWindow: 128_000,
-      maxOutputTokens: 16_384,
-      agentEnabled: true,
-      compactionThresholdTokens: 96_000,
-      compactionRetainedUserTokens: 20_000,
-    })
-    expect(CI_PREVIEW_MODEL).not.toHaveProperty('compactionRetainedTurns')
+  it('defines conservative preview model and workspace settings', () => {
+    expect(CI_PREVIEW_MODELS.map((model) => model.id)).toEqual(previewModelIds)
+    for (const model of CI_PREVIEW_MODELS) {
+      expect(model).toMatchObject({
+        upstreamModelId: model.id,
+        enabled: true,
+        visible: true,
+        contextWindow: 128_000,
+        maxOutputTokens: 16_384,
+        agentEnabled: true,
+        compactionThresholdTokens: 96_000,
+        compactionRetainedUserTokens: 20_000,
+      })
+      expect(model).not.toHaveProperty('compactionRetainedTurns')
+    }
     expect(ciPreviewAgentSettings(imageDigest)).toMatchObject({
       enabled: true,
       imageDigest,
