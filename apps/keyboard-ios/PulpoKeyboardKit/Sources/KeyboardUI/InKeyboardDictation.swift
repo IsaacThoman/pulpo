@@ -275,7 +275,7 @@ private final class AACRecording {
     file = try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
   }
 
-  /// Writes the samples and returns their level, 0 (silence) to 1 (loud speech).
+  /// Writes the samples and returns their level on the Pulpo app's meter curve.
   func append(_ data: Data) -> Float {
     let count = data.count / 2
     guard count > 0, let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(count)),
@@ -292,9 +292,7 @@ private final class AACRecording {
     }
     try? file?.write(from: buffer)
     frames += count
-    // Same scale as the app's meter: -55 dB is silence, -10 dB is loud speech.
-    let decibels = 20 * log10(max((sum / Float(count)).squareRoot(), 1e-6))
-    return min(1, max(0, (decibels + 55) / 45))
+    return DictationLevels.normalized(rms: (sum / Float(count)).squareRoot())
   }
 
   /// Closes the file and returns it with its length in seconds.
