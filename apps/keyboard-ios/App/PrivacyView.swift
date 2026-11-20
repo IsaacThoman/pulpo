@@ -12,7 +12,7 @@ struct PrivacyView: View {
 
       Section("Stays on this iPhone") {
         PrivacyRow(symbol: "lock.fill", title: "Everything you type",
-                   detail: "Autocorrect, predictions, slide to type, and learned words all run on this iPhone. The keyboard itself never connects to the internet, with or without Full Access.")
+                   detail: "Autocorrect, predictions, slide to type, and learned words all run on this iPhone. The keyboard connects to the internet only to send a dictation you start.")
         PrivacyRow(symbol: "eye.slash", title: "Passwords",
                    detail: "iOS uses its own keyboard for password fields, and Pulpo Keyboard doesn't learn from private fields like usernames and one-time codes.")
       }
@@ -25,12 +25,12 @@ struct PrivacyView: View {
         PrivacyRow(symbol: "iphone.radiowaves.left.and.right", title: "Haptic feedback",
                    detail: "A light tap as you type, if you turn it on.")
         PrivacyRow(symbol: "mic", title: "Dictation",
-                   detail: "The keyboard asks this app to record, because keyboards can't use the microphone.")
+                   detail: "The keyboard records while you dictate, using the microphone access you give this app.")
       }
 
       Section("What's sent, and when") {
         PrivacyRow(symbol: "waveform", title: "Only dictation recordings",
-                   detail: "When you tap the microphone, this app records your voice and sends the recording to your Pulpo server to be transcribed. It's billed to your Pulpo account. While the microphone is kept ready between dictations, nothing is saved or sent until you start one.")
+                   detail: "When you tap the microphone, the keyboard (or this app, on older iOS versions) records your voice and sends the recording to your Pulpo server to be transcribed. It's billed to your Pulpo account. While the microphone is kept ready between dictations, nothing is saved or sent until you start one.")
       }
 
       Section("Without Full Access") {

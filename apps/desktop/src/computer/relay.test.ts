@@ -181,11 +181,15 @@ describe('relay timeouts', () => {
 
   beforeEach(async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    operations = new Operations({ platform: 'linux', savedOutputDir: os.tmpdir(), scriptDir: os.tmpdir(), spawn: () => fakeSpawn() })
+    let spawned = false
+    operations = new Operations({ platform: 'linux', savedOutputDir: os.tmpdir(), scriptDir: os.tmpdir(), spawn: () => { spawned = true; return fakeSpawn() } })
     operations.enableRelay(true)
     operations.start(context, 'op', 'bash', { command: 'forever' })
-    // The command spawns after a stat of its folder.
-    for (let attempt = 0; attempt < 100; attempt += 1) await new Promise((resolve) => setImmediate(resolve))
+    // The command spawns after a stat of its folder, which is real I/O: on a busy machine it takes
+    // more turns of the loop than any fixed count, so wait for the spawn itself.
+    const deadline = Date.now() + 5_000
+    while (!spawned && Date.now() < deadline) await new Promise((resolve) => setImmediate(resolve))
+    expect(spawned).toBe(true)
   })
 
   afterEach(() => {

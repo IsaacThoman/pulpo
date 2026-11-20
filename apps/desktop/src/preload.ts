@@ -19,6 +19,7 @@ const computer: DesktopComputerApi = {
   allowFullAccess: () => ipcRenderer.invoke('desktop:computer:allow-full-access') as Promise<boolean>,
   revokeFullAccess: () => ipcRenderer.invoke('desktop:computer:revoke-full-access') as Promise<void>,
   forgetFolder: (folder) => ipcRenderer.invoke('desktop:computer:forget-folder', folder) as Promise<void>,
+  forgetApp: (id) => ipcRenderer.invoke('desktop:computer:forget-app', id) as Promise<void>,
   begin: (session) => ipcRenderer.invoke('desktop:computer:begin', session) as ReturnType<DesktopComputerApi['begin']>,
   end: (sessionId) => ipcRenderer.invoke('desktop:computer:end', sessionId) as Promise<void>,
   sessions: () => ipcRenderer.invoke('desktop:computer:sessions') as Promise<string[]>,

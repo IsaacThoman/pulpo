@@ -17,11 +17,14 @@ public protocol KeyboardHost: AnyObject {
   func setTypingLanguage(_ language: String)
   /// The app being typed in, when iOS still reveals it (before iOS 26.4).
   var hostBundleIdentifier: String? { get }
+  /// Uploads recordings made inside the keyboard. Nil means the app records.
+  var dictationTranscriber: KeyboardDictationTranscriber? { get }
 }
 
 extension KeyboardHost {
   public func setTypingLanguage(_ language: String) {}
   public var hostBundleIdentifier: String? { nil }
+  public var dictationTranscriber: KeyboardDictationTranscriber? { nil }
 }
 
 /// Adapts the system text proxy to the engine's document protocol.

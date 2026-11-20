@@ -89,8 +89,8 @@ public struct KeyboardHeartbeat: Codable, Equatable, Sendable {
   }
 }
 
-/// The signed-in Pulpo account as the keyboard sees it. The session token never
-/// leaves the app's Keychain; the keyboard only needs to know dictation will work.
+/// The signed-in Pulpo account as the keyboard sees it. The session token stays in the
+/// Keychain (see `SessionStore`); this only tells the keyboard dictation will work.
 public struct AccountSnapshot: Codable, Equatable, Sendable {
   public var signedIn: Bool
   public var displayName: String?

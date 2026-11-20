@@ -454,3 +454,63 @@ describe('ComputerWorkspace files', () => {
     await expect(instance.readGeneratedFile(path, 'other-lease')).rejects.toThrow('unavailable')
   })
 })
+
+describe('ComputerWorkspace apps', () => {
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('a window')])
+  const state = { app: 'TextEdit', window: 'Notes.txt', windows: ['Notes.txt'], elements: [{ index: 1, depth: 0, role: 'button', label: 'Save', x: 1, y: 2, width: 3, height: 4 }], truncated: false }
+  const picture = { mimeType: 'image/jpeg', width: 800, height: 600, sizeBytes: jpeg.byteLength }
+  const withApps = { ...mac, apps: { version: 1, background: true } }
+
+  it('knows whether the computer offers its apps once it was described', async () => {
+    const plain = workspace().instance
+    expect(plain.controlsApps).toBe(false)
+    await plain.describe()
+    expect(plain.controlsApps).toBe(false)
+    const { instance } = workspace(withApps)
+    await instance.describe()
+    expect(instance.controlsApps).toBe(true)
+  })
+
+  it('lists the running apps', async () => {
+    const apps = [{ name: 'TextEdit', allowed: true, frontmost: true, windows: ['Notes.txt'] }]
+    serve({ 'file.missing': () => ({ missing: [] }), 'app.list': () => ({ apps }) })
+    const started = vi.fn()
+    expect(await workspace(withApps).instance.listApps(undefined, started)).toEqual(apps)
+    expect(started).toHaveBeenCalledTimes(1)
+  })
+
+  it('acts in a window and returns it with its picture sent inline, waiting long enough for the user to allow the app', async () => {
+    serve({ 'file.missing': () => ({ missing: [] }), 'app.act': () => ({ ...state, note: 'Pressed the Save button', image: { ...picture, data: jpeg.toString('base64') } }) })
+    const view = await workspace(withApps).instance.useApp({ app: 'TextEdit', action: { type: 'click', element: 1 } })
+    expect(view.state).toEqual({ ...state, note: 'Pressed the Save button' })
+    expect(view.image).toEqual({ data: jpeg.toString('base64'), mimeType: 'image/jpeg', sizeBytes: jpeg.byteLength, width: 800, height: 600 })
+    const [, , params, options] = calls('app.act')[0]!
+    expect(params).toEqual({ app: 'TextEdit', action: { type: 'click', element: 1 } })
+    expect(options.timeoutMs).toBe(210_000)
+    expect(calls('file.send')).toHaveLength(0)
+  })
+
+  it('fetches a large picture from the path the computer named', async () => {
+    const dispose = vi.fn().mockResolvedValue(undefined)
+    tunnel.createComputerUpload.mockResolvedValue({ transfer: { url: '/api/computer/transfers/up' }, bytes: vi.fn().mockResolvedValue(new Uint8Array(jpeg)), dispose })
+    serve({
+      'file.missing': () => ({ missing: [] }),
+      'app.act': () => ({ ...state, image: { ...picture, path: '/Users/ada/Library/Application Support/Pulpo/computer/app-images/shot-1.jpg' } }),
+      'file.send': () => ({ sizeBytes: jpeg.byteLength }),
+    })
+    const view = await workspace(withApps).instance.useApp({ app: 'TextEdit', action: { type: 'view' } })
+    expect(view.image.data).toBe(jpeg.toString('base64'))
+    expect(calls('file.send')[0]![2]).toMatchObject({ path: '/Users/ada/Library/Application Support/Pulpo/computer/app-images/shot-1.jpg' })
+    expect(dispose).toHaveBeenCalled()
+  })
+
+  it('refuses something that is not a picture, and passes on the app\'s refusal', async () => {
+    serve({ 'file.missing': () => ({ missing: [] }), 'app.act': () => ({ ...state, image: { ...picture, data: Buffer.from('not an image').toString('base64') } }) })
+    await expect(workspace(withApps).instance.useApp({ app: 'TextEdit', action: { type: 'view' } })).rejects.toThrow('not a PNG or JPEG image')
+    serve({ 'file.missing': () => ({ missing: [] }), 'app.act': () => { throw new ComputerRequestError('not_allowed', 'The user has not allowed Pulpo Agent to use Safari.') } })
+    const { instance } = workspace(withApps)
+    await expect(instance.useApp({ app: 'Safari', action: { type: 'view' } })).rejects.toThrow('has not allowed Pulpo Agent to use Safari')
+    // A refusal is about one app; the computer is still there.
+    expect(instance.continuedWithoutAgent).toBe(false)
+  })
+})

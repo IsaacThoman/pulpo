@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ApiKeySettingsDialog } from './ApiKeySettingsDialog'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { useApiKeys } from '@/stores/apiKeys'
 import { useCatalog } from '@/stores/catalog'
 import { apiRequest } from '@/lib/api'
@@ -28,20 +29,22 @@ beforeEach(() => {
   useCatalog.setState({ models: [model('model-1', 'Friendly One'), model('model-2', 'Friendly Two'), model('codex:test', 'Codex model')] })
 })
 afterEach(cleanup)
-const edit = (key = apiKey) => render(<ApiKeySettingsDialog apiKey={key} onClose={onClose} onCreated={onCreated} />)
+const edit = (key = apiKey) => render(<TooltipProvider><ApiKeySettingsDialog apiKey={key} onClose={onClose} onCreated={onCreated} /></TooltipProvider>)
 
 it('prefills and saves every setting while preserving secret identity, enabled state and accumulated spending', async () => {
   edit()
   expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Laptop')
   expect((screen.getByLabelText('Monthly limit') as HTMLInputElement).value).toBe('10')
   expect((screen.getByLabelText('All-time limit') as HTMLInputElement).value).toBe('50')
-  expect(screen.getByRole('checkbox', { name: 'Friendly One' }).getAttribute('aria-checked')).toBe('true')
+  expect(screen.getByRole('option', { name: 'Friendly One' }).getAttribute('aria-selected')).toBe('true')
+  expect(screen.queryByRole('option', { name: 'Friendly Two' })).toBeNull()
   expect(screen.getByRole('checkbox', { name: 'All models' }).getAttribute('aria-checked')).toBe('false')
+  fireEvent.click(screen.getByRole('tab', { name: 'Pulpo' }))
   expect(screen.queryByText('Codex model')).toBeNull()
   fireEvent.change(screen.getByLabelText('Name'), { target: { value: '  Work  ' } })
   fireEvent.click(screen.getByRole('checkbox', { name: 'List models' }))
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Friendly One' }))
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Friendly Two' }))
+  fireEvent.click(screen.getByRole('option', { name: 'Friendly One' }))
+  fireEvent.click(screen.getByRole('option', { name: 'Friendly Two' }))
   fireEvent.change(screen.getByLabelText('Monthly limit'), { target: { value: '12.34' } })
   fireEvent.change(screen.getByLabelText('All-time limit'), { target: { value: '' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save' }))
@@ -73,7 +76,7 @@ it('validates names, scopes, selected models and spending limits', () => {
   fireEvent.click(screen.getByRole('checkbox', { name: 'List models' }))
   expect(save().disabled).toBe(true)
   fireEvent.click(screen.getByRole('checkbox', { name: 'Inference' }))
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Friendly One' }))
+  fireEvent.click(screen.getByRole('option', { name: 'Friendly One' }))
   expect(save().disabled).toBe(true)
   fireEvent.click(screen.getByRole('checkbox', { name: 'All models' }))
   for (const value of ['0', '-5', '0.0000001']) {
@@ -92,7 +95,7 @@ it('retains unavailable model restrictions and lets the user explicitly remove t
   fireEvent.click(screen.getByRole('button', { name: 'Save' }))
   await waitFor(() => expect(onClose).toHaveBeenCalled())
   expect(apiRequest).toHaveBeenCalledWith('/api/api-keys/key-1', expect.objectContaining({ body: expect.objectContaining({ allowedModels: ['unavailable-id'] }) }))
-  fireEvent.click(screen.getByRole('button', { name: 'Remove unavailable-id' }))
+  fireEvent.click(screen.getByRole('option', { name: 'unavailable-id, unavailable' }))
   expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true)
 })
 
@@ -115,7 +118,7 @@ it('keeps edits for retry after a failure and does not modify the saved settings
 
 it('uses the same form to create a key and reveals its secret only on creation', async () => {
   vi.mocked(apiRequest).mockResolvedValueOnce({ id: 'new-key', secret: 'new-secret' }).mockResolvedValueOnce({ data: [] })
-  render(<ApiKeySettingsDialog onClose={onClose} onCreated={onCreated} />)
+  render(<TooltipProvider><ApiKeySettingsDialog onClose={onClose} onCreated={onCreated} /></TooltipProvider>)
   expect(screen.getByRole('heading', { name: 'Create API key' })).toBeTruthy()
   expect(screen.getByRole('checkbox', { name: 'All models' }).getAttribute('aria-checked')).toBe('true')
   fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'New key' } })
@@ -124,4 +127,27 @@ it('uses the same form to create a key and reveals its secret only on creation',
   expect(apiRequest).toHaveBeenCalledWith('/api/api-keys', { method: 'POST', body: {
     name: 'New key', scopes: ['responses', 'models'], allowedModels: [], monthlyBudgetMicros: null, lifetimeBudgetMicros: null,
   } })
+})
+
+it('searches every provider and toggles the highlighted model with Enter without submitting', async () => {
+  edit()
+  const search = screen.getByRole('combobox', { name: 'Search models' })
+  fireEvent.change(search, { target: { value: 'two' } })
+  expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Friendly Two'])
+  fireEvent.keyDown(search, { key: 'Enter' })
+  expect(screen.getByRole('option', { name: 'Friendly Two' }).getAttribute('aria-selected')).toBe('true')
+  expect(apiRequest).not.toHaveBeenCalled()
+  fireEvent.change(search, { target: { value: '' } })
+  expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual(['Friendly One', 'Friendly Two'])
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(onClose).toHaveBeenCalled())
+  expect(apiRequest).toHaveBeenCalledWith('/api/api-keys/key-1', expect.objectContaining({ body: expect.objectContaining({ allowedModels: ['model-1', 'model-2'] }) }))
+})
+
+it('keeps the previous selection when all-model access is toggled back off', () => {
+  edit()
+  fireEvent.click(screen.getByRole('checkbox', { name: 'All models' }))
+  expect(screen.queryByRole('combobox', { name: 'Search models' })).toBeNull()
+  fireEvent.click(screen.getByRole('checkbox', { name: 'All models' }))
+  expect(screen.getByRole('option', { name: 'Friendly One' }).getAttribute('aria-selected')).toBe('true')
 })

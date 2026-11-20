@@ -21,8 +21,9 @@ public struct DictationDestination: Equatable, Sendable {
   public var hasSelection: Bool { selection?.isEmpty == false }
   public var allowsConfirmation: Bool { !isPrivate && !hasSelection }
 
-  fileprivate var allowsAutomaticInsertion: Bool {
-    allowsConfirmation && identifier != nil && before != nil && after != nil
+  /// Hosts report an empty field, and some every field, as no context at all.
+  fileprivate func allowsAutomaticInsertion(hiddenContext: Bool) -> Bool {
+    allowsConfirmation && identifier != nil && (hiddenContext || (before != nil && after != nil))
   }
 }
 
@@ -30,13 +31,20 @@ public struct DictationDestination: Equatable, Sendable {
 /// A snapshot that changes and later returns to its original value is still stale.
 public struct DictationInsertionGuard: Sendable {
   private let origin: DictationDestination
+  private let observedContinuously: Bool
   private var invalidated = false
 
-  public init(origin: DictationDestination) { self.origin = origin }
+  /// `observedContinuously` is for dictation recorded inside the keyboard: it never
+  /// leaves the screen, so any host edit or caret move invalidates the guard, and a
+  /// field without visible context (an empty one, usually) is as safe as typing into it.
+  public init(origin: DictationDestination, observedContinuously: Bool = false) {
+    self.origin = origin
+    self.observedContinuously = observedContinuously
+  }
 
   public mutating func invalidate() { invalidated = true }
 
   public func allowsAutomaticInsertion(at destination: DictationDestination) -> Bool {
-    !invalidated && origin.allowsAutomaticInsertion && destination == origin
+    !invalidated && origin.allowsAutomaticInsertion(hiddenContext: observedContinuously) && destination == origin
   }
 }

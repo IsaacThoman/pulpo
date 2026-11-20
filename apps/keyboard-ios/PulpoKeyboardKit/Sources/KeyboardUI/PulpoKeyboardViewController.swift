@@ -157,6 +157,8 @@ open class PulpoKeyboardViewController: UIInputViewController, KeyboardHost {
   public var document: TextDocument { proxyDocument ?? ProxyDocument(proxy: textDocumentProxy) }
   public var inputTraits: InputTraits { InputTraits(textDocumentProxy) }
   public var isInsideApp: Bool { false }
+  /// The extension target supplies Pulpo's uploader; KeyboardUI makes no network requests itself.
+  open var dictationTranscriber: KeyboardDictationTranscriber? { nil }
 
   /// Private and gone since iOS 26.4; only read when the object still answers to it.
   public var hostBundleIdentifier: String? {

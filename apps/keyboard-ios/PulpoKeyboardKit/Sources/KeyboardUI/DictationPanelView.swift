@@ -1,4 +1,5 @@
 #if os(iOS)
+import KeyboardCore
 import UIKit
 
 enum DictationPanelState: Equatable {
@@ -10,7 +11,8 @@ enum DictationPanelState: Equatable {
   case message(title: String, detail: String?, action: String?)
 }
 
-/// Takes over the keyboard while dictating: live level meter, elapsed time, stop and cancel.
+/// Takes over the keyboard while dictating: the Pulpo app's scrolling waveform and timer,
+/// stop and cancel.
 final class DictationPanelView: UIView {
   var onStop: (() -> Void)?
   var onCancel: (() -> Void)?
@@ -19,7 +21,7 @@ final class DictationPanelView: UIView {
   private var style: KeyboardStyle
   private let title = UILabel()
   private let detail = UILabel()
-  private let meter = LevelMeterView()
+  private let waveform = DictationWaveformView()
   private let elapsed = UILabel()
   private let stop = UIButton(type: .system)
   private let cancel = UIButton(type: .system)
@@ -38,9 +40,9 @@ final class DictationPanelView: UIView {
     detail.font = .systemFont(ofSize: 14)
     detail.textAlignment = .center
     detail.numberOfLines = 3
-    elapsed.font = .monospacedDigitSystemFont(ofSize: 14, weight: .medium)
-    elapsed.textAlignment = .center
-    [title, detail, meter, elapsed, spinner].forEach(addSubview)
+    elapsed.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+    elapsed.textAlignment = .left
+    [title, detail, waveform, elapsed, spinner].forEach(addSubview)
 
     var stopConfiguration = UIButton.Configuration.filled()
     stopConfiguration.cornerStyle = .capsule
@@ -72,15 +74,32 @@ final class DictationPanelView: UIView {
 
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
+  /// Leaving dictation only hides the panel; the waveform's display link must not keep
+  /// running behind the keys.
+  override var isHidden: Bool {
+    didSet {
+      guard isHidden != oldValue else { return }
+      if isHidden {
+        waveform.stop()
+      } else if case .recording = state {
+        waveform.start()
+      }
+    }
+  }
+
   func applyStyle(_ style: KeyboardStyle) {
     self.style = style
     title.textColor = style.label
     detail.textColor = style.secondaryLabel
     elapsed.textColor = style.secondaryLabel
-    meter.color = style.accent
-    meter.idleColor = style.secondaryLabel.withAlphaComponent(0.35)
-    stop.tintColor = style.accent
-    action.tintColor = style.accent
+    waveform.color = style.label
+    // The Pulpo app's prominent composer button: near-black on light, near-white on dark.
+    let prominent = style.dark ? UIColor(red: 0.95, green: 0.95, blue: 0.97, alpha: 1) : UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1)
+    let onProminent = style.dark ? UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1) : .white
+    for button in [stop, action] {
+      button.configuration?.baseBackgroundColor = prominent
+      button.configuration?.baseForegroundColor = onProminent
+    }
     cancel.tintColor = style.label
     spinner.color = style.secondaryLabel
   }
@@ -91,7 +110,9 @@ final class DictationPanelView: UIView {
     clock = nil
     action.isHidden = true
     stop.isHidden = true
-    meter.isHidden = true
+    waveform.isHidden = true
+    // Repeated recording updates keep the waveform's history running.
+    if case .recording = state {} else { waveform.stop() }
     elapsed.isHidden = true
     spinner.stopAnimating()
     detail.text = nil
@@ -102,7 +123,8 @@ final class DictationPanelView: UIView {
       spinner.startAnimating()
     case .recording(let startedAt):
       title.text = "Listening"
-      meter.isHidden = false
+      waveform.isHidden = false
+      waveform.start()
       elapsed.isHidden = false
       stop.isHidden = false
       updateElapsed(since: startedAt)
@@ -126,12 +148,20 @@ final class DictationPanelView: UIView {
   }
 
   private func updateElapsed(since start: Date) {
-    let seconds = max(0, Int(Date().timeIntervalSince(start)))
+    let interval = max(0, Date().timeIntervalSince(start))
+    let seconds = Int(interval)
     elapsed.text = String(format: "%d:%02d", seconds / 60, seconds % 60)
+    elapsed.textColor = DictationLevels.nearsLimit(seconds: interval) ? warning : style.secondaryLabel
   }
 
+  /// The Pulpo app's warning color for the last seconds before the limit.
+  private var warning: UIColor {
+    style.dark ? UIColor(red: 1, green: 0.69, blue: 0.35, alpha: 1) : UIColor(red: 0.64, green: 0.29, blue: 0, alpha: 1)
+  }
+
+  /// Recent levels, newest last; the waveform samples the newest at its own pace.
   func setLevels(_ levels: [Float]) {
-    meter.levels = levels
+    waveform.level = levels.last ?? 0
   }
 
   override func layoutSubviews() {
@@ -139,8 +169,13 @@ final class DictationPanelView: UIView {
     let width = bounds.width
     title.frame = CGRect(x: 16, y: 18, width: width - 32, height: 22)
     detail.frame = CGRect(x: 24, y: title.frame.maxY + 4, width: width - 48, height: 54)
-    meter.frame = CGRect(x: 40, y: bounds.height * 0.32, width: width - 80, height: bounds.height * 0.3)
-    elapsed.frame = CGRect(x: 0, y: meter.frame.maxY + 6, width: width, height: 18)
+    // One row like the app's dictation strip: waveform, then the timer beside it.
+    let timerWidth: CGFloat = 40
+    let rowX: CGFloat = 32
+    let rowY = bounds.height * 0.42
+    waveform.frame = CGRect(x: rowX, y: rowY - DictationWaveformView.height / 2,
+                            width: max(0, width - 2 * rowX - timerWidth - 8), height: DictationWaveformView.height)
+    elapsed.frame = CGRect(x: waveform.frame.maxX + 8, y: rowY - 9, width: timerWidth, height: 18)
     spinner.center = CGPoint(x: width / 2, y: bounds.height * 0.55)
     let buttonSize: CGFloat = 54
     let buttonY = bounds.height - buttonSize - 14
@@ -155,35 +190,92 @@ final class DictationPanelView: UIView {
   @objc private func actionTapped() { onAction?() }
 }
 
-/// Rounded bars that follow the microphone level, newest on the right.
-final class LevelMeterView: UIView {
-  var color: UIColor = .systemBlue { didSet { setNeedsDisplay() } }
-  var idleColor: UIColor = .gray { didSet { setNeedsDisplay() } }
-  var levels: [Float] = [] { didSet { setNeedsDisplay() } }
+/// The Pulpo app's dictation waveform (`DictationStrip.tsx`): thin bars that keep their
+/// sample's height while the row glides left, the newest sliding in from the right.
+final class DictationWaveformView: UIView {
+  static let height: CGFloat = 28
+  private static let minimumBarHeight: CGFloat = 2
+
+  var color: UIColor = .label { didSet { setNeedsDisplay() } }
+  /// The newest level, 0…1; sampled into the history every `DictationLevels.interval`.
+  var level: Float = 0
+  private var history = [Float](repeating: 0, count: DictationLevels.samples)
+  private var link: CADisplayLink?
+  private var lastSample: CFTimeInterval = 0
+  private var now: CFTimeInterval = 0
 
   override init(frame: CGRect) {
     super.init(frame: frame)
     isOpaque = false
     contentMode = .redraw
-    isAccessibilityElement = true
-    accessibilityLabel = "Microphone level"
+    clipsToBounds = true
+    isAccessibilityElement = false
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
+  /// Starts from a flat line, as each recording does in the app.
+  func start() {
+    guard link == nil else { return }
+    history = [Float](repeating: 0, count: DictationLevels.samples)
+    level = 0
+    lastSample = CACurrentMediaTime()
+    now = lastSample
+    let link = CADisplayLink(target: WeakTarget(self), selector: #selector(WeakTarget.tick(_:)))
+    link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+    link.add(to: .main, forMode: .common)
+    self.link = link
+    setNeedsDisplay()
+  }
+
+  /// Freezes the waveform where it is.
+  func stop() {
+    link?.invalidate()
+    link = nil
+  }
+
+  override func willMove(toWindow newWindow: UIWindow?) {
+    super.willMove(toWindow: newWindow)
+    if newWindow == nil { stop() }
+  }
+
+  fileprivate func tick(_ link: CADisplayLink) {
+    now = link.targetTimestamp
+    let elapsed = now - lastSample
+    if elapsed >= DictationLevels.interval {
+      // After a stall, take one sample and resume from now rather than catching up.
+      lastSample = elapsed > 3 * DictationLevels.interval ? now : lastSample + DictationLevels.interval
+      history.removeFirst()
+      history.append(max(0, min(1, level)))
+    }
+    setNeedsDisplay()
+  }
+
   override func draw(_ rect: CGRect) {
-    let count = 32
-    let spacing: CGFloat = 3
-    let barWidth = max(2, (bounds.width - spacing * CGFloat(count - 1)) / CGFloat(count))
-    let recent = Array(levels.suffix(count))
+    let pitch = CGFloat(DictationLevels.barPitch)
+    let barWidth = CGFloat(DictationLevels.barWidth)
+    let count = DictationLevels.barCount(width: Double(bounds.width))
+    // Each new sample moves every bar one slot left; sliding the row back from one pitch to
+    // the right over an interval turns those steps into a continuous scroll.
+    let progress = UIAccessibility.isReduceMotionEnabled ? 1 : min(1, max(0, (now - lastSample) / DictationLevels.interval))
+    let offset = pitch * CGFloat(1 - progress)
     for index in 0..<count {
-      let levelIndex = index - (count - recent.count)
-      let level = levelIndex >= 0 ? CGFloat(recent[levelIndex]) : 0
-      let height = max(barWidth, bounds.height * min(1, 0.08 + level * 0.92))
-      let x = CGFloat(index) * (barWidth + spacing)
-      let bar = UIBezierPath(roundedRect: CGRect(x: x, y: (bounds.height - height) / 2, width: barWidth, height: height), cornerRadius: barWidth / 2)
-      (levelIndex >= 0 ? color : idleColor).setFill()
-      bar.fill()
+      let level = CGFloat(history[DictationLevels.samples - count + index])
+      let height = Self.minimumBarHeight + level * (Self.height - Self.minimumBarHeight)
+      let x = bounds.width - barWidth - CGFloat(count - 1 - index) * pitch + offset
+      let bar = CGRect(x: x, y: (bounds.height - height) / 2, width: barWidth, height: height)
+      color.withAlphaComponent(0.22 + level * 0.78).setFill()
+      UIBezierPath(roundedRect: bar, cornerRadius: barWidth / 2).fill()
+    }
+  }
+
+  /// A display link retains its target; this keeps it from retaining the view.
+  private final class WeakTarget: NSObject {
+    weak var view: DictationWaveformView?
+    init(_ view: DictationWaveformView) { self.view = view }
+    @objc func tick(_ link: CADisplayLink) {
+      guard let view else { return link.invalidate() }
+      view.tick(link)
     }
   }
 }

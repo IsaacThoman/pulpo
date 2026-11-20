@@ -26,6 +26,8 @@ export const CI_PREVIEW_LAB_ID = '00000000-0000-7000-8000-000000000103'
 export const CI_PREVIEW_PRICING_ID = '00000000-0000-7000-8000-000000000104'
 export const CI_PREVIEW_MODEL_ID = 'gpt-5.6-luna'
 
+const ANTHROPIC_LAB_ID = '00000000-0000-7000-8000-000000000105'
+const CI_PREVIEW_BOOTSTRAP_VERSION = 2
 const PREVIEW_HOST_PATTERN = /^pulpo(?:-dev)?-pr-[1-9]\d*\.deathgrips\.org$/
 const LOCAL_PREVIEW_INSTANCE_ID = 'local-preview'
 const PROVIDER_BASE_URL = 'https://pulpo.baby/v1'
@@ -57,14 +59,10 @@ export function ciPreviewAgentSettings(workspaceImageDigest: string) {
   })
 }
 
-export const CI_PREVIEW_MODEL = {
-  id: CI_PREVIEW_MODEL_ID,
-  upstreamModelId: CI_PREVIEW_MODEL_ID,
-  name: 'GPT-5.6 Luna',
-  description: 'GPT-5.6 Luna through the budget-limited Pulpo Baby preview provider.',
+const previewModelDefaults = {
+  providerConnectionId: CI_PREVIEW_PROVIDER_ID,
   enabled: true,
   visible: true,
-  logo: 'openai',
   agentEnabled: true,
   contextWindow: 128_000,
   maxOutputTokens: 16_384,
@@ -77,6 +75,18 @@ export const CI_PREVIEW_MODEL = {
   useProviderCost: false,
 }
 
+export const CI_PREVIEW_MODELS = [
+  { id: CI_PREVIEW_MODEL_ID, name: 'GPT-5.6 Luna', labId: CI_PREVIEW_LAB_ID, logo: 'openai' },
+  { id: 'gpt-6-luna', name: 'GPT-6 Luna', labId: CI_PREVIEW_LAB_ID, logo: 'openai' },
+  { id: 'claude-opus-5.5', name: 'Claude Opus 5.5', labId: ANTHROPIC_LAB_ID, logo: 'claude-color' },
+  { id: 'claude-haiku-4.5', name: 'Claude Haiku 4.5', labId: ANTHROPIC_LAB_ID, logo: 'claude-color' },
+].map((model) => ({
+  ...previewModelDefaults,
+  ...model,
+  upstreamModelId: model.id,
+  description: `${model.name} through the budget-limited Pulpo Baby preview provider.`,
+}))
+
 export type CiPreviewSeed = {
   adminEmail: string
   passwordHash: string
@@ -85,10 +95,11 @@ export type CiPreviewSeed = {
 }
 
 export interface LockedBootstrapStore {
-  markerExists(): Promise<boolean>
+  markerVersion(): Promise<number | undefined>
   seededProviderEncryptedApiKey(): Promise<string | undefined>
   userExists(): Promise<boolean>
   create(seed: CiPreviewSeed): Promise<void>
+  upgradeModels(): Promise<void>
 }
 
 export interface BootstrapStore {
@@ -146,8 +157,10 @@ async function validateProviderAccess(fetchImplementation: typeof globalThis.fet
   }
   if (!response.ok) throw new Error(`Pulpo Baby model validation returned ${response.status}`)
   const body = providerModelsSchema.parse(await response.json())
-  if (!body.data.some((model) => model.id === CI_PREVIEW_MODEL_ID)) {
-    throw new Error(`Pulpo Baby API key does not allow ${CI_PREVIEW_MODEL_ID}`)
+  const availableIds = new Set(body.data.map((model) => model.id))
+  const missingIds = CI_PREVIEW_MODELS.map((model) => model.id).filter((id) => !availableIds.has(id))
+  if (missingIds.length) {
+    throw new Error(`Pulpo Baby API key does not allow ${missingIds.join(', ')}`)
   }
 }
 
@@ -170,13 +183,19 @@ export async function runBootstrapPreset(
   requirePreviewRuntimeConfig(config)
 
   return dependencies.store.withLock(async (store) => {
-    if (await store.markerExists()) {
+    const version = await store.markerVersion()
+    if (version !== undefined) {
       const encryptedApiKey = await store.seededProviderEncryptedApiKey()
       if (!encryptedApiKey) throw new Error('The ci-preview provider connection is missing from the seeded database')
+      let apiKey: string
       try {
-        dependencies.decrypt(encryptedApiKey, config.ENCRYPTION_KEY)
+        apiKey = dependencies.decrypt(encryptedApiKey, config.ENCRYPTION_KEY)
       } catch {
         throw new Error('The ci-preview provider key cannot be decrypted with the configured ENCRYPTION_KEY')
+      }
+      if (version < CI_PREVIEW_BOOTSTRAP_VERSION) {
+        await validateProviderAccess(dependencies.fetch, apiKey)
+        await store.upgradeModels()
       }
       return 'existing'
     }
@@ -200,12 +219,37 @@ export async function runBootstrapPreset(
 
 type BootstrapTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
+async function seedPreviewModels(transaction: BootstrapTransaction): Promise<void> {
+  await transaction.insert(labs).values([
+    { id: CI_PREVIEW_LAB_ID, name: 'OpenAI', logo: 'openai' },
+    { id: ANTHROPIC_LAB_ID, name: 'Anthropic', logo: 'anthropic' },
+  ]).onConflictDoNothing()
+  await transaction.insert(providerUpstreamModels).values(CI_PREVIEW_MODELS.map((model) => ({
+    providerConnectionId: CI_PREVIEW_PROVIDER_ID,
+    modelId: model.upstreamModelId,
+  }))).onConflictDoNothing()
+  const addedModels = await transaction.insert(models).values(CI_PREVIEW_MODELS)
+    .onConflictDoNothing().returning({ id: models.id })
+  if (addedModels.length) {
+    await transaction.insert(modelPricingVersions).values(addedModels.map(({ id }) => ({
+      id: id === CI_PREVIEW_MODEL_ID ? CI_PREVIEW_PRICING_ID : newId(),
+      modelId: id,
+      inputPriceMicros: 0,
+      cachedInputPriceMicros: 0,
+      cacheWritePriceMicros: 0,
+      outputPriceMicros: 0,
+      perRequestPriceMicros: 0,
+    })))
+  }
+}
+
 function lockedDatabaseStore(transaction: BootstrapTransaction): LockedBootstrapStore {
   return {
-    async markerExists() {
-      const [marker] = await transaction.select({ key: applicationSettings.key }).from(applicationSettings)
+    async markerVersion() {
+      const [marker] = await transaction.select({ value: applicationSettings.value }).from(applicationSettings)
         .where(eq(applicationSettings.key, CI_PREVIEW_BOOTSTRAP_MARKER)).limit(1)
-      return Boolean(marker)
+      if (!marker) return undefined
+      return z.object({ version: z.number() }).safeParse(marker.value).data?.version ?? 1
     },
     async seededProviderEncryptedApiKey() {
       const [provider] = await transaction.select({ encryptedApiKey: providerConnections.encryptedApiKey })
@@ -243,22 +287,7 @@ function lockedDatabaseStore(transaction: BootstrapTransaction): LockedBootstrap
         lastHealthAt: new Date(),
         upstreamModelsSyncedAt: new Date(),
       })
-      await transaction.insert(providerUpstreamModels).values({ providerConnectionId: CI_PREVIEW_PROVIDER_ID, modelId: CI_PREVIEW_MODEL_ID })
-      await transaction.insert(labs).values({ id: CI_PREVIEW_LAB_ID, name: 'OpenAI', logo: 'openai' })
-      await transaction.insert(models).values({
-        ...CI_PREVIEW_MODEL,
-        providerConnectionId: CI_PREVIEW_PROVIDER_ID,
-        labId: CI_PREVIEW_LAB_ID,
-      })
-      await transaction.insert(modelPricingVersions).values({
-        id: CI_PREVIEW_PRICING_ID,
-        modelId: CI_PREVIEW_MODEL_ID,
-        inputPriceMicros: 0,
-        cachedInputPriceMicros: 0,
-        cacheWritePriceMicros: 0,
-        outputPriceMicros: 0,
-        perRequestPriceMicros: 0,
-      })
+      await seedPreviewModels(transaction)
       await transaction.insert(userPreferences).values({
         userId: CI_PREVIEW_ADMIN_ID,
         values: {
@@ -281,9 +310,16 @@ function lockedDatabaseStore(transaction: BootstrapTransaction): LockedBootstrap
       })
       await transaction.insert(applicationSettings).values({
         key: CI_PREVIEW_BOOTSTRAP_MARKER,
-        value: { version: 1, completedAt: new Date().toISOString() },
+        value: { version: CI_PREVIEW_BOOTSTRAP_VERSION, completedAt: new Date().toISOString() },
         updatedBy: CI_PREVIEW_ADMIN_ID,
       })
+    },
+    async upgradeModels() {
+      await seedPreviewModels(transaction)
+      await transaction.update(applicationSettings).set({
+        value: sql`${applicationSettings.value} || ${JSON.stringify({ version: CI_PREVIEW_BOOTSTRAP_VERSION })}::jsonb`,
+        updatedAt: new Date(),
+      }).where(eq(applicationSettings.key, CI_PREVIEW_BOOTSTRAP_MARKER))
     },
   }
 }

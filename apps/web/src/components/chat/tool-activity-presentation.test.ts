@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  AppWindow,
   FileDiff,
   FilePenLine,
   FilePlus,
@@ -12,14 +13,19 @@ import {
   FolderUp,
   Globe,
   Image,
+  Keyboard,
   List,
+  Mouse,
+  MousePointerClick,
+  Move,
   Paperclip,
   Search,
   Terminal,
+  TextCursorInput,
   Trash2,
   Wrench,
 } from 'lucide-react'
-import { isShellTool, pulpoComputerCommand, pulpoFilesCommand, toolActivityPresentation } from './tool-activity-presentation'
+import { appToolSummary, isAppTool, isShellTool, pulpoComputerCommand, pulpoFilesCommand, toolActivityPresentation } from './tool-activity-presentation'
 
 describe('toolActivityPresentation', () => {
   it.each([
@@ -39,6 +45,37 @@ describe('toolActivityPresentation', () => {
     ['update_memory', 'Updating memory…', FilePenLine],
   ])('maps %s to a friendly label and icon', (name, label, icon) => {
     expect(toolActivityPresentation(name)).toEqual({ label, icon })
+  })
+
+  it.each([
+    ['app_list', {}, 'Checking which apps are open…', AppWindow],
+    ['app_view', { app: 'TextEdit' }, 'Looking at TextEdit…', AppWindow],
+    ['app_view', {}, 'Looking at an app…', AppWindow],
+    ['app_click', { app: ' Safari ', element: 4 }, 'Clicking in Safari…', MousePointerClick],
+    ['app_type', { app: 'Notes', text: 'hi' }, 'Typing in Notes…', Keyboard],
+    ['app_key', { app: 'Notes', keys: 'cmd+s' }, 'Pressing keys in Notes…', Keyboard],
+    ['app_scroll', { app: 'Safari', direction: 'down' }, 'Scrolling in Safari…', Mouse],
+    ['app_drag', { app: 'Preview' }, 'Dragging in Preview…', Move],
+    ['app_set_value', { app: 'Mail', element: 2, value: 'x' }, 'Filling in a field in Mail…', TextCursorInput],
+    ['app_set_value', undefined, 'Filling in a field…', TextCursorInput],
+  ])('names the app %s works in', (name, args, label, icon) => {
+    expect(toolActivityPresentation(name, args)).toEqual({ label, icon })
+  })
+
+  it('sums up what an app tool was asked to do', () => {
+    expect(isAppTool('app_click')).toBe(true)
+    expect(isAppTool('bash')).toBe(false)
+    expect(appToolSummary('app_click', { app: 'TextEdit', element: 12 })).toBe('TextEdit · #12')
+    expect(appToolSummary('app_click', { app: 'TextEdit', x: 10.4, y: 20 })).toBe('TextEdit · 10,20')
+    expect(appToolSummary('app_type', { app: 'TextEdit', text: 'hello\nworld' })).toBe('TextEdit · "hello world"')
+    expect(appToolSummary('app_key', { app: 'TextEdit', keys: 'cmd+s' })).toBe('TextEdit · cmd+s')
+    expect(appToolSummary('app_scroll', { app: 'Safari', element: 3, direction: 'down' })).toBe('Safari · #3 down')
+    expect(appToolSummary('app_drag', { app: 'Preview', from_x: 1, from_y: 2, to_x: 30, to_y: 40 })).toBe('Preview · 1,2 → 30,40')
+    expect(appToolSummary('app_set_value', { app: 'Mail', element: 2, value: 'ada@example.com' })).toBe('Mail · #2 "ada@example.com"')
+    expect(appToolSummary('app_view', { app: 'TextEdit', window: 'Notes' })).toBe('TextEdit · Notes')
+    expect(appToolSummary('app_view', { app: 'TextEdit' })).toBe('TextEdit')
+    expect(appToolSummary('app_list', {})).toBeNull()
+    expect(appToolSummary('bash', { app: 'x' })).toBeNull()
   })
 
   it('uses generic work presentation for unknown tools, including the removed files_* tools', () => {

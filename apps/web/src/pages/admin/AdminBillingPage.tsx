@@ -17,6 +17,9 @@ import { ToggleGroup } from '@/components/usage/ToggleGroup'
 import { ui, uit, activeLocale } from '@/i18n/ui'
 import { useSettings } from '@/stores/settings'
 import { DEFAULT_CHART_ANIMATION_DURATION_MS, scaledAnimationDuration } from '@/lib/animation-speed'
+import { ModelMultiPicker } from '@/components/ModelMultiPicker'
+import { getCatalogModel, useCatalog } from '@/stores/catalog'
+import type { Model } from '@/lib/types'
 import { UserListEditor } from './ModelAccessEditor'
 import { useAdminUserDirectory, type UserDirectory } from './user-directory'
 
@@ -679,8 +682,8 @@ function CustomLimitsPanel() {
   })
   const modelsQuery = useQuery({
     queryKey: ['admin-billing-custom-limit-models'],
-    queryFn: async ({ signal }) => (await apiRequest<{ data: { id: string; name: string }[] }>('/api/admin/models', { signal }))
-      .data.map(({ id, name }) => ({ id, name })),
+    queryFn: async ({ signal }) => (await apiRequest<{ data: AdminModelSummary[] }>('/api/admin/models', { signal }))
+      .data.map(({ id, name, labId }) => ({ id, name, labId })),
   })
   const limits = limitsQuery.data?.data ?? []
   const directory = useAdminUserDirectory(editing !== null || limits.some((limit) => limit.target === 'users'))
@@ -849,9 +852,29 @@ function CustomLimitUsageDialog({ limit, onClose }: { limit: CustomLimit; onClos
   )
 }
 
+type AdminModelSummary = { id: string; name: string; labId: string | null }
+
+/** Catalog entry for an admin model, so the picker can group and badge it; disabled models fall back to their lab. */
+function pickerModel(model: AdminModelSummary, catalog: Model[]): Model {
+  const known = catalog.find((candidate) => candidate.id === model.id)
+  if (known) return known
+  const lab = catalog.find((candidate) => candidate.providerGroupId === model.labId)
+  return {
+    ...getCatalogModel(model.id),
+    id: model.id,
+    name: model.name,
+    providerGroupId: model.labId ?? 'internal',
+    provider: lab?.provider ?? ui('Other'),
+    labLogo: lab?.labLogo ?? 'pulpo',
+    labCustomIcon: lab?.labCustomIcon ?? null,
+    modelLogo: lab?.labLogo ?? 'pulpo',
+    modelCustomIcon: lab?.labCustomIcon ?? null,
+  }
+}
+
 function CustomLimitDialog({ limit, models, directory, onSave, onClose }: {
   limit: CustomLimit | null
-  models: Array<{ id: string; name: string }>
+  models: AdminModelSummary[]
   directory: UserDirectory
   onSave: (input: CustomLimitInput) => Promise<void>
   onClose: () => void
@@ -869,7 +892,9 @@ function CustomLimitDialog({ limit, models, directory, onSave, onClose }: {
   const [enabled, setEnabled] = useState(limit?.enabled ?? true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const catalogModels = useCatalog((state) => state.models)
   const limitMicros = Math.round(Number(amount) * 1_000_000)
+  const pickerModels = models.map((model) => pickerModel(model, catalogModels))
   const toggleIn = <T,>(values: T[], value: T, checked: boolean) => checked ? [...values, value] : values.filter((item) => item !== value)
   const problem = !name.trim()
     ? ui("Enter a name.")
@@ -906,7 +931,7 @@ function CustomLimitDialog({ limit, models, directory, onSave, onClose }: {
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
         <form onSubmit={(event) => void submit(event)} className="space-y-4">
           <DialogHeader>
             <DialogTitle>{limit ? ui("Edit custom limit") : ui("Add custom limit")}</DialogTitle>
@@ -946,13 +971,9 @@ function CustomLimitDialog({ limit, models, directory, onSave, onClose }: {
                 <SelectItem value="selected">{ui("Selected models")}</SelectItem>
               </SelectContent>
             </Select>
-            {!allModels && <div role="group" aria-label={ui("Models")} className="max-h-48 space-y-1 overflow-y-auto rounded-md border p-2">
-              {models.map((model) => <label key={model.id} className="flex min-w-0 cursor-pointer items-center gap-2 text-sm">
-                <input type="checkbox" className="size-4 shrink-0 accent-primary" checked={modelIds.includes(model.id)} onChange={(event) => setModelIds((current) => toggleIn(current, model.id, event.target.checked))} />
-                <span className="truncate">{model.name}</span>
-              </label>)}
-              {!models.length && <p className="text-xs text-muted-foreground">{ui("Loading models…")}</p>}
-            </div>}
+            {!allModels && (models.length
+              ? <ModelMultiPicker label={ui("Models")} models={pickerModels} value={modelIds} onChange={setModelIds} />
+              : <p className="text-xs text-muted-foreground">{ui("Loading models…")}</p>)}
           </div>
           <div className="space-y-1.5">
             <label className="flex cursor-pointer items-center justify-between gap-3 text-sm">

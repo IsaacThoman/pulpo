@@ -2,6 +2,7 @@ import { mkdir, readdir, realpath, rm, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import {
+  COMPUTER_APP_IMAGE_MAX_EDGE,
   computerAccessSchema,
   computerMethods,
   computerRequestSchema,
@@ -18,6 +19,8 @@ import {
 } from '@pulpo/contracts'
 import type { AccountResolver } from './account'
 import { ChangesStore } from './changes'
+import { AppControl, appControlCapability } from './control/apps'
+import { ControlHelper, type ControlHelperCommand } from './control/helper'
 import { ComputerError, computerErrorOf } from './errors'
 import { missingFiles, receiveFile, sendFile } from './files'
 import { FolderService, type FolderSession } from './folder'
@@ -43,7 +46,7 @@ const NO_ID = '00000000-0000-0000-0000-000000000000'
 
 const UNKNOWN_SESSION = 'The Pulpo app on the user\'s computer does not know this session: it was restarted, or the reply that began it is over. Ask the user to send the message again.'
 
-const FULL_METHODS = new Set<ComputerMethod>(['describe', 'operation.start', 'operation.get', 'operation.cancel', 'operation.relay', 'file.send', 'file.receive', 'file.missing'])
+const FULL_METHODS = new Set<ComputerMethod>(['describe', 'operation.start', 'operation.get', 'operation.cancel', 'operation.relay', 'file.send', 'file.receive', 'file.missing', 'app.list', 'app.act'])
 const FOLDER_METHODS = new Set<ComputerMethod>(['folder.list', 'folder.read', 'folder.search', 'folder.send', 'folder.change'])
 
 interface Session {
@@ -83,6 +86,13 @@ export interface ComputerServiceOptions {
    * full access works but offers no Files.
    */
   pulpoCli?: { executable: string; source: string }
+  /**
+   * Seeing and working in other apps for full-access sessions: how to start this system's helper
+   * (control/helper.ts), the processes it must leave alone (the app's own), and the native question
+   * that allows one app, which ends as a refusal when its signal aborts. Without it, or on a system
+   * with no helper, the app tools are not offered.
+   */
+  appControl?: { helper: ControlHelperCommand; excludePids: number[]; confirmApp: (message: string, detail: string, signal: AbortSignal) => Promise<boolean> }
   /** For the relay socket when the usual path is too long; os.tmpdir() by default. */
   tmpdir?: string
   /** Tests shorten the daemon's relay limits. */
@@ -103,6 +113,8 @@ export class ComputerService implements Api {
   readonly changesStore: ChangesStore
   private readonly folders: FolderService
   private readonly operations: Operations
+  /** Null where other apps cannot be seen or controlled; then `describe` does not offer it. */
+  private readonly apps: AppControl | null
   private readonly shell: CommandShell
   private shellEnvironment: Promise<NodeJS.ProcessEnv> | null = null
   private readonly now: () => number
@@ -137,7 +149,19 @@ export class ComputerService implements Api {
       relayHandshakeMs: options.relayHandshakeMs,
     })
     this.shell = commandShell(options.platform, options.env ?? process.env)
+    const control = appControlCapability(options.platform) ? options.appControl : undefined
+    this.apps = control ? new AppControl({
+      helper: new ControlHelper({
+        command: control.helper, excludePids: control.excludePids, imageDir: this.appImagesDir, maxImageEdge: COMPUTER_APP_IMAGE_MAX_EDGE,
+        prepare: async () => { await mkdir(this.appImagesDir, { recursive: true }) },
+        spawn: options.spawn, onError: options.onError,
+      }),
+      platform: options.platform, imageDir: this.appImagesDir, confirmApp: control.confirmApp,
+    }) : null
   }
+
+  /** Where the helper writes the pictures it takes of windows; each is deleted once the server has it. */
+  private get appImagesDir(): string { return path.join(this.root, 'app-images') }
 
   get attachmentsDir(): string { return path.join(this.root, 'attachments') }
 
@@ -145,10 +169,13 @@ export class ComputerService implements Api {
 
   private folderOf(folder: string): ComputerFolder { return { path: folder, name: path.basename(folder) || folder } }
 
-  async status(): Promise<{ fullAccess: boolean; folders: ComputerFolder[]; defaultFolder: ComputerFolder; signedIn: boolean }> {
+  async status(): Promise<Awaited<ReturnType<DesktopComputerApi['status']>> & { signedIn: boolean }> {
     const account = await this.options.accounts.current()
-    const grants = account ? await this.grants.get(account) : { fullAccess: false, folders: [] }
-    return { fullAccess: grants.fullAccess, folders: grants.folders.map((folder) => this.folderOf(folder)), defaultFolder: this.defaultFolder(), signedIn: account !== null }
+    const grants = account ? await this.grants.get(account) : { fullAccess: false, folders: [], apps: [] }
+    return {
+      fullAccess: grants.fullAccess, folders: grants.folders.map((folder) => this.folderOf(folder)), defaultFolder: this.defaultFolder(), signedIn: account !== null,
+      ...(this.apps ? { apps: grants.apps } : {}),
+    }
   }
 
   /**
@@ -246,6 +273,7 @@ export class ComputerService implements Api {
   private endSession(sessionId: string, options: { now?: boolean } = {}): void {
     if (!this.sessionsById.delete(sessionId)) return
     this.operations.cancelSession(sessionId, options)
+    this.apps?.endSession(sessionId)
   }
 
   async end(sessionId: string): Promise<void> {
@@ -269,6 +297,7 @@ export class ComputerService implements Api {
     // Commands cancelled moments ago may still be ignoring the polite signal.
     this.operations.killStopping()
     this.operations.enableRelay(false)
+    this.apps?.shutdown()
     const filesRelay = this.filesRelay
     this.filesRelay = null
     return (filesRelay ?? Promise.resolve(null)).then((value) => value?.relay.close())
@@ -312,6 +341,15 @@ export class ComputerService implements Api {
     }
   }
 
+  /** Forgets an app the user allowed: what a reply is doing in it stops, and the agent must ask again to use it. */
+  async forgetApp(id: string): Promise<void> {
+    if (typeof id !== 'string' || !id) return
+    const account = await this.options.accounts.current()
+    if (!account) return
+    await this.grants.removeApp(account, id)
+    this.apps?.revoke(accountKey(account), id)
+  }
+
   async handle(raw: unknown): Promise<ComputerResponse> {
     const ids = (raw ?? {}) as { id?: unknown; sessionId?: unknown }
     const id = typeof ids.id === 'string' && UUID.test(ids.id) ? ids.id : NO_ID
@@ -332,7 +370,7 @@ export class ComputerService implements Api {
       if (!params.success) return fail('invalid_request', `Invalid parameters for ${method}: ${params.error.issues.map((issue) => `${issue.path.join('.') || 'params'}: ${issue.message}`).join('; ')}`.slice(0, 1_000))
       session.lastUsedAt = this.now()
       try {
-        const result = await this.run(session, method, params.data)
+        const result = await this.run(session, method, params.data, request.data.timeoutMs)
         return { id, sessionId, ok: true, result }
       } catch (error) {
         const { code, message } = computerErrorOf(error)
@@ -385,7 +423,7 @@ export class ComputerService implements Api {
     }
   }
 
-  private async run(session: Session, method: ComputerMethod, input: unknown): Promise<unknown> {
+  private async run(session: Session, method: ComputerMethod, input: unknown, timeoutMs: number): Promise<unknown> {
     // `input` was validated against computerMethods[method].params by the caller.
     const params = <M extends ComputerMethod>() => input as ComputerParams<M>
     // Ending a session cannot reach a request that is still being prepared, so each one asks again
@@ -408,6 +446,7 @@ export class ComputerService implements Api {
           cwd,
           attachmentsDir: this.attachmentsDir,
           ...(filesDir ? { filesDir } : {}),
+          ...(this.apps ? { apps: appControlCapability(this.options.platform)! } : {}),
         }
       }
       case 'operation.start': {
@@ -425,6 +464,17 @@ export class ComputerService implements Api {
       case 'file.send': return sendFile(files, params<'file.send'>())
       case 'file.receive': return receiveFile(files, params<'file.receive'>())
       case 'file.missing': return missingFiles(files, params<'file.missing'>())
+      case 'app.list':
+      case 'app.act': {
+        if (!this.apps) throw new ComputerError('not_allowed', 'This computer cannot show or control other apps.')
+        const control = {
+          sessionId: session.id, account: accountKey(session.account), active,
+          allowedApps: async () => (await this.grants.get(session.account)).apps,
+          allowApp: async (app: { id: string; name: string }) => { await this.grants.allowApp(session.account, app) },
+        }
+        // `input` holds the parsed action, defaults filled in.
+        return method === 'app.list' ? this.apps.list(control) : this.apps.act(control, input as Parameters<AppControl['act']>[1], timeoutMs)
+      }
       default: break
     }
     if (!isComputerFolderMode(session.access) || session.folder === null) throw new ComputerError('not_allowed', `${method} needs a folder session.`)
@@ -484,6 +534,7 @@ export class ComputerService implements Api {
     await removeOlderThan(this.attachmentsDir, ATTACHMENT_RETENTION_MS)
     await removeOlderThan(path.join(this.root, 'tool-output'), TOOL_OUTPUT_RETENTION_MS)
     await rm(path.join(this.root, 'scripts'), { recursive: true, force: true }).catch(() => undefined)
+    await rm(this.appImagesDir, { recursive: true, force: true }).catch(() => undefined)
     await this.changesStore.prune().catch(() => undefined)
   }
 }
