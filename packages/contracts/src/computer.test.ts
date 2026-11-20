@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  COMPUTER_INLINE_MAX_BYTES, COMPUTER_TRANSFER_TIMEOUT_MS, computerMethods, computerRequestSchema, computerSelectionSchema,
-  computerTransferSchema, computerTransferTimeoutMs, isComputerFolderMode,
+  COMPUTER_INLINE_MAX_BYTES, COMPUTER_TRANSFER_TIMEOUT_MS, computerAppStateSchema, computerDescriptionSchema, computerMethods, computerRequestSchema,
+  computerSelectionSchema, computerTransferSchema, computerTransferTimeoutMs, isComputerFolderMode,
 } from './computer.js'
 import { clientFeaturesHeaderValue, CLIENT_FEATURES_HEADER_VALUE, parseClientFeaturesHeader } from './admin-analytics.js'
 
@@ -50,6 +50,49 @@ describe('computer requests', () => {
     expect(computerTransferTimeoutMs(1_000)).toBe(COMPUTER_TRANSFER_TIMEOUT_MS)
     expect(computerTransferTimeoutMs(500 * 1024 * 1024)).toBe(2_098_000)
     expect(computerTransferTimeoutMs(10_000 * 1024 * 1024)).toBe(3_600_000)
+  })
+})
+
+describe('app control', () => {
+  const act = (action: Record<string, unknown>) => computerMethods['app.act'].params.safeParse({ app: 'TextEdit', action })
+
+  it('clicks an element or a point, with a left single click unless told otherwise', () => {
+    expect(act({ type: 'click', element: 3 }).data?.action).toEqual({ type: 'click', element: 3, button: 'left', count: 1 })
+    expect(act({ type: 'click', x: 10, y: 20, button: 'right', count: 2 }).success).toBe(true)
+    expect(act({ type: 'click' }).success).toBe(false)
+    expect(act({ type: 'click', x: 10 }).success).toBe(false)
+    expect(act({ type: 'click', element: 0 }).success).toBe(false)
+    expect(act({ type: 'click', x: -1, y: 5 }).success).toBe(false)
+  })
+
+  it('refuses actions it does not know and ones that do nothing', () => {
+    expect(act({ type: 'view' }).success).toBe(true)
+    expect(act({ type: 'type', text: 'hello' }).success).toBe(true)
+    expect(act({ type: 'type', text: '' }).success).toBe(false)
+    expect(act({ type: 'type', text: 'x'.repeat(2_001) }).success).toBe(false)
+    expect(act({ type: 'key', keys: 'cmd+s' }).success).toBe(true)
+    expect(act({ type: 'scroll', dy: 3 }).data?.action).toEqual({ type: 'scroll', dx: 0, dy: 3 })
+    expect(act({ type: 'scroll' }).success).toBe(false)
+    expect(act({ type: 'drag', fromX: 1, fromY: 2, toX: 3, toY: 4 }).success).toBe(true)
+    expect(act({ type: 'set_value', element: 2, value: '' }).success).toBe(true)
+    expect(act({ type: 'run', command: 'rm -rf /' }).success).toBe(false)
+  })
+
+  it('carries a window\'s picture inline or by its path, never both or neither', () => {
+    const state = (image: Record<string, unknown>) => computerAppStateSchema.safeParse({
+      app: 'TextEdit', window: 'Untitled', elements: [], truncated: false,
+      image: { mimeType: 'image/jpeg', width: 800, height: 600, sizeBytes: 3, ...image },
+    }).success
+    expect(state({ data: 'YWJj' })).toBe(true)
+    expect(state({ path: '/Users/me/Library/pulpo/shot.jpg' })).toBe(true)
+    expect(state({})).toBe(false)
+    expect(state({ data: 'YWJj', path: '/tmp/shot.jpg' })).toBe(false)
+  })
+
+  it('is described only by apps that can do it', () => {
+    const description = { os: 'macos', osVersion: 'macOS 15.2', arch: 'arm64', shell: 'zsh', home: '/Users/me', cwd: '/Users/me/Pulpo', attachmentsDir: '/Users/me/a' }
+    expect(computerDescriptionSchema.parse(description).apps).toBeUndefined()
+    expect(computerDescriptionSchema.parse({ ...description, apps: { version: 1, background: true } }).apps).toEqual({ version: 1, background: true })
   })
 })
 

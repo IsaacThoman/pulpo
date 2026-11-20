@@ -30,6 +30,7 @@ import { computerChangesItem as buildComputerChangesItem, routeRelayRequests } f
 import { createComputerFolderRelay, describeComputerFolder } from '../computer/folder-relay.js'
 import type { AgentWorkspace, WorkspaceLeaseEvent } from './workspace.js'
 import { createWorkspaceTools } from './tools.js'
+import { createAppTools, toolShowsImage } from './app-tools.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { buildAgentSystemPrompt, buildAgentUserPrompt, buildToolsDisabledSystemPrompt, computerAgentPrompt, withoutAgentTools } from './policy.js'
 import { runPostResponseTasks, type PostResponseTaskResult } from '../responses/post-tasks.js'
@@ -406,7 +407,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   )))
   for (const [id, imagePreview] of imagePreviews) {
     const item = toolItems.get(id)
-    if (item?.tool === 'view_image') item.imagePreview = imagePreview
+    if (item && toolShowsImage(item.tool)) item.imagePreview = imagePreview
   }
   for (const attachment of generatedAttachmentRows) {
     const item = attachment.sourceToolCallId ? toolItems.get(attachment.sourceToolCallId) : undefined
@@ -899,6 +900,16 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     },
   }) : undefined
   const relay = routeRelayRequests(computerFolderRelay, filesRelay)
+  /** Keeps a small copy of a picture a tool showed the agent (an image file, an app's window) for the reply's timeline. */
+  const storeImagePreview = async (toolCallId: string, path: string, data: string): Promise<ToolImagePreview> => {
+    const existing = imagePreviews.get(toolCallId)
+    if (existing) return existing
+    const preview = await storeToolImagePreview({
+      responseId, toolCallId, userId: record.response.userId, chatId: record.response.chatId, path, data,
+    })
+    imagePreviews.set(toolCallId, preview)
+    return preview
+  }
   let agentAbortReason: 'response_timeout' | 'cancellation' | 'turn_limit' | undefined
   const abortTimer = setTimeout(() => {
     agentAbortReason ??= 'response_timeout'
@@ -916,15 +927,9 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
       systemPrompt: agentSystemPrompt,
       model: active.piModel,
       tools: toolsDisabled ? [] : [
-        ...createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile, async (toolCallId, path, data) => {
-          const existing = imagePreviews.get(toolCallId)
-          if (existing) return existing
-          const preview = await storeToolImagePreview({
-            responseId, toolCallId, userId: record.response.userId, chatId: record.response.chatId, path, data,
-          })
-          imagePreviews.set(toolCallId, preview)
-          return preview
-        }, relay, manager.kind === 'computer' ? computerDescription ?? null : undefined),
+        ...createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile, storeImagePreview, relay, manager.kind === 'computer' ? computerDescription ?? null : undefined),
+        // Other apps' windows, where the computer's app can show and control them.
+        ...(manager instanceof ComputerWorkspace && computerDescription?.apps ? createAppTools(manager, computerDescription, markToolStarted, storeImagePreview) : []),
         ...configuredWebTools,
         ...imageTools,
         ...memoryTools,
@@ -1170,7 +1175,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     } else if (event.type === 'tool_execution_end') {
       const output = truncateUtf8(toolResultText(event.result), settings.maxToolOutputBytes)
       const details = toolResultDetails(event.result)
-      const imagePreview = event.toolName === 'view_image' && !event.isError
+      const imagePreview = toolShowsImage(event.toolName) && !event.isError
         ? toolImagePreviewSchema.safeParse(details.imagePreview).data
         : undefined
       const providerExecution = webProviderExecutions.get(event.toolCallId)

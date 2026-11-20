@@ -1,4 +1,5 @@
 import type { Context, ImageContent, TextContent } from '@earendil-works/pi-ai'
+import { toolShowsImage } from './app-tools.js'
 
 export type ToolResultImageMode = 'native' | 'user_message'
 
@@ -46,7 +47,7 @@ export function adaptToolResultImagesForProvider(
       continue
     }
 
-    const images = ['view_image', 'generate_image'].includes(message.toolName) ? imageParts(message.content) : []
+    const images = message.toolName === 'generate_image' || toolShowsImage(message.toolName) ? imageParts(message.content) : []
     if (!images.length) {
       messages.push(message)
       continue
