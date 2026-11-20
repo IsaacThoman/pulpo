@@ -74,6 +74,19 @@ final class DictationPanelView: UIView {
 
   required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
+  /// Leaving dictation only hides the panel; the waveform's display link must not keep
+  /// running behind the keys.
+  override var isHidden: Bool {
+    didSet {
+      guard isHidden != oldValue else { return }
+      if isHidden {
+        waveform.stop()
+      } else if case .recording = state {
+        waveform.start()
+      }
+    }
+  }
+
   func applyStyle(_ style: KeyboardStyle) {
     self.style = style
     title.textColor = style.label
