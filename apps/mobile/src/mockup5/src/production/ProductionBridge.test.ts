@@ -97,7 +97,7 @@ beforeEach(() => {
   usePrototypeStore.setState({
     ...createInitialState(),
     productionNamespace: null, productionScopeReady: false, modelPickerScopeReady: false,
-    modelCatalogReady: false, agentAvailable: false,
+    modelCatalogReady: false, agentAvailable: false, workspaceScreen: false,
   })
 })
 
@@ -133,7 +133,7 @@ describe('production scope hydration', () => {
     mocks.cachedChatSummaries.mockReturnValue(pendingChats.promise)
     mocks.getValue.mockImplementation(async (_namespace: string, key: string) => {
       if (key === 'folders') return [cachedFolder]
-      if (key === 'model-catalog') return { agentAvailable: true, data: [model('cached')] }
+      if (key === 'model-catalog') return { agentAvailable: true, workspaceScreen: true, data: [model('cached')] }
       return null
     })
 
@@ -154,7 +154,7 @@ describe('production scope hydration', () => {
     await hydration
     expect(usePrototypeStore.getState()).toMatchObject({
       productionNamespace: 'instance|user-a', productionScopeReady: true,
-      modelPickerScopeReady: true, modelCatalogReady: true, agentAvailable: true,
+      modelPickerScopeReady: true, modelCatalogReady: true, agentAvailable: true, workspaceScreen: true,
     })
     expect(usePrototypeStore.getState().chats.map((item) => item.title)).toEqual(['Cached chat'])
     expect(usePrototypeStore.getState().folders.map((item) => item.name)).toEqual(['Work'])
