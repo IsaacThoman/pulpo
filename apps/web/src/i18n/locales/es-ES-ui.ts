@@ -2929,6 +2929,7 @@ const esUi: Record<string, string> = {
   "Can run commands anywhere on this computer": "Puede ejecutar comandos en cualquier parte de este ordenador",
   "Changes apply right away": "Los cambios se aplican al momento",
   "Starting folder": "Carpeta inicial",
+  "Used once this computer is on": "Se usa cuando este ordenador está activado",
   "Remove anyway": "Eliminar de todos modos",
   "This folder is no longer empty.": "Esta carpeta ya no está vacía.",
   "Pulpo Files": "Archivos de Pulpo",
