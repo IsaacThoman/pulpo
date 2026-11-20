@@ -349,10 +349,8 @@ nonisolated final class Capture: @unchecked Sendable {
     guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return 0 }
     var sum: Float = 0
     for index in 0..<Int(buffer.frameLength) { sum += samples[index] * samples[index] }
-    let rms = (sum / Float(buffer.frameLength)).squareRoot()
-    let decibels = 20 * log10(max(rms, 1e-6))
-    // -55 dB is silence, -10 dB is loud speech.
-    return min(1, max(0, (decibels + 55) / 45))
+    // The Pulpo app's meter curve, so both waveforms move alike.
+    return DictationLevels.normalized(rms: (sum / Float(buffer.frameLength)).squareRoot())
   }
 
   static func firstChannel(of buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer {
