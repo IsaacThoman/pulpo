@@ -129,6 +129,19 @@ export type ControlAction =
   /** Sets what an element holds without typing: a field's text, a slider's or stepper's number. */
   | { type: 'set_value'; element: number; value: string }
 
+/**
+ * What a person watching a workspace's screen did while in control of it (Linux only). Points are
+ * screen pixels from the top-left corner, not a window's. `scroll` counts wheel notches; `key` is
+ * one key or chord in the words of `ControlAction`'s `key`; `text` is typed as characters.
+ */
+export type ControlInputEvent =
+  | { type: 'move'; x: number; y: number }
+  | { type: 'down' | 'up'; x: number; y: number; button: 'left' | 'middle' | 'right' }
+  | { type: 'click'; x: number; y: number; button: 'left' | 'middle' | 'right'; count: 1 | 2 | 3 }
+  | { type: 'scroll'; x: number; y: number; dx: number; dy: number }
+  | { type: 'text'; text: string }
+  | { type: 'key'; keys: string }
+
 interface ControlMethods {
   /**
    * First request after start. `excludePids`: processes whose windows do not exist as far as the
@@ -170,6 +183,12 @@ interface ControlMethods {
    * `release` hides it at once: the reply is over.
    */
   release: { params: Record<string, never>; result: Record<string, never> }
+  /**
+   * Linux only (the macOS and Windows helpers answer `invalid_request`): carries out, in order, what
+   * a person in control of the workspace's screen did. It is given to a helper process of its own,
+   * so the user's input never waits behind a snapshot the agent asked for.
+   */
+  input: { params: { events: ControlInputEvent[] }; result: Record<string, never> }
 }
 
 export type ControlMethod = keyof ControlMethods
