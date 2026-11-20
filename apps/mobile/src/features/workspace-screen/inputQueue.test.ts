@@ -130,9 +130,10 @@ describe('textEvents', () => {
   it('splits long text without breaking a character', () => {
     const text = `${'a'.repeat(WORKSPACE_SCREEN_INPUT_MAX_TEXT - 1)}😀b`
     const events = textEvents(text)
+    // The limit counts UTF-16 units, as the server's does: the emoji is two, so it starts the next piece whole.
     expect(events).toEqual([
-      { type: 'text', text: `${'a'.repeat(WORKSPACE_SCREEN_INPUT_MAX_TEXT - 1)}😀` },
-      { type: 'text', text: 'b' },
+      { type: 'text', text: 'a'.repeat(WORKSPACE_SCREEN_INPUT_MAX_TEXT - 1) },
+      { type: 'text', text: '😀b' },
     ])
   })
 

@@ -1,6 +1,6 @@
 import {
   WORKSPACE_SCREEN_INPUT_MAX_EVENTS,
-  WORKSPACE_SCREEN_INPUT_MAX_TEXT,
+  workspaceScreenTextChunks,
   type WorkspaceScreenInputEventInput,
 } from '@pulpo/contracts'
 
@@ -18,12 +18,7 @@ export interface InputQueueOptions {
 
 /** Splits typed text into events no longer than one `text` event may be. */
 export function textEvents(text: string): WorkspaceScreenInputEventInput[] {
-  const characters = Array.from(text)
-  const events: WorkspaceScreenInputEventInput[] = []
-  for (let start = 0; start < characters.length; start += WORKSPACE_SCREEN_INPUT_MAX_TEXT) {
-    events.push({ type: 'text', text: characters.slice(start, start + WORKSPACE_SCREEN_INPUT_MAX_TEXT).join('') })
-  }
-  return events
+  return workspaceScreenTextChunks(text).map((chunk) => ({ type: 'text', text: chunk }))
 }
 
 /**

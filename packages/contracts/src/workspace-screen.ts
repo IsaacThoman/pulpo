@@ -85,6 +85,22 @@ export const workspaceScreenInputEventSchema = z.discriminatedUnion('type', [
 export type WorkspaceScreenInputEvent = z.infer<typeof workspaceScreenInputEventSchema>
 export type WorkspaceScreenInputEventInput = z.input<typeof workspaceScreenInputEventSchema>
 
+/**
+ * Text cut into pieces one `text` event may carry. The limit counts UTF-16 units, as the schema's
+ * does, and a character written as two of them (an emoji) is never cut in half.
+ */
+export function workspaceScreenTextChunks(text: string): string[] {
+  const chunks: string[] = []
+  for (let start = 0; start < text.length;) {
+    let end = Math.min(start + WORKSPACE_SCREEN_INPUT_MAX_TEXT, text.length)
+    const last = text.charCodeAt(end - 1)
+    if (end < text.length && last >= 0xd800 && last <= 0xdbff) end -= 1
+    chunks.push(text.slice(start, end))
+    start = end
+  }
+  return chunks
+}
+
 export const workspaceScreenInputSchema = z.object({
   events: z.array(workspaceScreenInputEventSchema).min(1).max(WORKSPACE_SCREEN_INPUT_MAX_EVENTS),
 })

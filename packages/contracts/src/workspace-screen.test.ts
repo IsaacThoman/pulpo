@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { agentSettingsSchema } from './index.js'
 import {
-  WORKSPACE_SCREEN_HEIGHT, WORKSPACE_SCREEN_INPUT_MAX_EVENTS, WORKSPACE_SCREEN_WIDTH,
-  workspaceScreenFrameQuerySchema, workspaceScreenInputSchema, workspaceScreenPath,
+  WORKSPACE_SCREEN_HEIGHT, WORKSPACE_SCREEN_INPUT_MAX_EVENTS, WORKSPACE_SCREEN_INPUT_MAX_TEXT, WORKSPACE_SCREEN_WIDTH,
+  workspaceScreenFrameQuerySchema, workspaceScreenInputSchema, workspaceScreenPath, workspaceScreenTextChunks,
 } from './workspace-screen.js'
 
 describe('workspace screen contracts', () => {
@@ -38,6 +38,20 @@ describe('workspace screen contracts', () => {
     expect(workspaceScreenInputSchema.safeParse({ events: [] }).success).toBe(false)
     const many = Array.from({ length: WORKSPACE_SCREEN_INPUT_MAX_EVENTS + 1 }, () => ({ type: 'move', x: 1, y: 1 }))
     expect(workspaceScreenInputSchema.safeParse({ events: many }).success).toBe(false)
+  })
+
+  it('cuts long text into pieces the schema accepts, without splitting an emoji', () => {
+    expect(workspaceScreenTextChunks('')).toEqual([])
+    expect(workspaceScreenTextChunks('short')).toEqual(['short'])
+    // The emoji is two UTF-16 units and straddles the limit, so it goes to the next piece whole.
+    const text = `${'a'.repeat(WORKSPACE_SCREEN_INPUT_MAX_TEXT - 1)}😀b${'c'.repeat(WORKSPACE_SCREEN_INPUT_MAX_TEXT)}`
+    const chunks = workspaceScreenTextChunks(text)
+    expect(chunks.join('')).toBe(text)
+    expect(chunks[0]).toBe('a'.repeat(WORKSPACE_SCREEN_INPUT_MAX_TEXT - 1))
+    expect(chunks[1]!.startsWith('😀b')).toBe(true)
+    for (const chunk of chunks) expect(workspaceScreenInputSchema.safeParse({ events: [{ type: 'text', text: chunk }] }).success).toBe(true)
+    // A piece full of emoji is measured the way the schema measures it.
+    for (const chunk of workspaceScreenTextChunks('😀'.repeat(WORKSPACE_SCREEN_INPUT_MAX_TEXT))) expect(chunk.length).toBeLessThanOrEqual(WORKSPACE_SCREEN_INPUT_MAX_TEXT)
   })
 
   it('reads the frame query as it arrives in a URL', () => {

@@ -1,6 +1,7 @@
 import {
   WORKSPACE_SCREEN_INPUT_MAX_EVENTS,
   WORKSPACE_SCREEN_INPUT_MAX_TEXT,
+  workspaceScreenTextChunks,
   type WorkspaceScreenInputEvent,
 } from '@pulpo/contracts'
 
@@ -125,13 +126,7 @@ export function isPasteShortcut(press: KeyPress, mac: boolean): boolean {
 
 /** Pasted text as text events: line endings as the screen expects them, and no event longer than the most one may type. */
 export function pasteEvents(text: string): ScreenInputEvent[] {
-  const normalized = text.replace(/\r\n?/g, '\n')
-  const events: ScreenInputEvent[] = []
-  const characters = [...normalized]
-  for (let start = 0; start < characters.length; start += WORKSPACE_SCREEN_INPUT_MAX_TEXT) {
-    events.push({ type: 'text', text: characters.slice(start, start + WORKSPACE_SCREEN_INPUT_MAX_TEXT).join('') })
-  }
-  return events
+  return workspaceScreenTextChunks(text.replace(/\r\n?/g, '\n')).map((chunk) => ({ type: 'text', text: chunk }))
 }
 
 /**
@@ -142,7 +137,7 @@ export function pasteEvents(text: string): ScreenInputEvent[] {
 export function enqueueInput(queue: ScreenInputEvent[], event: ScreenInputEvent): ScreenInputEvent[] {
   const last = queue.at(-1)
   if (last?.type === 'move' && event.type === 'move') return [...queue.slice(0, -1), event]
-  if (last?.type === 'text' && event.type === 'text' && [...last.text].length + [...event.text].length <= WORKSPACE_SCREEN_INPUT_MAX_TEXT) {
+  if (last?.type === 'text' && event.type === 'text' && last.text.length + event.text.length <= WORKSPACE_SCREEN_INPUT_MAX_TEXT) {
     return [...queue.slice(0, -1), { type: 'text', text: last.text + event.text }]
   }
   if (last?.type === 'scroll' && event.type === 'scroll' && last.x === event.x && last.y === event.y) {

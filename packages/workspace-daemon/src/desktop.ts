@@ -264,6 +264,9 @@ export class WorkspaceDesktop {
   private pictures: string[] = []
   /** App operations run one at a time, so the elements an action names are the ones its picture showed. */
   private turn: Promise<void> = Promise.resolve()
+  /** An action of the agent's is with its helper right now; `takenOver` once the owner took the screen from under it. */
+  private acting = false
+  private takenOver = false
   private status_: { at: number; running: Promise<boolean> } | null = null
   private emptied = false
   private readonly spawn: Spawn
@@ -421,7 +424,18 @@ export class WorkspaceDesktop {
       let note: string | undefined
       let after = app
       if (action.type !== 'view') {
-        const done = await this.ask(signal, (stillWanted) => this.agent.call('act', { pid: app.pid, windowId: window.id, action }, { timeoutMs: HELPER_ACT_TIMEOUT_MS, stillWanted }), free)
+        let done
+        this.acting = true
+        try {
+          done = await this.ask(signal, (stillWanted) => this.agent.call('act', { pid: app.pid, windowId: window.id, action }, { timeoutMs: HELPER_ACT_TIMEOUT_MS, stillWanted }), free)
+        } catch (error) {
+          // Stopped part-way because the owner took the screen: said as that, not as a helper that died.
+          if (this.takenOver && !signal.aborted) throw new Error(HELD, { cause: error })
+          throw error
+        } finally {
+          this.acting = false
+          this.takenOver = false
+        }
         note = limited(typeof done?.note === 'string' ? done.note : undefined, 800)
         await this.wait(action.type === 'type' ? SETTLE_TYPING_MS : SETTLE_MS)
         if (signal.aborted) throw new Error(CANCELLED)
@@ -460,10 +474,19 @@ export class WorkspaceDesktop {
     })
   }
 
-  /** Takes control for the owner, renews it, or gives it back. */
+  /**
+   * Takes control for the owner, renews it, or gives it back. An action the agent's helper is in
+   * the middle of (a long text being typed, a drag) is stopped first, by stopping that helper, so
+   * it cannot go on into what the owner does next; the action fails and says why.
+   */
   setControl(held: boolean): boolean {
-    if (held) this.control.take()
-    else this.control.release()
+    if (held) {
+      if (this.acting && !this.takenOver) {
+        this.takenOver = true
+        this.agent.stop()
+      }
+      this.control.take()
+    } else this.control.release()
     return this.control.held
   }
 

@@ -159,10 +159,14 @@ export class FrameStream {
       const fresh = () => this.latest && this.latest.id !== after ? this.latest : null
       const now = fresh()
       if (now) return now
-      const startedAt = Date.now()
       const firstFrameMs = this.options.firstFrameMs ?? FIRST_FRAME_MS
       return await new Promise<Frame | null>((resolve, reject) => {
         const timers: NodeJS.Timeout[] = []
+        // Set by the timers themselves, never worked out from the clock: a timer can fire a
+        // millisecond before the clock says its time is up, and a check that then found it was
+        // "not yet" time would leave the request waiting with no timer left to end it.
+        let waited = false
+        let overdue = false
         const finish = (settle: () => void) => {
           for (const timer of timers) clearTimeout(timer)
           this.waiters.delete(check)
@@ -173,15 +177,14 @@ export class FrameStream {
           const frame = fresh()
           if (frame) return finish(() => resolve(frame))
           if (signal?.aborted) return finish(() => resolve(null))
-          const elapsed = Date.now() - startedAt
           if (!this.latest) {
             if (!this.child) return finish(() => reject(new Error(FRAME_STOPPED)))
-            if (elapsed >= firstFrameMs) return finish(() => reject(new Error(FRAME_TIMEOUT)))
-          } else if (elapsed >= waitMs) return finish(() => resolve(null))
+            if (overdue) return finish(() => reject(new Error(FRAME_TIMEOUT)))
+          } else if (waited) return finish(() => resolve(null))
         }
         this.waiters.add(check)
         signal?.addEventListener('abort', check)
-        timers.push(setTimeout(check, waitMs), setTimeout(check, firstFrameMs))
+        timers.push(setTimeout(() => { waited = true; check() }, waitMs), setTimeout(() => { overdue = true; check() }, firstFrameMs))
         check()
       })
     } finally { this.touch() }

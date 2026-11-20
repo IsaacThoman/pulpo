@@ -104,6 +104,25 @@ describe('workspace screen apps', () => {
     expect((await readdir(fake.imageDir)).sort()).toEqual(paths.slice(-4).map((path) => path.split('/').at(-1)).sort())
   })
 
+  it('stops an action that is under way when the owner takes control', async () => {
+    await desktop.act(view(), signal())
+    await fake.set({ actDelayMs: 10_000 })
+    const typing = desktop.act({ app: 'Chromium', action: { type: 'type', text: 'a long text' } }, signal())
+    await until(async () => (await helperCalls('act')).length === 1)
+    const [helper] = await helperCalls('act')
+    const startedAt = Date.now()
+    expect(desktop.setControl(true)).toBe(true)
+    expect(await failure(typing)).toBe(HELD)
+    expect(Date.now() - startedAt).toBeLessThan(1_000)
+    // The helper that was typing is gone, so nothing more of that text arrives.
+    await until(() => !alive(helper!.pid))
+    // Looking still works, on a new helper, and acting again once control is handed back.
+    await fake.set({ actDelayMs: 0 })
+    expect((await desktop.act(view(), signal())).result.window).toBe('Example Domain')
+    desktop.setControl(false)
+    expect((await desktop.act({ app: 'Chromium', action: { type: 'key', keys: 'enter' } }, signal())).result.window).toBe('Example Domain')
+  })
+
   it('stops the helper when a running action is cancelled, and starts another for the next request', async () => {
     await desktop.act(view(), signal())
     await fake.set({ actDelayMs: 10_000 })
