@@ -85,11 +85,7 @@ function protectLiteralDollars(content: string, options: MathDelimiterOptions): 
       if (closing !== -1) {
         const tex = content.slice(index + 1, closing)
         if (tex.length > 0 && tex.trim() === tex) {
-          // Native inline math is a single text span. Long expressions can be
-          // clipped by the viewport with no way to pan across the span.
-          result += options.maxInlineMathLength !== undefined && tex.length > options.maxInlineMathLength
-            ? `\n\n${displayMathBlock(tex, options.displayMathStyle ?? 'single-line')}\n\n`
-            : content.slice(index, closing + 1)
+          result += inlineMath(tex, options)
           index = closing
           continue
         }
@@ -99,6 +95,33 @@ function protectLiteralDollars(content: string, options: MathDelimiterOptions): 
     result += '\\$'
   }
   return result
+}
+
+function inlineMath(tex: string, options: MathDelimiterOptions): string {
+  // Native inline math is a single text span. Long expressions can be
+  // clipped by the viewport with no way to pan across the span.
+  return options.maxInlineMathLength !== undefined && tex.length > options.maxInlineMathLength
+    ? `\n\n${displayMathBlock(tex, options.displayMathStyle ?? 'single-line')}\n\n`
+    : `$${tex}$`
+}
+
+const explicitInlineMath = /(?<!\\)\\\(([\s\S]*?)(?<!\\)\\\)/g
+
+/**
+ * Turn `\(...\)` into inline math and escape literal dollars in the text around it.
+ * Explicit delimiters are never currency, so `\(1-x\)` must not become an escaped `\$1-x\$`.
+ */
+function normalizeInlineMath(content: string, options: MathDelimiterOptions): string {
+  let result = ''
+  let cursor = 0
+  for (const match of content.matchAll(explicitInlineMath)) {
+    // Inline math is one line, and a blank line means the delimiters belong to different paragraphs.
+    const tex = match[1]!.trim().replace(/[ \t]*\r?\n[ \t]*/g, ' ')
+    if (!tex || /\r?\n[ \t]*\r?\n/.test(match[1]!)) continue
+    result += protectLiteralDollars(content.slice(cursor, match.index), options) + inlineMath(tex, options)
+    cursor = match.index + match[0].length
+  }
+  return result + protectLiteralDollars(content.slice(cursor), options)
 }
 
 export interface MathDelimiterOptions {
@@ -114,10 +137,9 @@ export function normalizeMathDelimiters(content: string, options: MathDelimiterO
   const parts = content.split(/(```[\s\S]*?```|`[^`\n]+`)/g)
   return parts.map((part, index) => {
     if (index % 2 === 1) return part
-    const explicitMath = replaceBracketDisplayMath(part, style)
-      .replace(/(?<!\\)\\\(([\s\S]*?)(?<!\\)\\\)/g, (_match, tex: string) => `$${tex}$`)
+    const displayMath = replaceBracketDisplayMath(part, style)
       .replace(/^[ \t]*\$\$[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*\$\$[ \t]*$/gm, (_match, tex: string) => displayMathBlock(tex, style))
-    const normalized = protectLiteralDollars(explicitMath, options)
+    const normalized = normalizeInlineMath(displayMath, options)
     if (style !== 'multiline') return normalized
     return normalized.replace(/^[ \t]*\$\$([^\r\n]*?)\$\$[ \t]*$/gm, (_match, tex: string) => `$$\n${tex}\n$$`)
   }).join('')

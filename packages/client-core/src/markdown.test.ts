@@ -60,6 +60,24 @@ $$\frac{a}{b} + c$$
 `)
   })
 
+  it('never reads explicit inline math that starts with a number as currency', () => {
+    const markdown = String.raw`although \(1-y^2=0\) at \(y=-1\), use \(1 - x^2\) and \(2\) but $5 stays money.`
+
+    expect(normalizeMathDelimiters(markdown))
+      .toBe(String.raw`although $1-y^2=0$ at $y=-1$, use $1 - x^2$ and $2$ but \$5 stays money.`)
+  })
+
+  it('trims explicit inline math and keeps it on one line', () => {
+    expect(normalizeMathDelimiters(String.raw`Take \( x+1 \) and \(a +` + '\n' + String.raw`b\).`))
+      .toBe('Take $x+1$ and $a + b$.')
+  })
+
+  it('leaves explicit inline delimiters split across paragraphs alone', () => {
+    const markdown = String.raw`Open \(x` + '\n\n' + String.raw`close\) and $5.`
+
+    expect(normalizeMathDelimiters(markdown)).toBe(String.raw`Open \(x` + '\n\n' + String.raw`close\) and \$5.`)
+  })
+
   it('formats display math as multiline delimiters when requested by the renderer', () => {
     expect(normalizeMathDelimiters(String.raw`\[x^2 + y^2\]`, { displayMathStyle: 'multiline' }))
       .toBe('\n$$\nx^2 + y^2\n$$\n')
