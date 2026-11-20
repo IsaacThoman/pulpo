@@ -96,6 +96,7 @@ export function preferencesFromServer(values: Record<string, unknown>): Partial<
   if (typeof values.memoryEnabled === 'boolean') result.memoryEnabled = values.memoryEnabled
   if (typeof values.customInstructions === 'string') result.customInstructions = values.customInstructions
   if (typeof values.defaultModelId === 'string') result.defaultModelId = values.defaultModelId || null
+  if (values.defaultModelId === null) result.defaultModelId = null
   if (typeof values.localChatLimit === 'number' && Number.isFinite(values.localChatLimit)) {
     result.localChatLimit = Math.max(0, Math.min(50, Math.floor(values.localChatLimit)))
   }

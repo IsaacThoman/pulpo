@@ -11,7 +11,7 @@ vi.mock('../data/database', () => ({
 }))
 
 import { usePreferencesStore } from './preferences'
-import { defaultPreferences } from './preferenceMapping'
+import { defaultPreferences, preferencesFromServer } from './preferenceMapping'
 
 beforeEach(() => {
   mocks.values.clear()
@@ -101,6 +101,14 @@ describe('realtime preference reconciliation', () => {
 })
 
 describe('synchronized model picker preferences', () => {
+  it('hydrates explicit defaults and clears them when the server returns null', async () => {
+    await usePreferencesStore.getState().applyServerPreferences(preferencesFromServer({ defaultModelId: 'model-a' }))
+    expect(usePreferencesStore.getState().defaultModelId).toBe('model-a')
+
+    await usePreferencesStore.getState().applyServerPreferences(preferencesFromServer({ defaultModelId: null }))
+    expect(usePreferencesStore.getState().defaultModelId).toBeNull()
+  })
+
   it('keeps dirty local favorites and provider order until the server matches them', async () => {
     const localFavorites = ['model-b', 'missing-model']
     const localOrder = ['lab-b', 'lab-a']
@@ -124,9 +132,10 @@ describe('synchronized model picker preferences', () => {
     expect(usePreferencesStore.getState().modelPreferencesDirty).toBe(false)
   })
 
-  it('clears favorites and provider order when another account takes ownership', async () => {
+  it('clears model preferences when another account takes ownership', async () => {
     usePreferencesStore.setState({
       synchronizedOwnerNamespace: 'instance|user-a',
+      defaultModelId: 'model-a',
       favoriteModelIds: ['model-a'],
       providerOrder: ['lab-a'],
       modelPreferencesDirty: true,
@@ -136,6 +145,7 @@ describe('synchronized model picker preferences', () => {
 
     expect(usePreferencesStore.getState()).toMatchObject({
       synchronizedOwnerNamespace: 'instance|user-b',
+      defaultModelId: null,
       favoriteModelIds: [],
       providerOrder: [],
       modelPreferencesDirty: false,
