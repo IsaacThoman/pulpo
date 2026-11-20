@@ -66,7 +66,10 @@ export function formatAppView(view: ComputerAppView): string {
   if (others.length) lines.push(`Other windows of ${state.app}: ${others.map((title) => JSON.stringify(title)).join(', ')}`)
   lines.push(`The picture is ${image.width}×${image.height} pixels. Coordinates, and the boxes below (x,y width×height), are in its pixels from the top-left corner.`)
   if (!state.elements.length) {
-    lines.push('This window lists no elements; use coordinates from the picture.')
+    // Cut short with nothing listed: the app was still busy (a page that had just loaded), not empty.
+    lines.push(state.truncated
+      ? 'The list of what is in this window was not ready yet. Look again with app_view for it, or use coordinates from the picture.'
+      : 'This window lists no elements; use coordinates from the picture.')
     return lines.join('\n')
   }
   lines.push('', 'Elements:')

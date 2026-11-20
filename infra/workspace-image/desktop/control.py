@@ -47,6 +47,8 @@ MIN_WINDOW = (60, 40)
 CLOSING_GRACE_S = 1.0
 TYPE_DELAY_MS = 8
 INPUT_TYPE_DELAY_MS = 4
+# How long a person's keys wait after their own shortcut or click, for the focus it moved to settle.
+INPUT_FOCUS_SETTLE_S = 0.08
 
 closing = threading.Event()
 
@@ -1241,12 +1243,18 @@ class Helper:
         events = params.get('events')
         if not isinstance(events, list):
             raise invalid('`events` must be a list.')
+        previous = None
         for event in events:
             if closing.is_set():
                 break
             if not isinstance(event, dict):
                 raise invalid('Each event must be an object.')
             kind = event.get('type')
+            # A shortcut or a click moves the keyboard focus a moment later (Ctrl+L to the address
+            # bar, a click into a field). Keys sent in the same batch would land before it has.
+            if kind in ('text', 'key') and previous in ('key', 'click', 'up'):
+                time.sleep(INPUT_FOCUS_SETTLE_S)
+            previous = kind
             if kind in ('move', 'down', 'up', 'click', 'scroll'):
                 x = min(max(require_number(event, 'x'), 0), self.screen.width - 1)
                 y = min(max(require_number(event, 'y'), 0), self.screen.height - 1)

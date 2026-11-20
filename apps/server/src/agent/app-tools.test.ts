@@ -136,6 +136,8 @@ describe('app tools', () => {
     ])
     expect(text).toMatch(/More elements were left out\. For anything not listed, use coordinates from the picture\.$/)
     expect(formatAppView(view({ elements: [] }))).toContain('This window lists no elements; use coordinates from the picture.')
+    // Cut short with nothing listed: the app was busy, so the agent is told to look again rather than that the window is empty.
+    expect(formatAppView(view({ elements: [], truncated: true }))).toContain('was not ready yet. Look again with app_view')
     const many = Array.from({ length: 1_000 }, (_, index) => ({ index: index + 1, depth: 0, role: 'text', label: 'x'.repeat(150), x: 0, y: 0, width: 1, height: 1 }))
     expect(formatAppView(view({ elements: many })).length).toBeLessThan(32_000)
   })
