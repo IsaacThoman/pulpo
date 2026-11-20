@@ -1,4 +1,5 @@
 #if os(iOS)
+import AVFAudio
 import UIKit
 
 /// Finds the bundled dictionary and emoji data, in the extension or (for the app's
@@ -316,6 +317,8 @@ public final class KeyboardController: NSObject {
     dictationObserver = DarwinNotifications.observe(DictationBridge.stateNotification) { [weak self] in
       MainActor.assumeIsolated { self?.dictationStateChanged() }
     }
+    // Selector observers unregister themselves when the controller goes away.
+    NotificationCenter.default.addObserver(self, selector: #selector(inKeyboardDictationChanged), name: InKeyboardDictation.didChange, object: nil)
     engine.documentDidChange()
     sync()
     PerfLog.end("init.total", initStart)
@@ -405,6 +408,13 @@ public final class KeyboardController: NSObject {
     engine.save(inBackground: true)
     recordDiagnostics()
     stopLevelUpdates()
+    // Never keep the microphone open behind another app. An upload already under way finishes.
+    let inKeyboard = InKeyboardDictation.shared
+    if let request = inKeyboard.requestID, request == dictationPanelRequest, inKeyboard.isActive, inKeyboard.state?.phase != .transcribing {
+      inKeyboard.cancel()
+      if bridge?.pendingRequest == request { bridge?.pendingRequest = nil }
+      finishDictation()
+    }
     rootView.keys.cancelAllTouches()
     rootView.emoji?.cancelInteractions()
     // The keyboard reappears on the letters.
@@ -420,6 +430,7 @@ public final class KeyboardController: NSObject {
     rootView.emoji?.releaseCachedImages()
     rootView.search.releaseCachedImages()
     EmojiFont.releaseCurrent()
+    InKeyboardDictation.shared.releaseIfIdle()
   }
 
   public func documentDidChange() {
@@ -825,13 +836,40 @@ public final class KeyboardController: NSObject {
       return
     }
     let request = UUID()
+    let transcriber = inKeyboardTranscriber()
     dictationOriginRequest = request
-    dictationInsertionGuard = DictationInsertionGuard(origin: dictationDestination)
+    // Recording here keeps the keyboard on screen, so every host change is seen.
+    dictationInsertionGuard = DictationInsertionGuard(origin: dictationDestination, observedContinuously: transcriber != nil)
     bridge.pendingRequest = request
     bindDictationControls(to: request)
     rootView.dictation.onAction = nil
     rootView.dictation.set(.connecting)
     rootView.bar.setMicrophoneActive(true)
+    if let transcriber {
+      InKeyboardDictation.shared.start(request: request, in: rootView, transcriber: transcriber)
+    } else {
+      startDictationThroughApp(request)
+    }
+  }
+
+  /// In-keyboard recording needs iOS 26, a session the keyboard can read, and the
+  /// microphone permission the app asks for. Otherwise the app records, as before.
+  private func inKeyboardTranscriber() -> KeyboardDictationTranscriber? {
+    #if DEBUG
+    if AppGroup.defaults?.bool(forKey: "debugAppDictation") == true { return nil }
+    #endif
+    guard InKeyboardDictation.isSupported, let host, !host.isInsideApp,
+          AVAudioApplication.shared.recordPermission == .granted,
+          let transcriber = host.dictationTranscriber, transcriber.canTranscribe else { return nil }
+    return transcriber
+  }
+
+  private func startDictationThroughApp(_ request: UUID) {
+    guard let bridge else { return }
+    // The app records now; its round trip can't vouch for a field it can't see.
+    if InKeyboardDictation.shared.requestID != request, dictationOriginRequest == request {
+      dictationInsertionGuard = DictationInsertionGuard(origin: dictationDestination)
+    }
     if host?.isInsideApp == true || bridge.readState().isStandingBy() {
       bridge.send(DictationCommand(kind: .start, requestID: request))
       connectTimeout?.invalidate()
@@ -875,9 +913,13 @@ public final class KeyboardController: NSObject {
   }
 
   private func stopDictation(request: UUID) {
-    guard isVisible, let bridge, bridge.pendingRequest == request else { return }
-    let state = bridge.readState()
-    guard state.requestID == request, state.phase == .recording else { return }
+    guard isVisible, let bridge, bridge.pendingRequest == request,
+          let state = dictationState(for: request), state.requestID == request, state.phase == .recording else { return }
+    if InKeyboardDictation.shared.requestID == request {
+      stopLevelUpdates()
+      // Publishes transcribing, which the panel follows.
+      return InKeyboardDictation.shared.stop()
+    }
     bridge.send(DictationCommand(kind: .stop, requestID: request))
     rootView.dictation.set(.transcribing)
     stopLevelUpdates()
@@ -889,12 +931,19 @@ public final class KeyboardController: NSObject {
       if dictationPanelRequest == request { finishDictation() }
       return
     }
-    bridge.send(DictationCommand(kind: .cancel, requestID: request))
+    if InKeyboardDictation.shared.requestID == request {
+      InKeyboardDictation.shared.cancel()
+    } else {
+      bridge.send(DictationCommand(kind: .cancel, requestID: request))
+    }
     bridge.pendingRequest = nil
     finishDictation()
   }
 
   private func finishDictation() {
+    // A delivered or dismissed in-keyboard result is dropped; a running one stays.
+    let inKeyboard = InKeyboardDictation.shared
+    if inKeyboard.requestID != nil, !inKeyboard.isActive { inKeyboard.cancel() }
     dictationInsertionGuard = nil
     dictationOriginRequest = nil
     dictationPanelRequest = nil
@@ -910,9 +959,7 @@ public final class KeyboardController: NSObject {
   }
 
   private func resumeDictationIfNeeded() {
-    guard let bridge, bridge.pendingRequest != nil else { return }
-    let state = bridge.readState()
-    guard state.requestID == bridge.pendingRequest else { return }
+    guard let request = bridge?.pendingRequest, dictationState(for: request)?.requestID == request else { return }
     rootView.mode = .dictation
     dictationStateChanged()
   }
@@ -926,8 +973,8 @@ public final class KeyboardController: NSObject {
       }
       return
     }
-    let state = bridge.readState()
-    guard state.requestID == request else { return }
+    guard let state = dictationState(for: request), state.requestID == request else { return }
+    let inKeyboard = InKeyboardDictation.shared.requestID == request
     bindDictationControls(to: request)
     connectTimeout?.invalidate()
     switch state.phase {
@@ -960,6 +1007,10 @@ public final class KeyboardController: NSObject {
       dictationOriginRequest = nil
       dictationPanelRequest = nil
       rootView.mode = .dictation
+      if inKeyboard, InKeyboardDictation.shared.needsSignIn {
+        showDictationRequirement("Sign in again to dictate", detail: state.errorMessage ?? "Dictation uses your Pulpo account.", action: "Sign In", path: "account")
+        return
+      }
       rootView.dictation.onStop = nil
       rootView.dictation.onCancel = { [weak self] in self?.finishDictation() }
       rootView.dictation.set(.message(title: "Couldn't transcribe", detail: state.errorMessage, action: "Try Again"))
@@ -970,13 +1021,30 @@ public final class KeyboardController: NSObject {
     }
   }
 
+  /// The app's published state, or the keyboard's own for a request it records itself.
+  private func dictationState(for request: UUID) -> DictationState? {
+    let inKeyboard = InKeyboardDictation.shared
+    return inKeyboard.requestID == request ? inKeyboard.state : bridge?.readState()
+  }
+
+  @objc private func inKeyboardDictationChanged() {
+    let inKeyboard = InKeyboardDictation.shared
+    guard isVisible, let bridge, let request = bridge.pendingRequest, inKeyboard.requestID == request else { return }
+    if let reason = inKeyboard.startFailure {
+      // Recording here didn't start; the app records the same request instead.
+      inKeyboard.clearStartFailure()
+      Diagnostics.record("keyboard", "dictation", ["path": "app", "reason": String(reason.prefix(80))])
+      return startDictationThroughApp(request)
+    }
+    dictationStateChanged()
+  }
+
   private var dictationDestination: DictationDestination {
     DictationDestination(document: engine.document, traits: host?.inputTraits ?? InputTraits())
   }
 
   private func refreshTranscriptRecoveryIfNeeded() {
-    guard isVisible, let bridge, let request = bridge.pendingRequest else { return }
-    let state = bridge.readState()
+    guard isVisible, let bridge, let request = bridge.pendingRequest, let state = dictationState(for: request) else { return }
     guard state.requestID == request, state.phase == .finished,
           state.transcript != nil, !bridge.wasDelivered(request) else { return }
     showTranscriptRecovery(request: request, updatedAt: state.updatedAt)
@@ -1008,8 +1076,7 @@ public final class KeyboardController: NSObject {
   }
 
   private func confirmTranscriptInsertion(request: UUID, updatedAt: Date, destination: DictationDestination, revision: UInt64) {
-    guard isVisible, let bridge, bridge.pendingRequest == request else { return }
-    let state = bridge.readState()
+    guard isVisible, let bridge, bridge.pendingRequest == request, let state = dictationState(for: request) else { return }
     guard state.requestID == request, state.phase == .finished,
           state.updatedAt == updatedAt, let text = state.transcript,
           !bridge.wasDelivered(request) else {
@@ -1042,7 +1109,12 @@ public final class KeyboardController: NSObject {
   }
 
   @objc private func readLevels() {
-    rootView.dictation.setLevels(bridge?.readLevels() ?? [])
+    let inKeyboard = InKeyboardDictation.shared
+    if let request = bridge?.pendingRequest, inKeyboard.requestID == request {
+      rootView.dictation.setLevels(inKeyboard.levels)
+    } else {
+      rootView.dictation.setLevels(bridge?.readLevels() ?? [])
+    }
   }
 }
 
