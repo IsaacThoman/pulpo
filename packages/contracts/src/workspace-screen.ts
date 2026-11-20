@@ -43,8 +43,31 @@ export const workspaceScreenStatusSchema = z.object({
   height: z.number().int().positive(),
   /** A viewer holds control right now, in this tab or another. */
   controlled: z.boolean(),
+  /**
+   * What a minute with the screen open costs the user, in millionths of a dollar; 0 or absent when
+   * the instance does not bill for workspaces. A minute is charged when it starts, and none while a
+   * reply is at work in the chat, since the reply pays for the workspace then.
+   */
+  pricePerMinuteMicros: z.number().int().nonnegative().optional(),
 })
 export type WorkspaceScreenStatus = z.infer<typeof workspaceScreenStatusSchema>
+
+/**
+ * Whether the chat's workspace is still there, from the server's own records. Unlike the status,
+ * asking this does not reach the workspace and does not count as using it, so a client may ask
+ * whenever it wants to know whether to offer the screen at all.
+ */
+export const workspaceScreenPresenceSchema = z.object({
+  /** A workspace is running for the chat on an instance that gives workspaces a screen. */
+  live: z.boolean(),
+  /** When it shuts down unless the agent or a viewer uses it before then; null when none is running. */
+  expiresAt: z.string().nullable(),
+})
+export type WorkspaceScreenPresence = z.infer<typeof workspaceScreenPresenceSchema>
+/** `…/presence`, under `workspaceScreenPath(chatId)`. */
+export const WORKSPACE_SCREEN_PRESENCE_SUFFIX = '/presence'
+/** The error code of a viewer request refused because the user cannot pay for the next minute (HTTP 402). */
+export const WORKSPACE_SCREEN_UNFUNDED_CODE = 'insufficient_balance'
 
 export const workspaceScreenFrameQuerySchema = z.object({
   /** The frame the viewer already shows; the answer waits until the picture differs from it. */
