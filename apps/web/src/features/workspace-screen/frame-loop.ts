@@ -11,11 +11,14 @@ export type FrameAnswer =
   | { kind: 'unchanged' }
   /** The workspace is gone, or no longer has a screen. */
   | { kind: 'gone' }
+  /** The user is out of credit for watching; the loop stops and is not started again by itself. */
+  | { kind: 'unfunded' }
 
 export interface FrameLoopOptions {
   fetchFrame: (after: string | undefined, waitMs: number, signal: AbortSignal) => Promise<FrameAnswer>
   onFrame: (image: Blob, id: string | null) => void
   onGone: () => void
+  onUnfunded: () => void
   /** A request failed and the loop is waiting before it asks again; `failures` counts them in a row. */
   onError?: (error: unknown, failures: number) => void
   /** The loop got a picture or an answer again after failing. */
@@ -50,7 +53,7 @@ export function abortableSleep(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /**
- * Asks for frames until `signal` aborts or the workspace is gone. `after` is the picture already
+ * Asks for frames until `signal` aborts, the workspace is gone, or the user is out of credit. `after` is the picture already
  * shown when the loop starts again (after the page was hidden, say), so it is not sent twice.
  */
 export async function runFrameLoop(options: FrameLoopOptions, signal: AbortSignal, after?: string): Promise<void> {
@@ -77,6 +80,10 @@ export async function runFrameLoop(options: FrameLoopOptions, signal: AbortSigna
     }
     if (answer.kind === 'gone') {
       options.onGone()
+      return
+    }
+    if (answer.kind === 'unfunded') {
+      options.onUnfunded()
       return
     }
     if (answer.kind === 'unchanged') continue
