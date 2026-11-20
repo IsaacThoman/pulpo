@@ -60,7 +60,7 @@ describe('WorkspaceScreenDialog', () => {
     await waitFor(() => expect(requests.filter((request) => request.path.endsWith('/frame'))).toHaveLength(2))
 
     fireEvent.click(screen.getByRole('button', { name: 'Take control' }))
-    const region = await screen.findByRole('application', { name: 'Workspace screen. Your clicks and keys go to the workspace.' })
+    const region = await screen.findByRole('application', { name: 'Workspace screen. Your clicks and keys go to the workspace. Press Escape twice to hand back.' })
     expect(screen.getByRole('status').textContent).toContain("You're in control")
     expect(requests.find((request) => request.path.endsWith('/control'))?.body).toEqual({ held: true })
 
@@ -76,6 +76,25 @@ describe('WorkspaceScreenDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Hand back' }))
     await screen.findByRole('button', { name: 'Take control' })
     expect(requests.filter((request) => request.path.endsWith('/control')).at(-1)?.body).toEqual({ held: false })
+  })
+
+  it('hands control back by keyboard when Escape is pressed twice', async () => {
+    const requests = serve()
+    render(<Harness />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Take control' }))
+    const region = await screen.findByRole('application')
+    // One Escape, then another key, is just keys for the workspace.
+    fireEvent.keyDown(region, { key: 'Escape' })
+    fireEvent.keyDown(region, { key: 'a' })
+    fireEvent.keyDown(region, { key: 'Escape' })
+    expect(screen.getByRole('button', { name: 'Hand back' })).toBeTruthy()
+    fireEvent.keyDown(region, { key: 'Escape' })
+    await screen.findByRole('button', { name: 'Take control' })
+    expect(screen.queryByRole('dialog')).toBeTruthy()
+    expect(requests.filter((request) => request.path.endsWith('/control')).at(-1)?.body).toEqual({ held: false })
+    const sent = requests.filter((request) => request.path.endsWith('/input')).flatMap((request) => (request.body as { events: Array<{ keys?: string }> }).events)
+    // The second of the pair was not sent on (handing back may also drop keys still waiting to go).
+    expect(sent.filter((event) => event.keys === 'escape').length).toBeLessThanOrEqual(2)
   })
 
   it('hands control back when the dialog is closed', async () => {

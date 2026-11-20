@@ -233,6 +233,7 @@ function ScreenViewer({ chatId, touch, control, setControl }: {
             <p role="status" className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
               <span aria-hidden="true" className={cn('size-1.5 shrink-0 rounded-full', controlling ? 'bg-primary' : 'bg-muted-foreground/60')} />
               <span className={cn(controlling && 'font-medium text-foreground')}>{controlling ? ui("You're in control") : ui("Watching")}</span>
+              {controlling && !touch && !notice && <span className="min-w-0 truncate max-md:hidden">· {ui("Press Esc twice to hand back")}</span>}
               {notice && <span className="min-w-0 truncate" title={notice}>· {notice}</span>}
             </p>
             {controlling ? (
@@ -258,13 +259,17 @@ function ScreenViewer({ chatId, touch, control, setControl }: {
         send={send}
         onRetry={() => setAttempt((value) => value + 1)}
         onPaste={sendText}
+        onHandBack={handBack}
       />
       {ready && controlling && touch && <TouchKeys send={send} sendText={sendText} />}
     </>
   )
 }
 
-function ScreenArea({ phase, width, height, picture, reconnecting, controlling, regionRef, send, onRetry, onPaste }: {
+/** Escape pressed twice within this long hands control back: every other key belongs to the workspace, Tab included. */
+const HAND_BACK_ESCAPE_MS = 500
+
+function ScreenArea({ phase, width, height, picture, reconnecting, controlling, regionRef, send, onRetry, onPaste, onHandBack }: {
   phase: Phase
   width: number
   height: number
@@ -275,8 +280,10 @@ function ScreenArea({ phase, width, height, picture, reconnecting, controlling, 
   send: (event: ScreenInputEvent) => void
   onRetry: () => void
   onPaste: (text: string) => void
+  onHandBack: () => void
 }) {
   const screen = { width, height }
+  const lastEscapeRef = useRef(0)
   const mac = usesCommandKey()
   const buttonsRef = useRef(new Set<string>())
   const hoverRef = useRef<{ at: number; timer: number | null; point: { x: number; y: number } | null }>({ at: 0, timer: null, point: null })
@@ -415,12 +422,19 @@ function ScreenArea({ phase, width, height, picture, reconnecting, controlling, 
     if (!input) return
     event.preventDefault()
     event.stopPropagation()
+    // The one way out by keyboard: the first Escape goes to the workspace like any key, a second
+    // one right after it hands control back instead.
+    if (event.key === 'Escape' && !event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey) {
+      const now = Date.now()
+      if (now - lastEscapeRef.current < HAND_BACK_ESCAPE_MS) { lastEscapeRef.current = 0; onHandBack(); return }
+      lastEscapeRef.current = now
+    } else lastEscapeRef.current = 0
     send(input)
   }
 
   const ready = phase.kind === 'ready'
   const label = controlling
-    ? ui("Workspace screen. Your clicks and keys go to the workspace.")
+    ? ui("Workspace screen. Your clicks and keys go to the workspace. Press Escape twice to hand back.")
     : ui("Workspace screen, live")
 
   return (
