@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import KeyboardCore
 
@@ -15,6 +16,18 @@ struct DictationLevelsTests {
     #expect(DictationLevels.normalized(decibels: -30) > 0.15)
     #expect(DictationLevels.normalized(decibels: -20) > 0.3)
     #expect(DictationLevels.normalized(decibels: -20) < 0.5)
+  }
+
+  @Test func liftsUnprocessedSpeechToTheAppsRange() {
+    let gain = DictationLevels.unprocessedInputGainDecibels
+    let rms = { (decibels: Double) in Float(pow(10, decibels / 20)) }
+    #expect(abs(DictationLevels.normalized(rms: rms(-30)) - DictationLevels.normalized(decibels: -30)) < 0.001)
+    // Raw in-keyboard speech fills a good part of the track, as metered speech does in the app.
+    #expect(DictationLevels.normalized(rms: rms(-40), gainDecibels: gain) > 0.3)
+    #expect(DictationLevels.normalized(rms: rms(-30), gainDecibels: gain) > 0.6)
+    #expect(DictationLevels.normalized(rms: rms(-30), gainDecibels: gain) < 1)
+    // Room noise stays near the floor.
+    #expect(DictationLevels.normalized(rms: rms(-70), gainDecibels: gain) < 0.1)
   }
 
   @Test func barCountFillsTheTrackPlusTheOneLeaving() {
