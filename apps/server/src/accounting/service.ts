@@ -277,15 +277,31 @@ async function reservationCapacity(tx: Transaction, caller: {
   return capacity
 }
 
-export async function chargeMeteredUsage(input: {
+export interface MeteredUsageInput {
   userId: string
   costMicros: number
   type: string
   metadata?: Record<string, unknown>
-}): Promise<void> {
+}
+
+/** Whose account state a metered charge changed, to tell their clients once it has committed. */
+export type MeteredUsageChanges = Awaited<ReturnType<typeof chargeMeteredUsageIn>>
+
+export async function chargeMeteredUsage(input: MeteredUsageInput): Promise<void> {
   if (!Number.isSafeInteger(input.costMicros) || input.costMicros < 0) throw new AppError(400, 'invalid_metered_cost', 'Metered usage cost is invalid')
   if (input.costMicros === 0) return
-  const changes = await db.transaction(async (tx) => {
+  await announceMeteredUsage(await db.transaction((tx) => chargeMeteredUsageIn(tx, input)))
+}
+
+/**
+ * The same charge inside a transaction the caller holds, for a charge that has to commit together
+ * with something of the caller's (opening a second transaction while holding the first can leave
+ * both waiting for a connection). The caller hands what this returns to `announceMeteredUsage`
+ * after its transaction has committed.
+ */
+export async function chargeMeteredUsageIn(tx: Transaction, input: MeteredUsageInput) {
+  if (!Number.isSafeInteger(input.costMicros) || input.costMicros <= 0) throw new AppError(400, 'invalid_metered_cost', 'Metered usage cost is invalid')
+  {
     const membership = await activePoolMembership(tx, input.userId)
     if (membership) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pool:${membership.pool.id}`}))`)
     const poolRows = membership ? await activePoolMembers(tx, membership.pool.id) : []
@@ -363,7 +379,11 @@ export async function chargeMeteredUsage(input: {
       friendChanges: await bumpAccountRevisions(tx, peers),
       poolChanges: await bumpAccountRevisions(tx, poolIds),
     }
-  })
+  }
+}
+
+/** Tells clients about a metered charge that has committed, and checks whether it calls for a top-up. */
+export async function announceMeteredUsage(changes: MeteredUsageChanges): Promise<void> {
   await Promise.all([
     publishScopedStateChanges(changes.ownChanges, ['usage', 'billing']),
     publishScopedStateChanges(changes.friendChanges, ['friends']),

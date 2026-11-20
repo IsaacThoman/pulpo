@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { agentSettingsSchema } from './index.js'
 import {
   WORKSPACE_SCREEN_HEIGHT, WORKSPACE_SCREEN_INPUT_MAX_EVENTS, WORKSPACE_SCREEN_INPUT_MAX_TEXT, WORKSPACE_SCREEN_WIDTH,
-  workspaceScreenFrameQuerySchema, workspaceScreenInputSchema, workspaceScreenPath, workspaceScreenTextChunks,
+  workspaceScreenFrameQuerySchema, workspaceScreenInputSchema, workspaceScreenPath, workspaceScreenPresenceSchema,
+  workspaceScreenStatusSchema, workspaceScreenTextChunks,
 } from './workspace-screen.js'
 
 describe('workspace screen contracts', () => {
@@ -52,6 +53,15 @@ describe('workspace screen contracts', () => {
     for (const chunk of chunks) expect(workspaceScreenInputSchema.safeParse({ events: [{ type: 'text', text: chunk }] }).success).toBe(true)
     // A piece full of emoji is measured the way the schema measures it.
     for (const chunk of workspaceScreenTextChunks('😀'.repeat(WORKSPACE_SCREEN_INPUT_MAX_TEXT))) expect(chunk.length).toBeLessThanOrEqual(WORKSPACE_SCREEN_INPUT_MAX_TEXT)
+  })
+
+  it('carries the price of a minute and whether the workspace is still there', () => {
+    const status = { state: 'ready', width: 1280, height: 800, controlled: false }
+    expect(workspaceScreenStatusSchema.parse(status).pricePerMinuteMicros).toBeUndefined()
+    expect(workspaceScreenStatusSchema.parse({ ...status, pricePerMinuteMicros: 1_500 }).pricePerMinuteMicros).toBe(1_500)
+    expect(workspaceScreenStatusSchema.safeParse({ ...status, pricePerMinuteMicros: -1 }).success).toBe(false)
+    expect(workspaceScreenPresenceSchema.parse({ live: true, expiresAt: '2026-11-20T20:00:00.000Z' }).live).toBe(true)
+    expect(workspaceScreenPresenceSchema.parse({ live: false, expiresAt: null }).expiresAt).toBeNull()
   })
 
   it('reads the frame query as it arrives in a URL', () => {

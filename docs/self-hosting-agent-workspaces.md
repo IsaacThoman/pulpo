@@ -354,7 +354,8 @@ seconds per action. Raise **Memory** further if agents browse much, and size the
 for it. The measured figures are in
 [the workspace image's README](https://github.com/IsaacThoman/pulpo/blob/main/infra/workspace-image/README.md#footprint).
 While someone watches a chat's screen, its workspace counts as used and is not deleted
-for being idle; the hard timeout still applies. A user who is asked to sign in has
+for being idle; the hard timeout still applies. With **Bill users for agent workspaces**
+on, that time is charged by the minute like a reply's, and idle time stays free. A user who is asked to sign in has
 **Idle timeout** to open the screen before the workspace, and the browser in it, is gone,
 so keep that timeout at several minutes or more.
 

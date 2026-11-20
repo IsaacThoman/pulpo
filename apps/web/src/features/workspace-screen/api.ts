@@ -1,7 +1,11 @@
 import {
   WORKSPACE_SCREEN_FRAME_HEADER,
+  WORKSPACE_SCREEN_PRESENCE_SUFFIX,
+  WORKSPACE_SCREEN_UNFUNDED_CODE,
   workspaceScreenPath,
+  workspaceScreenPresenceSchema,
   workspaceScreenStatusSchema,
+  type WorkspaceScreenPresence,
   type WorkspaceScreenStatus,
 } from '@pulpo/contracts'
 import { ApiError, apiRequest, authenticatedFetch, fetchApiBlobResponse } from '@/lib/api'
@@ -12,6 +16,14 @@ export async function fetchScreenStatus(chatId: string, signal?: AbortSignal): P
   const body = await apiRequest<unknown>(workspaceScreenPath(chatId), { signal })
   const parsed = workspaceScreenStatusSchema.safeParse(body)
   if (!parsed.success) throw new Error('Unexpected workspace screen status')
+  return parsed.data
+}
+
+/** Whether the chat's workspace is still there. Asking does not count as using the workspace. */
+export async function fetchScreenPresence(chatId: string, signal?: AbortSignal): Promise<WorkspaceScreenPresence> {
+  const body = await apiRequest<unknown>(`${workspaceScreenPath(chatId)}${WORKSPACE_SCREEN_PRESENCE_SUFFIX}`, { signal })
+  const parsed = workspaceScreenPresenceSchema.safeParse(body)
+  if (!parsed.success) throw new Error('Unexpected workspace screen presence')
   return parsed.data
 }
 
@@ -38,6 +50,7 @@ export async function fetchScreenFrame(chatId: string, after: string | undefined
     return { kind: 'frame', id, image }
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) return { kind: 'gone' }
+    if (unfunded(error)) return { kind: 'unfunded' }
     throw error
   }
 }
@@ -68,4 +81,9 @@ export async function sendScreenInput(chatId: string, events: ScreenInputEvent[]
 /** The input or control request failed because control is no longer held, or the workspace went away. */
 export function lostControl(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 404 || error.status === 409)
+}
+
+/** The request was refused because the user cannot pay for the next minute with the screen open. */
+export function unfunded(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 402 && error.code === WORKSPACE_SCREEN_UNFUNDED_CODE
 }

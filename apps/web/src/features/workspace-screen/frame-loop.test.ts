@@ -24,7 +24,7 @@ describe('runFrameLoop', () => {
     ])
     const onFrame = vi.fn()
     const abort = new AbortController()
-    const done = runFrameLoop({ fetchFrame, onFrame, onGone: vi.fn(), waitMs: 5_000 }, abort.signal)
+    const done = runFrameLoop({ fetchFrame, onFrame, onGone: vi.fn(), onUnfunded: vi.fn(), waitMs: 5_000 }, abort.signal)
     await vi.waitFor(() => expect(requests).toHaveLength(4))
     abort.abort()
     await done
@@ -40,7 +40,7 @@ describe('runFrameLoop', () => {
   it('starts again from the picture already shown', async () => {
     const { fetchFrame, requests } = script([])
     const abort = new AbortController()
-    const done = runFrameLoop({ fetchFrame, onFrame: vi.fn(), onGone: vi.fn(), waitMs: 5_000 }, abort.signal, 'cccccccc')
+    const done = runFrameLoop({ fetchFrame, onFrame: vi.fn(), onGone: vi.fn(), onUnfunded: vi.fn(), waitMs: 5_000 }, abort.signal, 'cccccccc')
     await vi.waitFor(() => expect(requests).toHaveLength(1))
     abort.abort()
     await done
@@ -50,8 +50,18 @@ describe('runFrameLoop', () => {
   it('stops when the workspace is gone', async () => {
     const { fetchFrame } = script([{ kind: 'frame', id: 'aaaaaaaa', image: image('one') }, { kind: 'gone' }])
     const onGone = vi.fn()
-    await runFrameLoop({ fetchFrame, onFrame: vi.fn(), onGone }, new AbortController().signal)
+    await runFrameLoop({ fetchFrame, onFrame: vi.fn(), onGone, onUnfunded: vi.fn() }, new AbortController().signal)
     expect(onGone).toHaveBeenCalledOnce()
+    expect(fetchFrame).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops, without asking again, when the user is out of credit', async () => {
+    const { fetchFrame } = script([{ kind: 'frame', id: 'aaaaaaaa', image: image('one') }, { kind: 'unfunded' }, { kind: 'unchanged' }])
+    const onGone = vi.fn()
+    const onUnfunded = vi.fn()
+    await runFrameLoop({ fetchFrame, onFrame: vi.fn(), onGone, onUnfunded }, new AbortController().signal)
+    expect(onUnfunded).toHaveBeenCalledOnce()
+    expect(onGone).not.toHaveBeenCalled()
     expect(fetchFrame).toHaveBeenCalledTimes(2)
   })
 
@@ -61,7 +71,7 @@ describe('runFrameLoop', () => {
     const onError = vi.fn()
     const onRecovered = vi.fn()
     await runFrameLoop({
-      fetchFrame, onFrame: vi.fn(), onGone: vi.fn(), onError, onRecovered,
+      fetchFrame, onFrame: vi.fn(), onGone: vi.fn(), onUnfunded: vi.fn(), onError, onRecovered,
       sleep: async (ms) => { sleeps.push(ms) },
     }, new AbortController().signal)
     expect(sleeps).toEqual([500, 1_000, 2_000])
@@ -76,7 +86,7 @@ describe('runFrameLoop', () => {
   it('pauses between frames that have no name rather than asking again at once', async () => {
     const { fetchFrame, requests } = script([{ kind: 'frame', id: null, image: image('one') }, { kind: 'gone' }])
     const sleeps: number[] = []
-    await runFrameLoop({ fetchFrame, onFrame: vi.fn(), onGone: vi.fn(), sleep: async (ms) => { sleeps.push(ms) } }, new AbortController().signal)
+    await runFrameLoop({ fetchFrame, onFrame: vi.fn(), onGone: vi.fn(), onUnfunded: vi.fn(), sleep: async (ms) => { sleeps.push(ms) } }, new AbortController().signal)
     expect(sleeps).toEqual([250])
     expect(requests[1]).toEqual({ after: undefined, waitMs: 0 })
   })
@@ -85,7 +95,7 @@ describe('runFrameLoop', () => {
     const { fetchFrame } = script([])
     const onError = vi.fn()
     const abort = new AbortController()
-    const done = runFrameLoop({ fetchFrame, onFrame: vi.fn(), onGone: vi.fn(), onError }, abort.signal)
+    const done = runFrameLoop({ fetchFrame, onFrame: vi.fn(), onGone: vi.fn(), onUnfunded: vi.fn(), onError }, abort.signal)
     await vi.waitFor(() => expect(fetchFrame).toHaveBeenCalledOnce())
     abort.abort()
     await done

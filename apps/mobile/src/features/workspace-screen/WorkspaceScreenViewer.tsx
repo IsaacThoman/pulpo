@@ -22,7 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import type { WorkspaceScreenInputEventInput } from '@pulpo/contracts'
 import { usePreferencesStore } from '../../store/preferences'
 import { useAppTheme, type AppTheme } from '../../theme'
-import { fetchWorkspaceScreenFrame, fetchWorkspaceScreenStatus, isNotControlledError, postWorkspaceScreenControl, postWorkspaceScreenInput } from './api'
+import { fetchWorkspaceScreenFrame, fetchWorkspaceScreenStatus, isNotControlledError, isUnfundedError, postWorkspaceScreenControl, postWorkspaceScreenInput } from './api'
 import { ControlSession } from './control'
 import { clearFrames, deleteFrame, writeFrame } from './frameFiles'
 import { startFrameLoop } from './frameLoop'
@@ -36,11 +36,16 @@ import {
   type Size,
 } from './geometry'
 import { InputQueue, textEvents } from './inputQueue'
+import { failurePhase, statusPhase, type ViewerPhase } from './phase'
 import { useWorkspaceScreenViewer } from './store'
+import { workspaceScreenPresence } from './usePresence'
 
 export const WORKSPACE_SCREEN_TITLE = 'Workspace screen'
 export const WORKSPACE_SCREEN_NONE_TEXT = "No workspace is running for this chat. The screen is there while the agent's workspace is, and goes when the workspace shuts down after sitting idle."
 export const WORKSPACE_SCREEN_UNAVAILABLE_TEXT = 'This workspace has no screen.'
+// The app never shows balances, credits or prices, so a billed screen speaks of the plan's usage.
+export const WORKSPACE_SCREEN_UNFUNDED_TEXT = "You've reached your plan's usage limit, so the screen can't stay open. See Settings › Usage for when it resets, then open it again."
+export const WORKSPACE_SCREEN_BILLED_TEXT = "The screen counts toward your plan's usage while it's open."
 const CONTROL_LOST_TEXT = "Control ended, so you're watching again."
 const CONTROL_REFUSED_TEXT = "Couldn't take control. Try again."
 const INPUT_FAILED_TEXT = "Couldn't send that to the workspace."
@@ -59,39 +64,32 @@ const KEYS: Array<{ keys: string; label: string; accessibilityLabel: string }> =
 
 type Layers = { front: string | null; next: string | null; waiting: string | null }
 
-type Phase =
-  | { kind: 'loading' }
-  | { kind: 'error'; message: string }
-  | { kind: 'none' }
-  | { kind: 'unavailable' }
-  | { kind: 'ready'; screen: Size }
-
 /**
  * The live picture of a chat's workspace screen. The owner watches what the agent does on it and
  * can take it over, to sign in to a site for example, then hand it back.
  */
 export function WorkspaceScreenViewer({ chatId, onClose }: { chatId: string; onClose: () => void }) {
   const theme = useAppTheme()
-  const [phase, setPhase] = useState<Phase>({ kind: 'loading' })
+  const [phase, setPhase] = useState<ViewerPhase>({ kind: 'loading' })
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     const controller = new AbortController()
     setPhase({ kind: 'loading' })
     void fetchWorkspaceScreenStatus(chatId, controller.signal).then((status) => {
-      if (controller.signal.aborted) return
-      if (status.state === 'ready') setPhase({ kind: 'ready', screen: { width: status.width, height: status.height } })
-      else setPhase({ kind: status.state })
+      if (!controller.signal.aborted) setPhase(statusPhase(status))
     }).catch((error) => {
-      if (controller.signal.aborted) return
-      setPhase({ kind: 'error', message: error instanceof Error && error.message ? error.message : "Couldn't open the screen." })
+      if (!controller.signal.aborted) setPhase(failurePhase(error))
     })
     return () => controller.abort()
   }, [attempt, chatId])
 
   useEffect(() => () => clearFrames(), [])
+  // Watching moved the workspace's expiry on; the reply that offers the screen asks for the new one.
+  useEffect(() => () => workspaceScreenPresence.ask(chatId), [chatId])
 
   const onGone = useCallback(() => setPhase({ kind: 'none' }), [])
+  const onUnfunded = useCallback(() => setPhase({ kind: 'unfunded' }), [])
 
   return (
     <Modal
@@ -113,12 +111,13 @@ export function WorkspaceScreenViewer({ chatId, onClose }: { chatId: string; onC
             </Pressable>
           </View>
           {phase.kind === 'ready' ? (
-            <LiveScreen chatId={chatId} screen={phase.screen} onGone={onGone} theme={theme} />
+            <LiveScreen billed={phase.billed} chatId={chatId} screen={phase.screen} onGone={onGone} onUnfunded={onUnfunded} theme={theme} />
           ) : (
             <View style={styles.message}>
               {phase.kind === 'loading' ? <ActivityIndicator accessibilityLabel="Loading the screen" color={theme.secondary} /> : null}
               {phase.kind === 'none' ? <Text style={[styles.messageText, { color: theme.secondary }]}>{WORKSPACE_SCREEN_NONE_TEXT}</Text> : null}
               {phase.kind === 'unavailable' ? <Text style={[styles.messageText, { color: theme.secondary }]}>{WORKSPACE_SCREEN_UNAVAILABLE_TEXT}</Text> : null}
+              {phase.kind === 'unfunded' ? <Text accessibilityLiveRegion="polite" style={[styles.messageText, { color: theme.secondary }]}>{WORKSPACE_SCREEN_UNFUNDED_TEXT}</Text> : null}
               {phase.kind === 'error' ? (
                 <>
                   <Text style={[styles.messageText, { color: theme.secondary }]}>{phase.message}</Text>
@@ -153,7 +152,16 @@ function useForeground(): boolean {
   return foreground
 }
 
-function LiveScreen({ chatId, screen, onGone, theme }: { chatId: string; screen: Size; onGone: () => void; theme: AppTheme }) {
+function LiveScreen({ billed, chatId, screen, onGone, onUnfunded, theme }: {
+  /** Watching is charged by the minute on this instance. */
+  billed: boolean
+  chatId: string
+  screen: Size
+  onGone: () => void
+  /** A request was refused for want of credit. Leaving unmounts this, which gives control back. */
+  onUnfunded: () => void
+  theme: AppTheme
+}) {
   const foreground = useForeground()
   const [connected, setConnected] = useState(true)
   const [held, setHeld] = useState(false)
@@ -191,11 +199,13 @@ function LiveScreen({ chatId, screen, onGone, theme }: { chatId: string; screen:
         setText('')
         if (loss) setNotice(CONTROL_LOST_TEXT)
       },
+      onRenewError: (error) => { if (isUnfundedError(error)) onUnfunded() },
     })
     const input = new InputQueue({
       send: (events) => postWorkspaceScreenInput(chatId, events),
       onError: (error) => {
-        if (isNotControlledError(error)) control.lose()
+        if (isUnfundedError(error)) onUnfunded()
+        else if (isNotControlledError(error)) control.lose()
         else setNotice(INPUT_FAILED_TEXT)
       },
     })
@@ -227,13 +237,14 @@ function LiveScreen({ chatId, screen, onGone, theme }: { chatId: string; screen:
         showLayers(current.next ? { ...current, waiting: uri } : { ...current, next: uri })
       },
       onGone,
+      onUnfunded,
       onConnection: setConnected,
     })
     return () => {
       loop.stop()
       setConnected(true)
     }
-  }, [chatId, foreground, onGone, showLayers])
+  }, [chatId, foreground, onGone, onUnfunded, showLayers])
 
   const promote = useCallback((uri: string) => {
     const current = layersRef.current
@@ -445,6 +456,7 @@ function LiveScreen({ chatId, screen, onGone, theme }: { chatId: string; screen:
       const result = await control.take()
       if (result === 'refused') setNotice(CONTROL_REFUSED_TEXT)
     } catch (error) {
+      if (isUnfundedError(error)) return onUnfunded()
       setNotice(error instanceof Error && error.message ? error.message : CONTROL_REFUSED_TEXT)
     } finally {
       setTaking(false)
@@ -503,6 +515,7 @@ function LiveScreen({ chatId, screen, onGone, theme }: { chatId: string; screen:
               {!connected ? <Text numberOfLines={1} style={[styles.statusDetail, { color: theme.secondary }]}>Reconnecting…</Text> : null}
             </View>
             {held ? <Text style={[styles.hint, { color: theme.secondary }]}>Tap to click, hold to right-click, drag to scroll. Use two fingers to zoom and move around.</Text> : null}
+            {billed ? <Text style={[styles.hint, { color: theme.secondary }]}>{WORKSPACE_SCREEN_BILLED_TEXT}</Text> : null}
           </View>
           <Pressable
             accessibilityRole="button"

@@ -6,8 +6,9 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { Input } from '@/components/ui/input'
 import { ui } from '@/i18n/ui'
 import { detectPlatform } from '@/lib/downloads'
+import { formatCost } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { fetchScreenFrame, fetchScreenStatus, lostControl, releaseScreenControlOnExit, sendScreenInput, setScreenControl } from './api'
+import { fetchScreenFrame, fetchScreenStatus, lostControl, releaseScreenControlOnExit, sendScreenInput, setScreenControl, unfunded } from './api'
 import { runFrameLoop } from './frame-loop'
 import {
   HOVER_MOVE_INTERVAL_MS,
@@ -27,9 +28,12 @@ import {
 
 type Phase =
   | { kind: 'loading' }
-  | { kind: 'ready'; width: number; height: number }
+  /** `pricePerMinuteMicros`: what each minute with the screen open costs the user; 0 when it is free. */
+  | { kind: 'ready'; width: number; height: number; pricePerMinuteMicros: number }
   | { kind: 'none' }
   | { kind: 'unavailable' }
+  /** The user is out of credit for watching. Nothing more is asked until the viewer is opened again. */
+  | { kind: 'unfunded' }
   | { kind: 'error' }
 
 type Control = 'watching' | 'taking' | 'controlling'
@@ -118,8 +122,10 @@ function ScreenViewer({ chatId, touch, control, setControl }: {
     setPhase({ kind: 'loading' })
     fetchScreenStatus(chatId, abort.signal).then((status) => {
       if (abort.signal.aborted) return
-      setPhase(status.state === 'ready' ? { kind: 'ready', width: status.width, height: status.height } : { kind: status.state })
-    }, () => { if (!abort.signal.aborted) setPhase({ kind: 'error' }) })
+      setPhase(status.state === 'ready'
+        ? { kind: 'ready', width: status.width, height: status.height, pricePerMinuteMicros: status.pricePerMinuteMicros ?? 0 }
+        : { kind: status.state })
+    }, (error) => { if (!abort.signal.aborted) setPhase({ kind: unfunded(error) ? 'unfunded' : 'error' }) })
     return () => abort.abort()
   }, [chatId, attempt])
 
@@ -144,6 +150,7 @@ function ScreenViewer({ chatId, touch, control, setControl }: {
       fetchFrame: (after, waitMs, signal) => fetchScreenFrame(chatId, after, waitMs, signal),
       onFrame: (image, id) => { lastFrameRef.current = id ?? undefined; showFrame(image) },
       onGone: () => setPhase({ kind: 'none' }),
+      onUnfunded: () => setPhase({ kind: 'unfunded' }),
       onError: (_error, failures) => { if (failures >= 2) setReconnecting(true) },
       onRecovered: () => setReconnecting(false),
     }, abort.signal, lastFrameRef.current)
@@ -176,14 +183,19 @@ function ScreenViewer({ chatId, touch, control, setControl }: {
       if (!held) throw new Error('Control was not given')
       senderRef.current = new InputSender(
         (events) => sendScreenInput(chatId, events),
-        (error) => { if (lostControl(error)) loseControl(); else setNotice(ui("Some of what you did didn't reach the screen.")) },
+        (error) => {
+          if (unfunded(error)) setPhase({ kind: 'unfunded' })
+          else if (lostControl(error)) loseControl()
+          else setNotice(ui("Some of what you did didn't reach the screen."))
+        },
       )
       setControl('controlling')
       requestAnimationFrame(() => regionRef.current?.focus())
     } catch (error) {
       setControl('watching')
       if (!openRef.current) return
-      if (lostControl(error)) setPhase({ kind: 'none' })
+      if (unfunded(error)) setPhase({ kind: 'unfunded' })
+      else if (lostControl(error)) setPhase({ kind: 'none' })
       else setNotice(ui("Couldn't take control. Try again."))
     }
   }
@@ -200,7 +212,10 @@ function ScreenViewer({ chatId, touch, control, setControl }: {
   useEffect(() => {
     if (!controlling) return
     const timer = window.setInterval(() => {
-      setScreenControl(chatId, true).then((held) => { if (!held) loseControl() }, (error) => { if (lostControl(error)) loseControl() })
+      setScreenControl(chatId, true).then((held) => { if (!held) loseControl() }, (error) => {
+        if (unfunded(error)) setPhase({ kind: 'unfunded' })
+        else if (lostControl(error)) loseControl()
+      })
     }, WORKSPACE_SCREEN_CONTROL_RENEW_MS)
     return () => window.clearInterval(timer)
   }, [chatId, controlling, loseControl])
@@ -225,12 +240,16 @@ function ScreenViewer({ chatId, touch, control, setControl }: {
       senderRef.current?.stop()
       senderRef.current = null
       setControl('watching')
+      // Out of credit, the workspace is still there and would otherwise keep waiting on this viewer
+      // until control lapses. Giving control back is never refused for want of credit.
+      if (phase.kind === 'unfunded') void setScreenControl(chatId, false).catch(() => undefined)
     }
-  }, [phase.kind, setControl])
+  }, [chatId, phase.kind, setControl])
 
   const send = useCallback((event: ScreenInputEvent) => senderRef.current?.push(event), [])
   const sendText = (text: string) => { for (const event of pasteEvents(text)) send(event) }
 
+  const price = phase.kind === 'ready' && phase.pricePerMinuteMicros > 0 ? formatCost(phase.pricePerMinuteMicros / 1_000_000) : null
   const width = phase.kind === 'ready' ? phase.width : WORKSPACE_SCREEN_WIDTH
   const height = phase.kind === 'ready' ? phase.height : WORKSPACE_SCREEN_HEIGHT
 
@@ -243,12 +262,17 @@ function ScreenViewer({ chatId, touch, control, setControl }: {
         </DialogDescription>
         {ready && (
           <div className="ml-auto flex min-w-0 items-center gap-3 max-sm:ml-0 max-sm:w-full max-sm:justify-between">
-            <p role="status" className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-              <span aria-hidden="true" className={cn('size-1.5 shrink-0 rounded-full', controlling ? 'bg-primary' : 'bg-muted-foreground/60')} />
-              <span className={cn(controlling && 'font-medium text-foreground')}>{controlling ? ui("You're in control") : ui("Watching")}</span>
-              {controlling && !touch && !notice && <span className="min-w-0 truncate max-md:hidden">· {ui("Press Esc twice to hand back")}</span>}
-              {notice && <span className="min-w-0 truncate" title={notice}>· {notice}</span>}
-            </p>
+            {/* Two lines of small text are no taller than the button beside them, so the price never moves the picture. */}
+            <div className="flex min-w-0 flex-col">
+              <p role="status" className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+                <span aria-hidden="true" className={cn('size-1.5 shrink-0 rounded-full', controlling ? 'bg-primary' : 'bg-muted-foreground/60')} />
+                <span className={cn(controlling && 'font-medium text-foreground')}>{controlling ? ui("You're in control") : ui("Watching")}</span>
+                {controlling && !touch && !notice && <span className="min-w-0 truncate max-md:hidden">· {ui("Press Esc twice to hand back")}</span>}
+                {notice && <span className="min-w-0 truncate" title={notice}>· {notice}</span>}
+              </p>
+              {/* On a phone the dialog fills the screen from the top and this arrives with the controls, before any picture, so it may wrap there. */}
+              {price && <p className="min-w-0 text-xs text-muted-foreground sm:truncate">{ui("Billed at {{price}} a minute while this is open.", { price })}</p>}
+            </div>
             {controlling ? (
               <Button size="sm" variant="outline" onClick={handBack}>
                 <MousePointer2 /> {ui("Hand back")}
@@ -492,7 +516,7 @@ function ScreenArea({ phase, width, height, picture, reconnecting, controlling, 
           </span>
         </div>
       )}
-      {(phase.kind === 'none' || phase.kind === 'unavailable' || phase.kind === 'error') && (
+      {(phase.kind === 'none' || phase.kind === 'unavailable' || phase.kind === 'unfunded' || phase.kind === 'error') && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center">
           <MonitorOff className="size-6 text-muted-foreground" />
           <p className="max-w-md text-sm text-muted-foreground">
@@ -500,9 +524,11 @@ function ScreenArea({ phase, width, height, picture, reconnecting, controlling, 
               ? ui("No workspace is running for this chat. The screen is there while the agent's workspace is, and goes when the workspace shuts down after sitting idle.")
               : phase.kind === 'unavailable'
                 ? ui("This workspace has no screen.")
-                : ui("Couldn't load the screen.")}
+                : phase.kind === 'unfunded'
+                  ? ui("You're out of credit, so the screen can't stay open. Add credit, then open it again.")
+                  : ui("Couldn't load the screen.")}
           </p>
-          {phase.kind !== 'unavailable' && (
+          {(phase.kind === 'none' || phase.kind === 'error') && (
             <Button size="sm" variant="outline" onClick={onRetry}>{ui("Try again")}</Button>
           )}
         </div>

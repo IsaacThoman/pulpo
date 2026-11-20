@@ -100,6 +100,18 @@ export function usedWorkspaceScreen(output: readonly unknown[] | undefined): boo
   })
 }
 
+/**
+ * The id of the newest reply in a chat that worked on its cloud workspace's screen: the only one
+ * that offers the screen, since every such reply shares the chat's one workspace.
+ */
+export function newestWorkspaceScreenReply(messages: readonly { id: string; role: string; outputItems?: readonly unknown[] }[]): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!
+    if (message.role === 'assistant' && usedWorkspaceScreen(message.outputItems)) return message.id
+  }
+  return undefined
+}
+
 /** Whether an activity block shows app tool steps, which is where the reply offers its screen. */
 export function activityUsesApps(steps: readonly TimelineStep[]): boolean {
   return steps.some((step) => step.kind === 'tool' && Boolean(step.tool.tool?.startsWith('app_')))

@@ -1147,10 +1147,26 @@ describe('the workspace screen on a reply', () => {
     outputItems: [{ type: 'pulpo_workspace', state: 'ready', ...workspace }, ...tools],
     ...overrides,
   })
+  const closedText = 'The workspace shut down after sitting idle. Send another message to start a new one.'
+
+  /** A fake `…/presence`; every request is counted. */
+  function presence(answer: () => Response | Promise<Response>) {
+    const requests: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+      requests.push(new URL(String(input), 'http://pulpo.test').pathname)
+      return answer()
+    }))
+    onTestFinished(() => { vi.unstubAllGlobals() })
+    return requests
+  }
+  const live = (value: boolean) => () => new Response(JSON.stringify({ live: value, expiresAt: value ? new Date(Date.now() + 600_000).toISOString() : null }), {
+    headers: { 'content-type': 'application/json' },
+  })
 
   async function offered(on: boolean) {
     const { useCatalog } = await import('@/stores/catalog')
     const { useAuth } = await import('@/stores/auth')
+    const { resetWorkspaceScreenPresence } = await import('@/features/workspace-screen/presence')
     const catalog = useCatalog.getState().workspaceScreen
     const authUser = useAuth.getState().user
     useCatalog.setState({ workspaceScreen: on })
@@ -1158,13 +1174,15 @@ describe('the workspace screen on a reply', () => {
     onTestFinished(() => {
       useCatalog.setState({ workspaceScreen: catalog })
       useAuth.setState({ user: authUser })
+      resetWorkspaceScreenPresence()
     })
   }
 
-  it('offers Open screen on a cloud reply that used the app tools, running or finished', async () => {
+  it('offers Open screen on the newest cloud reply that used the app tools, running or finished', async () => {
     await offered(true)
+    presence(live(true))
     const { MessageItem } = await import('./MessageItem')
-    const finished = render(<MessageItem chat={chat} message={reply({})} streaming={false} onRegenerate={() => undefined} />)
+    const finished = render(<MessageItem chat={chat} message={reply({})} streaming={false} onRegenerate={() => undefined} newestScreenReply />)
     expect(finished.queryByRole('button', { name: 'Open screen' })).toBeTruthy()
     finished.unmount()
     const running = render(<MessageItem
@@ -1172,24 +1190,98 @@ describe('the workspace screen on a reply', () => {
       message={reply({}, [{ ...appStep, status: 'running' }], { content: '', done: false })}
       streaming
       onRegenerate={() => undefined}
+      newestScreenReply
     />)
     expect(running.queryByRole('button', { name: 'Open screen' })).toBeTruthy()
   })
 
-  it('does not offer it on the user\'s own computer, without app tools, or with the screen turned off', async () => {
+  it('does not offer it on an older reply, the user\'s own computer, without app tools, or with the screen turned off', async () => {
     await offered(true)
+    presence(live(true))
     const { MessageItem } = await import('./MessageItem')
-    const offers = (message: Message) => {
-      const view = render(<MessageItem chat={chat} message={message} streaming={false} onRegenerate={() => undefined} />)
-      const found = Boolean(view.queryByRole('button', { name: 'Open screen' }))
+    const offers = (message: Message, newestScreenReply = true) => {
+      const view = render(<MessageItem chat={chat} message={message} streaming={false} onRegenerate={() => undefined} newestScreenReply={newestScreenReply} />)
+      const found = Boolean(view.queryByRole('button', { name: 'Open screen' }) || view.queryByText('Screen closed'))
       view.unmount()
       return found
     }
     expect(offers(reply({}))).toBe(true)
+    expect(offers(reply({}), false)).toBe(false)
     expect(offers(reply({ computer: true }))).toBe(false)
     expect(offers(reply({}, [{ type: 'pulpo_tool', id: 'tool-2', tool: 'bash', status: 'completed', arguments: { command: 'ls' } }]))).toBe(false)
 
     await act(async () => { await offered(false) })
     expect(offers(reply({}))).toBe(false)
+  })
+
+  it('says the screen closed once the workspace is gone, as text rather than a button', async () => {
+    await offered(true)
+    const requests = presence(live(false))
+    const { MessageItem } = await import('./MessageItem')
+    const view = render(<MessageItem chat={chat} message={reply({})} streaming={false} onRegenerate={() => undefined} newestScreenReply />)
+    // Before the answer the screen is offered; the viewer explains itself if the workspace is gone.
+    expect(view.queryByRole('button', { name: 'Open screen' })).toBeTruthy()
+    const closed = await view.findByText('Screen closed')
+    expect(requests).toEqual(['/api/chats/chat-1/workspace-screen/presence'])
+    expect(view.queryByRole('button', { name: 'Open screen' })).toBeNull()
+    expect(closed.closest('button, a, [tabindex]')).toBeNull()
+    expect(closed.getAttribute('title')).toBe(closedText)
+    expect(closed.textContent).toContain(closedText)
+  })
+
+  it('offers the screen without asking while the reply that used it is at work', async () => {
+    await offered(true)
+    const requests = presence(live(false))
+    const { useChat } = await import('@/stores/chat')
+    const running = reply({}, [{ ...appStep, status: 'running' }], { content: '', done: false })
+    const chats = useChat.getState().chats
+    useChat.setState({ chats: [{ ...chat, messages: [user(), running] }] })
+    onTestFinished(() => { useChat.setState({ chats }) })
+    const { MessageItem } = await import('./MessageItem')
+    const view = render(<MessageItem chat={chat} message={running} streaming onRegenerate={() => undefined} newestScreenReply />)
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)) })
+    expect(view.queryByRole('button', { name: 'Open screen' })).toBeTruthy()
+    expect(requests).toEqual([])
+
+    // When it finishes, presence is asked for, and the answer is shown.
+    const finished = { ...running, done: true, content: 'Done.', outputItems: [{ type: 'pulpo_workspace', state: 'ready' }, appStep] }
+    await act(async () => { useChat.setState({ chats: [{ ...chat, messages: [user(), finished] }] }) })
+    view.rerender(<MessageItem chat={chat} message={finished} streaming={false} onRegenerate={() => undefined} newestScreenReply />)
+    expect(await view.findByText('Screen closed')).toBeTruthy()
+    expect(requests).toHaveLength(1)
+  })
+
+  it('offers it only from the newest reply in the chat that used the screen', async () => {
+    await offered(true)
+    const requests = presence(live(true))
+    const { useChat } = await import('@/stores/chat')
+    const { MessageList } = await import('./MessageList')
+    const messages: Message[] = [
+      user({ id: 'r1:input' }), reply({}, [appStep], { id: 'r1', content: 'First.' }),
+      user({ id: 'r2:input' }), reply({}, [{ ...appStep, id: 'tool-2' }], { id: 'r2', content: 'Second.' }),
+      // Later replies on the user's own computer, or without the app tools, do not take it over.
+      user({ id: 'r3:input' }), reply({ computer: true }, [{ ...appStep, id: 'tool-3' }], { id: 'r3', content: 'Third.' }),
+      user({ id: 'r4:input' }), reply({}, [{ type: 'pulpo_tool', id: 'tool-4', tool: 'bash', status: 'completed', arguments: { command: 'ls' } }], { id: 'r4', content: 'Fourth.' }),
+    ]
+    const listChat: Chat = { ...chat, messages }
+    const chats = useChat.getState().chats
+    useChat.setState({ chats: [listChat] })
+    onTestFinished(() => { useChat.setState({ chats }) })
+    const view = render(<MessageList chat={listChat} onRegenerate={() => undefined} />)
+    // Which message, in order, offers the screen.
+    const offering = () => {
+      const buttons = view.getAllByRole('button', { name: 'Open screen' })
+      expect(buttons).toHaveLength(1)
+      return view.getAllByRole('article').indexOf(buttons[0]!.closest('article')!)
+    }
+    expect(offering()).toBe(3)
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)) })
+    expect(requests).toHaveLength(1)
+
+    // A newer reply that uses the screen takes the offer over.
+    await act(async () => {
+      useChat.setState({ chats: [{ ...listChat, messages: [...messages, user({ id: 'r5:input' }), reply({}, [{ ...appStep, id: 'tool-5' }], { id: 'r5', content: 'Fifth.' })] }] })
+    })
+    expect(offering()).toBe(9)
   })
 })

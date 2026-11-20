@@ -160,6 +160,61 @@ describe('WorkspaceScreenDialog', () => {
     expect(await screen.findByText(/No workspace is running for this chat\./)).toBeTruthy()
   })
 
+  it('says what watching costs, only where it costs something', async () => {
+    serve({ status: () => json({ ...ready, pricePerMinuteMicros: 1_500 }) })
+    const first = render(<Harness />)
+    expect(await screen.findByText('Billed at $0.0015 a minute while this is open.')).toBeTruthy()
+    // Still said while in control.
+    fireEvent.click(screen.getByRole('button', { name: 'Take control' }))
+    await screen.findByRole('button', { name: 'Hand back' })
+    expect(screen.getByText('Billed at $0.0015 a minute while this is open.')).toBeTruthy()
+    first.unmount()
+
+    for (const status of [{ ...ready, pricePerMinuteMicros: 0 }, ready]) {
+      serve({ status: () => json(status) })
+      const view = render(<Harness />)
+      await screen.findByRole('button', { name: 'Take control' })
+      expect(screen.queryByText(/Billed at/)).toBeNull()
+      view.unmount()
+    }
+  })
+
+  it('stops asking for frames when the user is out of credit, and does not retry', async () => {
+    const unfunded = () => json({ error: { code: 'insufficient_balance', message: 'Insufficient balance' } }, 402)
+    let frames = 0
+    serve({ frame: (url) => {
+      frames += 1
+      return new URL(url, 'http://pulpo.test').searchParams.has('after')
+        ? unfunded()
+        : new Response(new Blob(['jpeg'], { type: 'image/jpeg' }), { headers: { 'content-type': 'image/jpeg', 'x-pulpo-frame': 'abcdef0123456789' } })
+    } })
+    render(<Harness />)
+    expect(await screen.findByText("You're out of credit, so the screen can't stay open. Add credit, then open it again.")).toBeTruthy()
+    expect(frames).toBe(2)
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Take control' })).toBeNull()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(frames).toBe(2)
+  })
+
+  it('gives control back when input is refused for want of credit', async () => {
+    const requests = serve({ input: () => json({ error: { code: 'insufficient_balance', message: 'Insufficient balance' } }, 402) })
+    render(<Harness />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Take control' }))
+    const region = await screen.findByRole('application')
+    fireEvent.keyDown(region, { key: 'a' })
+    expect(await screen.findByText(/You're out of credit/)).toBeTruthy()
+    await waitFor(() => expect(requests.filter((request) => request.path.endsWith('/control')).at(-1)?.body).toEqual({ held: false }))
+    expect(screen.queryByRole('application')).toBeNull()
+  })
+
+  it('says so when taking control is refused for want of credit', async () => {
+    serve({ control: () => json({ error: { code: 'insufficient_balance', message: 'Insufficient balance' } }, 402) })
+    render(<Harness />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Take control' }))
+    expect(await screen.findByText(/You're out of credit/)).toBeTruthy()
+  })
+
   it('offers to try again when the status could not be loaded', async () => {
     let failing = true
     serve({ status: () => failing ? json({ error: { message: 'Down' } }, 503) : json(ready) })

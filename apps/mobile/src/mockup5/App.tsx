@@ -332,9 +332,11 @@ import {
   type HistoryChatExpiryMenuAction,
   type HistoryChatSummary,
 } from '../features/chat/history';
-import { activityDurationMs, activityUsesApps, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, computerWorkspaceLabel, filesPermissionLabel, filesPermissionPlace, pendingFilesPermission, timelineActivityIsActive, usedWorkspaceScreen, workspaceIsActive, type TimelineSegment, type TimelineStep } from '../features/chat/timeline';
+import { activityDurationMs, activityUsesApps, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, computerWorkspaceLabel, filesPermissionLabel, filesPermissionPlace, newestWorkspaceScreenReply, pendingFilesPermission, timelineActivityIsActive, workspaceIsActive, type TimelineSegment, type TimelineStep } from '../features/chat/timeline';
 import { WorkspaceScreenHost } from '../features/workspace-screen/WorkspaceScreenViewer';
 import { useWorkspaceScreenViewer } from '../features/workspace-screen/store';
+import { screenOffer } from '../features/workspace-screen/presence';
+import { useWorkspaceScreenPresence, workspaceScreenPresence } from '../features/workspace-screen/usePresence';
 import { toolActivityPresentation } from '../features/chat/toolActivityPresentation';
 import { CHAT_RESUME_FOLLOW_THRESHOLD, CHAT_SCROLL_TO_BOTTOM_THRESHOLD, type ChatViewportMetrics, chatBottomDistance, chatLandingKeyboardTranslation, chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent, shouldResumeChatFollow } from '../features/chat/viewport';
 import {
@@ -4060,10 +4062,25 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
   );
 }
 
-/** Opens the screen of the cloud workspace a reply worked on with the app tools. */
-function OpenScreenButton({ chatId }: { chatId: string }) {
+const SCREEN_CLOSED_HINT = 'The workspace shut down after sitting idle. Send another message to start a new one.';
+
+/**
+ * Opens the chat's workspace screen while the workspace is there. Once it is gone the button gives
+ * way to a note saying so; before the first answer, and while the reply is at work, it is there.
+ */
+function OpenScreenButton({ chatId, running }: { chatId: string; running: boolean }) {
   const { styles, COLORS } = useChatStyles();
   const open = useWorkspaceScreenViewer((state) => state.open);
+  const presence = useWorkspaceScreenPresence(chatId, running);
+  if (screenOffer(presence) === 'closed') return (
+    <View accessible accessibilityLabel={`Screen closed. ${SCREEN_CLOSED_HINT}`} style={styles.screenClosed}>
+      <View style={styles.screenClosedLabel}>
+        <Monitor color={COLORS.muted} size={13} />
+        <Text style={[styles.openScreenText, styles.screenClosedText]}>Screen closed</Text>
+      </View>
+      <Text style={styles.screenClosedHint}>{SCREEN_CLOSED_HINT}</Text>
+    </View>
+  );
   return (
     <Pressable
       accessibilityHint="Watch the workspace's screen, or take it over"
@@ -4234,6 +4251,7 @@ const MessageRow = memo(function MessageRow({
   onStop,
   sideRail = false,
   editingLocked = false,
+  offersWorkspaceScreen = false,
 }: {
   message: Message;
   model: Model;
@@ -4246,6 +4264,8 @@ const MessageRow = memo(function MessageRow({
   onStop: () => void;
   sideRail?: boolean;
   editingLocked?: boolean;
+  /** This is the chat's newest reply that worked on its workspace's screen, so it offers that screen. */
+  offersWorkspaceScreen?: boolean;
 }) {
   const { styles, COLORS } = useChatStyles();
   const { showReasoning } = useAppPreferences();
@@ -4311,12 +4331,9 @@ const MessageRow = memo(function MessageRow({
     })
     : message.initialResponseDurationMs;
   const activitySegments = timeline.filter((segment) => segment.kind === 'activity');
-  // The owner can watch the cloud workspace a reply worked on with the app tools. The button sits
-  // under the work that shows those steps, or under the reply when the work is hidden.
-  const workspaceScreen = usePrototypeStore((state) => state.workspaceScreen);
-  const screenChatId = message.role === 'assistant' && workspaceScreen && message.chatId && usedWorkspaceScreen(message.outputItems)
-    ? message.chatId
-    : null;
+  // The owner can watch the cloud workspace the chat's newest reply with app tools worked on. The
+  // button sits under the work that shows those steps, or under the reply when the work is hidden.
+  const screenChatId = offersWorkspaceScreen && message.chatId ? message.chatId : null;
   const screenActivityIndex = screenChatId
     ? timeline.reduce((found, segment, index) => segment.kind === 'activity' && activityUsesApps(segment.steps) ? index : found, -1)
     : -1;
@@ -4411,7 +4428,7 @@ const MessageRow = memo(function MessageRow({
                           steps={segment.steps}
                           onOpenChat={onOpenChat}
                         />
-                        {screenChatId && index === screenActivityIndex ? <OpenScreenButton chatId={screenChatId} /> : null}
+                        {screenChatId && index === screenActivityIndex ? <OpenScreenButton chatId={screenChatId} running={streaming} /> : null}
                       </Fragment>;
                     }
                     return <AssistantMarkdown selectable={Platform.OS !== 'android'}
@@ -4428,7 +4445,7 @@ const MessageRow = memo(function MessageRow({
                 <ResponseErrorNotice message={message} onRetry={onRegenerate} />
               </MessageContextMenu>
             ) : streaming ? <ResponsePendingIndicator /> : null}
-            {screenChatId && screenActivityIndex < 0 ? <OpenScreenButton chatId={screenChatId} /> : null}
+            {screenChatId && screenActivityIndex < 0 ? <OpenScreenButton chatId={screenChatId} running={streaming} /> : null}
             {showReasoning && extraOutput.map((item, index) => {
               const details = JSON.stringify(item, null, 2).slice(0, 4000);
               return <View key={`${String(item.type)}:${index}`} style={styles.otherOutput}>
@@ -5100,6 +5117,17 @@ function ChatView({
   const listRef = useRef<FlatList<Message>>(null);
   const latestRowRef = useRef<View>(null);
   const latestMessageId = messages.at(-1)?.id;
+  // Only the chat's newest reply that worked on its workspace's screen offers it.
+  const workspaceScreen = usePrototypeStore((state) => state.workspaceScreen);
+  const screenReplyId = useMemo(() => workspaceScreen ? newestWorkspaceScreenReply(messages) : undefined, [messages, workspaceScreen]);
+  // A finished reply used the workspace, which moves its expiry on, so ask about it again.
+  const replyWorking = messages.some((message) => message.role === 'assistant' && (message.status === 'queued' || message.status === 'streaming'));
+  const replyWasWorking = useRef(replyWorking);
+  useEffect(() => {
+    const finished = replyWasWorking.current && !replyWorking;
+    replyWasWorking.current = replyWorking;
+    if (finished && chatId) workspaceScreenPresence.ask(chatId);
+  }, [chatId, replyWorking]);
   useEffect(() => {
     if (!chatId || !chatLoaded || !hasTranscriptPositionObserver()) return;
     const end = Date.now() + 5000;
@@ -6576,11 +6604,12 @@ function ChatView({
           onStop={onStop}
           sideRail={assistantSideRail}
           editingLocked={Boolean(messageEdit) || dictationBusy}
+          offersWorkspaceScreen={item.id === screenReplyId}
         />
         </MessageReportsContext.Provider>
       </QuizComposerContext.Provider>
     </View>
-  ), [appendToComposer, assistantSideRail, expired, handleMessageEditAction, latestMessageId, messageEdit, dictationBusy, model, models, onActivateBranch, onOpenChat, onRegenerate, onStop, openFilePreview, openImageViewer, styles.transcriptColumn]);
+  ), [appendToComposer, assistantSideRail, expired, handleMessageEditAction, latestMessageId, messageEdit, dictationBusy, model, models, onActivateBranch, onOpenChat, onRegenerate, onStop, openFilePreview, openImageViewer, screenReplyId, styles.transcriptColumn]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
@@ -8043,6 +8072,11 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   workStep: { gap: 5 },
   openScreenButton: { alignSelf: 'flex-start', minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 16, paddingHorizontal: 12, backgroundColor: COLORS.fillStrong, marginTop: 2 },
   openScreenText: { color: COLORS.textSoft, fontSize: 12.5, fontWeight: '600' },
+  // Where Open screen was, as plain text: nothing about it looks pressable.
+  screenClosed: { alignSelf: 'flex-start', gap: 2, marginTop: 2 },
+  screenClosedLabel: { minHeight: 24, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  screenClosedText: { color: COLORS.muted },
+  screenClosedHint: { color: COLORS.muted, fontSize: 12, lineHeight: 17 },
   compactionDetail: { gap: 12 },
   compactionSection: { gap: 6 },
   compactionSectionTitle: { color: COLORS.textSoft, fontSize: 12, fontWeight: '600' },
