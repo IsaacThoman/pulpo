@@ -1,13 +1,10 @@
 import { useState } from 'react'
-import { Check } from 'lucide-react'
 import { createApiKeySchema } from '@pulpo/contracts'
 import { useApiKeys } from '@/stores/apiKeys'
 import { filterCodexModels, useCatalog } from '@/stores/catalog'
 import type { ApiKey } from '@/lib/types'
-import { ui, uit } from '@/i18n/ui'
-import { cn } from '@/lib/utils'
-import { ModelIcon } from '@/components/ModelIcon'
-import { Badge } from '@/components/ui/badge'
+import { ui } from '@/i18n/ui'
+import { ModelMultiPicker } from '@/components/ModelMultiPicker'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -51,10 +48,6 @@ export function ApiKeySettingsDialog({ apiKey, onClose, onCreated }: {
   const invalidBudget = !parsed.success && parsed.error.issues.some((issue) => String(issue.path[0]).endsWith('BudgetMicros'))
   const canSave = parsed.success && (allModels || selectedModels.length > 0)
 
-  const toggleModel = (id: string, on: boolean) => {
-    setAllModels(false)
-    setSelectedModels((current) => on ? [...new Set([...current, id])] : current.filter((value) => value !== id))
-  }
   const submit = async () => {
     if (saving || !canSave) return
     setSaving(true)
@@ -111,72 +104,21 @@ export function ApiKeySettingsDialog({ apiKey, onClose, onCreated }: {
             <div className="space-y-1.5">
               <Label>{ui("Model access")}</Label>
               <p className="text-xs text-muted-foreground"> {ui("Restrict this key to specific models, or allow every model.")} </p>
-              <div className="max-h-52 space-y-0.5 overflow-y-auto rounded-lg border p-1.5">
-                <CheckboxRow
-                  label={ui("All models")}
-                  checked={allModels}
-                  onChange={(v) => {
-                    setAllModels(v)
-                    if (v) setSelectedModels([])
-                  }}
+              <CheckboxRow
+                label={ui("All models")}
+                checked={allModels}
+                onChange={setAllModels}
+              />
+              {!allModels && (
+                <ModelMultiPicker
+                  label={ui("Allowed models")}
+                  models={selectableModels}
+                  value={selectedModels}
+                  onChange={setSelectedModels}
                 />
-                <div className="mx-1 my-1 h-px bg-border" />
-                {selectableModels.map((m) => {
-                  const checked = !allModels && selectedModels.includes(m.id)
-                  return (
-                    <label
-                      key={m.id}
-                      className="flex cursor-pointer items-center gap-2.5 rounded-md px-1 py-1.5 text-sm hover:bg-accent/60"
-                    >
-                      <button
-                        type="button"
-                        aria-label={m.name}
-                        role="checkbox"
-                        aria-checked={checked}
-                        onClick={(e) => {
-                          e.preventDefault()
-                          toggleModel(m.id, !checked)
-                        }}
-                        className={cn(
-                          'flex size-4 shrink-0 cursor-pointer items-center justify-center rounded border transition-colors',
-                          checked
-                            ? 'border-primary bg-primary text-primary-foreground'
-                            : 'border-input bg-transparent'
-                        )}
-                      >
-                        {checked && <Check className="size-3" />}
-                      </button>
-                      <ModelIcon model={m} className="size-4" boxed={false} />
-                      <span className="min-w-0 flex-1 truncate">{m.name}</span>
-                      <span className="text-[11px] text-muted-foreground">{m.provider}</span>
-                    </label>
-                  )
-                })}
-              </div>
+              )}
               {!allModels && selectedModels.length === 0 && (
                 <p className="text-xs text-destructive"> {ui("Select at least one model, or choose All models.")} </p>
-              )}
-              {!allModels && selectedModels.length > 0 && (
-                <div className="flex flex-wrap gap-1 pt-0.5">
-                  {selectedModels.map((id) => {
-                    const m = models.find((x) => x.id === id)
-                    return (
-                      <Badge key={id} variant="secondary" className="max-w-full gap-1 whitespace-normal font-normal">
-                        {m && <ModelIcon model={m} className="size-3" boxed={false} />}
-                        <span className="break-all">{m?.name ?? id}</span>
-                        {!m && <span>{ui("Unavailable")}</span>}
-                        <button
-                          type="button"
-                          className="ml-0.5 cursor-pointer opacity-60 hover:opacity-100"
-                          onClick={() => toggleModel(id, false)}
-                          aria-label={uit`Remove ${m?.name ?? id}`}
-                        >
-                          ×
-                        </button>
-                      </Badge>
-                    )
-                  })}
-                </div>
               )}
             </div>
             <div className="grid grid-cols-2 gap-3">

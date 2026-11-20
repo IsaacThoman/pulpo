@@ -129,7 +129,7 @@ describe('Access in the agent menu', () => {
     expect((await screen.findByRole('group', { name: 'Changes to Files' })).textContent).toBe('Read onlySuggest changesEdit directly')
   })
 
-  it('starts with This computer Off, and offers a folder only once it is on', async () => {
+  it('starts with This computer Off, with a folder offered ahead of turning it on', async () => {
     render(<Harness />)
     const options = await openComputer()
     expect(within(options).getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual([
@@ -140,7 +140,9 @@ describe('Access in the agent menu', () => {
       'Edit directly',
     ])
     expect(checked(options)).toEqual(['Off'])
-    expect(screen.queryByRole('group', { name: 'Folder' })).toBeNull()
+    const folder = screen.getByRole('group', { name: 'Folder' })
+    expect(within(folder).queryAllByRole('menuitemradio')).toEqual([])
+    expect(within(folder).getByText('Used once this computer is on')).not.toBeNull()
   })
 
   it('turns on a folder mode by choosing a folder first, and cancelling leaves it Off', async () => {
@@ -215,11 +217,29 @@ describe('Access in the agent menu', () => {
 
     fireEvent.click(within(await openComputer()).getByRole('menuitemradio', { name: 'Off' }))
     await waitFor(() => expect(computerChoice(owner, 'chat-a')).toEqual({ enabled: false, access: 'full', folder: null }))
-    // Off takes the folder choices away while the submenu is still open.
-    expect(screen.queryByRole('group', { name: 'Folder' })).toBeNull()
+    // Off keeps the folder choices, muted and saying they wait for the computer to be on.
+    expect(checked(screen.getByRole('group', { name: 'Folder' }))).toEqual(['No folder'])
+    expect(screen.getByText('Used once this computer is on')).not.toBeNull()
     await closeMenu()
     expect(screen.getByRole('button', { name: 'Agent options, Pulpo Agent' })).not.toBeNull()
     expect(await accessRows()).toEqual(['Pulpo FilesItems you mention · Suggest changes', 'This computerOff'])
+  })
+
+  it('lets a folder be chosen while off, and uses it once an access is chosen', async () => {
+    render(<Harness />)
+    await openComputer()
+    expect(screen.getByText('Used once this computer is on')).not.toBeNull()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Choose folder…' }))
+    await waitFor(() => expect(computerChoice(owner, 'chat-a')).toEqual({ enabled: false, access: 'suggest', folder: project }))
+    expect(checked(await openComputer())).toEqual(['Off'])
+    expect(checked(screen.getByRole('group', { name: 'Folder' }))).toEqual(['project'])
+    expect(await accessRows()).toEqual(['Pulpo FilesItems you mention · Suggest changes', 'This computerOff'])
+
+    // The folder was chosen already, so turning it on does not ask again.
+    fireEvent.click(within(await openComputer()).getByRole('menuitemradio', { name: /Read only/ }))
+    await waitFor(() => expect(computerChoice(owner, 'chat-a')).toEqual({ enabled: true, access: 'read', folder: project }))
+    expect(computer.chooseFolder).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Used once this computer is on')).toBeNull()
   })
 
   it('applies a folder to the choice as it stands when the folder dialog closes', async () => {

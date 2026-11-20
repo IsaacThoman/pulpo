@@ -2929,6 +2929,7 @@ const esUi: Record<string, string> = {
   "Can run commands anywhere on this computer": "Puede ejecutar comandos en cualquier parte de este ordenador",
   "Changes apply right away": "Los cambios se aplican al momento",
   "Starting folder": "Carpeta inicial",
+  "Used once this computer is on": "Se usa cuando este ordenador está activado",
   "Remove anyway": "Eliminar de todos modos",
   "This folder is no longer empty.": "Esta carpeta ya no está vacía.",
   "Pulpo Files": "Archivos de Pulpo",
@@ -3044,6 +3045,12 @@ const esUi: Record<string, string> = {
   "Themes use VS Code’s color theme format, so you can import VS Code themes and export yours to VS Code. Each has light and dark colors.": "Los temas usan el formato de temas de color de VS Code, así que puedes importar temas de VS Code y exportar los tuyos a VS Code. Cada uno tiene colores claros y oscuros.",
   "Dark VS Code theme": "Tema oscuro de VS Code",
   "Light VS Code theme": "Tema claro de VS Code",
+  "No models selected yet. Search or pick a provider to add some.": "Aún no hay modelos seleccionados. Busca o elige un proveedor para añadir algunos.",
+  "No models": "No hay modelos",
+  "Selected models ({{0}})": "Modelos seleccionados ({{0}})",
+  "Use the up and down arrow keys to browse models and Enter to select or deselect one. Press Tab to reach the providers.": "Usa las flechas arriba y abajo para recorrer los modelos y Intro para seleccionar o deseleccionar uno. Pulsa Tab para llegar a los proveedores.",
+  "{{0}}, unavailable": "{{0}}, no disponible",
+  "Allowed models": "Modelos permitidos",
 }
 
 export default esUi

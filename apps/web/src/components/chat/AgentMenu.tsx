@@ -215,26 +215,25 @@ export function AgentMenu({ ref, enabled, disabled, compact = false, files, comp
                           <ChoiceRow icon={COMPUTER_ACCESS_ICONS[access]} label={computerAccessLabel(access)} checked={checked} />)
                       })}
                     </DropdownMenuGroup>
-                    {/* A folder only means something once the computer is in use, so it is offered then. */}
-                    {computer.active && (
-                      <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuGroup aria-label={ui("Folder")}>
-                          {/* Full access only starts in its folder; the other modes stay inside theirs. */}
-                          <DropdownMenuLabel className={mutedLabel}>{computer.access === 'full' ? ui("Starting folder") : ui("Folder")}</DropdownMenuLabel>
-                          {computer.folder && radio(computer.folder.path, true, () => undefined,
-                            <ChoiceRow icon={Folder} label={computer.folder.name} checked />, computer.folder.path)}
-                          {computer.recentFolders?.map((folder) => radio(folder.path, false, () => computer.onFolder(folder),
-                            <ChoiceRow icon={Folder} label={folder.name} checked={false} />, folder.path))}
-                          {computer.access === 'full' && radio('none', !computer.folder, () => { if (computer.folder) computer.onFolder(null) },
-                            <ChoiceRow icon={FolderX} label={ui("No folder")} checked={!computer.folder} />)}
-                          <DropdownMenuItem onSelect={choose(computer.onChooseFolder)} className="gap-1.5">
-                            <FolderOpen className="size-4 opacity-70" />
-                            {ui("Choose folder…")}
-                          </DropdownMenuItem>
-                        </DropdownMenuGroup>
-                      </>
-                    )}
+                    {/* The folder can be chosen before the computer is turned on. Until then it is muted and says so. */}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuGroup aria-label={ui("Folder")} className={cn(!computer.active && 'text-muted-foreground')}>
+                      {/* Full access only starts in its folder; the other modes stay inside theirs. */}
+                      <DropdownMenuLabel className={cn(mutedLabel, 'flex flex-col')}>
+                        <span>{computer.access === 'full' ? ui("Starting folder") : ui("Folder")}</span>
+                        {!computer.active && <span className="text-[11px] opacity-80">{ui("Used once this computer is on")}</span>}
+                      </DropdownMenuLabel>
+                      {computer.folder && radio(computer.folder.path, true, () => undefined,
+                        <ChoiceRow icon={Folder} label={computer.folder.name} checked />, computer.folder.path)}
+                      {computer.recentFolders?.map((folder) => radio(folder.path, false, () => computer.onFolder(folder),
+                        <ChoiceRow icon={Folder} label={folder.name} checked={false} />, folder.path))}
+                      {computer.access === 'full' && radio('none', !computer.folder, () => { if (computer.folder) computer.onFolder(null) },
+                        <ChoiceRow icon={FolderX} label={ui("No folder")} checked={!computer.folder} />)}
+                      <DropdownMenuItem onSelect={choose(computer.onChooseFolder)} className="gap-1.5">
+                        <FolderOpen className="size-4 opacity-70" />
+                        {ui("Choose folder…")}
+                      </DropdownMenuItem>
+                    </DropdownMenuGroup>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
               )}

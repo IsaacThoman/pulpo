@@ -33,6 +33,16 @@ curl --fail --silent --show-error \
     '{email: $email, password: $password}')" \
   "${PREVIEW_URL}/api/auth/login" >/dev/null
 
+catalog="$(curl --fail --silent --show-error \
+  --cookie "${cookie_jar}" \
+  "${PREVIEW_URL}/api/models")"
+for model_id in gpt-5.6-luna gpt-6-luna claude-opus-5.5 claude-haiku-4.5; do
+  if ! jq -e --arg id "${model_id}" 'any(.data[]?; .id == $id and .enabled and .visible)' <<<"${catalog}" >/dev/null; then
+    echo "Preview catalog is missing enabled, visible model ${model_id}." >&2
+    exit 1
+  fi
+done
+
 episodic_memory_status="$(curl --fail --silent --show-error \
   --cookie "${cookie_jar}" \
   "${PREVIEW_URL}/api/admin/settings/episodic-memory")"
