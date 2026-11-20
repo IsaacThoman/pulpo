@@ -1389,6 +1389,12 @@ export const agentSettingsSchema = z.object({
   billWorkspaces: z.boolean().default(false),
   /** Lets desktop apps lend the agent the computer they run on ("This computer"). */
   computerAccess: z.boolean().default(true),
+  /**
+   * Gives cloud workspaces a screen: the agent can open a browser and other apps there and work in
+   * their windows with the app tools, and the chat's owner can watch and take over. Needs a
+   * workspace image that includes the desktop; with an older image the tools fail and say so.
+   */
+  workspaceDesktop: z.boolean().default(false),
   workspacePricePerMinuteMicros: z.number().int().min(0).max(1_000_000_000).default(10_000),
 })
 export type AgentSettings = z.infer<typeof agentSettingsSchema>
@@ -2314,6 +2320,7 @@ export interface ServerToClientEvents {
 export * from "./shelf.js"
 export * from "./files.js"
 export * from "./computer.js"
+export * from "./workspace-screen.js"
 export * from "./trash.js"
 export * from "./message-reports.js"
 export * from "./audio-transcription.js"
