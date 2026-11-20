@@ -405,32 +405,42 @@ private final class WebAudioCapture: NSObject, WKNavigationDelegate, WKUIDelegat
   /// Echo cancellation and noise suppression stay off: the server's model wants the raw voice.
   private static let page = """
   <!doctype html><meta charset="utf-8"><script>
-  let context = null, stream = null, source = null, processor = null, running = false;
+  // Each start gets a generation; a start that a stop or newer start superseded while it
+  // awaited the microphone releases what it opened instead of publishing it.
+  let context = null, stream = null, source = null, processor = null, generation = 0;
   const post = (message) => webkit.messageHandlers.pulpo.postMessage(message);
   const constraints = { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+  const release = (media) => { if (media) media.getTracks().forEach((track) => track.stop()); };
   async function builtInMicrophone() {
     const inputs = (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === "audioinput");
     const found = inputs.find((device) => /iphone|built-in/i.test(device.label));
     return found ? found.deviceId : null;
   }
   async function pulpoStart() {
-    if (running) return;
-    running = true;
+    pulpoStop();
+    const mine = generation;
+    let media = null, audio = null;
+    const current = () => mine === generation;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
+      media = await navigator.mediaDevices.getUserMedia({ audio: constraints });
+      if (!current()) return release(media);
       // Device labels are only readable once access is granted.
       const builtIn = await builtInMicrophone();
-      if (builtIn && stream.getAudioTracks()[0].getSettings().deviceId !== builtIn) {
-        stream.getTracks().forEach((track) => track.stop());
-        stream = await navigator.mediaDevices.getUserMedia({ audio: { ...constraints, deviceId: { exact: builtIn } } });
+      if (!current()) return release(media);
+      if (builtIn && media.getAudioTracks()[0].getSettings().deviceId !== builtIn) {
+        release(media);
+        media = await navigator.mediaDevices.getUserMedia({ audio: { ...constraints, deviceId: { exact: builtIn } } });
+        if (!current()) return release(media);
       }
-      if (!running) return pulpoStop();
-      context = new AudioContext();
-      await context.resume();
-      source = context.createMediaStreamSource(stream);
-      processor = context.createScriptProcessor(2048, 1, 1);
+      audio = new AudioContext();
+      await audio.resume();
+      if (!current()) { release(media); return audio.close(); }
+      stream = media;
+      context = audio;
+      source = audio.createMediaStreamSource(media);
+      processor = audio.createScriptProcessor(2048, 1, 1);
       processor.onaudioprocess = (event) => {
-        if (!running) return;
+        if (!current()) return;
         const input = event.inputBuffer.getChannelData(0);
         const pcm = new Int16Array(input.length);
         for (let i = 0; i < input.length; i++) {
@@ -443,19 +453,21 @@ private final class WebAudioCapture: NSObject, WKNavigationDelegate, WKUIDelegat
         post({ type: "pcm", data: btoa(binary) });
       };
       source.connect(processor);
-      processor.connect(context.destination);
-      post({ type: "started", rate: context.sampleRate });
+      processor.connect(audio.destination);
+      post({ type: "started", rate: audio.sampleRate });
     } catch (error) {
-      running = false;
+      if (!current()) { release(media); if (audio) audio.close().catch(() => {}); return; }
       pulpoStop();
+      release(media);
+      if (audio) audio.close().catch(() => {});
       post({ type: "error", message: (error && error.name ? error.name + ": " + error.message : String(error)) });
     }
   }
-  async function pulpoStop() {
-    running = false;
+  function pulpoStop() {
+    generation++;
     try { if (processor) processor.disconnect(); if (source) source.disconnect(); } catch (e) {}
-    if (stream) stream.getTracks().forEach((track) => track.stop());
-    if (context) { try { await context.close(); } catch (e) {} }
+    release(stream);
+    if (context) context.close().catch(() => {});
     context = stream = source = processor = null;
   }
   </script>
