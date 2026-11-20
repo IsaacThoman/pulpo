@@ -8,6 +8,8 @@ export interface ControlSessionOptions {
   post: (held: boolean) => Promise<boolean>
   /** Control was taken, given back or lost. */
   onChange: (held: boolean, loss?: ControlLoss) => void
+  /** A renewal request failed (control is then lost); for errors that mean more than that. */
+  onRenewError?: (error: unknown) => void
   renewMs?: number
 }
 
@@ -84,8 +86,9 @@ export class ControlSession {
     let held = false
     try {
       held = await this.options.post(true)
-    } catch {
+    } catch (error) {
       held = false
+      if (generation === this.generation) this.options.onRenewError?.(error)
     } finally {
       this.renewing = false
     }

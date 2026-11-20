@@ -23,6 +23,7 @@ function callbacks() {
     frames: [] as string[],
     connection: [] as boolean[],
     gone: 0,
+    unfunded: 0,
     sleeps: [] as number[],
   }
 }
@@ -34,6 +35,7 @@ function start(answers: Array<FrameAnswer | Error>) {
     fetchFrame: fake.fetchFrame,
     onFrame: (frame) => seen.frames.push(frame.id),
     onGone: () => { seen.gone += 1 },
+    onUnfunded: () => { seen.unfunded += 1 },
     onConnection: (connected) => seen.connection.push(connected),
     waitMs: 5_000,
     sleep: async (milliseconds) => { seen.sleeps.push(milliseconds) },
@@ -67,6 +69,15 @@ describe('startFrameLoop', () => {
     expect(requests).toHaveLength(2)
   })
 
+  it('stops for good, without retrying, once the screen is unfunded', async () => {
+    const { requests, seen, loop } = start([{ kind: 'frame', id: 'aaaaaaaa', bytes: bytes(1) }, { kind: 'unfunded' }])
+    await loop.done
+    expect(seen.unfunded).toBe(1)
+    expect(seen.gone).toBe(0)
+    expect(seen.sleeps).toEqual([])
+    expect(requests).toHaveLength(2)
+  })
+
   it('backs off while requests fail and says when they answer again', async () => {
     const failure = new Error('offline')
     const { seen, loop } = start([failure, failure, failure, { kind: 'unchanged' }, { kind: 'gone' }])
@@ -91,6 +102,7 @@ describe('startFrameLoop', () => {
       fetchFrame: () => new Promise((resolve) => { answer = resolve }),
       onFrame: (frame) => seen.frames.push(frame.id),
       onGone: () => { seen.gone += 1 },
+      onUnfunded: () => { seen.unfunded += 1 },
       onConnection: (connected) => seen.connection.push(connected),
     })
     await vi.waitFor(() => expect(answer).toBeTypeOf('function'))

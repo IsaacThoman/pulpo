@@ -1,10 +1,14 @@
 import { WORKSPACE_SCREEN_FRAME_WAIT_MAX_MS } from '@pulpo/contracts'
 
-/** One answer of `…/workspace-screen/frame`. `gone`: the chat has no running workspace with a screen. */
+/**
+ * One answer of `…/workspace-screen/frame`. `gone`: the chat has no running workspace with a
+ * screen. `unfunded`: the user cannot pay for the next minute with the screen open (HTTP 402).
+ */
 export type FrameAnswer =
   | { kind: 'frame'; id: string; bytes: Uint8Array }
   | { kind: 'unchanged' }
   | { kind: 'gone' }
+  | { kind: 'unfunded' }
 
 export type FrameFetch = (after: string | undefined, waitMs: number, signal: AbortSignal) => Promise<FrameAnswer>
 
@@ -13,6 +17,8 @@ export interface FrameLoopOptions {
   onFrame: (frame: { id: string; bytes: Uint8Array }) => void
   /** The workspace went away; the loop has stopped. */
   onGone: () => void
+  /** The screen can't stay open until the user can pay for it; the loop has stopped and does not retry. */
+  onUnfunded: () => void
   /** Requests started failing (false) or answer again (true). Called on changes only. */
   onConnection: (connected: boolean) => void
   waitMs?: number
@@ -21,7 +27,7 @@ export interface FrameLoopOptions {
 
 export interface FrameLoop {
   stop: () => void
-  /** Settles when the loop has ended, after `stop` or once the workspace is gone. */
+  /** Settles when the loop has ended, after `stop`, once the workspace is gone or once it is unfunded. */
   done: Promise<void>
 }
 
@@ -76,6 +82,10 @@ export function startFrameLoop(options: FrameLoopOptions): FrameLoop {
       }
       if (answer.kind === 'gone') {
         options.onGone()
+        return
+      }
+      if (answer.kind === 'unfunded') {
+        options.onUnfunded()
         return
       }
       if (answer.kind === 'frame') {
