@@ -348,11 +348,15 @@ A workspace is deleted when it times out. Files a model should keep belong in Pu
 Files, which the agent can read and write.
 
 With the screen on, the display, window manager and browser run inside each workspace's
-own memory. Chromium with a few pages open takes a good part of the default 2048 MiB, so raise
-**Memory** if agents browse much, and size the machine for it. The measured figures are
-in [the workspace image's README](https://github.com/IsaacThoman/pulpo/blob/main/infra/workspace-image/README.md).
+own memory and on its own cores. Keep workspaces at 2 cores and 2048 MiB or more: with
+1 core and 1 GiB one page works, but several tabs leave the agent waiting over ten
+seconds per action. Raise **Memory** further if agents browse much, and size the machine
+for it. The measured figures are in
+[the workspace image's README](https://github.com/IsaacThoman/pulpo/blob/main/infra/workspace-image/README.md#footprint).
 While someone watches a chat's screen, its workspace counts as used and is not deleted
-for being idle; the hard timeout still applies.
+for being idle; the hard timeout still applies. A user who is asked to sign in has
+**Idle timeout** to open the screen before the workspace, and the browser in it, is gone,
+so keep that timeout at several minutes or more.
 
 ## Updating
 

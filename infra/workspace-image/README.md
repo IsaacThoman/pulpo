@@ -201,11 +201,41 @@ scripts are under 0.1 MB. On linux/amd64 the image unpacks to 2,226 MB.
   scrolls (drawing the scroll costs Chromium and Xvfb about 30% more). A frame
   of a text-heavy page is about 115 KB (up to 135 KB while scrolling).
 
-Not measured here: anything about Kata (whether unprivileged user namespaces,
-and so Chromium's sandbox, are available in the microVM; memory overhead of
-the guest), amd64 timings on real hardware (the amd64 image was only run
-under emulation, where the desktop smoke test takes 21–37 s against 6–9 s on arm64),
-and cold image pulls.
+Not measured here: amd64 timings in an ordinary container on real hardware (the
+amd64 image was only run under emulation, where the desktop smoke test takes
+21–37 s against 6–9 s on arm64), and cold image pulls.
+
+#### Under Kata
+
+Measured on linux/amd64 in a Kata pod on the reference cluster (K3s, the
+`kata-pulpo-bounded` runtime, the default seccomp profile, no DNS, the egress
+proxy and tunnel), driving the daemon as the Pulpo server does.
+
+- **Chromium's sandbox is on.** Unprivileged user namespaces work in the guest,
+  so the `chromium` wrapper does not add `--no-sandbox`.
+- **Proxy only.** Lookups and direct connections fail; pages load through the
+  proxy. `/dev/shm` is half the guest's memory there, not 64 MB.
+- `pulpo-desktop start`: 0.29 s cold, 14 ms warm.
+
+| | 1 CPU, 1 GiB | 2 CPUs, 2 GiB |
+| --- | --- | --- |
+| Memory the guest sees | 946 MiB | 1,953 MiB |
+| `chromium <url>` on a new workspace to the loaded page | 9.1 s | 3.1 s |
+| Browser with one small page | 327 MiB in use | 432 MiB in use |
+| Two tabs, one a Wikipedia article | 450 MiB left | 1,095 MiB left |
+| Eight tabs (search, shop, news, video and an animated page in front) | 225 MiB left | 541 MiB left |
+| One app operation with one or two tabs open | 0.1–0.6 s to look, 0.7–1.3 s to act | 0.2–0.3 s to look, 0.6–0.9 s to act |
+| One app operation with the eight tabs open | 12–14 s, and the element list comes back empty | 0.2–1.5 s |
+| First live frame for a viewer | 1.2 s with one tab; none within 5 s with eight | 2.2 s with eight tabs |
+
+Nothing was killed for memory in any of these. At 1 CPU the limit is the
+processor: Chromium draws without a GPU, and a busy page in front leaves no
+time for the element list or the live picture. Give workspaces at least 2 CPUs
+and 2 GiB when the screen is on.
+
+Seven sites were opened once each through the egress address: a Google
+search, Amazon, GitHub, Hacker News, Cloudflare's own site and Wikipedia loaded
+as usual, and Reddit answered with its block page.
 
 ## Publishing
 

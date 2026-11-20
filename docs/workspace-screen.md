@@ -73,7 +73,8 @@ Without a running workspace the viewer says *No workspace is running for this ch
 
 - **Signed-in sites need the user.** The agent is told not to sign in, solve CAPTCHAs or ask for passwords; the user takes over and signs in themselves.
 - **Sites that challenge the egress address.** Many sites challenge or block traffic from data centres and VPNs, which is where workspace traffic comes from. Some of those challenges the user can pass while in control; some sites refuse anyway.
-- **Memory.** The display, window manager and browser run in the workspace's own memory, and Chromium with a few pages takes a good part of the default 2048 MiB. Raise **Memory** in **Settings → Agent** if agents browse much.
+- **Memory and CPU.** The display, window manager and browser run in the workspace's own memory and on its own cores, and Chromium draws without a GPU. Give workspaces at least 2 CPUs and 2048 MiB (the defaults) in **Settings → Agent** before turning the screen on: at 1 CPU and 1 GiB one page works, but with several tabs open an action takes over ten seconds and the element list comes back empty. See [Footprint](#footprint).
+- **The idle timeout.** The screen lives and dies with the workspace. When a reply ends asking the user to sign in, the workspace is deleted, and the browser with it, once it has sat unused for **Idle timeout**. An open viewer counts as use, so it is the time the user has to press **Open screen**, and again to answer after handing back. The default of 30 minutes is comfortable; with a timeout of a minute or two most users will find the workspace gone.
 - **Turn budget.** Every look and every action is a tool call and a model turn, so a task done in windows uses up **Maximum model turns** (30 by default) and **Maximum tool calls** much faster than one done with commands. The prompt tells the agent to use the screen only for what needs one.
 - **Pictures in the context.** Every app tool result puts a picture in the model's context. Past eight, the oldest are replaced with a note that they were dropped because they are out of date, until only the latest three are left (`withoutStaleAppPictures` in `apps/server/src/agent/tool-result-images.ts`); the text of each result stays. The cut comes in steps rather than one picture a turn, so the start of the request, and the provider's prompt cache for it, stays the same between cuts. This applies to the app tools on the user's computer as well, never to `view_image` or generated images.
 - **One screen, shared.** The agent and the user work on the same display and the same pointer; control decides whose input counts.
@@ -87,4 +88,11 @@ Without a running workspace the viewer says *No workspace is running for this ch
 
 ## Footprint
 
-The measurements are in `infra/workspace-image/README.md`.
+The full measurements are in [the workspace image's README](https://github.com/IsaacThoman/pulpo/blob/main/infra/workspace-image/README.md#footprint). In short:
+
+- **Image.** The desktop adds 668 MB unpacked and 289 MB compressed (2,220 MB and 790 MB in all), nearly all of it Chromium and its libraries and fonts.
+- **A workspace that never uses the screen** runs nothing extra. The session alone (display, window manager, buses) takes about 15 MB and starts in under a second.
+- **Memory.** The browser with one page takes 250–450 MB; three heavy pages about 1.0–1.3 GB.
+- **Time.** In a Kata workspace with 2 CPUs and 2 GiB, the first page of a new workspace is up in about 3 seconds, looking at a window takes 0.2–0.3 seconds and an action with the look that follows it under a second. With 1 CPU and 1 GiB the first page takes about 9 seconds, and with several tabs open one action takes over ten.
+- **The live picture** costs 5–6% of one core while someone watches, and each frame is about 115 KB.
+- **Chromium's own sandbox is on** in a Kata workspace; in an ordinary container without user namespaces the browser runs without it, and the workspace is the boundary.
