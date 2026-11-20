@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode, type Ref } from 'react'
 import { COMPUTER_ACCESS_MODES, FILE_ACCESS_MODES, type ComputerAccess, type ComputerFolder, type FileAccessMode } from '@pulpo/contracts'
-import { Bot, BotOff, Check, ChevronDown, CircleOff, Folder, FolderLock, FolderOpen, FolderX, Laptop, SquareTerminal, type LucideIcon } from 'lucide-react'
+import { Bot, BotOff, Check, ChevronDown, CircleOff, Folder, FolderLock, FolderOpen, FolderX, Laptop, Monitor, SquareTerminal, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { ui } from '@/i18n/ui'
@@ -72,7 +72,7 @@ const mutedLabel = 'text-xs font-normal text-muted-foreground'
 const SUBMENU_WIDTH = 288
 const submenuClass = 'w-72 max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto'
 
-export function AgentMenu({ ref, enabled, disabled, compact = false, files, computer, onSelect, onSelectClose }: {
+export function AgentMenu({ ref, enabled, disabled, compact = false, files, computer, onOpenScreen, onSelect, onSelectClose }: {
   ref?: Ref<HTMLButtonElement>
   enabled: boolean
   disabled: boolean
@@ -82,6 +82,8 @@ export function AgentMenu({ ref, enabled, disabled, compact = false, files, comp
   files?: AgentFilesControls
   /** Offered in the desktop app where the agent may use this computer. */
   computer?: AgentComputerControls
+  /** Opens the chat's cloud workspace screen; offered while the agent works in the cloud workspace. */
+  onOpenScreen?: () => void
   onSelect: (enabled: boolean) => void
   onSelectClose?: () => void
 }) {
@@ -238,6 +240,15 @@ export function AgentMenu({ ref, enabled, disabled, compact = false, files, comp
                 </DropdownMenuSub>
               )}
             </DropdownMenuGroup>
+          </>
+        )}
+        {onOpenScreen && active && !onComputer && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => onOpenScreen()} className="gap-1.5">
+              <Monitor className="size-4 opacity-70" />
+              {ui("Workspace screen")}
+            </DropdownMenuItem>
           </>
         )}
       </DropdownMenuContent>

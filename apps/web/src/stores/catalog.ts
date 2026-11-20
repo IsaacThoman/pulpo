@@ -67,6 +67,8 @@ interface CatalogState {
   agentAvailable: boolean
   /** The instance lets desktop apps lend the agent their computer ("This computer"). */
   computerAccess: boolean
+  /** The instance gives cloud workspaces a screen the chat's owner can watch and take over. */
+  workspaceScreen: boolean
   codexEnabled: boolean
   setCodexEnabled: (enabled: boolean) => void
   load: () => Promise<void>
@@ -79,6 +81,7 @@ export const useCatalog = create<CatalogState>()(persist((set) => ({
   loaded: false,
   agentAvailable: false,
   computerAccess: false,
+  workspaceScreen: false,
   codexEnabled: false,
   setCodexEnabled: (enabled) => {
     catalogRequestVersion += 1
@@ -87,9 +90,9 @@ export const useCatalog = create<CatalogState>()(persist((set) => ({
   load: async () => {
     const version = ++catalogRequestVersion
     try {
-      const response = await apiRequest<{ data: ServerModel[]; agentAvailable?: boolean; computerAccess?: boolean; codexEnabled?: boolean }>('/api/models')
+      const response = await apiRequest<{ data: ServerModel[]; agentAvailable?: boolean; computerAccess?: boolean; workspaceScreen?: boolean; codexEnabled?: boolean }>('/api/models')
       if (version !== catalogRequestVersion) return
-      set({ models: filterCodexModels(response.data.map(fromServer), response.codexEnabled === true), agentAvailable: response.agentAvailable ?? false, computerAccess: response.computerAccess === true, codexEnabled: response.codexEnabled === true, loaded: true })
+      set({ models: filterCodexModels(response.data.map(fromServer), response.codexEnabled === true), agentAvailable: response.agentAvailable ?? false, computerAccess: response.computerAccess === true, workspaceScreen: response.workspaceScreen === true, codexEnabled: response.codexEnabled === true, loaded: true })
     } catch {
       // Persisted catalog remains available while offline.
     }

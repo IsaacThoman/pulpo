@@ -67,3 +67,12 @@ describe('This computer availability', () => {
     expect(useCatalog.getState().computerAccess).toBe(expected)
   })
 })
+
+describe('Workspace screen availability', () => {
+  it.each([[undefined, false], [false, false], [true, true]])('reads workspaceScreen %s as %s', async (workspaceScreen, expected) => {
+    useCatalog.setState({ workspaceScreen: !expected })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ workspaceScreen, data: [] }), { headers: { 'content-type': 'application/json' } })))
+    await useCatalog.getState().load()
+    expect(useCatalog.getState().workspaceScreen).toBe(expected)
+  })
+})
