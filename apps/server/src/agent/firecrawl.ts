@@ -1,7 +1,5 @@
 import { publicHttpsUrl, webFetchOutput, type KagiSearchInput, type KagiResult, type WebPage } from './kagi.js'
 
-export const FIRECRAWL_DEFAULT_API_BASE = 'https://api.firecrawl.dev/v2'
-
 type FirecrawlSearchResult = {
   title?: string
   description?: string

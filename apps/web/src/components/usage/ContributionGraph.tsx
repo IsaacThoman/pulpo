@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import type { DailyModelUsage } from '@/lib/mock'
+import type { DailyModelUsage } from '@/lib/leaderboard-usage'
 import { formatUsd } from '@/lib/format'
 import type { Metric } from '@/lib/types'
 import { cn } from '@/lib/utils'

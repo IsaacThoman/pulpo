@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 import {
   episodicMemorySettingsSchema,
   type EpisodicMemoryAdminStatus,
@@ -112,12 +112,4 @@ export async function cancelEpisodicMemoryBuild(actorUserId: string): Promise<vo
   })
   const jobs = await embeddingQueue.getJobs(['waiting', 'delayed', 'prioritized'])
   await Promise.all(jobs.filter((job) => job.data.type === 'reconcile').map((job) => job.remove()))
-}
-
-export async function hasActiveEpisodicMemory(): Promise<boolean> {
-  const settings = await readEpisodicMemorySettings()
-  if (!settings.enabled) return false
-  const [generation] = await db.select({ id: episodicMemoryGenerations.id }).from(episodicMemoryGenerations)
-    .where(and(eq(episodicMemoryGenerations.active, true), eq(episodicMemoryGenerations.status, 'ready'), ne(episodicMemoryGenerations.modelDigest, ''))).limit(1)
-  return Boolean(generation)
 }

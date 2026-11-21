@@ -50,10 +50,6 @@ export function formatBalance(usd: number): string {
   return currencyUsd(usd, 2)
 }
 
-export function formatTokens(inTok: number, outTok: number): string {
-  return ui('{{input}} in / {{output}} out', { input: formatNumber(inTok), output: formatNumber(outTok) })
-}
-
 export function timeAgo(ts: number): string {
   if (!Number.isFinite(ts)) return ''
   const s = Math.floor((Date.now() - ts) / 1000)

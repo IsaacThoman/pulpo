@@ -12,10 +12,6 @@ function deleteDatabase(name: string): Promise<void> {
   })
 }
 
-export async function clearDocCache(accountKey: string, docId: string): Promise<void> {
-  if (typeof indexedDB !== 'undefined') await deleteDatabase(docCacheName(accountKey, docId))
-}
-
 /** Removes every cached document for an account, e.g. on sign-out. */
 export async function clearDocCaches(accountKey: string): Promise<void> {
   if (typeof indexedDB === 'undefined' || typeof indexedDB.databases !== 'function') return

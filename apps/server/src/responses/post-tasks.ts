@@ -90,20 +90,6 @@ export function selectPostTaskRuntime(
   return selected ?? current
 }
 
-export async function persistGeneratedTitleResult(input: {
-  userId: string
-  chatId: string
-  outputText: string
-}): Promise<boolean> {
-  const title = parseGeneratedTitle(input.outputText)
-  if (!title) return false
-  return persistGeneratedChatTitle({
-    userId: input.userId,
-    chatId: input.chatId,
-    title,
-  })
-}
-
 /** Billed cost survives task failures so provider usage already incurred is still settled. */
 export interface PostResponseTaskResult {
   costMicros: number

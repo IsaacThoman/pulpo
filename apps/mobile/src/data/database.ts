@@ -96,25 +96,6 @@ export async function clearNamespace(namespace: string): Promise<string[]> {
   })
 }
 
-export async function clearDownloadedData(namespace: string): Promise<string[]> {
-  return withDatabase(async (database) => {
-    const files = await database.getAllAsync<{ local_uri: string }>(
-      'SELECT local_uri FROM attachment_cache WHERE namespace = ? UNION ALL SELECT local_uri FROM file_cache WHERE namespace = ?', namespace, namespace,
-    )
-    await database.withTransactionAsync(async () => {
-      for (const table of ['chat_cache', 'chat_access', 'attachment_cache', 'file_cache']) {
-        await database.runAsync(`DELETE FROM ${table} WHERE namespace = ?`, namespace)
-      }
-      await database.runAsync('DELETE FROM chat_fts WHERE namespace = ?', namespace)
-      // Documents with edits not yet uploaded are the user's work, not downloaded data.
-      await database.runAsync(`DELETE FROM file_doc_updates WHERE namespace = ? AND doc_id IN
-        (SELECT doc_id FROM file_docs WHERE namespace = ? AND dirty = 0)`, namespace, namespace)
-      await database.runAsync('DELETE FROM file_docs WHERE namespace = ? AND dirty = 0', namespace)
-    })
-    return files.map((file) => file.local_uri)
-  })
-}
-
 export async function recordCachedAttachment(
   namespace: string,
   attachmentId: string,
@@ -493,10 +474,6 @@ export async function failOutbox(id: string, attempts: number, message: string):
       attempts, Date.now() + delay, message.slice(0, 500), id,
     )
   })
-}
-
-export async function saveResponseCursor(namespace: string, responseId: string, sequence: number): Promise<void> {
-  await saveResponseCursors(namespace, { [responseId]: sequence })
 }
 
 export async function saveResponseCursors(namespace: string, cursors: Record<string, number>): Promise<void> {
