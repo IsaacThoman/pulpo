@@ -38,6 +38,20 @@ describe('billing source allocation', () => {
     })).toEqual({ weeklyMicros: 2_000_000, fiveHourMicros: 2_000_000, balanceMicros: 500_000 })
   })
 
+  it('lets a reservation another source funded so far draw on the current allowance', () => {
+    expect(allocateResizedReservationMicros({
+      amountMicros: 2_500_000,
+      weeklyRemainingMicros: 400_000,
+      currentWeeklyReservedMicros: 0,
+      reservationWeeklyPeriodStart: null,
+      currentWeeklyPeriodStart: new Date('2026-08-17T00:00:00.000Z'),
+      fiveHourRemainingMicros: 700_000,
+      currentFiveHourReservedMicros: 0,
+      reservationFiveHourPeriodStart: null,
+      currentFiveHourPeriodStart: new Date('2026-08-17T10:00:00.000Z'),
+    })).toEqual({ weeklyMicros: 400_000, fiveHourMicros: 400_000, balanceMicros: 2_100_000 })
+  })
+
   it('keeps a cross-Monday reservation bound to its original weekly allocation', () => {
     expect(allocateResizedReservationMicros({
       amountMicros: 3_000_000,
