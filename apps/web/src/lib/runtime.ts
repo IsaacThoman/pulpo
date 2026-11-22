@@ -1,4 +1,4 @@
-import { CLIENT_FEATURES_HEADER, CLIENT_FEATURES_HEADER_VALUE, CLIENT_PLATFORM_HEADER, type NativeDevice } from '@pulpo/contracts'
+import { CLIENT_FEATURES_HEADER, CLIENT_FEATURES_HEADER_VALUE, CLIENT_PLATFORM_HEADER, clientFeaturesHeaderValue, type DesktopComputerApi, type NativeDevice } from '@pulpo/contracts'
 import { normalizeInstanceUrl } from '@pulpo/client-core'
 
 export interface DesktopStoredSession {
@@ -40,6 +40,8 @@ interface DesktopApi {
     isMaximized(): Promise<boolean>
     onMaximizedChanged(listener: (maximized: boolean) => void): () => void
   }
+  /** Lends the agent this computer ("This computer"); missing in older apps. */
+  computer?: DesktopComputerApi
 }
 
 declare global {
@@ -64,6 +66,11 @@ function readInstance(): string {
 
 export function isDesktopRuntime(): boolean {
   return typeof window !== 'undefined' && Boolean(window.pulpoDesktop)
+}
+
+/** The desktop app's "This computer" bridge, when this app has one. */
+export function desktopComputerApi(): DesktopComputerApi | null {
+  return typeof window === 'undefined' ? null : window.pulpoDesktop?.computer ?? null
 }
 
 export function runtimeInstanceUrl(): string {
@@ -145,7 +152,10 @@ export function runtimeClientHeaders(url: string): Record<string, string> {
   } catch {
     return {}
   }
-  return { [CLIENT_PLATFORM_HEADER]: runtimeClientPlatform(), [CLIENT_FEATURES_HEADER]: CLIENT_FEATURES_HEADER_VALUE }
+  return {
+    [CLIENT_PLATFORM_HEADER]: runtimeClientPlatform(),
+    [CLIENT_FEATURES_HEADER]: desktopComputerApi() ? clientFeaturesHeaderValue(['computer']) : CLIENT_FEATURES_HEADER_VALUE,
+  }
 }
 
 /** Test hook: forgets the cached desktop version. */

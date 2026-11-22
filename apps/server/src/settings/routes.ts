@@ -1,7 +1,7 @@
 import { eq, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentCostLimitMicrosSchema, chatSortModeSchema, fileAccessModeSchema, fileDoubleClickActionSchema, newChatAutoExpireSchema, trashColorSchema } from '@pulpo/contracts'
+import { agentCostLimitMicrosSchema, chatSortModeSchema, colorThemeIdSchema, customThemesSchema, fileAccessModeSchema, fileDoubleClickActionSchema, newChatAutoExpireSchema, trashColorSchema } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { applicationSettings, userPreferences, users } from '../database/schema.js'
@@ -13,6 +13,7 @@ import { normalizedPreferencePatch, preferencesWithModelDefaults } from './model
 import { automaticChatExpirationValues, parseAutomaticChatExpiration } from '../chats/expiration.js'
 import { parseAuthSettings, parsePersonalizationSettings } from './application-settings.js'
 import { withNewAccountModelDefaults } from './new-account-defaults.js'
+import { registerInstanceColorThemeRoutes } from './instance-color-themes.js'
 import { deleteUserEpisodicMemory } from '../episodic-memory/indexer.js'
 import { scheduleUserIndex } from '../episodic-memory/queue.js'
 import {
@@ -26,6 +27,8 @@ import {
 const preferencesSchema = z.record(z.string(), z.unknown())
 
 export async function registerSettingsRoutes(app: FastifyInstance): Promise<void> {
+  registerInstanceColorThemeRoutes(app)
+
   app.get('/api/settings', async (request) => {
     const user = requireUser(request)
     const [[row], [authSetting], [personalizationSetting]] = await Promise.all([
@@ -77,6 +80,14 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     }
     if ('trashColor' in patch && !trashColorSchema.safeParse(patch.trashColor).success) {
       throw new AppError(400, 'invalid_trash_color', 'Choose a valid trash color')
+    }
+    if ('colorTheme' in patch && !colorThemeIdSchema.safeParse(patch.colorTheme).success) {
+      throw new AppError(400, 'invalid_color_theme', 'Choose a valid color theme')
+    }
+    if ('customThemes' in patch) {
+      const themes = customThemesSchema.safeParse(patch.customThemes)
+      if (!themes.success) throw new AppError(400, 'invalid_custom_themes', themes.error.issues[0]?.message ?? 'Check your custom themes')
+      patch.customThemes = themes.data
     }
     if ('showPromptSuggestions' in patch && typeof patch.showPromptSuggestions !== 'boolean') {
       throw new AppError(400, 'invalid_prompt_suggestions_setting', 'Choose whether prompt suggestions should be shown')

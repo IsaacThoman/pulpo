@@ -28,10 +28,14 @@ export const IMAGE_TOKEN_RATE_LABELS: Record<keyof ImageTokenPrices, string> = {
   input: 'Input tokens', cachedInput: 'Cached input tokens', output: 'Output tokens',
   imageInput: 'Image input tokens', cachedImageInput: 'Cached image input tokens', imageOutput: 'Image output tokens',
 }
-export function imageTokenRateKeys(adapter: 'azure-mai' | 'meta-muse' | 'openai-images'): Array<keyof ImageTokenPrices> {
+export const IMAGE_TOKEN_BILLING_UNAVAILABLE: Partial<Record<ImageModel['adapter'], string>> = {
+  'azure-mai': 'Azure MAI does not report token usage; use per-image pricing.',
+  'openrouter-images': 'OpenRouter Images uses per-image pricing in Pulpo.',
+}
+export function imageTokenRateKeys(adapter: ImageModel['adapter']): Array<keyof ImageTokenPrices> {
   return adapter === 'openai-images' ? ['input', 'cachedInput', 'imageInput', 'cachedImageInput', 'output', 'imageOutput'] : ['input', 'cachedInput', 'output']
 }
-export function imageTokenRateLabel(adapter: 'azure-mai' | 'meta-muse' | 'openai-images', key: keyof ImageTokenPrices): string {
+export function imageTokenRateLabel(adapter: ImageModel['adapter'], key: keyof ImageTokenPrices): string {
   if (adapter === 'openai-images') {
     if (key === 'input') return 'Text input tokens'
     if (key === 'cachedInput') return 'Cached text input tokens'
@@ -43,7 +47,7 @@ export function imageTokenRateLabel(adapter: 'azure-mai' | 'meta-muse' | 'openai
 export const imageModelSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,119}$/),
   providerConnectionId: z.uuid(),
-  adapter: z.enum(['azure-mai', 'meta-muse', 'openai-images']),
+  adapter: z.enum(['azure-mai', 'meta-muse', 'openai-images', 'openrouter-images']),
   name: z.string().trim().min(1).max(120),
   upstreamModelId: z.string().trim().min(1).max(200),
   // Optional for existing model records. Azure deployment names can be arbitrary.
@@ -57,7 +61,8 @@ export const imageModelSchema = z.object({
   reservationMicros: price.default(0),
 }).superRefine((model, ctx) => {
   if (model.billingUnit !== 'tokens') return
-  if (model.adapter === 'azure-mai') ctx.addIssue({ code: 'custom', path: ['billingUnit'], message: 'Azure MAI does not report token usage; use per-image pricing.' })
+  const unavailable = IMAGE_TOKEN_BILLING_UNAVAILABLE[model.adapter]
+  if (unavailable) ctx.addIssue({ code: 'custom', path: ['billingUnit'], message: unavailable })
   if (!model.billUsers) return
   if (model.reservationMicros <= 0) ctx.addIssue({ code: 'custom', path: ['reservationMicros'], message: 'Enter a positive upfront reservation.' })
   for (const key of imageTokenRateKeys(model.adapter)) {
@@ -88,11 +93,16 @@ export const OPENAI_IMAGE_PRESET = {
   // Microdollars / 1M tokens, verified 2026-09-13: developers.openai.com/api/docs/models/gpt-image-2.5-flare
   tokenPrices: { input: 5_000_000, cachedInput: 1_250_000, imageInput: 8_000_000, cachedImageInput: 2_000_000, output: 0, imageOutput: 30_000_000 },
 } satisfies Omit<ImageModel, 'id' | 'providerConnectionId'>
+export const OPENROUTER_IMAGE_PRESET = {
+  ...AZURE_MAI_IMAGE_PRESET, adapter: 'openrouter-images', name: 'MAI-Image-2.7 Flash', upstreamModelId: 'microsoft/mai-image-2.7-flash',
+  supportsAutoAspectRatio: false,
+} satisfies Omit<ImageModel, 'id' | 'providerConnectionId'>
 
 export const IMAGE_MODEL_PRESETS = {
   'azure-mai': AZURE_MAI_IMAGE_PRESET,
   'meta-muse': META_MUSE_IMAGE_PRESET,
   'openai-images': OPENAI_IMAGE_PRESET,
+  'openrouter-images': OPENROUTER_IMAGE_PRESET,
 } satisfies Record<ImageModel['adapter'], Omit<ImageModel, 'id' | 'providerConnectionId'>>
 
 // Pulpo's supported capabilities, which may be stricter than upstream limits.
@@ -105,6 +115,7 @@ export const IMAGE_PROVIDER_CAPABILITIES: Record<ImageModel['adapter'], {
   'azure-mai': { maxReferenceImages: 1, inputMimeTypes: ['image/png', 'image/jpeg'], outputMimeTypes: ['image/png'], supportsImageItemReplay: false },
   'meta-muse': { maxReferenceImages: 4, inputMimeTypes: ['image/png', 'image/jpeg', 'image/webp'], outputMimeTypes: ['image/png', 'image/jpeg', 'image/webp'], supportsImageItemReplay: true },
   'openai-images': { maxReferenceImages: 4, inputMimeTypes: ['image/png', 'image/jpeg', 'image/webp'], outputMimeTypes: ['image/png'], supportsImageItemReplay: false },
+  'openrouter-images': { maxReferenceImages: 4, inputMimeTypes: ['image/png', 'image/jpeg', 'image/webp'], outputMimeTypes: ['image/png', 'image/jpeg', 'image/webp'], supportsImageItemReplay: false },
 }
 
 export function imagePriceLabel(model: PublicImageModel, translate: (source: string) => string = value => value): string {

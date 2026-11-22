@@ -1,5 +1,6 @@
 import { agentPathName, pulpoFilesCommand } from '@pulpo/client-core/files';
 import {
+  AppWindow,
   FileDiff,
   FilePenLine,
   FilePlus,
@@ -12,10 +13,15 @@ import {
   FolderUp,
   Globe,
   Image,
+  Keyboard,
   List,
+  Mouse,
+  MousePointerClick,
+  Move,
   Paperclip,
   Search,
   Terminal,
+  TextCursorInput,
   Trash2,
   Wrench,
   type LucideIcon,
@@ -31,6 +37,8 @@ const presentations: Record<string, ToolActivityPresentation> = {
   generate_image: { icon: Image, label: 'Generating an image…' },
   view_image: { icon: Image, label: 'Viewing an image…' },
   bash: { icon: Terminal, label: 'Running bash…' },
+  // A full-access run on a Windows computer names its shell tool `powershell`.
+  powershell: { icon: Terminal, label: 'Running PowerShell…' },
   write: { icon: FilePlus, label: 'Writing a file…' },
   edit: { icon: FilePenLine, label: 'Editing a file…' },
   ls: { icon: List, label: 'Listing files…' },
@@ -67,10 +75,30 @@ function filesCommandPresentation(command: string): ToolActivityPresentation | n
   }
 }
 
+/** The app tools of a full-access run on the user's computer, labelled as the web labels them. */
+function appToolPresentation(tool: string, args: unknown): ToolActivityPresentation | null {
+  const app = args && typeof args === 'object' ? (args as { app?: unknown }).app : undefined;
+  const trimmed = typeof app === 'string' ? app.trim() : '';
+  const name = trimmed.length > 40 ? `${trimmed.slice(0, 39)}…` : trimmed;
+  switch (tool) {
+    case 'app_list': return { icon: AppWindow, label: 'Checking which apps are open…' };
+    case 'app_view': return { icon: AppWindow, label: name ? `Looking at ${name}…` : 'Looking at an app…' };
+    case 'app_click': return { icon: MousePointerClick, label: name ? `Clicking in ${name}…` : 'Clicking in an app…' };
+    case 'app_type': return { icon: Keyboard, label: name ? `Typing in ${name}…` : 'Typing in an app…' };
+    case 'app_key': return { icon: Keyboard, label: name ? `Pressing keys in ${name}…` : 'Pressing keys in an app…' };
+    case 'app_scroll': return { icon: Mouse, label: name ? `Scrolling in ${name}…` : 'Scrolling in an app…' };
+    case 'app_drag': return { icon: Move, label: name ? `Dragging in ${name}…` : 'Dragging in an app…' };
+    case 'app_set_value': return { icon: TextCursorInput, label: name ? `Filling in a field in ${name}…` : 'Filling in a field…' };
+    default: return null;
+  }
+}
+
 export function toolActivityPresentation(name?: string, args?: unknown): ToolActivityPresentation {
   const command = name === 'bash' && args && typeof args === 'object' ? (args as { command?: unknown }).command : undefined;
   const files = typeof command === 'string' ? filesCommandPresentation(command) : null;
   if (files) return files;
+  const app = name?.startsWith('app_') ? appToolPresentation(name, args) : null;
+  if (app) return app;
   return name && presentations[name]
     ? presentations[name]
     : { icon: Wrench, label: 'Working…' };

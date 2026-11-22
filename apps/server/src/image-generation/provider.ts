@@ -174,6 +174,26 @@ const adapters: Record<ImageModel['adapter'], ImageAdapter> = {
     },
     result: imagesResult,
   },
+  'openrouter-images': {
+    path: path => `${path || '/api/v1'}/images`,
+    request: input => {
+      const inputReferences = input.references.map(reference => ({
+        type: 'image_url',
+        image_url: { url: `data:${reference.mimeType};base64,${Buffer.from(reference.data).toString('base64')}` },
+      }))
+      return {
+        headers: { Authorization: `Bearer ${input.apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: input.model.upstreamModelId,
+          prompt: input.prompt,
+          n: 1,
+          aspect_ratio: input.aspectRatio ?? 'auto',
+          ...(inputReferences.length ? { input_references: inputReferences } : {}),
+        }),
+      }
+    },
+    result: imagesResult,
+  },
   'meta-muse': {
     path: path => `${path || '/v1'}/responses`,
     request: input => {

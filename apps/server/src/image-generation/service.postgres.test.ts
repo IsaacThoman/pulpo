@@ -7,7 +7,7 @@ import sharp from 'sharp'
 import { and, eq, sql } from 'drizzle-orm'
 import { beforeAll, beforeEach, afterAll, describe, expect, it, vi } from 'vitest'
 import { ZodError } from 'zod'
-import { META_MUSE_IMAGE_PRESET, OPENAI_IMAGE_PRESET, imageModelSchema, imageGenerationInputSchema, responseUsageSchema, type ImageModel } from '@pulpo/contracts'
+import { META_MUSE_IMAGE_PRESET, OPENAI_IMAGE_PRESET, OPENROUTER_IMAGE_PRESET, imageModelSchema, imageGenerationInputSchema, responseUsageSchema, type ImageModel } from '@pulpo/contracts'
 vi.mock('../agent/controller-http.js', () => ({ workspaceControllerRequest: vi.fn() }))
 vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn() }))
 const mocks = vi.hoisted(() => ({ blobs: new Map<string, Uint8Array>(), writeFails: false }))
@@ -33,6 +33,7 @@ import { registerCatalogRoutes } from '../catalog/routes.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
 import { agentSettlementAmounts } from '../agent/settlement.js'
 import { WorkspaceManager } from '../agent/controller.js'
+import { cloudWorkspacePaths } from '../agent/workspace.js'
 
 const enabled = process.env.PULPO_IMAGE_POSTGRES_TEST === '1'
 if (enabled && new URL(process.env.DATABASE_URL ?? 'http://invalid').pathname !== '/pulpo_image_test') throw new Error('Use the disposable pulpo_image_test database')
@@ -40,7 +41,7 @@ const providerId = randomUUID(), userId = randomUUID(), chatId = randomUUID(), c
 const config: ImageModel = { ...META_MUSE_IMAGE_PRESET, id: 'muse-test', providerConnectionId: providerId, enabled: true, billUsers: true, imagePriceMicros: 10_000 }
 const workspaceFiles = new Map<string, Uint8Array>()
 const exportFile = vi.fn(), ensureLease = vi.fn(), saveGeneratedFile = vi.fn(), readGeneratedFile = vi.fn()
-const manager = { exportFile, ensureLease, saveGeneratedFile, readGeneratedFile, continuedWithoutAgent: false } as unknown as WorkspaceManager
+const manager = { kind: 'cloud', paths: cloudWorkspacePaths, exportFile, ensureLease, saveGeneratedFile, readGeneratedFile, continuedWithoutAgent: false } as unknown as WorkspaceManager
 let server: FastifyInstance, role: 'admin' | 'user' | null = 'admin', image: Buffer, fetcher: ReturnType<typeof vi.fn<typeof fetch>>
 async function turn() {
   const responseId = randomUUID(), runId = randomUUID(), operationId = `image-${randomUUID()}`
@@ -166,6 +167,25 @@ describe.skipIf(!enabled)('image generation persistence and authorization', () =
     const form = fetcher.mock.calls[1]![1]!.body as FormData
     expect(Buffer.from(await (form.get('image[]') as Blob).arrayBuffer())).toEqual(image)
     expect(exportFile).toHaveBeenCalledWith(result.path, undefined)
+  })
+  it('switches a saved image model to OpenRouter and bills the configured image price', async () => {
+    await db.update(providerConnections).set({ baseUrl: 'https://openrouter.ai/api/v1' }).where(eq(providerConnections.id, providerId))
+    const openRouter = { ...config, ...OPENROUTER_IMAGE_PRESET, enabled: true, billUsers: true, imagePriceMicros: 20_000 }
+    const url = `/api/admin/image-models/${config.id}`
+    const unsupported = await server.inject({ method: 'PATCH', url, payload: { ...openRouter, billingUnit: 'tokens' } })
+    expect(unsupported.statusCode).toBe(400)
+    const updated = await server.inject({ method: 'PATCH', url, payload: openRouter })
+    expect(updated.statusCode).toBe(200)
+    expect((await server.inject('/api/image-models')).json().data).toEqual([expect.objectContaining({ id: config.id, adapter: 'openrouter-images' })])
+
+    fetcher.mockImplementation(async () => Response.json({ data: [{ b64_json: image.toString('base64') }], usage: { cost: 0.01 } }))
+    const input = await turn()
+    const result = await executeImageGeneration(input)
+    expect(result.billedCostMicros).toBe(20_000)
+    expect(input.reserveCost).toHaveBeenCalledExactlyOnceWith(20_000)
+    expect(fetcher).toHaveBeenCalledExactlyOnceWith('https://openrouter.ai/api/v1/images', expect.objectContaining({
+      headers: { Authorization: 'Bearer fixture-secret', 'Content-Type': 'application/json' },
+    }))
   })
   it.each(['attachment', 'workspace', 'shorthand'] as const)('normalizes an MPO from a %s before editing without replacing the source', async source => {
     const data = await readFile(new URL('./fixtures/oriented-mpo.jpg', import.meta.url))

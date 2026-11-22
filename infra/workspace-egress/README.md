@@ -31,6 +31,7 @@ workspace ──► smokescreen pod ──► cni0 ──► [mark] ──► ta
 | `pulpo-workspace-egress` | `/usr/local/sbin/pulpo-workspace-egress` | `apply`, `route-up`, `remove`, `status` |
 | `pulpo-workspace-egress.service` | `/etc/systemd/system/` | Applies rules at boot, before K3s and the tunnel |
 | `k3s-egress.conf` | `/etc/systemd/system/k3s.service.d/51-pulpo-egress.conf` | Reapplies on every K3s start; failure blocks K3s |
+| `networkd-egress.conf` | `/etc/systemd/networkd.conf.d/50-pulpo-workspace-egress.conf` | Stops systemd-networkd from deleting the ip rules |
 | `wg-pulpo.conf.example` | `/etc/wireguard/wg-pulpo.conf` | Tunnel template (`Table = off`) |
 | `proxy/Dockerfile` | image | Smokescreen at a pinned commit, distroless, non-root |
 
@@ -49,6 +50,10 @@ is set. Warm pods created with a different proxy setting are replaced.
   route, `default dev wg-pulpo`, added by the tunnel's `PostUp`.
 - `ip rule 7421: fwmark 0x01000000/0x01000000 unreachable`. When the tunnel is down
   table 7420 is empty, lookup falls through to this rule, never to the main table.
+- systemd-networkd deletes routing policy rules it didn't create whenever it restarts,
+  which unattended systemd upgrades do. `networkd-egress.conf` turns that off. Without
+  it, rules 7420/7421 vanish and the kill switch silently drops all workspace egress
+  (Smokescreen answers 504 `lookup …: i/o timeout`).
 - `forward` drops pod-initiated traffic to any interface other than `cni0` or
   `wg-pulpo`, private/special destinations inside the tunnel, non-TCP/UDP and
   IPv6. This holds even if the ip rules are missing.
@@ -97,11 +102,13 @@ sudo install -D -m 0644 egress.nft /etc/pulpo/workspace-egress/egress.nft
 sudo install -m 0755 pulpo-workspace-egress /usr/local/sbin/pulpo-workspace-egress
 sudo install -m 0644 pulpo-workspace-egress.service /etc/systemd/system/
 sudo install -D -m 0644 k3s-egress.conf /etc/systemd/system/k3s.service.d/51-pulpo-egress.conf
+sudo install -D -m 0644 networkd-egress.conf /etc/systemd/networkd.conf.d/50-pulpo-workspace-egress.conf
 sudo install -m 0600 wg-pulpo.conf.example /etc/wireguard/wg-pulpo.conf
 sudoedit /etc/wireguard/wg-pulpo.conf      # fill in your provider's values
 
 sudo nft --check -f /etc/pulpo/workspace-egress/egress.nft
 sudo systemctl daemon-reload
+sudo systemctl restart systemd-networkd     # pick up the drop-in before adding rules
 sudo systemctl enable --now pulpo-workspace-egress.service
 sudo systemctl enable --now wg-quick@wg-pulpo.service
 sudo pulpo-workspace-egress status
@@ -150,7 +157,7 @@ decision: `kubectl -n pulpo-workspaces logs deploy/pulpo-workspace-egress-proxy`
 
 ```sh
 sudo systemctl disable --now wg-quick@wg-pulpo.service pulpo-workspace-egress.service
-sudo rm /etc/systemd/system/k3s.service.d/51-pulpo-egress.conf
+sudo rm /etc/systemd/system/k3s.service.d/51-pulpo-egress.conf /etc/systemd/networkd.conf.d/50-pulpo-workspace-egress.conf
 sudo systemctl daemon-reload
 sudo pulpo-workspace-egress remove
 ```

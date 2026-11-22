@@ -6,6 +6,7 @@ import { buildCompactedPiHistory, dropOldestPiUnit, piUserTextMessage } from '..
 import { SUMMARIZATION_PROMPT } from '../compaction/prompt.js'
 import { CompactionError, CompactionOverflowError, summarizeWithOverflowRetry, trimHistoryToTokenLimit } from '../compaction/summarize.js'
 import { piContextTokens, piFullEstimate, type ContextTokenCount } from '../compaction/tokens.js'
+import { withoutStaleAppPictures } from './tool-result-images.js'
 
 export type AgentCompactionPhase = CompactionItem['phase']
 
@@ -121,7 +122,9 @@ export function createAgentCompactor(deps: {
   const contextTokens = deps.contextTokens ?? piContextTokens
   const historyTokens = deps.historyTokens ?? ((messages: readonly Message[]) => piFullEstimate({ messages }))
   const now = deps.now ?? Date.now
-  return async (request) => {
+  return async (input) => {
+    // Counted and summarized as the model is sent it: without app pictures that are out of date.
+    const request = { ...input, messages: withoutStaleAppPictures(input.messages) }
     const settings = deps.settings()
     const limit = autoCompactLimit(settings.thresholdTokens, settings.contextWindow)
     const frame: AgentRequestFrame = { systemPrompt: request.systemPrompt, tools: request.tools, signal: request.signal }

@@ -1,8 +1,10 @@
 import { rm, stat } from 'node:fs/promises'
-import { basename, join, relative, resolve, sep } from 'node:path'
-import { helpText, parseCli, UsageError, type Invocation } from './cli-args.js'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
+import { helpText, parseInvocation, UsageError, type Invocation } from './cli-args.js'
+import { TOP_HELP } from './cli-help.js'
 import { isInside, localStatus, planPush, pruneEmptyDirectories, readManifest, remotePath, sameRemote, sha256File, updateManifest, type ManifestEntry, type PushItem } from './cli-manifest.js'
-import { DEFAULT_RELAY_SOCKET, OUTSIDE_AGENT_BASH, RelayUnavailableError, sendRelayRequest, type RelayAnswer } from './cli-relay.js'
+import { DEFAULT_RELAY_SOCKET, outsideAgentBash, RelayUnavailableError, sendRelayRequest, type RelayAnswer } from './cli-relay.js'
+import { FILES_STORE, isGroup, CLI_STORES, type CliStore } from './cli-store.js'
 
 export interface CliContext {
   cwd: string
@@ -10,6 +12,9 @@ export interface CliContext {
   /** Local mirror of Files (`/workspace/files`); injectable for tests. */
   mirrorRoot: string
   manifestPath: string
+  /** The same for `pulpo computer`; by default `computer` beside the Files mirror and `computer.json` beside its manifest. */
+  computerMirrorRoot?: string
+  computerManifestPath?: string
   stdout: (text: string) => void
   stderr: (text: string) => void
 }
@@ -22,6 +27,9 @@ interface PulledFile { remote: string; local: string; nodeId: string; version: s
 const SAVED: ReadonlySet<string> = new Set(['created', 'updated', 'suggested', 'unchanged'])
 const PUSH_BATCH = 200
 
+/** The context with the mirror and manifest of the group being run. */
+type StoreContext = CliContext & { store: CliStore }
+
 /** A refusal from Pulpo (`{ ok: false }`): the message is for the model, exit status 1. */
 class CommandError extends Error {}
 
@@ -29,32 +37,57 @@ export function defaultContext(): CliContext {
   const workspace = resolve(process.env.PULPO_WORKSPACE_ROOT || '/workspace')
   return {
     cwd: process.cwd(), env: process.env, mirrorRoot: join(workspace, 'files'), manifestPath: join(workspace, '.pulpo', 'files.json'),
+    computerMirrorRoot: join(workspace, 'computer'), computerManifestPath: join(workspace, '.pulpo', 'computer.json'),
     stdout: (text) => process.stdout.write(text), stderr: (text) => process.stderr.write(text),
   }
 }
 
+/**
+ * Help names the cloud workspace's paths. Where the CLI runs somewhere else (the user's own
+ * computer, for a reply with full access to it), the same paths are shown as they are there.
+ */
+export function localHelp(text: string, context: Pick<CliContext, 'mirrorRoot'>): string {
+  const root = dirname(context.mirrorRoot)
+  if (root === '/workspace') return text
+  return text.replace(/\/workspace((?:\/[\w.<>-]+)*)(\/?)/g, (_match, rest: string, trailing: string) => (
+    `${join(root, ...rest.split('/').filter(Boolean))}${trailing ? sep : ''}`
+  ))
+}
+
 const line = (text: string) => text.endsWith('\n') ? text : `${text}\n`
-const print = (context: CliContext, text: string | undefined) => { if (text) context.stdout(line(text)) }
+const print = (context: StoreContext, text: string | undefined) => { if (text) context.stdout(line(text)) }
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 
-async function call(context: CliContext, command: string, args: Record<string, unknown>): Promise<RelayAnswer> {
+function storeContext(context: CliContext, store: CliStore): StoreContext {
+  if (store === FILES_STORE) return { ...context, store }
+  return {
+    ...context, store,
+    mirrorRoot: context.computerMirrorRoot ?? join(dirname(context.mirrorRoot), 'computer'),
+    manifestPath: context.computerManifestPath ?? join(dirname(context.manifestPath), 'computer.json'),
+  }
+}
+
+async function call(context: StoreContext, command: string, args: Record<string, unknown>): Promise<RelayAnswer> {
   const operationId = context.env.PULPO_OPERATION_ID
-  if (!operationId) throw new RelayUnavailableError(OUTSIDE_AGENT_BASH)
-  const answer = await sendRelayRequest(context.env.PULPO_RELAY_SOCKET || DEFAULT_RELAY_SOCKET, operationId, command, args)
+  const name = `pulpo ${context.store.group}`
+  if (!operationId) throw new RelayUnavailableError(outsideAgentBash(name))
+  const answer = await sendRelayRequest(context.env.PULPO_RELAY_SOCKET || DEFAULT_RELAY_SOCKET, operationId, `${context.store.relayPrefix}${command}`, args, name)
   if (!answer.ok) throw new CommandError(answer.error || 'Pulpo refused the request.')
   return answer
 }
 
 /** Runs `pulpo …` and returns the exit status: 0 ok, 1 failed, 2 bad usage. */
-export async function runCli(argv: string[], context: CliContext): Promise<number> {
-  let invocation: Invocation
-  try { invocation = parseCli(argv) } catch (error) {
+export async function runCli(argv: string[], cliContext: CliContext): Promise<number> {
+  let invocation: Invocation; let store: CliStore | undefined
+  try { ({ invocation, store } = parseInvocation(argv)) } catch (error) {
     if (!(error instanceof UsageError)) throw error
-    return usage(context, error)
+    return usage(storeContext(cliContext, isGroup(argv[0]) ? CLI_STORES[argv[0]] : FILES_STORE), error)
   }
+  if (!store) { cliContext.stdout(localHelp(TOP_HELP, cliContext)); return 0 }
+  const context = storeContext(cliContext, store)
   try {
     switch (invocation.command) {
-      case 'help': context.stdout(helpText(invocation.topic)); return 0
+      case 'help': context.stdout(localHelp(helpText(invocation.topic, store), cliContext)); return 0
       case 'status': return await status(context)
       case 'pull': return await pull(invocation, context)
       case 'push': return await push(invocation, context)
@@ -77,29 +110,30 @@ export async function runCli(argv: string[], context: CliContext): Promise<numbe
   } catch (error) {
     if (error instanceof UsageError) return usage(context, error)
     const message = error instanceof Error ? error.message : String(error)
-    context.stderr(line(error instanceof RelayUnavailableError ? message : `pulpo files ${invocation.command}: ${message}`))
+    context.stderr(line(error instanceof RelayUnavailableError ? message : `pulpo ${store.group} ${invocation.command}: ${message}`))
     return 1
   }
 }
 
-function usage(context: CliContext, error: UsageError): number {
-  const name = error.command ? `pulpo files ${error.command}` : 'pulpo files'
-  context.stderr(`${error.topLevel ? 'pulpo' : name}: ${error.message}\nRun \`${name} --help\` for usage.\n`)
+function usage(context: StoreContext, error: UsageError): number {
+  const group = `pulpo ${context.store.group}`
+  const name = error.topLevel ? 'pulpo' : error.command ? `${group} ${error.command}` : group
+  context.stderr(`${name}: ${error.message}\nRun \`${name} --help\` for usage.\n`)
   return 2
 }
 
-function optionalPath(context: CliContext, value: string | undefined): { path?: string } {
+function optionalPath(context: StoreContext, value: string | undefined): { path?: string } {
   const path = value === undefined ? '' : remotePath(value, context.mirrorRoot)
   return path ? { path } : {}
 }
 
-async function single(context: CliContext, command: string, args: Record<string, unknown>): Promise<number> {
+async function single(context: StoreContext, command: string, args: Record<string, unknown>): Promise<number> {
   print(context, (await call(context, command, args)).output)
   return 0
 }
 
 /** Commands taking several paths run one request each and keep going after a failure, like coreutils. */
-async function each(context: CliContext, command: string, values: string[], args: (path: string) => Record<string, unknown>, after?: (path: string) => Promise<void>): Promise<number> {
+async function each(context: StoreContext, command: string, values: string[], args: (path: string) => Record<string, unknown>, after?: (path: string) => Promise<void>): Promise<number> {
   let failed = false
   for (const value of values) {
     const path = remotePath(value, context.mirrorRoot)
@@ -108,14 +142,14 @@ async function each(context: CliContext, command: string, values: string[], args
       await after?.(path)
     } catch (error) {
       if (!(error instanceof CommandError) || values.length === 1) throw error
-      context.stderr(line(`pulpo files ${command}: ${error.message}`))
+      context.stderr(line(`pulpo ${context.store.group} ${command}: ${error.message}`))
       failed = true
     }
   }
   return failed ? 1 : 0
 }
 
-async function pull(invocation: Command<'pull'>, context: CliContext): Promise<number> {
+async function pull(invocation: Command<'pull'>, context: StoreContext): Promise<number> {
   const path = remotePath(invocation.path, context.mirrorRoot)
   let dest = join(context.mirrorRoot, ...path.split('/'))
   if (invocation.dest !== undefined) {
@@ -138,11 +172,11 @@ async function pull(invocation: Command<'pull'>, context: CliContext): Promise<n
     const sha256 = await sha256File(local).catch(() => undefined)
     if (sha256) entries.push([local, { remote: file.remote, nodeId: file.nodeId, version: file.version, sha256 }])
   }
-  if (entries.length) await updateManifest(context.manifestPath, (manifest) => { for (const [local, entry] of entries) manifest.files[local] = entry })
+  if (entries.length) await updateManifest(context.manifestPath, (manifest) => { for (const [local, entry] of entries) manifest.files[local] = entry }, context.store)
   return 0
 }
 
-async function status(context: CliContext): Promise<number> {
+async function status(context: StoreContext): Promise<number> {
   const manifest = await readManifest(context.manifestPath)
   const { modified, added, deleted, detached } = await localStatus(context.mirrorRoot, manifest)
   const list = (files: Array<{ local: string; remote: string }>) => files.map(({ local, remote }) => `  ${remote}  (${local})\n`).join('')
@@ -150,20 +184,21 @@ async function status(context: CliContext): Promise<number> {
     context.stdout(Object.keys(manifest.files).length ? 'No local changes.\n' : `No local changes. Nothing has been pulled yet; new files under ${context.mirrorRoot} would show here.\n`)
     return 0
   }
-  if (modified.length) context.stdout(`Modified (\`pulpo files push\` saves them):\n${list(modified)}`)
-  if (added.length) context.stdout(`New (\`pulpo files push\` creates them in Files):\n${list(added)}`)
-  if (deleted.length) context.stdout(`Deleted locally (still in Files; \`pulpo files rm <path>\` deletes one there):\n${list(deleted)}`)
+  const { group, place } = context.store
+  if (modified.length) context.stdout(`Modified (\`pulpo ${group} push\` saves them):\n${list(modified)}`)
+  if (added.length) context.stdout(`New (\`pulpo ${group} push\` creates them in ${place}):\n${list(added)}`)
+  if (deleted.length) context.stdout(`Deleted locally (still in ${place}; \`pulpo ${group} rm <path>\` deletes one there):\n${list(deleted)}`)
   if (detached.length) {
-    context.stdout(`Moved or trashed in Files (push with --to <path>, pull the new path, or delete the copy):\n${detached
+    context.stdout(`Moved or trashed in ${place} (push with --to <path>, pull the new path, or delete the copy):\n${detached
       .map(({ local, remote, to }) => `  ${remote}${to === null ? ' (trashed)' : ` (moved to "${to}")`}  (${local})\n`).join('')}`)
   }
   return 0
 }
 
-async function push(invocation: Command<'push'>, context: CliContext): Promise<number> {
+async function push(invocation: Command<'push'>, context: StoreContext): Promise<number> {
   const manifest = await readManifest(context.manifestPath)
   const { items, refused } = await planPush({
-    mirrorRoot: context.mirrorRoot, manifest, force: invocation.force, to: invocation.to,
+    mirrorRoot: context.mirrorRoot, manifest, force: invocation.force, to: invocation.to, store: context.store,
     locals: invocation.locals.map((local) => resolve(context.cwd, local)),
   })
   for (const { remote, message } of refused) context.stdout(`skipped ${remote}: ${message}\n`)
@@ -183,7 +218,7 @@ async function push(invocation: Command<'push'>, context: CliContext): Promise<n
       if (result.status === 'conflict') conflicts = true
     }
   }
-  if (conflicts) context.stdout('A conflict means the item changed in Files after you pulled it. Copy your version aside, pull the item again, reapply your edits and push; or push with --force to replace it.\n')
+  if (conflicts) context.stdout(`A conflict means the item changed in ${context.store.place} after you pulled it. Copy your version aside, pull the item again, reapply your edits and push; or push with --force to replace it.\n`)
   return failed ? 1 : 0
 }
 
@@ -193,7 +228,7 @@ function pushResults(data: unknown): PushResult[] {
     && typeof result.local === 'string' && typeof result.remote === 'string' && typeof result.status === 'string')
 }
 
-async function recordPush(context: CliContext, batch: PushItem[], results: PushResult[]): Promise<void> {
+async function recordPush(context: StoreContext, batch: PushItem[], results: PushResult[]): Promise<void> {
   const saved = results.filter((result) => SAVED.has(result.status))
   if (!saved.length) return
   await updateManifest(context.manifestPath, (manifest) => {
@@ -206,14 +241,14 @@ async function recordPush(context: CliContext, batch: PushItem[], results: PushR
       const nodeId = result.nodeId ?? known?.nodeId; const version = result.version ?? known?.version
       if (nodeId && version) manifest.files[item.local] = { remote, nodeId, version, sha256: item.sha256 }
     }
-  })
+  }, context.store)
 }
 
 /**
- * After mv/rm the old Files path is gone. Unchanged mirror copies are removed; other copies keep
+ * After mv/rm the old path is gone. Unchanged mirror copies are removed; other copies keep
  * a tombstone so a later plain `push` reports the move instead of recreating the item.
  */
-async function forget(context: CliContext, remote: string, to: string | null): Promise<void> {
+async function forget(context: StoreContext, remote: string, to: string | null): Promise<void> {
   if (!remote) return
   const removed: string[] = []; const kept: string[] = []
   await updateManifest(context.manifestPath, async (manifest) => {
@@ -227,7 +262,7 @@ async function forget(context: CliContext, remote: string, to: string | null): P
       manifest.moved[local] = { remote: entry.remote, to }
       if (mirrored) kept.push(local)
     }
-  })
+  }, context.store)
   await pruneEmptyDirectories(removed, context.mirrorRoot)
   if (removed.length === 1) context.stdout(`Removed the local copy ${removed[0]}.\n`)
   else if (removed.length) context.stdout(`Removed ${removed.length} unchanged local copies under ${context.mirrorRoot}.\n`)

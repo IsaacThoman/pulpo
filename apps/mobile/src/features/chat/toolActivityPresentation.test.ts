@@ -2,6 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { toolActivityPresentation } from './toolActivityPresentation';
 
 const icons = vi.hoisted(() => ({
+  AppWindow: Symbol('AppWindow'),
+  Keyboard: Symbol('Keyboard'),
+  Mouse: Symbol('Mouse'),
+  MousePointerClick: Symbol('MousePointerClick'),
+  Move: Symbol('Move'),
+  TextCursorInput: Symbol('TextCursorInput'),
   FileDiff: Symbol('FileDiff'),
   FolderDown: Symbol('FolderDown'),
   FolderInput: Symbol('FolderInput'),
@@ -30,6 +36,7 @@ describe('toolActivityPresentation', () => {
     ['view_image', 'Viewing an image…', icons.Image],
     ['generate_image', 'Generating an image…', icons.Image],
     ['bash', 'Running bash…', icons.Terminal],
+    ['powershell', 'Running PowerShell…', icons.Terminal],
     ['write', 'Writing a file…', icons.FilePlus],
     ['edit', 'Editing a file…', icons.FilePenLine],
     ['ls', 'Listing files…', icons.List],
@@ -46,6 +53,19 @@ describe('toolActivityPresentation', () => {
     ['files_create_folder', 'Creating a folder…', icons.FolderPlus],
   ])('maps %s to a friendly label and icon', (name, label, icon) => {
     expect(toolActivityPresentation(name)).toEqual({ label, icon });
+  });
+
+  it.each([
+    ['app_list', {}, 'Checking which apps are open…', icons.AppWindow],
+    ['app_view', { app: 'TextEdit' }, 'Looking at TextEdit…', icons.AppWindow],
+    ['app_click', { app: 'Safari', element: 4 }, 'Clicking in Safari…', icons.MousePointerClick],
+    ['app_type', { app: 'Notes', text: 'hi' }, 'Typing in Notes…', icons.Keyboard],
+    ['app_key', {}, 'Pressing keys in an app…', icons.Keyboard],
+    ['app_scroll', { app: 'Safari' }, 'Scrolling in Safari…', icons.Mouse],
+    ['app_drag', { app: 'Preview' }, 'Dragging in Preview…', icons.Move],
+    ['app_set_value', { app: 'Mail' }, 'Filling in a field in Mail…', icons.TextCursorInput],
+  ])('names the app %s works in', (name, args, label, icon) => {
+    expect(toolActivityPresentation(name, args)).toEqual({ label, icon });
   });
 
   it('uses generic work presentation for unknown tools', () => {

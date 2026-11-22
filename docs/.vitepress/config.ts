@@ -5,6 +5,9 @@ const sidebar = [
     text: 'Pulpo Docs',
     items: [
       { text: 'Welcome', link: '/' },
+      { text: 'Self-hosting', link: '/self-hosting' },
+      { text: 'Agent workspaces on K3s', link: '/self-hosting-agent-workspaces' },
+      { text: 'Workspace screen', link: '/workspace-screen' },
       { text: 'Encrypted backups', link: '/backups' },
       { text: 'Speech and cloned voices', link: '/speech' },
       { text: 'Agent image generation', link: '/image-generation' },

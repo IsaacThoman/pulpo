@@ -226,7 +226,7 @@ export const mobileApi = {
   deletedChats: () => apiRequest<{ data: ServerDeletedChat[] }>('/api/chats/deleted'),
   emptyTrash: () => apiRequest<void>('/api/chats/deleted', { method: 'DELETE' }),
   chat: (id: string, signal?: AbortSignal, beforeDecode?: () => Promise<void>) => apiRequest<ServerChat>(`/api/chats/${id}?format=compact&scope=active`, { signal, beforeDecode }),
-  models: () => apiRequest<{ agentAvailable: boolean; data: MobileModel[] }>('/api/models'),
+  models: () => apiRequest<{ agentAvailable: boolean; workspaceScreen?: boolean; data: MobileModel[] }>('/api/models'),
   folders: () => apiRequest<{ data: ServerFolder[] }>('/api/folders'),
   settings: () => apiRequest<{ values: Record<string, unknown>; updatedAt: string | null }>('/api/settings'),
   updateSettings: (patch: Record<string, unknown>) => apiRequest<{ values: Record<string, unknown>; updatedAt: string }>('/api/settings', { method: 'PATCH', body: patch }),

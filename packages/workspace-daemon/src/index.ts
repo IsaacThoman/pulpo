@@ -10,6 +10,8 @@ import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { readTextFile, resolveReadableVmPath } from './read.js'
 import { saveLargeOutput } from './saved-output.js'
+import { WorkspaceDesktop } from './desktop.js'
+import { desktopRoute } from './desktop-routes.js'
 
 const port = Number(process.env.PORT ?? 8787)
 const token = process.env.PULPO_WORKSPACE_TOKEN
@@ -35,6 +37,14 @@ const stagedFiles = new StagedFiles()
 const operations = new Map<string, Operation>()
 const children = new Map<string, ChildProcess>()
 const journalRoot = resolve(root, '.pulpo', 'operations')
+/** The workspace's screen; images without one lack the version file, and nothing about it starts until it is asked for. */
+const desktop = new WorkspaceDesktop({
+  command: process.env.PULPO_DESKTOP_COMMAND ?? '/usr/local/bin/pulpo-desktop',
+  versionFile: process.env.PULPO_DESKTOP_VERSION_FILE ?? '/opt/pulpo/desktop/VERSION',
+  imageDir: resolve(process.env.PULPO_DESKTOP_IMAGE_DIR ?? '/tmp/pulpo-desktop-pictures'),
+})
+/** Running app operations, so a cancel can stop what the helper is doing for them. */
+const desktopCancels = new Map<string, AbortController>()
 
 /** CLI requests held open on the relay socket until Pulpo answers. Never journaled: they die with the process. */
 type RelayRequest = { id: string; operationId: string; command: string; args: Record<string, unknown>; settle: (status: number, value: unknown) => boolean }
@@ -234,6 +244,13 @@ async function finishOperation(operation: Operation, type: string, args: Record<
         child.once('error', reject); child.once('close', (code) => { operation.exitCode = code; resolveOutput(Buffer.concat(chunks).toString('utf8')) })
       })
     } else if (type === 'stat') operation.output = JSON.stringify(await stat(workspacePath(args.path)))
+    else if (type === 'app_list' || type === 'app_act') {
+      const cancel = new AbortController(); desktopCancels.set(id, cancel)
+      try {
+        const done = type === 'app_list' ? await desktop.list(cancel.signal) : await desktop.act(args, cancel.signal)
+        operation.output = done.output; operation.details = { result: done.result }
+      } finally { desktopCancels.delete(id) }
+    }
     else throw new Error(`Unknown operation type: ${type}`)
     if (['bash', 'list', 'find', 'grep'].includes(type)) {
       const saved = await saveLargeOutput(savedOutputRoot, id, operation.output, outputComplete)
@@ -291,6 +308,7 @@ const server = createServer(async (request, response) => {
       if (metadata.size > maxImageBytes) throw new Error(`Image exceeds the ${maxImageBytes} byte limit`)
       response.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': metadata.size }); response.end(await readFile(path)); return
     }
+    if (await desktopRoute(desktop, request, response, url, (limit) => body(request, limit))) return
     const match = url.pathname.match(/^\/v1\/operations\/([^/]+)(?:\/(cancel))?$/)
     if (request.method === 'GET' && match) {
       const operation = await findOperation(match[1]!); if (!operation) return json(response, 404, { error: 'not_found' })
@@ -306,6 +324,7 @@ const server = createServer(async (request, response) => {
       const operation = await findOperation(match[1]!); if (!operation) return json(response, 404, { error: 'not_found' })
       operation.status = 'cancelled'; stopped(operation)
       const child = children.get(operation.id); if (child) killProcessGroup(child, 'SIGTERM')
+      desktopCancels.get(operation.id)?.abort()
       await saveOperation(operation); return json(response, 202, operationView(operation))
     }
     if (request.method === 'POST' && url.pathname === '/v1/operations') {
@@ -367,6 +386,6 @@ export const relayReady = listenRelay().then(() => true, (error: unknown) => {
   process.stderr.write(`pulpo relay socket unavailable at ${relaySocket}: ${error instanceof Error ? error.message : String(error)}\n`)
   return false
 })
-export { server, relayServer }
+export { server, relayServer, desktop }
 
 server.listen(port, '0.0.0.0', () => process.stdout.write(`pulpo workspace daemon listening on ${(server.address() as import('node:net').AddressInfo).port}\n`))

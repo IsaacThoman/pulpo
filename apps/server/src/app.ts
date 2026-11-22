@@ -12,6 +12,7 @@ import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
 import multipart from '@fastify/multipart'
 import { ZodError } from 'zod'
+import { WORKSPACE_SCREEN_FRAME_HEADER } from '@pulpo/contracts'
 import { getConfig, isAllowedOrigin, isAllowedRequestOrigin } from './config.js'
 import { AppError } from './lib/errors.js'
 import { authenticateSession } from './auth/service.js'
@@ -50,12 +51,27 @@ import { registerAdminBillingRoutes } from './billing/admin-routes.js'
 import { registerInviteCodeRoutes } from './invite-codes/routes.js'
 import { registerDictationRoutes } from './dictation/routes.js'
 import { registerCodexRoutes } from './codex/routes.js'
+import { redactComputerTransferToken, registerComputerRoutes } from './computer/routes.js'
+import { registerWorkspaceScreenRoutes } from './workspace-screen/routes.js'
 import { anthropicErrorBody, isAnthropicApiRequest } from './public-api/anthropic-codec.js'
 
 export async function buildApp() {
   const config = getConfig()
   const app = Fastify({
-    logger: { level: config.LOG_LEVEL },
+    logger: {
+      level: config.LOG_LEVEL,
+      // Fastify's request serializer, except that transfer URLs lose their token (it is a credential).
+      serializers: {
+        req: (request) => ({
+          method: request.method,
+          url: redactComputerTransferToken(request.url),
+          version: request.headers?.['accept-version'] as string | undefined,
+          host: request.host,
+          remoteAddress: request.ip,
+          remotePort: request.socket?.remotePort,
+        }),
+      },
+    },
     bodyLimit: 2 * 1024 * 1024,
     requestIdHeader: 'x-request-id',
     // Local download routes carry a URL-encoded storage key, including restored object keys.
@@ -83,8 +99,13 @@ export async function buildApp() {
   await app.register(cookie)
   await app.register(cors, {
     origin: (origin, callback) => callback(null, !origin || isAllowedOrigin(origin, config)),
+    // The desktop app's page has its own origin, so every request it makes is cross-origin and is
+    // preflighted. The plugin allows only GET, HEAD and POST unless told otherwise, which silently
+    // stops every save, rename and delete there.
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'],
     credentials: true,
-    exposedHeaders: ['x-speech-duration-seconds', 'retry-after'],
+    // The workspace screen's frames name themselves in a header the viewer sends back.
+    exposedHeaders: ['x-speech-duration-seconds', 'retry-after', WORKSPACE_SCREEN_FRAME_HEADER],
   })
   await app.register(rateLimit, {
     max: 300,
@@ -188,6 +209,7 @@ export async function buildApp() {
   await registerAdminChatAccess(app)
   await registerShelfRoutes(app)
   await registerChatRoutes(app)
+  await registerWorkspaceScreenRoutes(app)
   await registerApiKeyRoutes(app)
   await registerSettingsRoutes(app)
   await registerShareRoutes(app)
@@ -208,6 +230,7 @@ export async function buildApp() {
   await registerSpeechRoutes(app)
   await registerImageGenerationRoutes(app)
   await registerDictationRoutes(app)
+  await registerComputerRoutes(app)
   await registerPublicApiRoutes(app)
   await registerManagementRoutes(app)
 

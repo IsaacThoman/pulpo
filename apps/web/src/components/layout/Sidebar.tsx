@@ -2005,7 +2005,7 @@ export function Sidebar({
         >
           Pulpo
           {(billingPlan === 'fat' || billingPlan === 'eight') && (
-            <span className="text-violet-600 dark:text-violet-400">
+            <span className="text-plan-foreground">
               {' '}{billingPlanTier(billingPlan)}
             </span>
           )}

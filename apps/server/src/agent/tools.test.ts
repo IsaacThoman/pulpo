@@ -164,4 +164,52 @@ describe('agent workspace tools', () => {
     expect(grep.details).toEqual(saved)
     expect(ls.details).toEqual({})
   })
+
+  describe('on the user\'s computer', () => {
+    const mac = { os: 'macos' as const, osVersion: 'macOS 15.1', arch: 'arm64', shell: 'zsh', home: '/Users/ada', cwd: '/Users/ada/Pulpo', attachmentsDir: '/Users/ada/.pulpo' }
+
+    it('describes the computer instead of the disposable VM', () => {
+      const tools = createWorkspaceTools({ execute: vi.fn() } as unknown as WorkspaceManager, 1_000, undefined, undefined, undefined, undefined, mac)
+      expect(tools.map((tool) => tool.name)).toEqual(['read', 'view_image', 'bash', 'write', 'edit', 'ls', 'find', 'grep', 'attach_file'])
+      const text = JSON.stringify(tools.map(({ description, parameters }) => ({ description, parameters })))
+      for (const cloud of ['disposable', 'sudo', '/workspace', ' VM']) expect(text).not.toContain(cloud)
+      expect(tools.find((tool) => tool.name === 'bash')!.description).toContain('Run a command in zsh on the user\'s Mac')
+      expect(text).toContain('/Users/ada/Pulpo')
+    })
+
+    it('names the shell powershell on Windows but still sends a bash operation', async () => {
+      const execute = vi.fn().mockResolvedValue({ output: 'ok', exitCode: 0 })
+      const windows = { ...mac, os: 'windows' as const, shell: 'pwsh', cwd: 'C:\\Users\\Ada\\Pulpo' }
+      const tools = createWorkspaceTools({ execute } as unknown as WorkspaceManager, 1_000, undefined, undefined, undefined, undefined, windows)
+      const shell = tools.find((tool) => tool.name === 'powershell')!
+      expect(tools.some((tool) => tool.name === 'bash')).toBe(false)
+      expect(shell.description).toContain('Run a PowerShell command on the user\'s Windows computer')
+      await shell.execute('cmd-1', { command: 'Get-ChildItem' })
+      expect(execute.mock.calls[0]!.slice(0, 3)).toEqual(['cmd-1', 'bash', { command: 'Get-ChildItem', timeoutMs: 1_000 }])
+      expect(execute.mock.calls[0]![6]).toBeUndefined()
+    })
+
+    it('relays pulpo files from either shell, with the browse wait floor', async () => {
+      const request = { id: 'relay-1', command: 'ls', args: {} }
+      const execute = vi.fn(async (_id: string, _type: string, _args: unknown, _signal: unknown, _onUpdate: unknown, _onStarted: unknown,
+        relay?: (request: unknown, signal?: AbortSignal) => Promise<unknown>) => ({ output: JSON.stringify(await relay?.(request)), exitCode: 0 }))
+      const onRelay = vi.fn().mockResolvedValue({ ok: true, output: 'Notes.md' })
+      const windows = { ...mac, os: 'windows' as const, shell: 'pwsh', cwd: 'C:\\Users\\Ada\\Pulpo' }
+      for (const [computer, name] of [[mac, 'bash'], [windows, 'powershell']] as const) {
+        const tools = createWorkspaceTools({ execute } as unknown as WorkspaceManager, 600_000, undefined, undefined, undefined, onRelay, computer)
+        const result = await tools.find((tool) => tool.name === name)!.execute(`${name}-1`, { command: 'pulpo files ls', timeoutMs: 5_000 })
+        expect(onRelay).toHaveBeenLastCalledWith(`${name}-1`, request, undefined)
+        expect(result.content).toEqual([{ type: 'text', text: '{"ok":true,"output":"Notes.md"}' }])
+        expect(execute.mock.calls.at(-1)?.[2]).toEqual({ command: 'pulpo files ls', timeoutMs: 210_000 })
+      }
+    })
+
+    it('stays generic before the computer is described', () => {
+      const tools = createWorkspaceTools({ execute: vi.fn() } as unknown as WorkspaceManager, 1_000, undefined, undefined, undefined, undefined, null)
+      const text = JSON.stringify(tools.map((tool) => tool.description))
+      expect(text).toContain('the user\'s computer')
+      expect(text).not.toContain('undefined')
+      expect(text).not.toContain('disposable')
+    })
+  })
 })

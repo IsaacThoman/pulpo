@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { AgentMenu } from './AgentMenu'
@@ -21,17 +21,23 @@ it.each([true, false])('opens without changing mode and explicitly selects the o
   expect(onSelect).not.toHaveBeenCalled()
   fireEvent.click(screen.getByRole('menuitemradio', { name: initial ? 'Disabled' : 'Pulpo Agent', checked: false }))
   expect(onSelect).toHaveBeenCalledExactlyOnceWith(!initial)
-  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
-  expect(screen.getByRole('button', { name: `Agent options, ${initial ? 'Disabled' : 'Pulpo Agent'}` }).querySelector(initial ? '.lucide-bot-off' : '.lucide-bot')).not.toBeNull()
+  // The menu stays open and shows the choice taking.
+  expect(await screen.findByRole('menuitemradio', { name: initial ? 'Disabled' : 'Pulpo Agent', checked: true })).not.toBeNull()
+  expect(screen.getByRole('button', { name: `Agent options, ${initial ? 'Disabled' : 'Pulpo Agent'}`, hidden: true }).querySelector(initial ? '.lucide-bot-off' : '.lucide-bot')).not.toBeNull()
 })
 
-it('closes when reselecting the current option without changing mode', async () => {
+it('stays open after a choice until the user clicks away', async () => {
   const onSelect = vi.fn()
   render(<AgentMenu enabled disabled={false} onSelect={onSelect} />)
   fireEvent.keyDown(screen.getByRole('button'), { key: 'Enter' })
+  // Choosing what is already chosen changes nothing, and closes nothing either.
   fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Pulpo Agent' }))
+  fireEvent.click(screen.getByRole('menuitemradio', { name: 'Disabled' }))
+  expect(onSelect).toHaveBeenCalledExactlyOnceWith(false)
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  expect(screen.getByRole('menu')).not.toBeNull()
+  fireEvent.pointerDown(document.body)
   await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
-  expect(onSelect).not.toHaveBeenCalled()
 })
 
 it('supports keyboard navigation and Escape without changing mode', async () => {
@@ -59,7 +65,7 @@ it('shows Disabled and cannot open when agent mode is unavailable', () => {
   expect(onSelect).not.toHaveBeenCalled()
 })
 
-it.each(['mouse', 'touch'])('restores focus without a ring after a %s selection, then allows keyboard focus', async (pointerType) => {
+it.each(['mouse', 'touch'])('restores focus without a ring after a %s selection and click away, then allows keyboard focus', async (pointerType) => {
   render(<AgentMenu enabled disabled={false} onSelect={vi.fn()} />)
   const trigger = screen.getByRole('button')
   // Switch input methods while the menu is open.
@@ -67,6 +73,7 @@ it.each(['mouse', 'touch'])('restores focus without a ring after a %s selection,
   const choice = await screen.findByRole('menuitemradio', { name: 'Disabled' })
   fireEvent.pointerDown(choice, { pointerType })
   fireEvent.click(choice)
+  fireEvent.pointerDown(document.body, { pointerType })
   await waitFor(() => expect(document.activeElement).toBe(trigger))
   expect(trigger.dataset.pointerFocus).toBe('true')
 
@@ -84,28 +91,43 @@ it('clears pointer focus suppression when leaving the trigger', async () => {
   const choice = await screen.findByRole('menuitemradio', { name: 'Disabled' })
   fireEvent.pointerDown(choice)
   fireEvent.click(choice)
+  fireEvent.pointerDown(document.body)
   await waitFor(() => expect(document.activeElement).toBe(trigger))
   expect(trigger.dataset.pointerFocus).toBe('true')
   fireEvent.blur(trigger)
   expect(trigger.dataset.pointerFocus).toBeUndefined()
 })
 
-it('chooses what the agent may change in Files and opens the chat’s Files access', async () => {
+it('keeps Files behind the Access section, where the agent’s reach and what it may change are chosen', async () => {
   const onModeChange = vi.fn()
   const onOpenAccess = vi.fn()
-  render(<AgentMenu enabled disabled={false} onSelect={vi.fn()} files={{ mode: 'suggest', onModeChange, onOpenAccess }} />)
+  function Control() {
+    const [mode, setMode] = useState<'read' | 'suggest' | 'write'>('suggest')
+    return <AgentMenu enabled disabled={false} onSelect={vi.fn()} files={{ mode, onModeChange: (next) => { setMode(next); onModeChange(next) }, onOpenAccess }} />
+  }
+  render(<Control />)
   fireEvent.keyDown(screen.getByRole('button'), { key: 'Enter' })
-  const options = await screen.findAllByRole('menuitemradio')
-  expect(options.map((option) => option.textContent)).toEqual([
-    'Pulpo Agent', 'Disabled',
-    'Read onlyThe agent can look but not change anything',
-    'Suggest changesYou accept or reject each change',
-    'Edit directlyChanges apply right away, and you can undo them',
+  // The menu itself holds only the agent choice and one row for Files.
+  expect((await screen.findAllByRole('menuitemradio')).map((option) => option.textContent)).toEqual(['Pulpo Agent', 'Disabled'])
+  const access = screen.getByRole('group', { name: 'Access' })
+  const row = within(access).getByRole('menuitem')
+  expect(row.textContent).toBe('Pulpo FilesItems you mention · Suggest changes')
+
+  fireEvent.keyDown(row, { key: 'ArrowRight' })
+  const modes = await screen.findByRole('group', { name: 'Changes to Files' })
+  expect(within(modes).getAllByRole('menuitemradio').map((option) => option.textContent)).toEqual([
+    'Read only',
+    'Suggest changes',
+    'Edit directly',
   ])
-  expect(options[3]!.getAttribute('aria-checked')).toBe('true')
-  fireEvent.click(options[4]!)
+  fireEvent.click(within(modes).getByRole('menuitemradio', { name: /Edit directly/ }))
   expect(onModeChange).toHaveBeenCalledExactlyOnceWith('write')
-  fireEvent.keyDown(screen.getByRole('button'), { key: 'Enter' })
-  fireEvent.click(await screen.findByRole('menuitem', { name: 'Files access…' }))
+  // Still open, with the new choice checked and the row saying so.
+  expect(within(modes).getByRole('menuitemradio', { name: /Edit directly/ }).getAttribute('aria-checked')).toBe('true')
+  expect(row.textContent).toBe('Pulpo FilesItems you mention · Edit directly')
+
+  // Files access opens a dialog, so that one does close the menu.
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Files access…' }))
   expect(onOpenAccess).toHaveBeenCalledOnce()
+  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
 })

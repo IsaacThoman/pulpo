@@ -58,3 +58,21 @@ describe('Codex catalog availability', () => {
     expect(useCatalog.getState().models).toEqual([ordinary])
   })
 })
+
+describe('This computer availability', () => {
+  it.each([[undefined, false], [false, false], [true, true]])('reads computerAccess %s as %s', async (computerAccess, expected) => {
+    useCatalog.setState({ computerAccess: !expected })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ computerAccess, data: [] }), { headers: { 'content-type': 'application/json' } })))
+    await useCatalog.getState().load()
+    expect(useCatalog.getState().computerAccess).toBe(expected)
+  })
+})
+
+describe('Workspace screen availability', () => {
+  it.each([[undefined, false], [false, false], [true, true]])('reads workspaceScreen %s as %s', async (workspaceScreen, expected) => {
+    useCatalog.setState({ workspaceScreen: !expected })
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ workspaceScreen, data: [] }), { headers: { 'content-type': 'application/json' } })))
+    await useCatalog.getState().load()
+    expect(useCatalog.getState().workspaceScreen).toBe(expected)
+  })
+})

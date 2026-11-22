@@ -12,7 +12,9 @@ same encrypted provider connections as chat and speech. Apply migration
    For Meta, use `https://api.meta.ai/v1`.
    For OpenAI, use `https://api.openai.com/v1` and an OpenAI API key with access
    to GPT Image models. An existing OpenAI chat or speech connection can be reused.
-2. Add an image model. Choose **Azure MAI**, **Meta Muse**, or **OpenAI Images**
+   For OpenRouter, use `https://openrouter.ai/api/v1` and an OpenRouter API key.
+   An existing OpenRouter chat connection can be reused.
+2. Add an image model. Choose **Azure MAI**, **Meta Muse**, **OpenAI Images**, or **OpenRouter Images**
    to populate a disabled preset. Set a stable local ID, display name, provider,
    and sort order.
 3. For MAI-Image-2.6-Flash, enter your deployed model's **deployment name**.
@@ -25,6 +27,10 @@ same encrypted provider connections as chat and speech. Apply migration
    OpenAI defaults to `gpt-image-2.5-flare`; the upstream model ID is editable,
    for example to use `gpt-image-2.5-sunburst`. This adapter targets GPT Image
    models that support generation and editing, not legacy DALL-E models.
+   OpenRouter defaults to `microsoft/mai-image-2.7-flash`. Enter a different
+   OpenRouter Image API model ID to use another model. To switch an existing
+   model to this API, select **OpenRouter Images**, review its preset and
+   pricing fields, and re-enable it when ready.
 4. Optionally enable **Bill users for images** and choose **Per image** or
    **Per token**. These are Pulpo user prices, manually managed and independent
    of provider price changes. Billing is disabled by default.
@@ -38,6 +44,8 @@ same encrypted provider connections as chat and speech. Apply migration
      is billed once, not again as a separate reasoning charge.
    - Azure MAI supports per-image pricing only because its documented API
      response does not report token usage.
+   - OpenRouter Images supports per-image pricing. Configure the Pulpo user
+     price separately from OpenRouter's upstream charge.
    - Token billing requires a positive **Upfront reservation (USD)**. This is a
      budget hold, not a fixed fee or maximum price. If actual usage exceeds the
      hold, Pulpo reserves the difference before saving the image. If funds are
@@ -89,12 +97,17 @@ ambiguous required token usage fails without saving or billing an image. Pulpo
 does not estimate missing usage or fall back to a flat fee. The reported user
 charge therefore depends on the usage breakdown available from the provider.
 
-All three adapters share the agent tool, encrypted provider connections,
+The [OpenRouter Image API](https://openrouter.ai/microsoft/mai-image-2.7-flash/)
+uses JSON at `/api/v1/images` for both generations and edits. Pulpo sends
+`aspect_ratio` to select framing and includes up to four PNG, JPEG, or WebP
+references as data URLs for edits. The selected model determines which
+reference formats and aspect ratios it accepts.
+
+All adapters share the agent tool, encrypted provider connections,
 timeouts, image validation, workspace storage, and billing/recovery flow.
 Provider capabilities determine input formats, reference limits, and whether
 prior image items can be replayed. The tool advertises the selected provider's
-reference limits. Adding OpenAI requires no database migration or changes to
-existing Azure and Meta entries; admins must explicitly add and enable it.
+reference limits. Adding an OpenRouter image model requires no database migration.
 
 ## User settings and tool inputs
 

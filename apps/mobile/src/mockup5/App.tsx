@@ -48,6 +48,7 @@ import { idSchema, type ComposerState, type FileNode } from '@pulpo/contracts';
 import {
   createContext,
   forwardRef,
+  Fragment,
   memo,
   startTransition,
   useCallback,
@@ -166,6 +167,7 @@ import {
   History,
   Hourglass,
   Minimize2,
+  Monitor,
   Pause,
   Server,
   StepForward,
@@ -250,7 +252,7 @@ import { FileReferenceBar } from '../features/files/components/FileReferenceBar'
 import { FileReferenceCard, type FileReferenceCardAppearance } from '../features/files/components/FileReferenceCard';
 import { sentMessageParts, sentMessageReadableText } from '../features/files/messageReferences';
 import { useFileReferencePicker } from '../features/files/scopePicker';
-import { addComposerReferences, composerMessageText, composerReferences, removeComposerReference } from '@pulpo/client-core/files';
+import { addComposerReferences, composerMessageText, composerReferences, mediaMimeType, removeComposerReference } from '@pulpo/client-core/files';
 import { appendComposerText, composerTextEnd, draftPreviewText, draftReferenceNames, withComposerText } from '../features/files/composerDraft';
 import { fileReferenceHref, type FileReference } from '@pulpo/contracts';
 import { useOpenFileItem } from '../features/files/open';
@@ -278,6 +280,7 @@ import { filesQueryKeys, lookUpFileNode } from '../features/files/queries';
 import { fileChangesItem } from '@pulpo/client-core/files';
 import { FileDocumentScreen } from '../features/files/screens/FileDocumentScreen';
 import { FileMarkdownScreen } from '../features/files/screens/FileMarkdownScreen';
+import { AudioPreviewScreen } from '../features/files/screens/AudioPreviewScreen';
 import { FileQuizScreen } from '../features/files/screens/FileQuizScreen';
 import { FilesFolderScreen } from '../features/files/screens/FilesFolderScreen';
 import { FriendsScreen } from '../features/friends/FriendsScreen';
@@ -329,7 +332,9 @@ import {
   type HistoryChatExpiryMenuAction,
   type HistoryChatSummary,
 } from '../features/chat/history';
-import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, filesPermissionLabel, filesPermissionPlace, pendingFilesPermission, timelineActivityIsActive, workspaceIsActive, type TimelineSegment, type TimelineStep } from '../features/chat/timeline';
+import { activityDurationMs, activityUsesApps, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, computerWorkspaceLabel, filesPermissionLabel, filesPermissionPlace, pendingFilesPermission, timelineActivityIsActive, usedWorkspaceScreen, workspaceIsActive, type TimelineSegment, type TimelineStep } from '../features/chat/timeline';
+import { WorkspaceScreenHost } from '../features/workspace-screen/WorkspaceScreenViewer';
+import { useWorkspaceScreenViewer } from '../features/workspace-screen/store';
 import { toolActivityPresentation } from '../features/chat/toolActivityPresentation';
 import { CHAT_RESUME_FOLLOW_THRESHOLD, CHAT_SCROLL_TO_BOTTOM_THRESHOLD, type ChatViewportMetrics, chatBottomDistance, chatLandingKeyboardTranslation, chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent, shouldResumeChatFollow } from '../features/chat/viewport';
 import {
@@ -1886,6 +1891,7 @@ function PrototypeRoot() {
         <RootStack.Screen name="FilesFolder" component={FilesFolderScreen} options={{ headerShown: Platform.OS === 'ios', headerLargeTitle: true, title: 'My files' }} />
         <RootStack.Screen name="FileDocument" component={FileDocumentScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Document' }} />
         <RootStack.Screen name="FileMarkdown" component={FileMarkdownScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Markdown' }} />
+        <RootStack.Screen name="AudioPreview" component={AudioPreviewScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Audio preview' }} />
         <RootStack.Screen name="FileQuiz" component={FileQuizScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Quiz' }} />
       </RootStack.Navigator>
     </NavigationContainer>
@@ -3857,6 +3863,8 @@ function workLabel(steps: TimelineStep[], active: boolean, durationMs?: number):
   }
   const workspace = steps.find((step) => step.kind === 'workspace');
   if (workspace?.kind === 'workspace') {
+    const computer = computerWorkspaceLabel(workspace.workspace);
+    if (computer && (workspaceIsActive(workspace.workspace.state) || ['expired', 'unavailable'].includes(workspace.workspace.state ?? ''))) return computer;
     if (workspace.workspace.state === 'waiting') return `Waiting for workspace${typeof workspace.workspace.position === 'number' ? ` · queue #${workspace.workspace.position}` : ''}`;
     if (workspace.workspace.state === 'provisioning') return 'Starting workspace…';
     if (['expired', 'unavailable'].includes(workspace.workspace.state ?? '')) return `Workspace ${workspace.workspace.state}`;
@@ -3879,7 +3887,7 @@ function toolStepSummary(step: Extract<TimelineStep, { kind: 'tool' }>['tool']):
   const command = typeof record.command === 'string' ? record.command : undefined;
   const pattern = typeof record.pattern === 'string' ? record.pattern : undefined;
   const query = typeof record.query === 'string' ? record.query : undefined;
-  if (step.tool === 'bash' && command) {
+  if ((step.tool === 'bash' || step.tool === 'powershell') && command) {
     const oneLine = command.replace(/\s+/g, ' ').trim();
     return oneLine.length > 72 ? `${oneLine.slice(0, 72)}…` : oneLine;
   }
@@ -4025,9 +4033,10 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
               return <SafeMarkdown selectable={Platform.OS !== 'android'} compact key={`message:${index}`}>{step.text}</SafeMarkdown>;
             }
             if (step.kind === 'workspace') {
-              const detail = step.workspace.error ?? step.workspace.state?.replaceAll('_', ' ') ?? 'Workspace';
+              const computer = computerWorkspaceLabel(step.workspace);
+              const detail = step.workspace.error ?? computer ?? step.workspace.state?.replaceAll('_', ' ') ?? 'Workspace';
               const failed = ['expired', 'unavailable'].includes(step.workspace.state ?? '');
-              return <View accessible accessibilityLabel={failed ? `Workspace failed: ${detail}` : `Workspace: ${detail}`} key={`workspace:${index}`} style={styles.workRow}>{failed ? <XCircle color={COLORS.critical} size={13} /> : <Server color={COLORS.muted} size={13} />}<Text style={styles.workRowText}>{detail}</Text></View>;
+              return <View accessible accessibilityLabel={computer ? (step.workspace.error ? `${computer}: ${detail}` : computer) : failed ? `Workspace failed: ${detail}` : `Workspace: ${detail}`} key={`workspace:${index}`} style={styles.workRow}>{failed ? <XCircle color={COLORS.critical} size={13} /> : <Server color={COLORS.muted} size={13} />}<Text style={styles.workRowText}>{detail}</Text></View>;
             }
             if (step.kind === 'compaction') {
               return <CompactionStepContent key={step.compaction.id} step={step} />;
@@ -4048,6 +4057,24 @@ function WorkBlock({ steps, active, durationMs, initialWork, onOpenChat }: {
         </View>
       )}
     </View>
+  );
+}
+
+/** Opens the screen of the cloud workspace a reply worked on with the app tools. */
+function OpenScreenButton({ chatId }: { chatId: string }) {
+  const { styles, COLORS } = useChatStyles();
+  const open = useWorkspaceScreenViewer((state) => state.open);
+  return (
+    <Pressable
+      accessibilityHint="Watch the workspace's screen, or take it over"
+      accessibilityRole="button"
+      hitSlop={TEXT_BUTTON_HIT_SLOP}
+      onPress={() => open(chatId)}
+      style={({ pressed }) => [styles.openScreenButton, pressed && styles.navRowPressed]}
+    >
+      <Monitor color={COLORS.muted} size={13} />
+      <Text style={styles.openScreenText}>Open screen</Text>
+    </Pressable>
   );
 }
 
@@ -4095,7 +4122,7 @@ function FilesPermissionPrompt({ responseId, item }: { responseId: string; item:
 }
 
 function otherOutputItems(outputItems?: unknown[]): Array<Record<string, unknown>> {
-  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit', 'pulpo_files_permission', 'pulpo_file_changes']);
+  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit', 'pulpo_files_permission', 'pulpo_file_changes', 'pulpo_computer_changes']);
   return (outputItems ?? []).filter((item): item is Record<string, unknown> => {
     const type = (item as { type?: unknown }).type;
     return typeof type === 'string' && !known.has(type);
@@ -4284,6 +4311,15 @@ const MessageRow = memo(function MessageRow({
     })
     : message.initialResponseDurationMs;
   const activitySegments = timeline.filter((segment) => segment.kind === 'activity');
+  // The owner can watch the cloud workspace a reply worked on with the app tools. The button sits
+  // under the work that shows those steps, or under the reply when the work is hidden.
+  const workspaceScreen = usePrototypeStore((state) => state.workspaceScreen);
+  const screenChatId = message.role === 'assistant' && workspaceScreen && message.chatId && usedWorkspaceScreen(message.outputItems)
+    ? message.chatId
+    : null;
+  const screenActivityIndex = screenChatId
+    ? timeline.reduce((found, segment, index) => segment.kind === 'activity' && activityUsesApps(segment.steps) ? index : found, -1)
+    : -1;
   const firstTextTimelineIndex = timeline.findIndex((segment) => segment.kind === 'text');
   const lastActivityTimelineIndex = timeline.reduce(
     (lastIndex, segment, index) => segment.kind === 'activity' ? index : lastIndex,
@@ -4365,16 +4401,18 @@ const MessageRow = memo(function MessageRow({
                       const useResponseDurationFallback = activitySegments.length === 1
                         && index === lastActivityTimelineIndex
                         && (!streaming || activityFinishedDuringStream);
-                      return <WorkBlock
-                        active={active}
-                        initialWork={initial ? collapsedWork !== undefined || initialActivity.worked : undefined}
-                        durationMs={initial ? initialDurationMs : segmentDurationMs ?? (useResponseDurationFallback
-                          ? streamingFallbackDurationMs ?? elapsedMs
-                          : undefined)}
-                        key={`activity:${index}`}
-                        steps={segment.steps}
-                        onOpenChat={onOpenChat}
-                      />;
+                      return <Fragment key={`activity:${index}`}>
+                        <WorkBlock
+                          active={active}
+                          initialWork={initial ? collapsedWork !== undefined || initialActivity.worked : undefined}
+                          durationMs={initial ? initialDurationMs : segmentDurationMs ?? (useResponseDurationFallback
+                            ? streamingFallbackDurationMs ?? elapsedMs
+                            : undefined)}
+                          steps={segment.steps}
+                          onOpenChat={onOpenChat}
+                        />
+                        {screenChatId && index === screenActivityIndex ? <OpenScreenButton chatId={screenChatId} /> : null}
+                      </Fragment>;
                     }
                     return <AssistantMarkdown selectable={Platform.OS !== 'android'}
                       containerStyle={styles.assistantMarkdown}
@@ -4390,6 +4428,7 @@ const MessageRow = memo(function MessageRow({
                 <ResponseErrorNotice message={message} onRetry={onRegenerate} />
               </MessageContextMenu>
             ) : streaming ? <ResponsePendingIndicator /> : null}
+            {screenChatId && screenActivityIndex < 0 ? <OpenScreenButton chatId={screenChatId} /> : null}
             {showReasoning && extraOutput.map((item, index) => {
               const details = JSON.stringify(item, null, 2).slice(0, 4000);
               return <View key={`${String(item.type)}:${index}`} style={styles.otherOutput}>
@@ -5790,7 +5829,11 @@ function ChatView({
       const uri = attachment.uri || (await downloadAttachment(attachment.id, attachment.name)).uri;
       // Quizzes open in the app, where they can be taken.
       if (isQuizFileName(attachment.name)) navigation.push('FileQuiz', { uri, name: attachment.name });
-      else await openAttachmentFile(uri, attachment.name, attachment.mimeType);
+      else {
+        const mimeType = mediaMimeType(attachment.name, attachment.mimeType);
+        if (mimeType?.startsWith('audio/')) navigation.push('AudioPreview', { uri, name: attachment.name, mimeType });
+        else await openAttachmentFile(uri, attachment.name, attachment.mimeType);
+      }
     })().catch((error) => {
       const message = error instanceof AttachmentPreviewError
         ? previewFallbackMessage(error.code)
@@ -7179,6 +7222,7 @@ function ChatView({
         resolveUri={resolvePreviewImageUri}
         visible={Boolean(imageViewer)}
       />
+      <WorkspaceScreenHost />
     </Reanimated.View>
   );
 }
@@ -7997,6 +8041,8 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   costLimitRowText: { color: COLORS.muted, fontSize: 12.5, lineHeight: 18, flex: 1 },
   workRowTitle: { color: COLORS.textSoft, fontSize: 12.5, lineHeight: 18, fontWeight: '600', flex: 1 },
   workStep: { gap: 5 },
+  openScreenButton: { alignSelf: 'flex-start', minHeight: 32, flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 16, paddingHorizontal: 12, backgroundColor: COLORS.fillStrong, marginTop: 2 },
+  openScreenText: { color: COLORS.textSoft, fontSize: 12.5, fontWeight: '600' },
   compactionDetail: { gap: 12 },
   compactionSection: { gap: 6 },
   compactionSectionTitle: { color: COLORS.textSoft, fontSize: 12, fontWeight: '600' },

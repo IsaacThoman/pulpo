@@ -20,6 +20,7 @@ import {
   Server,
   Trash2,
   Wrench,
+  Laptop,
   Loader2,
   XCircle,
   Minimize2,
@@ -47,6 +48,8 @@ import { canSubmitMessageEdit } from './message-edit'
 import {
   buildTimeline,
   workspaceIsActive,
+  workspaceIsFailed,
+  workspaceLabel,
   type ActivitySegment,
   type ActivityStep,
   type MessageStep,
@@ -62,11 +65,15 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { cn } from '@/lib/utils'
 import { writeClipboardText } from '@/lib/clipboard'
 import { ui, activeLocale } from '@/i18n/ui'
-import { toolActivityPresentation } from './tool-activity-presentation'
+import { appToolSummary, isAppTool, isShellTool, toolActivityPresentation } from './tool-activity-presentation'
 import { UsageCostBreakdown } from '@/components/usage/UsageCostBreakdown'
 import { FileChangesBar } from '@/features/files/FileChangesBar'
 import { FileReferenceCard } from '@/features/files/FileReferenceCard'
 import { fileChangesItem } from '@/features/files/file-changes'
+import { ComputerChangesBar } from '@/features/computer/changes/ComputerChangesBar'
+import { computerChangesItem, hasComputerBridge } from '@/features/computer/changes/bridge'
+import { OpenScreenButton } from '@/features/workspace-screen/OpenScreenButton'
+import { useWorkspaceScreenOffered } from '@/features/workspace-screen/offered'
 
 function CopyButton({ text }: { text: string }) {
   const { t } = useTranslation()
@@ -132,11 +139,13 @@ function toolSummary(tool: ToolItem): string {
   const args = tool.arguments
   if (!args || typeof args !== 'object') return tool.tool ?? 'tool'
   const record = args as Record<string, unknown>
+  const app = appToolSummary(tool.tool, args)
+  if (app) return app
   const path = typeof record.path === 'string' ? record.path : undefined
   const command = typeof record.command === 'string' ? record.command : undefined
   const pattern = typeof record.pattern === 'string' ? record.pattern : undefined
   const query = typeof record.query === 'string' ? record.query : undefined
-  if (tool.tool === 'bash' && command) {
+  if (isShellTool(tool.tool) && command) {
     const oneLine = command.replace(/\s+/g, ' ').trim()
     return oneLine.length > 72 ? `${oneLine.slice(0, 72)}…` : oneLine
   }
@@ -333,29 +342,8 @@ function CompactionStepRow({ item }: { item: CompactionItem }) {
   )
 }
 
-function workspaceIsQuiet(state?: string) {
-  return state === 'ready' || state === 'running'
-}
-
-function workspaceIsFailed(state?: string) {
-  return state === 'expired' || state === 'unavailable'
-}
-
-function workspaceLabel(item: WorkspaceItem): string {
-  if (item.state === 'waiting') {
-    return typeof item.position === 'number'
-      ? ui('Waiting for workspace · queue #{{position}}', { position: item.position })
-      : ui('Waiting for workspace')
-  }
-  if (item.state === 'provisioning') return ui("Starting workspace…")
-  if (item.state === 'continuing_without_agent') return ui("Continuing without agent tools")
-  if (item.state === 'expired') return ui('Workspace expired')
-  if (item.state === 'unavailable') return ui('Workspace unavailable')
-  if (workspaceIsQuiet(item.state)) return ui("Started workspace")
-  return ui("Workspace")
-}
-
 function WorkspaceStepRow({ workspace }: { workspace: WorkspaceItem }) {
+  const WorkspaceIcon = workspace.computer ? Laptop : Server
   const busy = workspaceIsActive(workspace.state)
   const failed = workspaceIsFailed(workspace.state)
   const liveMs = useElapsedMs(
@@ -372,9 +360,9 @@ function WorkspaceStepRow({ workspace }: { workspace: WorkspaceItem }) {
         ) : failed ? (
           <XCircle className="size-3 shrink-0 text-destructive" />
         ) : (
-          <Server className="size-3 shrink-0" />
+          <WorkspaceIcon className="size-3 shrink-0" />
         )}
-        <span className="min-w-0 flex-1">{workspaceLabel(workspace)}</span>
+        <span className="min-w-0 flex-1">{workspaceLabel(workspace, hasComputerBridge())}</span>
         <StepDuration ms={busy ? liveMs : workspace.durationMs} live={busy} />
       </div>
       {workspace.error && (
@@ -472,6 +460,7 @@ function ActivityBlock({
   onContinue,
   capacityPending,
   onOpenChat,
+  screenChatId,
 }: {
   steps: ActivityStep[]
   active: boolean
@@ -483,6 +472,8 @@ function ActivityBlock({
   onContinue: (id: string) => void
   capacityPending: boolean
   onOpenChat: (chatId: string) => void
+  /** The agent used the cloud workspace's screen here, so it can be opened from beside the label. */
+  screenChatId?: string
 }) {
   const workspace = steps.find((step): step is WorkspaceStep => step.kind === 'workspace')?.workspace
   const compaction = steps.find((step) => step.kind === 'compaction')?.compaction
@@ -500,7 +491,10 @@ function ActivityBlock({
   const hasMessages = steps.some((step) => step.kind === 'message')
   const workspaceBusy = workspaceIsActive(workspace?.state)
   const workspaceFailed = workspaceIsFailed(workspace?.state)
-  const isWaiting = workspace?.state === 'waiting'
+  // A computer is never queued for, so its run has no "Continue without agent".
+  const isWaiting = workspace?.state === 'waiting' && !workspace.computer
+  const WorkspaceIcon = workspace?.computer ? Laptop : Server
+  const thisComputer = hasComputerBridge()
   const workspaceActionsAvailableAt = workspace ? workspaceContinueWithoutAgentAvailableAtMs(workspace) : undefined
   const [showWorkspaceActions, setShowWorkspaceActions] = useState(() => (
     isWaiting && workspaceActionsAvailableAt !== undefined && Date.now() >= workspaceActionsAvailableAt
@@ -535,10 +529,10 @@ function ActivityBlock({
     if (compaction?.status === 'in_progress') return ui("Compacting context…")
     if (compaction?.status === 'failed') return ui("Context compaction failed")
     if (compaction) return ui("Compacted context")
-    if (workspace && workspaceBusy) return workspaceLabel(workspace)
-    if (workspaceFailed && workspace) return workspaceLabel(workspace)
+    if (workspace && workspaceBusy) return workspaceLabel(workspace, thisComputer)
+    if (workspaceFailed && workspace) return workspaceLabel(workspace, thisComputer)
     if (workspace?.state === 'continuing_without_agent' && !hasTools && !hasReasoning && !active) {
-      return workspaceLabel(workspace)
+      return workspaceLabel(workspace, thisComputer)
     }
     if (pausedCostLimit) return costLimitStepLabel(pausedCostLimit, true)
     if (waitingPermission && permissionPending) return filesPermissionStepLabel(waitingPermission, true)
@@ -565,7 +559,7 @@ function ActivityBlock({
     if (compaction?.status === 'failed') return <XCircle className="size-3.5 shrink-0 text-destructive" />
     if (compaction) return <Minimize2 className="size-3.5 shrink-0" />
     if (workspace && workspaceBusy) {
-      return <Server className="size-3.5 shrink-0 animate-pulse" />
+      return <WorkspaceIcon className="size-3.5 shrink-0 animate-pulse" />
     }
     if (workspaceFailed) return <XCircle className="size-3.5 shrink-0 text-destructive" />
     if (pausedCostLimit) return <Pause className="size-3.5 shrink-0" />
@@ -578,7 +572,7 @@ function ActivityBlock({
     if (active) return <Brain className="size-3.5 shrink-0 animate-pulse" />
     if (recall && !hasOtherActivity) return <History className="size-3.5 shrink-0" />
     if (hasTools) return <Wrench className="size-3.5 shrink-0" />
-    if (hasWorkspace && !hasReasoning) return <Server className="size-3.5 shrink-0" />
+    if (hasWorkspace && !hasReasoning) return <WorkspaceIcon className="size-3.5 shrink-0" />
     return <Brain className="size-3.5 shrink-0" />
   })()
 
@@ -592,11 +586,14 @@ function ActivityBlock({
   return (
     <div className="space-y-1.5">
       <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
-        <CollapsibleTrigger className="flex max-w-full min-w-0 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
-          {triggerIcon}
-          <span className="min-w-0 truncate">{label}</span>
-          <ChevronRight className={cn('size-3 shrink-0 transition-transform', open && 'rotate-90')} />
-        </CollapsibleTrigger>
+        <div className="flex min-w-0 items-center gap-3">
+          <CollapsibleTrigger className="flex max-w-full min-w-0 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
+            {triggerIcon}
+            <span className="min-w-0 truncate">{label}</span>
+            <ChevronRight className={cn('size-3 shrink-0 transition-transform', open && 'rotate-90')} />
+          </CollapsibleTrigger>
+          {screenChatId && <OpenScreenButton chatId={screenChatId} />}
+        </div>
         <CollapsibleContent>
           <div className="mt-1 space-y-1.5 border-l-2 border-muted py-0.5 pl-2.5">
             {steps.map((step, index) => {
@@ -681,6 +678,7 @@ export const MessageItem = memo(function MessageItem({
   const showResponseCost = useSettings((s) => s.showResponseCost)
   const filesEnabled = useAuth((s) => s.filesEnabled)
   const billingEnabled = useAuth((s) => s.billingEnabled)
+  const screenOffered = useWorkspaceScreenOffered()
   const insufficientBalance = /insufficient balance/i.test(message.error ?? '')
   const [editing, setEditing] = useState(() => editDrafts?.has(message.id) ?? false)
   const [draft, setDraft] = useState(() => editDrafts?.get(message.id) ?? message.content)
@@ -782,7 +780,7 @@ export const MessageItem = memo(function MessageItem({
         <div className={cn(
           'min-w-0 max-w-[85%] text-[15px] leading-7 [overflow-wrap:anywhere]',
           messageText
-            ? 'rounded-[1.25rem] border border-foreground/[0.04] bg-secondary/85 px-4 py-2.5 shadow-sm'
+            ? 'rounded-[1.25rem] border border-foreground/[0.04] bg-message px-4 py-2.5 shadow-sm'
             : 'w-full',
         )}>
           {message.attachments && message.attachments.length > 0 && (
@@ -839,11 +837,18 @@ export const MessageItem = memo(function MessageItem({
   const outputItems = message.outputItems ?? []
   const otherItems = outputItems.filter((item) => {
     const type = (item as { type?: string }).type
-    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit', 'pulpo_files_permission', 'pulpo_file_changes'].includes(type)
+    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall', 'pulpo_cost_limit', 'pulpo_files_permission', 'pulpo_file_changes', 'pulpo_computer_changes'].includes(type)
   })
   const costLimit = findCostLimitItem(outputItems)
+  const computerChanges = computerChangesItem(outputItems)
   const filesPermission = findFilesPermissionItems(outputItems).findLast((item) => item.status === 'awaiting_decision')
   const lastActivityIndex = activitySegments.length - 1
+  // A reply that used the app tools in a cloud workspace (not on the user's own computer) offers its
+  // screen beside the last activity that used it, while it runs and after.
+  const cloudWorkspace = outputItems.some((item) => (item as WorkspaceItem).type === 'pulpo_workspace' && !(item as WorkspaceItem).computer)
+  const screenTimelineIndex = screenOffered && cloudWorkspace
+    ? timeline.findLastIndex((segment) => segment.kind === 'activity' && segment.steps.some((step) => step.kind === 'tool' && isAppTool(step.tool.tool)))
+    : -1
   const hasVisibleBody = timeline.length > 0 || Boolean(message.error)
   let activityOrdinal = -1
 
@@ -918,6 +923,7 @@ export const MessageItem = memo(function MessageItem({
                       }}
                       capacityPending={capacityActionPending}
                       onOpenChat={onOpenChat}
+                      screenChatId={index === screenTimelineIndex ? chat.id : undefined}
                     />
                   )
                 }
@@ -990,6 +996,7 @@ export const MessageItem = memo(function MessageItem({
         </div>
 
         {message.done && !chat.expired && filesEnabled && fileChangesItem(outputItems) && <FileChangesBar responseId={message.id} />}
+        {message.done && computerChanges && <ComputerChangesBar item={computerChanges} />}
 
         {(message.done || hasMultipleBranches(message.branch)) && (
           <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1">

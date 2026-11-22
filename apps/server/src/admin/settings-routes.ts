@@ -9,7 +9,7 @@ import { registerRestoreUploadRoutes } from './restore-upload-routes.js'
 import { and, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentSettingsSchema, backupSettingsTestInputSchema, DATA_RETENTION_TAGS_SETTING_KEY, dataRetentionTagsSchema, bannerCreateInputSchema, bannerUpdateInputSchema, bannerWindowIsValid, backupSettingsUpdateSchema, dictationSettingsSchema, episodicMemorySettingsSchema, episodicMemoryStatisticsRangeSchema, personalizationSettingsSchema, secretRevealInputSchema, webToolProviderSchema, webToolsSettingsSchema } from '@pulpo/contracts'
+import { agentSettingsSchema, backupSettingsTestInputSchema, DATA_RETENTION_TAGS_SETTING_KEY, INSTANCE_COLOR_THEMES_SETTING_KEY, dataRetentionTagsSchema, bannerCreateInputSchema, bannerUpdateInputSchema, bannerWindowIsValid, backupSettingsUpdateSchema, dictationSettingsSchema, episodicMemorySettingsSchema, episodicMemoryStatisticsRangeSchema, personalizationSettingsSchema, secretRevealInputSchema, webToolProviderSchema, webToolsSettingsSchema } from '@pulpo/contracts'
 import { requireAdmin } from '../auth/service.js'
 import { requireSecretRevealAuth } from '../auth/sensitive-action.js'
 import { db } from '../database/client.js'
@@ -19,8 +19,9 @@ import { UNIFIED_TRASH_SINCE_KEY } from '../trash/unified-since.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
-import { codexSettingsSchema, authSettingsSchema, interfaceSettingsSchema, loggingSettingsSchema, ocrSettingsSchema, parseBackupSettings, parseBillingSettings, parseDictationSettings, parseInterfaceSettings, parseOcrSettings, parseWebToolsSettings, publicDictationSettings, publicWebToolsSettings, storedDictationSettingsSchema, storedWebToolsSettingsSchema } from '../settings/application-settings.js'
+import { dictationProviderConfigured, codexSettingsSchema, authSettingsSchema, interfaceSettingsSchema, loggingSettingsSchema, ocrSettingsSchema, parseBackupSettings, parseBillingSettings, parseDictationSettings, parseInterfaceSettings, parseOcrSettings, parseWebToolsSettings, publicDictationSettings, publicWebToolsSettings, storedDictationSettingsSchema, storedWebToolsSettingsSchema } from '../settings/application-settings.js'
 import { decryptSecret, encryptSecret } from '../lib/crypto.js'
+import { getWhisperConnection } from '../dictation/whisper.js'
 import { getConfig } from '../config.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
 import { resolveLegacyOcrCatalogModel } from '../responses/catalog-model-runtime.js'
@@ -122,6 +123,9 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
   app.patch('/api/admin/settings', async (request) => {
     const admin = requireAdmin(request)
     const values = z.record(z.string().min(1).max(120), z.unknown()).parse(request.body)
+    if (values[INSTANCE_COLOR_THEMES_SETTING_KEY] !== undefined) {
+      throw new AppError(400, 'dedicated_color_themes_endpoint', 'Use /api/admin/settings/color-themes for instance color themes')
+    }
     let loggingSettings: DetailedPayloadLoggingSettings | undefined
     if (values.diagnosticCleanup !== undefined) throw new AppError(400, 'runtime_status_read_only', 'Diagnostic cleanup status is managed by the worker')
     if (values.publicUrl !== undefined) throw new AppError(400, 'deployment_setting_read_only', 'PUBLIC_URL is managed by the deployment environment')
@@ -262,38 +266,44 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
   app.get('/api/admin/settings/dictation', async (request) => {
     requireAdmin(request)
     const [row] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'dictation')).limit(1)
-    return publicDictationSettings(parseDictationSettings(row?.value))
+    return publicDictationSettings(parseDictationSettings(row?.value), Boolean(getWhisperConnection(getConfig())))
   })
 
   app.patch('/api/admin/settings/dictation', async (request) => {
     const admin = requireAdmin(request)
     const input = dictationSettingsSchema.extend({
+      provider: storedDictationSettingsSchema.shape.provider.unwrap().optional(),
       groqApiKey: z.string().trim().min(1).optional(),
     }).parse(request.body)
+    const whisperConfigured = Boolean(getWhisperConnection(getConfig()))
     const value = await db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
       const [existing] = await tx.select().from(applicationSettings).where(eq(applicationSettings.key, 'dictation')).limit(1)
       const old = parseDictationSettings(existing?.value)
       const next = storedDictationSettingsSchema.parse({
         enabled: input.enabled,
+        provider: input.provider ?? old.provider,
         billUsers: input.billUsers,
         pricePerMinuteMicros: input.pricePerMinuteMicros,
         encryptedGroqApiKey: input.groqApiKey
           ? encryptSecret(input.groqApiKey, getConfig().ENCRYPTION_KEY)
           : old.encryptedGroqApiKey,
       })
-      if (next.enabled && !next.encryptedGroqApiKey) {
+      if (next.enabled && !dictationProviderConfigured(next, whisperConfigured)) {
+        if (next.provider === 'whisper') {
+          throw new AppError(400, 'dictation_whisper_required', 'Configure the Whisper service on the Pulpo server before enabling dictation')
+        }
         throw new AppError(400, 'dictation_api_key_required', 'Configure a Groq API key before enabling dictation')
       }
       await tx.insert(applicationSettings).values({ key: 'dictation', value: next, updatedBy: admin.id })
         .onConflictDoUpdate({ target: applicationSettings.key, set: { value: next, updatedBy: admin.id, updatedAt: new Date() } })
       await tx.insert(auditEvents).values({
         id: newId(), actorUserId: admin.id, action: 'settings.dictation.update', targetType: 'application',
-        metadata: { enabled: next.enabled, billUsers: next.billUsers, pricePerMinuteMicros: next.pricePerMinuteMicros, hasApiKey: Boolean(next.encryptedGroqApiKey) },
+        metadata: { enabled: next.enabled, provider: next.provider, billUsers: next.billUsers, pricePerMinuteMicros: next.pricePerMinuteMicros, hasApiKey: Boolean(next.encryptedGroqApiKey) },
       })
       return next
     })
-    return publicDictationSettings(value)
+    return publicDictationSettings(value, whisperConfigured)
   })
 
   for (const secret of [

@@ -1,3 +1,6 @@
+import type { AudioTranscript } from '@pulpo/contracts'
+import type { DictationTranscript } from './transcript.js'
+
 const GROQ_TRANSCRIPTIONS_URL = 'https://api.groq.com/openai/v1/audio/transcriptions'
 const GROQ_TRANSCRIPTION_MODEL = 'whisper-large-v3-turbo'
 
@@ -8,11 +11,6 @@ export class GroqTranscriptionError extends Error {
   }
 }
 
-export interface GroqTranscript {
-  text: string
-  durationSeconds: number
-}
-
 export async function transcribeWithGroq(input: {
   apiKey: string
   audio: Uint8Array
@@ -20,7 +18,7 @@ export async function transcribeWithGroq(input: {
   mimeType: string
   signal?: AbortSignal
   fetchImpl?: typeof fetch
-}): Promise<GroqTranscript> {
+}): Promise<DictationTranscript> {
   const form = new FormData()
   form.set('model', GROQ_TRANSCRIPTION_MODEL)
   form.set('response_format', 'verbose_json')
@@ -36,7 +34,7 @@ export async function transcribeWithGroq(input: {
   const body = await response.json().catch(() => null) as {
     text?: unknown
     duration?: unknown
-    segments?: Array<{ end?: unknown }>
+    segments?: Array<{ start?: unknown; end?: unknown; text?: unknown } | null>
     error?: { message?: unknown }
   } | null
   if (!response.ok) {
@@ -45,8 +43,17 @@ export async function transcribeWithGroq(input: {
   }
   if (typeof body?.text !== 'string') throw new GroqTranscriptionError('Groq returned an invalid transcript', 502)
   const reportedDuration = typeof body.duration === 'number' ? body.duration : Number.NaN
-  const segmentDuration = Math.max(0, ...(body.segments ?? []).map((segment) => typeof segment.end === 'number' ? segment.end : 0))
+  const chunks = Array.isArray(body.segments) ? body.segments : []
+  let segmentDuration = 0
+  const segments: NonNullable<AudioTranscript['segments']> = []
+  for (const chunk of chunks) {
+    if (!chunk || typeof chunk.end !== 'number' || !Number.isFinite(chunk.end)) continue
+    segmentDuration = Math.max(segmentDuration, chunk.end)
+    const { start, end, text } = chunk
+    if (typeof start !== 'number' || !Number.isFinite(start) || start < 0 || end < start || typeof text !== 'string' || !text.trim()) continue
+    segments.push({ start, end, text: text.trim() })
+  }
   const durationSeconds = Number.isFinite(reportedDuration) && reportedDuration > 0 ? reportedDuration : segmentDuration
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) throw new GroqTranscriptionError('Groq returned invalid audio duration', 502)
-  return { text: body.text.trim(), durationSeconds }
+  return { text: body.text.trim(), durationSeconds, ...(segments.length > 0 && { segments }) }
 }

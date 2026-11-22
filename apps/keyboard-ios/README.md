@@ -32,8 +32,8 @@ xcodegen generate
 open PulpoKeyboard.xcodeproj
 ```
 
-From the repository root, `npm run keyboard:test` runs the engine tests and
-`npm run keyboard:build` builds the app for the simulator.
+Run the engine tests locally with `npm run keyboard:test` from the repository
+root. Use `npm run keyboard:build` to build the app for the simulator.
 
 The app icon references the shared `apps/mobile/assets/PulpoKeyboard.icon`
 Icon Composer asset. Build with Xcode 26 or later and XcodeGen 2.45.1 or later;
@@ -71,7 +71,7 @@ Pulpo Mobile. `scripts/validate_archive.py` then checks the app, extension,
 language data, versions and privacy manifests before
 `.github/scripts/upload-ios-testflight.sh` uploads the build. That script is
 shared with Pulpo Mobile and uses the same `testflight` GitHub environment
-secrets. The upload only runs after the `Keyboard / iOS` check passes.
+secrets.
 
 Each target bundles its own `PrivacyInfo.xcprivacy`. Update them when the app
 or extension starts using another
@@ -154,14 +154,25 @@ expand the keyboard or move it to the other edge. The choice is remembered and i
 in the app's settings. Landscape always uses the full width. Key geometry, swipe decoding
 and tap correction all come from the narrowed grid.
 
-**Dictation.** iOS doesn't let keyboard extensions use the microphone, so the mic key
-opens the app, which records, uploads the audio to Pulpo's
-`/api/dictation/transcriptions`, and hands the transcript back through the App Group
-(`DictationBridge`, with Darwin notifications as wake-ups). The person returns to their
-app with the system back button and sees a live level meter in the keyboard. Afterwards
-the app keeps the microphone running on standby (5 minutes by default, configurable) so
-the next dictation starts without leaving the current app. The session token stays in
-the app's Keychain; the keyboard extension never makes network requests.
+**Dictation.** On iOS 26 and later the keyboard records by itself, so the mic key never
+leaves the app being typed in. iOS refuses `AVAudioSession` recording in a keyboard
+extension, but a hidden `WKWebView` can capture with `getUserMedia`: WebKit's media
+process records under the app's microphone permission (the approach
+[Hex](https://github.com/anomalyco/hex)'s iPhone keyboard uses). The page streams 16-bit
+PCM back, `InKeyboardDictation` encodes it to AAC, and the extension uploads it to Pulpo's
+`/api/dictation/transcriptions` with the app's session, which the Keychain shares with the
+keyboard through the App Group's access group. The field stays on screen the whole time,
+so the transcript goes straight in unless the host reported an edit or a caret move.
+
+The app records instead before iOS 26, before the app has granted microphone access, when
+the keyboard can't read the session (a sign-in from an older version moves into the
+shared group the next time the app opens), or when capture doesn't start within five
+seconds. Then the mic key opens the app, which records, uploads, and hands the transcript
+back through the App Group (`DictationBridge`, with Darwin notifications as wake-ups). The
+person returns to their app with the system back button and sees a live level meter in
+the keyboard. Afterwards the app keeps the microphone running on standby (5 minutes by
+default, configurable) so the next dictation starts without leaving the current app.
+Apart from dictation uploads, the keyboard extension makes no network requests.
 
 **Full Access** is needed for dictation, haptics, and reading shared settings. Without
 it the keyboard still types, corrects, predicts and swipes using defaults (English).
@@ -208,7 +219,8 @@ spaces, delete ordering, batched events, drift after a key has committed, and ro
 gaps and empty keyboard padding to the closest visible key. Preview and installed
 keyboard tests also tap between caps and in the surrounding margins.
 `AppearanceTests` saves
-screenshots of every page and field layout. `DictationTests` and `BounceDictationTests`
+screenshots of every page and field layout. `DictationTests`, `InKeyboardDictationTests`
+and `BounceDictationTests` (which passes `-PKAppDictation` to keep the app's recorder)
 need the stub server (`python3 scripts/stub_pulpo_server.py`) and microphone permission
 (`xcrun simctl privacy <device> grant microphone com.isaacthoman.pulpo.keyboard`).
 Set `TEST_RUNNER_PK_SCREENSHOT_DIR` to also write the screenshots as PNGs.

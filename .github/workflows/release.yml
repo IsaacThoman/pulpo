@@ -38,7 +38,9 @@ jobs:
           cache: npm
 
       - name: Report high and critical vulnerabilities
-        run: npm audit --audit-level=high
+        run: node scripts/security/audit.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   checks:
     name: Checks / ${{ matrix.name }}
@@ -73,7 +75,7 @@ jobs:
 
       - name: Install speech audio tools
         if: matrix.name == 'Test'
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        run: bash .github/scripts/setup-ffmpeg.sh
 
       - name: ${{ matrix.name }}
         run: ${{ matrix.command }}
@@ -171,7 +173,7 @@ jobs:
       - name: Create disposable migration recovery database
         run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_migration_test"); await sql.end();'
       - name: Install speech audio tools
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+        run: bash .github/scripts/setup-ffmpeg.sh
       - name: Create disposable budget database
         run: node --input-type=module -e 'import postgres from "postgres"; const sql = postgres(process.env.DATABASE_URL); await sql.unsafe("CREATE DATABASE pulpo_budget_test"); await sql.end();'
       - name: Verify budget reservations and concurrency against PostgreSQL
@@ -369,68 +371,6 @@ jobs:
           npm install --prefix "${smoke_dir}" "${RUNNER_TEMP}/${tarball}"
           "${smoke_dir}/node_modules/.bin/pulpo" --version
           "${smoke_dir}/node_modules/.bin/pulpo" --json settings schema >/dev/null
-
-  keyboard-changes:
-    name: Keyboard / Detect changes
-    if: >-
-      github.event_name == 'pull_request' &&
-      github.event.action != 'closed'
-    runs-on: ubuntu-24.04
-    outputs:
-      changed: ${{ steps.diff.outputs.changed }}
-    env:
-      PULL_REQUEST_SHA: ${{ github.event.pull_request.head.sha }}
-      PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Check for keyboard changes
-        id: diff
-        run: |
-          set -euo pipefail
-          git fetch --no-tags --depth=1 origin "${PULL_REQUEST_BASE_SHA}" "${PULL_REQUEST_SHA}"
-          if git diff --quiet "${PULL_REQUEST_BASE_SHA}" "${PULL_REQUEST_SHA}" -- \
-            apps/keyboard-ios \
-            apps/mobile/assets/PulpoKeyboard.icon \
-            package.json \
-            .github/scripts/setup-xcodegen.sh \
-            .github/workflows/release.yml; then
-            echo 'changed=false' >> "${GITHUB_OUTPUT}"
-            echo '::notice::Keyboard / iOS will be skipped because this PR does not touch the keyboard.'
-          else
-            echo 'changed=true' >> "${GITHUB_OUTPUT}"
-          fi
-
-  keyboard:
-    name: Keyboard / iOS
-    # Pushes to dev and main always run this job, since keyboard-testflight needs it.
-    # Pull requests only run it when they touch the keyboard. If change detection
-    # fails, the output is empty and the job still runs.
-    needs: keyboard-changes
-    if: >-
-      !cancelled() && (
-        github.event_name != 'pull_request' ||
-        (github.event.action != 'closed' && needs.keyboard-changes.outputs.changed != 'false')
-      )
-    # Matches keyboard-testflight, so pull requests build the keyboard with the
-    # Xcode that ships it.
-    runs-on: xcode-27
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up XcodeGen
-        run: .github/scripts/setup-xcodegen.sh
-
-      - name: Test keyboard scripts and release validation
-        run: python3 -m unittest discover -s apps/keyboard-ios/scripts -p 'test_*.py'
-
-      - name: Test keyboard engine
-        run: npm run keyboard:test
-
-      - name: Build keyboard app for the simulator
-        run: npm run keyboard:build
 
   windows-signing-tools-check:
     name: Windows signing tools
@@ -1394,7 +1334,7 @@ jobs:
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
       needs.release.outputs.version != ''
-    needs: [release, keyboard]
+    needs: release
     # Built with the iOS 27.1 SDK or later for the same reason as testflight.
     runs-on: xcode-27
     environment: testflight

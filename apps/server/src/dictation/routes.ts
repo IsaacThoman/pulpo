@@ -1,3 +1,4 @@
+import { audioTranscriptionMimeType, MAX_AUDIO_TRANSCRIPTION_BYTES } from '@pulpo/contracts'
 import { diagnosticFetch } from '../logging/diagnostic-fetch.js'
 import { eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
@@ -7,16 +8,13 @@ import { db } from '../database/client.js'
 import { applicationSettings } from '../database/schema.js'
 import { decryptSecret } from '../lib/crypto.js'
 import { AppError } from '../lib/errors.js'
-import { parseDictationSettings } from '../settings/application-settings.js'
+import { dictationProviderConfigured, parseDictationSettings } from '../settings/application-settings.js'
 import { GroqTranscriptionError, transcribeWithGroq } from './groq.js'
+import { getWhisperConnection, transcribeWithWhisper, WhisperTranscriptionError } from './whisper.js'
+import type { DictationTranscript } from './transcript.js'
 import { chargeMeteredUsage } from '../accounting/service.js'
 import { dictationUsageMicros } from './billing.js'
 import { assertDailySpendAvailable } from '../billing/usage-tiers.js'
-
-export const MAX_DICTATION_BYTES = 10 * 1024 * 1024
-const SUPPORTED_AUDIO_TYPES = new Set([
-  'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav',
-])
 
 export async function registerDictationRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/dictation/transcriptions', {
@@ -26,14 +24,17 @@ export async function registerDictationRoutes(app: FastifyInstance): Promise<voi
     const [row] = await db.select({ value: applicationSettings.value }).from(applicationSettings)
       .where(eq(applicationSettings.key, 'dictation')).limit(1)
     const settings = parseDictationSettings(row?.value)
-    if (!settings.enabled || !settings.encryptedGroqApiKey) {
+    const config = getConfig()
+    const whisper = getWhisperConnection(config)
+    const { provider } = settings
+    if (!settings.enabled || !dictationProviderConfigured(settings, Boolean(whisper))) {
       throw new AppError(404, 'dictation_disabled', 'Dictation is not enabled')
     }
     if (settings.billUsers) await assertDailySpendAvailable(user.id)
 
     let part: Awaited<ReturnType<typeof request.file>> = undefined
     try {
-      part = await request.file({ limits: { files: 1, fileSize: MAX_DICTATION_BYTES } })
+      part = await request.file({ limits: { files: 1, fileSize: MAX_AUDIO_TRANSCRIPTION_BYTES } })
     } catch (cause) {
       if (cause && typeof cause === 'object' && 'code' in cause && cause.code === 'FST_REQ_FILE_TOO_LARGE') {
         throw new AppError(413, 'dictation_audio_too_large', 'Dictation recordings must be 10 MB or smaller')
@@ -41,8 +42,8 @@ export async function registerDictationRoutes(app: FastifyInstance): Promise<voi
       throw cause
     }
     if (!part) throw new AppError(400, 'dictation_audio_required', 'An audio recording is required')
-    const mimeType = part.mimetype.toLowerCase().split(';', 1)[0]!
-    if (!SUPPORTED_AUDIO_TYPES.has(mimeType)) {
+    const mimeType = audioTranscriptionMimeType(part.mimetype)
+    if (!mimeType) {
       throw new AppError(415, 'dictation_audio_type_unsupported', 'This audio format is not supported')
     }
     let audio: Buffer
@@ -55,19 +56,27 @@ export async function registerDictationRoutes(app: FastifyInstance): Promise<voi
     if (part.file.truncated) throw new AppError(413, 'dictation_audio_too_large', 'Dictation recordings must be 10 MB or smaller')
     if (audio.length === 0) throw new AppError(400, 'dictation_audio_empty', 'The audio recording is empty')
 
-    let transcript: Awaited<ReturnType<typeof transcribeWithGroq>>
+    let transcript: DictationTranscript
     try {
-      transcript = await transcribeWithGroq({
-        apiKey: decryptSecret(settings.encryptedGroqApiKey, getConfig().ENCRYPTION_KEY),
-        audio,
-        filename: part.filename || 'dictation.webm',
-        mimeType,
-        signal: AbortSignal.timeout(30_000),
-        fetchImpl: diagnosticFetch({ purpose: 'dictation', userId: user.id, providerId: 'groq', upstreamModelId: 'whisper-large-v3-turbo' }),
-      })
+      const signal = AbortSignal.timeout(30_000)
+      if (provider === 'whisper' && whisper) {
+        transcript = await transcribeWithWhisper({ connection: whisper, audio, signal })
+      } else if (provider === 'groq' && settings.encryptedGroqApiKey) {
+        transcript = await transcribeWithGroq({
+          apiKey: decryptSecret(settings.encryptedGroqApiKey, config.ENCRYPTION_KEY),
+          audio,
+          filename: part.filename || 'dictation.webm',
+          mimeType,
+          signal,
+          fetchImpl: diagnosticFetch({ purpose: 'dictation', userId: user.id, providerId: 'groq', upstreamModelId: 'whisper-large-v3-turbo' }),
+        })
+      } else {
+        throw new Error('Dictation provider configuration is missing')
+      }
     } catch (cause) {
-      request.log.warn({ err: cause }, 'Groq dictation transcription failed')
-      if (cause instanceof GroqTranscriptionError && cause.status === 429) {
+      request.log.warn({ err: cause, provider }, 'Dictation transcription failed')
+      if ((cause instanceof GroqTranscriptionError && cause.status === 429)
+        || (cause instanceof WhisperTranscriptionError && (cause.status === 429 || cause.status === 503))) {
         throw new AppError(429, 'dictation_provider_rate_limited', 'Dictation is temporarily busy. Try again shortly.')
       }
       throw new AppError(502, 'dictation_provider_error', 'The recording could not be transcribed', 'server_error')
@@ -80,12 +89,12 @@ export async function registerDictationRoutes(app: FastifyInstance): Promise<voi
         costMicros: usage.costMicros,
         type: 'dictation',
         metadata: {
-          provider: 'groq', model: 'whisper-large-v3-turbo',
+          provider, model: 'whisper-large-v3-turbo',
           durationSeconds: transcript.durationSeconds, billedSeconds: usage.billedSeconds,
           pricePerMinuteMicros: settings.pricePerMinuteMicros,
         },
       })
     }
-    return { text: transcript.text }
+    return { text: transcript.text, ...(transcript.segments && { segments: transcript.segments }) }
   })
 }

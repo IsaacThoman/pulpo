@@ -218,6 +218,8 @@ export async function interceptOpenAIInputImages(
 }
 
 function agentImageLabel(message: Record<string, unknown>): string {
+  // The app tools show the agent a window on the user's computer.
+  if (typeof message.toolName === 'string' && message.toolName.startsWith('app_')) return 'app window'
   if (message.toolName !== 'view_image' || !Array.isArray(message.content)) return 'agent image'
   const viewed = message.content.find((part) => part && typeof part === 'object' && (part as { type?: unknown }).type === 'text') as { text?: unknown } | undefined
   if (typeof viewed?.text !== 'string') return 'view_image result'

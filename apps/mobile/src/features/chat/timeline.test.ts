@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { recalledChatLabel } from './recall-label'
-import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, filesPermissionLabel, filesPermissionPlace, pendingFilesPermission, timelineActivityIsActive } from './timeline'
+import { activityDurationMs, activityUsesApps, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, computerWorkspaceLabel, filesPermissionLabel, filesPermissionPlace, pendingFilesPermission, timelineActivityIsActive, usedWorkspaceScreen } from './timeline'
 
 describe('buildMessageTimeline', () => {
   it('ignores empty active reasoning while ordinary answer text streams', () => {
@@ -302,5 +302,50 @@ describe('Files permission requests', () => {
     expect(filesPermissionPlace({ path: '' })).toBe('My files')
     expect(filesPermissionPlace({ path: '/' })).toBe('My files')
     expect(filesPermissionPlace({ path: 'Projects/Plans/' })).toBe('“Projects/Plans”')
+  })
+})
+
+describe('computerWorkspaceLabel', () => {
+  it('names the user\'s computer for a full-access run and nothing for a cloud workspace', () => {
+    expect(computerWorkspaceLabel({ type: 'pulpo_workspace', state: 'provisioning', computer: true })).toBe('Connecting to your computer…')
+    expect(computerWorkspaceLabel({ type: 'pulpo_workspace', state: 'ready', computer: true })).toBe('Using your computer')
+    expect(computerWorkspaceLabel({ type: 'pulpo_workspace', state: 'unavailable', computer: true })).toBe("Your computer isn't connected")
+    expect(computerWorkspaceLabel({ type: 'pulpo_workspace', state: 'ready' })).toBeNull()
+  })
+
+  it('ignores a computer changes item in the timeline', () => {
+    expect(buildMessageTimeline([
+      { type: 'pulpo_computer_changes', id: 'cc', session_id: 's', applied: 1, suggested: 0 },
+      { type: 'message', content: [{ text: 'Done' }] },
+    ], true)).toEqual([{ kind: 'text', text: 'Done' }])
+  })
+})
+
+describe('usedWorkspaceScreen', () => {
+  const appTool = { type: 'pulpo_tool', tool: 'app_click', status: 'completed', arguments: { app: 'Chromium' } }
+
+  it('offers the screen of a cloud workspace whose reply used the app tools', () => {
+    expect(usedWorkspaceScreen([{ type: 'pulpo_workspace', state: 'ready' }, appTool])).toBe(true)
+  })
+
+  it('never offers it for a run on the user\'s own computer', () => {
+    expect(usedWorkspaceScreen([{ type: 'pulpo_workspace', state: 'ready', computer: true }, appTool])).toBe(false)
+  })
+
+  it('needs app tool activity and a workspace', () => {
+    expect(usedWorkspaceScreen([{ type: 'pulpo_workspace', state: 'ready' }, { type: 'pulpo_tool', tool: 'bash' }])).toBe(false)
+    expect(usedWorkspaceScreen([appTool])).toBe(false)
+    expect(usedWorkspaceScreen(undefined)).toBe(false)
+  })
+
+  it('finds the activity block that shows the app steps', () => {
+    const timeline = buildMessageTimeline([
+      { type: 'pulpo_workspace', state: 'ready' },
+      { type: 'pulpo_tool', tool: 'bash', status: 'completed' },
+      { type: 'message', content: [{ text: 'Opening the site.' }] },
+      appTool,
+    ], true)
+    const blocks = timeline.filter((segment) => segment.kind === 'activity')
+    expect(blocks.map((segment) => activityUsesApps(segment.steps))).toEqual([false, true])
   })
 })

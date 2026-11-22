@@ -11,6 +11,7 @@ vi.mock('react-native', () => ({ Platform: { OS: 'ios' }, AppState: {
 } }))
 vi.mock('expo-audio', () => ({}))
 vi.mock('expo-file-system', () => ({}))
+vi.mock('../../../modules/pulpo-audio-focus', () => ({ default: null }))
 import { useDictation } from './useDictation'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })

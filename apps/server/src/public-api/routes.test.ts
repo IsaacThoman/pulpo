@@ -199,12 +199,13 @@ describe('public OpenAI-compatible routes', () => {
     expect(mocks.logInfo).toHaveBeenCalledWith({ protocol: 'anthropic_messages', ignoredParameters: ['tools.web_search_20250305'] }, 'Ignored OpenAI-compatible request parameters')
   })
 
-  it('accepts Anthropic-sized request bodies on the Messages routes', async () => {
+  it('uses the same body limit for every public generation protocol', async () => {
     routeOptions.clear()
     await handlers()
-    expect(routeOptions.get('POST /v1/messages')).toEqual({ bodyLimit: 32 * 1024 * 1024 })
-    expect(routeOptions.get('POST /v1/messages/count_tokens')).toEqual({ bodyLimit: 32 * 1024 * 1024 })
-    expect(routeOptions.has('POST /v1/responses')).toBe(false)
+    for (const path of ['/v1/responses', '/v1/chat/completions', '/v1/completions', '/v1/messages', '/v1/messages/count_tokens']) {
+      expect(routeOptions.get(`POST ${path}`)).toEqual({ bodyLimit: 32 * 1024 * 1024 })
+    }
+    expect(routeOptions.has('POST /v1/responses/:id/cancel')).toBe(false)
   })
 
   it('estimates Anthropic input tokens without requiring max_tokens', async () => {
