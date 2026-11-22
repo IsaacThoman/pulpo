@@ -289,8 +289,9 @@ The script:
   when there is one) with Agent mode, and deletes the chat from the previous
   run. The account needs a balance.
 - Builds a Release simulator app through the shared build directory used by
-  `deploy:iphone` (see above), then installs it fresh on each simulator. These
-  simulators are named `Pulpo Screenshots <device>`.
+  `deploy:iphone` (see above), then installs it fresh on each simulator.
+  These simulators are named `Pulpo Screenshots <device>`. The iPad
+  runs sign in in portrait and capture all screens in landscape.
 - Drives the app with [agent-device](https://github.com/callstack/agent-device),
   which is installed on first use under `~/.cache/pulpo`. It captures dark-mode
   PNGs at native resolution with a 9:41 status bar into
@@ -301,7 +302,11 @@ picker, a temporary chat, the chat list, and the answer. On iPad and the open
 iPhone Duo, the chat list is always visible as a sidebar, so those devices skip
 the separate chat-list shot. Use `--devices`, `--shots`, `--reuse-answer`
 (skip asking again), and `--skip-build` to rerun parts. `--help` lists every
-option.
+option. For sign-in screenshots alone, use `--shots 06-sign-in` without
+account credentials. To use a bound agent-device command, set
+`PULPO_SCREENSHOT_DEVICE_COMMAND` to its executable path and select its
+simulator with `--devices`. With `--skip-build`, `PULPO_SCREENSHOT_APP`
+can select a previously built app bundle.
 
 ## GitHub Actions releases
 

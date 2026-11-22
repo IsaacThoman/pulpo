@@ -205,6 +205,16 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual([call['args'] for call in self.commands('xcrun', 'launch')],
                          [['simctl', 'launch', 'SIM-UDID', 'com.isaacthoman.pulpo']])
 
+    def test_simulator_output_builds_without_launching(self):
+        output = str(self.directory / 'simulator apps')
+        result = self.deploy(PULPO_IOS_SIMULATOR_OUTPUT=output)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([call['args'] for call in self.commands('npx', 'run:ios')],
+                         [['--no-install', 'expo', 'run:ios', '--device', 'generic',
+                           '--configuration', 'Release', '--no-bundler', '--output', output]])
+        self.assertEqual(self.commands('xcrun', 'launch'), [])
+        self.assertEqual(self.commands('xcrun', 'devicectl'), [])
+
     def test_lock_blocks_sync_and_log_truncation_and_releases_after_exit(self):
         self.root.mkdir()
         self.log.write_text('active deployment log')

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Captures App Store screenshots of the Release app on simulators, signed in to a real Pulpo instance
 // (pulpo.baby by default). It asks the screenshot question once through the API so every device shows the same
-// fresh answer, then drives each simulator with agent-device and captures full-resolution PNGs with simctl.
+// fresh answer, then drives each simulator and captures full-resolution PNGs with agent-device.
 //
 //   PULPO_SCREENSHOT_EMAIL=… PULPO_SCREENSHOT_PASSWORD=… npm run screenshots:app-store -w @pulpo/mobile
 //
@@ -10,7 +10,7 @@
 import { execFile as execFileCallback, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -30,7 +30,7 @@ const DEVICES = [
   { key: 'iphone-dynamic-island-medium', label: 'iPhone with Dynamic Island (medium)', type: 'iPhone-18-Pro', runtime: '27.0' },
   { key: 'iphone-face-id-large', label: 'iPhone with Face ID (large)', type: 'iPhone-14-Plus', runtime: '27.0' },
   { key: 'iphone-face-id-medium', label: 'iPhone with Face ID (medium)', type: 'iPhone-17e', runtime: '27.0' },
-  { key: 'iphone-home-button', label: 'iPhone with Home Button (medium)', type: 'iPhone-SE-3rd-generation', runtime: '27.0' },
+  { key: 'iphone-home-button', label: 'iPhone with Home Button (medium)', type: 'iPhone-SE-3rd-generation', runtime: '27.0', scale: 2 },
   { key: 'iphone-duo', label: 'iPhone Duo (open)', type: 'iPhone-Duo', runtime: '27.1', foldable: true, scale: 3 },
   { key: 'ipad-13', label: 'iPad 13-inch (landscape)', type: 'iPad-Pro-13-inch-M5-12GB', runtime: '27.0', landscape: true, scale: 2 },
   { key: 'ipad-11', label: 'iPad 11-inch (landscape)', type: 'iPad-Pro-11-inch-M5-12GB', runtime: '27.0', landscape: true, scale: 2 },
@@ -57,7 +57,7 @@ const { values: options } = parseArgs({
 if (options.help) {
   console.log(`Usage: node apps/mobile/scripts/app-store-screenshots.mjs [options]
 
-Environment: PULPO_SCREENSHOT_EMAIL and PULPO_SCREENSHOT_PASSWORD (required).
+Environment: PULPO_SCREENSHOT_EMAIL and PULPO_SCREENSHOT_PASSWORD (required for signed-in screens).
 
 Options:
   --devices <keys>         Comma-separated subset of: ${DEVICES.map((device) => device.key).join(', ')}
@@ -75,11 +75,14 @@ Options:
 
 const email = process.env.PULPO_SCREENSHOT_EMAIL
 const password = process.env.PULPO_SCREENSHOT_PASSWORD
-if (!email || !password) fail('Set PULPO_SCREENSHOT_EMAIL and PULPO_SCREENSHOT_PASSWORD.')
 const instance = options.instance.replace(/\/+$/, '')
 const selectedDevices = pick(DEVICES.map((device) => device.key), options.devices, '--devices')
   .map((key) => DEVICES.find((device) => device.key === key))
 const selectedShots = new Set(pick(SHOTS, options.shots, '--shots'))
+const signedInShots = [...selectedShots].some((shot) => shot !== '06-sign-in')
+if (signedInShots && (!email || !password)) fail('Set PULPO_SCREENSHOT_EMAIL and PULPO_SCREENSHOT_PASSWORD.')
+const deviceCommand = process.env.PULPO_SCREENSHOT_DEVICE_COMMAND
+if (deviceCommand && selectedDevices.length !== 1) fail('Use --devices with one device when supplying a bound agent-device command.')
 
 function pick(all, list, flag) {
   if (!list) return all
@@ -117,7 +120,6 @@ async function signIn() {
     email, password, deviceLabel: 'App Store screenshot script', appType: 'mobile', platform: 'ios',
   })
   token = result.session.token
-  return result.user
 }
 
 async function signOut() {
@@ -165,10 +167,15 @@ async function askQuestion(model) {
   const state = await readState()
   const previous = state[instance]?.answerChatId
   if (options['reuse-answer'] && previous) {
-    const title = await chatTitle(previous).catch(() => null)
-    if (title) {
-      log(`Reusing the previous answer chat “${title}”.`)
-      return { chatId: previous, title }
+    const chat = await api('GET', `/api/chats/${previous}?format=compact&scope=active`).catch(() => null)
+    const question = state[instance].question ?? chat?.responses?.flatMap((response) => response.input ?? [])
+      .filter((item) => item.role === 'user')
+      .flatMap(({ content }) => typeof content === 'string' ? [content] : (content ?? [])
+        .filter((item) => item.type === 'input_text').map((item) => item.text))
+      .find(Boolean)
+    if (chat?.title && question) {
+      log(`Reusing the previous answer chat “${chat.title}”.`)
+      return { chatId: previous, title: chat.title, question }
     }
   }
   const chatId = randomUUID()
@@ -204,14 +211,14 @@ async function askQuestion(model) {
     await api('DELETE', `/api/chats/${previous}/permanent`).catch(() => undefined)
   }
   await mkdir(cacheDirectory, { recursive: true })
-  await writeFile(statePath, JSON.stringify({ ...state, [instance]: { answerChatId: chatId } }, null, 2))
-  return { chatId, title }
+  await writeFile(statePath, JSON.stringify({ ...state, [instance]: { answerChatId: chatId, question: options.question } }, null, 2))
+  return { chatId, title, question: options.question }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
 // Build: one Release simulator app for every device, built in the shared serialized build directory.
 
-const appPath = path.join(cacheDirectory, 'Pulpo.app')
+const appPath = process.env.PULPO_SCREENSHOT_APP ?? path.join(cacheDirectory, 'Pulpo.app')
 
 async function run(command, args, { quiet = false, env = process.env } = {}) {
   return new Promise((resolve, reject) => {
@@ -229,28 +236,30 @@ async function simctl(...args) {
   return stdout
 }
 
-async function buildApp(buildDevice) {
+async function buildApp() {
   if (options['skip-build']) {
     if (!existsSync(appPath)) fail(`--skip-build needs an earlier build at ${appPath}.`)
     log(`Using the existing build at ${appPath}.`)
     return
   }
   log('Building the Release simulator app (waits for the shared build lock; the first build takes a while)…')
-  await run('python3', [path.join(scriptDirectory, 'deploy-iphone.py')], {
-    env: {
-      ...process.env,
-      PULPO_INSTANCE_URL: instance,
-      PULPO_IOS_BUILD_ROOT: process.env.PULPO_IOS_BUILD_ROOT ?? path.join(os.homedir(), '.cache/pulpo/simulator-build'),
-      PULPO_IOS_DEVICE: buildDevice.udid,
-      PULPO_IOS_SIMULATOR: '1',
-      PULPO_IOS_DEPLOY_LOG: path.join(cacheDirectory, 'build.log'),
-    },
-  })
-  // Copy the build from the simulator it was installed on, never from the shared DerivedData, which another
-  // worktree's build may overwrite as soon as the lock is released.
-  const installed = (await simctl('get_app_container', buildDevice.udid, bundleId, 'app')).trim()
-  await rm(appPath, { recursive: true, force: true })
-  await run('cp', ['-R', installed, appPath])
+  const output = await mkdtemp(path.join(cacheDirectory, 'build-'))
+  try {
+    const { PULPO_SCREENSHOT_EMAIL: _email, PULPO_SCREENSHOT_PASSWORD: _password, ...env } = process.env
+    await run('python3', [path.join(scriptDirectory, 'deploy-iphone.py')], {
+      env: {
+        ...env,
+        PULPO_INSTANCE_URL: instance,
+        PULPO_IOS_BUILD_ROOT: env.PULPO_IOS_BUILD_ROOT ?? path.join(os.homedir(), '.cache/pulpo/simulator-build'),
+        PULPO_IOS_SIMULATOR_OUTPUT: output,
+        PULPO_IOS_DEPLOY_LOG: path.join(cacheDirectory, 'build.log'),
+      },
+    })
+    await rm(appPath, { recursive: true, force: true })
+    await rename(path.join(output, 'Pulpo.app'), appPath)
+  } finally {
+    await rm(output, { recursive: true, force: true })
+  }
   log(`Saved the build to ${appPath}.`)
 }
 
@@ -269,22 +278,15 @@ async function ensureSimulator(device) {
 async function bootSimulator(device) {
   await simctl('boot', device.udid).catch(() => undefined) // already booted
   await simctl('bootstatus', device.udid, '-b')
-  await simctl('ui', device.udid, 'appearance', 'dark')
-  await simctl('status_bar', device.udid, 'override', '--time', '9:41', '--dataNetwork', 'wifi', '--wifiMode', 'active',
-    '--wifiBars', '3', '--cellularMode', 'active', '--cellularBars', '4', '--operatorName', '',
-    '--batteryState', 'discharging', '--batteryLevel', '100')
 }
 
 async function freshInstall(device) {
-  await simctl('terminate', device.udid, bundleId).catch(() => undefined)
   await simctl('uninstall', device.udid, bundleId).catch(() => undefined)
-  // The session token lives in the keychain, which survives an uninstall.
-  await simctl('keychain', device.udid, 'reset')
   await simctl('install', device.udid, appPath)
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// agent-device drives the UI through accessibility labels; simctl takes the full-resolution captures.
+// agent-device drives the UI through accessibility labels and captures the active display.
 
 const agentDeviceRoot = path.join(os.homedir(), `.cache/pulpo/agent-device-${agentDeviceVersion}`)
 const agentDeviceBin = path.join(agentDeviceRoot, 'node_modules/agent-device/bin/agent-device.mjs')
@@ -296,15 +298,22 @@ async function ensureAgentDevice() {
 }
 
 function agent(device) {
-  const target = ['--platform', 'ios', '--udid', device.udid, '--session', `pulpo-screenshots-${device.key}`]
+  const prefix = deviceCommand ? [] : [agentDeviceBin]
+  const target = deviceCommand ? [] : ['--platform', 'ios', '--udid', device.udid, '--session', `pulpo-screenshots-${device.key}`]
   const call = async (args, { allowFailure = false } = {}) => {
     try {
-      const { stdout } = await execFile(process.execPath, [agentDeviceBin, ...args, ...target, '--json'], { maxBuffer: 64 * 1024 * 1024 })
+      const { stdout } = await execFile(deviceCommand || process.execPath, [...prefix, ...args, ...target, '--json'], { maxBuffer: 64 * 1024 * 1024 })
       return JSON.parse(stdout).data
     } catch (error) {
       if (allowFailure) return null
       const detail = (() => { try { return JSON.parse(error.stdout).error?.message } catch { return error.stdout || error.message } })()
-      throw new Error(`agent-device ${args.join(' ')} failed on ${device.key}: ${detail}`, { cause: error })
+      if (args[0] === 'type') {
+        const safeDetail = detail?.match(/No focused text input was available for typing|XCTest recorded a failure while executing type/)?.[0]
+        // The child-process error contains the sign-in text in its command arguments.
+        // eslint-disable-next-line preserve-caught-error
+        throw new Error(`Could not enter sign-in text on ${device.key}.${safeDetail ? ` ${safeDetail}.` : ''}`)
+      }
+      throw new Error(`agent-device ${args[0]} failed on ${device.key}: ${detail}`, { cause: error })
     }
   }
   // Transitions briefly keep the outgoing screen in the tree, so retry selectors that match twice.
@@ -320,6 +329,8 @@ function agent(device) {
   return {
     open: () => call(['open', bundleId, '--relaunch', '--timeout', '600000']),
     close: () => call(['close'], { allowFailure: true }),
+    darkMode: () => call(['settings', 'appearance', 'dark']),
+    resetKeychain: () => call(['settings', 'reset-keychain', 'clear']),
     // The iPhone Duo's windowed app briefly has no viewport after a capture or pose change.
     snapshot: async () => {
       for (let attempt = 1; ; attempt += 1) {
@@ -333,12 +344,12 @@ function agent(device) {
     press: (label) => settle(['press', `role=button ${selector(label)}`]),
     pressPoint: (x, y) => call(['press', String(Math.round(x)), String(Math.round(y))]),
     type: (text) => call(['type', text]),
-    wait: (label, ms = 30_000) => call(['wait', selector(label), String(ms)]),
+    wait: (label, ms = 30_000, options) => call(['wait', selector(label), String(ms)], options),
     waitText: (text, ms = 30_000) => call(['wait', 'text', text, String(ms)]),
-    fold: (pose) => call(['fold', pose], { allowFailure: true }),
+    fold: (pose) => call(['fold', pose]),
     orientation: (orientation) => call(['orientation', orientation]),
     scroll: (direction) => call(['scroll', direction], { allowFailure: true }),
-    screenshot: (file, density) => call(['screenshot', file, '--pixel-density', String(density)]),
+    screenshot: (file, density) => call(['screenshot', file, '--pixel-density', String(density), '--normalize-status-bar']),
   }
 }
 
@@ -349,10 +360,7 @@ async function capture(device, ui, shot, outDirectory) {
   if (!selectedShots.has(shot)) return
   await sleep(1200) // let menus and transitions finish animating
   const file = path.join(outDirectory, `${shot}.png`)
-  // simctl captures the raw portrait framebuffer (and on a foldable, whichever display it picks); agent-device
-  // captures the lit panel in the app's orientation.
-  if (device.foldable || device.landscape) await ui.screenshot(file, device.scale)
-  else await simctl('io', device.udid, 'screenshot', '--type=png', file)
+  await ui.screenshot(file, device.scale ?? 3)
   log(`  ${device.key}: ${shot}.png`)
 }
 
@@ -362,12 +370,14 @@ async function capture(device, ui, shot, outDirectory) {
 async function captureDevice(device, models, answer) {
   const outDirectory = path.join(options.out, device.key)
   await mkdir(outDirectory, { recursive: true })
-  await rm(path.join(outDirectory, 'failure.png'), { force: true })
   log(`${device.label}: preparing ${device.key} (${device.udid})`)
   await bootSimulator(device)
   await freshInstall(device)
   const ui = agent(device)
   try {
+    await ui.darkMode()
+    // The session token survives reinstall, so reset the dedicated screenshot simulator's keychain.
+    await ui.resetKeychain()
     await ui.open()
     if (device.foldable) {
       // Panel geometry changes with the pose, so unfold before reading any layout.
@@ -381,6 +391,9 @@ async function captureDevice(device, models, answer) {
 
     await ui.wait('Email', 60_000)
     await capture(device, ui, '06-sign-in', outDirectory)
+    if (!signedInShots) return
+    // In landscape the iPad software keyboard can cover the password field.
+    if (device.landscape) await ui.orientation('portrait')
     // `fill` verifies by reading the field back, which fails in the iPhone Duo's windowed app, so focus each
     // field with a tap and type into it.
     const enter = async (label, text) => {
@@ -408,6 +421,11 @@ async function captureDevice(device, models, answer) {
       await ui.press('Not Now')
       snapshot = await ui.snapshot()
     }
+    if (device.landscape) {
+      await ui.orientation('landscape-left')
+      await sleep(2000)
+      snapshot = await ui.snapshot()
+    }
     const { width, height } = snapshot.viewport ?? findNode(snapshot, (node) => node.kind === 'application').rect
     const persistentSidebar = hasLabel(snapshot, 'Hide chats sidebar')
     // Tapping empty space above the landing content ends editing, which reveals the prompt suggestions.
@@ -422,22 +440,34 @@ async function captureDevice(device, models, answer) {
     }
 
     // The last model used syncs across devices, so always choose the default explicitly.
-    const chooseModel = async (model) => {
+    const openModelPicker = async () => {
       snapshot = await ui.snapshot()
       const button = findNode(snapshot, (node) => node.label?.startsWith('Model, '))
       if (!button) throw new Error(`No model picker on ${device.key}.`)
       await ui.pressPoint(button.rect.x + button.rect.width / 2, button.rect.y + button.rect.height / 2)
-      await ui.wait(model.name, 10_000)
-      return () => ui.press(model.name)
     }
-    await (await chooseModel(models.defaultModel))()
+    const chooseModel = async (model) => {
+      if (await ui.wait(model.name, 1500, { allowFailure: true }) === null) {
+        const section = models.favorites.some((favorite) => favorite.id === model.id)
+          ? 'Favorites'
+          : model.lab?.name ?? 'Internal'
+        await ui.wait('Labs', 10_000)
+        await ui.press('Labs')
+        await ui.wait(section, 10_000)
+        await ui.press(section)
+      }
+      await ui.wait(model.name, 10_000)
+      await ui.press(model.name)
+    }
+    await openModelPicker()
+    await chooseModel(models.defaultModel)
     await ui.wait(`Model, ${models.defaultModel.name}`, 10_000)
     await blur()
     await capture(device, ui, '01-new-chat', outDirectory)
 
-    await chooseModel(models.defaultModel)
+    await openModelPicker()
     await capture(device, ui, '04-model-picker', outDirectory)
-    await ui.press(models.temporaryModel.name)
+    await chooseModel(models.temporaryModel)
     await ui.wait(`Model, ${models.temporaryModel.name}`, 10_000)
     // The header exposes temporary chat as a switch whose value reads On or Off. The accessibility bridge calls it
     // a Toggle and XCTest (used on the iPhone Duo) a Switch.
@@ -452,7 +482,8 @@ async function captureDevice(device, models, answer) {
     await capture(device, ui, '03-temporary-chat', outDirectory)
     await setTemporary(false)
     // Leave the account's synced composer model on the default again.
-    await (await chooseModel(models.defaultModel))()
+    await openModelPicker()
+    await chooseModel(models.defaultModel)
 
     if (!answer.title) return
     if (!persistentSidebar) await ui.press('Open chats')
@@ -462,13 +493,13 @@ async function captureDevice(device, models, answer) {
     if (!persistentSidebar) await capture(device, ui, '02-chats', outDirectory)
     const row = await waitForNode(answerRow, 10_000, `the chat “${answer.title}”`)
     await ui.pressPoint(row.rect.x + row.rect.width / 2, row.rect.y + row.rect.height / 2)
-    await ui.waitText(options.question, 60_000)
+    await ui.waitText(answer.question, 60_000)
     await sleep(2500) // markdown and model icons render after the transcript arrives
     // Chats open at the latest message; start from the question like a reader would.
     await ui.scroll('top')
     await capture(device, ui, '05-answer', outDirectory)
   } finally {
-    await ui.close()
+    if (!deviceCommand) await ui.close()
   }
 }
 
@@ -476,24 +507,25 @@ async function captureDevice(device, models, answer) {
 
 async function main() {
   await mkdir(cacheDirectory, { recursive: true })
-  const user = await signIn()
   let answer
   let models
-  try {
-    log(`Signed in to ${instance} as ${user.email}.`)
-    models = await readModels()
-    log(`Default model: ${models.defaultModel.name}. Favorites: ${models.favorites.map((model) => model.name).join(', ')}.`)
-    log(`Answer model: ${models.answerModel.name}. Temporary chat model: ${models.temporaryModel.name}.`)
-    if (selectedShots.has('05-answer') || selectedShots.has('02-chats')) answer = await askQuestion(models.answerModel)
-  } finally {
-    await signOut()
+  if (signedInShots) {
+    await signIn()
+    try {
+      log(`Signed in to ${instance}.`)
+      models = await readModels()
+      log(`Default model: ${models.defaultModel.name}. Favorites: ${models.favorites.map((model) => model.name).join(', ')}.`)
+      log(`Answer model: ${models.answerModel.name}. Temporary chat model: ${models.temporaryModel.name}.`)
+      if (selectedShots.has('05-answer') || selectedShots.has('02-chats')) answer = await askQuestion(models.answerModel)
+    } finally {
+      await signOut()
+    }
   }
   answer ??= { title: '', chatId: null }
 
-  await ensureAgentDevice()
+  if (!deviceCommand) await ensureAgentDevice()
   for (const device of selectedDevices) await ensureSimulator(device)
-  if (!options['skip-build']) await bootSimulator(selectedDevices[0])
-  await buildApp(selectedDevices[0])
+  await buildApp()
 
   const failures = []
   for (const device of selectedDevices) {
@@ -502,7 +534,6 @@ async function main() {
     } catch (error) {
       failures.push(device.key)
       console.error(`${device.key} failed: ${error.message}`)
-      await simctl('io', device.udid, 'screenshot', '--type=png', path.join(options.out, device.key, 'failure.png')).catch(() => undefined)
     }
     if (!options['keep-booted']) await simctl('shutdown', device.udid).catch(() => undefined)
   }
