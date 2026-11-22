@@ -107,7 +107,11 @@ let token = null
 async function api(method, pathname, body) {
   const response = await fetch(`${instance}${pathname}`, {
     method,
-    headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(body ? { 'content-type': 'application/json' } : {}) },
+    headers: {
+      'x-pulpo-client': 'ios',
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+      ...(body ? { 'content-type': 'application/json' } : {}),
+    },
     body: body ? JSON.stringify(body) : undefined,
   })
   const text = await response.text()
@@ -136,8 +140,8 @@ async function readModels() {
     console.warn('Warning: this account overrides the instance default model or favorites, so the screenshots '
       + 'show its own choices rather than the instance defaults.')
   }
-  const defaultModel = byId.get(settings.values.defaultModelId)
-  if (!defaultModel) throw new Error(`Default model ${settings.values.defaultModelId} is not in the catalog.`)
+  const defaultModel = byId.get(settings.values.defaultModelId) ?? byId.values().next().value
+  if (!defaultModel) throw new Error('The iOS model catalog is empty.')
   const favorites = (settings.values.favoriteModelIds ?? []).map((id) => byId.get(id)).filter(Boolean)
   const others = favorites.filter((model) => model.id !== defaultModel.id)
   const fromLab = (lab) => others.find((model) => model.lab?.name === lab)
