@@ -40,12 +40,12 @@ const pricing = (modelId: string) => ({ id: randomUUID(), modelId, inputPriceMic
 const limitedPricing = pricing(limitedModelId), otherPricing = pricing(otherModelId)
 const usage = { inputTokens: 1, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 100, reasoningTokens: 0, totalTokens: 101 }
 
-async function account(options: { plan?: 'baby' | 'eight' | 'fat'; role?: 'user' | 'admin'; balanceMicros?: number; dailyLimitMicros?: number } = {}) {
+async function account(options: { plan?: 'baby' | 'eight' | 'fat'; role?: 'user' | 'admin'; balanceMicros?: number; dailyLimitMicros?: number; weeklyLimitMicros?: number } = {}) {
   const id = randomUUID(); userIds.push(id)
   await db.insert(users).values({ id, email: `${id}@example.test`, username: id, name: 'Custom limit QA', balanceMicros: options.balanceMicros ?? 1_000_000, role: options.role ?? 'user' })
   if (options.plan || options.dailyLimitMicros !== undefined) {
     await db.insert(billingAccounts).values({
-      userId: id, planOverride: options.plan ?? null, weeklyLimitOverrideMicros: 0, fiveHourLimitOverrideMicros: 0, dailyLimitOverrideMicros: options.dailyLimitMicros ?? null,
+      userId: id, planOverride: options.plan ?? null, weeklyLimitOverrideMicros: options.weeklyLimitMicros ?? 0, fiveHourLimitOverrideMicros: options.weeklyLimitMicros ?? 0, dailyLimitOverrideMicros: options.dailyLimitMicros ?? null,
     })
   }
   return id
@@ -225,6 +225,17 @@ describe.skipIf(!enabled)('custom limit allowances in PostgreSQL', () => {
     await reserveBudget(input)
     await expect(extendBudgetReservationFixedCost(input.responseId, 5_000)).rejects.toMatchObject({ code: 'insufficient_balance' })
     expect(await reservation(input.responseId)).toMatchObject({ amountMicros: 16_001, customReservedMicros: 16_001, extraReservedMicros: 0 })
+  })
+
+  it('funds extras from the subscription when the allowance funded the request so far', async () => {
+    const userId = await account({ plan: 'eight', balanceMicros: 0, weeklyLimitMicros: 50_000 })
+    await limit({ limitMicros: 100_000, coversExtras: false, target: 'users', userIds: [userId] })
+    const input = await request(userId)
+    await reserveBudget(input)
+    expect(await reservation(input.responseId)).toMatchObject({ customReservedMicros: 16_001, weeklyReservedMicros: 0, weeklyPeriodStart: null })
+    // The allowance does not cover the tool hold, so the untouched weekly allowance does.
+    await extendBudgetReservationFixedCost(input.responseId, 5_000)
+    expect(await reservation(input.responseId)).toMatchObject({ amountMicros: 21_001, customReservedMicros: 16_001, extraReservedMicros: 5_000, weeklyReservedMicros: 5_000, fiveHourReservedMicros: 5_000, balanceReservedMicros: 0 })
   })
 
   it('covers extras by default', async () => {
