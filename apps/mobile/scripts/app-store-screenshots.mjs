@@ -307,8 +307,8 @@ function agent(device) {
     } catch (error) {
       if (allowFailure) return null
       const detail = (() => { try { return JSON.parse(error.stdout).error?.message } catch { return error.stdout || error.message } })()
-      if (args[0] === 'type') {
-        const safeDetail = detail?.match(/No focused text input was available for typing|XCTest recorded a failure while executing type/)?.[0]
+      if (args[0] === 'type' || args[0] === 'fill') {
+        const safeDetail = detail?.match(/No focused text input was available for typing|XCTest recorded a failure while executing (?:type|fill)/)?.[0]
         // The child-process error contains the sign-in text in its command arguments.
         // eslint-disable-next-line preserve-caught-error
         throw new Error(`Could not enter sign-in text on ${device.key}.${safeDetail ? ` ${safeDetail}.` : ''}`)
@@ -343,6 +343,7 @@ function agent(device) {
     // XCTest-backed trees wrap a control in a same-label container, so target the button itself.
     press: (label) => settle(['press', `role=button ${selector(label)}`]),
     pressPoint: (x, y) => call(['press', String(Math.round(x)), String(Math.round(y))]),
+    fill: (label, text) => call(['fill', selector(label), text, '--settle']),
     type: (text) => call(['type', text]),
     wait: (label, ms = 30_000, options) => call(['wait', selector(label), String(ms)], options),
     waitText: (text, ms = 30_000) => call(['wait', 'text', text, String(ms)]),
@@ -394,9 +395,13 @@ async function captureDevice(device, models, answer) {
     if (!signedInShots) return
     // In landscape the iPad software keyboard can cover the password field.
     if (device.landscape) await ui.orientation('portrait')
-    // `fill` verifies by reading the field back, which fails in the iPhone Duo's windowed app, so focus each
-    // field with a tap and type into it.
+    // The iPad keyboard can lose focus between separate tap and type commands.
+    // The windowed iPhone Duo cannot reliably verify the field value after fill.
     const enter = async (label, text) => {
+      if (device.landscape) {
+        await ui.fill(label, text)
+        return
+      }
       const field = findNode(await ui.snapshot(), (node) => node.label === label && /text/i.test(node.type ?? ''))
       if (!field) throw new Error(`No ${label} field on ${device.key}.`)
       await ui.pressPoint(field.rect.x + field.rect.width / 2, field.rect.y + field.rect.height / 2)
