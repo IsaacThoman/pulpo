@@ -108,7 +108,7 @@ const config: ExpoConfig = {
     versionCode: Number(process.env.PULPO_ANDROID_VERSION_CODE ?? '1'),
     predictiveBackGestureEnabled: true,
     softwareKeyboardLayoutMode: 'resize',
-    adaptiveIcon: { foregroundImage: './assets/pulpo-smiley.png', backgroundColor: '#F1F6EF' },
+    adaptiveIcon: { foregroundImage: './assets/earthworm-android-foreground.png', backgroundColor: '#F1F6EF' },
     intentFilters: [{ action: 'VIEW', autoVerify: true, category: ['BROWSABLE', 'DEFAULT'], data: [{ scheme: 'https', host: 'pulpo.baby', pathPrefix: '/share/' }] }],
   },
   plugins: [
