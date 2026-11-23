@@ -21,11 +21,15 @@ export function allocateResizedReservationMicros(input: {
   reservationFiveHourPeriodStart: Date | null
   currentFiveHourPeriodStart: Date | null
 }): FundingAllocation {
-  const sameWeek = input.reservationWeeklyPeriodStart?.getTime() === input.currentWeeklyPeriodStart.getTime()
+  // A reservation that has not drawn on an allowance yet (another source funded it) is bound
+  // to no window, so it draws on the current one like a new reservation would.
+  const sameWeek = input.reservationWeeklyPeriodStart === null
+    || input.reservationWeeklyPeriodStart.getTime() === input.currentWeeklyPeriodStart.getTime()
   const weeklyAvailableMicros = sameWeek
     ? input.weeklyRemainingMicros + input.currentWeeklyReservedMicros
     : input.currentWeeklyReservedMicros
-  const sameFiveHourPeriod = input.reservationFiveHourPeriodStart?.getTime() === input.currentFiveHourPeriodStart?.getTime()
+  const sameFiveHourPeriod = input.reservationFiveHourPeriodStart === null
+    || input.reservationFiveHourPeriodStart.getTime() === input.currentFiveHourPeriodStart?.getTime()
   const fiveHourAvailableMicros = sameFiveHourPeriod
     ? input.fiveHourRemainingMicros + input.currentFiveHourReservedMicros
     : input.currentFiveHourReservedMicros
