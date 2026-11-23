@@ -94,6 +94,17 @@ interface GlobalOptions {
   verbose?: boolean
 }
 
+/**
+ * Check a `usage requests` cursor the way the server reads it. A page's `nextCursor` is
+ * `<Postgres timestamp>|<model-call ID>`; a bare timestamp is the older format.
+ */
+function parseModelCallCursor(cursor: string): void {
+  const [startedAt, id] = cursor.split('|', 2)
+  if (Number.isNaN(Date.parse(startedAt ?? '')) || (id !== undefined && !z.uuid().safeParse(id).success)) {
+    throw new Error('--cursor must be the nextCursor from the previous page')
+  }
+}
+
 function globalOptions(command: Command): GlobalOptions {
   return command.optsWithGlobals() as GlobalOptions
 }
@@ -751,14 +762,14 @@ export function createProgram(io: CliIo = processIo, dependencies: CliDependenci
     .description('List model calls with request-log IDs and a pagination cursor')
     .addOption(new Option('--range <range>', 'time range').choices(['24h', '7d', '30d', '90d', 'all']).default('24h'))
     .option('--limit <count>', 'page size (1-100)', '50')
-    .option('--cursor <timestamp>', 'nextCursor from the previous page')
+    .option('--cursor <cursor>', 'nextCursor from the previous page')
     .option('--status <statuses>', 'comma-separated model-call statuses')
     .option('--origin <origin>', 'call source')
     .option('--model <id>', 'catalog or upstream model ID')
     .option('--identity <id>', 'user or API key ID')
     .action(async (options, command) => {
       const limit = z.coerce.number().int().min(1).max(100).parse(options.limit)
-      if (options.cursor) z.iso.datetime({ offset: true }).parse(options.cursor)
+      if (options.cursor) parseModelCallCursor(options.cursor)
       const query = new URLSearchParams({ range: options.range, limit: String(limit) })
       for (const key of ['cursor', 'status', 'origin', 'model', 'identity']) {
         if (options[key]) query.set(key, options[key])

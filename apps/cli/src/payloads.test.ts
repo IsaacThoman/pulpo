@@ -45,7 +45,14 @@ describe('detailed payload commands', () => {
     expect(Object.fromEntries(url.searchParams)).toEqual({ range: 'all', limit: '10', cursor: '2026-09-02T12:00:00+01:00', status: 'completed,failed', origin: 'web', model: 'provider/model', identity: 'user-id' })
     expect(JSON.parse(stdout.read().toString())).toEqual(result)
   })
-  it.each([['--limit', '0'], ['--limit', '101'], ['--limit', '1.5'], ['--cursor', 'invalid']])('rejects invalid pagination %j', async (flag, value) => {
+  it('accepts the nextCursor the server returns', async () => {
+    const cursor = '2026-11-19 11:37:46.769975+00|01a1f399-3611-712b-9ab2-abc291336fb5'
+    const { program, request } = cli({ data: [], nextCursor: null })
+    await program.parseAsync(['node', 'pulpo', 'usage', 'requests', '--cursor', cursor, '--json'])
+    const url = new URL(request.mock.calls[0]![0], 'https://pulpo.example.test')
+    expect(url.searchParams.get('cursor')).toBe(cursor)
+  })
+  it.each([['--limit', '0'], ['--limit', '101'], ['--limit', '1.5'], ['--cursor', 'invalid'], ['--cursor', '2026-11-19 11:37:46+00|not-an-id']])('rejects invalid pagination %j', async (flag, value) => {
     const { program, request } = cli({})
     await expect(program.parseAsync(['node', 'pulpo', 'usage', 'requests', flag, value])).rejects.toThrow()
     expect(request).not.toHaveBeenCalled()
