@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { AppState } from 'react-native'
+import { WorkspaceScreenPresenceTracker } from '@pulpo/client-core'
 import type { WorkspaceScreenPresence } from '@pulpo/contracts'
 import { fetchWorkspaceScreenPresence } from './api'
-import { WorkspaceScreenPresenceTracker } from './presence'
 
-/** The app's one tracker: every reply that offers a chat's screen shares its chat's answer. */
+/**
+ * The app's one presence tracker (`@pulpo/client-core`): every reply that offers a chat's screen
+ * shares its chat's answer. Nothing is asked while the app is in the background.
+ */
 export const workspaceScreenPresence = new WorkspaceScreenPresenceTracker({
   fetchPresence: fetchWorkspaceScreenPresence,
   foreground: {
@@ -17,21 +20,13 @@ export const workspaceScreenPresence = new WorkspaceScreenPresenceTracker({
   },
 })
 
-const noSubscription = () => () => undefined
-
 /**
  * Whether the chat's workspace is still there, for the reply that offers its screen; undefined
- * until the first answer. While that reply is at work (`running`) the workspace is there without
- * asking, and the answer from before it started is forgotten.
+ * until the first answer. While that reply is at work (`running`) nothing is asked and the answer
+ * from before it started is forgotten.
  */
 export function useWorkspaceScreenPresence(chatId: string, running: boolean): WorkspaceScreenPresence | undefined {
-  const subscribe = useCallback(
-    (listener: () => void) => workspaceScreenPresence.subscribe(chatId, listener),
-    [chatId],
-  )
-  const presence = useSyncExternalStore(running ? noSubscription : subscribe, () => workspaceScreenPresence.get(chatId))
-  useEffect(() => {
-    if (running) workspaceScreenPresence.forget(chatId)
-  }, [chatId, running])
-  return running ? undefined : presence
+  const subscribe = useCallback((listener: () => void) => workspaceScreenPresence.subscribe(chatId, listener), [chatId])
+  useEffect(() => { workspaceScreenPresence.setBusy(chatId, running) }, [chatId, running])
+  return useSyncExternalStore(subscribe, () => workspaceScreenPresence.get(chatId))
 }

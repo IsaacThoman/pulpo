@@ -335,7 +335,7 @@ import {
 import { activityDurationMs, activityUsesApps, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, computerWorkspaceLabel, filesPermissionLabel, filesPermissionPlace, newestWorkspaceScreenReply, pendingFilesPermission, timelineActivityIsActive, workspaceIsActive, type TimelineSegment, type TimelineStep } from '../features/chat/timeline';
 import { WorkspaceScreenHost } from '../features/workspace-screen/WorkspaceScreenViewer';
 import { useWorkspaceScreenViewer } from '../features/workspace-screen/store';
-import { screenOffer } from '../features/workspace-screen/presence';
+import { workspaceScreenOffer as screenOffer } from '@pulpo/client-core';
 import { useWorkspaceScreenPresence, workspaceScreenPresence } from '../features/workspace-screen/usePresence';
 import { toolActivityPresentation } from '../features/chat/toolActivityPresentation';
 import { CHAT_RESUME_FOLLOW_THRESHOLD, CHAT_SCROLL_TO_BOTTOM_THRESHOLD, type ChatViewportMetrics, chatBottomDistance, chatLandingKeyboardTranslation, chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent, shouldResumeChatFollow } from '../features/chat/viewport';
