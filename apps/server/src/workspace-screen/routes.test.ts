@@ -5,23 +5,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => {
   process.env.WORKSPACE_CONTROLLER_URL = 'http://controller.test'
   process.env.WORKSPACE_CONTROLLER_TOKEN = 'controller-token-'.padEnd(40, 'x')
-  return { selects: [] as unknown[][], updates: [] as Array<Record<string, unknown>>, request: vi.fn() }
+  return { selects: [] as unknown[][], updates: [] as Array<Record<string, unknown>>, request: vi.fn(), charge: vi.fn(), announce: vi.fn(async () => undefined) }
 })
 
-vi.mock('../database/client.js', () => ({
-  db: {
+vi.mock('../database/client.js', () => {
+  // Each query takes the next queued answer, whether it ends in `limit` or in a row lock.
+  const answer = async () => mocks.selects.shift() ?? []
+  const queries = {
     select: vi.fn(() => {
-      const builder = { from: () => builder, where: () => builder, limit: async () => mocks.selects.shift() ?? [] }
+      const builder = { from: () => builder, innerJoin: () => builder, where: () => builder, limit: answer, for: answer }
       return builder
     }),
     update: vi.fn(() => ({ set: (values: Record<string, unknown>) => ({ where: async () => { mocks.updates.push(values) } }) })),
-  },
-}))
+  }
+  return { db: { ...queries, transaction: async (work: (tx: typeof queries) => unknown) => work(queries) } }
+})
+// The charge runs in the transaction that holds the lease row; it is announced after the commit.
+vi.mock('../accounting/service.js', () => ({ chargeMeteredUsageIn: (_tx: unknown, input: unknown) => mocks.charge(input), announceMeteredUsage: mocks.announce }))
 vi.mock('../auth/service.js', () => ({ requireUser: (request: { user: unknown }) => request.user }))
 vi.mock('../agent/controller-http.js', () => ({ workspaceControllerRequest: mocks.request }))
 
 import { AppError } from '../lib/errors.js'
-import { registerWorkspaceScreenRoutes, touchScreenLease, workspaceScreenFrameId, WORKSPACE_SCREEN_FRAME_MAX_BYTES } from './routes.js'
+import { chargeScreenTime, registerWorkspaceScreenRoutes, touchScreenLease, workspaceScreenFrameId, WORKSPACE_SCREEN_BILLED_MS, WORKSPACE_SCREEN_FRAME_MAX_BYTES } from './routes.js'
 
 const chatId = '9db9ea5a-3af7-4b66-9f2a-c179278a0998'
 const base = `/api/chats/${chatId}/workspace-screen`
@@ -32,9 +37,21 @@ const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000)
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
 const settings = (value: Record<string, unknown> = {}) => [{ key: 'agent', value: { enabled: true, workspaceDesktop: true, ...value } }]
 /** A chat with a running workspace whose lease was last used `usedMinutesAgo`, with a 30-minute idle timeout. */
-function running(usedMinutesAgo = 5) {
+function running(usedMinutesAgo = 5, agent: Record<string, unknown> = {}, lease: Record<string, unknown> = {}) {
   const lastUsedAt = minutesAgo(usedMinutesAgo)
-  mocks.selects = [[{ scopeId: 'scope-1' }], settings(), [{ id: 'lease-row', controllerLeaseId: 'lease-1', lastUsedAt, expiresAt: new Date(lastUsedAt.getTime() + 30 * 60_000) }]]
+  mocks.selects = [[{ scopeId: 'scope-1' }], settings(agent), [{
+    id: 'lease-row', controllerLeaseId: 'lease-1', lastUsedAt, expiresAt: new Date(lastUsedAt.getTime() + 30 * 60_000),
+    hardExpiresAt: new Date(lastUsedAt.getTime() + 4 * 3_600_000), screenBilledUntil: null, ...lease,
+  }]]
+}
+/**
+ * A running workspace on an instance that bills for workspaces. `replyPaying`: a reply's run has the
+ * workspace. `locked`: the lease row as the request finds it once it holds the row's lock.
+ */
+function billed(lease: Record<string, unknown> = {}, replyPaying = false, locked: unknown[] = [{ screenBilledUntil: lease.screenBilledUntil ?? null }]) {
+  running(5, { billWorkspaces: true, workspacePricePerMinuteMicros: 1_500 }, lease)
+  mocks.selects.push(replyPaying ? [{ id: 'run-1' }] : [])
+  if (!replyPaying) mocks.selects.push(locked)
 }
 
 type Upstream = { path: string; method: string; body?: unknown; signal?: AbortSignal }
@@ -64,7 +81,7 @@ async function server(): Promise<FastifyInstance> {
   return app
 }
 
-beforeEach(() => { mocks.selects = []; mocks.updates = []; mocks.request.mockReset(); upstream = [] })
+beforeEach(() => { mocks.selects = []; mocks.updates = []; mocks.request.mockReset(); mocks.charge.mockReset(); mocks.charge.mockResolvedValue({ ownChanges: [] }); mocks.announce.mockClear(); upstream = [] })
 afterEach(async () => { await Promise.all(apps.splice(0).map((app) => app.close())) })
 
 describe('workspace screen access', () => {
@@ -282,11 +299,131 @@ describe('watching keeps the workspace', () => {
 
   it('follows the throttle on its own clock', async () => {
     const now = Date.now()
-    const lease = { id: 'lease-row', controllerLeaseId: 'lease-1', lastUsedAt: new Date(now - 29_000), expiresAt: new Date(now + 60_000) }
+    const lease = { id: 'lease-row', controllerLeaseId: 'lease-1', lastUsedAt: new Date(now - 29_000), expiresAt: new Date(now + 60_000), hardExpiresAt: null, screenBilledUntil: null }
     expect(await touchScreenLease(lease, 1_800_000, now)).toBe(false)
     expect(await touchScreenLease(lease, 1_800_000, now + 1_000)).toBe(true)
     // A lease never used before takes the instance's idle timeout.
     expect(await touchScreenLease({ ...lease, lastUsedAt: null, expiresAt: null }, 1_800_000, now)).toBe(true)
     expect((mocks.updates.at(-1) as { expiresAt: Date }).expiresAt.getTime()).toBe(now + 1_800_000)
+  })
+})
+
+describe('workspace screen presence', () => {
+  it('says whether the workspace is still there and when it goes, without reaching it or keeping it alive', async () => {
+    const app = await server()
+    running(5)
+    const lastUsedAt = (mocks.selects[2] as Array<{ lastUsedAt: Date }>)[0]!.lastUsedAt
+    const presence = await app.inject({ url: `${base}/presence` })
+    expect(presence.json()).toEqual({ live: true, expiresAt: new Date(lastUsedAt.getTime() + 30 * 60_000).toISOString() })
+    // The hard timeout ends it sooner than the idle one would.
+    running(5, {}, { hardExpiresAt: new Date(lastUsedAt.getTime() + 60_000) })
+    expect((await app.inject({ url: `${base}/presence` })).json().expiresAt).toBe(new Date(lastUsedAt.getTime() + 60_000).toISOString())
+    expect(mocks.request).not.toHaveBeenCalled()
+    expect(mocks.updates).toEqual([])
+    expect(mocks.charge).not.toHaveBeenCalled()
+  })
+
+  it('is not live without a running workspace, or with the screen turned off', async () => {
+    const app = await server()
+    mocks.selects = [[{ scopeId: 'scope-1' }], settings(), []]
+    expect((await app.inject({ url: `${base}/presence` })).json()).toEqual({ live: false, expiresAt: null })
+    mocks.selects = [[{ scopeId: 'scope-1' }], settings({ workspaceDesktop: false })]
+    expect((await app.inject({ url: `${base}/presence` })).json()).toEqual({ live: false, expiresAt: null })
+    mocks.selects = [[]]
+    expect((await app.inject({ url: `${base}/presence` })).statusCode).toBe(404)
+  })
+})
+
+describe('workspace screen billing', () => {
+  it('tells the viewer what a minute costs, only where workspaces are billed', async () => {
+    const app = await server()
+    daemon(() => json({ available: true, running: true, width: 1280, height: 800, controlled: false }))
+    running(5, { billWorkspaces: true, workspacePricePerMinuteMicros: 1_500 })
+    expect((await app.inject({ url: base })).json()).toMatchObject({ state: 'ready', pricePerMinuteMicros: 1_500 })
+    running(5, { billWorkspaces: false, workspacePricePerMinuteMicros: 1_500 })
+    expect((await app.inject({ url: base })).json()).not.toHaveProperty('pricePerMinuteMicros')
+    // Asking the status is not watching.
+    expect(mocks.charge).not.toHaveBeenCalled()
+  })
+
+  it('charges a minute when one starts, and nothing more until it is over', async () => {
+    const app = await server()
+    daemon(() => new Response(jpeg, { headers: { 'content-type': 'image/jpeg' } }))
+    billed()
+    const before = Date.now()
+    expect((await app.inject({ url: `${base}/frame` })).statusCode).toBe(200)
+    expect(mocks.charge).toHaveBeenCalledTimes(1)
+    expect(mocks.charge.mock.calls[0]![0]).toEqual({
+      userId: 'user-1', costMicros: 1_500, type: 'workspace_screen',
+      metadata: { chatId, workspaceLeaseId: 'lease-row', minutes: 1, pricePerMinuteMicros: 1_500 },
+    })
+    expect(mocks.announce).toHaveBeenCalledTimes(1)
+    const paidUntil = (mocks.updates[0] as { screenBilledUntil: Date }).screenBilledUntil.getTime()
+    expect(paidUntil).toBeGreaterThanOrEqual(before + WORKSPACE_SCREEN_BILLED_MS)
+    expect(paidUntil).toBeLessThanOrEqual(Date.now() + WORKSPACE_SCREEN_BILLED_MS)
+
+    // Within the paid minute: no charge, and not even a look at whether a reply is running.
+    running(0, { billWorkspaces: true, workspacePricePerMinuteMicros: 1_500 }, { screenBilledUntil: new Date(Date.now() + 30_000) })
+    expect((await app.inject({ url: `${base}/frame` })).statusCode).toBe(200)
+    expect(mocks.selects).toEqual([])
+    expect(mocks.charge).toHaveBeenCalledTimes(1)
+
+    // The minute is over: the next request starts another, whatever it is.
+    billed({ screenBilledUntil: new Date(Date.now() - 1) })
+    daemon(() => json({ ok: true }))
+    expect((await app.inject({ method: 'POST', url: `${base}/input`, payload: { events: [{ type: 'move', x: 1, y: 1 }] } })).statusCode).toBe(204)
+    expect(mocks.charge).toHaveBeenCalledTimes(2)
+  })
+
+  it('charges nothing while a reply has the workspace, or when a request ahead of this one paid for the minute', async () => {
+    const app = await server()
+    daemon(() => new Response(jpeg, { headers: { 'content-type': 'image/jpeg' } }))
+    billed({}, true)
+    expect((await app.inject({ url: `${base}/frame` })).statusCode).toBe(200)
+    expect(mocks.charge).not.toHaveBeenCalled()
+    expect(mocks.updates.some((update) => 'screenBilledUntil' in update)).toBe(false)
+
+    // Two requests found the minute unpaid; this one waited on the row's lock and finds it paid.
+    billed({}, false, [{ screenBilledUntil: new Date(Date.now() + 50_000) }])
+    expect((await app.inject({ url: `${base}/frame` })).statusCode).toBe(200)
+    expect(mocks.charge).not.toHaveBeenCalled()
+    expect(mocks.updates.some((update) => 'screenBilledUntil' in update)).toBe(false)
+
+    // The workspace went while the request waited: nothing to pay for.
+    billed({}, false, [])
+    await app.inject({ url: `${base}/frame` })
+    expect(mocks.charge).not.toHaveBeenCalled()
+  })
+
+  it('refuses the request, records no paid minute and leaves the workspace alone when the user cannot pay', async () => {
+    const app = await server()
+    daemon(() => new Response(jpeg, { headers: { 'content-type': 'image/jpeg' } }))
+    mocks.charge.mockRejectedValue(new AppError(402, 'insufficient_balance', 'Insufficient balance for metered usage'))
+    const paidBefore = new Date(Date.now() - 5_000)
+    billed({ screenBilledUntil: paidBefore })
+    const frame = await app.inject({ url: `${base}/frame` })
+    expect(frame.statusCode).toBe(402)
+    expect(frame.json()).toMatchObject({ error: { code: 'insufficient_balance' } })
+    expect(mocks.request).not.toHaveBeenCalled()
+    // No minute was recorded as paid, so a request arriving with this one is refused the same way,
+    // and the lease's idle expiry was never moved on.
+    expect(mocks.updates).toEqual([])
+    billed({ screenBilledUntil: paidBefore })
+    expect((await app.inject({ url: `${base}/frame` })).statusCode).toBe(402)
+    expect(mocks.request).not.toHaveBeenCalled()
+
+    billed()
+    expect((await app.inject({ method: 'POST', url: `${base}/control`, payload: { held: true } })).statusCode).toBe(402)
+    // Handing control back always goes through.
+    running(5, { billWorkspaces: true, workspacePricePerMinuteMicros: 1_500 })
+    daemon(() => json({ held: false }))
+    expect((await app.inject({ method: 'POST', url: `${base}/control`, payload: { held: false } })).json()).toEqual({ held: false })
+  })
+
+  it('is free where the price is zero', async () => {
+    const lease = { id: 'lease-row', controllerLeaseId: 'lease-1', lastUsedAt: null, expiresAt: null, hardExpiresAt: null, screenBilledUntil: null }
+    expect(await chargeScreenTime({ userId: 'user-1', chatId, pricePerMinuteMicros: 0, lease })).toBe(false)
+    expect(mocks.charge).not.toHaveBeenCalled()
+    expect(mocks.updates).toEqual([])
   })
 })

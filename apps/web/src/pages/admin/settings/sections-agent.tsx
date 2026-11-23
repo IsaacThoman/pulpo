@@ -171,7 +171,7 @@ export function AgentSection() {
         <label className="space-y-1 text-xs"><span>{ui("Command timeout (seconds)")}</span>{number('commandTimeoutSeconds', 1)}</label>
         <label className="space-y-1 text-xs"><span>{ui("Retained tool output (bytes)")}</span>{number('maxToolOutputBytes', 1024)}</label>
       </div>
-      <Toggle label={ui("Bill users for agent workspaces")} hint="Charges from lease ready until the response ends. Queue wait is free." checked={value.billWorkspaces} onChange={(billWorkspaces) => setValue({ ...value, billWorkspaces })} />
+      <Toggle label={ui("Bill users for agent workspaces")} hint="Charges from lease ready until the response ends, and each minute a user has the workspace's screen open. Queue wait and idle time are free." checked={value.billWorkspaces} onChange={(billWorkspaces) => setValue({ ...value, billWorkspaces })} />
       {value.billWorkspaces && <NumField label={ui("Price per workspace minute")} value={value.workspacePricePerMinuteMicros / 1_000_000} onChange={(usd) => setValue({ ...value, workspacePricePerMinuteMicros: Math.round(usd * 1_000_000) })} min={0} step={0.001} decimals={4} suffix="USD" />}
       <Toggle label={ui("Let desktop apps use the user's computer")} hint={ui("Shows This computer in the Pulpo Agent menu of the desktop app.")} checked={value.computerAccess} onChange={(computerAccess) => setValue({ ...value, computerAccess })} />
       <Toggle label={ui("Give agent workspaces a screen")} hint={ui("Adds a browser and the app tools to cloud workspaces, and lets a chat's owner watch the screen and take it over. Needs a workspace image that includes the desktop.")} checked={value.workspaceDesktop} onChange={(workspaceDesktop) => setValue({ ...value, workspaceDesktop })} />

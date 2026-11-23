@@ -3079,6 +3079,10 @@ const esUi: Record<string, string> = {
   "Type here, then send": "Escribe aquí y luego envía",
   "Type in the workspace": "Escribir en el espacio de trabajo",
   "Keys": "Teclas",
+  "Screen closed": "Pantalla cerrada",
+  "The workspace shut down after sitting idle. Send another message to start a new one.": "El espacio de trabajo se apagó tras estar inactivo. Envía otro mensaje para iniciar uno nuevo.",
+  "Billed at {{price}} a minute while this is open.": "Se cobra a {{price}} por minuto mientras esté abierta.",
+  "You're out of credit, so the screen can't stay open. Add credit, then open it again.": "Te has quedado sin crédito, así que la pantalla no puede seguir abierta. Añade crédito y vuelve a abrirla.",
 }
 
 export default esUi

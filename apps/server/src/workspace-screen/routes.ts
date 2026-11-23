@@ -3,18 +3,19 @@ import { and, eq, gt, isNotNull, isNull, lt, or } from 'drizzle-orm'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import {
-  WORKSPACE_SCREEN_FRAME_HEADER, WORKSPACE_SCREEN_HEIGHT, WORKSPACE_SCREEN_WIDTH,
+  WORKSPACE_SCREEN_FRAME_HEADER, WORKSPACE_SCREEN_HEIGHT, WORKSPACE_SCREEN_PRESENCE_SUFFIX, WORKSPACE_SCREEN_WIDTH,
   workspaceScreenControlSchema, workspaceScreenFrameQuerySchema, workspaceScreenInputSchema,
-  type WorkspaceScreenStatus,
+  type WorkspaceScreenPresence, type WorkspaceScreenStatus,
 } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { applicationSettings, chats, workspaceLeases } from '../database/schema.js'
+import { agentRuns, applicationSettings, chats, responses, workspaceLeases } from '../database/schema.js'
 import { requireUser } from '../auth/service.js'
 import { AppError, forbidden, notFound } from '../lib/errors.js'
 import { getConfig } from '../config.js'
 import { parseAgentSettings } from '../settings/application-settings.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
+import { announceMeteredUsage, chargeMeteredUsageIn } from '../accounting/service.js'
 import { boundedBody } from '../agent/controller.js'
 import { detectImageMime } from '../agent/images.js'
 
@@ -31,6 +32,8 @@ export const WORKSPACE_SCREEN_FRAME_MAX_BYTES = 4 * 1_048_576
 export const WORKSPACE_SCREEN_LEASE_TOUCH_MS = 30_000
 /** 64 events of at most 2,000 characters each, in JSON even when every character is escaped. */
 const INPUT_BODY_LIMIT = 1_048_576
+/** Having the screen open is paid for a minute at a time, each when it starts. */
+export const WORKSPACE_SCREEN_BILLED_MS = 60_000
 
 /*
  * A viewer asks for a frame about five times a second at most and sends input about twenty times
@@ -40,6 +43,8 @@ const statusRoute = { config: { rateLimit: { max: 120, timeWindow: '1 minute' } 
 const frameRoute = { compress: false as const, config: { rateLimit: { max: 360, timeWindow: '1 minute' } } }
 const controlRoute = { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }
 const inputRoute = { bodyLimit: INPUT_BODY_LIMIT, config: { rateLimit: { max: 1_500, timeWindow: '1 minute' } } }
+// Asked when a chat is shown and when its workspace is due to go, not on an interval.
+const presenceRoute = { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }
 
 const unavailable = () => new AppError(404, 'workspace_screen_unavailable', 'No workspace with a screen is running for this chat')
 const unreachable = () => new AppError(502, 'workspace_screen_unreachable', 'The workspace\'s screen could not be reached', 'server_error')
@@ -61,12 +66,19 @@ interface ScreenLease {
   controllerLeaseId: string
   lastUsedAt: Date | null
   expiresAt: Date | null
+  hardExpiresAt: Date | null
+  /** Up to when the owner has paid for having the screen open. */
+  screenBilledUntil: Date | null
 }
 
 interface ScreenContext {
+  userId: string
+  chatId: string
   /** Agent mode is available and the instance gives workspaces a screen. */
   enabled: boolean
   idleTimeoutMs: number
+  /** What a minute with the screen open costs; 0 where the instance does not bill for workspaces. */
+  pricePerMinuteMicros: number
   /** The chat's current workspace: the ready, unexpired lease of its workspace scope. */
   lease?: ScreenLease
 }
@@ -97,23 +109,64 @@ async function screenContext(request: FastifyRequest): Promise<ScreenContext> {
   const config = getConfig()
   const enabled = settings.enabled && settings.workspaceDesktop && Boolean(config.WORKSPACE_CONTROLLER_URL && config.WORKSPACE_CONTROLLER_TOKEN)
   const idleTimeoutMs = settings.idleTimeoutSeconds * 1000
-  if (!enabled) return { enabled, idleTimeoutMs }
+  const pricePerMinuteMicros = settings.billWorkspaces ? settings.workspacePricePerMinuteMicros : 0
+  const context = { userId: user.id, chatId, enabled, idleTimeoutMs, pricePerMinuteMicros }
+  if (!enabled) return context
   const [lease] = await db.select({
     id: workspaceLeases.id, controllerLeaseId: workspaceLeases.controllerLeaseId, lastUsedAt: workspaceLeases.lastUsedAt, expiresAt: workspaceLeases.expiresAt,
+    hardExpiresAt: workspaceLeases.hardExpiresAt, screenBilledUntil: workspaceLeases.screenBilledUntil,
   }).from(workspaceLeases).where(and(
     eq(workspaceLeases.workspaceScopeId, chat.scopeId), eq(workspaceLeases.chatId, chatId), eq(workspaceLeases.userId, user.id),
     eq(workspaceLeases.status, 'ready'), isNotNull(workspaceLeases.controllerLeaseId),
     or(isNull(workspaceLeases.expiresAt), gt(workspaceLeases.expiresAt, now)),
     or(isNull(workspaceLeases.hardExpiresAt), gt(workspaceLeases.hardExpiresAt, now)),
   )).limit(1)
-  return { enabled, idleTimeoutMs, ...(lease?.controllerLeaseId ? { lease: { ...lease, controllerLeaseId: lease.controllerLeaseId } } : {}) }
+  return { ...context, ...(lease?.controllerLeaseId ? { lease: { ...lease, controllerLeaseId: lease.controllerLeaseId } } : {}) }
 }
 
 /** The workspace for a request that needs its screen. */
-async function screenLease(request: FastifyRequest): Promise<{ lease: ScreenLease; idleTimeoutMs: number }> {
+async function screenLease(request: FastifyRequest): Promise<ScreenContext & { lease: ScreenLease }> {
   const context = await screenContext(request)
   if (!context.enabled || !context.lease) throw unavailable()
-  return { lease: context.lease, idleTimeoutMs: context.idleTimeoutMs }
+  return { ...context, lease: context.lease }
+}
+
+/**
+ * Charges the owner for having the screen open, a minute at a time and each when it starts, on
+ * instances that bill for workspaces. A reply that has the workspace pays for it itself (from when
+ * it has it until it ends), so nothing is charged while one does; and with nobody watching no
+ * request comes, so an idle workspace costs nothing. The lease remembers up to when is paid. The
+ * request that finds that passed locks the lease row, charges and writes the new time in one
+ * transaction: requests arriving together wait on the lock and find the minute paid, or, when the
+ * user cannot pay, each gets the accounting error (402 `insufficient_balance`) and none is carried
+ * out. One transaction, so a burst of requests never holds two connections apiece.
+ */
+export async function chargeScreenTime(context: Pick<ScreenContext, 'userId' | 'chatId' | 'pricePerMinuteMicros'> & { lease: ScreenLease }, now = Date.now()): Promise<boolean> {
+  const { lease, pricePerMinuteMicros } = context
+  if (pricePerMinuteMicros <= 0) return false
+  if (lease.screenBilledUntil && lease.screenBilledUntil.getTime() > now) return false
+  // A reply pays once its run has this workspace; one that is queued, or never uses it, does not.
+  const [paying] = await db.select({ id: agentRuns.id }).from(agentRuns).innerJoin(responses, eq(responses.id, agentRuns.responseId))
+    .where(and(eq(agentRuns.workspaceLeaseId, lease.id), eq(agentRuns.status, 'running'), eq(responses.status, 'in_progress'))).limit(1)
+  if (paying) return false
+  const charged = await db.transaction(async (tx) => {
+    const [current] = await tx.select({ screenBilledUntil: workspaceLeases.screenBilledUntil }).from(workspaceLeases)
+      .where(and(eq(workspaceLeases.id, lease.id), eq(workspaceLeases.status, 'ready'))).for('update')
+    // Gone meanwhile (the request finds that out next), or paid by the request that held the lock before this one.
+    if (!current || (current.screenBilledUntil && current.screenBilledUntil.getTime() > now)) return null
+    const changes = await chargeMeteredUsageIn(tx, {
+      userId: context.userId, costMicros: pricePerMinuteMicros, type: 'workspace_screen',
+      metadata: { chatId: context.chatId, workspaceLeaseId: lease.id, minutes: 1, pricePerMinuteMicros },
+    })
+    await tx.update(workspaceLeases).set({ screenBilledUntil: new Date(now + WORKSPACE_SCREEN_BILLED_MS) }).where(eq(workspaceLeases.id, lease.id))
+    return changes
+  })
+  if (!charged) return false
+  // After the commit; telling clients must not undo a charge that went through.
+  await announceMeteredUsage(charged).catch((error: unknown) => {
+    console.warn('Workspace screen charge was not announced', { leaseId: lease.id, error: error instanceof Error ? error.message : String(error) })
+  })
+  return true
 }
 
 /**
@@ -184,8 +237,9 @@ export function workspaceScreenFrameId(bytes: Uint8Array): string {
 /**
  * The screen of the chat's current cloud workspace, for its owner to watch and take over. The
  * daemon in the workspace holds the picture and who has control; these routes check who asks,
- * find the workspace, and relay. Input bodies may carry a password being typed: they are never
- * logged, and no error here repeats them.
+ * find the workspace, and relay. Watching counts as use: it keeps the workspace from idling out
+ * (up to its hard timeout) and, where workspaces are billed, is charged by the minute. Input bodies
+ * may carry a password being typed: they are never logged, and no error here repeats them.
  */
 export async function registerWorkspaceScreenRoutes(app: FastifyInstance): Promise<void> {
   const base = '/api/chats/:chatId/workspace-screen'
@@ -212,13 +266,25 @@ export async function registerWorkspaceScreenRoutes(app: FastifyInstance): Promi
     return status('ready', {
       ...(parsed.data.width && parsed.data.height ? { width: parsed.data.width, height: parsed.data.height } : {}),
       controlled: parsed.data.controlled ?? false,
+      ...(context.pricePerMinuteMicros > 0 ? { pricePerMinuteMicros: context.pricePerMinuteMicros } : {}),
     })
+  })
+
+  // Whether the workspace is still there, from the lease alone: nothing is asked of the workspace,
+  // so knowing costs nothing and does not keep it alive.
+  app.get(`${base}${WORKSPACE_SCREEN_PRESENCE_SUFFIX}`, presenceRoute, async (request): Promise<WorkspaceScreenPresence> => {
+    const context = await screenContext(request)
+    if (!context.enabled || !context.lease) return { live: false, expiresAt: null }
+    const ends = [context.lease.expiresAt, context.lease.hardExpiresAt].flatMap((date) => date ? [date.getTime()] : [])
+    return { live: true, expiresAt: ends.length ? new Date(Math.min(...ends)).toISOString() : null }
   })
 
   app.get(`${base}/frame`, frameRoute, async (request, reply) => {
     const query = workspaceScreenFrameQuerySchema.safeParse(request.query)
     if (!query.success) throw invalid(query.error)
-    const { lease, idleTimeoutMs } = await screenLease(request)
+    const context = await screenLease(request)
+    const { lease, idleTimeoutMs } = context
+    await chargeScreenTime(context)
     const search = new URLSearchParams()
     if (query.data.after) search.set('after', query.data.after)
     if (query.data.waitMs !== undefined) search.set('waitMs', String(query.data.waitMs))
@@ -252,7 +318,10 @@ export async function registerWorkspaceScreenRoutes(app: FastifyInstance): Promi
   app.post(`${base}/control`, controlRoute, async (request) => {
     const body = workspaceScreenControlSchema.safeParse(request.body)
     if (!body.success) throw invalid(body.error)
-    const { lease, idleTimeoutMs } = await screenLease(request)
+    const context = await screenLease(request)
+    const { lease, idleTimeoutMs } = context
+    // Giving control back is never refused for want of credit.
+    if (body.data.held) await chargeScreenTime(context)
     return reaching(async () => {
       const answer = await daemonRequest(lease, idleTimeoutMs, '/control', { method: 'POST', body: JSON.stringify(body.data), signal: AbortSignal.timeout(CONTROL_TIMEOUT_MS) })
       if (answer.kind === 'gone') throw unavailable()
@@ -268,7 +337,9 @@ export async function registerWorkspaceScreenRoutes(app: FastifyInstance): Promi
   app.post(`${base}/input`, inputRoute, async (request, reply) => {
     const body = workspaceScreenInputSchema.safeParse(request.body)
     if (!body.success) throw invalid(body.error)
-    const { lease, idleTimeoutMs } = await screenLease(request)
+    const context = await screenLease(request)
+    const { lease, idleTimeoutMs } = context
+    await chargeScreenTime(context)
     await reaching(async () => {
       const answer = await daemonRequest(lease, idleTimeoutMs, '/input', { method: 'POST', body: JSON.stringify(body.data), signal: AbortSignal.timeout(INPUT_TIMEOUT_MS) })
       if (answer.kind === 'gone') throw unavailable()

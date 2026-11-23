@@ -28,6 +28,10 @@ export { createUploadQueue, retryBusyUpload } from './upload-queue.js'
 export { mergePendingAttachments } from './attachment-order.js'
 
 export { LatestValueQueue } from './latest-value-queue.js'
+export {
+  PRESENCE_EXPIRY_GRACE_MS, PRESENCE_RECHECK_MIN_MS, WorkspaceScreenPresenceTracker, workspaceScreenOffer,
+  type PresenceForeground, type WorkspaceScreenPresenceOptions,
+} from './workspace-screen-presence.js'
 
 export function hydrateEmbeddedResponseSnapshot(
   snapshot: ResponseSnapshot | EmbeddedResponseSnapshot,

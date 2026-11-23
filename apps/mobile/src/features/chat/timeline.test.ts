@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { recalledChatLabel } from './recall-label'
-import { activityDurationMs, activityUsesApps, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, computerWorkspaceLabel, filesPermissionLabel, filesPermissionPlace, pendingFilesPermission, timelineActivityIsActive, usedWorkspaceScreen } from './timeline'
+import { activityDurationMs, activityUsesApps, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, computerWorkspaceLabel, filesPermissionLabel, filesPermissionPlace, newestWorkspaceScreenReply, pendingFilesPermission, timelineActivityIsActive, usedWorkspaceScreen } from './timeline'
 
 describe('buildMessageTimeline', () => {
   it('ignores empty active reasoning while ordinary answer text streams', () => {
@@ -318,6 +318,36 @@ describe('computerWorkspaceLabel', () => {
       { type: 'pulpo_computer_changes', id: 'cc', session_id: 's', applied: 1, suggested: 0 },
       { type: 'message', content: [{ text: 'Done' }] },
     ], true)).toEqual([{ kind: 'text', text: 'Done' }])
+  })
+})
+
+describe('newestWorkspaceScreenReply', () => {
+  const screen = [{ type: 'pulpo_workspace', state: 'ready' }, { type: 'pulpo_tool', tool: 'app_view', status: 'completed' }]
+  const commands = [{ type: 'pulpo_workspace', state: 'ready' }, { type: 'pulpo_tool', tool: 'bash', status: 'completed' }]
+  const computer = [{ type: 'pulpo_workspace', state: 'ready', computer: true }, { type: 'pulpo_tool', tool: 'app_click', status: 'completed' }]
+
+  it('picks only the newest reply that used the screen', () => {
+    expect(newestWorkspaceScreenReply([
+      { id: 'u1', role: 'user' },
+      { id: 'a1', role: 'assistant', outputItems: screen },
+      { id: 'u2', role: 'user' },
+      { id: 'a2', role: 'assistant', outputItems: screen },
+      { id: 'u3', role: 'user' },
+      { id: 'a3', role: 'assistant', outputItems: commands },
+    ])).toBe('a2')
+  })
+
+  it('never counts a reply on the user\'s own computer', () => {
+    expect(newestWorkspaceScreenReply([
+      { id: 'a1', role: 'assistant', outputItems: screen },
+      { id: 'a2', role: 'assistant', outputItems: computer },
+    ])).toBe('a1')
+    expect(newestWorkspaceScreenReply([{ id: 'a1', role: 'assistant', outputItems: computer }])).toBeUndefined()
+  })
+
+  it('finds none in a chat without such a reply', () => {
+    expect(newestWorkspaceScreenReply([])).toBeUndefined()
+    expect(newestWorkspaceScreenReply([{ id: 'u1', role: 'user', outputItems: screen }, { id: 'a1', role: 'assistant' }])).toBeUndefined()
   })
 })
 

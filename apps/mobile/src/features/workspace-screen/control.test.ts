@@ -11,15 +11,17 @@ function deferred<T>() {
 function session(post: (held: boolean) => Promise<boolean>) {
   const changes: Array<[boolean, string | undefined]> = []
   const posts: boolean[] = []
+  const renewErrors: unknown[] = []
   const control = new ControlSession({
     post: (held) => {
       posts.push(held)
       return post(held)
     },
     onChange: (held, loss) => changes.push([held, loss]),
+    onRenewError: (error) => renewErrors.push(error),
     renewMs: 5_000,
   })
-  return { control, changes, posts }
+  return { control, changes, posts, renewErrors }
 }
 
 beforeEach(() => { vi.useFakeTimers() })
@@ -57,6 +59,20 @@ describe('ControlSession', () => {
     expect(changes).toEqual([[true, undefined], [false, 'lost']])
     await vi.advanceTimersByTimeAsync(15_000)
     expect(calls).toBe(2)
+  })
+
+  it('passes on why a renewal failed, so the viewer can tell an unfunded screen apart', async () => {
+    const unfunded = Object.assign(new Error('unfunded'), { status: 402 })
+    let calls = 0
+    const { control, renewErrors } = session(async () => {
+      calls += 1
+      if (calls === 2) throw unfunded
+      return true
+    })
+    await control.take()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(renewErrors).toEqual([unfunded])
+    expect(control.isHeld).toBe(false)
   })
 
   it('falls back to watching when the server stops holding it', async () => {

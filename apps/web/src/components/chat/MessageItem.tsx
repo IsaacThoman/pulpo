@@ -72,8 +72,8 @@ import { FileReferenceCard } from '@/features/files/FileReferenceCard'
 import { fileChangesItem } from '@/features/files/file-changes'
 import { ComputerChangesBar } from '@/features/computer/changes/ComputerChangesBar'
 import { computerChangesItem, hasComputerBridge } from '@/features/computer/changes/bridge'
-import { OpenScreenButton } from '@/features/workspace-screen/OpenScreenButton'
-import { useWorkspaceScreenOffered } from '@/features/workspace-screen/offered'
+import { WorkspaceScreenOffer } from '@/features/workspace-screen/OpenScreenButton'
+import { usesWorkspaceScreen, useWorkspaceScreenOffered } from '@/features/workspace-screen/offered'
 
 function CopyButton({ text }: { text: string }) {
   const { t } = useTranslation()
@@ -461,6 +461,7 @@ function ActivityBlock({
   capacityPending,
   onOpenChat,
   screenChatId,
+  screenRunning = false,
 }: {
   steps: ActivityStep[]
   active: boolean
@@ -474,6 +475,8 @@ function ActivityBlock({
   onOpenChat: (chatId: string) => void
   /** The agent used the cloud workspace's screen here, so it can be opened from beside the label. */
   screenChatId?: string
+  /** The reply that used the screen is still at work, so its workspace is there without asking. */
+  screenRunning?: boolean
 }) {
   const workspace = steps.find((step): step is WorkspaceStep => step.kind === 'workspace')?.workspace
   const compaction = steps.find((step) => step.kind === 'compaction')?.compaction
@@ -592,7 +595,7 @@ function ActivityBlock({
             <span className="min-w-0 truncate">{label}</span>
             <ChevronRight className={cn('size-3 shrink-0 transition-transform', open && 'rotate-90')} />
           </CollapsibleTrigger>
-          {screenChatId && <OpenScreenButton chatId={screenChatId} />}
+          {screenChatId && <WorkspaceScreenOffer chatId={screenChatId} running={screenRunning} />}
         </div>
         <CollapsibleContent>
           <div className="mt-1 space-y-1.5 border-l-2 border-muted py-0.5 pl-2.5">
@@ -655,6 +658,7 @@ export const MessageItem = memo(function MessageItem({
   composerEditActive = false,
   onOpenChat = ignoreOpenChat,
   editDrafts,
+  newestScreenReply = false,
 }: {
   chat: Pick<Chat, 'id' | 'expired' | 'modelId'>
   message: Message
@@ -664,6 +668,8 @@ export const MessageItem = memo(function MessageItem({
   composerEditActive?: boolean
   onOpenChat?: (chatId: string) => void
   editDrafts?: Map<string, string>
+  /** The newest reply in the chat that used the workspace's screen, the only one that offers it. */
+  newestScreenReply?: boolean
 }) {
   const speechState = useSyncExternalStore(speechPlayback.subscribe, speechPlayback.getSnapshot, speechPlayback.getSnapshot)
   const speechActive = speechState.key === `${chat.id}:${message.id}`
@@ -843,10 +849,10 @@ export const MessageItem = memo(function MessageItem({
   const computerChanges = computerChangesItem(outputItems)
   const filesPermission = findFilesPermissionItems(outputItems).findLast((item) => item.status === 'awaiting_decision')
   const lastActivityIndex = activitySegments.length - 1
-  // A reply that used the app tools in a cloud workspace (not on the user's own computer) offers its
-  // screen beside the last activity that used it, while it runs and after.
-  const cloudWorkspace = outputItems.some((item) => (item as WorkspaceItem).type === 'pulpo_workspace' && !(item as WorkspaceItem).computer)
-  const screenTimelineIndex = screenOffered && cloudWorkspace
+  // The newest reply that used the app tools in a cloud workspace (not on the user's own computer)
+  // offers its screen beside the last activity that used it, while it runs and after; the list
+  // works out which reply that is.
+  const screenTimelineIndex = screenOffered && newestScreenReply && usesWorkspaceScreen(message)
     ? timeline.findLastIndex((segment) => segment.kind === 'activity' && segment.steps.some((step) => step.kind === 'tool' && isAppTool(step.tool.tool)))
     : -1
   const hasVisibleBody = timeline.length > 0 || Boolean(message.error)
@@ -924,6 +930,7 @@ export const MessageItem = memo(function MessageItem({
                       capacityPending={capacityActionPending}
                       onOpenChat={onOpenChat}
                       screenChatId={index === screenTimelineIndex ? chat.id : undefined}
+                      screenRunning={streaming}
                     />
                   )
                 }
@@ -1065,4 +1072,5 @@ export const MessageItem = memo(function MessageItem({
   && previous.chat.id === next.chat.id
   && previous.chat.modelId === next.chat.modelId
   && previous.chat.expired === next.chat.expired
+  && previous.newestScreenReply === next.newestScreenReply
 ))

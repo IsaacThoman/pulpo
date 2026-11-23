@@ -6,10 +6,11 @@ import { HISTORY_PREFETCH_MESSAGES } from '@/lib/chat-history'
 import { useChatHistory } from '@/features/chat/use-chat-history'
 import { ui } from '@/i18n/ui'
 import { Button } from '@/components/ui/button'
+import { newestScreenReplyId, useWorkspaceScreenOffered } from '@/features/workspace-screen/offered'
 import { MessageItem } from './MessageItem'
 
 const EMPTY_MESSAGES: Message[] = []
-type MessageListProps = Omit<ComponentProps<typeof MessageItem>, 'message' | 'streaming'> & { viewport?: HTMLDivElement }
+type MessageListProps = Omit<ComponentProps<typeof MessageItem>, 'message' | 'streaming' | 'newestScreenReply'> & { viewport?: HTMLDivElement }
 const indexes = new WeakMap<Message[], Map<string, Message>>()
 const idsByChat = new Map<string, { messages: Message[]; ids: string[] }>()
 function messageIndex(messages: Message[]) {
@@ -28,7 +29,13 @@ function messageIds(chatId: string, messages: Message[]) {
   return ids
 }
 
-const MessageRow = memo(function MessageRow({ id, ...props }: Omit<MessageListProps, 'viewport'> & { id: string }) {
+/** Which reply offers the workspace's screen: only the newest that used it, and none when the screen is not offered. */
+function useNewestScreenReplyId(chatId: string, enabled = true): string | undefined {
+  const offered = useWorkspaceScreenOffered() && enabled
+  return useChat(state => offered ? newestScreenReplyId(state.chats.find(chat => chat.id === chatId)?.messages ?? EMPTY_MESSAGES) : undefined)
+}
+
+const MessageRow = memo(function MessageRow({ id, ...props }: Omit<MessageListProps, 'viewport'> & { id: string; newestScreenReply: boolean }) {
   const message = useChat(state => messageIndex(state.chats.find(chat => chat.id === props.chat.id)?.messages ?? EMPTY_MESSAGES).get(id))
   return message ? <MessageItem {...props} message={message} streaming={message.role === 'assistant' && !message.done} /> : null
 })
@@ -50,6 +57,7 @@ const historyComponents = { Header: HistoryHeader, List: HistoryList }
 
 function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: HTMLDivElement }) {
   const ids = useChat(state => messageIds(props.chat.id, state.chats.find(chat => chat.id === props.chat.id)?.messages ?? EMPTY_MESSAGES))
+  const screenReplyId = useNewestScreenReplyId(props.chat.id)
   useEffect(() => () => { idsByChat.delete(props.chat.id) }, [props.chat.id])
   // Keep unsaved inline edits when virtual rows unmount; release them when the chat closes.
   const editState = useRef({ chatId: props.chat.id, drafts: new Map<string, string>() })
@@ -243,13 +251,14 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     endReached={endReached}
     components={historyComponents}
     context={context}
-    itemContent={(_index, id) => <div className={id === ids.at(-1) ? "pb-[53px]" : "pb-7"} data-message-id={id}><MessageRow {...props} editDrafts={editState.current.drafts} id={id} /></div>}
+    itemContent={(_index, id) => <div className={id === ids.at(-1) ? "pb-[53px]" : "pb-7"} data-message-id={id}><MessageRow {...props} editDrafts={editState.current.drafts} id={id} newestScreenReply={id === screenReplyId} /></div>}
   />
 }
 
 /** Rows subscribe by ID; token updates do not reconcile the complete transcript. */
 export const MessageList = memo(function MessageList({ viewport, ...props }: MessageListProps) {
   const messages = useChat(state => viewport ? EMPTY_MESSAGES : state.chats.find(chat => chat.id === props.chat.id)?.messages ?? EMPTY_MESSAGES)
+  const screenReplyId = useNewestScreenReplyId(props.chat.id, !viewport)
   if (viewport) return <VirtualMessages {...props} viewport={viewport} />
-  return messages.map(message => <MessageItem key={message.id} {...props} message={message} streaming={message.role === 'assistant' && !message.done} />)
+  return messages.map(message => <MessageItem key={message.id} {...props} message={message} streaming={message.role === 'assistant' && !message.done} newestScreenReply={message.id === screenReplyId} />)
 })
