@@ -45,15 +45,15 @@ describe('color theme settings', () => {
   it('selects a built-in theme and duplicates it into an editable copy', () => {
     render(<ColorThemeSettings />)
     const picker = screen.getByRole('group', { name: 'Color theme' })
-    fireEvent.click(within(picker).getByRole('button', { name: 'Iris' }))
+    fireEvent.click(within(picker).getByRole('button', { name: 'Squirmy' }))
     expect(useSettings.getState().colorTheme).toBe('iris')
     expect(screen.queryByRole('textbox', { name: 'Theme name' })).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Duplicate' }))
     const [copy] = useSettings.getState().customThemes
-    expect(copy).toMatchObject({ name: 'Iris copy', dark: { colors: { 'editor.background': '#1d1929' } } })
+    expect(copy).toMatchObject({ name: 'Squirmy copy', dark: { colors: { 'editor.background': '#1d1929' } } })
     expect(useSettings.getState().colorTheme).toBe(copy!.id)
-    expect((screen.getByRole('textbox', { name: 'Theme name' }) as HTMLInputElement).value).toBe('Iris copy')
+    expect((screen.getByRole('textbox', { name: 'Theme name' }) as HTMLInputElement).value).toBe('Squirmy copy')
   })
 
   it('edits colors for the active appearance, shows VS Code ids, and resets advanced overrides', () => {
