@@ -32,7 +32,7 @@ import type { AgentWorkspace, WorkspaceLeaseEvent } from './workspace.js'
 import { createWorkspaceTools } from './tools.js'
 import { createAppTools, toolShowsImage } from './app-tools.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
-import { buildAgentSystemPrompt, buildAgentUserPrompt, buildToolsDisabledSystemPrompt, computerAgentPrompt, withoutAgentTools } from './policy.js'
+import { buildAgentSystemPrompt, buildAgentUserPrompt, buildToolsDisabledSystemPrompt, cloudAgentPrompt, computerAgentPrompt, withoutAgentTools } from './policy.js'
 import { runPostResponseTasks, type PostResponseTaskResult } from '../responses/post-tasks.js'
 import { calculateCostMicros, workspaceBillableMinutes, workspaceHoldMicros, workspaceUsageMicros } from '../accounting/pricing.js'
 import { truncateUtf8 } from './output.js'
@@ -84,7 +84,7 @@ import { createFirstTokenTimeout, type FirstTokenTimeout } from './first-token-t
 import { createProviderCostCapture } from './provider-cost.js'
 import { detailedPayloadCaptureIsActive } from '../logging/detailed-payload-retention.js'
 import { loadAgentPromptImages } from './prompt-images.js'
-import { adaptToolResultImagesForProvider, type ToolResultImageMode } from './tool-result-images.js'
+import { adaptToolResultImagesForProvider, withoutStaleAppPictures, type ToolResultImageMode } from './tool-result-images.js'
 import { boundToolOutputContent, boundToolResultMessages } from './tool-output-budget.js'
 import { CODEX_PROVIDER_ID } from '../codex/constants.js'
 import { codexErrorRequiresReauthentication, createCodexModels, markCodexReauthenticationRequired, safeCodexErrorMessage } from '../codex/credential-store.js'
@@ -228,7 +228,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     record.model.agentInstructions,
     customInstructions,
     memoryContext,
-    computerFullAccess ? computerAgentPrompt(computerDescription) : undefined,
+    computerFullAccess ? computerAgentPrompt(computerDescription) : cloudAgentPrompt({ screen: settings.workspaceDesktop }),
   )
   const computerFolderContext = computerFolderMode && computerSelection?.folder
     ? describeComputerFolder({ folder: computerSelection.folder, mode: computerFolderMode })
@@ -569,7 +569,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     : messages
   /** Everything streamFn changes in a provider request without bookkeeping; the summarizer shares it so its prefix is identical. */
   const prepareProviderContext = async (context: Context): Promise<Context> => {
-    context = { ...context, messages: wireHistory(context.messages) }
+    context = { ...context, messages: withoutStaleAppPictures(wireHistory(context.messages)) }
     if (!toolsDisabled) context = { ...context, systemPrompt: [context.systemPrompt, await manager.contextNotice()].filter(Boolean).join('\n\n') }
     let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor, active.provider)
     preparedContext = adaptToolResultImagesForProvider(
@@ -930,6 +930,8 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         ...createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile, storeImagePreview, relay, manager.kind === 'computer' ? computerDescription ?? null : undefined),
         // Other apps' windows, where the computer's app can show and control them.
         ...(manager instanceof ComputerWorkspace && computerDescription?.apps ? createAppTools(manager, computerDescription, markToolStarted, storeImagePreview) : []),
+        // The windows on a cloud workspace's screen, where the instance gives workspaces one.
+        ...(manager instanceof WorkspaceManager && settings.workspaceDesktop ? createAppTools(manager, 'workspace', markToolStarted, storeImagePreview) : []),
         ...configuredWebTools,
         ...imageTools,
         ...memoryTools,

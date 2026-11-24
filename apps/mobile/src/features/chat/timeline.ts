@@ -86,6 +86,25 @@ export function computerWorkspaceLabel(workspace: WorkspaceItem): string | null 
   return 'Using your computer'
 }
 
+/**
+ * Whether a reply worked on a cloud workspace's screen with the app tools, so its owner may open
+ * that screen. A run on the user's own computer uses the same tools but has no screen to show here.
+ */
+export function usedWorkspaceScreen(output: readonly unknown[] | undefined): boolean {
+  if (!output?.length) return false
+  const workspace = output.find((item): item is WorkspaceItem => (item as { type?: unknown } | null)?.type === 'pulpo_workspace')
+  if (!workspace || workspace.computer) return false
+  return output.some((item) => {
+    const tool = item as Partial<ToolItem> | null
+    return tool?.type === 'pulpo_tool' && typeof tool.tool === 'string' && tool.tool.startsWith('app_')
+  })
+}
+
+/** Whether an activity block shows app tool steps, which is where the reply offers its screen. */
+export function activityUsesApps(steps: readonly TimelineStep[]): boolean {
+  return steps.some((step) => step.kind === 'tool' && Boolean(step.tool.tool?.startsWith('app_')))
+}
+
 export function workspaceIsActive(state?: string): boolean {
   return state === 'waiting' || state === 'provisioning'
 }

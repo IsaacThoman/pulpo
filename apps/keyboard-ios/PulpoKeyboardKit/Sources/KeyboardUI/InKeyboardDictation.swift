@@ -275,7 +275,8 @@ private final class AACRecording {
     file = try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
   }
 
-  /// Writes the samples and returns their level on the Pulpo app's meter curve.
+  /// Writes the samples and returns their level on the Pulpo app's meter curve, lifted to make
+  /// up for the capture's disabled gain control.
   func append(_ data: Data) -> Float {
     let count = data.count / 2
     guard count > 0, let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(count)),
@@ -292,7 +293,7 @@ private final class AACRecording {
     }
     try? file?.write(from: buffer)
     frames += count
-    return DictationLevels.normalized(rms: (sum / Float(count)).squareRoot())
+    return DictationLevels.normalized(rms: (sum / Float(count)).squareRoot(), gainDecibels: DictationLevels.unprocessedInputGainDecibels)
   }
 
   /// Closes the file and returns it with its length in seconds.

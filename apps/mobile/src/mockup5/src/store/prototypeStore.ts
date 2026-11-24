@@ -18,6 +18,7 @@ type PrototypeActions = {
   modelPickerScopeReady: boolean;
   modelCatalogReady: boolean;
   agentAvailable: boolean;
+  workspaceScreen: boolean;
   updateProfile: (patch: Partial<NonNullable<SessionState['user']>>) => void;
   setPreference: <K extends keyof AppPreferences>(key: K, value: AppPreferences[K]) => void;
   addFolder: (name: string) => string;
@@ -118,7 +119,7 @@ function runOptimisticAction(key: string, action: Promise<unknown>, rollback: ()
 
 export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
   ...createInitialState(),
-  productionNamespace: null, productionScopeReady: false, modelPickerScopeReady: false, modelCatalogReady: false, agentAvailable: false,
+  productionNamespace: null, productionScopeReady: false, modelPickerScopeReady: false, modelCatalogReady: false, agentAvailable: false, workspaceScreen: false,
   updateProfile: (patch) => set((state) => state.session.user ? { session: { ...state.session, user: { ...state.session.user, ...patch, initials: patch.name ? initialsFor(patch.name) : state.session.user.initials } } } : {}),
   setPreference: (key, value) => {
     const previous = get().preferences[key];

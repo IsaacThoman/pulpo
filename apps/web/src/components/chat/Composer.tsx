@@ -67,6 +67,8 @@ import { canSubmitComposerDraft } from '@/components/chat/composer-upload-policy
 import type { Attachment } from '@/lib/types'
 import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
 import { FileScopePicker, FilesAccessDialog } from '@/features/files/FileScope'
+import { useWorkspaceScreenOffered } from '@/features/workspace-screen/offered'
+import { WorkspaceScreenDialog } from '@/features/workspace-screen/WorkspaceScreenDialog'
 import { FileReferenceCard } from '@/features/files/FileReferenceCard'
 import { addComposerReferences, composerMessageText, composerReferences, referencePreviewText, removeComposerReference, withComposerReferences } from '@pulpo/client-core/files'
 import { takePendingReferences, usePendingReferences } from '@/features/side-panel/agent'
@@ -320,6 +322,8 @@ export function Composer({
   const [folderPickerOpen, setFolderPickerOpen] = useState(false)
   const canScopeFiles = filesEnabled && canReferenceFiles && !temporary
   const [filesAccessOpen, setFilesAccessOpen] = useState(false)
+  const screenOffered = useWorkspaceScreenOffered()
+  const [screenOpen, setScreenOpen] = useState(false)
   const chatFileChangeMode = useChat((state) => chatId ? state.chats.find((chat) => chat.id === chatId)?.fileChangeMode : undefined)
   const defaultFileChangeMode = useSettings((state) => state.agentFileChangeMode)
   const fileChangeMode = chatId ? chatFileChangeMode ?? 'suggest' : defaultFileChangeMode
@@ -1520,6 +1524,7 @@ export function Composer({
               },
               onOpenAccess: chatId ? () => setFilesAccessOpen(true) : undefined,
             } : undefined}
+            onOpenScreen={chatId && screenOffered ? () => setScreenOpen(true) : undefined}
             onSelect={(enabled) => {
               if (!canUseAgent) return
               if (messageEdit) setEditAgentMode(enabled)
@@ -1531,6 +1536,13 @@ export function Composer({
               chatId={chatId}
               open={filesAccessOpen}
               onOpenChange={(open) => { setFilesAccessOpen(open); if (!open) requestAnimationFrame(focusComposer) }}
+            />
+          )}
+          {chatId && screenOpen && (
+            <WorkspaceScreenDialog
+              chatId={chatId}
+              open={screenOpen}
+              onOpenChange={(open) => { setScreenOpen(open); if (!open) requestAnimationFrame(focusComposer) }}
             />
           )}
 

@@ -13,6 +13,12 @@ public enum DictationLevels {
   /// Remaining seconds at which the elapsed timer starts warning about the limit.
   public static let warningSeconds: TimeInterval = 10
 
+  /// In-keyboard capture turns off WebKit's gain control and voice processing so the server
+  /// gets the raw voice, which leaves speech around -45 to -35 dBFS: far below what the app's
+  /// recorder meters. The waveform adds this back so it moves like the app's; the recording
+  /// itself is untouched.
+  public static let unprocessedInputGainDecibels: Double = 24
+
   private static let noiseFloorDecibels: Double = -60
   private static let noiseFloorAmplitude = pow(10, noiseFloorDecibels / 20)
 
@@ -24,9 +30,9 @@ public enum DictationLevels {
     return Float(((amplitude - noiseFloorAmplitude) / (1 - noiseFloorAmplitude)).squareRoot())
   }
 
-  /// The level of samples in -1…1 from their RMS.
-  public static func normalized(rms: Float) -> Float {
-    rms > 0 ? normalized(decibels: 20 * log10(Double(rms))) : 0
+  /// The level of samples in -1…1 from their RMS, after `gainDecibels` of display gain.
+  public static func normalized(rms: Float, gainDecibels: Double = 0) -> Float {
+    rms > 0 ? normalized(decibels: 20 * log10(Double(rms)) + gainDecibels) : 0
   }
 
   /// Bars needed to fill `width` while scrolling: every slot, plus the one sliding out

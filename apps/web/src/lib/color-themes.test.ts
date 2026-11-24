@@ -54,10 +54,19 @@ describe('color helpers', () => {
 })
 
 describe('color themes', () => {
-  it('ships Pulpo and the Iris colors from the reference, stored under VS Code ids', () => {
+  it('ships the Squirmy colors under VS Code ids and keeps the saved Iris ID', () => {
     expect(BUILT_IN_THEMES.map((theme) => theme.id)).toEqual(['pulpo', 'iris', 'ocean', 'forest', 'ember'])
-    expect(findColorTheme('iris', []).dark.colors).toMatchObject({
-      'editor.background': '#1d1929', 'button.background': '#f099d8', focusBorder: '#9d7df2', 'chat.requestBackground': '#4b3d72', 'sideBar.background': '#272139',
+    const squirmy = findColorTheme('iris', [])
+    expect(squirmy.name).toBe('Squirmy')
+    expect(squirmy.light.colors).toMatchObject({
+      'editor.background': '#fbf9ff', 'button.background': '#b5368f', 'button.foreground': '#ffffff',
+      descriptionForeground: '#67607c', 'input.border': '#8a8794', errorForeground: '#c42e3a',
+    })
+    expect(squirmy.dark.colors).toMatchObject({
+      'editor.background': '#1d1929', 'button.background': '#f099d8', 'button.foreground': '#000000',
+      'editorWidget.background': '#231e31', 'list.hoverBackground': '#403c4b', descriptionForeground: '#aca6b5',
+      'input.border': '#837e8b', 'list.activeSelectionBackground': '#3d325d', errorForeground: '#fe5a5e',
+      focusBorder: '#9d7df2', 'chat.requestBackground': '#4b3d72', 'sideBar.background': '#272139',
     })
   })
 
@@ -129,13 +138,13 @@ describe('VS Code themes', () => {
   })
 
   it('exports a complete VS Code theme that imports back whole', () => {
-    const iris = { ...findColorTheme('iris', []), css: '.a { color: red }' }
-    const exported = themeToVsCode(iris, 'dark')
-    expect(vsCodeThemeFileName(iris, 'dark')).toBe('iris-dark-color-theme.json')
-    expect(exported).toMatchObject({ name: 'Iris', type: 'dark', colors: { 'editor.background': '#1d1929', 'button.background': '#f099d8', 'pulpo.temporaryChatBackground': expect.any(String) } })
+    const squirmy = { ...findColorTheme('iris', []), css: '.a { color: red }' }
+    const exported = themeToVsCode(squirmy, 'dark')
+    expect(vsCodeThemeFileName(squirmy, 'dark')).toBe('squirmy-dark-color-theme.json')
+    expect(exported).toMatchObject({ name: 'Squirmy', type: 'dark', colors: { 'editor.background': '#1d1929', 'button.background': '#f099d8', 'pulpo.temporaryChatBackground': expect.any(String) } })
     expect(exported.tokenColors).toHaveLength(11)
     const result = parseVsCodeTheme(JSON.stringify(exported))
-    expect(result).toMatchObject({ ok: true, appearance: 'dark', pulpo: { light: iris.light, dark: iris.dark, css: '.a { color: red }' } })
+    expect(result).toMatchObject({ ok: true, appearance: 'dark', pulpo: { light: squirmy.light, dark: squirmy.dark, css: '.a { color: red }' } })
     expect(parseVsCodeTheme(JSON.stringify({ ...exported, pulpo: { version: 1, css: '@import "https://example.com/x.css";' } }))).toMatchObject({ ok: false, reason: 'css' })
   })
 })

@@ -118,6 +118,18 @@ describe('createAgentCompactor', () => {
     expect(updates).toEqual([])
   })
 
+  it('counts the history as the model is sent it, without app pictures that are out of date', async () => {
+    const contextTokens = tokenSequence({ tokens: 10, source: 'usage' })
+    const { compact } = setup({ contextTokens })
+    const windows: AgentMessage[] = Array.from({ length: 9 }, (_, index) => ({
+      role: 'toolResult', toolCallId: `app-${index}`, toolName: 'app_view', isError: false, timestamp: 1,
+      content: [{ type: 'text', text: 'Chromium' }, { type: 'image', data: 'AAAA', mimeType: 'image/jpeg' }],
+    }))
+    await expect(compact({ ...frame, phase: 'agent_mid_run', messages: [user('Book a table'), ...windows] })).resolves.toBeUndefined()
+    const counted = contextTokens.mock.calls[0]![0].messages as ToolResultMessage[]
+    expect(counted.flatMap((message) => message.content ?? []).filter((part) => typeof part === 'object' && part.type === 'image')).toHaveLength(3)
+  })
+
   it('compacts at min(threshold, 90% of the context window)', async () => {
     const { compact, items } = setup({
       settings: { thresholdTokens: 50_000, contextWindow: 1_000, summaryMaxTokens: 100 },

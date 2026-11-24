@@ -166,10 +166,19 @@ def deploy(source, root, log, lock_fd):
         (mobile / 'ios/Podfile').exists() and (mobile / 'ios/Pods/Manifest.lock').exists(),
         prebuild,
     )
+    simulator_output = os.environ.get('PULPO_IOS_SIMULATOR_OUTPUT')
+    if simulator_output:
+        run(['npx', '--no-install', 'expo', 'run:ios', '--device', 'generic',
+             '--configuration', configuration, '--no-bundler', '--output', simulator_output])
+        return
     device = os.environ.get('PULPO_IOS_DEVICE', 'Isaac iphone')
     run(['npx', '--no-install', 'expo', 'run:ios', '--device', device,
          '--configuration', configuration, '--no-bundler'])
-    run(['xcrun', 'devicectl', 'device', 'process', 'launch', '--device', device, 'com.isaacthoman.pulpo'])
+    if os.environ.get('PULPO_IOS_SIMULATOR') == '1':
+        # Simulators reject devicectl. Expo already installed the app; launch it the simulator way.
+        run(['xcrun', 'simctl', 'launch', device, 'com.isaacthoman.pulpo'])
+    else:
+        run(['xcrun', 'devicectl', 'device', 'process', 'launch', '--device', device, 'com.isaacthoman.pulpo'])
 
 
 def main():
@@ -198,8 +207,11 @@ def main():
                 print('Last 80 log lines:', file=sys.stderr)
                 print(''.join(log_path.read_text(errors='replace').splitlines(keepends=True)[-80:]), file=sys.stderr)
             return error.returncode if isinstance(error, subprocess.CalledProcessError) else 1
-    print(f'Deployed and launched Pulpo {os.environ.get("PULPO_IOS_CONFIGURATION", "Release")} '
-          f'on {os.environ.get("PULPO_IOS_DEVICE", "Isaac iphone")}.')
+    if simulator_output := os.environ.get('PULPO_IOS_SIMULATOR_OUTPUT'):
+        print(f'Built Pulpo simulator app in {simulator_output}.')
+    else:
+        print(f'Deployed and launched Pulpo {os.environ.get("PULPO_IOS_CONFIGURATION", "Release")} '
+              f'on {os.environ.get("PULPO_IOS_DEVICE", "Isaac iphone")}.')
     print(f'Full log: {log_path}')
     return 0
 

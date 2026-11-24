@@ -54,6 +54,19 @@ describe('HTTP rate limits', () => {
     expect(Number(response.headers['retry-after'])).toBeGreaterThan(0)
   })
 
+  it('lets a workspace screen viewer poll frames and send input faster than the global bucket allows', async () => {
+    const app = await buildApp()
+    apps.push(app)
+    const screen = '/api/chats/9db9ea5a-3af7-4b66-9f2a-c179278a0998/workspace-screen'
+    // Five frames a second for a minute, and a little more.
+    for (let index = 0; index < 360; index++) expect((await app.inject(`${screen}/frame`)).statusCode).toBe(401)
+    expect((await app.inject(`${screen}/frame`)).statusCode).toBe(429)
+    // Input has its own bucket of twenty batches a second.
+    const input = { method: 'POST' as const, url: `${screen}/input`, payload: { events: [{ type: 'key', keys: 'a' }] } }
+    for (let index = 0; index < 1_500; index++) expect((await app.inject(input)).statusCode).not.toBe(429)
+    expect((await app.inject(input)).statusCode).toBe(429)
+  })
+
   it('preserves the Anthropic error envelope when the global bucket is exhausted', async () => {
     const app = await buildApp()
     apps.push(app)

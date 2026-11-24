@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+# pulpo-desktop: the workspace's screen. A virtual display (:1, 1280×800), a session bus, the
+# accessibility bus and a window manager that maximizes every ordinary window. Nothing runs until a
+# command here, or the `chromium` wrapper, first needs the screen.
+#
+# Everything the session starts is detached into a session of its own with its output in
+# /tmp/pulpo-desktop/log, so it outlives the command that started it and never holds that command's
+# standard output open (the daemon waits for an agent command's output to close, and kills its
+# process group on timeout).
+set -euo pipefail
+
+readonly display=':1'
+readonly screen_size='1280x800'
+readonly state_dir='/tmp/pulpo-desktop'
+readonly log_dir="${state_dir}/log"
+readonly runtime_dir="${state_dir}/runtime"
+readonly bus_socket="${state_dir}/bus"
+readonly desktop_dir='/opt/pulpo/desktop'
+readonly system_python='/usr/bin/python3'
+
+usage() {
+  cat <<'EOF'
+Usage: pulpo-desktop <command>
+
+The workspace's screen: display :1, 1280x800, with a window manager that maximizes
+every window and Chromium (`chromium <url>`).
+
+Commands:
+  start                 Start the screen if it is not running (safe to repeat).
+  status                Exit 0 when the screen is running, 1 when not.
+  run <command> [args]  Start a program on the screen, detached; returns at once.
+  helper                Run the control helper (JSON lines on stdin/stdout).
+  frames [fps]          Write the screen to stdout as JPEGs (multipart, default 4 fps).
+  stop                  Stop the screen and everything on it.
+
+Logs are in /tmp/pulpo-desktop/log. Programs started any other way see the screen
+when DISPLAY=:1 (login shells have it).
+EOF
+}
+
+session_environment() {
+  export DISPLAY="${display}"
+  export DBUS_SESSION_BUS_ADDRESS="unix:path=${bus_socket}"
+  export XDG_RUNTIME_DIR="${runtime_dir}"
+  # Chromium and Qt only expose their accessibility trees when told to; the helper reads them.
+  export ACCESSIBILITY_ENABLED=1
+  export QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
+}
+
+# The process in the pid file, when it is still that program.
+alive() {
+  local name="$1" pid
+  pid="$(cat "${state_dir}/${name}.pid" 2> /dev/null)" || return 1
+  [[ "${pid}" =~ ^[0-9]+$ ]] && [[ -r "/proc/${pid}/comm" ]] || return 1
+  [[ "$(< "/proc/${pid}/comm")" == "$2" ]]
+}
+
+is_up() {
+  alive xvfb Xvfb && alive dbus dbus-daemon && alive openbox openbox
+}
+
+stop_one() {
+  local name="$1" pid
+  pid="$(cat "${state_dir}/${name}.pid" 2> /dev/null)" || return 0
+  if [[ "${pid}" =~ ^[0-9]+$ ]] && alive "${name}" "$2"; then kill "${pid}" 2> /dev/null || true; fi
+  rm -f "${state_dir}/${name}.pid"
+}
+
+# Starts a program in a session of its own, with no tie to the caller's terminal, output or locks,
+# and records its pid. `setsid` does not fork here (a background job is not a group leader), so
+# `$!` is the program itself.
+launch() {
+  local name="$1"
+  shift
+  setsid "$@" < /dev/null >> "${log_dir}/${name}.log" 2>&1 9>&- &
+  echo "$!" > "${state_dir}/${name}.pid"
+}
+
+wait_for() {
+  local description="$1"
+  shift
+  for _ in $(seq 200); do
+    if "$@" > /dev/null 2>&1; then return 0; fi
+    sleep 0.025
+  done
+  echo "pulpo-desktop: ${description} did not start; see ${log_dir}" >&2
+  return 1
+}
+
+prepare_state() {
+  if [[ ! -d "${state_dir}" ]]; then
+    mkdir -p -m 0700 "${state_dir}"
+  fi
+  if [[ ! -O "${state_dir}" ]]; then
+    echo "pulpo-desktop: ${state_dir} belongs to another user; run this as the user who started the screen." >&2
+    exit 1
+  fi
+  mkdir -p -m 0700 "${log_dir}" "${runtime_dir}"
+  # The X server puts its socket here; /tmp may be fresh.
+  if [[ ! -d /tmp/.X11-unix ]]; then mkdir -p -m 1777 /tmp/.X11-unix 2> /dev/null || true; fi
+}
+
+start_session() {
+  prepare_state
+  # Fast path, without the lock: everything is already running.
+  if is_up; then return 0; fi
+  exec 9> "${state_dir}/lock"
+  flock 9
+  if ! is_up; then start_locked; fi
+  # The lock must not reach what runs next (the helper is exec'd from here).
+  exec 9>&-
+}
+
+start_locked() {
+  session_environment
+
+  if ! alive xvfb Xvfb; then
+    # A new display means none of what ran on the old one is left.
+    stop_one openbox openbox
+    stop_one dbus dbus-daemon
+    rm -f "/tmp/.X11-unix/X${display#:}" "/tmp/.X${display#:}-lock"
+    launch xvfb Xvfb "${display}" -screen 0 "${screen_size}x24" -nolisten tcp -noreset -dpi 96
+    wait_for 'The display' xdpyinfo -display "${display}"
+  fi
+
+  if ! alive dbus dbus-daemon; then
+    rm -f "${bus_socket}"
+    launch dbus dbus-daemon --session --nofork --nopidfile --address="${DBUS_SESSION_BUS_ADDRESS}"
+    wait_for 'The session bus' test -S "${bus_socket}"
+    # The accessibility bus must be up before an app starts, or the app never exposes its tree.
+    wait_for 'The accessibility bus' dbus-send --session --print-reply --dest=org.a11y.Bus /org/a11y/bus org.a11y.Bus.GetAddress
+    dbus-send --session --dest=org.a11y.Bus /org/a11y/bus org.freedesktop.DBus.Properties.Set \
+      string:org.a11y.Status string:IsEnabled variant:boolean:true > /dev/null 2>&1 || true
+  fi
+
+  if ! alive openbox openbox; then
+    launch openbox openbox --config-file "${desktop_dir}/openbox.xml"
+    wait_for 'The window manager' xprop -display "${display}" -root -notype _NET_SUPPORTING_WM_CHECK
+  fi
+}
+
+command="${1:-}"
+[[ $# -gt 0 ]] && shift
+
+case "${command}" in
+  start)
+    start_session
+    ;;
+  status)
+    is_up
+    ;;
+  run)
+    if [[ $# -eq 0 ]]; then
+      echo 'Usage: pulpo-desktop run <command> [args]' >&2
+      exit 2
+    fi
+    if ! command -v "$1" > /dev/null; then
+      echo "pulpo-desktop: $1: command not found" >&2
+      exit 127
+    fi
+    start_session
+    session_environment
+    setsid "$@" < /dev/null >> "${log_dir}/run.log" 2>&1 &
+    ;;
+  helper)
+    start_session
+    session_environment
+    # The system interpreter, isolated from the agent's Python environment.
+    exec "${system_python}" -I "${desktop_dir}/control.py"
+    ;;
+  frames)
+    fps="${1:-4}"
+    if [[ ! "${fps}" =~ ^[0-9]+$ ]] || ((fps < 1 || fps > 30)); then
+      echo 'pulpo-desktop: frames per second must be a whole number from 1 to 30.' >&2
+      exit 2
+    fi
+    start_session
+    # Each frame is a JPEG preceded by multipart headers with its Content-Length (ffmpeg's mpjpeg).
+    exec ffmpeg -nostdin -hide_banner -loglevel error \
+      -f x11grab -draw_mouse 1 -framerate "${fps}" -video_size "${screen_size}" -i "${display}" \
+      -c:v mjpeg -pix_fmt yuvj420p -q:v 9 -f mpjpeg -
+    ;;
+  stop)
+    prepare_state
+    exec 9> "${state_dir}/lock"
+    flock 9
+    stop_one openbox openbox
+    stop_one dbus dbus-daemon
+    stop_one xvfb Xvfb
+    ;;
+  -h | --help | help)
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

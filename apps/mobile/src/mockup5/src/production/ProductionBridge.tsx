@@ -156,6 +156,7 @@ function clearProductionScopeState(): void {
     models: [],
     defaultModelId: '',
     agentAvailable: false,
+    workspaceScreen: false,
   })
 }
 
@@ -192,6 +193,7 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
         models: (catalog?.data ?? []).map((model) => mapModel(model, preferences.favoriteModelIds)),
         defaultModelId: preferences.defaultModelId ?? catalog?.data[0]?.id ?? '',
         agentAvailable: catalog?.agentAvailable ?? false,
+        workspaceScreen: catalog?.workspaceScreen ?? false,
         preferences: {
           ...state.preferences,
           imageGeneration: preferences.imageGeneration,
@@ -534,6 +536,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
         models: models.data ? models.data.data.map((model) => mapModel(model, preferences.favoriteModelIds)) : state.models,
         modelCatalogReady: Boolean(models.data) || models.isError || state.modelCatalogReady,
         agentAvailable: models.data?.agentAvailable ?? state.agentAvailable,
+        workspaceScreen: models.data ? models.data.workspaceScreen === true : state.workspaceScreen,
       }
     })
   }, [models.data, models.isError, namespace, preferences])

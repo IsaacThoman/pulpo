@@ -213,19 +213,19 @@ export const BUILT_IN_THEMES: readonly ColorTheme[] = [
     dark: variantFromRoles(PULPO_DARK, PULPO_SYNTAX.dark),
   },
   {
-    id: 'iris',
-    name: 'Iris',
+    id: 'iris', // Keep the saved ID for accounts that selected Iris.
+    name: 'Squirmy',
     builtIn: true,
     css: '',
     light: variantFromRoles({
-      background: '#fbf9ff', surface: '#ffffff', raisedSurface: '#f1edf9', hover: '#ebe5f7', text: '#1d1929', mutedText: '#6b6480',
-      border: '#e2dbf0', input: '#d6cdea', action: '#b5368f', focus: '#7c5ce0', messageSurface: '#ece4fb', codeSurface: '#f5f2fb',
-      sidebar: '#f4f0fc', sidebarSelection: '#e6ddf8', sidebarBorder: '#e2dbf0', error: '#d92d3a',
+      background: '#fbf9ff', surface: '#ffffff', raisedSurface: '#f1edf9', hover: '#ebe5f7', text: '#1d1929', mutedText: '#67607c',
+      border: '#e2dbf0', input: '#8a8794', action: '#b5368f', actionText: '#ffffff', focus: '#7c5ce0', messageSurface: '#ece4fb', codeSurface: '#f5f2fb',
+      sidebar: '#f4f0fc', sidebarSelection: '#e6ddf8', sidebarBorder: '#e2dbf0', error: '#c42e3a',
     }),
     dark: variantFromRoles({
-      background: '#1d1929', surface: '#1d1929', raisedSurface: '#383443', hover: '#454250', text: '#fffaff', mutedText: '#9690a1',
-      border: '#4d4366', input: '#5d527b', action: '#f099d8', focus: '#9d7df2', messageSurface: '#4b3d72', codeSurface: '#2a2736',
-      sidebar: '#272139', sidebarSelection: '#433766', sidebarBorder: '#362d51', error: '#fb414a',
+      background: '#1d1929', surface: '#231e31', raisedSurface: '#383443', hover: '#403c4b', text: '#fffaff', mutedText: '#aca6b5',
+      border: '#4d4366', input: '#837e8b', action: '#f099d8', actionText: '#000000', focus: '#9d7df2', messageSurface: '#4b3d72', codeSurface: '#2a2736',
+      sidebar: '#272139', sidebarSelection: '#3d325d', sidebarBorder: '#362d51', error: '#fe5a5e',
     }),
   },
   {
