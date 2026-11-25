@@ -172,17 +172,22 @@ describe('search result presentation', () => {
     expect(screen.getByText('Details for result 3')).toBeDefined()
   })
 
-  it('sorts dated news on this page and preserves reported relative labels', () => {
+  it.each(['telescope', 'latest telescope news'])('sorts dated news on this page for %s', query => {
     const news = { ...data, results: [
       { url: 'https://a.example.org/story', title: 'Undated', snippet: '' },
       { url: 'https://b.example.org/story', title: 'Earlier news', snippet: '', publishedAt: '3 days ago' },
       { url: 'https://c.example.org/story', title: 'Recent news', snippet: '', publishedAt: '2 hours ago' },
     ] }
-    const { container } = render(<Results data={news} location={{ ...homeLocation, category: 'news', query: 'telescope' }}
+    const { container } = render(<Results data={news} location={{ ...homeLocation, category: 'news', query }}
       preferences={loadPreferences()} setDomain={vi.fn()} onQuery={vi.fn()} />)
     const titles = () => [...container.querySelectorAll('.result-link')].map(link => link.textContent)
-    expect(titles()).toEqual(['Undated', 'Earlier news', 'Recent news'])
-    fireEvent.change(screen.getByRole('combobox', { name: 'Sort news' }), { target: { value: 'newest' } })
+    const byRelevance = ['Undated', 'Earlier news', 'Recent news']
+    const byRecency = ['Recent news', 'Earlier news', 'Undated']
+    expect(titles()).toEqual(query.startsWith('latest') ? byRecency : byRelevance)
+    const sort = screen.getByRole('combobox', { name: 'Sort news' })
+    fireEvent.change(sort, { target: { value: 'relevance' } })
+    expect(titles()).toEqual(byRelevance)
+    fireEvent.change(sort, { target: { value: 'newest' } })
     expect(titles()).toEqual(['Recent news', 'Earlier news', 'Undated'])
     expect(screen.getByText('2 hours ago')).toBeDefined()
   })

@@ -413,7 +413,7 @@ describe('Pulpo Search API', () => {
     const config = (await app.inject('/api/search/config')).json()
     expect(config.providers.find((provider: { id: string }) => provider.id === 'firecrawl')).toMatchObject({ newsPriceMicros: 15_000 })
     mocks.fetch.mockResolvedValueOnce(Response.json({ success: true, data: { news: [
-      { url: 'https://example.com/article', title: 'Article', date: '17 hours ago', metadata: {
+      { url: 'https://example.com/article', title: 'Article', date: '17 hours ago', snippet: 'A different article from the page sidebar', metadata: {
         'article:published_time': '2025-11-18T11:00:00-05:00', ogDescription: 'Publisher summary', ogImage: 'https://example.com/article.jpg',
       } },
       { url: 'https://example.com/other', title: 'Other article', date: '3 hours ago', metadata: {

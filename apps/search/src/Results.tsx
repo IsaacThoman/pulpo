@@ -242,7 +242,7 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
   const [preview, setPreview] = useState<{ entries: ResultWithUrl[]; startIndex: number; opener: HTMLButtonElement }>()
   const [imageRefinement, setImageRefinement] = useState<{ query: string; value: ImageRefinements }>()
   const [videoDuration, setVideoDuration] = useState<{ scope: string; value: VideoDuration }>()
-  const [newestNews, setNewestNews] = useState(false)
+  const [newsOrder, setNewsOrder] = useState<'relevance' | 'newest'>()
   const [galleryLimit, setGalleryLimit] = useState(imageBatchSize)
   const gallery = useRef<HTMLOListElement>(null)
   const firstRevealed = useRef<number>(undefined)
@@ -259,6 +259,9 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
   const now = Date.now()
   const newsEntries = news ? visible.map(entry => ({ entry, time: newsSourceTime(entry.result.publishedAt, now) })) : []
   const canSortNews = newsEntries.filter(item => item.time !== undefined).length >= 2
+  const wantsRecentNews = /\b(?:latest|today(?:'s)?|breaking|this week)\b/i.test(location.query)
+    || location.date === 'day' || location.date === 'week'
+  const newestNews = newsOrder === undefined ? wantsRecentNews : newsOrder === 'newest'
   const videoEntries = videos ? visible.map(entry => ({ entry, duration: videoDurationBucket(entry.result.duration) })) : []
   const withoutDuration = videoEntries.filter(item => !item.duration).length
   const knownDurations = videoEntries.length - withoutDuration
@@ -329,7 +332,7 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
           <label>
             <span>Sort news</span>
             <span className="filter-select">
-              <select value={newestNews ? 'newest' : 'relevance'} onChange={event => setNewestNews(event.target.value === 'newest')}>
+              <select value={newestNews ? 'newest' : 'relevance'} onChange={event => setNewsOrder(event.target.value === 'newest' ? 'newest' : 'relevance')}>
                 <option value="relevance">Relevance</option>
                 <option value="newest">Newest on this page</option>
               </select>

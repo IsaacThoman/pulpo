@@ -75,6 +75,11 @@ function searchPreview(row: FirecrawlSearchResult | undefined) {
   return !snippet || (snippet.length > 300 && description && description.length < snippet.length) ? description : snippet
 }
 
+function publisherPreview(row: FirecrawlSearchResult) {
+  return [row.metadata?.ogDescription, row.metadata?.description, row.description, row.snippet]
+    .find(value => typeof value === 'string' && value.trim() && value.length <= 600 && !/\]\(|\\\s/.test(value))
+}
+
 function providerDate(date: string) {
   const [year, month, day] = date.split('-')
   return `${month}/${day}/${year}`
@@ -155,7 +160,7 @@ export class FirecrawlClient {
       results: uniqueResults(rows.map((row) => normalizeResult({
         url: row?.url,
         title: row?.title,
-        snippet: searchPreview(row) || row?.metadata?.ogDescription || row?.metadata?.description,
+        snippet: includePublisherMetadata && row ? publisherPreview(row) : searchPreview(row),
         imageUrl: row?.imageUrl || row?.metadata?.ogImage,
         imageWidth: category === 'images' ? row?.imageWidth : undefined,
         imageHeight: category === 'images' ? row?.imageHeight : undefined,
