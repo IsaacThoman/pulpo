@@ -174,6 +174,7 @@ function renderForecast(timeline: Timeline, place: WeatherPlace, now: number, nw
   const today = dateAt(formatter, now)
   const days = new Map<string, ForecastPoint[]>()
   for (const point of points) {
+    if (point !== current && Date.parse(point.validAt) < now) continue
     const date = dateAt(formatter, point.validAt)
     if (date < today) continue
     const group = days.get(date) ?? []

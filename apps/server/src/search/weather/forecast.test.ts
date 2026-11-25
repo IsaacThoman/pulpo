@@ -121,6 +121,23 @@ describe('Weather forecasts', () => {
     expect(fetcher.mock.calls[1]?.[1]?.headers).toMatchObject({ 'if-modified-since': modified })
   })
 
+  it('drops elapsed readings from a cached outlook while retaining the current period', async () => {
+    const { client, fetcher, setTime } = fixture()
+    const timeseries = [30, 18, 21, 19].map((temperature, index) => ({
+      time: `2026-11-24T0${4 + index}:00:00Z`,
+      data: { instant: { details: { air_temperature: temperature } } },
+    }))
+    fetcher.mockResolvedValueOnce(Response.json({ properties: {
+      meta: { updated_at: timeseries[0]!.time }, timeseries,
+    } }))
+    expect((await client(paris, 'weather@example.org'))?.forecast.daily[0]).toMatchObject({ highC: 30, lowC: 18 })
+    setTime(Date.parse('2026-11-24T06:30:00Z'))
+    const updated = (await client(paris, 'weather@example.org'))?.forecast
+    expect(updated).toMatchObject({ validAt: '2026-11-24T06:00:00Z', temperatureC: 21 })
+    expect(updated?.daily[0]).toMatchObject({ date: '2026-11-24', highC: 21, lowC: 19 })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
   it('builds seven dates from NOAA hourly readings without another forecast request', async () => {
     const { client, fetcher } = fixture()
     const start = Date.parse('2026-11-24T04:00:00Z')
