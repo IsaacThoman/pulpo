@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { Link } from 'react-router-dom'
+import { BalanceLimitAction } from './BalanceLimitAction'
 import { SpeechButton } from '@/features/speech/SpeechButton'
 import { SpeechPlayer } from '@/features/speech/SpeechPlayer'
 import { ActionButton } from './ActionButton'
@@ -983,12 +983,7 @@ export const MessageItem = memo(function MessageItem({
               {insufficientBalance ? (
                 <div className="space-y-2">
                   <p>{t('chat.usageLimitReached')}</p>
-                  {billingEnabled && <>
-                    <p>{t('chat.usageLimitBillingHint')}</p>
-                    <Button asChild size="sm" variant="outline">
-                      <Link to="/billing">{t('chat.viewBilling')}</Link>
-                    </Button>
-                  </>}
+                  {billingEnabled && <BalanceLimitAction />}
                 </div>
               ) : message.error}
             </div>

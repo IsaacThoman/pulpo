@@ -89,7 +89,7 @@ export function SignupPromoSettings() {
         <label className="block max-w-xl space-y-1 text-xs">
           <span>{ui("Banner message (optional)")}</span>
           <Textarea rows={2} maxLength={SIGNUP_PROMO_MESSAGE_MAX} value={current.message}
-            placeholder={ui("A little something to get you started.")}
+            placeholder={ui("Welcome to Pulpo!")}
             onChange={(event) => edit({ message: event.target.value })} className="text-xs" />
         </label>
       </fieldset>

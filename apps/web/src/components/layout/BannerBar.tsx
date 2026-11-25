@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { SIGNUP_PROMO_CLAIM_MS, type Banner } from '@pulpo/contracts'
+import type { Banner } from '@pulpo/contracts'
 import { apiRequest } from '@/lib/api'
 import { useAuth } from '@/stores/auth'
 import { isDesktopRuntime } from '@/lib/runtime'
+import { useSignupPromoAccount } from '@/lib/signup-promo'
 import { BannerCard } from './BannerCard'
 import { SignupPromoBanner } from './SignupPromoBanner'
 import { dismissBanner, pruneDismissedBannerIds, readDismissedBannerIds } from './banner-dismissals'
@@ -14,12 +15,8 @@ import { dismissBanner, pruneDismissedBannerIds, readDismissedBannerIds } from '
 export function BannerBar() {
   const [banners, setBanners] = useState<Banner[]>([])
   const instanceReady = useAuth((state) => state.instanceReady)
-  const billingEnabled = useAuth((state) => state.billingEnabled)
-  const user = useAuth((state) => state.user)
   const networkReady = !isDesktopRuntime() || instanceReady
-  const promoExpiresAt = user ? Date.parse(user.createdAt) + SIGNUP_PROMO_CLAIM_MS : 0
-  const promoUserId = networkReady && billingEnabled && user && user.role !== 'pending'
-    && promoExpiresAt > Date.now() ? user.id : undefined
+  const promoAccount = useSignupPromoAccount()
   useEffect(() => {
     if (!networkReady) return
     void apiRequest<{ data: Banner[] }>('/api/banners').then((result) => {
@@ -32,10 +29,10 @@ export function BannerBar() {
     dismissBanner(id)
     setBanners((items) => items.filter((item) => item.id !== id))
   }
-  if (banners.length === 0 && !promoUserId) return null
+  if (banners.length === 0 && !promoAccount) return null
   return (
     <div className="site-banners pointer-events-none absolute inset-x-0 top-14 z-[25] flex flex-col items-center gap-2 px-3">
-      {promoUserId && <SignupPromoBanner key={promoUserId} userId={promoUserId} expiresAt={promoExpiresAt} />}
+      {promoAccount && <SignupPromoBanner key={promoAccount.userId} {...promoAccount} />}
       {banners.map((banner) => (
         <BannerCard
           key={banner.id}

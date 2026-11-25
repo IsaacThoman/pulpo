@@ -4,7 +4,8 @@ import { saveSpeechToFiles, shareSpeechAudio } from '../features/speech/save';
 import { SPEECH_SEEK_SECONDS, nextSpeechRate, speechRateLabel, speechText, speechTimeLabel, type SpeechProgress } from '@pulpo/client-core';
 import { INITIAL_TRANSCRIPT_ROWS, hasLargeInitialMessage, transcriptListMessages, usesBottomAnchoredTranscript } from '../features/chat/transcriptWindow';
 import { hasChatSelectionObserver, recordChatSelection, hasTranscriptPositionObserver, recordTranscriptPosition } from '../features/chat/selectionTiming';
-import { isUsageLimitMessage, isUsageLimitRejection, responseErrorMessage, usageLimitNoticeText } from '../features/usage-limits/errors';
+import { isBalanceLimitMessage, isUsageLimitMessage, isUsageLimitRejection, responseErrorMessage, usageLimitNoticeText } from '../features/usage-limits/errors';
+import { signupPromoClaimLabel, signupPromoSuccessLabel, useSignupPromo } from '../features/signup-promo/useSignupPromo';
 import { prepareChatSelection } from '../data/prepareChat';
 import { createDrawerTransition } from '../features/chat/drawerTransition';
 import { protectTranscript } from '../data/transcriptResidency';
@@ -4203,18 +4204,24 @@ function AssistantFrame({ children, model, sideRail, time, spokenTime = time, he
   );
 }
 
-/** A failed response's error with Try again, plus View Usage when a plan's usage limit stopped it. */
+/** A failed response's error and the available recovery actions. */
 function ResponseErrorNotice({ message, onRetry }: { message: Message; onRetry: (message: Message) => void }) {
   const { styles, COLORS } = useChatStyles();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const limited = isUsageLimitMessage(message.error);
+  const { offer, claim, receipt, pending, checking } = useSignupPromo(isBalanceLimitMessage(message.error));
   const errorText = limited && message.error ? usageLimitNoticeText(message.error) : message.error;
   return <View style={styles.responseError}>
     <Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} />
     <View style={styles.responseErrorBody}>
       <Text accessibilityLabel={`Response failed: ${errorText ?? ''}`} style={styles.responseErrorMessage}>{errorText}</Text>
       <View style={styles.responseErrorActions}>
-        {limited ? <Pressable accessibilityRole="button" hitSlop={TEXT_BUTTON_HIT_SLOP} onPress={() => { Keyboard.dismiss(); navigation.navigate('SettingsDetail', { section: 'usage' }); }}>
+        {receipt ? <Text accessibilityLiveRegion="polite" style={styles.responseErrorMessage}>{signupPromoSuccessLabel(receipt.amountCents)}</Text>
+          : offer ? <Pressable accessibilityRole="button" hitSlop={TEXT_BUTTON_HIT_SLOP} disabled={pending}
+            accessibilityState={{ disabled: pending, busy: pending }} onPress={() => claim(offer.amountCents)}>
+            <Text style={styles.tryAgainText}>{signupPromoClaimLabel(offer.amountCents, pending)}</Text>
+          </Pressable>
+          : limited && !checking ? <Pressable accessibilityRole="button" hitSlop={TEXT_BUTTON_HIT_SLOP} onPress={() => { Keyboard.dismiss(); navigation.navigate('SettingsDetail', { section: 'usage' }); }}>
           <Text style={styles.tryAgainText}>View Usage</Text>
         </Pressable> : null}
         <Pressable accessibilityRole="button" hitSlop={TEXT_BUTTON_HIT_SLOP} onPress={() => onRetry(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable>

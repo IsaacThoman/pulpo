@@ -141,6 +141,38 @@ describe('insufficient balance notice', () => {
     expect(view.getByText('Billing destination')).toBeDefined()
   })
 
+  it('claims signup credit from the notice and clears the cached offer', async () => {
+    const { useAuth } = await import('@/stores/auth')
+    const { MessageItem } = await import('./MessageItem')
+    const previousUser = useAuth.getState().user
+    const userId = 'signup-member'
+    useAuth.setState({ user: {
+      id: userId, name: 'Signup member', email: 'member@example.test', username: 'signup_member', role: 'user',
+      avatarUrl: null, profileColor: null, usageVisibility: 'friends', initials: 'SM',
+      balanceMicros: 0, storageLimitBytes: 0, blocked: false, stateRevision: 0, createdAt: new Date().toISOString(),
+    } })
+    const fetch = vi.fn(async (path: string) => Response.json(path.endsWith('/claim')
+      ? { amountCents: 100 } : { userId, offer: { amountCents: 100, message: 'Welcome' } }))
+    vi.stubGlobal('fetch', fetch)
+    onTestFinished(() => {
+      vi.unstubAllGlobals()
+      useAuth.setState({ user: previousUser })
+    })
+    const client = new QueryClient()
+    const view = render(<QueryClientProvider client={client}><MemoryRouter>
+      <MessageItem chat={chat} message={assistant({ error: balanceErrors[0] })} streaming={false} onRegenerate={() => undefined} />
+    </MemoryRouter></QueryClientProvider>)
+
+    const claim = await view.findByRole('button', { name: 'Claim $1.00' })
+    expect(view.queryByRole('link', { name: 'View billing' })).toBeNull()
+    fireEvent.click(claim)
+    expect(await view.findByText('$1.00 added to your balance.')).toBeDefined()
+    expect(fetch).toHaveBeenCalledWith('/api/billing/signup-promo/claim', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ userId, amountCents: 100 }),
+    }))
+    expect(client.getQueryData(['signup-promo', userId])).toEqual({ userId, offer: null })
+  })
+
   it('omits billing guidance when billing is disabled', async () => {
     const { useAuth } = await import('@/stores/auth')
     useAuth.setState({ billingEnabled: false })

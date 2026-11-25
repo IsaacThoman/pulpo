@@ -15,7 +15,11 @@ export function isUsageLimitRejection(error: unknown): error is Error & { status
 
 /** Whether a response's error is one of the app's plan limit messages, which link to Settings › Usage. */
 export function isUsageLimitMessage(message: string | undefined): boolean {
-  return message === USAGE_LIMIT_MESSAGE || message === DAILY_LIMIT_MESSAGE
+  return isBalanceLimitMessage(message) || message === DAILY_LIMIT_MESSAGE
+}
+
+export function isBalanceLimitMessage(message: string | undefined): boolean {
+  return message === USAGE_LIMIT_MESSAGE
 }
 
 /** A plan limit error shown beside a View Usage button, which makes "See Settings › Usage" redundant. */
