@@ -1,6 +1,5 @@
 import { Info, OctagonAlert, TriangleAlert, X, type LucideIcon } from 'lucide-react'
 import type { BannerType } from '@pulpo/contracts'
-import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { ui } from '@/i18n/ui'
 import { bannerSegments } from './banner-links'
@@ -25,18 +24,17 @@ const TONES: Record<BannerType, { icon: LucideIcon; card: string; iconColor: str
 }
 
 /** One admin banner: a tinted card with a tone icon, linkified copy, and an optional dismiss control. */
-export function BannerCard({ type, content, onDismiss, className, action }: {
+export function BannerCard({ type, content, onDismiss, className }: {
   type: BannerType
   content: string
   onDismiss?: () => void
   className?: string
-  action?: ReactNode
 }) {
   const tone = TONES[type]
   const Icon = tone.icon
   return (
     <div
-      role={action ? undefined : type === 'error' ? 'alert' : 'status'}
+      role={type === 'error' ? 'alert' : 'status'}
       className={cn('flex w-fit max-w-full items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-sm', tone.card, className)}
     >
       {/* Centers the 16px icon on the 22px first line of copy. */}
@@ -46,7 +44,6 @@ export function BannerCard({ type, content, onDismiss, className, action }: {
           ? <a key={index} href={segment.href} target="_blank" rel="noreferrer" className="font-medium text-foreground underline decoration-foreground/30 underline-offset-2 transition-colors hover:decoration-foreground">{segment.text}</a>
           : <span key={index}>{segment.text}</span>)}
       </p>
-      {action}
       {onDismiss && (
         <button
           type="button"

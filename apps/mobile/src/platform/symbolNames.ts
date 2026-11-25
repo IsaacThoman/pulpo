@@ -27,6 +27,7 @@ export const materialSymbolNames: Record<string, string> = {
   "chevron.up": "expand_less",
   "xmark": "close",
   "xmark.circle.fill": "cancel",
+  "gift.fill": "redeem",
   "checkmark": "check",
   "checkmark.circle.fill": "check_circle",
   "checkmark.circle": "check_circle",
