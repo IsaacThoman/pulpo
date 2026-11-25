@@ -562,6 +562,15 @@ summary::-webkit-details-marker { display: none; }
 .places-header h2 { font-size: 1.2rem; }
 .places-header-actions { display: flex; flex-wrap: wrap; gap: .2rem .65rem; }
 .places-header-actions .text-button { display: inline-flex; align-items: center; gap: .3rem; color: var(--link); }
+.place-map-rail { min-width: 0; margin-bottom: .7rem; }
+.place-map-toggle { margin-bottom: .35rem; color: var(--link); }
+.place-locations { margin: 0; }
+.place-locations svg { width: 100%; height: clamp(8.5rem, 24vh, 12rem); border-radius: .65rem; background: var(--subtle); }
+.place-locations svg circle { fill: var(--link); stroke: var(--surface); stroke-width: 1.5; }
+.place-locations-north, .place-locations-count { text-anchor: middle; font-size: .72rem; font-weight: 650; }
+.place-locations-north { fill: var(--muted); }
+.place-locations-count { fill: var(--page); }
+.place-locations figcaption { margin-top: .35rem; color: var(--muted); font-size: .75rem; }
 .places-note { padding-block: .4rem; color: var(--muted); font-size: .875rem; }
 .place-refinements { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .65rem; }
 .place-open-filter { min-height: 2.3rem; border: 0; background: transparent; }
@@ -977,9 +986,9 @@ label.settings-row { cursor: pointer; }
   .results-body:has(.knowledge-card) { grid-template-columns: minmax(0, var(--reading-width)) minmax(12rem, 18rem); column-gap: var(--shell-gap); }
   .results-body:has(.knowledge-card) > .results-column { grid-column: 1; grid-row: 1; }
   .results-body:has(.knowledge-card) > .knowledge-card { grid-column: 2; grid-row: 1; }
-  .places-answer[data-map-open] { width: min(100%, 65rem); }
-  .places-map-and-list:has(.place-map-panel:not([hidden])) { display: grid; grid-template-columns: minmax(0, var(--reading-width)) minmax(17rem, 1fr); gap: 1.5rem; }
-  .places-map-and-list .place-map-panel { grid-column: 2; grid-row: 1; min-width: 0; }
+  .places-answer[data-location-overview] { width: min(100%, 65rem); }
+  .places-map-and-list:has(.place-map-rail) { display: grid; grid-template-columns: minmax(0, var(--reading-width)) minmax(17rem, 1fr); gap: 1.5rem; }
+  .places-map-and-list .place-map-rail { grid-column: 2; grid-row: 1; }
   .places-map-and-list .place-list, .places-map-and-list > .places-note { grid-column: 1; grid-row: 1; }
 }
 @media (max-width: 66rem) {

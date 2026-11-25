@@ -23,6 +23,46 @@ function googleMapsUrl(place: PlaceResult, action: 'directions' | 'listing') {
 const formatRating = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 })
 const initialPlaceCount = 6
 
+function PlaceLocations({ pins }: { pins: PlaceMapPin[] }) {
+  const gridId = useId()
+  const [originLongitude, originLatitude] = pins[0]!.coordinates
+  const longitudeScale = Math.cos(originLatitude * Math.PI / 180)
+  const points = pins.map(({ coordinates: [longitude, latitude] }) => ({
+    x: (((longitude - originLongitude + 540) % 360) - 180) * longitudeScale,
+    y: originLatitude - latitude,
+  }))
+  const minimumX = Math.min(...points.map(point => point.x))
+  const maximumX = Math.max(...points.map(point => point.x))
+  const minimumY = Math.min(...points.map(point => point.y))
+  const maximumY = Math.max(...points.map(point => point.y))
+  const scale = Math.min(230 / Math.max(maximumX - minimumX, .0005), 108 / Math.max(maximumY - minimumY, .0005))
+  const groups: Array<{ x: number; y: number; count: number }> = []
+  for (const point of points) {
+    const x = 150 + (point.x - (minimumX + maximumX) / 2) * scale
+    const y = 78 + (point.y - (minimumY + maximumY) / 2) * scale
+    const group = groups.find(dot => Math.hypot(dot.x - x, dot.y - y) < 18)
+    if (group) group.count += 1
+    else groups.push({ x, y, count: 1 })
+  }
+  return <figure className="place-locations">
+    <svg viewBox="0 0 300 156" aria-hidden="true">
+      <defs><pattern id={gridId} width="26" height="26" patternUnits="userSpaceOnUse">
+        <path d="M26 0H0V26" fill="none" stroke="var(--line)" strokeWidth=".75" />
+      </pattern></defs>
+      <rect width="300" height="156" fill={`url(#${gridId})`} />
+      <g className="place-locations-north">
+        <text x="279" y="18">N</text>
+        <path d="M279 23l-4 8 4-2 4 2z" />
+      </g>
+      {groups.map(({ x, y, count }) => <g key={`${x},${y}`} transform={`translate(${x},${y})`}>
+        <circle r={count > 1 ? 10 : 5.5} />
+        {count > 1 && <text className="place-locations-count" y=".35em">{count}</text>}
+      </g>)}
+    </svg>
+    <figcaption>{pins.length} {pins.length === 1 ? 'place' : 'places'} · Relative locations</figcaption>
+  </figure>
+}
+
 export function PlacesAnswer({ response, openNow, webExpanded, onWeb }: {
   response: PlaceResponse
   openNow: boolean
@@ -60,16 +100,12 @@ export function PlacesAnswer({ response, openNow, webExpanded, onWeb }: {
   }, [mapId, places, response.results, showAll])
   const canFilterHours = !openNow && response.results.some(place => place.openNow !== undefined)
   const canSortRatings = response.results.filter(place => place.rating).length > 1
+  const hasLocations = pins.length > 0 || showMap
   return (
-    <section className="places-answer" aria-label="Local places" data-map-open={showMap || undefined}>
+    <section className="places-answer" aria-label="Local places" data-location-overview={hasLocations || undefined}>
       <div className="places-header">
         <h2>Places{openNow && ' open now'}</h2>
         <div className="places-header-actions">
-          {mapStyleUrl && (showMap || pins.length > 0) && <button className="text-button" aria-controls={mapId} aria-expanded={showMap}
-            title={showMap ? undefined : 'Load map tiles from OpenFreeMap'} onClick={event => {
-              if (showMap) event.currentTarget.focus()
-              setShowMap(!showMap)
-            }}><MapIcon size={15} aria-hidden="true" />{showMap ? 'Hide map' : 'Show map'}</button>}
           <button className="text-button" aria-expanded={webExpanded} onClick={onWeb}>
             {webExpanded ? 'Hide web results' : 'Show web results'}
           </button>
@@ -87,13 +123,21 @@ export function PlacesAnswer({ response, openNow, webExpanded, onWeb }: {
         </select><ChevronDown size={14} aria-hidden="true" /></span>}
       </div>}
       <div className="places-map-and-list">
-        <div id={mapId} className="place-map-panel" hidden={!showMap}>
-          {showMap && mapStyleUrl && (pins.length ? (
-            <Suspense fallback={<p className="places-note" role="status">Loading map…</p>}>
-              <PlacesMap pins={pins} styleUrl={mapStyleUrl} />
-            </Suspense>
-          ) : <p className="places-note">No mapped places in these results.</p>)}
-        </div>
+        {hasLocations && <div className="place-map-rail">
+          {mapStyleUrl && <button className="text-button place-map-toggle" aria-controls={mapId} aria-expanded={showMap}
+            title={showMap ? undefined : 'Load map tiles from OpenFreeMap'} onClick={event => {
+              event.currentTarget.focus()
+              setShowMap(!showMap)
+            }}><MapIcon size={15} aria-hidden="true" />{showMap ? 'Hide map' : 'Show map'}</button>}
+          {!showMap && <PlaceLocations pins={pins} />}
+          {mapStyleUrl && <div id={mapId} className="place-map-panel" hidden={!showMap}>
+            {showMap && (pins.length ? (
+              <Suspense fallback={<p className="places-note" role="status">Loading map…</p>}>
+                <PlacesMap pins={pins} styleUrl={mapStyleUrl} />
+              </Suspense>
+            ) : <p className="places-note">No mapped places in these results.</p>)}
+          </div>}
+        </div>}
         {places.length ? (
           <ol className="place-list">
             {visiblePlaces.map(({ id, rank, place }) => {
