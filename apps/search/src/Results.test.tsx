@@ -187,6 +187,23 @@ describe('search result presentation', () => {
     expect(screen.getByText('2 hours ago')).toBeDefined()
   })
 
+  it('shows the relative age of recent timestamps and preserves date-only stories', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-25T04:30:00.000Z'))
+    try {
+      const news = { ...data, results: [
+        { url: 'https://a.example.org/recent', title: 'Recent news', snippet: '', publishedAt: '2026-11-25T02:30:00.000Z' },
+        { url: 'https://b.example.org/archive', title: 'Calendar date', snippet: '', publishedAt: '2026-11-24' },
+      ] }
+      const { container } = render(<Results data={news} location={{ ...homeLocation, category: 'news', query: 'telescope' }}
+        preferences={loadPreferences()} setDomain={vi.fn()} onQuery={vi.fn()} />)
+      expect(screen.getByText('2 hours ago').getAttribute('datetime')).toBe('2026-11-25T02:30:00.000Z')
+      expect(container.querySelector('time[datetime="2026-11-24"]')?.textContent).toBe('Nov 24, 2026')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('puts nearby versions of the same documentation behind the top-ranked result on site searches', async () => {
     const docs: SearchResponse = { ...data, results: [
       docsResult('3/library/tomllib.html', 'tomllib'),

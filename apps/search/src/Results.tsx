@@ -34,14 +34,23 @@ function Highlight({ text, terms }: { text: string; terms: Set<string> }) {
   ))
 }
 
-function formatDate(value: string | undefined) {
+function formatDate(value: string | undefined, newsNow: number | undefined) {
   if (!value) return undefined
   const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value)
   const date = /^\d{4}-\d{2}-\d{2}(?:$|T)/.test(value) ? new Date(value) : undefined
   if (date && !Number.isNaN(date.getTime())) {
     // Search timestamps may represent calendar dates stored at midnight UTC.
-    const formatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' })
-    return { label: formatter.format(date), iso: dateOnly ? value : date.toISOString() }
+    const iso = dateOnly ? value : date.toISOString()
+    const calendarDate = dateOnly || /T00:00:00(?:\.0+)?Z$/.test(value)
+    const formatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: calendarDate ? 'UTC' : undefined })
+    const absolute = formatter.format(date)
+    const age = newsNow === undefined || calendarDate ? undefined : (newsNow - date.getTime()) / 1000
+    if (age !== undefined && age >= 0 && age < newsAgeInSeconds.week) {
+      const unit = age < newsAgeInSeconds.hour ? 'minute' : age < newsAgeInSeconds.day ? 'hour' : 'day'
+      const relative = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' })
+      return { label: relative.format(-Math.floor(age / newsAgeInSeconds[unit]), unit), iso, absolute }
+    }
+    return { label: absolute, iso }
   }
   return { label: value, iso: undefined }
 }
@@ -88,14 +97,14 @@ function ImageThumbnail({ image, thumbnail, title, contain, open }: {
   </button>
 }
 
-function ResultItem({ entry, additional, versions, preview, media, video, news, newTab, setDomain, showHidden, searchSite, terms }: {
+function ResultItem({ entry, additional, versions, preview, media, video, newsNow, newTab, setDomain, showHidden, searchSite, terms }: {
   entry: ResultWithUrl
   additional: ResultWithUrl[]
   versions: { url: URL; label: string }[]
   preview?: (opener: HTMLButtonElement) => void
   media: boolean
   video: boolean
-  news: boolean
+  newsNow?: number
   newTab: boolean
   setDomain: (host: string, rule: DomainRule | undefined) => void
   showHidden: boolean
@@ -104,7 +113,8 @@ function ResultItem({ entry, additional, versions, preview, media, video, news, 
 }) {
   const [versionsOpen, setVersionsOpen] = useState(false)
   const { result, url, host, rule } = entry
-  const date = formatDate(result.publishedAt)
+  const news = newsNow !== undefined
+  const date = formatDate(result.publishedAt, newsNow)
   const target = newTab ? '_blank' : undefined
   const path = preview || news ? '' : pathLabel(url)
   const title = result.title || host
@@ -113,7 +123,7 @@ function ResultItem({ entry, additional, versions, preview, media, video, news, 
   const videoDuration = video && videoDurationBucket(result.duration) ? result.duration : undefined
   const videoDetails = video ? [result.creatorName, videoDuration].filter(Boolean).join(' · ') : ''
   const reportedDate = date && (date.iso
-    ? <time className="result-date" dateTime={date.iso} title="Date reported by the search provider">{date.label}</time>
+    ? <time className="result-date" dateTime={date.iso} title={date.absolute ?? 'Date reported by the search provider'}>{date.label}</time>
     : <span className="result-date" title="Date reported by the search provider">{date.label}</span>)
   const dimensions = result.imageDimensions
   const containImage = Boolean(dimensions && (dimensions.width >= 2 * dimensions.height || dimensions.height >= 1.6 * dimensions.width))
@@ -336,7 +346,7 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
               <ResultItem key={entry.url.href + (entry.result.imageUrl ?? '')} entry={entry}
                 additional={additional} versions={versions}
                 preview={images ? opener => setPreview({ entries: ordered, startIndex: index, opener }) : undefined}
-                media={media} video={videos} news={news}
+                media={media} video={videos} newsNow={news ? now : undefined}
                 newTab={preferences.newTab} setDomain={setDomain} showHidden={showHidden} searchSite={searchSite} terms={terms} />
             ))}
           </ol>
