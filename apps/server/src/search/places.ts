@@ -25,6 +25,9 @@ export interface PlaceResult {
   website?: string
   phone?: string
   category?: string
+  summary?: string
+  priceLevel?: string
+  googlePlaceId?: string
   coordinates?: [latitude: number, longitude: number]
   timezone?: string
   todayHours?: string[]
@@ -250,6 +253,11 @@ function normalizeFirecrawlPlace(value: unknown, now: Date): PlaceResult | undef
   const website = placeWebsite(row.website)
   const phone = placePhone(row.phone) ?? placePhone(row.phone_e164)
   const category = placeCategory(row.categories)
+  const summary = placeText(row.editorial_summary, 180)
+  const priceLevel = typeof row.price_level === 'string' && /^(?:\${1,4}|€{1,4}|£{1,4})$/.test(row.price_level.trim())
+    ? row.price_level.trim() : undefined
+  const googlePlaceId = typeof row.place_id === 'string' && /^[a-z\d_-]{10,200}$/i.test(row.place_id)
+    ? row.place_id : undefined
   const coordinates = placeCoordinates([row.latitude, row.longitude])
   const rating = placeRating({ ratingValue: row.rating, bestRating: 5, reviewCount: row.review_count })
   return {
@@ -257,6 +265,9 @@ function normalizeFirecrawlPlace(value: unknown, now: Date): PlaceResult | undef
     ...(website ? { website } : {}),
     ...(phone ? { phone } : {}),
     ...(category ? { category } : {}),
+    ...(summary ? { summary } : {}),
+    ...(priceLevel ? { priceLevel } : {}),
+    ...(googlePlaceId ? { googlePlaceId } : {}),
     ...(coordinates ? { coordinates } : {}),
     ...(rating ? { rating } : {}),
     ...firecrawlPlaceHours(row, now),

@@ -220,7 +220,23 @@ describe('Kagi client', () => {
     expect(podcasts.podcastShows).toEqual([{ url: 'https://pod.example.com/show', title: 'The show', snippet: '' }])
   })
 
-  it.each(['The Pool and the Stream (Redux)', 'The Pool and the Stream Redux'])('ranks the named original ahead of %s unless the query names the rerun', async (title) => {
+  it('prioritizes the first video from an explicitly named creator', async () => {
+    const other = { title: 'A recent explanation', url: 'https://example.com/other', props: { creator_name: 'Mateo Explains' } }
+    const first = { title: 'A visual introduction', url: 'https://example.com/first', props: { creator_name: '3Blue1Brown' } }
+    const second = { ...first, title: 'Another video', url: 'https://example.com/second' }
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json({ data: { video: [other, first, second] } }))))
+    const client = new KagiClient('secret')
+    const exact = await client.searchResults({ query: '3Blue1Brown Fourier transform explained', category: 'videos' })
+    expect(exact.results.map(result => result.url)).toEqual([first.url, other.url, second.url])
+    const general = await client.searchResults({ query: 'Fourier transform explained', category: 'videos' })
+    expect(general.results.map(result => result.url)).toEqual([other.url, first.url, second.url])
+  })
+
+  it.each([
+    ['The Pool and the Stream (Redux)', 'redux'],
+    ['The Pool and the Stream Redux', 'redux'],
+    ['The Pool and the Stream (Deluxe)', 'deluxe'],
+  ])('ranks the named original ahead of %s unless the query names the variant', async (title, suffix) => {
     const rerun = { title, url: 'https://example.com/redux' }
     const original = { title: 'The Pool and the Stream', url: 'https://example.com/original' }
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json({ data: { podcast: [rerun, original] } }))))
@@ -228,7 +244,7 @@ describe('Kagi client', () => {
     const query = '99% Invisible The Pool and the Stream'
     const originalSearch = await client.searchResults({ query, category: 'podcasts' })
     expect(originalSearch.results.map(result => result.url)).toEqual([original.url, rerun.url])
-    const rerunSearch = await client.searchResults({ query: query + ' redux', category: 'podcasts' })
+    const rerunSearch = await client.searchResults({ query: `${query} ${suffix}`, category: 'podcasts' })
     expect(rerunSearch.results.map(result => result.url)).toEqual([rerun.url, original.url])
   })
 

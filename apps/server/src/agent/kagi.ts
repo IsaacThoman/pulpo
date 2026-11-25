@@ -19,6 +19,19 @@ const resultGroups: Record<SearchCategory, string> = {
   podcasts: 'podcast',
 }
 
+function normalizedWords(value: string) {
+  return value.normalize('NFC').toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu)?.join(' ') ?? ''
+}
+
+function prioritizeNamedVideoCreator(results: SearchResult[], query: string) {
+  const queryWords = ` ${normalizedWords(query)} `
+  const index = results.findIndex(result => {
+    const creator = normalizedWords(result.creatorName ?? '')
+    return creator.length >= 4 && queryWords.includes(` ${creator} `)
+  })
+  return index > 0 ? [results[index]!, ...results.slice(0, index), ...results.slice(index + 1)] : results
+}
+
 function preferEpisodeLinks(rows: Array<SearchResult | null>, query: string) {
   const identity = (row: SearchResult) => row.duration && row.publishedAt
     ? JSON.stringify([row.title.toLowerCase(), row.duration, row.publishedAt]) : undefined
@@ -29,21 +42,20 @@ function preferEpisodeLinks(rows: Array<SearchResult | null>, query: string) {
   }))
   const episodes = rows.filter((row): row is SearchResult => row !== null
     && (!isHomepage(row.url) || !linkedEpisodes.has(identity(row) ?? '')))
-  const words = (value: string) => value.normalize('NFC').toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu)?.join(' ') ?? ''
-  const queryWords = ' ' + words(query)
+  const queryWords = ' ' + normalizedWords(query)
   const originalIndex = episodes.findIndex(row => {
-    const title = words(row.title)
+    const title = normalizedWords(row.title)
     return title.length >= 10 && queryWords.endsWith(' ' + title)
   })
   if (originalIndex > 0) {
     const original = episodes[originalIndex]!
-    const rerunIndex = episodes.findIndex((row, index) => {
-      const rerun = /^(.*) (?:redux|replay|encore|rebroadcast)$/.exec(words(row.title))?.[1]
-      return index < originalIndex && rerun === words(original.title)
+    const variantIndex = episodes.findIndex((row, index) => {
+      const variantTitle = /^(.*) (?:redux|replay|encore|rebroadcast|deluxe)$/.exec(normalizedWords(row.title))?.[1]
+      return index < originalIndex && variantTitle === normalizedWords(original.title)
     })
-    if (rerunIndex >= 0) {
+    if (variantIndex >= 0) {
       episodes.splice(originalIndex, 1)
-      episodes.splice(rerunIndex, 0, original)
+      episodes.splice(variantIndex, 0, original)
     }
   }
   return episodes
@@ -274,7 +286,7 @@ export class KagiClient {
       && !searchQueryTokens(input.query).some(token => /^[()+-]*site:[^)\s]/i.test(token))
       ? wikipediaKnowledge(group('infobox')) : undefined
     return {
-      results,
+      results: category === 'videos' ? prioritizeNamedVideoCreator(results, input.query) : results,
       // The API supplies no total or cursor, but can accept an additional page after a full result group.
       hasMore: page < KAGI_MAX_SEARCH_PAGE && rows.length >= limit,
       ...(related.length ? { related } : {}),

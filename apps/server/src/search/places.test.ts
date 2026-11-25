@@ -172,6 +172,7 @@ const firecrawlCafe = {
   business_status: 'operational', website: 'https://station-coffee.example.com/', phone: '(212) 555-0111',
   phone_e164: '+12125550111', categories: ['Coffee shop'], latitude: 40.7524, longitude: -73.9777,
   rating: 4.8, review_count: 86, maps_url: 'https://maps.firecrawl.dev/place/private', feature_id: 'raw-provider-id',
+  editorial_summary: '<b>Espresso bar by the station.</b>', price_level: '$$', place_id: 'ChIJx_12StationCoffee',
 }
 
 function firecrawlResponse(results: unknown[]) {
@@ -192,6 +193,7 @@ describe('Firecrawl Maps place search', () => {
         todayHours: ['6:30 AM–10 PM'], openNow: true, website: 'https://station-coffee.example.com/',
         phone: '(212) 555-0111', category: 'Coffee shop', coordinates: [40.7524, -73.9777],
         rating: { value: 4.8, max: 5, count: 86 },
+        summary: 'Espresso bar by the station.', priceLevel: '$$', googlePlaceId: 'ChIJx_12StationCoffee',
       }],
     })
     expect(fetch).toHaveBeenCalledExactlyOnceWith('https://api.firecrawl.dev/v2/scrape', expect.objectContaining({

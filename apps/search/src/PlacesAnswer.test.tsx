@@ -12,7 +12,8 @@ vi.mock('./PlacesMap', () => ({
 
 const style = 'https://tiles.openfreemap.org/styles/positron'
 const places = [
-  { name: 'Market Books', address: '1 Market St', coordinates: [47.6, -122.34] as [number, number], openNow: true },
+  { name: 'Market Books', address: '1 Market St', coordinates: [47.6, -122.34] as [number, number], openNow: true,
+    category: 'Bookshop', summary: 'Independent bookseller.', priceLevel: '$$', googlePlaceId: 'ChIJMarketBooks' },
   { name: 'City Books', address: '2 Union St', coordinates: [47.61, -122.33] as [number, number], openNow: false },
   { name: 'Travel Books', address: '3 Pine St' },
 ]
@@ -27,6 +28,16 @@ afterEach(() => {
 })
 
 describe('Places map disclosure', () => {
+  it('shows published place details and links to the exact venue', () => {
+    showPlaces()
+    expect(screen.getByText('Independent bookseller.')).toBeDefined()
+    expect(screen.getByText('Bookshop · $$')).toBeDefined()
+    const listing = screen.getByRole('link', { name: 'Map listing' }) as HTMLAnchorElement
+    expect(new URL(listing.href).searchParams.get('query_place_id')).toBe('ChIJMarketBooks')
+    const directions = screen.getAllByRole('link', { name: 'Directions' })[0] as HTMLAnchorElement
+    expect(new URL(directions.href).searchParams.get('destination_place_id')).toBe('ChIJMarketBooks')
+  })
+
   it.each(['', 'https://tiles.openfreemap.org.example.com/styles/positron', style + '?query=coffee'])('hides the map for an unconfigured or unsupported style URL %j', url => {
     vi.stubEnv('VITE_SEARCH_PLACES_MAP_STYLE_URL', url)
     showPlaces()

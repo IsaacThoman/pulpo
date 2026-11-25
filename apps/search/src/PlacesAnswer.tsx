@@ -10,9 +10,13 @@ const PlacesMap = lazy(() => import('./PlacesMap').catch(() => ({
   default: () => <p className="places-note" role="status">Couldn’t load the map. Use the listings below.</p>,
 })))
 
-function directionsFor(place: PlaceResult) {
-  const url = new URL('https://www.google.com/maps/dir/')
-  url.search = new URLSearchParams({ api: '1', destination: [place.name, place.address].filter(Boolean).join(', ') }).toString()
+function googleMapsUrl(place: PlaceResult, action: 'directions' | 'listing') {
+  const directions = action === 'directions'
+  const url = new URL(directions ? 'https://www.google.com/maps/dir/' : 'https://www.google.com/maps/search/')
+  const parameter = directions ? 'destination' : 'query'
+  url.searchParams.set('api', '1')
+  url.searchParams.set(parameter, [place.name, place.address].filter(Boolean).join(', '))
+  if (place.googlePlaceId) url.searchParams.set(`${parameter}_place_id`, place.googlePlaceId)
   return url.href
 }
 
@@ -102,8 +106,9 @@ export function PlacesAnswer({ response, openNow, webExpanded, onWeb }: {
                   {showMap && rank !== undefined && <span className="place-map-number" aria-hidden="true">{rank}</span>}
                   {place.name}
                 </h3>
-                {place.category && <p className="place-category">{place.category}</p>}
+                {(place.category || place.priceLevel) && <p className="place-category">{[place.category, place.priceLevel].filter(Boolean).join(' · ')}</p>}
                 <p>{place.address}</p>
+                {place.summary && <p>{place.summary}</p>}
                 <div className="place-details">
                   {place.openNow !== undefined && <strong data-open={place.openNow}>{place.openNow ? 'Open now' : 'Closed'}</strong>}
                   {hours && <span>Today {hours}</span>}
@@ -124,10 +129,11 @@ export function PlacesAnswer({ response, openNow, webExpanded, onWeb }: {
                   </details>
                 )}
                 <div className="place-actions">
-                  <a className="secondary-button result-link" href={directionsFor(place)} target="_blank" rel="noreferrer">
+                  <a className="secondary-button result-link" href={googleMapsUrl(place, 'directions')} target="_blank" rel="noreferrer">
                     <MapPin size={14} aria-hidden="true" /> Directions
                   </a>
                   {website && <a className="secondary-button" href={website.href} rel="noreferrer">Website</a>}
+                  {place.googlePlaceId && <a className="secondary-button" href={googleMapsUrl(place, 'listing')} target="_blank" rel="noreferrer">Map listing</a>}
                   {telephone && /^\+?\d{7,15}$/.test(telephone) && <a className="secondary-button"
                     href={'tel:' + telephone + (extension && /^\d{1,8}$/.test(extension) ? ';ext=' + extension : '')}>Call</a>}
                 </div>

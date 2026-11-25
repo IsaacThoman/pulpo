@@ -10,6 +10,9 @@ export interface PlaceResult {
   website?: string
   phone?: string
   category?: string
+  summary?: string
+  priceLevel?: string
+  googlePlaceId?: string
   coordinates?: [number, number]
   todayHours?: string[]
   weeklyHours?: { day: string; hours: string }[]
