@@ -1,13 +1,17 @@
-import { searchConnectInputSchema, type SearchSessionUser } from '@pulpo/contracts'
+import { colorThemeIdSchema, customThemesSchema, DEFAULT_COLOR_THEME_ID, INSTANCE_COLOR_THEME_PREFIX, INSTANCE_COLOR_THEMES_SETTING_KEY, searchConnectInputSchema, type SearchSessionUser } from '@pulpo/contracts'
+import { defaultSearchAccountPreferences, SEARCH_ACCOUNT_PREFERENCES_KEY } from '@pulpo/contracts/search'
 import { and, eq, gt, lte } from 'drizzle-orm'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
-import { searchAuthCodes, sessions, users } from '../database/schema.js'
+import { applicationSettings, searchAuthCodes, sessions, userPreferences, users } from '../database/schema.js'
 import { resolveClientIp } from '../lib/client-ip.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { AppError, forbidden, notFound, unauthorized } from '../lib/errors.js'
+import { patchAccountPreferences } from '../settings/account-preferences.js'
+import { parseInstanceColorThemes } from '../settings/instance-color-themes.js'
+import { savedSearchPreferences, searchPreferencesAccountQuery, searchPreferencesUpdate } from '../settings/search-preferences.js'
 import { authenticateSession, authenticateSessionToken, currentSessionId, newSessionCredentials, requireUser } from './service.js'
 
 const SEARCH_API_PATH = '/api/search'
@@ -127,6 +131,52 @@ export function registerSearchAuthRoutes(app: FastifyInstance) {
     reply.header('cache-control', 'no-store')
     const user = request.user
     return { user: user && user.role !== 'pending' ? sessionUser(user) : null }
+  })
+
+  app.get('/api/search/appearance', async (request, reply) => {
+    reply.header('cache-control', 'no-store')
+    const user = requireUser(request)
+    const [row] = await db.select({ values: userPreferences.values }).from(userPreferences)
+      .where(eq(userPreferences.userId, user.id)).limit(1)
+    const preferences = row?.values as Record<string, unknown> | undefined
+    const theme = z.enum(['system', 'light', 'dark']).catch('system').parse(preferences?.theme)
+    const colorTheme = colorThemeIdSchema.catch(DEFAULT_COLOR_THEME_ID).parse(preferences?.colorTheme)
+    if (colorTheme.startsWith(INSTANCE_COLOR_THEME_PREFIX)) {
+      const [setting] = await db.select({ value: applicationSettings.value }).from(applicationSettings)
+        .where(eq(applicationSettings.key, INSTANCE_COLOR_THEMES_SETTING_KEY)).limit(1)
+      const selected = parseInstanceColorThemes(setting?.value).find(item => INSTANCE_COLOR_THEME_PREFIX + item.id === colorTheme)
+      return { theme, colorTheme, instanceTheme: selected }
+    }
+    const selected = customThemesSchema.catch([]).parse(preferences?.customThemes).find(item => item.id === colorTheme)
+    // Search applies Pulpo's color palette without carrying chat-specific custom styles across origins.
+    return { theme, colorTheme, customTheme: selected && { ...selected, css: '' } }
+  })
+
+  app.get('/api/search/preferences', async (request, reply) => {
+    reply.header('cache-control', 'no-store')
+    const user = requireUser(request)
+    const { accountId } = searchPreferencesAccountQuery.parse(request.query)
+    if (user.id !== accountId) throw forbidden('The active Search account changed. Reload and try again.')
+    const [row] = await db.select({ values: userPreferences.values }).from(userPreferences)
+      .where(eq(userPreferences.userId, user.id)).limit(1)
+    return { preferences: savedSearchPreferences(row?.values as Record<string, unknown> | undefined) }
+  })
+
+  app.patch('/api/search/preferences', {
+    bodyLimit: 512 * 1024,
+    config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
+    reply.header('cache-control', 'no-store')
+    const user = requireUser(request)
+    const { accountId, patch, initial } = searchPreferencesUpdate.parse(request.body)
+    if (user.id !== accountId) throw forbidden('The active Search account changed. Reload and try again.')
+    const changed = Object.keys(patch).length > 0
+    const values = await patchAccountPreferences(user.id, existing => {
+      const saved = savedSearchPreferences(existing)
+      if (!changed && (saved || !initial)) return
+      return { [SEARCH_ACCOUNT_PREFERENCES_KEY]: { ...(saved ?? initial ?? defaultSearchAccountPreferences), ...patch } }
+    })
+    return { preferences: savedSearchPreferences(values) }
   })
 
   app.post('/api/search/auth/logout', async (request, reply) => {

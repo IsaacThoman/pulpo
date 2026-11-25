@@ -45,6 +45,7 @@ export function ChatDataBridge() {
   const location = useLocation()
   const adminChatView = location.pathname.startsWith('/admin/chats/')
   const routeChatId = /^\/c\/([^/]+)/.exec(location.pathname)?.[1]
+  const previousRouteChatIdRef = useRef(routeChatId)
   const activeTemporaryChatId = useChat((state) => state.activeTemporaryChatId)
   const chatId = routeChatId ?? activeTemporaryChatId ?? undefined
   const streamingIds = useChat((state) => state.streamingIds)
@@ -81,16 +82,33 @@ export function ChatDataBridge() {
     refetchOnReconnect: false,
   })
 
-  useEffect(() => { if (chatsQuery.data) replaceSummaries(chatsQuery.data) }, [chatsQuery.data, replaceSummaries])
+  useEffect(() => {
+    const previousRouteChatId = previousRouteChatIdRef.current
+    previousRouteChatIdRef.current = routeChatId
+    if (previousRouteChatId && previousRouteChatId !== routeChatId) {
+      const { chats, abandonTemporaryChat } = useChat.getState()
+      if (chats.some((chat) => chat.id === previousRouteChatId && chat.temporary)) {
+        abandonTemporaryChat(previousRouteChatId)
+      }
+    }
+  }, [routeChatId])
+  useEffect(() => {
+    if (chatsQuery.data) replaceSummaries(chatsQuery.data, activeChatIdRef.current)
+  }, [chatsQuery.data, replaceSummaries])
   useEffect(() => { if (chatQuery.data) setDetailedChat(chatQuery.data) }, [chatQuery.data, setDetailedChat])
   useEffect(() => {
     setAdminAccessRequiredChat(adminAccessRequiredChatId(chatId, chatQuery.error))
   }, [chatId, chatQuery.error, setAdminAccessRequiredChat])
   useEffect(() => {
-    if (chatId === activeTemporaryChatId && chatQuery.error instanceof ApiError && chatQuery.error.code === 'temporary_chat_expired') {
-      useChat.getState().markTemporaryExpired(chatId)
+    useChat.setState({ unavailableChatId: routeChatId && chatQuery.error ? routeChatId : null })
+    if (chatId && chatQuery.error instanceof ApiError) {
+      const { code, status } = chatQuery.error
+      const { chats, markTemporaryExpired } = useChat.getState()
+      if (code === 'temporary_chat_expired' || (routeChatId && status === 404 && chats.some((chat) => chat.id === chatId && chat.temporary))) {
+        markTemporaryExpired(chatId)
+      }
     }
-  }, [activeTemporaryChatId, chatId, chatQuery.error])
+  }, [chatId, routeChatId, chatQuery.error])
   useEffect(() => { if (networkReady && userId) void loadCatalog() }, [networkReady, userId, loadCatalog])
 
   useEffect(() => {

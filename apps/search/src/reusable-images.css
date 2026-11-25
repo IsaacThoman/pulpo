@@ -1,0 +1,12 @@
+.reusable-images { display: grid; gap: .55rem; margin: .15rem 0 1rem; }
+.reusable-image-modes { display: flex; flex-wrap: wrap; gap: .4rem; }
+.reusable-image-credit { color: var(--muted); font-size: .875rem; }
+.reusable-image-credit strong { color: var(--ink); }
+.reusable-image-filters { display: flex; flex-wrap: wrap; align-items: end; gap: .45rem .65rem; min-width: 0; margin: 0; padding: 0; border: 0; }
+.reusable-image-filters .filter-field { flex: 0 1 auto; max-width: 100%; }
+.reusable-image-filters select, .reusable-image-reset { min-height: 2.5rem; }
+.image-viewer-license { display: grid; gap: .25rem; margin-top: .45rem; color: var(--muted); font-size: .875rem; }
+.image-viewer-license strong { color: var(--ink); }
+.image-viewer-license summary { width: fit-content; cursor: pointer; }
+.image-viewer-license details > p { margin-top: .15rem; white-space: pre-line; }
+.image-viewer-attribution-actions { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 .6rem; }

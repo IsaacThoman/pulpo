@@ -3087,6 +3087,11 @@ const esUi: Record<string, string> = {
   "Type here, then send": "Escribe aquí y luego envía",
   "Type in the workspace": "Escribir en el espacio de trabajo",
   "Keys": "Teclas",
+  "Ask Pulpo": "Preguntar a Pulpo",
+  "New chat draft": "Borrador de chat nuevo",
+  "Edit the question and sources before sending.": "Edita la pregunta y las fuentes antes de enviar.",
+  "Use these search results as starting points and cite the sources you consult.": "Usa estos resultados de búsqueda como punto de partida y cita las fuentes que consultes.",
+  "This search draft is missing or invalid.": "Este borrador de búsqueda no existe o no es válido.",
 }
 
 export default esUi

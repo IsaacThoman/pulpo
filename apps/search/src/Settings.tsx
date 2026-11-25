@@ -1,8 +1,11 @@
 import { Copy, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { providerNames, type Provider, type SearchConfig } from './api'
+import { formatSearchPrice, providerNames, type Provider, type SearchConfig } from './api'
 import { searchBangs, validateCustomBang, type CustomBang } from './bangs'
+import { regions } from './navigation'
+import { placeProviderNames } from './places'
 import { providerOrder, type Preferences } from './preferences'
+import type { SearchPreferencesSyncStatus } from './use-search-preferences'
 
 export type Panel = 'settings' | 'bangs' | 'shortcuts' | 'browser'
 
@@ -11,8 +14,13 @@ export function Modal({ title, close, children }: { title: string; close: () => 
   useEffect(() => {
     const element = dialog.current
     if (!element) return
+    const opener = document.activeElement
     element.showModal()
-    return () => element.close()
+    return () => {
+      element.close()
+      if (opener instanceof HTMLElement && opener.isConnected
+        && (document.activeElement === document.body || element.contains(document.activeElement))) opener.focus()
+    }
   }, [])
 
   return (
@@ -38,21 +46,25 @@ interface SettingsProps {
   config: SearchConfig | undefined
   preferences: Preferences
   update: (next: Preferences) => void
+  syncStatus: SearchPreferencesSyncStatus
+  retrySync: () => void
+  recentQueryCount: number
+  clearRecentQueries: () => void
 }
 
-function formatPrice(micros: number) {
-  return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 6 }).format(micros / 1_000_000)
-}
-
-export function Settings({ config, preferences, update }: SettingsProps) {
+export function Settings({ config, preferences, update, syncStatus, retrySync, recentQueryCount, clearRecentQueries }: SettingsProps) {
   const activePrimary = config ? providerOrder(preferences, config)[0] : undefined
   const domainEntries = Object.entries(preferences.domains).sort(([a], [b]) => a.localeCompare(b))
   const available = config?.providers.map(provider => provider.id) ?? []
   const primaryLabel = config?.defaultOrder[0]
   const searchPrice = config?.providers.find(provider => provider.id === activePrimary)?.priceMicros ?? 0
+  const publisherNewsPrice = config?.providers.find(provider => provider.id === 'firecrawl')?.newsPriceMicros
   return (
     <div className="settings">
-      <p className="hint">Changes apply to this browser.</p>
+      <p className="hint" role="status">{syncStatus === 'browser' ? 'Search preferences are saved in this browser.'
+        : syncStatus === 'syncing' ? 'Syncing Search preferences…'
+        : syncStatus === 'synced' ? 'Search preferences sync with your Pulpo account.'
+        : <>Search preferences are saved here until sync is available. <button className="text-button" onClick={retrySync}>Retry sync</button></>}</p>
       <fieldset className="settings-group">
         <legend>Search providers</legend>
         {available.length > 0 ? (
@@ -79,31 +91,73 @@ export function Settings({ config, preferences, update }: SettingsProps) {
               </select>
             </div>
             <p className="hint">Provider changes apply to your next search. Pulpo can try your fallback when the default can’t complete it.</p>
-            {searchPrice > 0 && <p className="hint">The default provider costs {formatPrice(searchPrice)} per search from your shared Pulpo credits.</p>}
+            {searchPrice > 0 && <p className="hint">The default provider costs {formatSearchPrice(searchPrice)} per search from your shared Pulpo credits.</p>}
+            {publisherNewsPrice && <p className="hint">Firecrawl News includes publisher details when available and costs {formatSearchPrice(publisherNewsPrice)} per search.</p>}
           </>
         ) : <p className="hint">Provider options appear when you’re signed in and search is available.</p>}
+        {config?.places && <>
+          <label className="settings-row">
+            Local places
+            <input type="checkbox" checked={preferences.localPlaces}
+              onChange={event => update({ ...preferences, localPlaces: event.target.checked })} />
+          </label>
+          <p className="hint">Places searches use {placeProviderNames[config.places.provider]} and cost {formatSearchPrice(config.places.priceMicros)} from your shared Pulpo credits when listings are found.</p>
+        </>}
       </fieldset>
       <fieldset className="settings-group">
-        <legend>Appearance and results</legend>
-        <div className="settings-row">
-          <label htmlFor="search-theme">Theme</label>
-          <select id="search-theme" value={preferences.theme} onChange={event => update({ ...preferences, theme: event.target.value as Preferences['theme'] })}>
-            <option value="system">System</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
-        </div>
+        <legend>Search results</legend>
         <div className="settings-row">
           <label htmlFor="search-limit">Results per search</label>
-          <select id="search-limit" value={preferences.limit} onChange={event => update({ ...preferences, limit: event.target.value === '20' ? 20 : 10 })}>
+          <select id="search-limit" value={preferences.limit} onChange={event => {
+            const limit = Number(event.target.value)
+            if (limit === 10 || limit === 20 || limit === 40) update({ ...preferences, limit })
+          }}>
             <option value="10">10</option>
             <option value="20">20</option>
+            <option value="40">Up to 40</option>
           </select>
         </div>
+        {config?.providers.some(provider => provider.expandedImages) && <p className="hint">Kagi image galleries show more results in batches of 24.</p>}
+        <div className="settings-row">
+          <label htmlFor="search-region-default">Default region</label>
+          <select id="search-region-default" value={preferences.defaultRegion} onChange={event => {
+            const region = regions.find(([value]) => value === event.target.value)?.[0]
+            if (region !== undefined) update({ ...preferences, defaultRegion: region })
+          }}>
+            {regions.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+          </select>
+        </div>
+        <label className="settings-row">
+          SafeSearch
+          <input type="checkbox" checked={preferences.safeSearch} onChange={event => update({ ...preferences, safeSearch: event.target.checked })} />
+        </label>
         <label className="settings-row">
           Open links in a new tab
           <input type="checkbox" checked={preferences.newTab} onChange={event => update({ ...preferences, newTab: event.target.checked })} />
         </label>
+        <label className="settings-row">
+          Single-key shortcuts
+          <input type="checkbox" checked={preferences.keyboardShortcuts}
+            onChange={event => update({ ...preferences, keyboardShortcuts: event.target.checked })} />
+        </label>
+      </fieldset>
+      <fieldset className="settings-group">
+        <legend>This browser</legend>
+        <div className="settings-row">
+          <label htmlFor="search-theme">Theme</label>
+          <select id="search-theme" value={preferences.theme} onChange={event => update({ ...preferences, theme: event.target.value as Preferences['theme'] })}>
+            <option value="pulpo">Follow Pulpo</option>
+            <option value="system">Follow device</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
+        <label className="settings-row">
+          Remember recent searches on this browser
+          <input type="checkbox" checked={preferences.rememberRecentQueries}
+            onChange={event => update({ ...preferences, rememberRecentQueries: event.target.checked })} />
+        </label>
+        <button className="text-button" disabled={!recentQueryCount} onClick={clearRecentQueries}>Clear recent searches</button>
       </fieldset>
       <fieldset className="settings-group">
         <legend>Sites</legend>
@@ -161,7 +215,10 @@ export function Bangs({ customBangs, update, onChooseBang }: BangsProps) {
   }
   return (
     <div className="settings">
-      <p className="hint">Type a shortcut before your query to search on another site. Try <code>!w tide pools</code>.</p>
+      <div className="bang-help">
+        <p className="hint"><code>!w tide pools</code> searches Wikipedia.</p>
+        <p className="hint"><code>tide pools !</code> opens the first web result.</p>
+      </div>
       <label className="field-label">
         Find a shortcut
         <input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Wikipedia, GitHub, Maps…" />
@@ -203,12 +260,12 @@ export function Bangs({ customBangs, update, onChooseBang }: BangsProps) {
   )
 }
 
-export function Shortcuts() {
+export function Shortcuts({ singleKeys }: { singleKeys: boolean }) {
   return (
     <dl className="shortcut-list">
-      <div><dt>Focus search</dt><dd><kbd>/</kbd></dd></div>
-      <div><dt>Next result</dt><dd><kbd>J</kbd></dd></div>
-      <div><dt>Previous result</dt><dd><kbd>K</kbd></dd></div>
+      {singleKeys && <div><dt>Focus search</dt><dd><kbd>/</kbd></dd></div>}
+      <div><dt>Next result</dt><dd><kbd aria-label="Arrow down">↓</kbd>{singleKeys && <> or <kbd>J</kbd></>}</dd></div>
+      <div><dt>Previous result</dt><dd><kbd aria-label="Arrow up">↑</kbd>{singleKeys && <> or <kbd>K</kbd></>}</dd></div>
       <div><dt>Open focused result</dt><dd><kbd>Enter</kbd></dd></div>
       <div><dt>Close a panel</dt><dd><kbd>Esc</kbd></dd></div>
     </dl>
