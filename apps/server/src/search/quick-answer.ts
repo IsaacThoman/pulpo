@@ -25,7 +25,7 @@ const maximumAnswerLength = 24_000
 const inFlight = new Map<string, { fingerprint: string; result: Promise<QuickAnswerStart> }>()
 
 type QuickAnswerInput = z.infer<typeof quickAnswerInput>
-type QuickAnswerStart = { responseId: string; modelName: string }
+type QuickAnswerStart = { responseId: string; chatId: string; modelName: string }
 
 async function resolveQuickAnswerModel(userId: string) {
   const config = getConfig()
@@ -70,11 +70,11 @@ export async function quickAnswerCapability(userId: string) {
 
 async function readQuickAnswer(userId: string, identity: SQL) {
   const [row] = await db.select({
-    id: responses.id, modelName: models.name, output: responses.output, status: responses.status,
+    id: responses.id, chatId: chats.id, modelName: models.name, output: responses.output, status: responses.status,
     fingerprint: responses.idempotencyFingerprint,
   }).from(responses).innerJoin(chats, eq(chats.id, responses.chatId)).innerJoin(models, eq(models.id, responses.modelId))
     .where(and(
-      identity, eq(responses.userId, userId), eq(chats.userId, userId), eq(chats.temporary, true),
+      identity, eq(responses.userId, userId), eq(chats.userId, userId),
       eq(responses.agentMode, true), eq(responses.idempotencyScope, searchQuickAnswerScope),
       isNull(chats.deletedAt), isNull(chats.purgeStartedAt), isNull(responses.deletedAt), accessibleChatCondition(),
     )).limit(1)
@@ -90,7 +90,7 @@ async function admitQuickAnswer(userId: string, input: QuickAnswerInput, fingerp
     const existing = await readQuickAnswer(userId, eq(responses.idempotencyKey, input.requestId))
     if (!existing) return
     if (existing.fingerprint !== fingerprint) throw requestConflict()
-    return { responseId: existing.id, modelName: existing.modelName }
+    return { responseId: existing.id, chatId: existing.chatId, modelName: existing.modelName }
   }
   const existing = await recover()
   if (existing) return existing
@@ -107,7 +107,7 @@ async function admitQuickAnswer(userId: string, input: QuickAnswerInput, fingerp
       client: { platform: 'web', version: null, features: [] },
       input: { input: input.query, modelId: model.id, presetSelections: {}, attachmentIds: [], agentMode: true, executionMode: 'stream', maxOutputTokens: 1200 },
     })
-    if (created.chatId === chatId) return { responseId: created.id, modelName: model.name }
+    if (created.chatId === chatId) return { responseId: created.id, chatId, modelName: model.name }
   } catch (error) {
     await db.delete(chats).where(and(eq(chats.id, chatId), eq(chats.userId, userId)))
     const raced = await recover()
@@ -221,8 +221,7 @@ export async function streamQuickAnswer(reply: FastifyReply, userId: string, res
       reply.raw.off('close', close)
     }
     if (timeLimit.aborted && !disconnect.signal.aborted) {
-      void requestCancellation(responseId).catch(() => {})
-      yield frame({ type: 'error', message: 'Quick Answer took too long. Reconnect to check its status.', retryable: true })
+      yield frame({ type: 'error', message: 'Quick Answer is still running. Reconnect to check its status.', retryable: true })
     }
   }
   return reply.header('content-type', 'text/event-stream; charset=utf-8')

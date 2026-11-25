@@ -580,8 +580,11 @@ export class WorkspaceManager implements AgentWorkspace, AppHost {
   disableTools(): void { this.toolsDisabled = true }
 }
 
-export async function releaseWorkspaceForChat(chatId: string): Promise<void> {
-  const leases = await db.select().from(workspaceLeases).where(and(eq(workspaceLeases.chatId, chatId), inArray(workspaceLeases.status, ['provisioning', 'ready'])))
+export async function releaseWorkspaceForChat(chatId: string, responseId?: string): Promise<void> {
+  const leases = await db.select().from(workspaceLeases).where(and(
+    eq(workspaceLeases.chatId, chatId), inArray(workspaceLeases.status, ['provisioning', 'ready']),
+    responseId ? eq(workspaceLeases.responseId, responseId) : undefined,
+  ))
   const config = getConfig()
   for (const lease of leases) {
     await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: new Date(), updatedAt: new Date() }).where(eq(workspaceLeases.id, lease.id))

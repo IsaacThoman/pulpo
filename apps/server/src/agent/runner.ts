@@ -166,8 +166,8 @@ export async function processAgentGeneration(responseId: string, codexAllowed: b
     throw error
   } finally {
     if (quickAnswerChatId) {
-      // A Quick Answer has no follow-up turn that can reuse the workspace.
-      await releaseWorkspaceForChat(quickAnswerChatId).catch((error: unknown) => {
+      // The inline run owns its workspace even when the chat continues in Pulpo.
+      await releaseWorkspaceForChat(quickAnswerChatId, responseId).catch((error: unknown) => {
         console.warn(JSON.stringify({
           level: 'warn', service: 'pulpo-worker', event: 'search.workspace_release.failed', responseId,
           error: error instanceof Error ? error.message : String(error),
@@ -217,12 +217,14 @@ async function runAgentGeneration(record: {
   const computerFullAccess = computerDescribed !== undefined
   const [chatState] = await db.select({ temporary: chats.temporary, fileScopeIds: chats.fileScopeIds }).from(chats)
     .where(eq(chats.id, record.response.chatId)).limit(1)
+  // Saving the chat in Pulpo does not grant the original inline run more access.
+  const isolatedChat = quickAnswer || Boolean(chatState?.temporary)
   // Files attached to the chat, reached only through `pulpo files` in the shell and only while Files
   // is on; a full-access reply has them when the computer's app can run `pulpo files`.
   const filesAccess = replyFilesAccess({
     filesEnabled: parseAuthSettings(attachmentSettingsRow?.value).filesEnabled,
     adminChat: record.response.origin === 'admin_chat',
-    temporary: Boolean(chatState?.temporary),
+    temporary: isolatedChat,
     computer: computerFullAccess ? { description: computerDescription } : undefined,
   })
   const filesAllowed = filesAccess.allowed
@@ -232,7 +234,7 @@ async function runAgentGeneration(record: {
   const fileScopeContext = fileScope ? describeFileScope(fileScope, { canAskToBrowse: canAskToBrowseFiles, mirror: filesAccess.mirror }) : ''
   const memory = await loadGenerationMemory({
     chat: chatState,
-    memoryEnabled: preferenceValues.memoryEnabled,
+    memoryEnabled: !isolatedChat && preferenceValues.memoryEnabled,
     responseId,
     userId: record.response.userId,
     currentChatId: record.response.chatId,
@@ -291,7 +293,7 @@ async function runAgentGeneration(record: {
   const detailedPayloadsEnabled = detailedPayloadCaptureIsActive(requestLog)
   let sidecarCostMicros = 0
   const imageInterceptor = await createModelImageInterceptor(requestLog.id, {
-    allowCache: !chatState?.temporary,
+    allowCache: !isolatedChat,
     responseId,
     onBilledCost: (costMicros) => { sidecarCostMicros += costMicros },
   })

@@ -217,11 +217,12 @@ describe('Pulpo Search API', () => {
       expect((await quickAnswer(input)).statusCode).toBe(400)
     }
     expect(mocks.quickStart).not.toHaveBeenCalled()
-    mocks.quickStart.mockResolvedValueOnce({ responseId: quickId, modelName: 'Default model' })
+    const chatId = '00000000-0000-4000-8000-000000000012'
+    mocks.quickStart.mockResolvedValueOnce({ responseId: quickId, chatId, modelName: 'Default model' })
     const response = await quickAnswer({ query: ' tide pools ', requestId: quickId })
     expect(response.statusCode).toBe(202)
     expect(response.headers['cache-control']).toBe('no-store')
-    expect(response.json()).toEqual({ responseId: quickId, modelName: 'Default model' })
+    expect(response.json()).toEqual({ responseId: quickId, chatId, modelName: 'Default model' })
     expect(mocks.quickStart).toHaveBeenCalledExactlyOnceWith('search-user', { query: 'tide pools', requestId: quickId }, undefined)
     expect(mocks.reserve).not.toHaveBeenCalled()
     expect(mocks.fetch).not.toHaveBeenCalled()

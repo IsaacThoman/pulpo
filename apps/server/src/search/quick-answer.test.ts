@@ -64,6 +64,7 @@ vi.mock('../database/client.js', async () => {
 const userId = '00000000-0000-4000-8000-000000000001'
 const requestId = '00000000-0000-4000-8000-000000000002'
 const responseId = '00000000-0000-4000-8000-000000000003'
+const chatId = '00000000-0000-4000-8000-000000000004'
 const input = { query: 'What lives in tide pools?', requestId }
 const assistant = (text: string) => ({ type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] })
 
@@ -83,7 +84,7 @@ describe('Pulpo Agent Quick Answer', () => {
   it('resolves inherited defaults and admits an isolated, metered, idempotent agent response', async () => {
     expect(await quickAnswerCapability(userId)).toEqual({ modelName: 'Inherited model' })
     const [first, repeated] = await Promise.all([startQuickAnswer(userId, input), startQuickAnswer(userId, input)])
-    expect(first).toEqual({ responseId, modelName: 'Inherited model' })
+    expect(first).toEqual({ responseId, chatId: mocks.insertChat.mock.calls[0]?.[0].id, modelName: 'Inherited model' })
     expect(repeated).toEqual(first)
     expect(mocks.insertChat).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
       userId, modelId: 'inherited', temporary: true, expiresAt: expect.any(Date), fileScopeIds: [], fileScopeAccess: {}, filesBrowseAllowed: false,
@@ -109,13 +110,13 @@ describe('Pulpo Agent Quick Answer', () => {
   })
 
   it('recovers an existing matching request and rejects reuse with a different query', async () => {
-    mocks.response.mockResolvedValue([{ id: responseId, modelName: 'Previous model', fingerprint: createHash('sha256').update(input.query).digest('hex') }])
-    await expect(startQuickAnswer(userId, input)).resolves.toEqual({ responseId, modelName: 'Previous model' })
+    mocks.response.mockResolvedValue([{ id: responseId, chatId, modelName: 'Previous model', fingerprint: createHash('sha256').update(input.query).digest('hex') }])
+    await expect(startQuickAnswer(userId, input)).resolves.toEqual({ responseId, chatId, modelName: 'Previous model' })
     await expect(startQuickAnswer(userId, { ...input, query: 'Different question' })).rejects.toMatchObject({ code: 'idempotency_conflict' })
     expect(mocks.createResponse).not.toHaveBeenCalled()
   })
 
-  it('signals cancellation only for active owned, temporary Search agent responses', async () => {
+  it('signals cancellation only for active owned Search agent responses in accessible chats', async () => {
     await expect(cancelQuickAnswer(userId, responseId)).rejects.toMatchObject({ statusCode: 404 })
     expect(mocks.cancel).not.toHaveBeenCalled()
     mocks.response.mockResolvedValueOnce([{ id: responseId, status: 'completed' }]).mockResolvedValueOnce([{ id: responseId, status: 'queued' }])
@@ -123,7 +124,8 @@ describe('Pulpo Agent Quick Answer', () => {
     await cancelQuickAnswer(userId, responseId)
     expect(mocks.cancel).toHaveBeenCalledExactlyOnceWith(responseId)
     const query = mocks.where.mock.lastCall?.[1]
-    expect(query?.sql).toContain('"chats"."temporary"')
+    expect(query?.sql).toContain('"chats"."user_id"')
+    expect(query?.sql).toContain('"chats"."expires_at"')
     expect(query?.sql).toContain('"responses"."agent_mode"')
     expect(query?.params).toEqual(expect.arrayContaining([responseId, userId, searchQuickAnswerScope]))
     mocks.response.mockResolvedValueOnce([{ id: responseId, status: 'in_progress' }])

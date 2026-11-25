@@ -1,8 +1,7 @@
-import { ChevronDown, ExternalLink, Globe2, Image, Keyboard, MapPin, Newspaper, Podcast, Settings2, Sparkles, Video } from 'lucide-react'
+import { ChevronDown, ExternalLink, Globe2, Image, Keyboard, MapPin, Newspaper, Podcast, Settings2, Video } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, providerNames, SearchApiError, type SearchConfig, type SearchUser } from './api'
 import { useSearchAppearance } from './appearance'
-import { buildAskPulpoUrl } from './ask-pulpo'
 import { consumeCallback, pulpoOrigin, startSignIn } from './auth'
 import { firstResultQuery, resolveBang, type CustomBang } from './bangs'
 import { Calculator } from './Calculator'
@@ -16,7 +15,7 @@ import { compatibleProviders, loadPreferences, preferencesStorageKey, providerOr
 import { QuickAnswer } from './QuickAnswer'
 import { ReusableImageControls } from './ReusableImageControls'
 import type { ReusableImageFilters } from './reusable-images'
-import { firstVisibleResultUrl, groupResults, resultEntries, visibleEntries } from './result-order'
+import { firstVisibleResultUrl } from './result-order'
 import { useRecentQueries } from './recent-queries'
 import { Results } from './Results'
 import { SearchBox } from './SearchBox'
@@ -227,9 +226,6 @@ export function App({ callback }: { callback: Callback }) {
   const resultsData = state.status === 'success' && spelling ? {
     ...state.data, related: state.data.related?.filter(query => query !== spelling),
   } : imageBrowse.data
-  const askUrl = state.status === 'success' && view.category === 'web' && !luckyQuery
-    ? buildAskPulpoUrl(pulpoOrigin, view.query, groupResults(visibleEntries(resultEntries(state.data, preferences), false), view.query)
-      .flatMap(({ lead, additional }) => [lead.result, ...additional.map(({ result }) => result)])) : undefined
   const newsAlternative = state.status === 'success' && view.category === 'news' && !view.page
     && ((!view.provider && !view.dateRange) || (view.dateRange && state.data.results.length < 3))
     ? alternatives.find(provider => provider.id !== state.data.provider) : undefined
@@ -564,6 +560,12 @@ export function App({ callback }: { callback: Callback }) {
                 </label>}
                 {!showAnswer && !answerPending && !reuse && <SearchFilters date={view.date} dateRange={view.dateRange} region={view.region}
                   dates={filterDates} allowCustomDates={filterCustomDates} allowRegion={filterRegion}
+                  searchProvider={user && (alternatives.length > 1 || view.provider) ? {
+                    selected: view.provider,
+                    used: state.status === 'success' && state.data.provider !== 'openverse' ? state.data.provider : undefined,
+                    choices: alternatives.map(provider => provider.id),
+                    onChange: provider => go({ ...view, provider, page: undefined }),
+                  } : undefined}
                   onApply={filters => go({ ...view, ...filters, invalidDateRange: undefined, page: undefined })} />}
               </div>
             </div>
@@ -573,7 +575,7 @@ export function App({ callback }: { callback: Callback }) {
             )}
             {authError && <p className="form-error results-auth-error" role="alert">{authError}</p>}
             {user && config?.quickAnswer && view.category === 'web' && !bang && !luckyQuery && !view.page && !view.invalidDateRange && (
-              <QuickAnswer key={user.id + '\n' + view.query} query={view.query} modelName={config.quickAnswer.modelName}
+              <QuickAnswer key={user.id + '\n' + view.query} query={view.query}
                 automatic={submittedQuestion === view.query} onAutomaticStart={consumeSubmittedQuestion} pulpoOrigin={pulpoOrigin} />
             )}
             {view.invalidDateRange ? (
@@ -666,32 +668,6 @@ export function App({ callback }: { callback: Callback }) {
               </section>
             ) : state.status === 'success' && luckyQuery ? <LoadingResults firstResult /> : state.status === 'success' ? (
               <>
-                {!reuse && <div className="results-summary">
-                  {askUrl && <a className="text-button ask-pulpo-link" href={askUrl} target="_blank" rel="noopener noreferrer">
-                    <Sparkles size={14} aria-hidden="true" /> Ask Pulpo <ExternalLink size={12} aria-hidden="true" />
-                  </a>}
-                  <details className="provider-menu" key={searchPath(view)} onKeyDown={event => {
-                    if (event.key !== 'Escape' || !event.currentTarget.open) return
-                    event.currentTarget.open = false
-                    event.currentTarget.querySelector('summary')?.focus()
-                  }}>
-                    <summary className="text-button provider-indicator" aria-label="Search providers">
-                      {providerNames[state.data.provider]} <ChevronDown size={13} aria-hidden="true" />
-                    </summary>
-                    <div className="provider-options">
-                      {alternatives.filter(provider => provider.id !== state.data.provider).map(provider => (
-                        <button key={provider.id} onClick={() => go({ ...view, provider: provider.id })}>Search with {providerNames[provider.id]}</button>
-                      ))}
-                      {view.provider && <button onClick={() => go({ ...view, provider: undefined })}>Use default providers</button>}
-                      <button onClick={event => {
-                        const menu = event.currentTarget.closest('details')
-                        menu?.removeAttribute('open')
-                        menu?.querySelector('summary')?.focus()
-                        setPanel('settings')
-                      }}>Provider settings</button>
-                    </div>
-                  </details>
-                </div>}
                 {spelling && <p className="spelling-suggestion">
                   Did you mean <button className="text-button" onClick={() => onSearch(spelling)}>{spelling}</button>?
                 </p>}

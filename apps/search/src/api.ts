@@ -95,7 +95,7 @@ export interface SearchResponse {
 
 export interface QuickAnswerSession {
   responseId: string
-  modelName: string
+  chatId: string
 }
 
 export interface ProviderConfig {

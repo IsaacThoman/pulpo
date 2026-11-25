@@ -1,5 +1,6 @@
 import { scopeWithMessageReferences } from '../chats/file-scope.js'
 import { canContinueWorkspaceScope } from '../agent/workspace-scope.js'
+import { searchQuickAnswerScope } from '../search/quick-answer-policy.js'
 import { MAX_MESSAGE_ATTACHMENTS } from '@pulpo/contracts'
 import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { ChatPreset, CreateChatResponseInput, ResponseSnapshot } from '@pulpo/contracts'
@@ -254,13 +255,14 @@ export async function createResponse(options: CreateResponseOptions) {
     previousWorkspaceScopeId = current.workspaceScopeId
     const parentResponseId = options.parentResponseId === undefined ? previousActiveResponseId : options.parentResponseId
     const [predecessor] = parentResponseId
-      ? await tx.select({ status: responses.status }).from(responses).where(and(eq(responses.id, parentResponseId), eq(responses.chatId, chat.id), isNull(responses.deletedAt))).limit(1)
+      ? await tx.select({ status: responses.status, scope: responses.idempotencyScope }).from(responses)
+        .where(and(eq(responses.id, parentResponseId), eq(responses.chatId, chat.id), isNull(responses.deletedAt))).limit(1)
       : []
     if (parentResponseId && !predecessor) throw notFound('Parent response')
     const [runningPredecessor] = parentResponseId
       ? await tx.select({ id: agentRuns.id }).from(agentRuns).where(and(eq(agentRuns.responseId, parentResponseId), inArray(agentRuns.status, ['queued', 'running']))).limit(1)
       : []
-    const workspaceScopeId = !runningPredecessor && canContinueWorkspaceScope({
+    const workspaceScopeId = !runningPredecessor && predecessor?.scope !== searchQuickAnswerScope && canContinueWorkspaceScope({
       branchReason: options.branchReason ?? 'message', parentResponseId,
       activeResponseId: previousActiveResponseId, predecessorStatus: predecessor?.status,
     }) ? current.workspaceScopeId : newId()

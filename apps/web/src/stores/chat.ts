@@ -295,11 +295,12 @@ interface ChatState {
   activeChatId: string | null
   activeTemporaryChatId: string | null
   adminAccessRequiredChatId: string | null
+  unavailableChatId: string | null
   composerModelId: string | null
   streamingIds: string[]
   responseSequences: Record<string, number>
   responseChatIds: Record<string, string>
-  replaceSummaries: (chats: ServerChat[]) => void
+  replaceSummaries: (chats: ServerChat[], viewedChatId?: string) => void
   setDetailedChat: (chat: ServerChat) => void
   applyResponseEvents: (events: ResponseEvent[]) => boolean
   applyResponseSnapshot: (snapshot: ResponseSnapshot, options?: { invalidate?: boolean }) => void
@@ -1047,12 +1048,13 @@ export const useChat = create<ChatState>()((set, get) => ({
   activeChatId: null,
   activeTemporaryChatId: null,
   adminAccessRequiredChatId: null,
+  unavailableChatId: null,
   composerModelId: null,
   streamingIds: [],
   responseSequences: {},
   responseChatIds: {},
 
-  replaceSummaries: (rows) => set((state) => {
+  replaceSummaries: (rows, viewedChatId) => set((state) => {
     // Keep the first chat per ID, matching the linear lookup this index replaces.
     const currentById = new Map<string, Chat>()
     for (const chat of state.chats) if (!currentById.has(chat.id)) currentById.set(chat.id, chat)
@@ -1061,11 +1063,8 @@ export const useChat = create<ChatState>()((set, get) => ({
       awaitingSummary: false,
     }))
     const serverIds = new Set(serverChats.map((chat) => chat.id))
-    const activeTemporary = state.activeTemporaryChatId
-      ? state.chats.find((chat) => chat.id === state.activeTemporaryChatId && chat.temporary)
-      : undefined
     const localOnly = state.chats.filter((chat) => (
-      (chat.provisional || chat.awaitingSummary || chat.id === activeTemporary?.id)
+      (chat.provisional || chat.awaitingSummary || (chat.temporary && (chat.id === viewedChatId || chat.id === state.activeTemporaryChatId)))
       && !serverIds.has(chat.id)
     ))
     const chats = [...localOnly, ...serverChats]

@@ -5,6 +5,7 @@ import { App } from './App'
 import { api, SearchApiError, type SearchConfig, type SearchUser } from './api'
 
 const user: SearchUser = { id: 'test-user', name: 'Casey', email: 'casey@example.com' }
+const quickAnswerChatId = '00000000-0000-4000-8000-000000000042'
 const config: SearchConfig = {
   defaultOrder: ['kagi', 'firecrawl'],
   providers: [
@@ -46,7 +47,7 @@ describe('Pulpo Search', () => {
     weatherAlerts.mockResolvedValue({ status: 'unavailable' })
     currency.mockResolvedValue({ status: 'unavailable', source: { name: 'ECB', url: 'https://www.ecb.europa.eu/', description: 'Daily reference rates' } })
     places.mockResolvedValue({ provider: 'brave', results: [] })
-    quickAnswer.mockResolvedValue({ responseId: 'quick-answer-run', modelName: 'Pulpo Test Model' })
+    quickAnswer.mockResolvedValue({ responseId: 'quick-answer-run', chatId: quickAnswerChatId })
     streamQuickAnswer.mockImplementation(async (_id, onText) => { onText('An answer.') })
     cancelQuickAnswer.mockResolvedValue()
     reusableImages.mockResolvedValue({ provider: 'openverse', results: [] })
@@ -129,25 +130,24 @@ describe('Pulpo Search', () => {
     expect(window.location.search).toContain('type=images')
   })
 
-  it('applies site preferences to results and Ask Pulpo without another provider request', async () => {
+  it('applies site preferences to results without another provider request', async () => {
     window.history.replaceState(null, '', '/search?q=tides')
     render(<App callback={null} />)
     await screen.findByRole('link', { name: 'tides field guide' })
-    const draftSources = () => new URLSearchParams(new URL(screen.getByRole('link', { name: 'Ask Pulpo' })
-      .getAttribute('href')!).hash.slice(1)).getAll('source')
-    expect(draftSources()).toEqual(['https://example.com/', 'https://help.example.net/'])
+    const resultLinks = () => [...document.querySelectorAll<HTMLAnchorElement>('.results-list .result-link')].map(link => link.href)
+    expect(resultLinks()).toEqual(['https://example.com/', 'https://help.example.net/'])
     const pinOptions = screen.getByLabelText('Options for help.example.net')
     fireEvent.click(pinOptions)
     fireEvent.click(within(pinOptions.closest('details')!).getByRole('button', { name: 'Pin site' }))
-    expect(draftSources()).toEqual(['https://help.example.net/', 'https://example.com/'])
+    expect(resultLinks()).toEqual(['https://help.example.net/', 'https://example.com/'])
     const hideOptions = screen.getByLabelText('Options for example.com')
     fireEvent.click(hideOptions)
     fireEvent.click(within(hideOptions.closest('details')!).getByRole('button', { name: 'Hide site' }))
     expect(screen.queryByRole('link', { name: 'tides field guide' })).toBeNull()
-    expect(draftSources()).toEqual(['https://help.example.net/'])
+    expect(resultLinks()).toEqual(['https://help.example.net/'])
     fireEvent.click(screen.getByRole('button', { name: 'Show 1 hidden result' }))
     expect(screen.getByRole('link', { name: 'tides field guide' })).toBeDefined()
-    expect(draftSources()).toEqual(['https://help.example.net/'])
+    expect(resultLinks()).toEqual(['https://help.example.net/', 'https://example.com/'])
     expect(search).toHaveBeenCalledTimes(1)
   })
 
@@ -166,7 +166,10 @@ describe('Pulpo Search', () => {
     const source = await within(card).findByRole('link', { name: 'a source' })
     expect(source.getAttribute('href')).toBe('https://example.org/guide')
     expect(within(card).queryByRole('img')).toBeNull()
-    expect(within(card).getByText('Pulpo Test Model')).toBeDefined()
+    expect(within(card).queryByText('Pulpo Test Model')).toBeNull()
+    const handoff = within(card).getByRole('link', { name: 'Open in Pulpo' })
+    expect(new URL(handoff.getAttribute('href')!).pathname).toBe('/c/' + quickAnswerChatId)
+    expect(handoff.getAttribute('rel')).toContain('noreferrer')
     await screen.findByRole('link', { name: 'tide pools field guide' })
     fireEvent.click(button)
     expect(button.getAttribute('aria-expanded')).toBe('false')
@@ -174,6 +177,22 @@ describe('Pulpo Search', () => {
     expect(within(card).getByRole('link', { name: 'a source' })).toBeDefined()
     expect(quickAnswer).toHaveBeenCalledExactlyOnceWith('tide pools', expect.any(String))
     expect(streamQuickAnswer).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves a running agent response available after opening its Pulpo chat', async () => {
+    getConfig.mockResolvedValue({ ...config, quickAnswer: { modelName: 'Pulpo Test Model' } })
+    streamQuickAnswer.mockImplementation((_id, _onText, signal) => new Promise(resolve => {
+      signal.addEventListener('abort', () => resolve(), { once: true })
+    }))
+    window.history.replaceState(null, '', '/search?q=tide+pools')
+    const { unmount } = render(<App callback={null} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Quick answer' }))
+    const handoff = await screen.findByRole('link', { name: 'Open in Pulpo' })
+    handoff.addEventListener('click', event => event.preventDefault())
+    fireEvent.click(handoff)
+    unmount()
+    await act(async () => {})
+    expect(cancelQuickAnswer).not.toHaveBeenCalled()
   })
 
   it('automatically runs an answer for a question submitted in Search and cancels on Stop', async () => {
@@ -636,8 +655,8 @@ describe('Pulpo Search', () => {
     window.history.replaceState(null, '', '/search?q=tides')
     render(<App callback={null} />)
     await screen.findByRole('link', { name: 'tides field guide' })
-    fireEvent.click(screen.getByLabelText('Search providers'))
-    fireEvent.click(screen.getByRole('button', { name: 'Search with Firecrawl' }))
+    fireEvent.click(screen.getByLabelText('Filters'))
+    fireEvent.change(screen.getByLabelText('Search provider'), { target: { value: 'firecrawl' } })
     await screen.findByRole('link', { name: 'tides field guide' })
     expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ providers: ['firecrawl'] }), expect.any(AbortSignal))
     expect(window.location.search).toContain('provider=firecrawl')

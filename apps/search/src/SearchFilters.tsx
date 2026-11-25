@@ -1,6 +1,7 @@
 import { searchDateRange } from '@pulpo/contracts/search'
 import { ChevronDown, ListFilter, X } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
+import { providerNames, type Provider } from './api'
 import { dateOptions, regions, type SearchLocation } from './navigation'
 
 type Filters = Pick<SearchLocation, 'date' | 'dateRange' | 'region'>
@@ -18,6 +19,12 @@ interface SearchFiltersProps extends Filters {
   allowCustomDates: boolean
   allowRegion: boolean
   onApply: (filters: Filters) => void
+  searchProvider?: {
+    selected: Provider | undefined
+    used: Provider | undefined
+    choices: Provider[]
+    onChange: (value: Provider | undefined) => void
+  }
 }
 
 const empty: Filters = { date: '', dateRange: undefined, region: '' }
@@ -27,7 +34,7 @@ function filterDraft({ date, dateRange, region }: Filters): FilterDraft {
   return { date: dateRange ? 'custom' : date, from: dateRange?.from ?? '', to: dateRange?.to ?? '', region }
 }
 
-export function SearchFilters({ date, dateRange, region, dates, allowCustomDates, allowRegion, onApply }: SearchFiltersProps) {
+export function SearchFilters({ date, dateRange, region, dates, allowCustomDates, allowRegion, onApply, searchProvider }: SearchFiltersProps) {
   const menu = useRef<HTMLDetailsElement>(null)
   const summary = useRef<HTMLElement>(null)
   const dateId = useId()
@@ -35,6 +42,7 @@ export function SearchFilters({ date, dateRange, region, dates, allowCustomDates
   const toId = useId()
   const errorId = useId()
   const regionId = useId()
+  const providerId = useId()
   const [draft, setDraft] = useState(() => filterDraft({ date, dateRange, region }))
   const rangeDraft = draft.date === 'custom' ? searchDateRange(draft.from, draft.to) : undefined
   const reversed = draft.date === 'custom' && !!draft.to && draft.from > draft.to
@@ -61,7 +69,7 @@ export function SearchFilters({ date, dateRange, region, dates, allowCustomDates
     summary.current?.focus()
   }
 
-  if (!dates.length && !allowCustomDates && !allowRegion && !active) return null
+  if (!dates.length && !allowCustomDates && !allowRegion && !active && !searchProvider) return null
   return (
     <div className="filter-controls">
       <details className="filter-menu" ref={menu} onKeyDown={event => {
@@ -79,6 +87,20 @@ export function SearchFilters({ date, dateRange, region, dates, allowCustomDates
           close()
           if (changed) onApply({ date: nextDate, dateRange: rangeDraft, region: draft.region })
         }}>
+          {searchProvider && <div className="filter-field">
+            <label htmlFor={providerId}>Search provider</label>
+            <span className="filter-select">
+              <select id={providerId} value={searchProvider.selected ?? ''} onChange={event => {
+                const value = searchProvider.choices.find(provider => provider === event.target.value)
+                close()
+                searchProvider.onChange(value)
+              }}>
+                <option value="">{!searchProvider.selected && searchProvider.used ? 'Default (' + providerNames[searchProvider.used] + ')' : 'Default'}</option>
+                {searchProvider.choices.map(provider => <option key={provider} value={provider}>{providerNames[provider]}</option>)}
+              </select>
+              <ChevronDown size={14} aria-hidden="true" />
+            </span>
+          </div>}
           {(dates.length > 0 || allowCustomDates || date || dateRange) && <div className="filter-field">
             <label htmlFor={dateId}>Date range</label>
             <span className="filter-select">

@@ -1,4 +1,4 @@
-import { ChevronDown, LoaderCircle, Sparkles, Square } from 'lucide-react'
+import { ChevronDown } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { api, SearchApiError, type QuickAnswerSession } from './api'
 
@@ -12,9 +12,8 @@ interface ActiveAnswer {
   started: Promise<QuickAnswerSession>
 }
 
-export function QuickAnswer({ query, modelName, automatic, onAutomaticStart, pulpoOrigin }: {
+export function QuickAnswer({ query, automatic, onAutomaticStart, pulpoOrigin }: {
   query: string
-  modelName: string
   automatic: boolean
   onAutomaticStart: () => void
   pulpoOrigin: string
@@ -23,16 +22,23 @@ export function QuickAnswer({ query, modelName, automatic, onAutomaticStart, pul
   const [answer, setAnswer] = useState('')
   const [error, setError] = useState<SearchApiError>()
   const [expanded, setExpanded] = useState(false)
-  const [runningModel, setRunningModel] = useState(modelName)
+  const [chatId, setChatId] = useState<string>()
+  const [showFull, setShowFull] = useState(false)
+  const [overflows, setOverflows] = useState(false)
   const active = useRef<ActiveAnswer | null>(null)
   const stopping = useRef(false)
   const requestId = useRef<string | undefined>(undefined)
   const session = useRef<QuickAnswerSession | undefined>(undefined)
+  const handedOff = useRef<string | undefined>(undefined)
   const unconfirmed = useRef(false)
   const toggleButton = useRef<HTMLButtonElement>(null)
   const stopButton = useRef<HTMLButtonElement>(null)
+  const preview = useRef<HTMLDivElement>(null)
+  const previewBody = useRef<HTMLDivElement>(null)
   const id = useId()
   const headingId = id + '-title'
+  const previewId = id + '-preview'
+  const clipped = overflows && !showFull
 
   const run = useCallback(async () => {
     if (active.current || stopping.current) return
@@ -48,11 +54,13 @@ export function QuickAnswer({ query, modelName, automatic, onAutomaticStart, pul
     setStatus('running')
     setAnswer('')
     setError(undefined)
+    setChatId(session.current?.chatId)
+    setShowFull(false)
     try {
       const started = await attempt.started
       session.current = started
       if (signal.aborted) return
-      setRunningModel(started.modelName)
+      setChatId(started.chatId)
       await api.streamQuickAnswer(started.responseId, delta => {
         if (!signal.aborted) setAnswer(previous => (previous + delta).slice(0, 24_000))
       }, signal)
@@ -89,11 +97,26 @@ export function QuickAnswer({ query, modelName, automatic, onAutomaticStart, pul
     const pending = active.current
     if (pending) {
       pending.controller.abort()
-      void pending.started.then(({ responseId }) => api.cancelQuickAnswer(responseId)).catch(() => {})
-    } else if (unconfirmed.current && session.current) {
+      void pending.started.then(({ responseId }) => {
+        if (handedOff.current !== responseId) return api.cancelQuickAnswer(responseId)
+      }).catch(() => {})
+    } else if (unconfirmed.current && session.current && handedOff.current !== session.current.responseId) {
       void api.cancelQuickAnswer(session.current.responseId).catch(() => {})
     }
   }, [])
+
+  useEffect(() => {
+    const body = previewBody.current
+    if (!expanded || !body || typeof ResizeObserver === 'undefined') return
+    const update = () => {
+      const lineHeight = Number.parseFloat(window.getComputedStyle(body).lineHeight)
+      setOverflows(body.offsetHeight > 5 * lineHeight + 1)
+    }
+    const observer = new ResizeObserver(update)
+    observer.observe(body)
+    update()
+    return () => observer.disconnect()
+  }, [expanded])
 
   async function stop() {
     const pending = active.current
@@ -120,30 +143,40 @@ export function QuickAnswer({ query, modelName, automatic, onAutomaticStart, pul
 
   return (
     <section className="quick-answer" aria-labelledby={headingId} data-expanded={expanded || undefined}>
-      <div className="quick-answer-toolbar">
+      <div className="quick-answer-heading">
         <h2 id={headingId}>
           <button ref={toggleButton} className="quick-answer-toggle text-button" aria-expanded={expanded} aria-controls={id} onClick={() => {
             setExpanded(!expanded)
             if (status === 'idle') void run()
           }}>
-            <span className="quick-answer-icon"><Sparkles size={15} aria-hidden="true" /></span>
-            Quick answer <ChevronDown size={14} className="quick-answer-chevron" aria-hidden="true" />
+            Quick answer
           </button>
         </h2>
-        {expanded && <span className="quick-answer-model">{runningModel}</span>}
         {(status === 'running' || status === 'stopping') && <button ref={stopButton} className="text-button quick-answer-stop"
           disabled={status === 'stopping'} onClick={() => void stop()}>
-          <Square size={12} aria-hidden="true" /> {status === 'stopping' ? 'Stopping…' : 'Stop'}
+          {status === 'stopping' ? 'Stopping…' : 'Stop'}
         </button>}
       </div>
       <span className="sr-only" role="status">{status === 'complete' ? 'Quick answer ready.' : ''}</span>
       <div id={id} className="quick-answer-content" hidden={!expanded}>
-        {status === 'running' && !answer && <p className="quick-answer-progress" role="status">
-          <LoaderCircle size={15} aria-hidden="true" /> Pulpo is working…
-        </p>}
-        {answer && <Suspense fallback={<p className="quick-answer-progress" role="status">Formatting answer…</p>}>
-          <AnswerMarkdown text={answer} />
-        </Suspense>}
+        {status === 'running' && !answer && <p className="quick-answer-progress" role="status">Working…</p>}
+        <div className="quick-answer-preview" id={previewId} ref={preview} data-clipped={clipped || undefined}
+          onFocus={event => {
+            if (clipped && preview.current && event.target.getBoundingClientRect().bottom > preview.current.getBoundingClientRect().bottom) {
+              setShowFull(true)
+            }
+          }}>
+          <div className="quick-answer-preview-body" ref={previewBody}>
+            {answer && <Suspense fallback={<p className="quick-answer-progress" role="status">Formatting answer…</p>}>
+              <AnswerMarkdown text={answer} />
+            </Suspense>}
+          </div>
+        </div>
+        {overflows && answer && <div className="quick-answer-divider">
+          <button className="text-button" type="button" aria-expanded={showFull} aria-controls={previewId} onClick={() => setShowFull(!showFull)}>
+            {showFull ? 'Show less' : 'Show more'} <ChevronDown size={14} aria-hidden="true" />
+          </button>
+        </div>}
         {status === 'error' && <div className="quick-answer-recovery" role="alert">
           <p>{error?.message}</p>
           {error?.status === 402
@@ -154,6 +187,10 @@ export function QuickAnswer({ query, modelName, automatic, onAutomaticStart, pul
           <p role="status">Answer stopped.</p>
           <button className="secondary-button" onClick={() => void run()}>Try again</button>
         </div>}
+        {chatId && <a className="text-button quick-answer-open" href={new URL('/c/' + encodeURIComponent(chatId), pulpoOrigin).href}
+          target="_blank" rel="noopener noreferrer" onClick={() => { handedOff.current = session.current?.responseId }}>
+          Open in Pulpo
+        </a>}
       </div>
     </section>
   )
