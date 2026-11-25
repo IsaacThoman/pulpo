@@ -163,6 +163,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   }))
   useDocumentTitle(adminMode ? null : chat?.title)
   const adminAccessRequiredChatId = useChat((state) => state.adminAccessRequiredChatId)
+  const unavailableChatId = useChat((state) => state.unavailableChatId)
   const showPromptSuggestions = useSettings((s) => s.showPromptSuggestions)
   const chatWidth = useSettings((s) => s.chatWidth)
   const defaultModelId = useSettings((s) => s.defaultModelId)
@@ -248,12 +249,6 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   }, [location.pathname, location.search, navigate, navigationState])
 
   useEffect(() => {
-    if (adminMode || !routeChatId || !chat?.temporary) return
-    useChat.getState().abandonTemporaryChat(chat.id)
-    navigate('/', { replace: true, state: { resetDefaultModel: crypto.randomUUID() } })
-  }, [adminMode, chat, navigate, routeChatId])
-
-  useEffect(() => {
     if (chatId || routeModelId || !shouldApplyDefaultRef.current) return
     const next = resolveDefaultModelId(models, defaultModelId)
     if (next && next !== modelId) setModelId(next)
@@ -325,7 +320,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     if (!chat.temporary || chat.expired || savingTemporary) return
     const viewVersion = temporaryViewVersionRef.current
     setSavingTemporary(true)
-    setSavedTemporaryChatId(chat.id)
+    if (!routeChatId) setSavedTemporaryChatId(chat.id)
     try {
       await useChat.getState().persistTemporaryChat(chat.id)
       if (temporaryViewVersionRef.current !== viewVersion) {
@@ -333,7 +328,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
         return
       }
       setTemporary(false)
-      navigate(`/c/${chat.id}`)
+      if (!routeChatId) navigate(`/c/${chat.id}`)
     } catch (error) {
       setSavedTemporaryChatId(null)
       if (temporaryViewVersionRef.current !== viewVersion) return
@@ -359,13 +354,14 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   // The page stays mounted across routes, so the new-chat toggle must not tint a saved chat.
   const temporaryMode = Boolean(chat?.temporary) || (temporary && !routeChatId)
   // Files beside the page add to this chat; temporary chats and admin views take no files.
-  usePublishChatTarget(adminMode || temporaryMode ? null : chat ? { kind: 'chat', id: chat.id } : { kind: 'new' })
+  usePublishChatTarget(adminMode || temporaryMode || (routeChatId && !chat)
+    ? null : chat ? { kind: 'chat', id: chat.id } : { kind: 'new' })
   const desktopSidebarVisible = useDesktopChrome((state) => state.desktopSidebarVisible)
   useEffect(() => {
     setDesktopTemporaryChat(temporaryMode)
     return () => setDesktopTemporaryChat(false)
   }, [setDesktopTemporaryChat, temporaryMode])
-  const showTemporaryControl = !adminMode && !routeChatId && (!chat || chat.temporary)
+  const showTemporaryControl = !adminMode && (chat?.temporary || (!routeChatId && !chat))
   const expirationEnabled = chat ? chat.expiresAt !== null : effectiveNewChatAutoExpire
   const showExpirationControl = !temporaryMode && (chat
     ? automaticChatExpiration !== 'disabled' || chat.expiresAt !== null
@@ -379,14 +375,13 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     }
     setSyncedAutoExpire(!expirationEnabled)
   }
-  const legacyTemporaryRoute = Boolean(!adminMode && routeChatId && chat?.temporary)
-
-  if (legacyTemporaryRoute) {
-    return <div className="grid h-full place-items-center text-sm text-muted-foreground">{t('chat.openingNewChat')}</div>
-  }
-
-  if (routeChatId && !chat && userRole === 'admin' && !adminMode && adminAccessRequiredChatId === routeChatId) {
-    return <div className="grid h-full place-items-center p-6"><div className="max-w-md space-y-3 text-center"><h2 className="text-lg font-semibold">{ui('Chat is not in your account')}</h2><p className="text-sm text-muted-foreground">{ui('If this is a user chat, open the administrator access gate.')}</p><button className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground" onClick={() => navigate(`/admin/chats/${routeChatId}`)}>{ui('Open with admin access')}</button></div></div>
+  if (routeChatId && !chat && !adminMode) {
+    if (userRole === 'admin' && adminAccessRequiredChatId === routeChatId) {
+      return <div className="grid h-full place-items-center p-6"><div className="max-w-md space-y-3 text-center"><h2 className="text-lg font-semibold">{ui('Chat is not in your account')}</h2><p className="text-sm text-muted-foreground">{ui('If this is a user chat, open the administrator access gate.')}</p><button className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground" onClick={() => navigate(`/admin/chats/${routeChatId}`)}>{ui('Open with admin access')}</button></div></div>
+    }
+    return <div role="status" className="grid h-full place-items-center text-sm text-muted-foreground">
+      {unavailableChatId === routeChatId ? ui('Unable to load this chat.') : t('common.loading')}
+    </div>
   }
 
   return (

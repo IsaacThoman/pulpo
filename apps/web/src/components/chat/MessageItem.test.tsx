@@ -127,10 +127,11 @@ describe('insufficient balance notice', () => {
 
   it.each(balanceErrors)('links to billing for %s', async (error) => {
     const { MessageItem } = await import('./MessageItem')
-    const page = (message: Message) => <MemoryRouter initialEntries={['/chat']}><Routes>
+    const client = new QueryClient()
+    const page = (message: Message) => <QueryClientProvider client={client}><MemoryRouter initialEntries={['/chat']}><Routes>
       <Route path="/chat" element={<MessageItem chat={chat} message={message} streaming={!message.done} onRegenerate={() => undefined} />} />
       <Route path="/billing" element={<p>Billing destination</p>} />
-    </Routes></MemoryRouter>
+    </Routes></MemoryRouter></QueryClientProvider>
     const view = render(page(assistant({ done: false })))
     view.rerender(page(assistant({ error })))
 

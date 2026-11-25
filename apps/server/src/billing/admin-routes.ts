@@ -19,7 +19,8 @@ import { maintenanceQueue } from '../jobs.js'
 import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { publishStateChange } from '../responses/events.js'
-import { parseAuthSettings, parseBillingSettings, usageTiersSchema } from '../settings/application-settings.js'
+import { parseAuthSettings, parseBillingSettings, SIGNUP_PROMO_BUDGET_PERIODS, signupPromoSettingsSchema, usageTiersSchema } from '../settings/application-settings.js'
+import { loadSignupPromoSettings, loadSignupPromoUsage, SIGNUP_PROMO_SETTINGS_KEY } from './signup-promo.js'
 import { getBillingEntitlements, loadBillingEntitlements } from './entitlements.js'
 import { loadDailySpend } from './usage-tiers.js'
 import { planForPriceId, stripeMode } from './stripe.js'
@@ -44,6 +45,16 @@ const settingsPatchSchema = z.object({
   fatStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   usageTiers: usageTiersSchema.optional(),
 })
+
+// Explicit optionals: a partial of the stored schema would fill omitted fields with defaults.
+export const signupPromoPatchSchema = z.object({
+  enabled: z.boolean().optional(),
+  amountMicros: z.number().int().positive().max(1_000_000_000).optional(),
+  message: z.string().trim().max(500).optional(),
+  eligibleDays: z.number().int().min(1).max(365).optional(),
+  budgetMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  budgetPeriod: z.enum(SIGNUP_PROMO_BUDGET_PERIODS).optional(),
+}).strict()
 
 const uniqueStrings = (values: string[]) => [...new Set(values)]
 
@@ -309,6 +320,31 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
     })
     await Promise.all(changes.map((change) => publishStateChange({ ...change, scopes: ['billing', 'usage'] })))
     return next
+  })
+
+  app.get('/api/admin/billing/signup-promo', async (request) => {
+    requireAdmin(request)
+    const settings = await loadSignupPromoSettings()
+    return { settings, usage: await loadSignupPromoUsage(settings) }
+  })
+
+  app.patch('/api/admin/billing/signup-promo', async (request) => {
+    const admin = requireAdmin(request)
+    const patch = signupPromoPatchSchema.parse(request.body)
+    const current = await loadSignupPromoSettings()
+    const next = signupPromoSettingsSchema.parse({ ...current, ...patch })
+    await db.transaction(async (tx) => {
+      await tx.insert(applicationSettings).values({ key: SIGNUP_PROMO_SETTINGS_KEY, value: next, updatedBy: admin.id })
+        .onConflictDoUpdate({
+          target: applicationSettings.key,
+          set: { value: next, updatedBy: admin.id, updatedAt: new Date() },
+        })
+      await tx.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id, action: 'billing.signup_promo.update', targetType: 'billing', targetId: 'signup_promo',
+        metadata: { previous: current, next: patch },
+      })
+    })
+    return { settings: next, usage: await loadSignupPromoUsage(next) }
   })
 
   app.get('/api/admin/billing/users', async (request) => {

@@ -1303,6 +1303,21 @@ export const creditLedger = pgTable('credit_ledger', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [index('ledger_user_created_idx').on(table.userId, table.createdAt)])
 
+/**
+ * One-time signup promo credits. The user is kept nullable so a deleted account's claim
+ * still counts toward the instance budget of the period it was claimed in.
+ */
+export const signupPromoClaims = pgTable('signup_promo_claims', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  amountMicros: bigint('amount_micros', { mode: 'number' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('signup_promo_claims_user_unique').on(table.userId),
+  index('signup_promo_claims_created_idx').on(table.createdAt),
+  check('signup_promo_claims_amount_check', sql`${table.amountMicros} > 0`),
+])
+
 export const usageEvents = pgTable('usage_events', {
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

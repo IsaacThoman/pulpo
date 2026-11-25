@@ -24,7 +24,7 @@ import { isCancellationRequested, createResponseEventPublisher, publishSnapshot 
 import { toSnapshot } from '../responses/service.js'
 import { persistResponseItems } from '../responses/storage.js'
 import { extendBudgetReservationFixedCost, getActivePricing, releaseBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from '../accounting/service.js'
-import { WorkspaceManager } from './controller.js'
+import { releaseWorkspaceForChat, WorkspaceManager } from './controller.js'
 import { COMPUTER_UNAVAILABLE_MESSAGE, COMPUTER_UNAVAILABLE_USER_MESSAGE, ComputerWorkspace, describeComputer } from './computer-workspace.js'
 import { computerChangesItem as buildComputerChangesItem, routeRelayRequests } from './computer-relay.js'
 import { createComputerFolderRelay, describeComputerFolder } from '../computer/folder-relay.js'
@@ -92,6 +92,7 @@ import { codexInferenceReferenceCostMicros } from '../codex/reference-cost.js'
 import { agentSettlementAmounts } from './settlement.js'
 import { costLimitPause, redisCostLimitApproval, waitForCostLimitDecision } from './cost-limit.js'
 import { createThoughtSignatureStore, isGeminiApiBaseUrl } from '../upstream/thought-signatures.js'
+import { searchQuickAnswerInstructions, searchQuickAnswerScope } from '../search/quick-answer-policy.js'
 
 function toolResultText(result: unknown): string {
   const content = (result as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content
@@ -150,21 +151,39 @@ async function finalizeUnhandledAgentFailure(responseId: string, error: unknown)
 }
 
 export async function processAgentGeneration(responseId: string, codexAllowed: boolean): Promise<void> {
+  const startedAt = Date.now()
+  let quickAnswerChatId: string | undefined
   try {
-    await runAgentGeneration(responseId, codexAllowed)
+    const [record] = await db.select({ response: responses, model: models, provider: providerConnections })
+      .from(responses).innerJoin(models, eq(responses.modelId, models.id)).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
+      .where(eq(responses.id, responseId)).limit(1)
+    if (!record || !record.response.agentMode) return
+    if (record.response.idempotencyScope === searchQuickAnswerScope) quickAnswerChatId = record.response.chatId
+    if (['completed', 'cancelled'].includes(record.response.status)) return
+    await runAgentGeneration(record, codexAllowed, startedAt)
   } catch (error) {
     await finalizeUnhandledAgentFailure(responseId, error)
     throw error
+  } finally {
+    if (quickAnswerChatId) {
+      // The inline run owns its workspace even when the chat continues in Pulpo.
+      await releaseWorkspaceForChat(quickAnswerChatId, responseId).catch((error: unknown) => {
+        console.warn(JSON.stringify({
+          level: 'warn', service: 'pulpo-worker', event: 'search.workspace_release.failed', responseId,
+          error: error instanceof Error ? error.message : String(error),
+        }))
+      })
+    }
   }
 }
 
-async function runAgentGeneration(responseId: string, codexAllowed: boolean): Promise<void> {
-  const startedAt = Date.now()
+async function runAgentGeneration(record: {
+  response: typeof responses.$inferSelect
+  model: typeof models.$inferSelect
+  provider: typeof providerConnections.$inferSelect
+}, codexAllowed: boolean, startedAt: number): Promise<void> {
+  const responseId = record.response.id
   const config = getConfig()
-  const [record] = await db.select({ response: responses, model: models, provider: providerConnections })
-    .from(responses).innerJoin(models, eq(responses.modelId, models.id)).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
-    .where(eq(responses.id, responseId)).limit(1)
-  if (!record || !record.response.agentMode || ['completed', 'cancelled'].includes(record.response.status)) return
   const [settingsRow, webToolsRow, personalizationRow, preferencesRow, episodicMemorySettings, attachmentSettingsRow] = await Promise.all([
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1).then((rows) => rows[0]),
@@ -175,6 +194,9 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1).then((rows) => rows[0]),
   ])
   const settings = parseAgentSettings(settingsRow?.value)
+  const quickAnswer = record.response.idempotencyScope === searchQuickAnswerScope
+  const workspaceDesktop = settings.workspaceDesktop && !quickAnswer
+  const answerInstructions = quickAnswer ? searchQuickAnswerInstructions : ''
   const webToolsSettings = parseWebToolsSettings(webToolsRow?.value)
   const preferenceValues = (preferencesRow?.values ?? {}) as Record<string, unknown>
   const costLimitMicros = agentCostLimitMicros(preferenceValues)
@@ -195,12 +217,14 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   const computerFullAccess = computerDescribed !== undefined
   const [chatState] = await db.select({ temporary: chats.temporary, fileScopeIds: chats.fileScopeIds }).from(chats)
     .where(eq(chats.id, record.response.chatId)).limit(1)
+  // Saving the chat in Pulpo does not grant the original inline run more access.
+  const isolatedChat = quickAnswer || Boolean(chatState?.temporary)
   // Files attached to the chat, reached only through `pulpo files` in the shell and only while Files
   // is on; a full-access reply has them when the computer's app can run `pulpo files`.
   const filesAccess = replyFilesAccess({
     filesEnabled: parseAuthSettings(attachmentSettingsRow?.value).filesEnabled,
     adminChat: record.response.origin === 'admin_chat',
-    temporary: Boolean(chatState?.temporary),
+    temporary: isolatedChat,
     computer: computerFullAccess ? { description: computerDescription } : undefined,
   })
   const filesAllowed = filesAccess.allowed
@@ -210,7 +234,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   const fileScopeContext = fileScope ? describeFileScope(fileScope, { canAskToBrowse: canAskToBrowseFiles, mirror: filesAccess.mirror }) : ''
   const memory = await loadGenerationMemory({
     chat: chatState,
-    memoryEnabled: preferenceValues.memoryEnabled,
+    memoryEnabled: !isolatedChat && preferenceValues.memoryEnabled,
     responseId,
     userId: record.response.userId,
     currentChatId: record.response.chatId,
@@ -220,7 +244,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   const { memoryContext, recallContext, recallItem } = memory
   let toolsDisabled = record.response.agentCapacityAction === 'continue_without_agent'
   const toolsDisabledSystemPrompt = () => withGenerationTimeContext(
-    [buildToolsDisabledSystemPrompt(record.model.systemPrompt, customInstructions, memoryContext), recallContext].filter(Boolean).join('\n\n'),
+    [buildToolsDisabledSystemPrompt(record.model.systemPrompt, customInstructions, memoryContext), recallContext, answerInstructions].filter(Boolean).join('\n\n'),
     record.response, Date.now(),
   )
   const baseAgentSystemPrompt = buildAgentSystemPrompt(
@@ -228,12 +252,12 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     record.model.agentInstructions,
     customInstructions,
     memoryContext,
-    computerFullAccess ? computerAgentPrompt(computerDescription) : cloudAgentPrompt({ screen: settings.workspaceDesktop }),
+    computerFullAccess ? computerAgentPrompt(computerDescription) : cloudAgentPrompt({ screen: workspaceDesktop }),
   )
   const computerFolderContext = computerFolderMode && computerSelection?.folder
     ? describeComputerFolder({ folder: computerSelection.folder, mode: computerFolderMode })
     : ''
-  const currentAgentSystemPrompt = [baseAgentSystemPrompt, fileScopeContext, computerFolderContext, recallContext].filter(Boolean).join('\n\n')
+  const currentAgentSystemPrompt = [baseAgentSystemPrompt, fileScopeContext, computerFolderContext, recallContext, answerInstructions].filter(Boolean).join('\n\n')
   if (!settings.enabled || !record.model.agentEnabled) throw new Error('Agent mode is no longer available')
   const allHistory = await db.select().from(responses).where(and(
     eq(responses.chatId, record.response.chatId),
@@ -269,7 +293,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   const detailedPayloadsEnabled = detailedPayloadCaptureIsActive(requestLog)
   let sidecarCostMicros = 0
   const imageInterceptor = await createModelImageInterceptor(requestLog.id, {
-    allowCache: !chatState?.temporary,
+    allowCache: !isolatedChat,
     responseId,
     onBilledCost: (costMicros) => { sidecarCostMicros += costMicros },
   })
@@ -535,6 +559,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   const waitAtCostLimit = async (signal?: AbortSignal): Promise<boolean> => {
     const paused = costLimitPause({ responseId, thresholdMicros: costLimitMicros, costMicros: currentCostMicros(), current: findCostLimitItem(costLimitItems), agentTurn: modelTurns })
     if (!paused) return true
+    if (quickAnswer) throw new Error('Pulpo Agent reached its cost limit')
     const setCostLimitItem = (item: CostLimitItem) => {
       const index = costLimitItems.findIndex((candidate) => candidate.id === item.id)
       if (index >= 0) costLimitItems[index] = item
@@ -931,7 +956,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         // Other apps' windows, where the computer's app can show and control them.
         ...(manager instanceof ComputerWorkspace && computerDescription?.apps ? createAppTools(manager, computerDescription, markToolStarted, storeImagePreview) : []),
         // The windows on a cloud workspace's screen, where the instance gives workspaces one.
-        ...(manager instanceof WorkspaceManager && settings.workspaceDesktop ? createAppTools(manager, 'workspace', markToolStarted, storeImagePreview) : []),
+        ...(manager instanceof WorkspaceManager && workspaceDesktop ? createAppTools(manager, 'workspace', markToolStarted, storeImagePreview) : []),
         ...configuredWebTools,
         ...imageTools,
         ...memoryTools,
@@ -1210,6 +1235,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   })
   await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
   try {
+    if (quickAnswer && await isCancellationRequested(responseId)) throw new Error('Generation cancelled')
     await resizeBudgetReservation({
       responseId, accruedCostMicros: accruedCostMicros + accruedToolCostMicros + sidecarCostMicros,
       accruedExtraCostMicros: accruedToolCostMicros + sidecarCostMicros,

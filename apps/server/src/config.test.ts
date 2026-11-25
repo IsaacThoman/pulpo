@@ -11,6 +11,22 @@ describe('server configuration', () => {
     expect(() => parseConfig({ PUBLIC_URL: 'https://pulpo.baby', SEARCH_PUBLIC_URL: 'https://pulpo.baby' })).toThrow(/must differ/)
   })
 
+  it('accepts an optional server-only Brave Place Search token', () => {
+    expect(parseConfig({}).SEARCH_BRAVE_PLACES_API_KEY).toBeUndefined()
+    expect(parseConfig({ SEARCH_BRAVE_PLACES_API_KEY: '' }).SEARCH_BRAVE_PLACES_API_KEY).toBeUndefined()
+    expect(parseConfig({ SEARCH_BRAVE_PLACES_API_KEY: ' token-example ' }).SEARCH_BRAVE_PLACES_API_KEY).toBe('token-example')
+    expect(() => parseConfig({ SEARCH_BRAVE_PLACES_API_KEY: 'token\nexample' })).toThrow()
+  })
+
+  it('enables Firecrawl Maps with a positive integer price', () => {
+    expect(parseConfig({}).SEARCH_FIRECRAWL_PLACES_PRICE_MICROS).toBeUndefined()
+    expect(parseConfig({ SEARCH_FIRECRAWL_PLACES_PRICE_MICROS: '' }).SEARCH_FIRECRAWL_PLACES_PRICE_MICROS).toBeUndefined()
+    expect(parseConfig({ SEARCH_FIRECRAWL_PLACES_PRICE_MICROS: '12000' }).SEARCH_FIRECRAWL_PLACES_PRICE_MICROS).toBe(12000)
+    for (const price of ['0', '-1', '1.5', 'invalid', '9007199254740992']) {
+      expect(() => parseConfig({ SEARCH_FIRECRAWL_PLACES_PRICE_MICROS: price })).toThrow(/SEARCH_FIRECRAWL_PLACES_PRICE_MICROS/)
+    }
+  })
+
   it('keeps billing disabled unless explicitly and completely configured', () => {
     expect(parseConfig({}).PULPO_BILLING_ENABLED).toBe(false)
     expect(() => parseConfig({ PULPO_BILLING_ENABLED: 'true' })).toThrow(/STRIPE_SECRET_KEY/)

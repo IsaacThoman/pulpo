@@ -1,14 +1,18 @@
 FROM node:22.23.4-alpine AS build
 ARG NODE_ENV
 ARG VITE_PULPO_PUBLIC_URL=https://pulpo.baby
+ARG VITE_SEARCH_PLACES_MAP_STYLE_URL
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY scripts/security/vendor/braces scripts/security/vendor/braces
 COPY apps/search/package.json apps/search/package.json
+COPY packages/contracts/package.json packages/contracts/package.json
 RUN npm ci --include=dev
 COPY apps/search apps/search
+COPY packages/contracts packages/contracts
+COPY apps/web/src/lib/color.ts apps/web/src/lib/color-themes.ts apps/web/src/lib/
 COPY apps/web/public/pulpo-smiley.png apps/web/public/pulpo-smiley.png
-RUN npm run build -w @pulpo/search
+RUN npm run build -w @pulpo/contracts && npm run build -w @pulpo/search
 
 FROM nginx:1.29-alpine
 COPY deploy/nginx-search.conf /etc/nginx/conf.d/default.conf

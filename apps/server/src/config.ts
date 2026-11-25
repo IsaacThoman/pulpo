@@ -39,6 +39,14 @@ const configSchema = z.object({
     }
     return url.origin
   })),
+  SEARCH_BRAVE_PLACES_API_KEY: optionalEnvironmentValue(z.string().trim().regex(/^[!-~]{1,512}$/)),
+  SEARCH_FIRECRAWL_PLACES_PRICE_MICROS: optionalEnvironmentValue(z.coerce.number().int().positive()),
+  SEARCH_FIRECRAWL_NEWS_PRICE_MICROS: optionalEnvironmentValue(z.coerce.number().int().positive()),
+  SEARCH_OPENVERSE_ENABLED: booleanString,
+  // Setting a contact opts this deployment into MET Norway's weather service.
+  SEARCH_WEATHER_MET_CONTACT: optionalEnvironmentValue(z.string().trim().max(250).pipe(z.union([
+    z.email(), z.url({ protocol: /^https$/ }).refine(value => /^[!-~]+$/.test(value)),
+  ]))),
   PULPO_ANDROID_CERTIFICATE_FINGERPRINTS: z.string().default('').refine((value) => { try { androidCertificateFingerprints(value); return true } catch { return false } }, 'Use comma-separated SHA-256 signing certificate fingerprints'),
   INSTANCE_NAME: z.string().trim().min(1).default('Pulpo'),
   PULPO_VERSION: z.string().trim().min(1).default('0.1.0'),

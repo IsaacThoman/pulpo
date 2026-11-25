@@ -36,6 +36,7 @@ COPY --from=build /app/packages/contracts/dist packages/contracts/dist
 COPY --from=build /app/packages/client-core/dist packages/client-core/dist
 COPY --from=build /app/apps/server/dist apps/server/dist
 COPY --from=build /app/apps/server/drizzle apps/server/drizzle
+COPY --from=build /app/apps/server/data/search-weather/cities.json.gz apps/server/data/search-weather/cities.json.gz
 COPY deploy/healthcheck.mjs /app/deploy/healthcheck.mjs
 USER node
 CMD ["node", "apps/server/dist/api.js"]

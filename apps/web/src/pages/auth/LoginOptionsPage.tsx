@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { browserSupportsWebAuthn } from '@/lib/passkeys'
 import { useAuth } from '@/stores/auth'
 import { isDesktopRuntime } from '@/lib/runtime'
-import { searchConnectLoginState } from '@/lib/search-connect'
+import { authReturnLoginState } from '@/lib/auth-return'
 import { AuthFormError } from './auth-form'
 
 export function LoginOptionsPage() {
@@ -15,7 +15,7 @@ export function LoginOptionsPage() {
   const passkeyLogin = useAuth((state) => state.passkeyLogin)
   const setupRequired = useAuth((state) => state.setupRequired)
   const navigate = useNavigate()
-  const loginState = searchConnectLoginState(useLocation().state)
+  const loginState = authReturnLoginState(useLocation().state)
   const returnTo = loginState?.from ?? '/'
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)

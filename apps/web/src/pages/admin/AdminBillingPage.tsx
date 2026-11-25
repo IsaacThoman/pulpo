@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, ChartColumn, CreditCard, ExternalLink, Gauge, Minus, Pencil, Plus, RefreshCw, Repeat2, Search, SlidersHorizontal, Trash2, UsersRound, WalletCards } from 'lucide-react'
+import { AlertTriangle, ChartColumn, CreditCard, ExternalLink, Gauge, Gift, Minus, Pencil, Plus, RefreshCw, Repeat2, Search, SlidersHorizontal, Trash2, UsersRound, WalletCards } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, matchByDataKey } from 'recharts'
 import { apiRequest } from '@/lib/api'
 import { formatBalance, formatDate } from '@/lib/format'
@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup } from '@/components/usage/ToggleGroup'
 import { ui, uit, activeLocale } from '@/i18n/ui'
 import { useSettings } from '@/stores/settings'
@@ -22,6 +23,7 @@ import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import type { Model } from '@/lib/types'
 import { UserListEditor } from './ModelAccessEditor'
 import { useAdminUserDirectory, type UserDirectory } from './user-directory'
+import { parseSignupPromoDraft, signupPromoDraft, type SignupPromoBudgetPeriod, type SignupPromoDraft, type SignupPromoState } from './signup-promo-logic'
 
 type Range = '7d' | '30d' | '90d' | 'all'
 /** animate bars by full date so a range change keeps each day in place */
@@ -364,6 +366,8 @@ export function AdminBillingPage() {
 
       {settingsQuery.data && <UsageTiersPanel tiers={settingsQuery.data.usageTiers} onSaved={() => void settingsQuery.refetch()} />}
 
+      <SignupPromoPanel />
+
       <CustomLimitsPanel />
 
       <Panel icon={<CreditCard className="size-3" />} title={ui("Recent payments")} extra={<span className="text-xs text-muted-foreground">{(data?.recentOrders.length ?? 0).toLocaleString(activeLocale())}</span>}>
@@ -620,6 +624,112 @@ function UsageTiersPanel({ tiers, onSaved }: { tiers: UsageTier[]; onSaved: () =
           {message && <span className="text-xs text-muted-foreground">{message}</span>}
         </div>
       </div>
+    </Panel>
+  )
+}
+
+function claimCount(count: number) {
+  return count === 1 ? ui("1 claim") : ui("{{count}} claims", { count: count.toLocaleString(activeLocale()) })
+}
+
+function SignupPromoPanel() {
+  const query = useQuery({
+    queryKey: ['admin-billing-signup-promo'],
+    queryFn: () => apiRequest<SignupPromoState>('/api/admin/billing/signup-promo'),
+    refetchInterval: 30_000,
+  })
+  const [draft, setDraft] = useState<SignupPromoDraft | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState('')
+  const settings = query.data?.settings
+  useEffect(() => { if (settings) setDraft(signupPromoDraft(settings)) }, [settings])
+  const parsed = draft ? parseSignupPromoDraft(draft) : null
+  const update = (patch: Partial<SignupPromoDraft>) => setDraft((current) => current && { ...current, ...patch })
+  const usage = query.data?.usage
+  const periodLabel = (settings?.budgetPeriod ?? 'day') === 'hour' ? ui("This hour") : ui("Today")
+
+  const save = async () => {
+    if (!parsed) return
+    setSaving(true)
+    setMessage('')
+    try {
+      await apiRequest('/api/admin/billing/signup-promo', { method: 'PATCH', body: parsed })
+      setMessage(ui("Signup promo saved."))
+      await query.refetch()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : ui("Could not save the signup promo."))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Panel
+      icon={<Gift className="size-3" />}
+      title={ui("Signup promo")}
+      extra={<Button size="sm" onClick={() => void save()} disabled={saving || !parsed}>{saving ? ui("Saving…") : ui("Save")}</Button>}
+    >
+      {draft ? (
+        <div className="grid gap-4 px-3 py-3 lg:grid-cols-[minmax(0,1fr)_16rem]">
+          <div className="space-y-3">
+            <label className="flex cursor-pointer items-center justify-between gap-3 text-sm">
+              {ui("Offer credits to new accounts")}
+              <Switch checked={draft.enabled} onCheckedChange={(enabled) => update({ enabled })} />
+            </label>
+            <p className="text-xs text-muted-foreground">{ui("New accounts see a banner on the web and desktop apps and can claim the credits once. The iOS and Android apps never show it. When the budget for the period runs out, the banner says to check back after it resets.")}</p>
+            <div className="flex flex-wrap items-end gap-3">
+              <LimitInput label={ui("Credits per account")} value={draft.amount} onChange={(amount) => update({ amount })} />
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">{ui("Accounts younger than")}</span>
+                <div className="relative w-28">
+                  <Input className="h-8 w-28 pr-12 text-xs tabular-nums" type="number" min="1" max="365" step="1" value={draft.eligibleDays} onChange={(event) => update({ eligibleDays: event.target.value })} />
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">{ui("days")}</span>
+                </div>
+              </label>
+              <LimitInput label={ui("Instance budget")} value={draft.budget} onChange={(budget) => update({ budget })} />
+              <label className="space-y-1">
+                <span className="text-xs text-muted-foreground">{ui("Budget resets")}</span>
+                <Select value={draft.budgetPeriod} onValueChange={(value) => update({ budgetPeriod: value as SignupPromoBudgetPeriod })}>
+                  <SelectTrigger size="sm" className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="hour">{ui("Every hour")}</SelectItem>
+                    <SelectItem value="day">{ui("Every day")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </label>
+            </div>
+            <label className="block space-y-1">
+              <span className="text-xs text-muted-foreground">{ui("Banner message")}</span>
+              <Textarea
+                className="min-h-14 text-xs md:text-xs"
+                maxLength={500}
+                value={draft.message}
+                placeholder={ui("Welcome! Claim {{amount}} in free credits to try things out.", { amount: formatBalance((parsed?.amountMicros ?? 0) / 1_000_000) })}
+                onChange={(event) => update({ message: event.target.value })}
+              />
+            </label>
+            <p className="text-xs text-muted-foreground">{ui("Leave empty to use the default message. Links become clickable. Budgets reset at the top of each UTC hour or at 00:00 UTC.")}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              {!parsed && <span className="text-xs text-destructive">{ui("Enter a credit amount above zero, a budget, and between 1 and 365 days.")}</span>}
+              {message && <span className="text-xs text-muted-foreground">{message}</span>}
+            </div>
+          </div>
+          {usage && settings && (
+            <div className="divide-y self-start rounded-md border">
+              <div className="px-3 py-2 text-xs">
+                <div className="text-muted-foreground">{periodLabel}</div>
+                <div className="mt-1 font-medium tabular-nums">{ui("{{claimed}} of {{budget}}", { claimed: formatBalance(usage.periodClaimedMicros / 1_000_000), budget: formatBalance(settings.budgetMicros / 1_000_000) })}</div>
+                <div className="mt-0.5 text-muted-foreground">{ui("{{claims}} · resets {{time}}", { claims: claimCount(usage.periodClaims), time: new Date(usage.resetsAt).toLocaleString(activeLocale(), { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) })}</div>
+              </div>
+              <div className="px-3 py-2 text-xs">
+                <div className="text-muted-foreground">{ui("All time")}</div>
+                <div className="mt-1 font-medium tabular-nums">{formatBalance(usage.totalClaimedMicros / 1_000_000)}</div>
+                <div className="mt-0.5 text-muted-foreground">{claimCount(usage.totalClaims)}</div>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : <Empty label={query.isError ? ui("Could not load the signup promo.") : ui("Loading…")} />}
     </Panel>
   )
 }

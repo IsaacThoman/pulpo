@@ -1,0 +1,29 @@
+.places-map { margin: 0 0 .7rem; min-width: 0; }
+.places-map-frame { position: relative; border: 1px solid var(--line); border-radius: .75rem; background: var(--surface); overflow: hidden; }
+.places-map-canvas { width: 100%; height: clamp(12rem, 39svh, 22rem); }
+.places-map-canvas[data-loading] { visibility: hidden; }
+.places-map-loading { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; color: var(--muted); }
+.places-map .places-map-pin {
+  display: grid;
+  place-items: center;
+  min-width: 1.8rem;
+  height: 1.8rem;
+  padding-inline: .25rem;
+  border: 2px solid var(--surface);
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  filter: drop-shadow(0 1px 3px rgb(0 0 0 / .45));
+  font: inherit;
+  font-size: .8125rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+.places-map .places-map-pin:is(:focus-visible, [aria-pressed="true"]) { z-index: 1; outline: 2px solid var(--ink); outline-offset: 1px; }
+.places-map .places-map-pin[data-cluster] { min-width: 2.1rem; height: 2.1rem; background: var(--surface); color: var(--link); border-color: var(--link); }
+.places-map-selections { margin: 0; padding: 0; list-style: none; }
+.places-map-selection { display: flex; align-items: baseline; flex-wrap: wrap; gap: .25rem .75rem; padding: .65rem 0 .25rem; overflow-wrap: anywhere; }
+.places-map-selection > div { flex: 1 1 10rem; min-width: 0; }
+.places-map-selection p { margin: .15rem 0 0; color: var(--muted); font-size: .875rem; }
+.places-map-attribution { display: flex; flex-wrap: wrap; gap: .2rem .6rem; margin-top: .3rem; color: var(--muted); font-size: .75rem; }

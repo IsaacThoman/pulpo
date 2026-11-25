@@ -24,7 +24,7 @@ vi.mock('socket.io-client', () => ({ io: () => mocks.socket }))
 vi.mock('@/stores/auth', () => ({ useAuth: (selector: (state: unknown) => unknown) => selector({ user: { id: 'user', role: 'user', stateRevision: 0 }, instanceReady: true }) }))
 vi.mock('@/stores/catalog', () => ({ useCatalog: (selector: (state: unknown) => unknown) => selector({ load: mocks.load }) }))
 vi.mock('@/stores/chat', () => ({
-  useChat: Object.assign((selector: (state: unknown) => unknown) => selector(mocks.chat), { getState: () => mocks.chat }),
+  useChat: Object.assign((selector: (state: unknown) => unknown) => selector(mocks.chat), { getState: () => mocks.chat, setState: vi.fn() }),
   mergeServerChatDetails: (_previous: unknown, incoming: unknown) => incoming,
 }))
 vi.mock('@/lib/local-first/composer-sync', () => ({ bindWebComposerSocket: () => () => {} }))

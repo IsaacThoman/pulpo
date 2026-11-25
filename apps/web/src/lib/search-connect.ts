@@ -19,9 +19,3 @@ export function searchConnectReturn(path: string | undefined): string | undefine
   const params = new URLSearchParams({ code_challenge: input.codeChallenge, state: input.state })
   return `${SEARCH_CONNECT_PATH}?${params}`
 }
-
-export function searchConnectLoginState(state: unknown): { from: string } | undefined {
-  if (typeof state !== 'object' || !state || !('from' in state) || typeof state.from !== 'string') return undefined
-  const from = searchConnectReturn(state.from)
-  return from ? { from } : undefined
-}

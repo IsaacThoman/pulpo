@@ -1,18 +1,32 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { Chat, Model } from '@/lib/types'
+import type { ServerChat, ServerResponse } from '@/stores/chat'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
-vi.hoisted(() => {
+const { listeners, socket } = vi.hoisted(() => {
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) })
+  const listeners = new Map<string, (payload: unknown) => void>()
+  const socket = {
+    connected: true,
+    on: (event: string, listener: (payload: unknown) => void) => listeners.set(event, listener),
+    emit: vi.fn(), disconnect: vi.fn(),
+  }
+  return { listeners, socket }
 })
-vi.mock('@/lib/local-first/composer-sync', () => ({ webComposerSync: () => null, clearWebComposerSync() {} }))
+vi.mock('socket.io-client', () => ({ io: () => socket }))
+vi.mock('@/features/computer/ComputerBridge', () => ({ ComputerBridge: () => null }))
+vi.mock('@/lib/local-first/composer-sync', () => ({
+  webComposerSync: () => null, clearWebComposerSync() {}, bindWebComposerSocket: () => () => {},
+}))
 vi.mock('@/components/chat/MessageList', () => ({ MessageList: () => <div data-testid="messages" /> }))
-vi.mock('@/lib/local-first/shelf', () => ({ webShelf: () => null }))
+vi.mock('@/lib/local-first/shelf', () => ({ webShelf: () => null, bindWebShelfSocket: () => () => {} }))
 const { ChatPage } = await import('./ChatPage')
+const { ChatDataBridge } = await import('@/features/chat/ChatDataBridge')
 const { useChat } = await import('@/stores/chat')
 const { useAuth } = await import('@/stores/auth')
 const { useSettings } = await import('@/stores/settings')
@@ -34,6 +48,8 @@ const temporaryChat: Chat = {
 }
 
 beforeEach(() => {
+  listeners.clear()
+  socket.emit.mockClear()
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} unobserve() {} })
   Element.prototype.scrollIntoView = vi.fn()
   vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } }))
@@ -51,6 +67,88 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 function Path() {
   return <output data-testid="path">{useLocation().pathname}</output>
 }
+
+function openChatRoute() {
+  return render(<QueryClientProvider client={queryClient}><MemoryRouter initialEntries={[`/c/${chatId}`]}>
+    <TooltipProvider>
+      <ChatDataBridge />
+      <Routes>
+        <Route path="/" element={<ChatPage />} />
+        <Route path="/c/:chatId" element={<ChatPage />} />
+      </Routes>
+      <Link to="/">Leave chat</Link>
+      <Path />
+    </TooltipProvider>
+  </MemoryRouter></QueryClientProvider>)
+}
+
+function json(payload: unknown, status = 200) {
+  return new Response(JSON.stringify(payload), { status, headers: { 'content-type': 'application/json' } })
+}
+
+it('opens an existing temporary chat by URL, keeps its live response, and drops it when leaving', async () => {
+  useChat.setState({ chats: [], activeTemporaryChatId: null })
+  const responseId = '00000000-0000-4000-8000-0000000000ab'
+  const createdAt = new Date().toISOString()
+  const snapshot = { responseId, status: 'in_progress' as const, sequence: 1, updatedAt: createdAt, output: [], usage: null, error: null }
+  const response: ServerResponse = {
+    id: responseId, parentResponseId: null, userMessageId: null, modelId: model.id,
+    status: snapshot.status, createdAt, completedAt: null,
+    input: [{ role: 'user', content: [{ type: 'input_text', text: 'My search question' }] }],
+    output: [], usage: null, error: null, presetSelections: {}, snapshot,
+    branches: { user: { ids: [responseId], index: 0 }, assistant: { ids: [responseId], index: 0 } },
+  }
+  const detail: ServerChat = {
+    ...temporaryChat, title: 'Quick Answer', createdAt, updatedAt: createdAt, expiresAt: new Date(Date.now() + 48 * 60 * 60 * 1_000).toISOString(),
+    activeResponseId: responseId, activeBranchLeafId: responseId, responses: [response],
+    history: { before: responseId, hasMore: false, offset: 0, leafId: responseId },
+  }
+  const summary: ServerChat = {
+    id: '00000000-0000-4000-8000-0000000000c2', title: 'Another chat', modelId: model.id,
+    pinned: false, folderId: null, createdAt, updatedAt: createdAt, activeResponseId: null, activeBranchLeafId: null,
+  }
+  let finishSummaries!: (response: Response) => void
+  const summaries = new Promise<Response>((resolve) => { finishSummaries = resolve })
+  vi.mocked(fetch).mockImplementation(async (input) => {
+    const path = String(input)
+    if (path === '/api/chats') return summaries
+    if (path.startsWith(`/api/chats/${chatId}?`)) return json(detail)
+    return json({})
+  })
+  vi.spyOn(useCatalog.getState(), 'load').mockResolvedValue(undefined)
+
+  const view = openChatRoute()
+  await view.findByRole('heading', { name: 'Quick Answer' })
+  expect(view.getByTestId('path').textContent).toBe(`/c/${chatId}`)
+  expect(view.container.querySelector('[data-desktop-temporary-chat="true"]')).toBeTruthy()
+  expect(useChat.getState().activeTemporaryChatId).toBeNull()
+  expect(useChat.getState().chats[0]?.messages[0]?.content).toBe('My search question')
+  await waitFor(() => expect(socket.emit).toHaveBeenCalledWith('response.subscribe', { responseId, afterSequence: 0 }))
+
+  await act(async () => { finishSummaries(json({ data: [summary] })) })
+  await waitFor(() => expect(useChat.getState().chats.some((chat) => chat.id === summary.id)).toBe(true))
+  act(() => listeners.get('response.snapshot')!({
+    ...snapshot, sequence: 2,
+    output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Live answer' }] }],
+  }))
+  expect(useChat.getState().chats.find((chat) => chat.id === chatId)?.messages[1]?.content).toBe('Live answer')
+
+  fireEvent.click(view.getByRole('link', { name: 'Leave chat' }))
+  await waitFor(() => expect(useChat.getState().chats.some((chat) => chat.id === chatId)).toBe(false))
+  expect(queryClient.getQueryData(['chat', userId, chatId])).toBeUndefined()
+})
+
+it.each([[404, 'not_found'], [410, 'temporary_chat_expired']])('shows an unavailable chat on a %i from the chat API', async (status, code) => {
+  useChat.setState({ chats: [], activeTemporaryChatId: null })
+  vi.mocked(fetch).mockImplementation(async (input) => String(input).startsWith(`/api/chats/${chatId}?`)
+    ? json({ error: { code } }, status)
+    : json({ data: [] }))
+  vi.spyOn(useCatalog.getState(), 'load').mockResolvedValue(undefined)
+  const view = openChatRoute()
+  expect(await view.findByText('Unable to load this chat.')).toBeTruthy()
+  expect(view.queryByRole('textbox')).toBeNull()
+  expect(view.queryByTestId('messages')).toBeNull()
+})
 
 it('keeps showing a temporary chat while saving it moves it to its own route', async () => {
   // Like the store: the chat stops being the active temporary one, then the chat list reloads.

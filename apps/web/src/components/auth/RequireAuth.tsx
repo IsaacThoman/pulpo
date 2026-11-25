@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react'
 import { useAuth } from '@/stores/auth'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { LandingPage } from '@/pages/LandingPage'
+import { searchHandoffReturn } from '@/lib/auth-return'
 
 export function RequireAuth() {
   const user = useAuth((s) => s.user)
@@ -22,7 +23,8 @@ export function RequireAuth() {
   }
 
   if (!user) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />
+    const from = searchHandoffReturn(location.pathname, location.hash) ?? location.pathname
+    return <Navigate to="/login" replace state={{ from }} />
   }
 
   if (user.role === 'pending') {

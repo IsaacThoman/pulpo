@@ -14,10 +14,12 @@ import { LocaleBoundary } from '@/i18n/LocaleBoundary'
 import { ExternalRedirect } from '@/components/ExternalRedirect'
 import { DOCS_URL } from '@/lib/links'
 import { ownProfilePath } from '@/lib/profile'
+import { SEARCH_HANDOFF_PATH } from '@pulpo/contracts/search'
 
 const AppLayout = lazy(() => import('@/components/layout/AppLayout').then((module) => ({ default: module.AppLayout })))
 
 const ChatPage = lazy(() => import('@/pages/ChatPage').then((module) => ({ default: module.ChatPage })))
+const SearchHandoffPage = lazy(() => import('@/pages/SearchHandoffPage').then((module) => ({ default: module.SearchHandoffPage })))
 const LeaderboardPage = lazy(() => import('@/pages/usage/LeaderboardPage').then((module) => ({ default: module.LeaderboardPage })))
 const FriendsLeaderboardPage = lazy(() => import('@/pages/usage/LeaderboardPage').then((module) => ({ default: module.FriendsLeaderboardPage })))
 const PeopleLayout = lazy(() => import('@/pages/PeopleLayout').then((module) => ({ default: module.PeopleLayout })))
@@ -140,6 +142,7 @@ export default function App() {
         <Route element={<RequireAuth />}>
           <Route element={<LocalizedRoute><AppLayout /></LocalizedRoute>}>
             <Route index element={<LocalizedRoute><ChatPage /></LocalizedRoute>} />
+            <Route path={SEARCH_HANDOFF_PATH} element={<LocalizedRoute><SearchHandoffPage /></LocalizedRoute>} />
             <Route path="c/:chatId" element={<LocalizedRoute><ChatPage /></LocalizedRoute>} />
             <Route path="usage">
               <Route index element={<OwnProfileRedirect />} />

@@ -17,6 +17,7 @@ import {
   type ManagementSettingsDocument,
   type UsageVisibility,
 } from '@pulpo/contracts'
+import { SEARCH_ACCOUNT_PREFERENCES_KEY } from '@pulpo/contracts/search'
 import { db } from '../database/client.js'
 import { applicationSettings, auditEvents, models, userPreferences, users } from '../database/schema.js'
 import { queueTrashPurge } from '../jobs.js'
@@ -238,7 +239,15 @@ export async function applyManagementSettings(
     }
     if (mode !== 'instance') {
       await tx.insert(userPreferences).values({ userId, values: account })
-        .onConflictDoUpdate({ target: userPreferences.userId, set: { values: account, updatedAt: new Date() } })
+        .onConflictDoUpdate({
+          target: userPreferences.userId,
+          set: {
+            values: sql`${JSON.stringify(account)}::jsonb || jsonb_strip_nulls(jsonb_build_object(
+              ${SEARCH_ACCOUNT_PREFERENCES_KEY}::text, ${userPreferences.values}->${SEARCH_ACCOUNT_PREFERENCES_KEY}::text
+            ))`,
+            updatedAt: new Date(),
+          },
+        })
       const [revision] = await tx.update(users).set({
         username: account.username,
         profileColor: account.profileColor,

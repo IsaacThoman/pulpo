@@ -1,7 +1,10 @@
+import { searchDateRange } from '@pulpo/contracts/search'
 import { publicHttpsUrl, webFetchOutput, type KagiSearchInput, type KagiResult, type WebPage } from './kagi.js'
-import { normalizeResult, uniqueResults, type ProviderSearchInput, type SearchCategory, type SearchResults } from './search-results.js'
+import { normalizeResult, uniqueResults, type BasicSearchCategory, type ProviderSearchInput, type SearchResults } from './search-results.js'
 
 export const FIRECRAWL_DEFAULT_API_BASE = 'https://api.firecrawl.dev/v2'
+
+type FirecrawlSearchInput = Omit<ProviderSearchInput, 'category' | 'page'> & { category?: BasicSearchCategory }
 
 type FirecrawlSearchResult = {
   title?: string
@@ -9,12 +12,22 @@ type FirecrawlSearchResult = {
   snippet?: string
   url?: string
   imageUrl?: string
+  imageWidth?: number
+  imageHeight?: number
   date?: string
+  metadata?: {
+    publishedTime?: unknown
+    'article:published_time'?: unknown
+    datePublished?: unknown
+    description?: string
+    ogDescription?: string
+    ogImage?: string
+  }
 }
 
 type FirecrawlSearchResponse = {
   success?: boolean
-  data?: Partial<Record<SearchCategory, FirecrawlSearchResult[]>>
+  data?: Partial<Record<BasicSearchCategory, FirecrawlSearchResult[]>>
   id?: string
   error?: string
   message?: string
@@ -54,6 +67,33 @@ function cleanDomains(value: string[] | undefined): string[] | undefined {
 
 function apiError(payload: FirecrawlSearchResponse | FirecrawlScrapeResponse | null, status: number): string {
   return payload?.error || payload?.message || `Firecrawl API returned ${status}`
+}
+
+function searchPreview(row: FirecrawlSearchResult | undefined) {
+  const snippet = typeof row?.snippet === 'string' ? row.snippet.trim() : ''
+  const description = typeof row?.description === 'string' ? row.description.trim() : ''
+  return !snippet || (snippet.length > 300 && description && description.length < snippet.length) ? description : snippet
+}
+
+function publisherPreview(row: FirecrawlSearchResult) {
+  return [row.metadata?.ogDescription, row.metadata?.description, row.description, row.snippet]
+    .find(value => typeof value === 'string' && value.trim() && value.length <= 600 && !/\]\(|\\\s/.test(value))
+}
+
+function providerDate(date: string) {
+  const [year, month, day] = date.split('-')
+  return `${month}/${day}/${year}`
+}
+
+function publisherDate(metadata: FirecrawlSearchResult['metadata']) {
+  for (const value of [metadata?.['article:published_time'], metadata?.datePublished, metadata?.publishedTime]) {
+    if (typeof value !== 'string') continue
+    const date = value.slice(0, 10)
+    const calendarDate = value === date
+    if (!searchDateRange(date, date) || (!calendarDate && !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/.test(value))) continue
+    const timestamp = Date.parse(value)
+    if (Number.isFinite(timestamp) && timestamp <= Date.now() + 86_400_000) return calendarDate ? date : new Date(timestamp).toISOString()
+  }
 }
 
 export function firecrawlCloudRequiresApiKey(baseUrl: string): boolean {
@@ -105,8 +145,12 @@ export class FirecrawlClient {
 
   async searchResults(input: ProviderSearchInput, signal?: AbortSignal): Promise<SearchResults> {
     const category = input.category ?? 'web'
-    const limit = Math.min(20, Math.max(1, Math.floor(input.limit ?? 10)))
-    const payload = await this.querySearch(input, limit, signal)
+    if (category === 'videos' || category === 'podcasts' || (input.page ?? 1) !== 1) {
+      throw new FirecrawlError('Firecrawl does not support this search type or page')
+    }
+    const includePublisherMetadata = category === 'news' && input.includePublisherMetadata
+    const limit = Math.min(includePublisherMetadata ? 10 : 20, Math.max(1, Math.floor(input.limit ?? 10)))
+    const payload = await this.querySearch({ ...input, category }, limit, signal)
     if (!payload.data || typeof payload.data !== 'object' || Array.isArray(payload.data)) {
       throw new FirecrawlError('Firecrawl search response did not contain a result set')
     }
@@ -116,28 +160,37 @@ export class FirecrawlClient {
       results: uniqueResults(rows.map((row) => normalizeResult({
         url: row?.url,
         title: row?.title,
-        snippet: row?.snippet ?? row?.description,
-        imageUrl: row?.imageUrl,
-        publishedAt: row?.date,
-      })), limit, category),
+        snippet: includePublisherMetadata && row ? publisherPreview(row) : searchPreview(row),
+        imageUrl: row?.imageUrl || row?.metadata?.ogImage,
+        imageWidth: category === 'images' ? row?.imageWidth : undefined,
+        imageHeight: category === 'images' ? row?.imageHeight : undefined,
+        // Search dates can reflect indexing or updates rather than publication.
+        publishedAt: category === 'news' ? (includePublisherMetadata ? publisherDate(row?.metadata) : undefined) : row?.date,
+      }, category === 'images' ? undefined : input.query)), limit, category),
     }
   }
 
-  private async querySearch(input: ProviderSearchInput, limit: number, signal?: AbortSignal): Promise<FirecrawlSearchResponse> {
+  private async querySearch(input: FirecrawlSearchInput, limit: number, signal?: AbortSignal): Promise<FirecrawlSearchResponse> {
     const includeDomains = cleanDomains(input.includeDomains)
     const excludeDomains = cleanDomains(input.excludeDomains)
     const query = includeDomains && excludeDomains
       ? `${input.query.trim()} ${excludeDomains.map((domain) => `-site:${domain}`).join(' ')}`
       : input.query.trim()
+    const tbs = input.dateRange
+      ? `cdr:1,cd_min:${providerDate(input.dateRange.from)},cd_max:${providerDate(input.dateRange.to)}`
+      : input.timeRelative ? `qdr:${{ day: 'd', week: 'w', month: 'm', year: 'y' }[input.timeRelative]}` : undefined
     return await this.post<FirecrawlSearchResponse>('/search', {
       query,
       limit,
       sources: [input.category ?? 'web'],
-      safe: true,
+      safe: input.safeSearch ?? true,
       ...(includeDomains ? { includeDomains } : {}),
       ...(!includeDomains && excludeDomains ? { excludeDomains } : {}),
-      ...(input.timeRelative ? { tbs: `qdr:${{ day: 'd', week: 'w', month: 'm', year: 'y' }[input.timeRelative]}` } : {}),
+      ...(tbs ? { tbs } : {}),
       ...(input.region ? { country: input.region } : {}),
+      ...(input.category === 'news' && input.includePublisherMetadata ? {
+        scrapeOptions: { formats: ['markdown'], onlyMainContent: true },
+      } : {}),
     }, signal)
   }
 

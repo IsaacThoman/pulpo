@@ -26,6 +26,20 @@ describe('Firecrawl client', () => {
     })
   })
 
+  it('prefers a concise provider description to a scraped page preview for Search', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({
+      success: true,
+      data: { web: [{
+        title: 'Octopus',
+        url: 'https://example.com/octopus',
+        description: 'An overview of octopus behavior and habitat.',
+        snippet: '# Octopus\n' + 'A paragraph from the page. '.repeat(30),
+      }] },
+    })))
+    const result = await new FirecrawlClient('https://api.firecrawl.dev/v2', 'secret').searchResults({ query: 'octopus' })
+    expect(result.results[0]?.snippet).toBe('An overview of octopus behavior and habitat.')
+  })
+
   it('supports an unauthenticated custom endpoint and fresh truncated scrapes', async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       success: true,
