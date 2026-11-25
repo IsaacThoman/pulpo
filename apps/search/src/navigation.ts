@@ -1,6 +1,7 @@
 import { searchDateRange, type SearchDateRange } from '@pulpo/contracts/search'
 import type { Category, Provider, SearchDate, SearchScope } from './api'
 import { queryTokens } from './query-tokens'
+import { reusableImageCategories, reusableImageLicenses, type ReusableImageFilters } from './reusable-images'
 
 export const MAX_QUERY_LENGTH = 500
 export const categories = ['web', 'images', 'news', 'videos', 'podcasts'] as const
@@ -45,6 +46,7 @@ export interface SearchLocation {
   web?: true
   provider?: Provider
   page?: number
+  reusableImages?: ReusableImageFilters
 }
 
 export const homeLocation: SearchLocation = { query: '', category: 'web', date: '', region: '' }
@@ -60,6 +62,9 @@ export function parseSearchLocation(url: URL): SearchLocation {
   const scope = searchScopes.find(([value]) => value === url.searchParams.get('scope'))?.[0] || undefined
   const provider = url.searchParams.get('provider')
   const page = Number(url.searchParams.get('page'))
+  const reusable = category === 'images' && url.searchParams.get('reuse') === '1'
+  const license = reusableImageLicenses.find(value => value === url.searchParams.get('license'))
+  const imageCategory = reusableImageCategories.find(value => value === url.searchParams.get('kind'))
   return {
     query, category, date, region,
     ...(dateRange ? { dateRange } : {}),
@@ -68,6 +73,7 @@ export function parseSearchLocation(url: URL): SearchLocation {
     ...(url.searchParams.get('web') === '1' ? { web: true as const } : {}),
     ...(provider === 'kagi' || provider === 'firecrawl' ? { provider } : {}),
     ...(Number.isInteger(page) && page >= 2 && page <= 10 ? { page } : {}),
+    ...(reusable ? { reusableImages: { ...(license ? { license } : {}), ...(imageCategory ? { category: imageCategory } : {}) } } : {}),
   }
 }
 
@@ -85,6 +91,11 @@ export function searchPath(input: SearchLocation) {
   if (input.web) params.set('web', '1')
   if (input.provider) params.set('provider', input.provider)
   if (input.page && input.page > 1) params.set('page', String(input.page))
+  if (input.category === 'images' && input.reusableImages) {
+    params.set('reuse', '1')
+    if (input.reusableImages.license) params.set('license', input.reusableImages.license)
+    if (input.reusableImages.category) params.set('kind', input.reusableImages.category)
+  }
   return '/search?' + params.toString()
 }
 

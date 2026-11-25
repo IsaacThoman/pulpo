@@ -3,13 +3,15 @@ import { type WeatherAlerts, type WeatherPlace, type WeatherResponse } from './a
 import { safeHttpUrl } from './navigation'
 
 const dayLabel = new Intl.DateTimeFormat(undefined, { weekday: 'short', timeZone: 'UTC' })
+const fullDayLabel = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' })
 const placeLabel = ({ name, admin, country }: WeatherPlace) => [name, admin, country].filter(Boolean).join(', ')
 
-export function WeatherAnswer({ response, alerts, onLocation, onWeb }: {
+export function WeatherAnswer({ response, alerts, onLocation, onWeb, webExpanded }: {
   response: Extract<WeatherResponse, { status: 'forecast' | 'ambiguous' }>
   alerts?: WeatherAlerts
   onLocation: (location: string) => void
   onWeb: () => void
+  webExpanded?: boolean
 }) {
   const [fahrenheit, setFahrenheit] = useState(() => /^en-US$/i.test(navigator.language))
   const degrees = (celsius: number) => Math.round(fahrenheit ? celsius * 9 / 5 + 32 : celsius)
@@ -68,13 +70,22 @@ export function WeatherAnswer({ response, alerts, onLocation, onWeb }: {
           </div>
         </div>
       )}
-      {forecast.daily.length > 0 && <ul className="weather-days" aria-label="Daily forecast">
-        {forecast.daily.slice(0, 7).map(day => <li key={day.date}>
-          <strong>{dayLabel.format(new Date(day.date + 'T12:00:00Z'))}</strong>
-          <span>{degrees(day.highC)}° <small>{degrees(day.lowC)}°</small></span>
-          {day.condition && <small>{day.condition}</small>}
-        </li>)}
-      </ul>}
+      {forecast.daily.length > 0 && <div className="weather-outlook">
+        <h3>{forecast.daily.length}-day outlook</h3>
+        <ul className="weather-days" role="list" aria-label="Daily forecast">
+          {forecast.daily.map(day => {
+            const date = new Date(day.date + 'T12:00:00Z')
+            return <li key={day.date}>
+              <time dateTime={day.date} title={fullDayLabel.format(date)}>{dayLabel.format(date)}</time>
+              <span className="weather-range">
+                <strong><span className="sr-only">High </span>{degrees(day.highC)}°</strong>
+                <span><span className="sr-only">Low </span>{degrees(day.lowC)}°</span>
+              </span>
+              {day.condition && <small>{day.condition}</small>}
+            </li>
+          })}
+        </ul>
+      </div>}
       <div className="weather-footer">
         <span>Sources {sources.map(source => {
           const url = safeHttpUrl(source.url)
@@ -83,7 +94,9 @@ export function WeatherAnswer({ response, alerts, onLocation, onWeb }: {
             {license && <> (<a href={license.href} rel="noreferrer">license</a>)</>}
             {source.note && <> {source.note}</>}</span>
         })}</span>
-        <button className="text-button weather-web" onClick={onWeb}>Search the web</button>
+        <button className="text-button weather-web" aria-expanded={webExpanded} onClick={onWeb}>
+          {webExpanded ? 'Hide web results' : 'Show web results'}
+        </button>
       </div>
     </section>
   )

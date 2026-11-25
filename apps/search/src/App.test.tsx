@@ -24,6 +24,8 @@ describe('Pulpo Search', () => {
   const weatherAlerts = vi.spyOn(api, 'weatherAlerts')
   const currency = vi.spyOn(api, 'currency')
   const places = vi.spyOn(api, 'places')
+  const quickAnswer = vi.spyOn(api, 'quickAnswer')
+  const reusableImages = vi.spyOn(api, 'reusableImages')
 
   beforeEach(() => {
     session.mockResolvedValue({ user })
@@ -42,6 +44,8 @@ describe('Pulpo Search', () => {
     weatherAlerts.mockResolvedValue({ status: 'unavailable' })
     currency.mockResolvedValue({ status: 'unavailable', source: { name: 'ECB', url: 'https://www.ecb.europa.eu/', description: 'Daily reference rates' } })
     places.mockResolvedValue({ provider: 'brave', results: [] })
+    quickAnswer.mockResolvedValue({ provider: 'kagi', answer: 'An answer.', references: [] })
+    reusableImages.mockResolvedValue({ provider: 'openverse', results: [] })
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
     const preferences = new Map<string, string>()
     vi.stubGlobal('localStorage', {
@@ -121,16 +125,71 @@ describe('Pulpo Search', () => {
     expect(window.location.search).toContain('type=images')
   })
 
-  it('hides and restores sites locally without a second provider request', async () => {
+  it('applies site preferences to results and Ask Pulpo without another provider request', async () => {
     window.history.replaceState(null, '', '/search?q=tides')
     render(<App callback={null} />)
     await screen.findByRole('link', { name: 'tides field guide' })
-    fireEvent.click(screen.getByLabelText('Options for example.com'))
-    fireEvent.click(screen.getAllByRole('button', { name: 'Hide site' })[0])
+    const draftSources = () => new URLSearchParams(new URL(screen.getByRole('link', { name: 'Ask Pulpo' })
+      .getAttribute('href')!).hash.slice(1)).getAll('source')
+    expect(draftSources()).toEqual(['https://example.com/', 'https://help.example.net/'])
+    const pinOptions = screen.getByLabelText('Options for help.example.net')
+    fireEvent.click(pinOptions)
+    fireEvent.click(within(pinOptions.closest('details')!).getByRole('button', { name: 'Pin site' }))
+    expect(draftSources()).toEqual(['https://help.example.net/', 'https://example.com/'])
+    const hideOptions = screen.getByLabelText('Options for example.com')
+    fireEvent.click(hideOptions)
+    fireEvent.click(within(hideOptions.closest('details')!).getByRole('button', { name: 'Hide site' }))
     expect(screen.queryByRole('link', { name: 'tides field guide' })).toBeNull()
+    expect(draftSources()).toEqual(['https://help.example.net/'])
     fireEvent.click(screen.getByRole('button', { name: 'Show 1 hidden result' }))
     expect(screen.getByRole('link', { name: 'tides field guide' })).toBeDefined()
+    expect(draftSources()).toEqual(['https://help.example.net/'])
     expect(search).toHaveBeenCalledTimes(1)
+  })
+
+  it('requests a cited quick answer once, while keeping the Web results visible', async () => {
+    getConfig.mockResolvedValue({ ...config, quickAnswer: { provider: 'kagi', priceMicros: 15000 } })
+    quickAnswer.mockResolvedValue({
+      provider: 'kagi', answer: 'A **short answer** [1] with an invalid reference [2].',
+      references: [
+        { index: 1, title: 'Source page', url: 'https://example.org/guide' },
+        { index: 2, url: 'javascript:alert(1)' },
+      ],
+    })
+    window.history.replaceState(null, '', '/search?q=tide+pools')
+    render(<App callback={null} />)
+    const button = await screen.findByRole('button', { name: /^Quick answer/ })
+    expect(button.textContent).toContain('0.015')
+    expect(quickAnswer).not.toHaveBeenCalled()
+    fireEvent.click(button)
+    const card = screen.getByRole('region', { name: 'Quick answer' })
+    const source = await within(card).findByRole('link', { name: 'Source 1, Source page' })
+    expect(source.getAttribute('href')).toBe('https://example.org/guide')
+    expect(within(card).queryByRole('link', { name: /^Source 2/ })).toBeNull()
+    expect(screen.getByRole('link', { name: 'tide pools field guide' })).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Hide quick answer' }))
+    expect(screen.queryByRole('region', { name: 'Quick answer' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /^Quick answer/ }))
+    expect(screen.getByRole('region', { name: 'Quick answer' })).toBeDefined()
+    expect(quickAnswer).toHaveBeenCalledExactlyOnceWith('tide pools', expect.any(AbortSignal))
+  })
+
+  it('preserves requested image license filters without running a different provider', async () => {
+    getConfig.mockResolvedValue({ ...config, reusableImages: true })
+    reusableImages.mockResolvedValue({ provider: 'openverse', results: [{
+      url: 'https://example.org/art', title: 'Public domain artwork', snippet: '',
+      imageUrl: 'https://example.org/art.jpg', imageLicense: { code: 'pdm', url: 'https://creativecommons.org/publicdomain/mark/1.0/' },
+    }] })
+    window.history.replaceState(null, '', '/search?q=Hokusai&type=images&reuse=1&license=public-domain&kind=digitized_artwork')
+    render(<App callback={null} />)
+    await screen.findByRole('button', { name: 'Preview image: Public domain artwork' })
+    expect((screen.getByLabelText('License') as HTMLSelectElement).value).toBe('public-domain')
+    expect((screen.getByLabelText('Image type') as HTMLSelectElement).value).toBe('digitized_artwork')
+    expect(reusableImages).toHaveBeenCalledTimes(1)
+    expect(reusableImages).toHaveBeenCalledWith({
+      query: 'Hokusai', license: 'public-domain', category: 'digitized_artwork',
+    }, expect.any(AbortSignal))
+    expect(search).not.toHaveBeenCalled()
   })
 
   it('suggests bangs without calling a provider', async () => {
@@ -188,7 +247,7 @@ describe('Pulpo Search', () => {
       forecast: {
         temperatureC: 10, condition: 'Cloudy', validAt: '2026-11-24T12:00:00Z', updatedAt: '2026-11-24T10:00:00Z',
         hourly: [{ validAt: '2026-11-24T13:00:00Z', temperatureC: 11, precipitationChance: 80 }],
-        daily: [{ date: '2026-11-24', highC: 12, lowC: 4 }],
+        daily: Array.from({ length: 7 }, (_, offset) => ({ date: `2026-11-${24 + offset}`, highC: 12, lowC: 4 })),
       },
       sources: [{ name: 'National Weather Service', url: 'https://www.weather.gov/', license: 'https://www.weather.gov/disclaimer' }],
     })
@@ -204,11 +263,17 @@ describe('Pulpo Search', () => {
     expect(weather).toHaveBeenCalledExactlyOnceWith('Seattle', expect.any(AbortSignal))
     expect(search).not.toHaveBeenCalled()
     expect(within(card).getByRole('region', { name: 'Hourly forecast' })).toBeDefined()
+    expect(within(card).getByRole('heading', { name: '7-day outlook' })).toBeDefined()
+    const days = within(within(card).getByRole('list', { name: 'Daily forecast' })).getAllByRole('listitem')
+    expect(days).toHaveLength(7)
+    expect(days.at(-1)?.querySelector('time')?.dateTime).toBe('2026-11-30')
     expect((await within(card).findByRole('link', { name: 'Wind Advisory' })).getAttribute('href')).toBe('https://www.weather.gov/warnings')
     fireEvent.click(within(card).getByRole('button', { name: '°C' }))
     expect(within(card).getByText('10°C')).toBeDefined()
-    fireEvent.click(within(card).getByRole('button', { name: 'Search the web' }))
+    fireEvent.click(within(card).getByRole('button', { name: 'Show web results' }))
     await screen.findByRole('link', { name: 'Seattle weather field guide' })
+    expect(within(card).getByRole('heading', { name: '7-day outlook' })).toBeDefined()
+    expect(weather).toHaveBeenCalledTimes(1)
     expect(search).toHaveBeenCalledTimes(1)
   })
 
@@ -307,6 +372,57 @@ describe('Pulpo Search', () => {
     expect(within(list).getByRole('link', { name: 'Directions' }).getAttribute('href')).toContain('destination=Morning+Cafe%2C+1+Elm+Street')
     expect(places).toHaveBeenCalledTimes(1)
     expect(search).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [402, 'Places search limit reached'],
+    [502, 'Couldn’t load places'],
+  ] as const)('shows a Places %s error before offering a separate Web search', async (status, title) => {
+    getConfig.mockResolvedValue({ ...config, places: { provider: 'firecrawl', priceMicros: 5000 } })
+    places.mockRejectedValueOnce(new SearchApiError('Places lookup failed.', status))
+    window.history.replaceState(null, '', '/search?q=coffee+shops+near+Grand+Central')
+    render(<App callback={null} />)
+    await screen.findByRole('heading', { name: title })
+    expect(search).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Search the web' }))
+    await screen.findByRole('link', { name: 'coffee shops near Grand Central field guide' })
+    expect(places).toHaveBeenCalledTimes(1)
+    expect(search).toHaveBeenCalledTimes(1)
+  })
+
+  it('reveals more venues and keeps the local answer beside requested Web results', async () => {
+    getConfig.mockResolvedValue({ ...config, places: { provider: 'firecrawl', priceMicros: 5000 },
+      providers: [{ ...config.providers[0], maxPage: 10 }, config.providers[1]],
+    })
+    places.mockResolvedValue({ provider: 'firecrawl', results: Array.from({ length: 8 }, (_, index) => ({
+      name: 'Shop ' + index, address: index + ' Elm Street',
+    })) })
+    search.mockImplementation(async ({ page }) => ({ provider: 'kagi', hasMore: !page, results: [
+      { url: 'https://example.com/' + (page ?? 1), title: 'Web page ' + (page ?? 1), snippet: '' },
+    ] }))
+    window.history.replaceState(null, '', '/search?q=coffee+shops+near+Grand+Central')
+    render(<App callback={null} />)
+    const local = await screen.findByRole('region', { name: 'Local places' })
+    expect(within(local).getAllByRole('listitem')).toHaveLength(6)
+    fireEvent.click(within(local).getByRole('button', { name: 'Show all 8 places' }))
+    expect(within(local).getAllByRole('listitem')).toHaveLength(8)
+    expect(search).not.toHaveBeenCalled()
+
+    fireEvent.click(within(local).getByRole('button', { name: 'Show web results' }))
+    fireEvent.click(within(local).getByRole('button', { name: 'Hide web results' }))
+    fireEvent.click(within(local).getByRole('button', { name: 'Show web results' }))
+    await screen.findByRole('link', { name: 'Web page 1' })
+    expect(search).toHaveBeenCalledTimes(1)
+    expect(within(local).getAllByRole('listitem')).toHaveLength(8)
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await screen.findByRole('link', { name: 'Web page 2' })
+    expect(within(local).getAllByRole('listitem')).toHaveLength(8)
+    fireEvent.click(within(local).getByRole('button', { name: 'Hide web results' }))
+    expect(screen.queryByRole('link', { name: 'Web page 2' })).toBeNull()
+    fireEvent.click(within(local).getByRole('button', { name: 'Show web results' }))
+    await screen.findByRole('link', { name: 'Web page 1' })
+    expect(places).toHaveBeenCalledTimes(1)
+    expect(search).toHaveBeenCalledTimes(2)
   })
 
   it('paginates only through a capable provider and restores a cached first page', async () => {

@@ -121,6 +121,62 @@ describe('Weather forecasts', () => {
     expect(fetcher.mock.calls[1]?.[1]?.headers).toMatchObject({ 'if-modified-since': modified })
   })
 
+  it('builds seven dates from NOAA hourly readings without another forecast request', async () => {
+    const { client, fetcher } = fixture()
+    const start = Date.parse('2026-11-24T04:00:00Z')
+    const periods = Array.from({ length: 168 }, (_, i) => ({
+      startTime: new Date(start + i * 3_600_000).toISOString(),
+      temperature: 5 + (i % 24), temperatureUnit: 'C', shortForecast: 'Clear',
+    }))
+    fetcher.mockResolvedValueOnce(portlandGrid())
+    fetcher.mockResolvedValueOnce(Response.json({ properties: { updateTime: periods[0]!.startTime, periods } }))
+
+    const forecast = (await client(portland, undefined))?.forecast
+    expect(forecast?.daily.map(day => day.date)).toEqual([
+      '2026-11-23', '2026-11-24', '2026-11-25', '2026-11-26', '2026-11-27', '2026-11-28', '2026-11-29',
+    ])
+    expect(forecast?.hourly).toHaveLength(12)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses longer MET periods for daily ranges while keeping the hourly strip at genuine hourly resolution', async () => {
+    const { client, fetcher } = fixture()
+    const start = Date.parse('2026-11-24T04:00:00Z')
+    const offsets = [...Array.from({ length: 60 }, (_, i) => i), ...Array.from({ length: 23 }, (_, i) => 60 + i * 6)]
+    const timeseries = offsets.map(offset => ({
+      time: new Date(start + offset * 3_600_000).toISOString(),
+      data: {
+        instant: { details: { air_temperature: 5 + (offset % 24) } },
+        ...(offset < 60 ? { next_1_hours: { details: { precipitation_amount: 0 } } }
+          : { next_6_hours: { summary: { symbol_code: 'partlycloudy_day' } } }),
+      },
+    }))
+    fetcher.mockResolvedValueOnce(Response.json({ properties: {
+      meta: { updated_at: timeseries[0]!.time }, timeseries,
+    } }))
+
+    const forecast = (await client(paris, 'weather@example.org'))?.forecast
+    expect(forecast?.daily.map(day => day.date)).toEqual([
+      '2026-11-24', '2026-11-25', '2026-11-26', '2026-11-27', '2026-11-28', '2026-11-29', '2026-11-30',
+    ])
+    expect(forecast?.daily.at(-1)).toMatchObject({ lowC: 5, highC: 23, condition: 'Partly cloudy' })
+    expect(forecast?.hourly.map(reading => reading.validAt)).toEqual(timeseries.slice(1, 13).map(reading => reading.time))
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('omits a future day with only a short window of forecast temperatures', async () => {
+    const { client, fetcher } = fixture()
+    const timeseries = ['2026-11-24T04:00:00Z', '2026-11-24T10:00:00Z',
+      '2026-11-25T00:00:00Z', '2026-11-25T06:00:00Z'].map(time => ({
+      time, data: { instant: { details: { air_temperature: 16 } } },
+    }))
+    fetcher.mockResolvedValueOnce(Response.json({ properties: {
+      meta: { updated_at: timeseries[0]!.time }, timeseries,
+    } }))
+
+    expect((await client(paris, 'weather@example.org'))?.forecast.daily.map(day => day.date)).toEqual(['2026-11-24'])
+  })
+
   it('allows cold NOAA hourly requests to complete and refreshes a legacy negative entry', async () => {
     const { cache, client, fetcher } = fixture()
     const url = 'https://api.weather.gov/gridpoints/GYX/72,58/forecast/hourly'

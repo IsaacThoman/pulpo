@@ -11,6 +11,7 @@ describe('local instant answers', () => {
     ['4 × (3 + 2)', '20'],
     ['20 celsius to fahrenheit', '68 °F'],
     ['37 mph to km/h', '59.545728 km/h'],
+    ['18 knots to km/h', '33.336 km/h'],
     ['2.54 cm in inches', '1 in'],
     ['roman numeral for 49', 'XLIX'],
     ['XLIX in decimal', '49'],

@@ -282,6 +282,7 @@ unit('duration', 86400, 'days', ['day', 'days'])
 unit('speed', 1, 'm/s', ['m/s', 'mps'])
 unit('speed', 1000 / 3600, 'km/h', ['km/h', 'kmh', 'kph'])
 unit('speed', 1609.344 / 3600, 'mph', ['mph', 'mi/h'])
+unit('speed', 1852 / 3600, 'kn', ['kn', 'kt', 'kts', 'knot', 'knots'])
 
 const canonicalUnits = [...new Set(units.values())]
 

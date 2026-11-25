@@ -27,6 +27,24 @@ describe('server configuration', () => {
     }
   })
 
+  it('requires a positive integer price to enable Kagi Quick Answer', () => {
+    expect(parseConfig({}).SEARCH_KAGI_ANSWER_PRICE_MICROS).toBeUndefined()
+    expect(parseConfig({ SEARCH_KAGI_ANSWER_PRICE_MICROS: '' }).SEARCH_KAGI_ANSWER_PRICE_MICROS).toBeUndefined()
+    expect(parseConfig({ SEARCH_KAGI_ANSWER_PRICE_MICROS: '15000' }).SEARCH_KAGI_ANSWER_PRICE_MICROS).toBe(15000)
+    for (const price of ['0', '-1', '1.5', 'invalid', '9007199254740992']) {
+      expect(() => parseConfig({ SEARCH_KAGI_ANSWER_PRICE_MICROS: price })).toThrow(/SEARCH_KAGI_ANSWER_PRICE_MICROS/)
+    }
+  })
+
+  it('validates the optional server-only FastGPT token', () => {
+    expect(parseConfig({}).SEARCH_KAGI_ANSWER_API_KEY).toBeUndefined()
+    expect(parseConfig({ SEARCH_KAGI_ANSWER_API_KEY: '' }).SEARCH_KAGI_ANSWER_API_KEY).toBeUndefined()
+    expect(parseConfig({ SEARCH_KAGI_ANSWER_API_KEY: ' synthetic-token ' }).SEARCH_KAGI_ANSWER_API_KEY).toBe('synthetic-token')
+    for (const value of [' ', 'synthetic\ntoken', 'synthetic token', 'a'.repeat(513)]) {
+      expect(() => parseConfig({ SEARCH_KAGI_ANSWER_API_KEY: value })).toThrow(/SEARCH_KAGI_ANSWER_API_KEY/)
+    }
+  })
+
   it('keeps billing disabled unless explicitly and completely configured', () => {
     expect(parseConfig({}).PULPO_BILLING_ENABLED).toBe(false)
     expect(() => parseConfig({ PULPO_BILLING_ENABLED: 'true' })).toThrow(/STRIPE_SECRET_KEY/)

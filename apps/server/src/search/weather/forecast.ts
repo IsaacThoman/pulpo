@@ -180,9 +180,12 @@ function renderForecast(timeline: Timeline, place: WeatherPlace, now: number, nw
     group.push(point)
     days.set(date, group)
   }
-  const daily = [...days].slice(0, 5).map(([date, hours]) => {
-    const temperatures = hours.map(point => point.temperatureC)
-    const condition = hours[Math.floor(hours.length / 2)]?.condition
+  const daily = [...days].filter(([date, readings]) => {
+    if (date === today) return true
+    return Date.parse(readings.at(-1)!.validAt) - Date.parse(readings[0]!.validAt) >= 12 * hour
+  }).slice(0, 7).map(([date, readings]) => {
+    const temperatures = readings.map(point => point.temperatureC)
+    const condition = readings[Math.floor(readings.length / 2)]?.condition
     return { date, lowC: Math.min(...temperatures), highC: Math.max(...temperatures), ...(condition ? { condition } : {}) }
   })
   const hourly = points.filter(point => {
@@ -317,7 +320,7 @@ export function createWeatherClient(cache: WeatherCache, fetcher = fetch, now = 
         const precipitation = point.next_1_hours?.details?.precipitation_amount
         return {
           validAt: time, temperatureC: air_temperature,
-          hourly: Boolean(point.next_1_hours?.summary),
+          hourly: Boolean(point.next_1_hours),
           ...(condition ? { condition } : {}),
           ...(wind_speed === undefined ? {} : { windKph: rounded(wind_speed * 3.6) }),
           ...(precipitation === undefined ? {} : { precipitationMm: precipitation }),

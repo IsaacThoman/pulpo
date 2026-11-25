@@ -18,6 +18,8 @@ import { parseWebToolsSettings, type StoredWebToolsSettings } from '../settings/
 import { registerSearchCurrencyRoute } from './currency.js'
 import { fetchSearchFavicon } from './favicon.js'
 import { placesCapability, placeSearchInput, searchFirecrawlPlaces, searchPlaces } from './places.js'
+import { quickAnswerInput, searchQuickAnswer } from './quick-answer.js'
+import { ReusableImagesRateLimitError, reusableImagesInput, searchReusableImages } from './reusable-images.js'
 import { filterSearchHosts, searchHostFilters, searchScopes } from './scope.js'
 import { registerSearchWeatherRoute } from './weather/routes.js'
 
@@ -70,6 +72,11 @@ async function configuredPlaces(settings?: StoredWebToolsSettings) {
   if (braveApiKey) return { ...placesCapability, apiKey: braveApiKey }
 }
 
+function configuredQuickAnswer() {
+  const { SEARCH_KAGI_ANSWER_API_KEY: apiKey, SEARCH_KAGI_ANSWER_PRICE_MICROS: priceMicros } = getConfig()
+  if (apiKey && priceMicros !== undefined) return { provider: 'kagi' as const, priceMicros, apiKey }
+}
+
 function searchOrigin() {
   const origin = getConfig().SEARCH_PUBLIC_URL
   if (!origin) throw new AppError(404, 'search_disabled', 'Pulpo Search is unavailable')
@@ -83,6 +90,7 @@ function searchUser(request: FastifyRequest, reply: FastifyReply) {
 }
 
 export function registerSearchRoutes(app: FastifyInstance) {
+  let openverseRetryAt = 0
   registerSearchCurrencyRoute(app, searchUser)
   registerSearchWeatherRoute(app, searchUser)
 
@@ -114,14 +122,100 @@ export function registerSearchRoutes(app: FastifyInstance) {
     const settings = await readSearchSettings()
     const defaultOrder = availableWebSearchProviders(settings)
     const places = await configuredPlaces(settings)
+    const quickAnswer = configuredQuickAnswer()
     return {
       defaultOrder,
       currency: true,
       weather: true,
       ...(places ? { places: { provider: places.provider, priceMicros: places.priceMicros } } : {}),
+      ...(quickAnswer ? { quickAnswer: { provider: quickAnswer.provider, priceMicros: quickAnswer.priceMicros } } : {}),
+      ...(getConfig().SEARCH_OPENVERSE_ENABLED ? { reusableImages: true } : {}),
       providers: defaultOrder.map((id) => ({
         id, ...providerCapabilities[id], dates, customDateRanges, region: true, priceMicros: billedPrice(id, 'search', settings),
       })),
+    }
+  })
+
+  app.post('/api/search/reusable-images', {
+    bodyLimit: 2048,
+    config: { rateLimit: {
+      max: 16, timeWindow: '1 minute', hook: 'preHandler',
+      keyGenerator: (request: FastifyRequest) => request.user ? 'openverse' : request.ip,
+    } },
+  }, async (request, reply) => {
+    searchUser(request, reply)
+    if (!getConfig().SEARCH_OPENVERSE_ENABLED) {
+      throw new AppError(404, 'reusable_images_disabled', 'Reusable images are unavailable')
+    }
+    const input = reusableImagesInput.parse(request.body)
+    const retryAfter = Math.ceil((openverseRetryAt - Date.now()) / 1000)
+    if (retryAfter > 0) {
+      reply.header('retry-after', String(retryAfter))
+      throw new AppError(429, 'reusable_images_rate_limit', 'Openverse reached its search limit. Try again later.', 'rate_limit_error')
+    }
+    const controller = new AbortController()
+    const onClose = () => { if (!reply.raw.writableFinished) controller.abort() }
+    reply.raw.on('close', onClose)
+    if (reply.raw.destroyed) controller.abort()
+    try {
+      return await searchReusableImages(input, controller.signal)
+    } catch (error) {
+      if (controller.signal.aborted) throw new AppError(408, 'search_cancelled', 'Search was cancelled')
+      if (error instanceof ReusableImagesRateLimitError) {
+        const seconds = Math.min(error.retryAfterSeconds ?? 60, 86_400)
+        openverseRetryAt = Math.max(openverseRetryAt, Date.now() + seconds * 1000)
+        reply.header('retry-after', String(seconds))
+        throw new AppError(429, 'reusable_images_rate_limit', 'Openverse reached its search limit. Try again later.', 'rate_limit_error')
+      }
+      throw new AppError(502, 'reusable_images_unavailable', 'Openverse is temporarily unavailable. Try again.', 'server_error')
+    } finally {
+      reply.raw.off('close', onClose)
+    }
+  })
+
+  app.post('/api/search/quick-answer', {
+    bodyLimit: 4096,
+    config: { rateLimit: {
+      max: 12, timeWindow: '1 minute', hook: 'preHandler',
+      keyGenerator: (request: FastifyRequest) => request.user?.id ?? request.ip,
+    } },
+  }, async (request, reply) => {
+    const user = searchUser(request, reply)
+    const controller = new AbortController()
+    const onClose = () => { if (!reply.raw.writableFinished) controller.abort() }
+    const cancelled = () => new AppError(408, 'search_cancelled', 'Search was cancelled')
+    reply.raw.on('close', onClose)
+    if (reply.raw.destroyed) controller.abort()
+    let reservationId: string | undefined
+    let settled = false
+    try {
+      const config = configuredQuickAnswer()
+      if (controller.signal.aborted) throw cancelled()
+      if (!config) throw new AppError(404, 'quick_answer_disabled', 'Quick Answer is unavailable')
+      const { query } = quickAnswerInput.parse(request.body)
+      const { provider, priceMicros: costMicros, apiKey } = config
+      reservationId = await reserveMeteredBudget({ userId: user.id, costMicros })
+      let result
+      try {
+        controller.signal.throwIfAborted()
+        result = await searchQuickAnswer(query, apiKey, controller.signal)
+        controller.signal.throwIfAborted()
+      } catch {
+        if (controller.signal.aborted) throw cancelled()
+        request.log.warn('Quick Answer provider failed')
+        throw new AppError(502, 'quick_answer_unavailable', 'Quick Answer is temporarily unavailable. Try again.', 'server_error')
+      }
+      await settleMeteredBudget({
+        reservationId, costMicros, type: 'web_search',
+        metadata: { provider, category: 'quick_answer', referenceCount: result.references.length },
+      })
+      settled = true
+      return result
+    } finally {
+      reply.raw.off('close', onClose)
+      if (reservationId && !settled) await releaseMeteredBudget(reservationId).catch(() => {
+        request.log.warn('Quick Answer reservation cleanup failed')
+      })
     }
   })
 

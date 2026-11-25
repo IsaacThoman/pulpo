@@ -97,4 +97,40 @@ describe('image result viewer', () => {
     fireEvent.error(thumbnail)
     expect(overlay.getByText('Image unavailable')).toBeDefined()
   })
+
+  it('shows the reported license, creator, attribution, and original source only for the current licensed image', () => {
+    const attribution = '“Reef octopus” by Reef Lab is licensed under CC BY-SA 4.0.'
+    const imageLicense = {
+      code: 'by-sa', version: '4.0', url: 'https://creativecommons.org/licenses/by-sa/4.0/',
+      creator: 'Reef Lab', creatorUrl: 'https://photos.example.com/creators/reef-lab', attribution,
+    }
+    render(<Results data={{ ...data, results: [{ ...data.results[0], imageLicense }, data.results[1]] }}
+      location={{ ...homeLocation, category: 'images', query: 'octopus' }} preferences={{ ...loadPreferences(), newTab: true }}
+      setDomain={vi.fn()} onQuery={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Preview image: Reef octopus' }))
+    const dialog = screen.getByRole('dialog')
+    const overlay = within(dialog)
+    const details = within(overlay.getByRole('group', { name: 'Image reuse details' }))
+    expect(details.getByText('Reported license')).toBeDefined()
+    expect(details.getByRole('link', { name: 'CC BY-SA 4.0' }).getAttribute('href')).toBe(imageLicense.url)
+    expect(details.getByRole('link', { name: 'Reef Lab' }).getAttribute('href')).toBe(imageLicense.creatorUrl)
+    fireEvent.click(details.getByText('Attribution'))
+    expect(details.getByText(attribution).parentElement?.hasAttribute('open')).toBe(true)
+    expect(details.getByText('Check the original source before reusing this image.')).toBeDefined()
+    expect(overlay.getByRole('link', { name: 'Visit original source' }).getAttribute('href')).toBe(data.results[0].url)
+    fireEvent.keyDown(dialog, { key: 'ArrowRight' })
+    expect(overlay.queryByRole('group', { name: 'Image reuse details' })).toBeNull()
+    expect(overlay.getByRole('link', { name: 'Visit site' }).getAttribute('href')).toBe(data.results[1].url)
+  })
+
+  it('keeps reported license text without promoting unsafe creator or license links', () => {
+    const imageLicense = { code: 'cc0', version: '1.0', url: 'javascript:alert(1)', creator: 'Reef Lab', creatorUrl: 'data:text/html,bad' }
+    render(<Results data={{ ...data, results: [{ ...data.results[0], imageLicense }] }}
+      location={{ ...homeLocation, category: 'images', query: 'octopus' }} preferences={loadPreferences()}
+      setDomain={vi.fn()} onQuery={vi.fn()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Preview image: Reef octopus' }))
+    const details = within(screen.getByRole('group', { name: 'Image reuse details' }))
+    expect(details.getByText(/CC0 1\.0 · By Reef Lab/)).toBeDefined()
+    expect(details.queryByRole('link')).toBeNull()
+  })
 })

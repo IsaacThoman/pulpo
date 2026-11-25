@@ -443,6 +443,14 @@ summary::-webkit-details-marker { display: none; }
 .results-summary { display: flex; justify-content: flex-end; min-height: 2.35rem; padding-top: .25rem; }
 .spelling-suggestion { margin: .1rem 0 .75rem; color: var(--muted); font-size: .875rem; overflow-wrap: anywhere; }
 .spelling-suggestion button { color: var(--link); font-weight: 650; text-decoration: underline; text-align: start; }
+.quick-answer { width: min(100%, var(--reading-width)); margin-bottom: .9rem; min-width: 0; }
+.quick-answer > button { gap: .45rem; min-height: 2.25rem; }
+.quick-answer-price, .quick-answer-provider { color: var(--muted); font-size: .75rem; }
+.quick-answer-card { margin-top: .55rem; overflow-wrap: anywhere; }
+.quick-answer-card h2 { font-size: 1.125rem; margin-bottom: .65rem; }
+.quick-answer-text { white-space: pre-wrap; line-height: 1.55; }
+.quick-answer-text a, .quick-answer-sources a { color: var(--link); }
+.quick-answer-sources { display: flex; gap: .4rem 1rem; flex-wrap: wrap; padding: 0; margin: .65rem 0; list-style: none; font-size: .875rem; }
 .provider-indicator { min-height: 2rem; padding-inline: .35rem; color: var(--faint); font-size: .8125rem; }
 .results-body { display: grid; grid-template-columns: minmax(0, var(--reading-width)); gap: 1.5rem; }
 .results-column { min-width: 0; }
@@ -490,6 +498,9 @@ summary::-webkit-details-marker { display: none; }
 .result-sitelinks { display: flex; flex-wrap: wrap; gap: .35rem .9rem; list-style: none; padding: 0 0 0 .65rem; margin: .65rem 0 0; border-inline-start: 2px solid var(--line); }
 .result-sitelinks li { min-width: 0; max-width: 100%; }
 .result-sitelinks .result-link { font-size: .875rem; font-weight: 500; overflow-wrap: anywhere; }
+.result-versions { margin-top: .25rem; }
+.result-versions summary { cursor: pointer; }
+.result-versions[open] summary svg { transform: rotate(180deg); }
 .result-menu { position: absolute; right: 0; top: 0; }
 .result-menu summary { width: 2rem; height: 2rem; }
 .answer { padding: 1rem 1.15rem; margin: .15rem 0 1.35rem; border: 1px solid var(--line); border-radius: .85rem; background: var(--subtle); }
@@ -510,16 +521,18 @@ summary::-webkit-details-marker { display: none; }
 .weather-condition { margin-top: .25rem; }
 .weather-details, .weather-choices, .weather-days { margin: .8rem 0; padding: 0; list-style: none; }
 .weather-details, .weather-choices { display: flex; flex-wrap: wrap; gap: .65rem; color: var(--muted); font-size: .875rem; }
-.weather-days { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 5rem), 1fr)); gap: .4rem; }
+.weather-days { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 5rem), 1fr)); gap: .4rem; margin-top: 0; }
 .weather-days li { min-width: 0; padding: .45rem .55rem; border: 1px solid var(--line); border-radius: .45rem; overflow-wrap: anywhere; }
 .weather-days li > * { display: block; }
-.weather-days small { color: var(--muted); font-size: .75rem; }
-.weather-days span { font-variant-numeric: tabular-nums; }
+.weather-days time { font-size: .8125rem; font-weight: 650; }
+.weather-days small, .weather-range > span { color: var(--muted); }
+.weather-days small { font-size: .75rem; }
+.weather-days .weather-range { display: flex; flex-wrap: wrap; gap: .1rem .35rem; font-variant-numeric: tabular-nums; }
 .weather-alerts { list-style: none; padding: 0; margin: .65rem 0 1rem; }
 .weather-alerts li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .65rem; padding: .45rem .65rem; border-inline-start: 3px solid var(--accent); background: var(--hover); }
 .weather-alerts li + li { margin-top: .25rem; }
 .weather-alerts small { color: var(--muted); }
-.weather-hourly h3 { margin: .8rem 0 .35rem; font-size: .875rem; }
+.weather-hourly h3, .weather-outlook h3 { margin: .8rem 0 .35rem; font-size: .875rem; }
 .weather-hourly-scroll { overflow-x: auto; padding-bottom: .4rem; }
 .weather-hourly ol { display: flex; gap: .4rem; list-style: none; padding: 0; margin: 0; }
 .weather-hourly li { flex: 0 0 5.7rem; display: grid; align-content: start; gap: .18rem; padding: .4rem .5rem; border: 1px solid var(--line); border-radius: .45rem; }
@@ -549,6 +562,8 @@ summary::-webkit-details-marker { display: none; }
 .places-header, .place-details, .place-actions { display: flex; align-items: baseline; flex-wrap: wrap; gap: .35rem .65rem; }
 .places-header { justify-content: space-between; margin-bottom: .55rem; }
 .places-header h2 { font-size: 1.2rem; }
+.places-header-actions { display: flex; flex-wrap: wrap; gap: .2rem .65rem; }
+.places-header-actions .text-button { display: inline-flex; align-items: center; gap: .3rem; }
 .places-note { padding-block: .4rem; color: var(--muted); font-size: .875rem; }
 .place-refinements { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .65rem; }
 .place-open-filter { min-height: 2rem; }
@@ -557,6 +572,7 @@ summary::-webkit-details-marker { display: none; }
 .place-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); gap: .6rem; padding: 0; margin: 0; list-style: none; }
 .place-card { min-width: 0; padding: .8rem .9rem; border: 1px solid var(--line); border-radius: .75rem; overflow-wrap: anywhere; }
 .place-card h3 { font-size: 1rem; line-height: 1.35; margin: 0 0 .16rem; }
+.place-map-number { display: inline-grid; place-items: center; min-width: 1.3rem; min-height: 1.3rem; margin-inline-end: .35rem; padding-inline: .2rem; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: .75rem; }
 .place-card p, .place-details { color: var(--muted); font-size: .875rem; }
 .place-card .place-category { color: var(--faint); font-size: .75rem; }
 .place-details:has(> *) { margin-top: .35rem; }
@@ -569,6 +585,7 @@ summary::-webkit-details-marker { display: none; }
 .place-hours dd { margin: 0; }
 .place-actions { margin-top: .56rem; }
 .place-actions .secondary-button { min-height: 2rem; padding-inline: .6rem; text-decoration: none; }
+.place-show-more { display: flex; margin-top: .65rem; }
 .place-source { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .35rem; margin-top: .75rem; color: var(--muted); font-size: .75rem; }
 .place-source img { object-fit: contain; }
 .brave-logo-dark, :root[data-theme="dark"] .brave-logo-light { display: none; }

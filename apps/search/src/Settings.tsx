@@ -1,6 +1,6 @@
 import { Copy, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { providerNames, type Provider, type SearchConfig } from './api'
+import { formatSearchPrice, providerNames, type Provider, type SearchConfig } from './api'
 import { searchBangs, validateCustomBang, type CustomBang } from './bangs'
 import { placeProviderNames } from './places'
 import { providerOrder, type Preferences } from './preferences'
@@ -48,10 +48,6 @@ interface SettingsProps {
   clearRecentQueries: () => void
 }
 
-function formatPrice(micros: number) {
-  return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 6 }).format(micros / 1_000_000)
-}
-
 export function Settings({ config, preferences, update, recentQueryCount, clearRecentQueries }: SettingsProps) {
   const activePrimary = config ? providerOrder(preferences, config)[0] : undefined
   const domainEntries = Object.entries(preferences.domains).sort(([a], [b]) => a.localeCompare(b))
@@ -87,7 +83,7 @@ export function Settings({ config, preferences, update, recentQueryCount, clearR
               </select>
             </div>
             <p className="hint">Provider changes apply to your next search. Pulpo can try your fallback when the default can’t complete it.</p>
-            {searchPrice > 0 && <p className="hint">The default provider costs {formatPrice(searchPrice)} per search from your shared Pulpo credits.</p>}
+            {searchPrice > 0 && <p className="hint">The default provider costs {formatSearchPrice(searchPrice)} per search from your shared Pulpo credits.</p>}
           </>
         ) : <p className="hint">Provider options appear when you’re signed in and search is available.</p>}
         {config?.places && <>
@@ -96,7 +92,7 @@ export function Settings({ config, preferences, update, recentQueryCount, clearR
             <input type="checkbox" checked={preferences.localPlaces}
               onChange={event => update({ ...preferences, localPlaces: event.target.checked })} />
           </label>
-          <p className="hint">Places searches use {placeProviderNames[config.places.provider]} and cost {formatPrice(config.places.priceMicros)} from your shared Pulpo credits when listings are found.</p>
+          <p className="hint">Places searches use {placeProviderNames[config.places.provider]} and cost {formatSearchPrice(config.places.priceMicros)} from your shared Pulpo credits when listings are found.</p>
         </>}
       </fieldset>
       <fieldset className="settings-group">

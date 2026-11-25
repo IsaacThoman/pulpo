@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SearchResponse } from './api'
 import { homeLocation } from './navigation'
@@ -19,6 +19,8 @@ const data: SearchResponse = {
   ],
   related: ['octopus tool use', 'octopus habitat'],
 }
+
+const docsResult = (path: string, title: string) => ({ url: `https://docs.python.org/${path}`, title, snippet: '' })
 
 describe('search result presentation', () => {
   it('highlights matching query words and displays a readable path and date', () => {
@@ -46,6 +48,67 @@ describe('search result presentation', () => {
     } finally {
       formatter.mockRestore()
     }
+  })
+
+  it('puts supplied video metadata near the title and keeps player loading opt-in', () => {
+    const videos: SearchResponse = { ...data, results: [
+      { url: 'https://www.youtube.com/watch?v=M7lc1UVf-VE', title: 'Adjust a rear derailleur', snippet: 'A workshop tutorial.',
+        imageUrl: 'https://images.example.org/video.webp', creatorName: 'Park Tool', duration: '05:31', publishedAt: '2026-11-24' },
+      { url: 'https://video.example.org/tutorial', title: 'Workshop tips', snippet: 'More bike maintenance tips.' },
+    ] }
+    const { container } = render(<Results data={videos} location={{ ...homeLocation, category: 'videos', query: 'bike' }}
+      preferences={loadPreferences()} setDomain={vi.fn()} onQuery={vi.fn()} />)
+    const first = screen.getByRole('heading', { name: 'Adjust a rear derailleur' }).closest('li')
+    expect(first?.querySelector('.result-media img')?.getAttribute('src')).toBe('https://images.example.org/video.webp')
+    expect(first?.querySelector('.video-result-runtime')?.textContent).toBe('05:31')
+    expect(first?.querySelector('.video-result-details')?.textContent).toContain('Park Tool · 05:31')
+    expect(first?.querySelector('.video-result-details time')?.getAttribute('datetime')).toBe('2026-11-24')
+    expect(screen.getByRole('button', { name: 'Watch here: Adjust a rear derailleur' })).toBeDefined()
+    expect(container.querySelector('iframe')).toBeNull()
+    const unsourced = screen.getByRole('heading', { name: 'Workshop tips' }).closest('li')
+    expect(unsourced?.querySelector('.video-result-details')).toBeNull()
+    expect(unsourced?.querySelector('.result-media')).toBeNull()
+  })
+
+  it('filters confirmed video runtimes on the current page and preserves ranking within each range', () => {
+    const videos: SearchResponse = { ...data, results: [
+      { url: 'https://video.example.org/short', title: 'Short tutorial', snippet: '', duration: '04:59' },
+      { url: 'https://video.example.org/medium', title: 'Medium tutorial', snippet: '', duration: '05:00' },
+      { url: 'https://video.example.org/shorter', title: 'Shorter tutorial', snippet: '', duration: '00:54' },
+      { url: 'https://video.example.org/long', title: 'Long tutorial', snippet: '', duration: '0:20:00' },
+      { url: 'https://video.example.org/unknown', title: 'Unknown runtime', snippet: '' },
+      { url: 'https://video.example.org/zero', title: 'Zero runtime', snippet: '', duration: '00:00' },
+    ] }
+    const props = { data: videos, preferences: loadPreferences(), setDomain: vi.fn(), onQuery: vi.fn(),
+      location: { ...homeLocation, category: 'videos' as const, query: 'tutorial' } }
+    const { container, rerender } = render(<Results {...props} />)
+    expect(screen.getByRole('link', { name: 'Unknown runtime' })).toBeDefined()
+    const select = screen.getByRole<HTMLSelectElement>('combobox', { name: 'Duration' })
+    fireEvent.change(select, { target: { value: 'short' } })
+    const visibleTitles = () => [...container.querySelectorAll('.result-link')].map(link => link.textContent)
+    expect(visibleTitles()).toEqual(['Short tutorial', 'Shorter tutorial'])
+    expect(screen.getByText('2 of 6 videos on this page · 2 without a reported duration')).toBeDefined()
+    fireEvent.change(select, { target: { value: 'medium' } })
+    expect(visibleTitles()).toEqual(['Medium tutorial'])
+    fireEvent.change(select, { target: { value: 'long' } })
+    expect(visibleTitles()).toEqual(['Long tutorial'])
+    rerender(<Results {...props} location={{ ...props.location, page: 2 }} />)
+    expect(select.value).toBe('any')
+    expect(visibleTitles()).toHaveLength(6)
+  })
+
+  it('leaves duration filtering out when most displayed videos have no reported runtime', () => {
+    const videos: SearchResponse = { ...data, results: [
+      { url: 'https://video.example.org/short', title: 'Short tutorial', snippet: '', duration: '04:59' },
+      { url: 'https://video.example.org/invalid', title: 'Invalid runtime', snippet: '', duration: '4:65' },
+      { url: 'https://video.example.org/unknown', title: 'Unknown runtime', snippet: '' },
+    ] }
+    render(<Results data={videos} location={{ ...homeLocation, category: 'videos', query: 'tutorial' }}
+      preferences={loadPreferences()} setDomain={vi.fn()} onQuery={vi.fn()} />)
+    expect(screen.queryByRole('combobox', { name: 'Duration' })).toBeNull()
+    expect(screen.getByText('04:59')).toBeDefined()
+    expect(screen.queryByText('4:65')).toBeNull()
+    expect(screen.getByRole('link', { name: 'Unknown runtime' })).toBeDefined()
   })
 
   it('sends only a public hostname for lazy favicons and shows a local fallback on error', () => {
@@ -97,6 +160,59 @@ describe('search result presentation', () => {
     rerender(<Results data={duplicates} location={{ ...homeLocation, query: 'octopus site:github.com' }}
       preferences={preferences} setDomain={vi.fn()} onQuery={vi.fn()} />)
     expect(screen.queryByRole('list', { name: 'More from github.com' })).toBeNull()
+  })
+
+  it('puts nearby versions of the same documentation behind the top-ranked result on site searches', async () => {
+    const docs: SearchResponse = { ...data, results: [
+      docsResult('3/library/tomllib.html', 'tomllib'),
+      docsResult('3.11/library/tomllib.html', 'Python 3.11 tomllib'),
+      docsResult('3/library/json.html', 'json'),
+      docsResult('release/3.11.0/library/tomllib.html', 'Python 3.11.0 tomllib'),
+      docsResult('3.12/library/tomllib.html#exceptions', 'tomllib exceptions'),
+      docsResult('3.12/library/tomllib.html', 'Python 3.12 tomllib'),
+    ] }
+    const preferences = { ...loadPreferences(), newTab: true }
+    const { container } = render(<Results data={docs} location={{ ...homeLocation, query: 'site:docs.python.org "tomllib"' }}
+      preferences={preferences} setDomain={vi.fn()} onQuery={vi.fn()} />)
+    expect([...container.querySelectorAll('.result-link')].map(link => link.textContent)).toEqual(['tomllib', 'json', 'tomllib exceptions'])
+    expect(firstVisibleResultUrl(docs, preferences)?.href).toBe(docs.results[0].url)
+    const summary = screen.getByText('Other versions (3)')
+    fireEvent.click(summary)
+    const link = await screen.findByRole('link', { name: 'Version 3.11' })
+    expect(link.getAttribute('target')).toBe('_blank')
+    const versions = screen.getByRole('list', { name: 'Other versions of tomllib' })
+    expect([...versions.querySelectorAll('a')].map(result => result.href)).toEqual([docs.results[1].url, docs.results[3].url, docs.results[5].url])
+    fireEvent.click(summary)
+    await waitFor(() => expect(container.querySelector('a[aria-label="Version 3.11"]')).toBeNull())
+  })
+
+  it.each(['tomllib python3.11', 'tomllib in 3.11 vs 3.12', 'compare tomllib releases'])('keeps distinct versions visible for %s', query => {
+    const docs: SearchResponse = { ...data, results: [
+      docsResult('3.11/library/tomllib.html', 'Python 3.11 tomllib'),
+      docsResult('3.12/library/tomllib.html', 'Python 3.12 tomllib'),
+    ] }
+    render(<Results data={docs} location={{ ...homeLocation, query: `site:docs.python.org ${query}` }}
+      preferences={loadPreferences()} setDomain={vi.fn()} onQuery={vi.fn()} />)
+    expect(screen.getByRole('link', { name: 'Python 3.11 tomllib' })).toBeDefined()
+    expect(screen.getByRole('link', { name: 'Python 3.12 tomllib' })).toBeDefined()
+    expect(screen.queryByText(/Other versions/)).toBeNull()
+  })
+
+  it('avoids grouping into a distant result or treating numbers in regular site paths as versions', () => {
+    const docs: SearchResponse = { ...data, results: [
+      docsResult('3/library/tomllib.html', 'tomllib'),
+      docsResult('3/library/json.html', 'json'),
+      docsResult('3/library/tarfile.html', 'tarfile'),
+      docsResult('3/library/zipfile.html', 'zipfile'),
+      docsResult('3.12/library/tomllib.html', 'Python 3.12 tomllib'),
+      { url: 'https://example.com/1/lessons/toml', title: 'Lesson 1', snippet: '' },
+      { url: 'https://example.com/2/lessons/toml', title: 'Lesson 2', snippet: '' },
+    ] }
+    render(<Results data={docs} location={{ ...homeLocation, query: 'toml site:docs.python.org site:example.com' }}
+      preferences={loadPreferences()} setDomain={vi.fn()} onQuery={vi.fn()} />)
+    expect(screen.getByRole('link', { name: 'Python 3.12 tomllib' })).toBeDefined()
+    expect(screen.getByRole('link', { name: 'Lesson 2' })).toBeDefined()
+    expect(screen.queryByText(/Other versions/)).toBeNull()
   })
 
   it('shows sourced knowledge facts and respects the result source preference', () => {

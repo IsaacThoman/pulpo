@@ -36,6 +36,17 @@ it('omits a link without a bounded query and usable sources', () => {
   expect(buildAskPulpoUrl('https://pulpo.baby', 'Mozilla', [{ url: 'https://private.example' }])).toBeUndefined()
 })
 
+it('accepts its own handoff for a long encoded query and five encoded sources', () => {
+  const query = 'あ'.repeat(500)
+  const sources = Array.from({ length: 5 }, (_, index) => {
+    const base = `https://example.org/${index}?`
+    return base + '='.repeat(512 - base.length)
+  })
+  const url = new URL(buildAskPulpoUrl('https://pulpo.baby', query, sources.map(url => ({ url })))!)
+  expect(url.hash.length).toBeGreaterThan(12_000)
+  expect(readSearchHandoff(url.hash)).toEqual({ query, sources })
+})
+
 it('prioritizes distinct sites and treats article and abstract links for the same paper as one source', () => {
   const abstract = 'https://www.sciencedirect.com/science/article/abs/pii/S0166046220302581'
   const paper = 'https://www.sciencedirect.com/science/article/pii/S0166046220302581'

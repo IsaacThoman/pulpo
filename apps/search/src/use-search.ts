@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, SearchApiError, type SearchInput, type SearchResponse } from './api'
+import { api, SearchApiError, type SearchRequest, type SearchResponse } from './api'
 
 interface CacheEntry {
   data: SearchResponse
@@ -12,7 +12,7 @@ type SearchState =
   | { status: 'success'; data: SearchResponse }
   | { status: 'error'; error: SearchApiError }
 
-export function useSearch(userId: string | undefined, search: SearchInput | null) {
+export function useSearch(userId: string | undefined, search: SearchRequest | null) {
   const cache = useRef(new Map<string, CacheEntry>())
   const [retry, setRetry] = useState(0)
   const [response, setResponse] = useState<{ key: string; value: SearchState }>()
@@ -31,7 +31,15 @@ export function useSearch(userId: string | undefined, search: SearchInput | null
       return
     }
     const controller = new AbortController()
-    api.search(JSON.parse(serialized), controller.signal).then(data => {
+    const input = JSON.parse(serialized) as SearchRequest
+    let request: Promise<SearchResponse>
+    if ('reusable' in input) {
+      const { reusable: _reusable, ...fields } = input
+      request = api.reusableImages(fields, controller.signal)
+    } else {
+      request = api.search(input, controller.signal)
+    }
+    request.then(data => {
       if (controller.signal.aborted) return
       cache.current.delete(key)
       if (cache.current.size >= 20) {

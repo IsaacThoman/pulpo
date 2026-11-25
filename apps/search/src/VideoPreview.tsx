@@ -36,7 +36,7 @@ export function VideoPreview({ url, title, newTab }: VideoPreviewProps) {
 
   return (
     <>
-      <button type="button" ref={opener} className="secondary-button video-preview-trigger"
+      <button type="button" ref={opener} className="text-button video-preview-trigger"
         aria-label={'Watch here: ' + title} aria-haspopup="dialog" onClick={() => setOpen(true)}>
         <Play size={14} aria-hidden="true" />
         Watch here

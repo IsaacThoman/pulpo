@@ -1,15 +1,21 @@
 import type { SearchDateRange } from '@pulpo/contracts/search'
 import type { CurrencyQuery, CurrencyResponse } from './currency'
 import type { PlaceProvider, PlaceQuery, PlaceResponse } from './places'
+import type { ReusableImageFilters } from './reusable-images'
 
 export type Provider = 'kagi' | 'firecrawl'
 export type Category = 'web' | 'news' | 'images' | 'videos' | 'podcasts'
 export type SearchDate = 'day' | 'week' | 'month' | 'year'
 export type SearchScope = 'developer' | 'discussions' | 'academic'
 
-export const providerNames: Record<Provider, string> = {
+export const providerNames: Record<Provider | 'openverse', string> = {
   kagi: 'Kagi',
   firecrawl: 'Firecrawl',
+  openverse: 'Openverse',
+}
+
+export function formatSearchPrice(micros: number) {
+  return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 6 }).format(micros / 1_000_000)
 }
 
 export interface SearchInput {
@@ -25,6 +31,39 @@ export interface SearchInput {
   page?: number
 }
 
+export interface ReusableImagesInput extends ReusableImageFilters {
+  query: string
+  page?: number
+}
+
+export type SearchRequest = SearchInput | (ReusableImagesInput & { reusable: true })
+
+export interface ImageLicense {
+  code: string
+  version?: string
+  url: string
+  creator?: string
+  creatorUrl?: string
+  attribution?: string
+}
+
+interface ReusableImagesResponse {
+  provider: 'openverse'
+  hasMore: boolean
+  results: Array<{
+    title: string
+    imageUrl: string
+    thumbnailUrl: string
+    sourceUrl: string
+    license: Pick<ImageLicense, 'code' | 'version' | 'url'>
+    creator?: string
+    creatorUrl?: string
+    attribution?: string
+    width?: number
+    height?: number
+  }>
+}
+
 export interface SearchResult {
   url: string
   title: string
@@ -32,6 +71,7 @@ export interface SearchResult {
   imageUrl?: string
   thumbnailUrl?: string
   imageDimensions?: { width: number; height: number }
+  imageLicense?: ImageLicense
   duration?: string
   creatorName?: string
   publishedAt?: string
@@ -45,12 +85,18 @@ export interface Knowledge {
 }
 
 export interface SearchResponse {
-  provider: Provider
+  provider: Provider | 'openverse'
   results: SearchResult[]
   related?: string[]
   answer?: { title: string; snippet: string; url?: string }
   knowledge?: Knowledge
   hasMore?: boolean
+}
+
+export interface QuickAnswerResponse {
+  provider: 'kagi'
+  answer: string
+  references: Array<{ index: number; url: string; title?: string; snippet?: string }>
 }
 
 export interface ProviderConfig {
@@ -70,6 +116,8 @@ export interface SearchConfig {
   weather?: boolean
   currency?: boolean
   places?: { provider: PlaceProvider; priceMicros: number }
+  quickAnswer?: { provider: 'kagi'; priceMicros: number }
+  reusableImages?: true
 }
 
 export interface WeatherPlace { name: string; admin?: string; country: string; timeZone: string }
@@ -152,6 +200,19 @@ export const api = {
   weatherAlerts: (location: string, signal?: AbortSignal) => request<WeatherAlerts>('/weather/alerts?' + new URLSearchParams({ location }), { signal }),
   currency: (query: CurrencyQuery, signal?: AbortSignal) => post<CurrencyResponse>('/currency', query, signal),
   places: (query: PlaceQuery, signal?: AbortSignal) => post<PlaceResponse>('/places', query, signal),
+  quickAnswer: (query: string, signal?: AbortSignal) => post<QuickAnswerResponse>('/quick-answer', { query }, signal),
+  reusableImages: async (input: ReusableImagesInput, signal?: AbortSignal): Promise<SearchResponse> => {
+    const response = await post<ReusableImagesResponse>('/reusable-images', input, signal)
+    return {
+      provider: response.provider,
+      hasMore: response.hasMore,
+      results: response.results.map(({ title, imageUrl, thumbnailUrl, sourceUrl, license, creator, creatorUrl, attribution, width, height }) => ({
+        title, imageUrl, thumbnailUrl, url: sourceUrl, snippet: '',
+        ...(width && height ? { imageDimensions: { width, height } } : {}),
+        imageLicense: { ...license, creator, creatorUrl, attribution },
+      })),
+    }
+  },
   appearance: (signal?: AbortSignal) => request<SearchAppearance>('/appearance', { signal }),
   session: (signal?: AbortSignal) => request<{ user: SearchUser | null }>('/auth/session', { signal }),
   exchange: (code: string, codeVerifier: string) => post<{ user: SearchUser }>('/auth/exchange', { code, codeVerifier }),

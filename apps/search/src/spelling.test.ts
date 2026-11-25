@@ -31,4 +31,31 @@ describe('search spelling suggestions', () => {
     const copy = { ...sameHost, results: [sample.results[0], { ...sample.results[0], url: sample.results[0].url + '#definition' }] }
     expect(suggestedSpelling('equidistnat definition', copy)).toBeUndefined()
   })
+
+  it('corrects a pair of typos together while preserving the original intent', () => {
+    const data: SearchResponse = {
+      provider: 'kagi',
+      results: [
+        { title: 'Block Editor Handbook – WordPress Developer Resources', url: 'https://developer.wordpress.org/block-editor/', snippet: 'Learn about the Gutenberg editor.' },
+        { title: 'The unofficial block editor handbook for WordPress', url: 'https://blockhandbook.com/', snippet: '' },
+        { title: 'Say Hello to Gutenberg, the WordPress Editor', url: 'https://wordpress.org/gutenberg/', snippet: '' },
+      ],
+      related: ['wrodpress gutenburg handbook pdf', 'wrodpress gutenburg handbook plugin',
+        'wrodpress gutenburg handbook 2024', 'wrodpress gutenburg handbooks', 'wrodpress gutenburg handbook 2023', 'wordpress gutenberg guide'],
+    }
+    expect(suggestedSpelling('wrodpress gutenburg handbook', data)).toBe('wordpress gutenberg handbook')
+    expect(suggestedSpelling('wrodpress gutenburg handbook', { ...data, related: undefined })).toBe('wordpress gutenberg handbook')
+    expect(suggestedSpelling('wrodpress gutenburg handbook', { ...data, results: data.results.slice(0, 2) }))
+      .toBe('wordpress gutenburg handbook')
+  })
+
+  it('can infer a correction while retaining an exact alphanumeric course code', () => {
+    const data: SearchResponse = { provider: 'kagi', results: [
+      { title: 'Stanford CS229 – Complete Study Guide', url: 'https://study.example.org/cs229', snippet: '' },
+      { title: 'Stanford Machine Learning Course Syllabus', url: 'https://community.example.net/cs229', snippet: 'Stanford CS229 course.' },
+    ] }
+    expect(suggestedSpelling('Stantford online machine learning cs229 syllabus', data))
+      .toBe('stanford online machine learning cs229 syllabus')
+    expect(suggestedSpelling('Stantford online machine learning "cs229" syllabus', data)).toBeUndefined()
+  })
 })

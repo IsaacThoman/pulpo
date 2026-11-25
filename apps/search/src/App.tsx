@@ -13,7 +13,10 @@ import { categories, homeLocation, localMapSearch, MAX_QUERY_LENGTH, parseSearch
 import { PlacesAnswer, PlacesLocation } from './PlacesAnswer'
 import { placeIntent } from './places'
 import { compatibleProviders, loadPreferences, preferencesStorageKey, providerOrder, savePreferences, type DomainRule, type Preferences } from './preferences'
-import { firstVisibleResultUrl } from './result-order'
+import { QuickAnswer } from './QuickAnswer'
+import { ReusableImageControls } from './ReusableImageControls'
+import type { ReusableImageFilters } from './reusable-images'
+import { firstVisibleResultUrl, groupResults, resultEntries, visibleEntries } from './result-order'
 import { useRecentQueries } from './recent-queries'
 import { Results } from './Results'
 import { SearchBox } from './SearchBox'
@@ -32,6 +35,7 @@ const smiley = new URL('../../web/public/pulpo-smiley.png', import.meta.url).hre
 const labels = { web: 'Web', images: 'Images', news: 'News', videos: 'Videos', podcasts: 'Podcasts' } as const
 const icons = { web: Globe2, images: Image, news: Newspaper, videos: Video, podcasts: Podcast }
 const isBangDiscovery = (query: string) => /^[!\s]+$/u.test(query)
+const answerPath = (location: SearchLocation) => searchPath({ ...location, page: undefined, provider: undefined })
 
 function PulpoMark({ size }: { size: number }) {
   return <img src={smiley} width={size} height={size} alt="" className="pulpo-mark" />
@@ -70,6 +74,7 @@ export function App({ callback }: { callback: Callback }) {
   const [config, setConfig] = useState<SearchConfig>()
   const [configError, setConfigError] = useState('')
   const [configAttempt, setConfigAttempt] = useState(0)
+  const [answerWithWeb, setAnswerWithWeb] = useState<{ userId: string; path: string; expanded: boolean }>()
   const [, refreshInstantAnswer] = useState(0)
   const input = useRef<HTMLInputElement>(null)
   const activePreferences = useRef(preferences)
@@ -85,6 +90,7 @@ export function App({ callback }: { callback: Callback }) {
       setLocation(next)
       setDraft(firstResultQuery(next.query) ?? next.query)
       setSearchPreferences(activePreferences.current)
+      setAnswerWithWeb(previous => previous?.path === answerPath(next) ? previous : undefined)
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
@@ -136,10 +142,12 @@ export function App({ callback }: { callback: Callback }) {
   const luckyQuery = bang ? null : firstResultQuery(location.query)
   const bangDiscovery = isBangDiscovery(location.query)
   const view = useMemo(() => bangDiscovery ? homeLocation
-    : luckyQuery ? { ...location, query: luckyQuery, category: 'web' as const, page: undefined } : location,
+    : luckyQuery ? { ...location, query: luckyQuery, category: 'web' as const, page: undefined, reusableImages: undefined } : location,
   [bangDiscovery, luckyQuery, location])
+  const companion = answerWithWeb?.userId === user?.id && answerWithWeb?.path === answerPath(view) ? answerWithWeb : undefined
   const allowAnswers = !bang && !luckyQuery && view.category === 'web'
-    && !view.scope && !view.region && !view.date && !view.dateRange && !view.invalidDateRange && !view.web && !view.page && !view.provider
+    && !view.scope && !view.region && !view.date && !view.dateRange && !view.invalidDateRange && !view.web
+    && (companion?.expanded || (!view.page && !view.provider))
   const localAnswer = allowAnswers ? instantAnswer(view.query) : undefined
   const currencyQuery = allowAnswers && !localAnswer && config?.currency ? parseCurrencyQuery(view.query) : undefined
   const currencyQuote = useCurrencyQuote(currencyQuery, user?.id)
@@ -153,13 +161,18 @@ export function App({ callback }: { callback: Callback }) {
   const localIntent = allowAnswers && config?.places && searchPreferences.localPlaces && !forecastLocation && !localAnswer && !currencyQuery
     ? placeIntent(view.query) : undefined
   const choosePlaceLocation = user ? localIntent?.needsLocation : undefined
-  const places = usePlaces(choosePlaceLocation ? undefined : localIntent, user?.id)
-  const placesPending = !!(user && localIntent && !choosePlaceLocation && places === undefined)
+  const { result: placeResult, retry: retryPlaces } = usePlaces(choosePlaceLocation ? undefined : localIntent, user?.id)
+  const placesError = placeResult instanceof SearchApiError ? placeResult : undefined
+  const places = placeResult instanceof SearchApiError ? undefined : placeResult
+  const placesPending = !!(user && localIntent && !choosePlaceLocation && placeResult === undefined)
   const showPlaces = !!(places && (places.results.length || localIntent?.openNow))
   const showUnavailableForecast = forecast?.status === 'unavailable'
   const answerPending = forecastPending || currencyPending || placesPending
-  const showAnswer = !!localAnswer || showForecast || showCurrency || showPlaces || !!choosePlaceLocation || showUnavailableForecast
-  const mapSearch = view.category === 'web' && !view.scope && !luckyQuery && !showAnswer && !answerPending
+  const showAnswer = !!localAnswer || showForecast || showCurrency || showPlaces || !!choosePlaceLocation || showUnavailableForecast || !!placesError
+  const keepCompanionLookup = !!companion && (showPlaces || forecast?.status === 'forecast')
+  const webAlongsideAnswer = keepCompanionLookup && companion?.expanded === true
+  const showWebResults = !view.invalidDateRange && (webAlongsideAnswer || (!showAnswer && !forecastPending && !placesPending))
+  const mapSearch = view.category === 'web' && !view.scope && !luckyQuery && (!showAnswer || placesError) && !answerPending
     ? localMapSearch(view.query) : undefined
   const refreshAt = localAnswer?.refreshAt
   useEffect(() => {
@@ -178,13 +191,17 @@ export function App({ callback }: { callback: Callback }) {
   const chosen = config?.providers.filter(provider => order.includes(provider.id)) ?? []
   const compatible = config ? compatibleProviders(config, order, view) : []
   const categoryProviders = chosen.filter(provider => provider.categories.includes(view.category))
-  const enabledCategories = categories.filter(category => chosen.some(provider => provider.categories.includes(category)))
+  const enabledCategories = categories.filter(category => chosen.some(provider => provider.categories.includes(category))
+    || (category === 'images' && config?.reusableImages))
   const mediaCategories = enabledCategories.filter(category => category === 'videos' || category === 'podcasts')
   const filterDates = [...new Set(categoryProviders.flatMap(provider => provider.dates))]
   const filterCustomDates = categoryProviders.some(provider => provider.customDateRanges?.includes(view.category))
   const filterRegion = categoryProviders.some(provider => provider.region)
   const recoveryProviders = alternatives.filter(provider => !order.includes(provider.id))
-  const { state, refresh } = useSearch(user?.id, view.query && compatible.length && !bang && !showAnswer && !answerPending && !view.invalidDateRange ? {
+  const reuse = view.category === 'images' ? view.reusableImages : undefined
+  const { state, refresh } = useSearch(user?.id, reuse ? config?.reusableImages && view.query.length <= 200 && !view.invalidDateRange ? {
+    reusable: true, query: view.query, page: view.page, ...reuse,
+  } : null : view.query && compatible.length && !bang && (!showAnswer || keepCompanionLookup) && !answerPending && !view.invalidDateRange ? {
     query: view.query,
     providers: order.filter(id => compatible.some(provider => provider.id === id)),
     category: view.category,
@@ -205,7 +222,8 @@ export function App({ callback }: { callback: Callback }) {
     ...state.data, related: state.data.related?.filter(query => query !== spelling),
   } : imageBrowse.data
   const askUrl = state.status === 'success' && view.category === 'web' && !luckyQuery
-    ? buildAskPulpoUrl(pulpoOrigin, view.query, state.data.results) : undefined
+    ? buildAskPulpoUrl(pulpoOrigin, view.query, groupResults(visibleEntries(resultEntries(state.data, preferences), false), view.query)
+      .flatMap(({ lead, additional }) => [lead.result, ...additional.map(({ result }) => result)])) : undefined
   const waitingForSession = user === undefined
   const isResults = Boolean(view.query)
 
@@ -248,11 +266,11 @@ export function App({ callback }: { callback: Callback }) {
   }, [bangUrl])
 
   useEffect(() => {
-    if (state.status === 'error' && state.error.status === 401 && user) {
+    if (user && (placesError?.status === 401 || (state.status === 'error' && state.error.status === 401))) {
       setUser(null)
       setConfig(undefined)
     }
-  }, [state, user])
+  }, [placesError, state, user])
 
   useEffect(() => {
     function closeAccountMenu(event: PointerEvent) {
@@ -321,6 +339,17 @@ export function App({ callback }: { callback: Callback }) {
     setLocation(next)
     setDraft(firstResultQuery(next.query) ?? next.query)
     setSearchPreferences(preferences)
+    setAnswerWithWeb(previous => previous?.path === answerPath(next) ? previous : undefined)
+  }
+
+  function toggleAnswerWeb() {
+    if (!user) return
+    if (webAlongsideAnswer && (view.page || view.provider)) {
+      go({ ...view, page: undefined, provider: undefined })
+      setAnswerWithWeb(undefined)
+      return
+    }
+    setAnswerWithWeb({ userId: user.id, path: answerPath(view), expanded: !webAlongsideAnswer })
   }
 
   function changeCategory(category: SearchLocation['category']) {
@@ -329,6 +358,7 @@ export function App({ callback }: { callback: Callback }) {
     const date = view.date
     const matchingDate = providers.filter(provider => (!date || provider.dates.includes(date))
       && (!view.dateRange || provider.customDateRanges?.includes(category)))
+    const reusableImages = category === 'images' && !providers.length && config?.reusableImages ? {} : undefined
     go({
       ...view,
       category,
@@ -337,8 +367,14 @@ export function App({ callback }: { callback: Callback }) {
       date: matchingDate.length ? date : '',
       dateRange: matchingDate.length ? view.dateRange : undefined,
       invalidDateRange: undefined,
+      reusableImages,
       region: (matchingDate.length ? matchingDate : providers).some(provider => provider.region) ? view.region : '',
     })
+  }
+
+  function changeReusableImages(filters: ReusableImageFilters | undefined) {
+    go({ ...view, reusableImages: filters, date: '', dateRange: undefined, invalidDateRange: undefined,
+      region: '', provider: undefined, page: undefined })
   }
 
   function onSearch(query: string) {
@@ -361,6 +397,7 @@ export function App({ callback }: { callback: Callback }) {
     const restoreInput = !isResults && input.current === document.activeElement
       && window.matchMedia?.('(pointer: fine)').matches
     go({ ...view, query: trimmed, category: firstResultQuery(trimmed) ? 'web' : view.category,
+      ...(firstResultQuery(trimmed) ? { reusableImages: undefined } : {}),
       invalidDateRange: undefined, web: undefined, provider: undefined, page: undefined })
     if (restoreInput) requestAnimationFrame(() => input.current?.focus())
   }
@@ -502,11 +539,15 @@ export function App({ callback }: { callback: Callback }) {
                   </select>
                   <ChevronDown size={13} aria-hidden="true" />
                 </label>}
-                {!showAnswer && !answerPending && <SearchFilters date={view.date} dateRange={view.dateRange} region={view.region}
+                {!showAnswer && !answerPending && !reuse && <SearchFilters date={view.date} dateRange={view.dateRange} region={view.region}
                   dates={filterDates} allowCustomDates={filterCustomDates} allowRegion={filterRegion}
                   onApply={filters => go({ ...view, ...filters, invalidDateRange: undefined, page: undefined })} />}
               </div>
             </div>
+            {view.category === 'images' && !!user && config?.reusableImages && (
+              <ReusableImageControls active={!!reuse} filters={reuse ?? {}}
+                onToggle={() => changeReusableImages(reuse ? undefined : {})} onFilters={changeReusableImages} />
+            )}
             {authError && <p className="form-error results-auth-error" role="alert">{authError}</p>}
             {view.invalidDateRange ? (
               <section className="search-message" role="alert">
@@ -529,7 +570,8 @@ export function App({ callback }: { callback: Callback }) {
               </section>
             ) : showForecast ? (
               <WeatherAnswer response={forecast} alerts={alerts} onLocation={place => onSearch('weather in ' + place)}
-                onWeb={() => go({ ...view, web: true })} />
+                webExpanded={forecast.status === 'forecast' ? webAlongsideAnswer : undefined}
+                onWeb={forecast.status === 'forecast' ? toggleAnswerWeb : () => go({ ...view, web: true })} />
             ) : showCurrency ? (
               <CurrencyAnswer key={view.query} quote={currencyQuote} onConvert={onSearch} onWeb={() => go({ ...view, web: true })} />
             ) : showUnavailableForecast ? (
@@ -542,13 +584,26 @@ export function App({ callback }: { callback: Callback }) {
               <PlacesLocation onLocation={area => onSearch([choosePlaceLocation.term, choosePlaceLocation.connector, area,
                 localIntent?.openNow ? 'open now' : ''].filter(Boolean).join(' '))} onWeb={() => go({ ...view, web: true })} />
             ) : showPlaces && places ? (
-              <PlacesAnswer key={view.query} response={places} openNow={!!localIntent?.openNow} onWeb={() => go({ ...view, web: true })} />
+              <PlacesAnswer key={view.query} response={places} openNow={!!localIntent?.openNow}
+                webExpanded={webAlongsideAnswer} onWeb={toggleAnswerWeb} />
+            ) : placesError && placesError.status !== 401 ? (
+              <section className="search-message" role="alert">
+                <h2>{placesError.status === 402 ? 'Places search limit reached' : 'Couldn’t load places'}</h2>
+                <p>{placesError.message}</p>
+                <div className="empty-actions">
+                  {placesError.status === 402
+                    ? <a className="secondary-button" href={pulpoOrigin}>Open Pulpo</a>
+                    : <button className="secondary-button" onClick={retryPlaces}>Try again</button>}
+                  <button className="secondary-button" onClick={() => go({ ...view, web: true })}>Search the web</button>
+                </div>
+              </section>
             ) : forecastPending || placesPending ? (
               <section className="search-message">
                 <p role="status">{forecastPending ? 'Checking forecast…' : 'Finding places…'}</p>
                 <button className="secondary-button" onClick={() => go({ ...view, web: true })}>Search the web</button>
               </section>
-            ) : bang || waitingForSession || currencyPending ? <LoadingResults firstResult={Boolean(luckyQuery)} /> : user === null ? (
+            ) : null}
+            {showWebResults && (bang || waitingForSession || currencyPending ? <LoadingResults firstResult={Boolean(luckyQuery)} /> : user === null ? (
               <section className="search-message">
                 <h2>Sign in to search</h2>
                 <p>Use your Pulpo account and shared credits.</p>
@@ -565,12 +620,18 @@ export function App({ callback }: { callback: Callback }) {
                 <p>{configError}</p>
                 <button className="secondary-button" onClick={() => { setConfigError(''); setConfigAttempt(value => value + 1) }}>Try again</button>
               </section>
-            ) : !config || state.status === 'loading' ? <LoadingResults firstResult={Boolean(luckyQuery)} /> : !order.length ? (
+            ) : !config || state.status === 'loading' ? <LoadingResults firstResult={Boolean(luckyQuery)} /> : reuse && (!config.reusableImages || view.query.length > 200) ? (
+              <section className="search-message">
+                <h2>{config.reusableImages ? 'Shorten your image query' : 'Reusable images are unavailable'}</h2>
+                {config.reusableImages && <p>Reusable images supports up to 200 characters.</p>}
+                <button className="secondary-button" onClick={() => changeReusableImages(undefined)}>Search all images</button>
+              </section>
+            ) : !reuse && !order.length ? (
               <section className="search-message"><h2>No search providers available</h2>
                 {view.provider ? <button className="secondary-button" onClick={() => go({ ...view, provider: undefined })}>Use default providers</button>
                   : <p>Ask your Pulpo administrator to enable a search provider.</p>}
               </section>
-            ) : !compatible.length ? (
+            ) : !reuse && !compatible.length ? (
               <section className="search-message"><h2>These filters are unavailable</h2><p>Try Web results with no filters.</p>
                 <button className="secondary-button" onClick={() => go({
                   ...view, category: 'web', date: '', dateRange: undefined, region: '', page: undefined,
@@ -578,7 +639,7 @@ export function App({ callback }: { callback: Callback }) {
               </section>
             ) : state.status === 'success' && luckyQuery ? <LoadingResults firstResult /> : state.status === 'success' ? (
               <>
-                <div className="results-summary">
+                {!reuse && <div className="results-summary">
                   {askUrl && <a className="text-button ask-pulpo-link" href={askUrl} target="_blank" rel="noopener noreferrer">
                     <Sparkles size={14} aria-hidden="true" /> Ask Pulpo <ExternalLink size={12} aria-hidden="true" />
                   </a>}
@@ -603,10 +664,13 @@ export function App({ callback }: { callback: Callback }) {
                       }}>Provider settings</button>
                     </div>
                   </details>
-                </div>
+                </div>}
                 {spelling && <p className="spelling-suggestion">
                   Did you mean <button className="text-button" onClick={() => onSearch(spelling)}>{spelling}</button>?
                 </p>}
+                {allowAnswers && config.quickAnswer && (
+                  <QuickAnswer key={searchPath(view)} query={view.query} priceMicros={config.quickAnswer.priceMicros} pulpoOrigin={pulpoOrigin} />
+                )}
                 {!state.data.results.length && !state.data.answer && !state.data.knowledge ? (
                   <section className="search-message">
                     <h2>No results found</h2>
@@ -647,7 +711,7 @@ export function App({ callback }: { callback: Callback }) {
                   </div>
                 )}
               </section>
-            ) : <LoadingResults />}
+            ) : <LoadingResults />)}
           </div>
         </main>
       )}

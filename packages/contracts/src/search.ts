@@ -24,7 +24,9 @@ export const SEARCH_HANDOFF_PATH = '/search/ask'
 const MAX_HANDOFF_QUERY_LENGTH = 500
 const MAX_HANDOFF_SOURCE_COUNT = 5
 const MAX_HANDOFF_SOURCE_LENGTH = 512
-const MAX_HANDOFF_FRAGMENT_LENGTH = 12_000
+// A UTF-16 unit can become nine percent-encoded characters. Canonical HTTP URLs are ASCII.
+const MAX_HANDOFF_FRAGMENT_LENGTH = '#q='.length + MAX_HANDOFF_QUERY_LENGTH * 9
+  + MAX_HANDOFF_SOURCE_COUNT * ('&source='.length + MAX_HANDOFF_SOURCE_LENGTH * 3)
 
 export interface SearchHandoff {
   query: string

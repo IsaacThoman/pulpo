@@ -93,6 +93,11 @@ name or publish a host port, since those prevent rolling replacement.
    those provider keys, search prices, and each user's existing Pulpo balance
    and limits. Users can change provider order in Search settings.
 
+To offer an interactive Places map, review and accept the
+[OpenFreeMap terms](https://openfreemap.org/tos/) and set the Search Docker build
+argument `VITE_SEARCH_PLACES_MAP_STYLE_URL=https://tiles.openfreemap.org/styles/positron`.
+The browser requests map tiles from OpenFreeMap when a user opens the map.
+
 ### Local Search
 
 With local Postgres and Redis running, set `PUBLIC_URL=http://localhost:5173`,

@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { safeHttpUrl } from './navigation'
 import { ResultImage } from './ResultImage'
 import type { ResultWithUrl } from './result-order'
+import './reusable-images.css'
 
 interface ImageViewerProps {
   entries: readonly ResultWithUrl[]
@@ -10,6 +11,13 @@ interface ImageViewerProps {
   opener: HTMLButtonElement
   newTab: boolean
   close: () => void
+}
+
+function licenseLabel(code: string, version: string | undefined) {
+  const abbreviation = code.toUpperCase()
+  const name = /^BY(?:-(?:SA|ND|NC|NC-SA|NC-ND))?$/.test(abbreviation)
+    ? `CC ${abbreviation}` : abbreviation === 'PDM' ? 'Public Domain Mark' : abbreviation === 'CC0' ? 'CC0' : code
+  return version ? `${name} ${version}` : name
 }
 
 export function ImageViewer({ entries, startIndex, opener, newTab, close }: ImageViewerProps) {
@@ -37,8 +45,11 @@ export function ImageViewer({ entries, startIndex, opener, newTab, close }: Imag
 
   if (!entry) return null
   const title = entry.result.title || entry.host
-  const { imageUrl, thumbnailUrl, imageDimensions } = entry.result
+  const { imageUrl, thumbnailUrl, imageDimensions, imageLicense } = entry.result
   const original = safeHttpUrl(imageUrl)
+  const license = imageLicense && licenseLabel(imageLicense.code, imageLicense.version)
+  const licenseUrl = safeHttpUrl(imageLicense?.url)
+  const creatorUrl = safeHttpUrl(imageLicense?.creatorUrl)
   const target = newTab ? '_blank' : undefined
 
   return (
@@ -92,12 +103,25 @@ export function ImageViewer({ entries, startIndex, opener, newTab, close }: Imag
           <div className="image-viewer-source">
             <h3>{title}</h3>
             <span>{entry.host}{imageDimensions && ' · ' + imageDimensions.width + ' × ' + imageDimensions.height}</span>
+            {imageLicense && <div className="image-viewer-license" role="group" aria-label="Image reuse details">
+              <p><strong>Reported license</strong>{' '}
+                {licenseUrl ? <a href={licenseUrl.href} target={target} rel="noreferrer">{license}</a> : license}
+                {imageLicense.creator && <>{' · By '}{creatorUrl
+                  ? <a href={creatorUrl.href} target={target} rel="noreferrer">{imageLicense.creator}</a>
+                  : imageLicense.creator}</>}
+              </p>
+              {imageLicense.attribution && <details>
+                <summary>Attribution</summary>
+                <p>{imageLicense.attribution}</p>
+              </details>}
+              <p>Check the original source before reusing this image.</p>
+            </div>}
           </div>
           <div className="image-viewer-actions">
             {original && <a className="secondary-button" href={original.href} target="_blank" rel="noreferrer" title="Opens in a new tab">
               Open image <ExternalLink size={13} aria-hidden="true" />
             </a>}
-            <a className="button" href={entry.url.href} target={target} rel="noreferrer">Visit site</a>
+            <a className="button" href={entry.url.href} target={target} rel="noreferrer">{imageLicense ? 'Visit original source' : 'Visit site'}</a>
           </div>
         </footer>
       </div>
