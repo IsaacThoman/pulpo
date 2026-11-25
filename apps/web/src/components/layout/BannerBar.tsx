@@ -12,11 +12,11 @@ import { useSignupPromoOffer } from './signup-promo'
  * Floats active admin banners, and any signup promo, over the top of the main column, just below page headers.
  * z-25 keeps them above the chat header (z-20) and under the mobile drawer backdrop (z-30).
  */
-export function BannerBar() {
+export function BannerBar({ signupPromo = true }: { signupPromo?: boolean }) {
   const [banners, setBanners] = useState<Banner[]>([])
   const instanceReady = useAuth((state) => state.instanceReady)
   const networkReady = !isDesktopRuntime() || instanceReady
-  const promo = useSignupPromoOffer(networkReady)
+  const promo = useSignupPromoOffer()
   useEffect(() => {
     if (!networkReady) return
     void apiRequest<{ data: Banner[] }>('/api/banners').then((result) => {
@@ -32,7 +32,7 @@ export function BannerBar() {
   // Stays mounted while empty so the promo can confirm a claim after its offer goes away.
   return (
     <div className="site-banners pointer-events-none absolute inset-x-0 top-14 z-[25] flex flex-col items-center gap-2 px-3">
-      <SignupPromoBanner offer={promo.data} className="site-banner-enter pointer-events-auto max-w-2xl" />
+      {signupPromo && <SignupPromoBanner offer={promo.data} className="site-banner-enter pointer-events-auto max-w-2xl" />}
       {banners.map((banner) => (
         <BannerCard
           key={banner.id}

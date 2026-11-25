@@ -26,9 +26,9 @@ function offer(overrides: Partial<SignupPromoOffer> = {}): SignupPromoOffer {
   return { amountMicros: 1_000_000, message: '', eligibleUntil: '2026-12-01T00:00:00.000Z', available: true, resetsAt: '2026-11-26T00:00:00.000Z', ...overrides }
 }
 
-function renderBar() {
+function renderBar(props: { signupPromo?: boolean } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={client}><BannerBar /></QueryClientProvider>)
+  return render(<QueryClientProvider client={client}><BannerBar {...props} /></QueryClientProvider>)
 }
 
 /** Answers the banner list and the promo endpoints; `claim` handles POSTs. */
@@ -122,6 +122,13 @@ describe('signup promo banner', () => {
     auth.user = { id: 'user-2' }
     renderBar()
     expect(await screen.findByRole('button', { name: 'Claim $1.00' })).toBeTruthy()
+  })
+
+  it('leaves the promo to pages that offer it inline', async () => {
+    apiRequest.mockImplementation(async (path: string) => path === '/api/banners' ? { data: [banner('a')] } : { offer: offer() })
+    renderBar({ signupPromo: false })
+    expect(await screen.findByText('Banner a')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Claim $1.00' })).toBeNull()
   })
 
   it('reports a failed claim without hiding the offer', async () => {
