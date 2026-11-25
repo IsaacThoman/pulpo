@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, ListFilter } from 'lucide-react'
 import { useId, useRef } from 'react'
 import {
   defaultImageRefinements, hasDimensionFilters, hasImageRefinements, imageAspects, imageOrders, imageSizes, type ImageRefinements,
@@ -13,10 +13,9 @@ interface ImageResultFiltersProps {
   withoutDimensions: number
   hasSourceDates: boolean
   sources: Array<[string, number]>
-  collapsed?: boolean
 }
 
-export function ImageResultFilters({ value, update, shown, total, matches, withoutDimensions, hasSourceDates, sources, collapsed }: ImageResultFiltersProps) {
+export function ImageResultFilters({ value, update, shown, total, matches, withoutDimensions, hasSourceDates, sources }: ImageResultFiltersProps) {
   const fieldset = useRef<HTMLFieldSetElement>(null)
   const id = useId()
   const active = hasImageRefinements(value)
@@ -31,7 +30,7 @@ export function ImageResultFilters({ value, update, shown, total, matches, witho
 
   const controls = (
     <fieldset className="image-refinements" ref={fieldset}>
-      <legend>Filter these results</legend>
+      <legend className="sr-only">Filter these results</legend>
       <div className="image-refinement-fields">
         {showDimensions && <>
           <div className="filter-field">
@@ -101,8 +100,18 @@ export function ImageResultFilters({ value, update, shown, total, matches, witho
       </div>}
     </fieldset>
   )
-  return collapsed ? <details className="image-refinements-menu">
-    <summary className="text-button">Refine images <ChevronDown size={14} aria-hidden="true" /></summary>
+  return <details className="image-refinements-menu" onKeyDown={event => {
+    const menu = event.currentTarget
+    if (event.key !== 'Escape' || !menu.open) return
+    menu.open = false
+    menu.querySelector('summary')?.focus()
+  }}>
+    <summary className="text-button" aria-label={active ? 'Image filters applied' : 'Refine images'}>
+      <ListFilter className="image-refinement-icon" size={15} aria-hidden="true" />
+      <span className="image-refinement-label">{active ? 'Image filters applied' : 'Refine images'}</span>
+      <span className="image-refinement-short" aria-hidden="true">{active ? 'Filters on' : 'Refine'}</span>
+      <ChevronDown size={14} aria-hidden="true" />
+    </summary>
     {controls}
-  </details> : controls
+  </details>
 }

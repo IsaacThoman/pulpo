@@ -9,7 +9,8 @@ import { Results } from './Results'
 const data: SearchResponse = {
   provider: 'kagi',
   results: [
-    { url: 'https://photos.example.com/octopus', title: 'Reef octopus', snippet: '', imageUrl: 'https://cdn.example.com/reef.jpg' },
+    { url: 'https://photos.example.com/octopus', title: 'Reef octopus', snippet: 'Photographed on a reef.',
+      imageUrl: 'https://cdn.example.com/reef.jpg', publishedAt: '2026-11-01' },
     { url: 'https://aquarium.example.com/octopus', title: 'Giant octopus', snippet: '', imageUrl: 'https://cdn.example.com/giant.jpg' },
     { url: 'https://hidden.example.com/octopus', title: 'Hidden octopus', snippet: '', imageUrl: 'https://cdn.example.com/hidden.jpg' },
   ],
@@ -31,12 +32,15 @@ describe('image result viewer', () => {
       preferences={{ ...loadPreferences(), newTab: true, domains: { 'hidden.example.com': 'hide' } }} setDomain={vi.fn()} onQuery={onQuery} />)
 
     const opener = screen.getByRole('button', { name: 'Preview image: Reef octopus' })
+    expect(screen.queryByText('Photographed on a reef.')).toBeNull()
     opener.focus()
     fireEvent.click(opener)
     const dialog = screen.getByRole('dialog', { name: 'Image preview' })
     const overlay = within(dialog)
     expect(overlay.getByRole('img', { name: 'Reef octopus' }).getAttribute('referrerpolicy')).toBe('no-referrer')
     expect(overlay.getByText('1 of 2')).toBeDefined()
+    expect(overlay.getByText('Photographed on a reef.')).toBeDefined()
+    expect(dialog.querySelector('time')?.dateTime).toBe('2026-11-01T00:00:00.000Z')
     expect(overlay.getByRole('button', { name: 'Previous image' }).getAttribute('aria-disabled')).toBe('true')
 
     fireEvent.keyDown(dialog, { key: 'ArrowRight' })

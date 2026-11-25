@@ -1,4 +1,4 @@
-import { ChevronDown, Map as MapIcon, MapPin, Star } from 'lucide-react'
+import { ChevronDown, Map as MapIcon, Route, Star } from 'lucide-react'
 import { lazy, Suspense, useId, useMemo, useState } from 'react'
 import braveLight from './assets/brave-logo-light.png'
 import braveDark from './assets/brave-logo-dark.png'
@@ -60,23 +60,20 @@ export function PlacesAnswer({ response, openNow, webExpanded, onWeb }: {
   }, [mapId, places, response.results, showAll])
   const canFilterHours = !openNow && response.results.some(place => place.openNow !== undefined)
   const canSortRatings = response.results.filter(place => place.rating).length > 1
+  const canShowMap = mapStyleUrl && (pins.length > 0 || showMap)
   return (
-    <section className="places-answer" aria-label="Local places">
+    <section className="places-answer" aria-label="Local places" data-map-open={showMap || undefined}>
       <div className="places-header">
         <h2>Places{openNow && ' open now'}</h2>
         <div className="places-header-actions">
-          {mapStyleUrl && (showMap || pins.length > 0) && <button className="text-button" aria-controls={mapId} aria-expanded={showMap}
-            title={showMap ? undefined : 'Load map tiles from OpenFreeMap'} onClick={event => {
-              if (showMap) event.currentTarget.focus()
-              setShowMap(!showMap)
-            }}><MapIcon size={15} aria-hidden="true" />{showMap ? 'Hide map' : 'Show map'}</button>}
-          <button className="text-button" aria-expanded={webExpanded} onClick={onWeb}>
+          <button className="text-button specialty-web-toggle" aria-expanded={webExpanded} onClick={onWeb}>
             {webExpanded ? 'Hide web results' : 'Show web results'}
+            <ChevronDown size={15} aria-hidden="true" />
           </button>
         </div>
       </div>
       {response.correction && <p className="places-note">Showing places for {response.correction}</p>}
-      {(canFilterHours || canSortRatings) && <div className="place-refinements">
+      {(canFilterHours || canSortRatings || canShowMap) && <div className="place-refinements">
         {canFilterHours && (
           <button className="secondary-button place-open-filter" aria-pressed={onlyOpen} onClick={() => setOnlyOpen(!onlyOpen)}>Open now</button>
         )}
@@ -85,63 +82,70 @@ export function PlacesAnswer({ response, openNow, webExpanded, onWeb }: {
           <option value="relevance">Relevance</option>
           <option value="ratings">Highest rated</option>
         </select><ChevronDown size={14} aria-hidden="true" /></span>}
+        {canShowMap && <button className="text-button place-map-toggle" aria-controls={mapId} aria-expanded={showMap}
+          title={showMap ? undefined : 'Load map tiles from OpenFreeMap'} onClick={event => {
+            event.currentTarget.focus()
+            setShowMap(!showMap)
+          }}><MapIcon size={15} aria-hidden="true" />{showMap ? 'Hide map' : 'Show map'}</button>}
       </div>}
-      <div id={mapId} hidden={!showMap}>
-        {showMap && mapStyleUrl && (pins.length ? (
-          <Suspense fallback={<p className="places-note" role="status">Loading map…</p>}>
-            <PlacesMap pins={pins} styleUrl={mapStyleUrl} />
-          </Suspense>
-        ) : <p className="places-note">No mapped places in these results.</p>)}
-      </div>
-      {places.length ? (
-        <ol className="place-list">
-          {visiblePlaces.map(({ id, rank, place }) => {
-            const website = safeHttpUrl(place.website)
-            const [number, extension] = place.phone?.split(/\s*(?:ext\.?|x)\s*/i) ?? []
-            const telephone = number?.replace(/[^\d+]/g, '')
-            const hours = place.todayHours?.join(', ')
-            return (
-              <li className="place-card" key={place.name + '\n' + place.address}>
-                <h3 id={id} tabIndex={showMap ? -1 : undefined}>
-                  {showMap && rank !== undefined && <span className="place-map-number" aria-hidden="true">{rank}</span>}
-                  {place.name}
-                </h3>
-                {(place.category || place.priceLevel) && <p className="place-category">{[place.category, place.priceLevel].filter(Boolean).join(' · ')}</p>}
-                <p>{place.address}</p>
-                {place.summary && <p>{place.summary}</p>}
-                <div className="place-details">
-                  {place.openNow !== undefined && <strong data-open={place.openNow}>{place.openNow ? 'Open now' : 'Closed'}</strong>}
-                  {hours && <span>Today {hours}</span>}
-                  {place.rating && (
-                    <span className="place-rating" aria-label={'Rated ' + place.rating.value + ' out of ' + place.rating.max}>
-                      <Star size={13} aria-hidden="true" />{formatRating.format(place.rating.value)}{place.rating.count ? ' (' + place.rating.count.toLocaleString() + ')' : ''}
-                    </span>
+      <div className="places-map-and-list">
+        {mapStyleUrl && <div id={mapId} className="place-map-panel" hidden={!showMap}>
+          {showMap && (pins.length ? (
+            <Suspense fallback={<p className="places-note" role="status">Loading map…</p>}>
+              <PlacesMap pins={pins} styleUrl={mapStyleUrl} />
+            </Suspense>
+          ) : <p className="places-note">No mapped places in these results.</p>)}
+        </div>}
+        {places.length ? (
+          <ol className="place-list">
+            {visiblePlaces.map(({ id, rank, place }) => {
+              const website = safeHttpUrl(place.website)
+              const [number, extension] = place.phone?.split(/\s*(?:ext\.?|x)\s*/i) ?? []
+              const telephone = number?.replace(/[^\d+]/g, '')
+              const hours = place.todayHours?.join(', ')
+              return (
+                <li className="place-card" key={place.name + '\n' + place.address}>
+                  <h3 id={id} tabIndex={showMap ? -1 : undefined}>
+                    {showMap && rank !== undefined && <span className="place-map-number" aria-hidden="true">{rank}</span>}
+                    {place.name}
+                  </h3>
+                  {(place.category || place.priceLevel) && <p className="place-category">{[place.category, place.priceLevel].filter(Boolean).join(' · ')}</p>}
+                  <p>{place.address}</p>
+                  {place.summary && <p>{place.summary}</p>}
+                  <div className="place-details">
+                    {place.openNow !== undefined && <strong data-open={place.openNow}>{place.openNow ? 'Open now' : 'Closed'}</strong>}
+                    {hours && <span>Today {hours}</span>}
+                    {place.rating && (
+                      <span className="place-rating" aria-label={'Rated ' + place.rating.value + ' out of ' + place.rating.max}>
+                        <Star size={13} aria-hidden="true" />{formatRating.format(place.rating.value)}{place.rating.count ? ' (' + place.rating.count.toLocaleString() + ')' : ''}
+                      </span>
+                    )}
+                  </div>
+                  {!!place.weeklyHours?.length && (
+                    <details className="place-hours">
+                      <summary>Weekly hours</summary>
+                      <dl>
+                        {place.weeklyHours.map(({ day, hours }) => (
+                          <div key={day}><dt>{day}</dt><dd>{hours}</dd></div>
+                        ))}
+                      </dl>
+                    </details>
                   )}
-                </div>
-                {!!place.weeklyHours?.length && (
-                  <details className="place-hours">
-                    <summary>Weekly hours</summary>
-                    <dl>
-                      {place.weeklyHours.map(({ day, hours }) => (
-                        <div key={day}><dt>{day}</dt><dd>{hours}</dd></div>
-                      ))}
-                    </dl>
-                  </details>
-                )}
-                <div className="place-actions">
-                  <a className="secondary-button result-link" href={googleMapsUrl(place, 'directions')} target="_blank" rel="noreferrer">
-                    <MapPin size={14} aria-hidden="true" /> Directions
-                  </a>
-                  {website && <a className="secondary-button" href={website.href} rel="noreferrer">Website</a>}
-                  {place.googlePlaceId && <a className="secondary-button" href={googleMapsUrl(place, 'listing')} target="_blank" rel="noreferrer">Map listing</a>}
-                  {telephone && /^\+?\d{7,15}$/.test(telephone) && <a className="secondary-button"
-                    href={'tel:' + telephone + (extension && /^\d{1,8}$/.test(extension) ? ';ext=' + extension : '')}>Call</a>}
-                </div>
-              </li>
-            )
-          })}
-        </ol>
-      ) : <p className="places-note">{onlyOpen || openNow ? 'No matches with listed hours showing they’re open.' : 'No places found.'}</p>}
+                  <div className="place-actions">
+                    <a className="secondary-button result-link" href={googleMapsUrl(place, 'directions')} target="_blank" rel="noreferrer">
+                      <Route size={14} aria-hidden="true" /> Directions
+                    </a>
+                    {website && <a className="secondary-button" href={website.href} rel="noreferrer">Website</a>}
+                    {place.googlePlaceId && <a className="secondary-button" href={googleMapsUrl(place, 'listing')} target="_blank" rel="noreferrer">Google Maps</a>}
+                    {telephone && /^\+?\d{7,15}$/.test(telephone) && <a className="secondary-button"
+                      href={'tel:' + telephone + (extension && /^\d{1,8}$/.test(extension) ? ';ext=' + extension : '')}>Call</a>}
+                  </div>
+                </li>
+              )
+            })}
+          </ol>
+        ) : <p className="places-note">{onlyOpen || openNow ? 'No matches with listed hours showing they’re open.' : 'No places found.'}</p>}
+      </div>
       {places.length > initialPlaceCount && (
         <button className="secondary-button place-show-more" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
           {showAll ? 'Show fewer places' : `Show all ${places.length} places`}

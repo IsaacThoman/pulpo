@@ -61,7 +61,8 @@ describe('search result presentation', () => {
     const first = screen.getByRole('heading', { name: 'Adjust a rear derailleur' }).closest('li')
     expect(first?.querySelector('.result-media img')?.getAttribute('src')).toBe('https://images.example.org/video.webp')
     expect(first?.querySelector('.video-result-runtime')?.textContent).toBe('05:31')
-    expect(first?.querySelector('.video-result-details')?.textContent).toContain('Park Tool · 05:31')
+    expect(first?.querySelector('.video-result-details')?.textContent).toContain('Park Tool')
+    expect(first?.querySelector('.video-result-details .sr-only')?.textContent).toContain('Duration 05:31')
     expect(first?.querySelector('.video-result-details time')?.getAttribute('datetime')).toBe('2026-11-24')
     expect(screen.getByRole('button', { name: 'Watch here: Adjust a rear derailleur' })).toBeDefined()
     expect(container.querySelector('iframe')).toBeNull()
@@ -136,13 +137,10 @@ describe('search result presentation', () => {
     expect(firstVisibleResultUrl(data, preferences)?.href).toBe(firstVisible)
   })
 
-  it('keeps related searches outside the primary results and submits them on selection', () => {
-    const onQuery = vi.fn()
+  it('keeps provider-supplied related searches out of the results layout', () => {
     render(<Results data={data} location={{ ...homeLocation, query: 'octopus' }}
-      preferences={loadPreferences()} setDomain={vi.fn()} onQuery={onQuery} />)
-    expect(screen.getByRole('complementary', { name: 'Related searches' })).toBeDefined()
-    fireEvent.click(screen.getByRole('button', { name: 'octopus habitat' }))
-    expect(onQuery).toHaveBeenCalledWith('octopus habitat')
+      preferences={loadPreferences()} setDomain={vi.fn()} onQuery={vi.fn()} />)
+    expect(screen.queryByText('octopus habitat')).toBeNull()
   })
 
   it('keeps adjacent links from a site together without changing their navigation order', () => {
@@ -285,7 +283,7 @@ describe('search result presentation', () => {
   })
 
   it('shows sourced knowledge facts and respects the result source preference', () => {
-    const featured = { ...data, knowledge: {
+    const featured = { ...data, results: data.results.map(result => ({ ...result, imageUrl: 'https://p.kagi.com/' + (result.url.includes('wikipedia') ? 'octopus' : 'other') })), knowledge: {
       title: 'Octopus', summary: 'A marine mollusc.', url: 'https://en.wikipedia.org/wiki/Octopus',
       facts: [{ label: 'Class', value: 'Cephalopoda' }],
     } }
@@ -296,6 +294,7 @@ describe('search result presentation', () => {
     const knowledge = screen.getByRole('complementary', { name: 'About Octopus' })
     expect(knowledge.textContent).toContain('Cephalopoda')
     expect(knowledge.querySelector('a')?.getAttribute('href')).toBe(featured.knowledge.url)
+    expect(knowledge.querySelector('img')?.getAttribute('src')).toBe('https://p.kagi.com/octopus')
     expect(screen.getByRole('link', { name: 'CC BY-SA 4.0' })).toBeDefined()
     expect(firstVisibleResultUrl(featured, preferences)?.hostname).toBe('github.com')
     rerender(<Results data={featured} location={location}

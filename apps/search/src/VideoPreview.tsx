@@ -7,9 +7,10 @@ interface VideoPreviewProps {
   url: string
   title: string
   newTab: boolean
+  overThumbnail?: boolean
 }
 
-export function VideoPreview({ url, title, newTab }: VideoPreviewProps) {
+export function VideoPreview({ url, title, newTab, overThumbnail }: VideoPreviewProps) {
   const opener = useRef<HTMLButtonElement>(null)
   const dialog = useRef<HTMLDialogElement>(null)
   const closeButton = useRef<HTMLButtonElement>(null)
@@ -36,10 +37,11 @@ export function VideoPreview({ url, title, newTab }: VideoPreviewProps) {
 
   return (
     <>
-      <button type="button" ref={opener} className="text-button video-preview-trigger"
+      <button type="button" ref={opener} className={overThumbnail ? 'icon-button video-thumbnail-play' : 'text-button video-preview-trigger'}
+        title={overThumbnail ? 'Watch here' : undefined}
         aria-label={'Watch here: ' + title} aria-haspopup="dialog" onClick={() => setOpen(true)}>
-        <Play size={14} aria-hidden="true" />
-        Watch here
+        <Play size={15} aria-hidden="true" />
+        {!overThumbnail && 'Watch here'}
       </button>
       {open && (
         <dialog ref={dialog} className="dialog video-preview" aria-labelledby={titleId}

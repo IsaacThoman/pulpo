@@ -21,6 +21,8 @@
   cursor: pointer;
 }
 .places-map .places-map-pin:is(:focus-visible, [aria-pressed="true"]) { z-index: 1; outline: 2px solid var(--ink); outline-offset: 1px; }
+.places-map .places-map-pin[data-cluster] { min-width: 2.1rem; height: 2.1rem; background: var(--surface); color: var(--link); border-color: var(--link); }
+.places-map-selections { margin: 0; padding: 0; list-style: none; }
 .places-map-selection { display: flex; align-items: baseline; flex-wrap: wrap; gap: .25rem .75rem; padding: .65rem 0 .25rem; overflow-wrap: anywhere; }
 .places-map-selection > div { flex: 1 1 10rem; min-width: 0; }
 .places-map-selection p { margin: .15rem 0 0; color: var(--muted); font-size: .875rem; }
