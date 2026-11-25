@@ -10,6 +10,7 @@ export const SETTINGS_SECTION_IDS = [
   'appearance',
   'interface',
   'agent',
+  'search',
   'billing',
   'api',
   'data',

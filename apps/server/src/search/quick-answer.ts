@@ -168,13 +168,13 @@ export function quickAnswerText(output: unknown): string {
 }
 
 type QuickAnswerFrame = { type: 'text'; text: string } | { type: 'done' }
-  | { type: 'error'; message: string; retryable?: true; billing?: true }
+  | { type: 'error'; message: string; retryable?: true; billing?: true; code?: string }
 
 function terminalError(status: string, error: unknown): QuickAnswerFrame {
   if (status === 'cancelled') return { type: 'error', message: 'Quick Answer was stopped.' }
   const code = (error as { code?: unknown } | null)?.code
-  if (code === 'insufficient_balance') return { type: 'error', message: 'Add Pulpo credits to use Quick Answer.', billing: true }
-  if (code === DAILY_SPEND_LIMIT_CODE) return { type: 'error', message: 'You reached your Pulpo daily spending limit.', billing: true }
+  if (code === 'insufficient_balance') return { type: 'error', message: 'Add Pulpo credits to use Quick Answer.', billing: true, code }
+  if (code === DAILY_SPEND_LIMIT_CODE) return { type: 'error', message: 'You reached your Pulpo daily spending limit.', billing: true, code }
   return { type: 'error', message: 'Pulpo couldn’t complete this Quick Answer.' }
 }
 

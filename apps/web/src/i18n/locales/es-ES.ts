@@ -214,6 +214,7 @@ const esES = {
       personalization: 'Personalización',
       appearance: 'Apariencia',
       interface: 'Interfaz',
+      search: 'Búsqueda',
       billing: 'Facturación',
       api: 'Claves de API',
       data: 'Controles de datos',

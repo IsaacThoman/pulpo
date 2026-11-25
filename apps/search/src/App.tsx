@@ -1,5 +1,8 @@
-import { ArrowUpRight, ChevronDown, ExternalLink, Keyboard, LogOut, MapPin, Settings2 } from 'lucide-react'
+import { SEARCH_LINKED_PANELS, type SearchLinkedPanel } from '@pulpo/contracts/search'
+import { ArrowUpRight, ChevronDown, CreditCard, ExternalLink, Keyboard, LogOut, MapPin, Settings2 } from 'lucide-react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { pulpoUrl, useAccountSummary } from './account'
+import { AccountAvatar, AccountCredits, LimitAction } from './AccountParts'
 import { api, providerNames, SearchApiError, type Category, type SearchConfig, type SearchRequest, type SearchUser } from './api'
 import { useSearchAppearance } from './appearance'
 import { consumeCallback, pulpoOrigin, startSignIn } from './auth'
@@ -37,6 +40,12 @@ const labels = { web: 'Web', images: 'Images', news: 'News', videos: 'Videos', p
 const isBangDiscovery = (query: string) => /^[!\s]+$/u.test(query)
 const answerPath = (location: SearchLocation) => searchPath({ ...location, provider: undefined })
 
+/** Pulpo's settings link to Search panels with `#settings`, `#bangs`, or `#browser`. */
+function linkedPanel(): SearchLinkedPanel | null {
+  const hash = window.location.hash.slice(1)
+  return SEARCH_LINKED_PANELS.find(panel => panel === hash) ?? null
+}
+
 function PulpoMark({ size }: { size: number }) {
   return <img src={smiley} width={size} height={size} alt="" className="pulpo-mark" />
 }
@@ -73,7 +82,7 @@ function returningNavigation() {
 export function App({ callback }: { callback: Callback }) {
   const [location, setLocation] = useState(() => parseSearchLocation(new URL(window.location.href)))
   const [draft, setDraft] = useState(firstResultQuery(location.query) ?? location.query)
-  const [panel, setPanel] = useState<Panel | null>(null)
+  const [panel, setPanel] = useState<Panel | null>(linkedPanel)
   const [imageToolbar, setImageToolbar] = useState<HTMLDivElement | null>(null)
   const [mediaToolbar, setMediaToolbar] = useState<HTMLDivElement | null>(null)
   const [user, setUser] = useState<SearchUser | null | undefined>(undefined)
@@ -108,7 +117,20 @@ export function App({ callback }: { callback: Callback }) {
   const lastScroll = useRef(0)
   const leaveResults = useRef<(scrollY: number) => void>(undefined)
   const pageColor = useSearchAppearance(user?.id, preferences.theme)
+  const { account, refreshAccount } = useAccountSummary(user?.id)
   const { recentQueries, rememberQuery, clearRecentQueries } = useRecentQueries(user?.id, preferences.rememberRecentQueries)
+
+  useEffect(() => {
+    function openLinkedPanel() {
+      const linked = linkedPanel()
+      if (!linked) return
+      setPanel(linked)
+      window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search)
+    }
+    openLinkedPanel()
+    window.addEventListener('hashchange', openLinkedPanel)
+    return () => window.removeEventListener('hashchange', openLinkedPanel)
+  }, [])
 
   useEffect(() => {
     function onPopState() {
@@ -537,15 +559,24 @@ export function App({ callback }: { callback: Callback }) {
               <Settings2 size={20} aria-hidden="true" />
             </button>
             {user ? (
-              <details ref={accountMenu} className="account-menu" onKeyDown={event => {
+              <details ref={accountMenu} className="account-menu" onToggle={event => {
+                if (event.currentTarget.open) refreshAccount()
+              }} onKeyDown={event => {
                 if (event.key !== 'Escape' || !event.currentTarget.open) return
                 event.currentTarget.open = false
                 event.currentTarget.querySelector('summary')?.focus()
               }}>
-                <summary aria-label="Pulpo account" title="Pulpo account">{(user.name || user.email || 'P').trim().charAt(0).toUpperCase()}</summary>
+                <summary aria-label="Pulpo account" title="Pulpo account"><AccountAvatar user={user} /></summary>
                 <div className="account-content">
-                  <strong>{user.name || 'Pulpo account'}</strong>
-                  <span>{user.email}</span>
+                  <div className="account-identity">
+                    <AccountAvatar user={user} />
+                    <div>
+                      <strong>{user.name || 'Pulpo account'}</strong>
+                      <span>{user.email}</span>
+                    </div>
+                  </div>
+                  <AccountCredits account={account} />
+                  {account?.billing && <a href={pulpoUrl('/billing')}><CreditCard size={16} aria-hidden="true" /> Credits and billing</a>}
                   <a href={pulpoOrigin}><ArrowUpRight size={16} aria-hidden="true" /> Open Pulpo</a>
                   <button onClick={signOut} disabled={authBusy}><LogOut size={16} aria-hidden="true" /> Sign out</button>
                 </div>
@@ -615,7 +646,7 @@ export function App({ callback }: { callback: Callback }) {
               {user && preferencesReady && config?.quickAnswer && view.category === 'web' && !bang && !unrecognizedBang && !luckyQuery && !view.invalidDateRange
                 && ((!showAnswer && !answerPending) || view.query.endsWith('?')) && (
                 <QuickAnswer key={user.id + '\n' + view.query} query={view.query}
-                  automatic={submittedQuestion === view.query} onAutomaticStart={consumeSubmittedQuestion} pulpoOrigin={pulpoOrigin} />
+                  automatic={submittedQuestion === view.query} onAutomaticStart={consumeSubmittedQuestion} pulpoOrigin={pulpoOrigin} account={account} />
               )}
             </div>
             {view.category === 'images' && !!user && config?.reusableImages && (
@@ -680,7 +711,7 @@ export function App({ callback }: { callback: Callback }) {
                 <p>{placesUnavailable ? 'Showing web results while Places is unavailable.' : placesError.message}</p>
                 <div className="empty-actions">
                   {placesError.status === 402
-                    ? <a className="secondary-button" href={pulpoOrigin}>Open Pulpo</a>
+                    ? <LimitAction error={placesError} account={account} />
                     : <button className="secondary-button" onClick={retryPlaces}>Try again</button>}
                   {!placesUnavailable && <button className="secondary-button" onClick={() => go({ ...view, web: true })}>Search the web</button>}
                 </div>
@@ -765,7 +796,7 @@ export function App({ callback }: { callback: Callback }) {
                 <h2>{state.error.status === 402 ? 'Search limit reached' : 'Couldn’t complete the search'}</h2>
                 <p>{state.error.message}</p>
                 {state.error.status === 402 ? (
-                  <a className="secondary-button" href={pulpoOrigin}>Open Pulpo</a>
+                  <LimitAction error={state.error} account={account} />
                 ) : (
                   <div className="empty-actions">
                     <button className="secondary-button" onClick={refresh}>Try again</button>

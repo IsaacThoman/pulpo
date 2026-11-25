@@ -85,6 +85,28 @@ export const defaultSearchAccountPreferences: SearchAccountPreferences = {
 
 export const SEARCH_ACCOUNT_PREFERENCES_KEY = 'searchPreferences'
 
+/** A subscription or admin usage limit, as Pulpo's usage bars show it. */
+export interface SearchUsageLimit {
+  /** `weekly`, `five_hour`, or a custom limit's id. */
+  id: string
+  label: string
+  remainingPercentage: number
+  availableBarPercentage: number
+  pendingBarPercentage: number
+}
+
+/** Pulpo credits and usage limits available to a signed-in Search user. Amounts are in micro-dollars. */
+export interface SearchAccountSummary {
+  billing: boolean
+  balanceMicros: number
+  poolBalanceMicros: number | null
+  limits: SearchUsageLimit[]
+}
+
+/** Search panels that Pulpo can open directly with `#<panel>` on the Search home page. */
+export const SEARCH_LINKED_PANELS = ['settings', 'bangs', 'browser'] as const
+export type SearchLinkedPanel = (typeof SEARCH_LINKED_PANELS)[number]
+
 export function normalizeSearchBangTrigger(trigger: string): string {
   return trigger.trim().replace(/^!/, '').toLowerCase()
 }

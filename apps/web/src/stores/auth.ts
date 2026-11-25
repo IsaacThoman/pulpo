@@ -69,6 +69,8 @@ interface PublicAuthSettings {
   codexEnabled: boolean
   dictationEnabled: boolean
   urlImportEnabled: boolean
+  /** Pulpo Search origin, when this instance runs Search. */
+  searchUrl: string | null
 }
 type AuthResult = { ok: true } | { ok: false; error: string }
 export type LoginResult = AuthResult | { ok: false; twoFactorRequired: true }
@@ -91,6 +93,7 @@ interface AuthState {
   codexEnabled: boolean
   dictationEnabled: boolean
   urlImportEnabled: boolean
+  searchUrl: string | null
   instanceUrl: string
   instanceName: string
   instanceReady: boolean
@@ -194,6 +197,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
   codexEnabled: false,
   dictationEnabled: false,
   urlImportEnabled: false,
+  searchUrl: null,
   instanceUrl: runtimeInstanceUrl(),
   instanceName: 'Pulpo',
   instanceReady: !isDesktopRuntime(),
@@ -264,6 +268,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
           codexEnabled: false,
           dictationEnabled: false,
           urlImportEnabled: false,
+          searchUrl: null,
         }
         if (!stored) {
           set({
@@ -338,6 +343,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
         codexEnabled: false,
         dictationEnabled: get().dictationEnabled,
         urlImportEnabled: get().urlImportEnabled,
+        searchUrl: get().searchUrl,
       }
       try {
         if (!authResult.ok) throw authResult.error
@@ -513,6 +519,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
         codexEnabled: false,
         dictationEnabled: false,
         urlImportEnabled: false,
+        searchUrl: null,
       }
       set({ checkingSession: false, setupRequired: config.setupRequired, instanceUrl, instanceName: config.instance.name, instanceReady: true, instanceError: '', ...settings, codexEnabled: settings.codexEnabled === true })
       window.location.reload()

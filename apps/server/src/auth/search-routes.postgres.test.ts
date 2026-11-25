@@ -10,6 +10,7 @@ import { hashToken, randomToken } from '../lib/crypto.js'
 import { AppError } from '../lib/errors.js'
 import { applyManagementSettings, loadManagementSettings } from '../management/settings.js'
 import { registerAccountSwitchingRoutes, signedInAccountsCookieName } from './accounts.js'
+import { searchAccountSummary } from '../search/account.js'
 import { authenticateApplicationRequest, registerSearchAuthRoutes } from './search-routes.js'
 import { requireUser } from './service.js'
 
@@ -107,7 +108,7 @@ describe.skipIf(!enabled)('Search sessions and Pulpo account handoff', () => {
 
     const response = await exchange(payload)
     expect(response.statusCode).toBe(200)
-    expect(response.json()).toEqual({ user: testUser })
+    expect(response.json()).toEqual({ user: { ...testUser, avatarUrl: null } })
     expect(response.headers['cache-control']).toBe('no-store')
     const setCookie = response.headers['set-cookie'] as string
     expect(setCookie).toMatch(new RegExp(`^${searchCookieName}=`))
@@ -118,7 +119,7 @@ describe.skipIf(!enabled)('Search sessions and Pulpo account handoff', () => {
     const searchCookie = setCookie.split(';')[0]!
     const token = searchCookie.split('=')[1]!
     const browserSession = await app.inject({ url: searchSessionUrl, headers: { host: searchHeaders.host, cookie: searchCookie } })
-    expect(browserSession.json()).toEqual({ user: testUser })
+    expect(browserSession.json()).toEqual({ user: { ...testUser, avatarUrl: null } })
     expect((await app.inject({ url: searchSessionUrl, headers: { ...pulpoHeaders, cookie: searchCookie } })).statusCode).toBe(404)
     expect((await app.inject({ url: '/api/test-account', headers: { ...pulpoHeaders, authorization: `Bearer ${token}` } })).statusCode).toBe(401)
     expect((await app.inject({ url: '/api/test-account', headers: { ...pulpoHeaders, cookie: `${mainCookieName}=${token}` } })).statusCode).toBe(401)
@@ -229,5 +230,25 @@ describe.skipIf(!enabled)('Search sessions and Pulpo account handoff', () => {
     const payload = { codeChallenge: hashToken(randomToken()), state: randomToken(), userId: randomUUID() }
     const response = await app.inject({ method: 'POST', url: authorizeUrl, headers: { ...pulpoHeaders, cookie: sourceCookie }, payload })
     expect(response.statusCode).toBe(403)
+  })
+
+  it('serves the profile picture through Search and reports the account balance', async () => {
+    await db.update(users).set({ avatarObjectKey: `users/${testUser.id}/avatar/test.webp`, avatarVersion: 4, balanceMicros: 7_250_000 })
+      .where(eq(users.id, testUser.id))
+    const response = await exchange(await authorize())
+    expect(response.json()).toEqual({ user: { ...testUser, avatarUrl: `/api/search/avatar/${testUser.id}?v=4` } })
+    const searchCookie = (response.headers['set-cookie'] as string).split(';')[0]!
+    const session = await app.inject({ url: searchSessionUrl, headers: { ...searchHeaders, cookie: searchCookie } })
+    expect(session.json().user.avatarUrl).toBe(`/api/search/avatar/${testUser.id}?v=4`)
+    const otherAccount = await app.inject({ url: `/api/search/avatar/${randomUUID()}`, headers: { ...searchHeaders, cookie: searchCookie } })
+    expect(otherAccount.statusCode).toBe(404)
+    expect(await searchAccountSummary(testUser.id)).toEqual({
+      billing: false, balanceMicros: 7_250_000, poolBalanceMicros: null, limits: [],
+    })
+
+    await db.update(users).set({ avatarObjectKey: null }).where(eq(users.id, testUser.id))
+    const avatar = await app.inject({ url: `/api/search/avatar/${testUser.id}`, headers: { ...searchHeaders, cookie: searchCookie } })
+    expect(avatar.statusCode).toBe(404)
+    expect((await app.inject({ url: `/api/search/avatar/${testUser.id}`, headers: searchHeaders })).statusCode).toBe(401)
   })
 })
