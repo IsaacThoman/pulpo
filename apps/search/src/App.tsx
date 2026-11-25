@@ -10,6 +10,8 @@ import { CurrencyAnswer } from './CurrencyAnswer'
 import { parseCurrencyQuery } from './currency'
 import { instantAnswer } from './instant-answer'
 import { categories, homeLocation, localMapSearch, MAX_QUERY_LENGTH, parseSearchLocation, searchPath, searchScopes, withoutSiteOperators, type SearchLocation } from './navigation'
+import { PlacesAnswer, PlacesLocation } from './PlacesAnswer'
+import { placeIntent } from './places'
 import { compatibleProviders, loadPreferences, preferencesStorageKey, providerOrder, savePreferences, type DomainRule, type Preferences } from './preferences'
 import { firstVisibleResultUrl } from './result-order'
 import { useRecentQueries } from './recent-queries'
@@ -18,6 +20,7 @@ import { SearchBox } from './SearchBox'
 import { SearchFilters } from './SearchFilters'
 import { Bangs, BrowserSetup, Modal, Settings, Shortcuts, type Panel } from './Settings'
 import { useCurrencyQuote } from './use-currency'
+import { usePlaces } from './use-places'
 import { useSearch } from './use-search'
 import { WeatherAnswer } from './WeatherAnswer'
 import { useWeatherAlerts, useWeatherAnswer, weatherLocation } from './weather'
@@ -144,8 +147,15 @@ export function App({ callback }: { callback: Callback }) {
   const forecastPending = !!(user && forecastLocation && forecast === undefined)
   const showForecast = forecast?.status === 'forecast' || forecast?.status === 'ambiguous'
   const alerts = useWeatherAlerts(forecast?.status === 'forecast' ? forecastLocation : undefined, user?.id)
-  const answerPending = forecastPending || currencyPending
-  const showAnswer = !!localAnswer || showForecast || showCurrency
+  const localIntent = allowAnswers && config?.places && searchPreferences.localPlaces && !forecastLocation && !localAnswer && !currencyQuery
+    ? placeIntent(view.query) : undefined
+  const choosePlaceLocation = user ? localIntent?.needsLocation : undefined
+  const places = usePlaces(choosePlaceLocation ? undefined : localIntent, user?.id)
+  const placesPending = !!(user && localIntent && !choosePlaceLocation && places === undefined)
+  const showPlaces = !!(places && (places.results.length || localIntent?.openNow))
+  const showUnavailableForecast = forecast?.status === 'unavailable'
+  const answerPending = forecastPending || currencyPending || placesPending
+  const showAnswer = !!localAnswer || showForecast || showCurrency || showPlaces || !!choosePlaceLocation || showUnavailableForecast
   const mapSearch = view.category === 'web' && !view.scope && !luckyQuery && !showAnswer && !answerPending
     ? localMapSearch(view.query) : undefined
   const refreshAt = localAnswer?.refreshAt
@@ -479,7 +489,23 @@ export function App({ callback }: { callback: Callback }) {
                 onWeb={() => go({ ...view, web: true })} />
             ) : showCurrency ? (
               <CurrencyAnswer key={view.query} quote={currencyQuote} onConvert={onSearch} onWeb={() => go({ ...view, web: true })} />
-            ) : bang || waitingForSession || answerPending ? <LoadingResults firstResult={Boolean(luckyQuery)} /> : user === null ? (
+            ) : showUnavailableForecast ? (
+              <section className="search-message">
+                <h2>Forecast unavailable</h2>
+                {forecast.place && <p>{[forecast.place.name, forecast.place.admin, forecast.place.country].filter(Boolean).join(', ')}</p>}
+                <button className="secondary-button" onClick={() => go({ ...view, web: true })}>Search the web</button>
+              </section>
+            ) : choosePlaceLocation ? (
+              <PlacesLocation onLocation={area => onSearch([choosePlaceLocation.term, choosePlaceLocation.connector, area,
+                localIntent?.openNow ? 'open now' : ''].filter(Boolean).join(' '))} onWeb={() => go({ ...view, web: true })} />
+            ) : showPlaces && places ? (
+              <PlacesAnswer key={view.query} response={places} openNow={!!localIntent?.openNow} onWeb={() => go({ ...view, web: true })} />
+            ) : forecastPending || placesPending ? (
+              <section className="search-message">
+                <p role="status">{forecastPending ? 'Checking forecast…' : 'Finding places…'}</p>
+                <button className="secondary-button" onClick={() => go({ ...view, web: true })}>Search the web</button>
+              </section>
+            ) : bang || waitingForSession || currencyPending ? <LoadingResults firstResult={Boolean(luckyQuery)} /> : user === null ? (
               <section className="search-message">
                 <h2>Sign in to search</h2>
                 <p>Use your Pulpo account and shared credits.</p>

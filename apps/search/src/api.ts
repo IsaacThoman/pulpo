@@ -1,4 +1,5 @@
 import type { CurrencyQuery, CurrencyResponse } from './currency'
+import type { PlaceQuery, PlaceResponse } from './places'
 
 export type Provider = 'kagi' | 'firecrawl'
 export type Category = 'web' | 'news' | 'images' | 'videos' | 'podcasts'
@@ -63,6 +64,7 @@ export interface SearchConfig {
   providers: ProviderConfig[]
   weather?: boolean
   currency?: boolean
+  places?: { provider: 'brave'; priceMicros: number }
 }
 
 export interface WeatherPlace { name: string; admin?: string; country: string; timeZone: string }
@@ -144,6 +146,7 @@ export const api = {
   weather: (location: string, signal?: AbortSignal) => request<WeatherResponse>('/weather?' + new URLSearchParams({ location }), { signal }),
   weatherAlerts: (location: string, signal?: AbortSignal) => request<WeatherAlerts>('/weather/alerts?' + new URLSearchParams({ location }), { signal }),
   currency: (query: CurrencyQuery, signal?: AbortSignal) => post<CurrencyResponse>('/currency', query, signal),
+  places: (query: PlaceQuery, signal?: AbortSignal) => post<PlaceResponse>('/places', query, signal),
   appearance: (signal?: AbortSignal) => request<SearchAppearance>('/appearance', { signal }),
   session: (signal?: AbortSignal) => request<{ user: SearchUser | null }>('/auth/session', { signal }),
   exchange: (code: string, codeVerifier: string) => post<{ user: SearchUser }>('/auth/exchange', { code, codeVerifier }),

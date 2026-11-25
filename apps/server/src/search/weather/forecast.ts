@@ -35,6 +35,7 @@ interface Timeline {
 interface CacheEntry<T> {
   freshUntil: number
   value: T | null
+  checkedAt?: number
   modified?: string
   etag?: string
 }
@@ -122,6 +123,11 @@ function cacheFreshUntil(response: Response, now: number, minimum: number) {
   return Math.max(now + minimum, dateHeader(response.headers.get('expires')), age ? now + Number(age[1]) * 1000 : 0)
 }
 
+function retryAfter(response: Response, now: number) {
+  const retry = response.headers.get('retry-after')
+  return retry && /^\d+$/.test(retry) ? now + Number(retry) * 1000 : dateHeader(retry)
+}
+
 async function readForecastJson(response: Response): Promise<unknown> {
   if (!response.body || Number(response.headers.get('content-length')) > maximumBody) {
     await response.body?.cancel()
@@ -187,8 +193,8 @@ function renderForecast(timeline: Timeline, place: WeatherPlace, now: number, nw
 export function createWeatherClient(cache: WeatherCache, fetcher = fetch, now = Date.now) {
   const inFlight = new Map<string, Promise<unknown>>()
 
-  async function requestForecast(url: URL, headers: HeadersInit, maxAttempts: number) {
-    const signal = AbortSignal.timeout(3500)
+  async function requestForecast(url: URL, headers: HeadersInit, maxAttempts: number, timeoutMs: number) {
+    const signal = AbortSignal.timeout(timeoutMs)
     let target = url
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const response = await fetcher(target, { headers, signal, redirect: 'manual' })
@@ -205,16 +211,20 @@ export function createWeatherClient(cache: WeatherCache, fetcher = fetch, now = 
 
   function cached<T>(url: URL, minimum: number, identification: string, parse: (data: unknown) => T, alertFeed = false): Promise<T | null> {
     const key = 'search:weather:v1:' + createHash('sha256').update(url.href).digest('hex')
+    const nwsForecast = url.origin === nwsOrigin && !alertFeed
+    const timeoutMs = nwsForecast && url.pathname.endsWith('/forecast/hourly') ? 12_000 : 3500
     const existing = inFlight.get(key)
     if (existing) return existing as Promise<T | null>
     const result = (async () => {
       const entry = readCacheEntry<T>(await cache.read(key))
       const at = now()
-      if (entry && entry.freshUntil > at) return entry.value
+      // Older NWS negative entries used the successful forecast's refresh interval.
+      const oldNegative = nwsForecast && entry?.value === null && entry.checkedAt === undefined
+      if (entry && entry.freshUntil > at && !oldNegative) return entry.value
       const fallback = alertFeed ? null : entry?.value ?? null
       const pauseKey = 'search:weather:v1:pause:' + url.hostname
       if (Number(await cache.read(pauseKey)) > at) return fallback
-      if (!await cache.lease(key + ':refresh', 10_000)) return fallback
+      if (!await cache.lease(key + ':refresh', Math.max(10_000, timeoutMs + 2000))) return fallback
       // NWS recommends at most one alert fetch every 30 seconds, shared across instances.
       if (alertFeed && !await cache.lease('search:weather:v1:nws-alerts:upstream', 30_000)) return null
       // The shared lease caps starts below MET's limit across this instance, including redirects.
@@ -232,11 +242,13 @@ export function createWeatherClient(cache: WeatherCache, fetcher = fetch, now = 
           accept: 'application/geo+json, application/json',
           ...(entry?.modified ? { 'if-modified-since': entry.modified } : {}),
           ...(entry?.etag ? { 'if-none-match': entry.etag } : {}),
-        }, alertFeed ? 1 : 2)
-        next.freshUntil = cacheFreshUntil(response, now(), minimum)
+        }, alertFeed ? 1 : 2, timeoutMs)
+        const atResponse = now()
+        const transient = nwsForecast && response.status >= 500
+        next.freshUntil = cacheFreshUntil(response, atResponse, transient ? minute : minimum)
+        if (transient) next.freshUntil = Math.max(next.freshUntil, retryAfter(response, atResponse))
         if (response.status === 429) {
-          const retry = response.headers.get('retry-after')
-          const retryUntil = retry && /^\d+$/.test(retry) ? now() + Number(retry) * 1000 : dateHeader(retry)
+          const retryUntil = retryAfter(response, atResponse)
           next.freshUntil = Math.max(next.freshUntil, retryUntil)
           const pauseUntil = Math.max(retryUntil, now() + minute)
           await cache.write(pauseKey, String(pauseUntil), Math.ceil((pauseUntil - now()) / 1000))
@@ -256,8 +268,10 @@ export function createWeatherClient(cache: WeatherCache, fetcher = fetch, now = 
           await response.body?.cancel()
         }
       } catch {
-        // Retain the last usable forecast and honor the provider's refresh interval on failure.
+        // Retain the last usable forecast and retry transient NWS failures promptly.
+        if (nwsForecast) next.freshUntil = now() + minute
       }
+      if (nwsForecast && next.value === null) next.checkedAt = now()
       const ttl = Math.ceil((next.freshUntil - now()) / 1000)
       await cache.write(key, JSON.stringify(next), alertFeed ? Math.max(120, ttl + 60) : Math.max(7 * 24 * 3600, ttl + 3600))
       return next.value

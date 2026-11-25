@@ -89,6 +89,14 @@ export function Settings({ config, preferences, update, recentQueryCount, clearR
             {searchPrice > 0 && <p className="hint">The default provider costs {formatPrice(searchPrice)} per search from your shared Pulpo credits.</p>}
           </>
         ) : <p className="hint">Provider options appear when you’re signed in and search is available.</p>}
+        {config?.places && <>
+          <label className="settings-row">
+            Local places
+            <input type="checkbox" checked={preferences.localPlaces}
+              onChange={event => update({ ...preferences, localPlaces: event.target.checked })} />
+          </label>
+          <p className="hint">Places searches use Brave and cost {formatPrice(config.places.priceMicros)} from your shared Pulpo credits when listings are found.</p>
+        </>}
       </fieldset>
       <fieldset className="settings-group">
         <legend>Appearance and results</legend>

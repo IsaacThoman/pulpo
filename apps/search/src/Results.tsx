@@ -9,7 +9,7 @@ import { KnowledgeCard } from './KnowledgeCard'
 import { safeHttpUrl, type SearchLocation } from './navigation'
 import { domainRule, type DomainRule, type Preferences } from './preferences'
 import { ResultImage } from './ResultImage'
-import { resultEntries, visibleEntries, type ResultWithUrl } from './result-order'
+import { consecutiveSiteResults, resultEntries, visibleEntries, type ResultWithUrl } from './result-order'
 
 const wordPattern = /[\p{L}\p{N}][\p{L}\p{M}\p{N}]*/gu
 const commonWords = new Set(['and', 'are', 'for', 'how', 'the', 'this', 'was', 'what', 'where', 'which', 'with'])
@@ -70,8 +70,9 @@ function ImageThumbnail({ image, thumbnail, title, open }: {
   </button>
 }
 
-function ResultItem({ entry, preview, media, newTab, setDomain, showHidden, searchSite, terms }: {
+function ResultItem({ entry, additional, preview, media, newTab, setDomain, showHidden, searchSite, terms }: {
   entry: ResultWithUrl
+  additional: ResultWithUrl[]
   preview?: (opener: HTMLButtonElement) => void
   media: boolean
   newTab: boolean
@@ -147,6 +148,13 @@ function ResultItem({ entry, preview, media, newTab, setDomain, showHidden, sear
           <Highlight text={result.snippet} terms={terms} />
         </p>
       )}
+      {additional.length > 0 && (
+        <ul className="result-sitelinks" aria-label={'More from ' + host}>
+          {additional.map(item => <li key={item.url.href}>
+            <a className="result-link" href={item.url.href} target={target} rel="noreferrer">{item.result.title || pathLabel(item.url) || host}</a>
+          </li>)}
+        </ul>
+      )}
     </li>
   )
 }
@@ -173,6 +181,7 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
   const refinements = imageRefinement?.query === location.query ? imageRefinement.value : defaultImageRefinements
   const refiningImages = images && hasImageRefinements(refinements)
   const shown = refiningImages ? visible.filter(entry => matchesImageRefinements(entry.result, refinements)) : visible
+  const groups = consecutiveSiteResults(shown, location.category === 'web' && !/\bsite:/i.test(location.query))
   const withoutDimensions = images ? visible.filter(entry => !entry.result.imageDimensions).length : 0
   const noMatchingImages = refiningImages && visible.length > 0 && shown.length === 0
   const answerUrl = safeHttpUrl(data.answer?.url)
@@ -205,8 +214,9 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
         )}
         {shown.length > 0 ? (
           <ol className={images ? 'results-list image-grid' : 'results-list'}>
-            {shown.map((entry, index) => (
+            {groups.map(({ lead: entry, additional }, index) => (
               <ResultItem key={entry.url.href + (entry.result.imageUrl ?? '')} entry={entry}
+                additional={additional}
                 preview={images ? opener => setPreview({ entries: shown, startIndex: index, opener }) : undefined}
                 media={media}
                 newTab={preferences.newTab} setDomain={setDomain} showHidden={showHidden} searchSite={searchSite} terms={terms} />

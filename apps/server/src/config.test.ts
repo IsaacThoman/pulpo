@@ -11,6 +11,13 @@ describe('server configuration', () => {
     expect(() => parseConfig({ PUBLIC_URL: 'https://pulpo.baby', SEARCH_PUBLIC_URL: 'https://pulpo.baby' })).toThrow(/must differ/)
   })
 
+  it('accepts an optional server-only Brave Place Search token', () => {
+    expect(parseConfig({}).SEARCH_BRAVE_PLACES_API_KEY).toBeUndefined()
+    expect(parseConfig({ SEARCH_BRAVE_PLACES_API_KEY: '' }).SEARCH_BRAVE_PLACES_API_KEY).toBeUndefined()
+    expect(parseConfig({ SEARCH_BRAVE_PLACES_API_KEY: ' token-example ' }).SEARCH_BRAVE_PLACES_API_KEY).toBe('token-example')
+    expect(() => parseConfig({ SEARCH_BRAVE_PLACES_API_KEY: 'token\nexample' })).toThrow()
+  })
+
   it('keeps billing disabled unless explicitly and completely configured', () => {
     expect(parseConfig({}).PULPO_BILLING_ENABLED).toBe(false)
     expect(() => parseConfig({ PULPO_BILLING_ENABLED: 'true' })).toThrow(/STRIPE_SECRET_KEY/)

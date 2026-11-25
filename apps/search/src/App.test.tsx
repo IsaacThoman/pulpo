@@ -23,6 +23,7 @@ describe('Pulpo Search', () => {
   const weather = vi.spyOn(api, 'weather')
   const weatherAlerts = vi.spyOn(api, 'weatherAlerts')
   const currency = vi.spyOn(api, 'currency')
+  const places = vi.spyOn(api, 'places')
 
   beforeEach(() => {
     session.mockResolvedValue({ user })
@@ -40,6 +41,7 @@ describe('Pulpo Search', () => {
     weather.mockResolvedValue({ status: 'not-found', sources: [] })
     weatherAlerts.mockResolvedValue({ status: 'unavailable' })
     currency.mockResolvedValue({ status: 'unavailable', source: { name: 'ECB', url: 'https://www.ecb.europa.eu/', description: 'Daily reference rates' } })
+    places.mockResolvedValue({ provider: 'brave', results: [] })
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
     const preferences = new Map<string, string>()
     vi.stubGlobal('localStorage', {
@@ -229,6 +231,46 @@ describe('Pulpo Search', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Try Web results' }))
     await screen.findByRole('link', { name: 'tide pools field guide' })
     expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ category: 'web' }), expect.any(AbortSignal))
+  })
+
+  it('offers a Web search explicitly when a known weather location has no forecast', async () => {
+    getConfig.mockResolvedValue({ ...config, weather: true })
+    weather.mockResolvedValue({ status: 'unavailable', sources: [],
+      place: { name: 'Portland', admin: 'Maine', country: 'United States', timeZone: 'America/New_York' } })
+    window.history.replaceState(null, '', '/search?q=weather+in+Portland+ME')
+    render(<App callback={null} />)
+    await screen.findByRole('heading', { name: 'Forecast unavailable' })
+    expect(search).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Search the web' }))
+    await screen.findByRole('link', { name: 'weather in Portland ME field guide' })
+    expect(search).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks for a typed location and filters reported open places without a second request', async () => {
+    getConfig.mockResolvedValue({ ...config, places: { provider: 'brave', priceMicros: 5000 } })
+    places.mockResolvedValue({ provider: 'brave', results: [
+      { name: 'Morning Cafe', address: '1 Elm Street', phone: '+1 555 321 9876 ext 1',
+        website: 'https://example.com/', todayHours: ['07:00–15:00'], openNow: true },
+      { name: 'Night Cafe', address: '2 Elm Street', openNow: false },
+      { name: 'Square Cafe', address: '3 Elm Street' },
+    ] })
+    window.history.replaceState(null, '', '/search?q=coffee+shops+near+me')
+    render(<App callback={null} />)
+    const choose = await screen.findByRole('region', { name: 'Choose a search area' })
+    expect(places).not.toHaveBeenCalled()
+    expect(search).not.toHaveBeenCalled()
+    fireEvent.change(within(choose).getByRole('textbox', { name: 'City or neighborhood' }), { target: { value: 'Davis Square' } })
+    fireEvent.click(within(choose).getByRole('button', { name: 'Find places' }))
+    const list = await screen.findByRole('region', { name: 'Local places' })
+    expect(places).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ query: 'coffee shops near Davis Square' }), expect.any(AbortSignal))
+    expect(within(list).getAllByRole('heading', { level: 3 })).toHaveLength(3)
+    fireEvent.click(within(list).getByRole('button', { name: 'Open now' }))
+    expect(within(list).getAllByRole('heading', { level: 3 })).toHaveLength(1)
+    expect(within(list).getByText('Today 07:00–15:00')).toBeDefined()
+    expect(within(list).getByRole('link', { name: 'Call' }).getAttribute('href')).toBe('tel:+15553219876;ext=1')
+    expect(within(list).getByRole('link', { name: 'Directions' }).getAttribute('href')).toContain('destination=Morning+Cafe%2C+1+Elm+Street')
+    expect(places).toHaveBeenCalledTimes(1)
+    expect(search).not.toHaveBeenCalled()
   })
 
   it('paginates only through a capable provider and restores a cached first page', async () => {

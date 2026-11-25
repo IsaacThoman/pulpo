@@ -1,4 +1,5 @@
-import Fastify, { type FastifyInstance } from 'fastify'
+import rateLimit from '@fastify/rate-limit'
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppError, unauthorized } from '../lib/errors.js'
 import { registerSearchRoutes } from './routes.js'
@@ -6,6 +7,7 @@ import { registerSearchRoutes } from './routes.js'
 const mocks = vi.hoisted(() => ({
   authenticated: true,
   enabled: true,
+  placeKey: undefined as string | undefined,
   settings: {} as Record<string, unknown>,
   fetch: vi.fn(),
   reserve: vi.fn(),
@@ -14,7 +16,11 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('../config.js', () => ({
-  getConfig: () => ({ SEARCH_PUBLIC_URL: mocks.enabled ? 'https://search.example.com' : undefined, ENCRYPTION_KEY: 'key' }),
+  getConfig: () => ({
+    SEARCH_PUBLIC_URL: mocks.enabled ? 'https://search.example.com' : undefined,
+    SEARCH_BRAVE_PLACES_API_KEY: mocks.placeKey,
+    ENCRYPTION_KEY: 'key',
+  }),
 }))
 vi.mock('../lib/crypto.js', () => ({ decryptSecret: (value: string) => value }))
 vi.mock('../auth/service.js', () => ({
@@ -34,10 +40,13 @@ vi.mock('../database/client.js', () => ({
 
 let app: FastifyInstance
 const query = (payload: Record<string, unknown>) => app.inject({ method: 'POST', url: '/api/search/query', payload })
+const places = (payload: Record<string, unknown>, remoteAddress?: string) =>
+  app.inject({ method: 'POST', url: '/api/search/places', payload, remoteAddress })
 
-beforeEach(() => {
+beforeEach(async () => {
   mocks.authenticated = true
   mocks.enabled = true
+  mocks.placeKey = undefined
   mocks.settings = {
     searchEnabled: true,
     searchProviderOrder: ['kagi', 'firecrawl'],
@@ -55,6 +64,13 @@ beforeEach(() => {
   app.setErrorHandler((error, _request, reply) => {
     if (error instanceof AppError) return reply.code(error.statusCode).send({ error: { code: error.code } })
     return reply.code(400).send({ error: { code: 'validation_error' } })
+  })
+  await app.register(rateLimit, {
+    global: false,
+    errorResponseBuilder: (_request, context) => new AppError(context.statusCode, 'rate_limit_exceeded', 'Rate limit exceeded'),
+  })
+  app.addHook('onRequest', async request => {
+    request.user = mocks.authenticated ? { id: 'search-user' } as FastifyRequest['user'] : null
   })
   registerSearchRoutes(app)
 })
@@ -102,6 +118,79 @@ describe('Pulpo Search API', () => {
       ],
     })
     expect(response.body).not.toContain('secret')
+  })
+
+  it('advertises Places through the session-bound config only when its server key is set', async () => {
+    expect((await app.inject('/api/search/config')).json()).not.toHaveProperty('places')
+    expect((await places({ query: 'coffee' })).statusCode).toBe(404)
+    mocks.placeKey = 'brave-test-secret'
+    const config = await app.inject('/api/search/config')
+    expect(config.json()).toMatchObject({ defaultOrder: ['kagi', 'firecrawl'], places: { provider: 'brave', priceMicros: 5000 } })
+    expect(config.body).not.toContain('brave-test-secret')
+    mocks.authenticated = false
+    expect((await places({ query: 'coffee' })).statusCode).toBe(401)
+    expect((await app.inject('/api/search/config')).statusCode).toBe(401)
+    mocks.authenticated = true
+    mocks.enabled = false
+    expect((await places({ query: 'coffee' })).statusCode).toBe(404)
+    expect(mocks.reserve).not.toHaveBeenCalled()
+    expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+
+  it('validates typed place inputs and reserves credits before fetching results', async () => {
+    mocks.placeKey = 'brave-test-secret'
+    for (const input of [{ query: ' ' }, { query: 'q'.repeat(501) }, { query: 'ok', location: 'x'.repeat(151) },
+      { query: 'ok', openNow: 'true' }, { query: 'ok', latitude: 40 }]) {
+      expect((await places(input)).statusCode).toBe(400)
+    }
+    expect(mocks.reserve).not.toHaveBeenCalled()
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    mocks.fetch.mockResolvedValueOnce(Response.json({ type: 'locations', results: [
+      { type: 'location_result', title: 'Coffee Shop', postal_address: { displayAddress: '12 Main St, Boston' } },
+    ] }))
+    const response = await places({ query: 'coffee', location: 'Boston' })
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['cache-control']).toBe('no-store')
+    expect(response.json()).toEqual({ provider: 'brave', results: [{ name: 'Coffee Shop', address: '12 Main St, Boston' }] })
+    expect(mocks.reserve).toHaveBeenCalledExactlyOnceWith({ userId: 'search-user', costMicros: 5000 })
+    expect(mocks.reserve.mock.invocationCallOrder[0]).toBeLessThan(mocks.fetch.mock.invocationCallOrder[0]!)
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+    expect(mocks.settle).toHaveBeenCalledExactlyOnceWith({
+      reservationId: 'kagi-hold', costMicros: 5000, type: 'web_search',
+      metadata: { provider: 'brave', category: 'places', resultCount: 1 },
+    })
+    expect(mocks.release).not.toHaveBeenCalled()
+  })
+
+  it('releases empty and failed Places attempts and does not fetch when credits fall short', async () => {
+    mocks.placeKey = 'brave-test-secret'
+    mocks.fetch.mockResolvedValueOnce(Response.json({ type: 'locations', results: [
+      { title: 'Unknown hours', postal_address: { displayAddress: '12 Main St, Boston' } },
+    ] })).mockResolvedValueOnce(new Response('secret upstream error', { status: 401 }))
+    const empty = await places({ query: 'coffee', openNow: true })
+    expect(empty.json()).toEqual({ provider: 'brave', results: [], unverifiedHours: 1 })
+    const failed = await places({ query: 'coffee' })
+    expect(failed.statusCode).toBe(502)
+    expect(failed.json()).toEqual({ error: { code: 'places_unavailable' } })
+    expect(failed.body).not.toContain('secret')
+    expect(mocks.release.mock.calls).toEqual([['kagi-hold'], ['firecrawl-hold']])
+    mocks.reserve.mockRejectedValueOnce(new AppError(402, 'insufficient_balance', 'Insufficient balance'))
+    expect((await places({ query: 'coffee' })).statusCode).toBe(402)
+    expect(mocks.fetch).toHaveBeenCalledTimes(2)
+    expect(mocks.settle).not.toHaveBeenCalled()
+  })
+
+  it('bounds Places attempts per account even if the client address changes', async () => {
+    mocks.placeKey = 'brave-test-secret'
+    mocks.reserve.mockReset().mockResolvedValue('place-hold')
+    mocks.fetch.mockImplementation(async () => Response.json({ type: 'locations' }))
+    for (let index = 1; index <= 12; index += 1) {
+      expect((await places({ query: 'coffee' }, '192.0.2.' + index)).statusCode).toBe(200)
+    }
+    expect((await places({ query: 'coffee' }, '192.0.2.13')).statusCode).toBe(429)
+    expect(mocks.reserve).toHaveBeenCalledTimes(12)
+    expect(mocks.fetch).toHaveBeenCalledTimes(12)
+    expect(mocks.release).toHaveBeenCalledTimes(12)
   })
 
   it('requires a session for weather and resolves places without a provider call until known and covered', async () => {

@@ -26,3 +26,13 @@ export function visibleEntries(entries: ResultWithUrl[], showHidden: boolean) {
 export function firstVisibleResultUrl(data: SearchResponse, preferences: Preferences): URL | undefined {
   return visibleEntries(resultEntries(data, preferences), false)[0]?.url
 }
+
+export function consecutiveSiteResults(entries: ResultWithUrl[], groupSites: boolean) {
+  const groups: Array<{ lead: ResultWithUrl; additional: ResultWithUrl[] }> = []
+  for (const entry of entries) {
+    const previous = groups.at(-1)
+    if (groupSites && previous?.lead.host === entry.host) previous.additional.push(entry)
+    else groups.push({ lead: entry, additional: [] })
+  }
+  return groups
+}

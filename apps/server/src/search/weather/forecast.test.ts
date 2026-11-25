@@ -1,9 +1,11 @@
+import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { createWeatherClient, type WeatherCache } from './forecast.js'
 
 const now = Date.parse('2026-11-24T04:30:00Z')
 const atlanta = { name: 'Atlanta', country: 'United States', countryCode: 'US', timeZone: 'America/New_York', latitude: 33.74901, longitude: -84.38798 }
 const paris = { name: 'Paris', country: 'France', countryCode: 'FR', timeZone: 'Europe/Paris', latitude: 48.856627, longitude: 2.352258 }
+const portland = { name: 'Portland', country: 'United States', countryCode: 'US', timeZone: 'America/New_York', latitude: 43.65737, longitude: -70.2589 }
 const alertUrl = 'https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.event.001.1'
 const alert = {
   status: 'Actual', messageType: 'Alert', event: 'Wind Advisory', severity: 'Moderate', headline: 'Wind advisory for Atlanta',
@@ -21,6 +23,17 @@ function fixture() {
   const fetcher = vi.fn<typeof fetch>()
   let current = now
   return { cache, fetcher, client: createWeatherClient(cache, fetcher, () => current), setTime: (time: number) => { current = time } }
+}
+
+function portlandGrid() {
+  return Response.json({ properties: { gridId: 'GYX', gridX: 72, gridY: 58 } })
+}
+
+function portlandForecast() {
+  return Response.json({ properties: {
+    updateTime: '2026-11-24T03:00:00Z',
+    periods: [{ startTime: '2026-11-23T23:00:00-05:00', temperature: 41, temperatureUnit: 'F', shortForecast: 'Clear' }],
+  } })
 }
 
 describe('Weather forecasts', () => {
@@ -106,6 +119,38 @@ describe('Weather forecasts', () => {
     setTime(expires + 1000)
     expect(await client(paris, 'weather@example.org')).toMatchObject({ forecast: { temperatureC: 18 } })
     expect(fetcher.mock.calls[1]?.[1]?.headers).toMatchObject({ 'if-modified-since': modified })
+  })
+
+  it('allows cold NOAA hourly requests to complete and refreshes a legacy negative entry', async () => {
+    const { cache, client, fetcher } = fixture()
+    const url = 'https://api.weather.gov/gridpoints/GYX/72,58/forecast/hourly'
+    const key = 'search:weather:v1:' + createHash('sha256').update(url).digest('hex')
+    await cache.write(key, JSON.stringify({ freshUntil: now + 900_000, value: null }), 900)
+    fetcher.mockResolvedValueOnce(portlandGrid())
+    fetcher.mockResolvedValueOnce(portlandForecast())
+    const deadlines = vi.spyOn(AbortSignal, 'timeout')
+    try {
+      expect(await client(portland, undefined)).toMatchObject({ forecast: { temperatureC: 5, condition: 'Clear' } })
+      expect(deadlines.mock.calls).toEqual([[3500], [12_000]])
+      expect(cache.lease).toHaveBeenCalledWith(key + ':refresh', 14_000)
+      expect(String(fetcher.mock.calls[1]?.[0])).toBe(url)
+    } finally {
+      deadlines.mockRestore()
+    }
+  })
+
+  it('backs off after a NOAA hourly timeout and retries within a minute instead of holding a long negative cache', async () => {
+    const { client, fetcher, setTime } = fixture()
+    fetcher.mockResolvedValueOnce(portlandGrid())
+    fetcher.mockRejectedValueOnce(new DOMException('Operation timed out', 'TimeoutError'))
+    fetcher.mockResolvedValueOnce(portlandForecast())
+    expect(await client(portland, undefined)).toBeNull()
+    setTime(now + 59_000)
+    expect(await client(portland, undefined)).toBeNull()
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    setTime(now + 60_000)
+    expect(await client(portland, undefined)).toMatchObject({ forecast: { temperatureC: 5 } })
+    expect(fetcher).toHaveBeenCalledTimes(3)
   })
 
   it('pauses all lookups to a throttled host and never follows cross-origin redirects', async () => {

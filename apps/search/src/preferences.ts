@@ -13,6 +13,7 @@ export interface Preferences {
   newTab: boolean
   keyboardShortcuts: boolean
   rememberRecentQueries: boolean
+  localPlaces: boolean
   domains: Record<string, DomainRule>
   bangs: CustomBang[]
 }
@@ -26,6 +27,7 @@ const defaults: Preferences = {
   newTab: false,
   keyboardShortcuts: true,
   rememberRecentQueries: false,
+  localPlaces: true,
   domains: {},
   bangs: [],
 }
@@ -59,6 +61,7 @@ export function loadPreferences(): Preferences {
       newTab: saved.newTab === true,
       keyboardShortcuts: saved.keyboardShortcuts !== false,
       rememberRecentQueries: saved.rememberRecentQueries === true,
+      localPlaces: saved.localPlaces !== false,
       domains: Object.fromEntries(domains),
       bangs: Array.isArray(saved.bangs) ? saved.bangs.filter(isCustomBang).slice(0, 30) : [],
     }

@@ -39,6 +39,7 @@ const configSchema = z.object({
     }
     return url.origin
   })),
+  SEARCH_BRAVE_PLACES_API_KEY: optionalEnvironmentValue(z.string().trim().regex(/^[!-~]{1,512}$/)),
   // Setting a contact opts this deployment into MET Norway's weather service.
   SEARCH_WEATHER_MET_CONTACT: optionalEnvironmentValue(z.string().trim().max(250).pipe(z.union([
     z.email(), z.url({ protocol: /^https$/ }).refine(value => /^[!-~]+$/.test(value)),

@@ -82,6 +82,23 @@ describe('search result presentation', () => {
     expect(onQuery).toHaveBeenCalledWith('octopus habitat')
   })
 
+  it('keeps adjacent links from a site together without changing their navigation order', () => {
+    const duplicates = { ...data, results: [
+      ...data.results.slice(0, 1),
+      { url: 'https://github.com/guide/examples', title: 'Octopus examples', snippet: 'More references.' },
+      ...data.results.slice(1),
+    ] }
+    const preferences = loadPreferences()
+    const { container, rerender } = render(<Results data={duplicates} location={{ ...homeLocation, query: 'octopus' }}
+      preferences={preferences} setDomain={vi.fn()} onQuery={vi.fn()} />)
+    expect(screen.getByRole('list', { name: 'More from github.com' }).textContent).toBe('Octopus examples')
+    expect(container.querySelectorAll('.result-link')[1]?.textContent).toBe('Octopus examples')
+    expect(firstVisibleResultUrl(duplicates, preferences)?.href).toBe(duplicates.results[0].url)
+    rerender(<Results data={duplicates} location={{ ...homeLocation, query: 'octopus site:github.com' }}
+      preferences={preferences} setDomain={vi.fn()} onQuery={vi.fn()} />)
+    expect(screen.queryByRole('list', { name: 'More from github.com' })).toBeNull()
+  })
+
   it('shows sourced knowledge facts and respects the result source preference', () => {
     const featured = { ...data, knowledge: {
       title: 'Octopus', summary: 'A marine mollusc.', url: 'https://en.wikipedia.org/wiki/Octopus',

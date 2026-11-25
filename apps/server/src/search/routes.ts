@@ -14,6 +14,7 @@ import { AppError } from '../lib/errors.js'
 import { parseWebToolsSettings } from '../settings/application-settings.js'
 import { registerSearchCurrencyRoute } from './currency.js'
 import { fetchSearchFavicon } from './favicon.js'
+import { placesCapability, placeSearchInput, searchPlaces } from './places.js'
 import { filterSearchHosts, searchHostFilters, searchScopes } from './scope.js'
 import { registerSearchWeatherRoute } from './weather/routes.js'
 
@@ -90,9 +91,54 @@ export function registerSearchRoutes(app: FastifyInstance) {
       defaultOrder,
       currency: true,
       weather: true,
+      ...(getConfig().SEARCH_BRAVE_PLACES_API_KEY ? { places: placesCapability } : {}),
       providers: defaultOrder.map((id) => ({
         id, ...providerCapabilities[id], dates, region: true, priceMicros: billedPrice(id, 'search', settings),
       })),
+    }
+  })
+
+  app.post('/api/search/places', {
+    bodyLimit: 4096,
+    config: { rateLimit: {
+      max: 12, timeWindow: '1 minute', hook: 'preHandler',
+      keyGenerator: (request: FastifyRequest) => request.user?.id ?? request.ip,
+    } },
+  }, async (request, reply) => {
+    const user = searchUser(request, reply)
+    const apiKey = getConfig().SEARCH_BRAVE_PLACES_API_KEY
+    if (!apiKey) throw new AppError(404, 'places_disabled', 'Place search is unavailable')
+    const input = placeSearchInput.parse(request.body)
+    const { provider, priceMicros: costMicros } = placesCapability
+    const controller = new AbortController()
+    const onClose = () => { if (!reply.raw.writableFinished) controller.abort() }
+    reply.raw.on('close', onClose)
+    let reservationId: string | undefined
+    let settled = false
+    try {
+      reservationId = await reserveMeteredBudget({ userId: user.id, costMicros })
+      let result
+      try {
+        result = await searchPlaces(input, apiKey, controller.signal)
+        controller.signal.throwIfAborted()
+      } catch {
+        if (controller.signal.aborted) throw new AppError(408, 'search_cancelled', 'Search was cancelled')
+        request.log.warn({ provider }, 'Place search provider failed')
+        throw new AppError(502, 'places_unavailable', 'Place search is temporarily unavailable. Try again.', 'server_error')
+      }
+      if (result.results.length) {
+        await settleMeteredBudget({
+          reservationId, costMicros, type: 'web_search',
+          metadata: { provider, category: 'places', resultCount: result.results.length },
+        })
+        settled = true
+      }
+      return result
+    } finally {
+      reply.raw.off('close', onClose)
+      if (reservationId && !settled) await releaseMeteredBudget(reservationId).catch(() => {
+        request.log.warn({ provider, reservationId }, 'Search reservation cleanup failed')
+      })
     }
   })
 
