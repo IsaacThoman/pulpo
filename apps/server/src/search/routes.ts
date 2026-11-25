@@ -11,6 +11,7 @@ import { db } from '../database/client.js'
 import { applicationSettings } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { parseWebToolsSettings } from '../settings/application-settings.js'
+import { fetchSearchFavicon } from './favicon.js'
 
 const categories = ['web', 'news', 'images'] as const
 const dates = ['day', 'week', 'month', 'year'] as const
@@ -44,6 +45,16 @@ function searchUser(request: FastifyRequest, reply: FastifyReply) {
 }
 
 export function registerSearchRoutes(app: FastifyInstance) {
+  app.get<{ Params: { host: string } }>('/api/search/favicon/:host', {
+    config: { rateLimit: { max: 160, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
+    searchUser(request, reply)
+    const icon = await fetchSearchFavicon(request.params.host)
+    reply.header('cache-control', icon ? 'private, max-age=86400' : 'private, max-age=300')
+    if (!icon) return reply.code(404).send()
+    return reply.type(icon.type).send(icon.data)
+  })
+
   app.get('/api/search/opensearch.xml', (_request, reply) => {
     const searchUrl = new URL('/search', searchOrigin()).href
     return reply.type('application/opensearchdescription+xml; charset=utf-8')

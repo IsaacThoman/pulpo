@@ -1,13 +1,14 @@
-import { searchConnectInputSchema, type SearchSessionUser } from '@pulpo/contracts'
+import { colorThemeIdSchema, customThemesSchema, DEFAULT_COLOR_THEME_ID, INSTANCE_COLOR_THEME_PREFIX, INSTANCE_COLOR_THEMES_SETTING_KEY, searchConnectInputSchema, type SearchSessionUser } from '@pulpo/contracts'
 import { and, eq, gt, lte } from 'drizzle-orm'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
-import { searchAuthCodes, sessions, users } from '../database/schema.js'
+import { applicationSettings, searchAuthCodes, sessions, userPreferences, users } from '../database/schema.js'
 import { resolveClientIp } from '../lib/client-ip.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { AppError, forbidden, notFound, unauthorized } from '../lib/errors.js'
+import { parseInstanceColorThemes } from '../settings/instance-color-themes.js'
 import { authenticateSession, authenticateSessionToken, currentSessionId, newSessionCredentials, requireUser } from './service.js'
 
 const SEARCH_API_PATH = '/api/search'
@@ -127,6 +128,25 @@ export function registerSearchAuthRoutes(app: FastifyInstance) {
     reply.header('cache-control', 'no-store')
     const user = request.user
     return { user: user && user.role !== 'pending' ? sessionUser(user) : null }
+  })
+
+  app.get('/api/search/appearance', async (request, reply) => {
+    reply.header('cache-control', 'no-store')
+    const user = requireUser(request)
+    const [row] = await db.select({ values: userPreferences.values }).from(userPreferences)
+      .where(eq(userPreferences.userId, user.id)).limit(1)
+    const preferences = row?.values as Record<string, unknown> | undefined
+    const theme = z.enum(['system', 'light', 'dark']).catch('system').parse(preferences?.theme)
+    const colorTheme = colorThemeIdSchema.catch(DEFAULT_COLOR_THEME_ID).parse(preferences?.colorTheme)
+    if (colorTheme.startsWith(INSTANCE_COLOR_THEME_PREFIX)) {
+      const [setting] = await db.select({ value: applicationSettings.value }).from(applicationSettings)
+        .where(eq(applicationSettings.key, INSTANCE_COLOR_THEMES_SETTING_KEY)).limit(1)
+      const selected = parseInstanceColorThemes(setting?.value).find(item => INSTANCE_COLOR_THEME_PREFIX + item.id === colorTheme)
+      return { theme, colorTheme, instanceTheme: selected }
+    }
+    const selected = customThemesSchema.catch([]).parse(preferences?.customThemes).find(item => item.id === colorTheme)
+    // Search applies Pulpo's color palette without carrying chat-specific custom styles across origins.
+    return { theme, colorTheme, customTheme: selected && { ...selected, css: '' } }
   })
 
   app.post('/api/search/auth/logout', async (request, reply) => {

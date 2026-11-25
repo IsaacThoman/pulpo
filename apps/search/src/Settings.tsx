@@ -11,8 +11,13 @@ export function Modal({ title, close, children }: { title: string; close: () => 
   useEffect(() => {
     const element = dialog.current
     if (!element) return
+    const opener = document.activeElement
     element.showModal()
-    return () => element.close()
+    return () => {
+      element.close()
+      if (opener instanceof HTMLElement && opener.isConnected
+        && (document.activeElement === document.body || element.contains(document.activeElement))) opener.focus()
+    }
   }, [])
 
   return (
@@ -52,7 +57,7 @@ export function Settings({ config, preferences, update }: SettingsProps) {
   const searchPrice = config?.providers.find(provider => provider.id === activePrimary)?.priceMicros ?? 0
   return (
     <div className="settings">
-      <p className="hint">Changes apply to this browser.</p>
+      <p className="hint">Search preferences are saved in this browser.</p>
       <fieldset className="settings-group">
         <legend>Search providers</legend>
         {available.length > 0 ? (
@@ -88,7 +93,8 @@ export function Settings({ config, preferences, update }: SettingsProps) {
         <div className="settings-row">
           <label htmlFor="search-theme">Theme</label>
           <select id="search-theme" value={preferences.theme} onChange={event => update({ ...preferences, theme: event.target.value as Preferences['theme'] })}>
-            <option value="system">System</option>
+            <option value="pulpo">Follow Pulpo</option>
+            <option value="system">Follow device</option>
             <option value="light">Light</option>
             <option value="dark">Dark</option>
           </select>
@@ -103,6 +109,11 @@ export function Settings({ config, preferences, update }: SettingsProps) {
         <label className="settings-row">
           Open links in a new tab
           <input type="checkbox" checked={preferences.newTab} onChange={event => update({ ...preferences, newTab: event.target.checked })} />
+        </label>
+        <label className="settings-row">
+          Single-key shortcuts
+          <input type="checkbox" checked={preferences.keyboardShortcuts}
+            onChange={event => update({ ...preferences, keyboardShortcuts: event.target.checked })} />
         </label>
       </fieldset>
       <fieldset className="settings-group">
@@ -161,7 +172,10 @@ export function Bangs({ customBangs, update, onChooseBang }: BangsProps) {
   }
   return (
     <div className="settings">
-      <p className="hint">Type a shortcut before your query to search on another site. Try <code>!w tide pools</code>.</p>
+      <div className="bang-help">
+        <p className="hint"><code>!w tide pools</code> searches Wikipedia.</p>
+        <p className="hint"><code>tide pools !</code> opens the first web result.</p>
+      </div>
       <label className="field-label">
         Find a shortcut
         <input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Wikipedia, GitHub, Maps…" />
@@ -203,12 +217,12 @@ export function Bangs({ customBangs, update, onChooseBang }: BangsProps) {
   )
 }
 
-export function Shortcuts() {
+export function Shortcuts({ singleKeys }: { singleKeys: boolean }) {
   return (
     <dl className="shortcut-list">
-      <div><dt>Focus search</dt><dd><kbd>/</kbd></dd></div>
-      <div><dt>Next result</dt><dd><kbd>J</kbd></dd></div>
-      <div><dt>Previous result</dt><dd><kbd>K</kbd></dd></div>
+      {singleKeys && <div><dt>Focus search</dt><dd><kbd>/</kbd></dd></div>}
+      <div><dt>Next result</dt><dd><kbd aria-label="Arrow down">↓</kbd>{singleKeys && <> or <kbd>J</kbd></>}</dd></div>
+      <div><dt>Previous result</dt><dd><kbd aria-label="Arrow up">↑</kbd>{singleKeys && <> or <kbd>K</kbd></>}</dd></div>
       <div><dt>Open focused result</dt><dd><kbd>Enter</kbd></dd></div>
       <div><dt>Close a panel</dt><dd><kbd>Esc</kbd></dd></div>
     </dl>

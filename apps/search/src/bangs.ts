@@ -102,6 +102,13 @@ export function searchBangs(query: string, customBangs: readonly CustomBang[] = 
   return matches.sort((a, b) => rank(a.trigger, value) - rank(b.trigger, value))
 }
 
+/** A standalone exclamation mark opens the first result. Named bangs are resolved separately. */
+export function firstResultQuery(query: string): string | null {
+  const trimmed = query.trim()
+  const clean = trimmed.replace(/^(?:!\s+)+|(?:\s+!)+$/gu, '')
+  return clean !== trimmed && clean !== '!' ? clean : null
+}
+
 function rank(trigger: string, value: string): number {
   if (trigger === value) return 0
   return trigger.startsWith(value) ? 1 : 2

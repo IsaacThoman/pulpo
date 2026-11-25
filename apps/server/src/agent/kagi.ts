@@ -1,5 +1,5 @@
 import { truncateUtf8 } from './output.js'
-import { normalizeResult, resultText, resultUrl, uniqueResults, type ProviderSearchInput, type SearchResults } from './search-results.js'
+import { normalizeResult, resultSnippet, resultText, resultUrl, uniqueResults, type ProviderSearchInput, type SearchResults } from './search-results.js'
 
 const KAGI_API_BASE = 'https://kagi.com/api/v1'
 
@@ -125,7 +125,7 @@ export class KagiClient {
     ].filter(Boolean))].slice(0, 8)
     const directAnswer = group('direct_answer')[0]
     const title = resultText(directAnswer?.title, 300)
-    const snippet = resultText(directAnswer?.snippet, 1200)
+    const snippet = resultSnippet(directAnswer?.snippet, 500)
     const url = resultUrl(directAnswer?.url)
     return {
       results,

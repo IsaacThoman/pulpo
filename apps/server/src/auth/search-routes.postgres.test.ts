@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, queryClient } from '../database/client.js'
-import { searchAuthCodes, sessions, users } from '../database/schema.js'
+import { searchAuthCodes, sessions, userPreferences, users } from '../database/schema.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { AppError } from '../lib/errors.js'
 import { registerAccountSwitchingRoutes, signedInAccountsCookieName } from './accounts.js'
@@ -140,6 +140,32 @@ describe.skipIf(!enabled)('Search sessions and Pulpo account handoff', () => {
     const payload = await authorize()
     const results = await Promise.all([exchange(payload), exchange(payload)])
     expect(results.map((response) => response.statusCode).sort()).toEqual([200, 401])
+  })
+
+  it('shares only the active account palette with an authenticated Search session', async () => {
+    const url = '/api/search/appearance'
+    expect((await app.inject({ url, headers: searchHeaders })).statusCode).toBe(401)
+    await db.insert(userPreferences).values({
+      userId: testUser.id,
+      values: {
+        theme: 'dark', colorTheme: 'lagoon', unrelated: 'private preference',
+        customThemes: [{ id: 'lagoon', name: 'Lagoon', css: '.test { color: red }', dark: { colors: { 'editor.background': '#102632' } } }],
+      },
+    })
+    const exchanged = await exchange(await authorize())
+    const response = await app.inject({ url, headers: {
+      ...searchHeaders, cookie: (exchanged.headers['set-cookie'] as string).split(';')[0],
+    } })
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['cache-control']).toBe('no-store')
+    expect(response.json()).toEqual({
+      theme: 'dark', colorTheme: 'lagoon',
+      customTheme: {
+        id: 'lagoon', name: 'Lagoon', css: '',
+        dark: { colors: { 'editor.background': '#102632' }, tokenColors: [] },
+        light: { colors: {}, tokenColors: [] },
+      },
+    })
   })
 
   it('rejects a grant after the source session is revoked or the code expires', async () => {

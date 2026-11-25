@@ -16,11 +16,11 @@ export function SearchBox({ value, setValue, onSearch, customBangs, input }: Sea
   const listId = useId()
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(-1)
-  const bangPrefix = /^!([\w-]*)$/.exec(value.trimStart())
+  const bangPrefix = /^\s*!([\w-]*)$/.exec(value) ?? /\s!([\w-]+)$/.exec(value)
   const matches = open && bangPrefix ? searchBangs(bangPrefix[1], customBangs).slice(0, 6) : []
 
   function choose(bang: CustomBang) {
-    setValue('!' + bang.trigger + ' ')
+    setValue(value.slice(0, value.lastIndexOf('!') + 1) + bang.trigger + ' ')
     setActive(-1)
     setOpen(false)
     input.current?.focus()
@@ -37,6 +37,7 @@ export function SearchBox({ value, setValue, onSearch, customBangs, input }: Sea
   }
 
   function handleKey(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.nativeEvent.isComposing) return
     if (event.key === 'Escape') {
       setOpen(false)
       setActive(-1)
@@ -56,7 +57,7 @@ export function SearchBox({ value, setValue, onSearch, customBangs, input }: Sea
   return (
     <form className="search-box" role="search" onSubmit={submit}>
       <label className="sr-only" htmlFor={inputId}>Search the web</label>
-      <Search className="search-leading" size={21} aria-hidden="true" />
+      <Search className="search-leading" size={20} aria-hidden="true" />
       <input
         id={inputId}
         ref={input}
@@ -87,8 +88,9 @@ export function SearchBox({ value, setValue, onSearch, customBangs, input }: Sea
           <X size={17} aria-hidden="true" />
         </button>
       )}
-      <button className="search-submit" type="submit" aria-label="Search">
-        Search
+      <button className="search-submit" type="submit" aria-label="Search" title="Search">
+        <span>Search</span>
+        <Search size={18} aria-hidden="true" />
       </button>
       {matches.length > 0 && (
         <ul className="bang-suggestions" id={listId} role="listbox" aria-label="Bangs">

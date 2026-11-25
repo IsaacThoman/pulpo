@@ -2,7 +2,7 @@ import type { Provider, SearchConfig } from './api'
 import { validateCustomBang, type CustomBang } from './bangs'
 import type { SearchLocation } from './navigation'
 
-export type Theme = 'system' | 'light' | 'dark'
+export type Theme = 'pulpo' | 'system' | 'light' | 'dark'
 export type DomainRule = 'pin' | 'hide'
 
 export interface Preferences {
@@ -11,17 +11,19 @@ export interface Preferences {
   fallbackProvider: Provider | 'none' | ''
   limit: 10 | 20
   newTab: boolean
+  keyboardShortcuts: boolean
   domains: Record<string, DomainRule>
   bangs: CustomBang[]
 }
 
 const key = 'pulpo-search-settings-v1'
 const defaults: Preferences = {
-  theme: 'system',
+  theme: 'pulpo',
   defaultProvider: '',
   fallbackProvider: '',
   limit: 10,
   newTab: false,
+  keyboardShortcuts: true,
   domains: {},
   bangs: [],
 }
@@ -48,11 +50,12 @@ export function loadPreferences(): Preferences {
       .filter((entry): entry is [string, DomainRule] => entry[1] === 'pin' || entry[1] === 'hide')
       .slice(0, 100)
     return {
-      theme: saved.theme === 'light' || saved.theme === 'dark' ? saved.theme : 'system',
+      theme: saved.theme === 'light' || saved.theme === 'dark' || (saved.theme === 'system' && saved.appearanceVersion === 1) ? saved.theme : 'pulpo',
       defaultProvider: isProvider(saved.defaultProvider) ? saved.defaultProvider : '',
       fallbackProvider: isProvider(saved.fallbackProvider) || saved.fallbackProvider === 'none' ? saved.fallbackProvider : '',
       limit: saved.limit === 20 ? 20 : 10,
       newTab: saved.newTab === true,
+      keyboardShortcuts: saved.keyboardShortcuts !== false,
       domains: Object.fromEntries(domains),
       bangs: Array.isArray(saved.bangs) ? saved.bangs.filter(isCustomBang).slice(0, 30) : [],
     }
@@ -63,7 +66,7 @@ export function loadPreferences(): Preferences {
 
 export function savePreferences(prefs: Preferences) {
   try {
-    window.localStorage.setItem(key, JSON.stringify(prefs))
+    window.localStorage.setItem(key, JSON.stringify({ ...prefs, appearanceVersion: 1 }))
   } catch {
     // Preferences can still be used for the current page when storage is unavailable.
   }

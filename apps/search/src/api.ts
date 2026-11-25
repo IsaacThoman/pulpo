@@ -50,6 +50,13 @@ export interface SearchUser {
   email: string
 }
 
+export interface SearchAppearance {
+  theme: 'system' | 'light' | 'dark'
+  colorTheme: string
+  customTheme?: CustomTheme
+  instanceTheme?: CustomTheme
+}
+
 export class SearchApiError extends Error {
   constructor(message: string, readonly status: number, readonly code?: string) {
     super(message)
@@ -94,9 +101,11 @@ function post<T>(path: string, body?: object, signal?: AbortSignal) {
 }
 
 export const api = {
+  appearance: (signal?: AbortSignal) => request<SearchAppearance>('/appearance', { signal }),
   session: (signal?: AbortSignal) => request<{ user: SearchUser | null }>('/auth/session', { signal }),
   exchange: (code: string, codeVerifier: string) => post<{ user: SearchUser }>('/auth/exchange', { code, codeVerifier }),
   logout: () => post<void>('/auth/logout'),
   config: (signal?: AbortSignal) => request<SearchConfig>('/config', { signal }),
   search: (input: SearchInput, signal?: AbortSignal) => post<SearchResponse>('/query', input, signal),
 }
+import type { CustomTheme } from '@pulpo/contracts'

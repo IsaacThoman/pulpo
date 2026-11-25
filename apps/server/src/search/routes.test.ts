@@ -65,6 +65,22 @@ afterEach(async () => {
 })
 
 describe('Pulpo Search API', () => {
+  it('proxies only bounded image resources for valid public result hosts', async () => {
+    mocks.fetch.mockResolvedValueOnce(new Response(new Uint8Array([0, 0, 1, 0]), { headers: { 'content-type': 'image/x-icon' } }))
+    const response = await app.inject('/api/search/favicon/github.com')
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['cache-control']).toBe('private, max-age=86400')
+    expect(response.headers['content-type']).toBe('image/x-icon')
+    expect(mocks.fetch).toHaveBeenLastCalledWith('https://icons.duckduckgo.com/ip3/github.com.ico', expect.objectContaining({ redirect: 'error' }))
+    expect((await app.inject('/api/search/favicon/private.local')).statusCode).toBe(404)
+    expect((await app.inject('/api/search/favicon/node.tailnet.ts.net')).statusCode).toBe(404)
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+    mocks.fetch.mockResolvedValueOnce(new Response('<svg>unsafe</svg>', { headers: { 'content-type': 'image/svg+xml' } }))
+    expect((await app.inject('/api/search/favicon/wikipedia.org')).statusCode).toBe(404)
+    mocks.fetch.mockResolvedValueOnce(new Response(new Uint8Array(65537), { headers: { 'content-type': 'image/x-icon' } }))
+    expect((await app.inject('/api/search/favicon/iana.org')).statusCode).toBe(404)
+  })
+
   it('advertises the configured hostname for browser search discovery without signing in', async () => {
     mocks.authenticated = false
     const response = await app.inject('/api/search/opensearch.xml')

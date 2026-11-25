@@ -56,6 +56,12 @@ function apiError(payload: FirecrawlSearchResponse | FirecrawlScrapeResponse | n
   return payload?.error || payload?.message || `Firecrawl API returned ${status}`
 }
 
+function searchPreview(row: FirecrawlSearchResult | undefined) {
+  const snippet = typeof row?.snippet === 'string' ? row.snippet.trim() : ''
+  const description = typeof row?.description === 'string' ? row.description.trim() : ''
+  return !snippet || (snippet.length > 300 && description && description.length < snippet.length) ? description : snippet
+}
+
 export function firecrawlCloudRequiresApiKey(baseUrl: string): boolean {
   return new URL(baseUrl).hostname.toLowerCase() === 'api.firecrawl.dev'
 }
@@ -116,7 +122,7 @@ export class FirecrawlClient {
       results: uniqueResults(rows.map((row) => normalizeResult({
         url: row?.url,
         title: row?.title,
-        snippet: row?.snippet ?? row?.description,
+        snippet: searchPreview(row),
         imageUrl: row?.imageUrl,
         publishedAt: row?.date,
       })), limit, category),

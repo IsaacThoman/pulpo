@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { resolveBang, searchBangs, validateCustomBang } from './bangs'
+import { firstResultQuery, resolveBang, searchBangs, validateCustomBang } from './bangs'
+
+describe('first-result bang', () => {
+  it.each(['isaac thoman !', '! isaac thoman', ' !  isaac thoman  !  '])('cleans %s', query => {
+    expect(firstResultQuery(query)).toBe('isaac thoman')
+  })
+
+  it.each(['!', '! !', 'hello!', '!g hello', '"inside ! quotes"', 'C++ !important'])('preserves %s', query => {
+    expect(firstResultQuery(query)).toBeNull()
+  })
+})
 
 describe('bangs', () => {
   it('redirects a standalone bang anywhere in a query with safely encoded terms', () => {

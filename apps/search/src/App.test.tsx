@@ -19,6 +19,7 @@ describe('Pulpo Search', () => {
   const search = vi.spyOn(api, 'search')
   const exchange = vi.spyOn(api, 'exchange')
   const logout = vi.spyOn(api, 'logout')
+  const appearance = vi.spyOn(api, 'appearance')
 
   beforeEach(() => {
     session.mockResolvedValue({ user })
@@ -32,6 +33,7 @@ describe('Pulpo Search', () => {
       ],
     }))
     logout.mockResolvedValue()
+    appearance.mockResolvedValue({ theme: 'system', colorTheme: 'pulpo' })
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
     const preferences = new Map<string, string>()
     vi.stubGlobal('localStorage', {
@@ -134,6 +136,41 @@ describe('Pulpo Search', () => {
     fireEvent.click(wikipedia)
     expect((combobox as HTMLInputElement).value).toBe('!w ')
     expect(search).not.toHaveBeenCalled()
+  })
+
+  it('handles bare bang discovery from the address bar without starting a paid search', async () => {
+    window.history.replaceState(null, '', '/search?q=%21')
+    render(<App callback={null} />)
+    await screen.findByRole('dialog', { name: 'Bangs' })
+    expect(window.location.pathname).toBe('/')
+    expect(search).not.toHaveBeenCalled()
+  })
+
+  it('searches the clean lucky query once and removes the bang when no result can open', async () => {
+    search.mockResolvedValue({ provider: 'kagi', results: [] })
+    window.history.replaceState(null, '', '/search?q=tide+pools+%21&type=news')
+    render(<App callback={null} />)
+    await screen.findByRole('heading', { name: 'No results found' })
+    await waitFor(() => expect(window.location.search).toBe('?q=tide+pools'))
+    expect(search).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      query: 'tide pools', category: 'web',
+    }), expect.any(AbortSignal))
+  })
+
+  it('batches date and region edits and preserves compatible filters when switching categories', async () => {
+    window.history.replaceState(null, '', '/search?q=tides')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'tides field guide' })
+    fireEvent.click(screen.getByLabelText('Filters'))
+    fireEvent.change(screen.getByLabelText('Date range'), { target: { value: 'day' } })
+    fireEvent.change(screen.getByLabelText('Region'), { target: { value: 'ca' } })
+    expect(search).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(2))
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ category: 'web', date: 'day', region: 'ca' }), expect.any(AbortSignal))
+    fireEvent.click(screen.getByRole('button', { name: 'News' }))
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(3))
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ category: 'news', date: 'day', region: 'ca' }), expect.any(AbortSignal))
   })
 
   it('clears search results on sign-out', async () => {
