@@ -1,8 +1,9 @@
 import { isSearchFaviconHost } from '@pulpo/contracts/search'
 import { ChevronDown, CircleHelp, Ellipsis, Globe2, Image, Pin } from 'lucide-react'
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { SearchResponse } from './api'
+import { faviconBackdrop, sampleFavicon } from './favicon-contrast'
 import { ImageResultFilters } from './ImageResultFilters'
 import { galleryGap, sizeImageTiles, type ImageTileSize } from './image-layout'
 import { ImageViewer } from './ImageViewer'
@@ -76,15 +77,18 @@ function pathLabel(url: URL) {
   return (segments.length > 3 ? [segments[0], '…', segments[segments.length - 1]] : segments).join(' › ')
 }
 
-function SiteIcon({ host }: { host: string }) {
+function SiteIcon({ host, pageColor }: { host: string; pageColor: string | undefined }) {
   const src = isSearchFaviconHost(host) ? '/api/search/favicon/' + host : undefined
-  const [loaded, setLoaded] = useState(false)
-  const [failed, setFailed] = useState(false)
-  return <span className="site-icon" aria-hidden="true">
+  const [favicon, setFavicon] = useState<Uint8ClampedArray | 'loaded' | 'failed'>()
+  const loaded = favicon !== undefined && favicon !== 'failed'
+  const backgroundColor = useMemo(() => (
+    pageColor && favicon instanceof Uint8ClampedArray ? faviconBackdrop(favicon, pageColor) : undefined
+  ), [favicon, pageColor])
+  return <span className="site-icon" aria-hidden="true" style={{ backgroundColor }}>
     {!loaded && <Globe2 size={14} style={{ gridArea: '1 / 1' }} />}
-    {src && !failed && <img src={src} alt="" width="16" height="16" loading="lazy" decoding="async" fetchPriority="low"
+    {src && favicon !== 'failed' && <img src={src} alt="" width="16" height="16" loading="lazy" decoding="async" fetchPriority="low"
       referrerPolicy="no-referrer" style={{ opacity: loaded ? 1 : 0, gridArea: '1 / 1' }}
-      onLoad={() => setLoaded(true)} onError={() => { setFailed(true); setLoaded(false) }} />}
+      onLoad={event => setFavicon(sampleFavicon(event.currentTarget) ?? 'loaded')} onError={() => setFavicon('failed')} />}
   </span>
 }
 
@@ -109,7 +113,7 @@ function ImageThumbnail({ image, thumbnail, title, source, license, dimensions, 
   </button>
 }
 
-function ResultItem({ entry, additional, versions, preview, imageTile, media, video, newsNow, newTab, setDomain, showHidden, searchSite, terms }: {
+function ResultItem({ entry, additional, versions, preview, imageTile, media, video, newsNow, newTab, setDomain, showHidden, searchSite, terms, pageColor }: {
   entry: ResultWithUrl
   additional: ResultWithUrl[]
   versions: { url: URL; label: string }[]
@@ -123,6 +127,7 @@ function ResultItem({ entry, additional, versions, preview, imageTile, media, vi
   showHidden: boolean
   searchSite?: (host: string) => void
   terms: Set<string>
+  pageColor?: string
 }) {
   const [versionsOpen, setVersionsOpen] = useState(false)
   const { result, url, host, rule } = entry
@@ -150,7 +155,7 @@ function ResultItem({ entry, additional, versions, preview, imageTile, media, vi
   </div>
   const heading = <h2><a className="result-link" href={url.href} target={target} rel="noreferrer" title={preview ? title : undefined}>{title}</a></h2>
   const metadata = <div className="result-meta">
-        {!preview && <SiteIcon host={host} />}
+        {!preview && <SiteIcon host={host} pageColor={pageColor} />}
         <span className="site-path" title={path ? host + ' › ' + path : host}>{host}
           {path && <span className="result-path"> › {path}</span>}
         </span>
@@ -247,6 +252,7 @@ interface ResultsProps {
   data: SearchResponse
   location: SearchLocation
   preferences: Preferences
+  pageColor?: string
   setDomain: (host: string, rule: DomainRule | undefined) => void
   onQuery: (query: string) => void
   onClearScope?: () => void
@@ -256,7 +262,7 @@ interface ResultsProps {
   imagePagination?: (canAdvance: boolean) => ReactNode
 }
 
-export function Results({ data, location, preferences, setDomain, onQuery, onClearScope, imageRefinements, imageToolbar, mediaToolbar, imagePagination }: ResultsProps) {
+export function Results({ data, location, preferences, pageColor, setDomain, onQuery, onClearScope, imageRefinements, imageToolbar, mediaToolbar, imagePagination }: ResultsProps) {
   const [expandedQuery, setExpandedQuery] = useState<string | null>(null)
   const [preview, setPreview] = useState<{ entries: ResultWithUrl[]; startIndex: number; opener: HTMLButtonElement }>()
   const [imageRefinement, setImageRefinement] = useState<{ query: string; value: ImageRefinements }>()
@@ -412,7 +418,7 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
                 preview={images ? opener => setPreview({ entries: ordered, startIndex: index, opener }) : undefined}
                 imageTile={imageTiles[index]}
                 media={media} video={videos} newsNow={news ? now : undefined}
-                newTab={preferences.newTab} setDomain={setDomain} showHidden={showHidden} searchSite={searchSite} terms={terms} />
+                newTab={preferences.newTab} setDomain={setDomain} showHidden={showHidden} searchSite={searchSite} terms={terms} pageColor={pageColor} />
             ))}
           </ol>
           </>
