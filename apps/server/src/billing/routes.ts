@@ -40,6 +40,8 @@ import { appStorePlanForProduct } from './app-store.js'
 import { appStoreAccountToken, hasRenewingAppStoreSubscription, processAppStoreNotification, syncAppStorePurchase } from './app-store-sync.js'
 import { processStripeWebhookEvent } from './webhooks.js'
 import { activePoolMembers, activePoolMembership, pendingFundingByUser } from '../pools/service.js'
+import { publishStateChange } from '../responses/events.js'
+import { claimSignupPromo, loadSignupPromoOffer } from './signup-promo.js'
 
 const creditAmountSchema = z.number().int().min(MIN_TOP_UP_CENTS).max(MAX_TOP_UP_CENTS)
 const checkoutInputSchema = z.object({
@@ -427,6 +429,23 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
   }, async (request) => {
     const user = requireUser(request)
     return { url: await createCustomerPortalUrl(user.id) }
+  })
+
+  // Web and desktop only: the native apps never show credits.
+  app.get('/api/billing/signup-promo', async (request) => {
+    const user = requireUser(request)
+    if (request.adminChatAccess) return { offer: null }
+    return { offer: await loadSignupPromoOffer(user.id) }
+  })
+
+  app.post('/api/billing/signup-promo/claim', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }, async (request) => {
+    const user = requireUser(request)
+    if (request.adminChatAccess) throw new AppError(403, 'signup_promo_not_eligible', 'This promotion is for new accounts')
+    const result = await claimSignupPromo(user.id)
+    await publishStateChange({ userId: user.id, revision: result.revision, scopes: ['billing', 'usage'] })
+    return { amountMicros: result.amountMicros, balanceMicros: result.balanceMicros }
   })
 
   app.get('/api/billing/checkouts/:id', async (request) => {

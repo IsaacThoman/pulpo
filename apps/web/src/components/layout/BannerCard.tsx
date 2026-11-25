@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Info, OctagonAlert, TriangleAlert, X, type LucideIcon } from 'lucide-react'
 import type { BannerType } from '@pulpo/contracts'
 import { cn } from '@/lib/utils'
@@ -23,27 +24,38 @@ const TONES: Record<BannerType, { icon: LucideIcon; card: string; iconColor: str
   },
 }
 
-/** One admin banner: a tinted card with a tone icon, linkified copy, and an optional dismiss control. */
-export function BannerCard({ type, content, onDismiss, className }: {
+/**
+ * One banner: a tinted card with a tone icon, linkified copy, and an optional dismiss control.
+ * `icon` and `iconClassName` replace the tone's icon; `detail` sits under the copy and `action` beside it.
+ */
+export function BannerCard({ type, content, onDismiss, className, icon, iconClassName, detail, action }: {
   type: BannerType
   content: string
   onDismiss?: () => void
   className?: string
+  icon?: LucideIcon
+  iconClassName?: string
+  detail?: ReactNode
+  action?: ReactNode
 }) {
   const tone = TONES[type]
-  const Icon = tone.icon
+  const Icon = icon ?? tone.icon
   return (
     <div
       role={type === 'error' ? 'alert' : 'status'}
       className={cn('flex w-fit max-w-full items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-sm', tone.card, className)}
     >
       {/* Centers the 16px icon on the 22px first line of copy. */}
-      <Icon className={cn('mt-[3px] size-4 shrink-0', tone.iconColor)} aria-hidden />
-      <p className="min-w-0 flex-1 whitespace-pre-line leading-[1.375rem] text-foreground/90 [overflow-wrap:anywhere]">
-        {bannerSegments(content).map((segment, index) => segment.kind === 'link'
-          ? <a key={index} href={segment.href} target="_blank" rel="noreferrer" className="font-medium text-foreground underline decoration-foreground/30 underline-offset-2 transition-colors hover:decoration-foreground">{segment.text}</a>
-          : <span key={index}>{segment.text}</span>)}
-      </p>
+      <Icon className={cn('mt-[3px] size-4 shrink-0', iconClassName ?? tone.iconColor)} aria-hidden />
+      <div className="min-w-0 flex-1">
+        <p className="whitespace-pre-line leading-[1.375rem] text-foreground/90 [overflow-wrap:anywhere]">
+          {bannerSegments(content).map((segment, index) => segment.kind === 'link'
+            ? <a key={index} href={segment.href} target="_blank" rel="noreferrer" className="font-medium text-foreground underline decoration-foreground/30 underline-offset-2 transition-colors hover:decoration-foreground">{segment.text}</a>
+            : <span key={index}>{segment.text}</span>)}
+        </p>
+        {detail && <div className="mt-0.5 text-xs leading-5 text-muted-foreground">{detail}</div>}
+      </div>
+      {action && <div className="-my-0.5 shrink-0">{action}</div>}
       {onDismiss && (
         <button
           type="button"
