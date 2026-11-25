@@ -90,7 +90,7 @@ export function App({ callback }: { callback: Callback }) {
   const callbackRef = useRef(callback && 'code' in callback ? callback : null)
   const accountMenu = useRef<HTMLDetailsElement>(null)
   const luckyRedirect = useRef('')
-  useSearchAppearance(user?.id, preferences.theme)
+  const pageColor = useSearchAppearance(user?.id, preferences.theme)
   const { recentQueries, rememberQuery, clearRecentQueries } = useRecentQueries(user?.id, preferences.rememberRecentQueries)
 
   useEffect(() => {
@@ -705,7 +705,7 @@ export function App({ callback }: { callback: Callback }) {
                     <p>These images are available on earlier pages.</p>
                   </section>
                 ) : <Results key={searchPath(view)} data={resultsData ?? state.data} location={{ ...view, date: effectiveDate }} preferences={preferences}
-                  setDomain={setDomain} onQuery={onSearch} imageRefinements={imageBrowse.refinements} imageToolbar={imageToolbar}
+                  pageColor={pageColor} setDomain={setDomain} onQuery={onSearch} imageRefinements={imageBrowse.refinements} imageToolbar={imageToolbar}
                   mediaToolbar={mediaToolbar} imagePagination={renderPages} />}
                 {!!state.data.results.length && shorterImageQuery && <div className="image-show-more">
                   <button className="secondary-button" onClick={() => onSearch(shorterImageQuery)}>Search for “{shorterImageQuery}”</button>
