@@ -285,6 +285,37 @@ describe('Pulpo Search', () => {
     expect(search).not.toHaveBeenCalled()
   })
 
+  it('offers to shorten an empty reusable image query while keeping its filters', async () => {
+    const query = 'vintage nineteenth-century botanical fern engraving'
+    getConfig.mockResolvedValue({ ...config, reusableImages: true })
+    reusableImages.mockResolvedValueOnce({ provider: 'openverse', results: [] }).mockResolvedValueOnce({
+      provider: 'openverse', results: [{
+        url: 'https://example.org/fern', title: 'Fern engraving', snippet: '', imageUrl: 'https://example.org/fern.jpg',
+        imageLicense: {
+          code: 'pdm', url: 'https://creativecommons.org/publicdomain/mark/1.0/', creator: 'BioDivLibrary',
+          attribution: 'Fern engraving by BioDivLibrary',
+        },
+      }],
+    })
+    window.history.replaceState(null, '', '/search?' + new URLSearchParams({
+      q: query, type: 'images', reuse: '1', license: 'public-domain', kind: 'illustration',
+    }))
+    render(<App callback={null} />)
+    const shorterSearch = await screen.findByRole('button', { name: 'Search for “fern engraving”' })
+    expect(reusableImages).toHaveBeenCalledExactlyOnceWith({ query, license: 'public-domain', category: 'illustration' }, expect.any(AbortSignal))
+    fireEvent.click(shorterSearch)
+    fireEvent.click(await screen.findByRole('button', { name: 'Preview image: Fern engraving' }))
+    const preview = screen.getByRole('dialog')
+    expect(within(preview).getByText('Fern engraving by BioDivLibrary')).toBeDefined()
+    expect(within(preview).getByRole('link', { name: 'Visit original source' }).getAttribute('href')).toBe('https://example.org/fern')
+    expect(window.location.search).toBe('?q=fern+engraving&type=images&reuse=1&license=public-domain&kind=illustration')
+    expect(reusableImages).toHaveBeenCalledTimes(2)
+    expect(reusableImages).toHaveBeenLastCalledWith({
+      query: 'fern engraving', license: 'public-domain', category: 'illustration',
+    }, expect.any(AbortSignal))
+    expect(search).not.toHaveBeenCalled()
+  })
+
   it('suggests bangs without calling a provider', async () => {
     render(<App callback={null} />)
     await screen.findByLabelText('Pulpo account')

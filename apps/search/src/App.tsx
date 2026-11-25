@@ -14,7 +14,7 @@ import { placeIntent } from './places'
 import { compatibleProviders, loadPreferences, preferencesStorageKey, providerOrder, savePreferences, type DomainRule, type Preferences } from './preferences'
 import { QuickAnswer } from './QuickAnswer'
 import { ReusableImageControls } from './ReusableImageControls'
-import type { ReusableImageFilters } from './reusable-images'
+import { shorterReusableImageQuery, type ReusableImageFilters } from './reusable-images'
 import { firstVisibleResultUrl } from './result-order'
 import { useRecentQueries } from './recent-queries'
 import { Results } from './Results'
@@ -221,6 +221,8 @@ export function App({ callback }: { callback: Callback }) {
   const imageBrowse = useImageBrowse(view.category === 'images' && user
     ? JSON.stringify([user.id, searchPath({ ...view, page: undefined })]) : undefined,
   view.page ?? 1, state.status === 'success' ? state.data : undefined)
+  const shorterImageQuery = reuse && !view.page && state.status === 'success' && !state.data.results.length && !state.data.hasMore
+    ? shorterReusableImageQuery(view.query) : undefined
   const spelling = state.status === 'success' && view.category === 'web' && !view.page
     ? suggestedSpelling(view.query, state.data) : undefined
   const resultsData = state.status === 'success' && spelling ? {
@@ -681,6 +683,8 @@ export function App({ callback }: { callback: Callback }) {
                     <h2>No results found</h2>
                     <p>Try fewer words or change your filters.</p>
                     <div className="empty-actions">
+                      {shorterImageQuery && <button className="secondary-button"
+                        onClick={() => onSearch(shorterImageQuery)}>Search for “{shorterImageQuery}”</button>}
                       {/"[^"]+"/.test(view.query) && <button className="secondary-button"
                         onClick={() => onSearch(view.query.replace(/"([^"]+)"/g, '$1'))}>Search without quotes</button>}
                       {withoutSiteOperators(view.query) && <button className="secondary-button"
