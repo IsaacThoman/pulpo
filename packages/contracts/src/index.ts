@@ -127,7 +127,7 @@ export const signupInputSchema = z.object({
 
 export const setupInputSchema = signupInputSchema
 
-export const sessionAppTypeSchema = z.enum(['web', 'mobile', 'desktop', 'cli', 'unknown'])
+export const sessionAppTypeSchema = z.enum(['web', 'mobile', 'desktop', 'cli', 'search', 'unknown'])
 export const sessionPlatformSchema = z.enum(['ios', 'android', 'windows', 'macos', 'linux', 'unknown'])
 export const nativeDeviceSchema = z.object({
   deviceLabel: z.string().trim().min(1).max(120),
@@ -152,6 +152,13 @@ export const deviceSessionSchema = z.object({
 export type DeviceSession = z.infer<typeof deviceSessionSchema>
 export const deviceSessionListSchema = z.object({ sessions: z.array(deviceSessionSchema) })
 export type DeviceSessionList = z.infer<typeof deviceSessionListSchema>
+
+export const searchConnectInputSchema = z.object({
+  codeChallenge: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+  state: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/),
+})
+export const searchSessionUserSchema = userSchema.pick({ id: true, name: true, email: true })
+export type SearchSessionUser = z.infer<typeof searchSessionUserSchema>
 
 export const nativeLoginInputSchema = loginInputSchema.and(nativeDeviceSchema)
 export const nativeSignupInputSchema = signupInputSchema.and(nativeDeviceSchema)

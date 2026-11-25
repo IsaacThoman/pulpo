@@ -11,7 +11,7 @@ import { Separator } from '@/components/ui/separator'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 const platforms = { ios: 'iOS', android: 'Android', windows: 'Windows', macos: 'macOS', linux: 'Linux', unknown: 'Unknown platform' }
-const apps = { web: 'Web', mobile: 'Mobile app', desktop: 'Desktop app', cli: 'CLI', unknown: 'Unknown app' }
+const apps = { web: 'Web', mobile: 'Mobile app', desktop: 'Desktop app', cli: 'CLI', search: 'Search', unknown: 'Unknown app' }
 
 export function DeviceSessionListView({ userId }: { userId?: string }) {
   const currentUserId = useAuth((state) => state.user?.id)

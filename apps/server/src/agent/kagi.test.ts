@@ -23,6 +23,31 @@ describe('Kagi client', () => {
     expect(JSON.parse(fetch.mock.calls[0]![1].body)).toMatchObject({ query: 'pulpo', limit: 1, lens: { sites_included: ['example.com'] } })
   })
 
+  it('maps a selected search category into safe, unescaped display data', async () => {
+    const example = {
+      url: 'https://example.com/page', title: '<b>Image</b> &amp; example', snippet: '&#x1f4f7; Photo',
+      image: { url: 'https://cdn.example.com/image.png' }, time: '2026-11-24',
+    }
+    const fetch = vi.fn().mockResolvedValue(Response.json({
+      data: {
+        image: [example, { ...example, url: 'https://example.com/duplicate' }, { ...example, url: 'javascript:alert(1)' },
+          { ...example, url: 'https://example.com/private', image: { url: 'https://127.0.0.1/image.png' } }],
+        search: [{ title: 'Unrelated', url: 'https://example.com/unrelated' }],
+        related_search: [{ title: 'other query' }, { props: { query: 'other query' } }],
+      },
+    }))
+    vi.stubGlobal('fetch', fetch)
+    await expect(new KagiClient('secret').searchResults({ query: 'pulpo', category: 'images', region: 'CA', timeRelative: 'day' })).resolves.toEqual({
+      results: [{
+        url: 'https://example.com/page', title: 'Image & example', snippet: '📷 Photo', imageUrl: 'https://cdn.example.com/image.png', publishedAt: '2026-11-24',
+      }],
+      related: ['other query'],
+    })
+    expect(JSON.parse(fetch.mock.calls[0]![1].body)).toMatchObject({
+      workflow: 'images', filters: { region: 'CA', safe_search: true }, lens: { time_relative: 'day' },
+    })
+  })
+
   it('truncates extracted Markdown before returning it to the model', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       meta: { trace: 'trace-extract' }, data: [{ url: 'https://example.com/page', markdown: 'abcdefghij' }],

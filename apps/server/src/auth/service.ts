@@ -1,6 +1,6 @@
 import argon2 from 'argon2'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { and, eq, gt, ne } from 'drizzle-orm'
+import { and, eq, gt, isNull, ne, or } from 'drizzle-orm'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { NativeDevice, User } from '@pulpo/contracts'
 import { resolveClientIp } from '../lib/client-ip.js'
@@ -71,26 +71,31 @@ export async function createSession(
   reply: FastifyReply,
 ): Promise<void> {
   const config = getConfig()
-  const token = randomToken()
-  const expiresAt = new Date(Date.now() + config.SESSION_TTL_DAYS * 86_400_000)
-  const ip = resolveClientIp(request.raw, config)
-  await db.insert(sessions).values({
-    id: newId(),
-    userId,
-    tokenHash: hashToken(token),
-    expiresAt,
-    userAgent: request.headers['user-agent'],
-    appType: 'web',
-    ipAddress: ip,
-    latestIpAddress: ip,
-  })
+  const { token, session } = newSessionCredentials(userId, request)
+  await db.insert(sessions).values({ ...session, appType: 'web' })
   reply.setCookie(config.SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: 'lax',
     secure: config.COOKIE_SECURE,
     path: '/',
-    expires: expiresAt,
+    expires: session.expiresAt,
   })
+}
+
+export function newSessionCredentials(userId: string, request: FastifyRequest) {
+  const config = getConfig()
+  const token = randomToken()
+  const expiresAt = new Date(Date.now() + config.SESSION_TTL_DAYS * 86_400_000)
+  const ip = resolveClientIp(request.raw, config)
+  return { token, session: {
+    id: newId(),
+    userId,
+    tokenHash: hashToken(token),
+    expiresAt,
+    userAgent: request.headers['user-agent'],
+    ipAddress: ip,
+    latestIpAddress: ip,
+  } }
 }
 
 export interface NativeSessionResult {
@@ -104,23 +109,14 @@ export async function createNativeSession(
   request: FastifyRequest,
   device: Pick<NativeDevice, 'appType' | 'platform'> = {},
 ): Promise<NativeSessionResult> {
-  const config = getConfig()
-  const token = randomToken()
-  const expiresAt = new Date(Date.now() + config.SESSION_TTL_DAYS * 86_400_000)
-  const ip = resolveClientIp(request.raw, config)
+  const { token, session } = newSessionCredentials(userId, request)
   await db.insert(sessions).values({
-    id: newId(),
-    userId,
-    tokenHash: hashToken(token),
-    expiresAt,
+    ...session,
     deviceLabel,
-    userAgent: request.headers['user-agent'],
     appType: device.appType ?? null,
     platform: device.platform ?? null,
-    ipAddress: ip,
-    latestIpAddress: ip,
   })
-  return { token, expiresAt: expiresAt.toISOString() }
+  return { token, expiresAt: session.expiresAt.toISOString() }
 }
 
 export function bearerSessionToken(authorization: string | undefined): string | undefined {
@@ -134,28 +130,24 @@ export function requestSessionToken(request: Pick<FastifyRequest, 'cookies' | 'h
   return cookieToken ?? bearerSessionToken(request.headers.authorization)
 }
 
+export function pulpoSessionFilter() {
+  return or(isNull(sessions.appType), ne(sessions.appType, 'search'))
+}
+
 export async function destroySession(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const config = getConfig()
   const token = request.cookies[config.SESSION_COOKIE_NAME]
-  if (token) await db.delete(sessions).where(eq(sessions.tokenHash, hashToken(token)))
+  if (token) await db.delete(sessions).where(and(eq(sessions.tokenHash, hashToken(token)), pulpoSessionFilter()))
   reply.clearCookie(config.SESSION_COOKIE_NAME, { path: '/' })
 }
 
 export async function destroyNativeSession(request: FastifyRequest): Promise<void> {
   const token = bearerSessionToken(request.headers.authorization)
-  if (token) await db.delete(sessions).where(eq(sessions.tokenHash, hashToken(token)))
+  if (token) await db.delete(sessions).where(and(eq(sessions.tokenHash, hashToken(token)), pulpoSessionFilter()))
 }
 
 export async function revokeOtherSessions(request: FastifyRequest, userId: string): Promise<void> {
-  const currentToken = requestSessionToken(request)
-  if (!currentToken) throw unauthorized()
-  const [current] = await db.select({ id: sessions.id }).from(sessions).where(and(
-    eq(sessions.userId, userId),
-    eq(sessions.tokenHash, hashToken(currentToken)),
-    gt(sessions.expiresAt, new Date()),
-  )).limit(1)
-  if (!current) throw unauthorized()
-  await revokeOtherSessionsById(userId, current.id)
+  await revokeOtherSessionsById(userId, await currentSessionId(request, userId))
 }
 
 export async function currentSessionId(request: FastifyRequest, userId: string): Promise<string> {
@@ -165,6 +157,7 @@ export async function currentSessionId(request: FastifyRequest, userId: string):
     eq(sessions.userId, userId),
     eq(sessions.tokenHash, hashToken(token)),
     gt(sessions.expiresAt, new Date()),
+    pulpoSessionFilter(),
   )).limit(1)
   if (!current) throw unauthorized()
   return current.id
@@ -188,13 +181,21 @@ export function runWithAuthenticatedUser<T>(user: AuthenticatedUser, operation: 
   return internalAuthenticatedUser.run(user, operation)
 }
 
-export async function authenticateSessionToken(token: string | undefined, ip?: string | null): Promise<AuthenticatedUser | null> {
+export async function authenticateSessionToken(
+  token: string | undefined,
+  ip?: string | null,
+  scope: 'pulpo' | 'search' = 'pulpo',
+): Promise<AuthenticatedUser | null> {
   if (!token) return null
   const [row] = await db
     .select({ session: sessions, user: users })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
-    .where(and(eq(sessions.tokenHash, hashToken(token)), gt(sessions.expiresAt, new Date())))
+    .where(and(
+      eq(sessions.tokenHash, hashToken(token)),
+      gt(sessions.expiresAt, new Date()),
+      scope === 'search' ? eq(sessions.appType, 'search') : pulpoSessionFilter(),
+    ))
     .limit(1)
   if (!row || row.user.blocked) return null
   await db.update(sessions).set({ lastSeenAt: new Date(), ...(ip ? { latestIpAddress: ip } : {}) }).where(eq(sessions.id, row.session.id))

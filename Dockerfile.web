@@ -4,6 +4,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY scripts/security/vendor/braces scripts/security/vendor/braces
 COPY apps/web/package.json apps/web/package.json
+COPY apps/search/package.json apps/search/package.json
 COPY apps/server/package.json apps/server/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/client-core/package.json packages/client-core/package.json

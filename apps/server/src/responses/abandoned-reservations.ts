@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lt } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, lt } from 'drizzle-orm'
 import { closeAbandonedReservation } from '../accounting/service.js'
 import { advanceMessageQueue } from '../chats/message-queue.js'
 import { isTerminalResponseStatus } from '../chats/message-queue-policy.js'
@@ -25,7 +25,14 @@ export async function sweepAbandonedReservations(input: {
   now?: Date
 }): Promise<{ closed: number; failedResponses: number }> {
   const cutoff = new Date((input.now ?? new Date()).getTime() - ABANDONED_RESERVATION_GRACE_MS)
-  const candidates = await db.select({ responseId: budgetReservations.responseId, status: responses.status })
+  // Standalone actions run synchronously under a short provider timeout and
+  // have no job to inspect. Holds this old cannot belong to a live request.
+  await db.delete(budgetReservations).where(and(
+    eq(budgetReservations.status, 'pending'),
+    isNull(budgetReservations.responseId),
+    lt(budgetReservations.createdAt, cutoff),
+  ))
+  const candidates = await db.select({ responseId: responses.id, status: responses.status })
     .from(budgetReservations).innerJoin(responses, eq(responses.id, budgetReservations.responseId))
     .where(and(eq(budgetReservations.status, 'pending'), lt(budgetReservations.createdAt, cutoff)))
     .orderBy(asc(budgetReservations.createdAt))

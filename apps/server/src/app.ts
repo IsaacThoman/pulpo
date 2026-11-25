@@ -1,5 +1,6 @@
 import { databaseErrorDetails } from './database/errors.js'
 import { registerImageGenerationRoutes } from './image-generation/routes.js'
+import { registerSearchRoutes } from './search/routes.js'
 import { registerSpeechRoutes } from './speech/routes.js'
 import { registerShelfRoutes } from './shelf/routes.js'
 import { registerAccountDeletionRoutes } from './account/routes.js'
@@ -15,7 +16,7 @@ import { ZodError } from 'zod'
 import { WORKSPACE_SCREEN_FRAME_HEADER } from '@pulpo/contracts'
 import { getConfig, isAllowedOrigin, isAllowedRequestOrigin } from './config.js'
 import { AppError } from './lib/errors.js'
-import { authenticateSession } from './auth/service.js'
+import { authenticateApplicationRequest, registerSearchAuthRoutes } from './auth/search-routes.js'
 import { registerAuthRoutes } from './auth/routes.js'
 import { registerAccountSwitchingRoutes, signedInAccountsCookieName } from './auth/accounts.js'
 import { registerCatalogRoutes } from './catalog/routes.js'
@@ -125,7 +126,7 @@ export async function buildApp() {
   app.decorateRequest('rawBody', null)
 
   app.addHook('onRequest', async (request) => {
-    request.user = await authenticateSession(request)
+    request.user = await authenticateApplicationRequest(request)
   })
 
   app.addHook('preValidation', async (request) => {
@@ -196,6 +197,7 @@ export async function buildApp() {
   await ensureBootstrapPreset()
   await registerMobileRoutes(app)
   await registerAuthRoutes(app)
+  registerSearchAuthRoutes(app)
   await registerAccountSwitchingRoutes(app)
   await registerDeviceSessionRoutes(app)
   await registerAccountDeletionRoutes(app)
@@ -229,6 +231,7 @@ export async function buildApp() {
   await registerTrashRoutes(app)
   await registerSpeechRoutes(app)
   await registerImageGenerationRoutes(app)
+  registerSearchRoutes(app)
   await registerDictationRoutes(app)
   await registerComputerRoutes(app)
   await registerPublicApiRoutes(app)

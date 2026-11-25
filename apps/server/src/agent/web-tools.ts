@@ -64,6 +64,12 @@ export function webExtractAvailable(settings: StoredWebToolsSettings): boolean {
   return enabledProviders('extract', settings, (provider) => configured.has(provider)).length > 0
 }
 
+export function availableWebSearchProviders(settings: StoredWebToolsSettings): WebToolProvider[] {
+  if (!settings.searchEnabled) return []
+  const configured = configuredProviders(settings)
+  return enabledProviders('search', settings, (provider) => configured.has(provider))
+}
+
 function sanitizedError(value: unknown): string {
   const message = value instanceof Error ? value.message : String(value)
   return message.replace(/\s+/g, ' ').trim().slice(0, 300) || 'Unknown provider error'

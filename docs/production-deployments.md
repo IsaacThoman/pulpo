@@ -1,6 +1,6 @@
 # Production deployments
 
-Production uses a persistent Coolify infrastructure application and three independent
+Production uses a persistent Coolify infrastructure application and independent
 Dockerfile applications. Persistent development follows the same separation; see
 [development deployments](development-deployments.md). Local Compose and disposable
 PR previews use `compose.yaml`.
@@ -11,6 +11,7 @@ PR previews use `compose.yaml`.
 | API | `apps/server/Dockerfile`, target `production-api` | HTTP `/ready`, Postgres + Redis | 30 seconds |
 | Worker | Same Dockerfile, target `production-worker` | Private HTTP `:3000/ready`, consumers + Postgres + Redis | 900 seconds |
 | Web | `Dockerfile.web`, target `production-web` | HTTP `/ready`, frontend exists | 30 seconds |
+| Search (optional) | `Dockerfile.search` | HTTP `/ready`, frontend exists | 30 seconds |
 
 The infrastructure application reuses the original named external volumes. Set
 `PULPO_DATA_PREFIX` to the original Coolify application UUID and retain its
@@ -46,6 +47,7 @@ deploys API, worker, and web from that exact SHA, using repository variables:
 - `COOLIFY_PULPO_APP_UUID`: API application (never the legacy Compose resource)
 - `COOLIFY_PULPO_WORKER_APP_UUID`: worker application
 - `COOLIFY_PULPO_WEB_APP_UUID`: frontend application
+- `COOLIFY_PULPO_SEARCH_APP_UUID`: optional Search frontend, deployed after Web
 
 Disable independent Git auto-deploy on these applications. Set
 `COMPOSE_REMOVE_ORPHANS=false` in each application (build time and runtime).
@@ -65,6 +67,42 @@ example 5-second intervals, 120 retries, and 5-second initial delay). Use the
 Dockerfile health command or an equivalent Node `fetch` command for API/worker;
 the slim Node image does not ship curl. Do not set a consistent/custom container
 name or publish a host port, since those prevent rolling replacement.
+
+## Pulpo Search
+
+1. In Coolify, create a Dockerfile application from the Pulpo repo root using
+   `Dockerfile.search`. Set its domain to `search.pulpo.baby`, its exposed port to
+   `80`, and its readiness probe to `/ready`. Add the hostname to the existing DNS
+   and Cloudflare ingress. Apply the health, shutdown, and
+   deployment settings above. Set the `VITE_PULPO_PUBLIC_URL` build argument to
+   the Pulpo login origin if it differs from `https://pulpo.baby`.
+2. On the API application, set `SEARCH_PUBLIC_URL=https://search.pulpo.baby`.
+   Add a Traefik router on that host matching
+   `` Path(`/api/search`) || PathPrefix(`/api/search/`) `` with priority above the
+   frontend router. Point it at the existing API service, preserve the incoming
+   host, and use the same trusted ingress and TLS settings as Pulpo. The
+   frontend serves the home, results and login callback from the same host as
+   those API requests.
+3. Add the app UUID to `COOLIFY_PULPO_SEARCH_APP_UUID` in GitHub. The production
+   workflow deploys it from the same release commit as API, worker, and Web
+   and checks that both Search routes respond. For development, use the
+   corresponding `COOLIFY_PULPO_DEV_SEARCH_APP_UUID` and
+   `PULPO_SEARCH_DEVELOPMENT_URL`, with a distinct Search hostname and the
+   development Pulpo login origin.
+4. Configure Kagi or Firecrawl in Pulpo under **Admin → Web tools**. Search uses
+   those provider keys, search prices, and each user's existing Pulpo balance
+   and limits. Users can change provider order in Search settings.
+
+### Local Search
+
+With local Postgres and Redis running, set `PUBLIC_URL=http://localhost:5173`,
+`SEARCH_PUBLIC_URL=http://127.0.0.1:5175`, and `COOKIE_SECURE=false` for the API,
+along with your local database and Redis connection settings. Run
+`npm run db:migrate`, then `npm run dev:api`, `npm run dev:web`, and
+`npm run dev:search` in separate terminals. Open `http://127.0.0.1:5175` so the
+Search and Pulpo session cookies have distinct hosts. For a custom API port, set
+`PULPO_DEV_API_TARGET` for Web and `SEARCH_API_TARGET` for Search. Configure test
+provider keys in the local Pulpo admin UI.
 
 ## Migration compatibility and rollback
 

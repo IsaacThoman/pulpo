@@ -1,0 +1,161 @@
+import { randomUUID } from 'node:crypto'
+import cookie from '@fastify/cookie'
+import { eq } from 'drizzle-orm'
+import Fastify, { type FastifyInstance } from 'fastify'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { db, queryClient } from '../database/client.js'
+import { searchAuthCodes, sessions, users } from '../database/schema.js'
+import { hashToken, randomToken } from '../lib/crypto.js'
+import { AppError } from '../lib/errors.js'
+import { registerAccountSwitchingRoutes, signedInAccountsCookieName } from './accounts.js'
+import { authenticateApplicationRequest, registerSearchAuthRoutes } from './search-routes.js'
+import { requireUser } from './service.js'
+
+vi.mock('../config.js', async (original) => {
+  const config = await original<typeof import('../config.js')>()
+  return {
+    ...config,
+    getConfig: () => config.parseConfig({
+      ...process.env,
+      PUBLIC_URL: 'https://pulpo.test',
+      SEARCH_PUBLIC_URL: 'https://search.pulpo.test',
+      SESSION_COOKIE_NAME: 'search_test_session',
+    }),
+  }
+})
+
+const enabled = process.env.PULPO_SEARCH_AUTH_TESTS === 'true'
+const pulpoHeaders = { host: 'pulpo.test', origin: 'https://pulpo.test' }
+const searchHeaders = { host: 'search.pulpo.test', origin: 'https://search.pulpo.test' }
+const mainCookieName = 'search_test_session'
+const searchCookieName = `__Host-${mainCookieName}_search`
+const authorizeUrl = '/api/auth/search/authorize'
+const exchangeUrl = '/api/search/auth/exchange'
+const searchSessionUrl = '/api/search/auth/session'
+
+describe.skipIf(!enabled)('Search sessions and Pulpo account handoff', () => {
+  let app: FastifyInstance
+  let testUser: { id: string; email: string; name: string }
+  let sourceSessionId: string
+  let sourceToken: string
+  let sourceCookie: string
+
+  beforeAll(async () => {
+    if (new URL(process.env.DATABASE_URL ?? 'postgres://localhost').pathname !== '/pulpo_search_auth_test') {
+      throw new Error('Run this suite against a disposable pulpo_search_auth_test PostgreSQL database')
+    }
+    app = Fastify()
+    await app.register(cookie)
+    app.decorateRequest('user', null)
+    app.addHook('onRequest', async (request) => { request.user = await authenticateApplicationRequest(request) })
+    app.setErrorHandler((error, _request, reply) => {
+      if (error instanceof AppError) return reply.code(error.statusCode).send({ code: error.code })
+      return reply.send(error)
+    })
+    app.get('/api/test-account', async (request) => ({ id: requireUser(request).id }))
+    await registerAccountSwitchingRoutes(app)
+    registerSearchAuthRoutes(app)
+  })
+  beforeEach(async () => {
+    const id = randomUUID()
+    testUser = { id, name: 'Search test user', email: `${id}@example.test` }
+    await db.insert(users).values({ ...testUser, username: `u${id.replaceAll('-', '').slice(0, 25)}`, role: 'user' })
+    sourceSessionId = randomUUID()
+    sourceToken = randomToken()
+    sourceCookie = `${mainCookieName}=${sourceToken}`
+    await db.insert(sessions).values({
+      id: sourceSessionId, userId: id, tokenHash: hashToken(sourceToken), appType: 'web',
+      expiresAt: new Date(Date.now() + 60_000),
+    })
+  })
+  afterEach(async () => { if (testUser) await db.delete(users).where(eq(users.id, testUser.id)) })
+  afterAll(async () => {
+    await app?.close()
+    await queryClient.end()
+  })
+
+  async function authorize() {
+    const codeVerifier = randomToken()
+    const state = randomToken()
+    const response = await app.inject({
+      method: 'POST', url: authorizeUrl, headers: { ...pulpoHeaders, cookie: sourceCookie },
+      payload: { codeChallenge: hashToken(codeVerifier), state, userId: testUser.id },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['cache-control']).toBe('no-store')
+    const redirect = new URL(response.json().redirectUrl)
+    expect(redirect.origin + redirect.pathname).toBe('https://search.pulpo.test/auth/callback')
+    expect(redirect.searchParams.get('state')).toBe(state)
+    const code = redirect.searchParams.get('code')!
+    expect(code).toHaveLength(43)
+    return { code, codeVerifier }
+  }
+
+  function exchange(payload: { code: string; codeVerifier: string }, headers = searchHeaders) {
+    return app.inject({ method: 'POST', url: exchangeUrl, headers, payload })
+  }
+
+  it('requires same-origin browser requests and keeps Pulpo and Search sessions separate', async () => {
+    const payload = await authorize()
+    expect((await exchange(payload, { ...searchHeaders, origin: 'https://preview.pulpo.test' })).statusCode).toBe(403)
+    expect((await exchange(payload, pulpoHeaders)).statusCode).toBe(404)
+    expect((await exchange({ ...payload, codeVerifier: randomToken() })).statusCode).toBe(401)
+    const mainSession = await app.inject({ url: searchSessionUrl, headers: { ...searchHeaders, cookie: sourceCookie } })
+    expect(mainSession.json()).toEqual({ user: null })
+
+    const response = await exchange(payload)
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ user: testUser })
+    expect(response.headers['cache-control']).toBe('no-store')
+    const setCookie = response.headers['set-cookie'] as string
+    expect(setCookie).toMatch(new RegExp(`^${searchCookieName}=`))
+    expect(setCookie).toContain('Path=/')
+    expect(setCookie).toContain('Secure')
+    expect(setCookie).toContain('HttpOnly')
+    expect(setCookie).not.toContain('Domain=')
+    const searchCookie = setCookie.split(';')[0]!
+    const token = searchCookie.split('=')[1]!
+    const browserSession = await app.inject({ url: searchSessionUrl, headers: { host: searchHeaders.host, cookie: searchCookie } })
+    expect(browserSession.json()).toEqual({ user: testUser })
+    expect((await app.inject({ url: searchSessionUrl, headers: { ...pulpoHeaders, cookie: searchCookie } })).statusCode).toBe(404)
+    expect((await app.inject({ url: '/api/test-account', headers: { ...pulpoHeaders, authorization: `Bearer ${token}` } })).statusCode).toBe(401)
+    expect((await app.inject({ url: '/api/test-account', headers: { ...pulpoHeaders, cookie: `${mainCookieName}=${token}` } })).statusCode).toBe(401)
+    const accounts = await app.inject({ url: '/api/auth/accounts', headers: {
+      ...pulpoHeaders, cookie: `${signedInAccountsCookieName()}=${token}`,
+    } })
+    expect(accounts.json()).toEqual({ accounts: [] })
+
+    const [session] = await db.select().from(sessions).where(eq(sessions.tokenHash, hashToken(token))).limit(1)
+    expect(session).toMatchObject({ appType: 'search', deviceLabel: 'Pulpo Search', userId: testUser.id })
+    const logoutUrl = '/api/search/auth/logout'
+    const searchCookies = { ...searchHeaders, cookie: searchCookie }
+    expect((await app.inject({ method: 'POST', url: logoutUrl, headers: { host: searchHeaders.host, cookie: searchCookie } })).statusCode).toBe(403)
+    expect((await app.inject({ method: 'POST', url: logoutUrl, headers: searchCookies })).statusCode).toBe(204)
+    expect((await app.inject({ url: searchSessionUrl, headers: searchCookies })).json()).toEqual({ user: null })
+    expect((await app.inject({ url: '/api/test-account', headers: { ...pulpoHeaders, cookie: sourceCookie } })).statusCode).toBe(200)
+    expect((await exchange(payload)).statusCode).toBe(401)
+  })
+
+  it('allows only one exchange when the callback is repeated concurrently', async () => {
+    const payload = await authorize()
+    const results = await Promise.all([exchange(payload), exchange(payload)])
+    expect(results.map((response) => response.statusCode).sort()).toEqual([200, 401])
+  })
+
+  it('rejects a grant after the source session is revoked or the code expires', async () => {
+    const expired = await authorize()
+    await db.update(searchAuthCodes).set({ expiresAt: new Date(Date.now() - 1_000) })
+      .where(eq(searchAuthCodes.tokenHash, hashToken(expired.code)))
+    expect((await exchange(expired)).statusCode).toBe(401)
+
+    const revoked = await authorize()
+    await db.delete(sessions).where(eq(sessions.id, sourceSessionId))
+    expect((await exchange(revoked)).statusCode).toBe(401)
+  })
+
+  it('checks the expected active account before issuing a code', async () => {
+    const payload = { codeChallenge: hashToken(randomToken()), state: randomToken(), userId: randomUUID() }
+    const response = await app.inject({ method: 'POST', url: authorizeUrl, headers: { ...pulpoHeaders, cookie: sourceCookie }, payload })
+    expect(response.statusCode).toBe(403)
+  })
+})

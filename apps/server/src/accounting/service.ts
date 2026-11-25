@@ -100,11 +100,25 @@ export async function reserveBudget(input: {
   }
 }
 
+/** Holds subscription usage and credits for a fixed-price action without a chat response. */
+export async function reserveMeteredBudget(input: { userId: string; costMicros: number }): Promise<string> {
+  if (!Number.isSafeInteger(input.costMicros) || input.costMicros <= 0) throw new AppError(400, 'invalid_metered_cost', 'Metered usage cost is invalid')
+  const reservationId = newId()
+  const fundingUserIds = new Set([input.userId])
+  try {
+    await reserveBudgetTransaction({ ...input, reservationId }, fundingUserIds)
+    return reservationId
+  } finally {
+    void queueAutoTopUpChecks(fundingUserIds)
+  }
+}
+
 function reserveBudgetTransaction(
-  input: Parameters<typeof reserveBudget>[0],
+  input: Parameters<typeof reserveBudget>[0] | { reservationId: string; userId: string; costMicros: number },
   fundingUserIds: Set<string>,
 ): Promise<{ amountMicros: number; maxOutputTokens: number }> {
   return db.transaction(async (tx) => {
+    const response = 'responseId' in input ? input : null
     const membership = await activePoolMembership(tx, input.userId)
     if (membership) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pool:${membership.pool.id}`}))`)
     const poolRows = membership ? await activePoolMembers(tx, membership.pool.id) : []
@@ -123,18 +137,26 @@ function reserveBudgetTransaction(
     }))
     const sharingOwnerIds = sharingCandidates(lockedUsers, held, input.userId)
     const poolAllowance = await loadPoolAllowance(tx, input.userId, sharingOwnerIds)
-    const customSources = await loadCustomFunding(tx, {
-      userId: user.id, plan: entitlements.plan, modelIds: await responseLimitModelIds(tx, input.responseId), sharingOwnerIds,
+    const eligibleCustomSources = await loadCustomFunding(tx, {
+      userId: user.id, plan: entitlements.plan, modelIds: response ? await responseLimitModelIds(tx, response.responseId) : [], sharingOwnerIds,
     })
-    const capacity = await reservationCapacity(tx, { userId: user.id, role: user.role, apiKeyId: input.apiKeyId, weeklyLimitMicros: entitlements.weeklyLimitMicros }, {
+    const customSources = response ? eligibleCustomSources : eligibleCustomSources.filter((source) => source.coversExtras)
+    const capacity = await reservationCapacity(tx, { userId: user.id, role: user.role, apiKeyId: response?.apiKeyId, weeklyLimitMicros: entitlements.weeklyLimitMicros }, {
       ...customCapacity(customSources),
       otherMicros: Math.min(entitlements.weeklyRemainingMicros, entitlements.fiveHourRemainingMicros)
         + poolAllowance.availableMicros
         + balances.reduce((sum, row) => sum + row.availableMicros, 0),
       extraMicros: 0,
     })
-    const reservation = budgetOutputReservation({ ...input, capacityMicros: capacity.amountMicros })
-    if (!reservation) throw new AppError(402, capacity.code, capacity.message)
+    const reservation = 'costMicros' in input
+      ? (input.costMicros <= capacity.amountMicros ? { amountMicros: input.costMicros, maxOutputTokens: 0 } : null)
+      : budgetOutputReservation({ ...input, capacityMicros: capacity.amountMicros })
+    if (!reservation) {
+      const message = !response && capacity.code === 'insufficient_balance'
+        ? 'Insufficient balance for this request'
+        : capacity.message
+      throw new AppError(402, capacity.code, message)
+    }
     const amount = reservation.amountMicros
     // Custom limit allowances are spent first; the rest is funded as before.
     const custom = allocateCustomFunding(amount, customSources)
@@ -148,12 +170,12 @@ function reserveBudgetTransaction(
     const funding = allocatePoolBalanceMicros({ amountMicros: balanceMicros, callerUserId: input.userId, balances })
     for (const userId of funding.keys()) fundingUserIds.add(userId)
     if (balanceMicros > 0 && !funding.size) throw new AppError(402, 'insufficient_balance', 'Insufficient balance for the request')
-    const reservationId = newId()
+    const reservationId = 'reservationId' in input ? input.reservationId : newId()
     await tx.insert(budgetReservations).values({
       id: reservationId,
-      responseId: input.responseId,
+      responseId: response?.responseId ?? null,
       userId: input.userId,
-      apiKeyId: input.apiKeyId,
+      apiKeyId: response?.apiKeyId,
       poolId: membership?.pool.id,
       amountMicros: amount,
       customReservedMicros: customMicros,
@@ -164,13 +186,14 @@ function reserveBudgetTransaction(
       sharedReservedMicros: sharedMicros,
       sharedFiveHourPeriodStart: sharedMicros > 0 ? poolAllowance.fiveHour.periodStart ?? new Date() : null,
       balanceReservedMicros: balanceMicros,
+      extraReservedMicros: response ? 0 : amount,
     })
     if (funding.size) await tx.insert(budgetReservationFunders).values([...funding].map(([userId, reservedMicros]) => ({ reservationId, userId, reservedMicros })))
     if (shared.size) await tx.insert(budgetReservationAllowanceFunders).values(poolAllowance.owners.filter((owner) => shared.has(owner.ownerUserId)).map((owner) => ({
       reservationId, ownerUserId: owner.ownerUserId, weeklyPeriodStart: owner.weeklyPeriodStart, reservedMicros: shared.get(owner.ownerUserId)!,
     })))
     await insertCustomFunders(tx, reservationId, customSources, custom)
-    await tx.update(responses).set({ pricingVersionId: input.pricing.id }).where(eq(responses.id, input.responseId))
+    if (response) await tx.update(responses).set({ pricingVersionId: response.pricing.id }).where(eq(responses.id, response.responseId))
     return reservation
   })
 }
@@ -372,7 +395,7 @@ export async function chargeMeteredUsage(input: {
   void queueAutoTopUpChecks(changes.ownChanges.map((change) => change.userId))
 }
 
-export async function settleBudget(input: {
+interface ResponseBudgetSettlement {
   responseId: string
   usage: ResponseUsage
   latencyMs: number
@@ -382,12 +405,42 @@ export async function settleBudget(input: {
   inferenceReferenceCostMicros?: number
   /** Billed workspace time, which is folded into `additionalCostMicros`. */
   workspace?: { minutes: number; costMicros: number }
-}): Promise<number> {
+}
+
+interface MeteredBudgetSettlement {
+  reservationId: string
+  costMicros: number
+  type: string
+  metadata?: Record<string, unknown>
+}
+
+export async function settleBudget(input: ResponseBudgetSettlement): Promise<number> {
+  const cost = await settleReservedBudget(input)
+  scheduleAnalyticsFinalization(input.responseId)
+  return cost
+}
+
+export async function settleMeteredBudget(input: MeteredBudgetSettlement): Promise<number> {
+  if (!Number.isSafeInteger(input.costMicros) || input.costMicros <= 0) throw new AppError(400, 'invalid_metered_cost', 'Metered usage cost is invalid')
+  return settleReservedBudget(input)
+}
+
+export async function releaseMeteredBudget(reservationId: string): Promise<void> {
+  await db.delete(budgetReservations).where(and(
+    eq(budgetReservations.id, reservationId), isNull(budgetReservations.responseId), eq(budgetReservations.status, 'pending'),
+  ))
+}
+
+async function settleReservedBudget(input: ResponseBudgetSettlement | MeteredBudgetSettlement): Promise<number> {
+  const responseInput = 'responseId' in input ? input : null
+  const meteredInput = 'reservationId' in input ? input : null
   const settlement = await db.transaction(async (tx) => {
     const [lockedReservation] = await tx
       .select()
       .from(budgetReservations)
-      .where(eq(budgetReservations.responseId, input.responseId))
+      .where('reservationId' in input
+        ? and(eq(budgetReservations.id, input.reservationId), isNull(budgetReservations.responseId))
+        : eq(budgetReservations.responseId, input.responseId))
       .for('update')
     if (!lockedReservation) throw new AppError(409, 'reservation_missing', 'Budget reservation is missing')
     if (lockedReservation.status === 'settled') return {
@@ -396,14 +449,19 @@ export async function settleBudget(input: {
       friendChanges: [],
       poolChanges: [],
     }
-    const [response] = await tx.select().from(responses).where(eq(responses.id, input.responseId)).limit(1)
+    if (meteredInput && (lockedReservation.status !== 'pending' || meteredInput.costMicros > lockedReservation.amountMicros)) {
+      throw new AppError(409, 'metered_reservation_invalid', 'The metered cost could not be settled')
+    }
+    const [response] = responseInput ? await tx.select().from(responses).where(eq(responses.id, responseInput.responseId)).limit(1) : []
     const [pricing] = response?.pricingVersionId
       ? await tx.select().from(modelPricingVersions).where(eq(modelPricingVersions.id, response.pricingVersionId)).limit(1)
       : []
-    if (!response || !pricing) throw new AppError(409, 'pricing_snapshot_missing', 'Pricing snapshot is missing')
-    const generationCost = input.costMicrosOverride ?? (calculateCostMicros(input.usage, pricing) + Math.max(0, (input.requestCount ?? 1) - 1) * pricing.perRequestPriceMicros)
-    const incurredCost = generationCost + Math.max(0, input.additionalCostMicros ?? 0)
-    const [toolCharges, taskCharges] = await Promise.all([
+    if (responseInput && (!response || !pricing)) throw new AppError(409, 'pricing_snapshot_missing', 'Pricing snapshot is missing')
+    const generationCost = responseInput && pricing
+      ? responseInput.costMicrosOverride ?? (calculateCostMicros(responseInput.usage, pricing) + Math.max(0, (responseInput.requestCount ?? 1) - 1) * pricing.perRequestPriceMicros)
+      : 0
+    const incurredCost = meteredInput?.costMicros ?? generationCost + Math.max(0, responseInput?.additionalCostMicros ?? 0)
+    const [toolCharges, taskCharges] = response ? await Promise.all([
       tx.select({ name: toolExecutions.toolName, calls: sql<number>`count(*)::int`, costMicros: sql<number>`sum(${toolExecutions.billedCostMicros})::bigint` })
         .from(toolExecutions).innerJoin(agentRuns, eq(agentRuns.id, toolExecutions.agentRunId))
         .where(and(eq(agentRuns.responseId, response.id), gt(toolExecutions.billedCostMicros, 0)))
@@ -412,12 +470,13 @@ export async function settleBudget(input: {
         .from(generationAttempts).innerJoin(requestLogs, eq(requestLogs.id, generationAttempts.requestLogId))
         .where(and(eq(requestLogs.responseId, response.id), eq(generationAttempts.source, 'tool'), gt(generationAttempts.costMicros, 0)))
         .groupBy(generationAttempts.purpose),
-    ])
+    ]) : [[], []]
     const numeric = (rows: Array<{ name: string; calls: number; costMicros: number }>) => rows.map((row) => ({ ...row, calls: Number(row.calls), costMicros: Number(row.costMicros) }))
     const tools = numeric(toolCharges), tasks = numeric(taskCharges)
     // Extras are what the usage record itemizes apart from the model: tools, background
     // model calls, and workspace time. Allowances that don't cover extras fund only the rest.
-    const extraCost = Math.min(incurredCost, [...tools, ...tasks].reduce((sum, row) => sum + row.costMicros, 0) + Math.max(0, input.workspace?.costMicros ?? 0))
+    const extraCost = meteredInput ? incurredCost : Math.min(incurredCost,
+      [...tools, ...tasks].reduce((sum, row) => sum + row.costMicros, 0) + Math.max(0, responseInput?.workspace?.costMicros ?? 0))
     const inferenceCost = incurredCost - extraCost
     // Reservations are estimates. Actual usage above the estimate is funded from
     // whatever the account can still cover; only the unfundable rest is absorbed.
@@ -433,7 +492,7 @@ export async function settleBudget(input: {
     const cost = Math.min(incurredCost, reservation.amountMicros)
     const uncoveredCostMicros = incurredCost - cost
     if (uncoveredCostMicros > 0) {
-      console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-accounting', event: 'settlement.overrun_absorbed', responseId: input.responseId, incurredCostMicros: incurredCost, chargedCostMicros: cost, uncoveredCostMicros }))
+      console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-accounting', event: 'settlement.overrun_absorbed', responseId: response?.id, incurredCostMicros: incurredCost, chargedCostMicros: cost, uncoveredCostMicros }))
     }
     const overrun = uncoveredCostMicros > 0 ? { uncoveredCostMicros } : {}
     const funders = await tx.select().from(budgetReservationFunders).where(eq(budgetReservationFunders.reservationId, reservation.id))
@@ -469,6 +528,13 @@ export async function settleBudget(input: {
       for (const [userId, amount] of shared) settledFunding.set(userId, amount)
     }
     const ownChanges: Array<{ userId: string; revision: number }> = []
+    const ledgerType = meteredInput?.type ?? 'usage'
+    const ledgerMetadata = {
+      ...meteredInput?.metadata,
+      ...(meteredInput ? { reservationId: reservation.id } : {}),
+      reservationMicros: reservation.amountMicros, totalCostMicros: cost, customCostMicros: customCost,
+      weeklyCostMicros: weeklyCost, fiveHourCostMicros: fiveHourCost, sharedCostMicros: sharedCost, poolId: reservation.poolId, ...overrun,
+    }
     for (const fundingUser of fundingUsers) {
       const debit = settledFunding.get(fundingUser.id) ?? 0
       if (debit <= 0) continue
@@ -477,15 +543,15 @@ export async function settleBudget(input: {
         .where(eq(users.id, fundingUser.id)).returning({ userId: users.id, revision: users.stateRevision })
       if (updated) ownChanges.push(updated)
       await tx.insert(creditLedger).values({
-        id: newId(), userId: fundingUser.id, responseId: response.id, type: 'usage', amountMicros: -debit,
+        id: newId(), userId: fundingUser.id, responseId: response?.id ?? null, type: ledgerType, amountMicros: -debit,
         balanceAfterMicros: balanceAfter,
-        metadata: { reservationMicros: reservation.amountMicros, totalCostMicros: cost, customCostMicros: customCost, weeklyCostMicros: weeklyCost, fiveHourCostMicros: fiveHourCost, sharedCostMicros: sharedCost, balanceCostMicros: debit, callerUserId: reservation.userId, poolId: reservation.poolId, ...overrun },
+        metadata: { ...ledgerMetadata, balanceCostMicros: debit, callerUserId: reservation.userId },
       })
     }
-    if (balanceCost === 0) await tx.insert(creditLedger).values({
-      id: newId(), userId: user.id, responseId: response.id, type: 'usage', amountMicros: 0,
+    if (balanceCost === 0 || (meteredInput && ownCost === 0)) await tx.insert(creditLedger).values({
+      id: newId(), userId: user.id, responseId: response?.id ?? null, type: ledgerType, amountMicros: 0,
       balanceAfterMicros: user.balanceMicros,
-      metadata: { reservationMicros: reservation.amountMicros, totalCostMicros: cost, customCostMicros: customCost, weeklyCostMicros: weeklyCost, fiveHourCostMicros: fiveHourCost, sharedCostMicros: sharedCost, balanceCostMicros: 0, poolId: reservation.poolId, ...overrun },
+      metadata: { ...ledgerMetadata, balanceCostMicros: 0 },
     })
     if (!ownChanges.some((change) => change.userId === user.id)) {
       const [updatedCaller] = await tx.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` }).where(eq(users.id, user.id)).returning({ userId: users.id, revision: users.stateRevision })
@@ -533,47 +599,49 @@ export async function settleBudget(input: {
         },
       })
     }
-    const [poolSnapshot] = reservation.poolId ? await tx.select({ total: sql<number>`coalesce(sum(${users.balanceMicros}), 0)::bigint` })
-      .from(poolMembers).innerJoin(users, eq(users.id, poolMembers.userId)).where(and(
-        eq(poolMembers.poolId, reservation.poolId), lte(poolMembers.joinedAt, reservation.createdAt),
-        or(isNull(poolMembers.leftAt), gt(poolMembers.leftAt, reservation.createdAt)),
-      )) : []
-    const [requestLog] = await tx.select({ requestedModelId: requestLogs.requestedModelId })
-      .from(requestLogs).where(eq(requestLogs.responseId, response.id)).limit(1)
-    const costBreakdown = itemizeUsageCost({
-      incurredMicros: incurredCost,
-      chargedMicros: cost,
-      tokens: input.usage.inputTokens + input.usage.outputTokens,
-      tools,
-      tasks,
-      workspace: input.workspace,
-    })
-    await tx.insert(usageEvents).values({
-      id: newId(),
-      userId: user.id,
-      apiKeyId: reservation.apiKeyId,
-      responseId: response.id,
-      modelId: response.actualModelId ?? response.modelId,
-      requestedModelId: requestLog?.requestedModelId ?? response.modelId,
-      pricingVersionId: pricing.id,
-      inputTokens: input.usage.inputTokens,
-      cachedInputTokens: input.usage.cachedInputTokens,
-      cacheWriteTokens: input.usage.cacheWriteTokens,
-      outputTokens: input.usage.outputTokens,
-      reasoningTokens: input.usage.reasoningTokens,
-      costMicros: cost,
-      inferenceReferenceCostMicros: Math.max(0, input.inferenceReferenceCostMicros ?? 0),
-      weeklyCostMicros: weeklyCost,
-      fiveHourCostMicros: fiveHourCost,
-      balanceCostMicros: balanceCost,
-      sharedCostMicros: sharedCost,
-      customCostMicros: customCost,
-      costBreakdown,
-      poolBalanceAfterMicros: reservation.poolId ? Number(poolSnapshot?.total ?? 0) : null,
-      weeklyPeriodStart: reservation.weeklyPeriodStart,
-      fiveHourPeriodStart: reservation.fiveHourPeriodStart,
-      latencyMs: input.latencyMs,
-    }).onConflictDoNothing()
+    if (responseInput && response && pricing) {
+      const [poolSnapshot] = reservation.poolId ? await tx.select({ total: sql<number>`coalesce(sum(${users.balanceMicros}), 0)::bigint` })
+        .from(poolMembers).innerJoin(users, eq(users.id, poolMembers.userId)).where(and(
+          eq(poolMembers.poolId, reservation.poolId), lte(poolMembers.joinedAt, reservation.createdAt),
+          or(isNull(poolMembers.leftAt), gt(poolMembers.leftAt, reservation.createdAt)),
+        )) : []
+      const [requestLog] = await tx.select({ requestedModelId: requestLogs.requestedModelId })
+        .from(requestLogs).where(eq(requestLogs.responseId, response.id)).limit(1)
+      const costBreakdown = itemizeUsageCost({
+        incurredMicros: incurredCost,
+        chargedMicros: cost,
+        tokens: responseInput.usage.inputTokens + responseInput.usage.outputTokens,
+        tools,
+        tasks,
+        workspace: responseInput.workspace,
+      })
+      await tx.insert(usageEvents).values({
+        id: newId(),
+        userId: user.id,
+        apiKeyId: reservation.apiKeyId,
+        responseId: response.id,
+        modelId: response.actualModelId ?? response.modelId,
+        requestedModelId: requestLog?.requestedModelId ?? response.modelId,
+        pricingVersionId: pricing.id,
+        inputTokens: responseInput.usage.inputTokens,
+        cachedInputTokens: responseInput.usage.cachedInputTokens,
+        cacheWriteTokens: responseInput.usage.cacheWriteTokens,
+        outputTokens: responseInput.usage.outputTokens,
+        reasoningTokens: responseInput.usage.reasoningTokens,
+        costMicros: cost,
+        inferenceReferenceCostMicros: Math.max(0, responseInput.inferenceReferenceCostMicros ?? 0),
+        weeklyCostMicros: weeklyCost,
+        fiveHourCostMicros: fiveHourCost,
+        balanceCostMicros: balanceCost,
+        sharedCostMicros: sharedCost,
+        customCostMicros: customCost,
+        costBreakdown,
+        poolBalanceAfterMicros: reservation.poolId ? Number(poolSnapshot?.total ?? 0) : null,
+        weeklyPeriodStart: reservation.weeklyPeriodStart,
+        fiveHourPeriodStart: reservation.fiveHourPeriodStart,
+        latencyMs: responseInput.latencyMs,
+      }).onConflictDoNothing()
+    }
     const peers = await usageNotificationFriendIds(tx, user)
     const poolMemberIds = reservation.poolId ? (await activePoolMembers(tx, reservation.poolId)).map((row) => row.user.id) : []
     // Owners who left the pool mid-request still see their shared usage change.
@@ -585,13 +653,17 @@ export async function settleBudget(input: {
       poolChanges: await bumpAccountRevisions(tx, poolChanges.filter((id) => !ownChanges.some((change) => change.userId === id))),
     }
   })
-  await Promise.all([
+  const publish = Promise.all([
     publishScopedStateChanges(settlement.ownChanges, ['usage', 'billing']),
     publishScopedStateChanges(settlement.friendChanges, ['friends']),
     publishScopedStateChanges(settlement.poolChanges, ['pool', 'usage', 'billing']),
   ])
+  if (meteredInput) {
+    void publish.catch(() => console.warn(JSON.stringify({
+      level: 'warn', service: 'pulpo-accounting', event: 'metered_usage.publish_failed', reservationId: meteredInput.reservationId,
+    })))
+  } else await publish
   void queueAutoTopUpChecks(settlement.ownChanges.map((change) => change.userId))
-  scheduleAnalyticsFinalization(input.responseId)
   return settlement.cost
 }
 
@@ -674,7 +746,8 @@ async function resizeLockedReservation<T extends { amountMicros: number }>(
     currentFiveHourPeriodStart: entitlements.fiveHourPeriodStart,
   })
   const customSources = resizedCustomSources(customFunders, await loadCustomFunding(tx, {
-    userId: reservation.userId, plan: entitlements.plan, modelIds: await responseLimitModelIds(tx, reservation.responseId), sharingOwnerIds,
+    userId: reservation.userId, plan: entitlements.plan,
+    modelIds: reservation.responseId ? await responseLimitModelIds(tx, reservation.responseId) : [], sharingOwnerIds,
   }))
   const subscriptionCapacity = allocate(Number.MAX_SAFE_INTEGER).weeklyMicros
   const sharedCapacity = totalMicros(allocateShared(Number.MAX_SAFE_INTEGER))

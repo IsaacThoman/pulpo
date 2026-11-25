@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/stores/auth'
 import { ui } from '@/i18n/ui'
+import { searchConnectLoginState } from '@/lib/search-connect'
 import { AuthFormError, PasswordVisibilityToggle } from './auth-form'
 import { errorFieldProps } from './error-field-props'
 
@@ -19,6 +20,8 @@ export function SetupPage() {
   const setupRequired = useAuth((state) => state.setupRequired)
   const setup = useAuth((state) => state.setup)
   const navigate = useNavigate()
+  const loginState = searchConnectLoginState(useLocation().state)
+  const returnTo = loginState?.from ?? '/'
   const [name, setName] = useState('')
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
@@ -29,8 +32,8 @@ export function SetupPage() {
   const [mismatch, setMismatch] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  if (user) return <Navigate to="/" replace />
-  if (setupRequired === false) return <Navigate to="/login" replace />
+  if (user) return <Navigate to={returnTo} replace />
+  if (setupRequired === false) return <Navigate to="/login" state={loginState} replace />
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -48,7 +51,7 @@ export function SetupPage() {
       setError(result.error)
       return
     }
-    navigate('/')
+    navigate(returnTo, { replace: Boolean(loginState) })
   }
 
   return (
