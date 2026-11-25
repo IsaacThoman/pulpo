@@ -12,7 +12,7 @@ export function AccountAvatar({ user }: { user: SearchUser }) {
     <span className="account-avatar" aria-hidden="true">
       {image
         ? <img src={image} alt="" onError={() => setFailed(image)} />
-        : initials(label)}
+        : <span className="account-avatar-fallback">{initials(label)}</span>}
     </span>
   )
 }
