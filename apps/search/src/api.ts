@@ -1,3 +1,5 @@
+import type { CurrencyQuery, CurrencyResponse } from './currency'
+
 export type Provider = 'kagi' | 'firecrawl'
 export type Category = 'web' | 'news' | 'images' | 'videos' | 'podcasts'
 export type SearchDate = 'day' | 'week' | 'month' | 'year'
@@ -52,14 +54,21 @@ export interface SearchConfig {
   defaultOrder: Provider[]
   providers: ProviderConfig[]
   weather?: boolean
+  currency?: boolean
 }
 
 export interface WeatherPlace { name: string; admin?: string; country: string; timeZone: string }
 export interface WeatherSource { name: string; url: string; license: string }
+export type WeatherAlerts = { status: 'unavailable' } | {
+  status: 'available'
+  source: WeatherSource
+  alerts: Array<{ event: string; headline?: string; severity: string; effectiveAt: string; expiresAt: string; url?: string }>
+}
 export type WeatherResponse = { sources: WeatherSource[] } & (
   | { status: 'forecast'; place: WeatherPlace; forecast: {
     updatedAt: string; validAt: string; temperatureC: number; condition?: string; windKph?: number
     precipitationMm?: number; precipitationChance?: number
+    hourly?: Array<{ validAt: string; temperatureC: number; condition?: string; precipitationChance?: number }>
     daily: Array<{ date: string; lowC: number; highC: number; condition?: string }>
   } }
   | { status: 'ambiguous'; places: Array<WeatherPlace & { query: string }> }
@@ -125,6 +134,8 @@ function post<T>(path: string, body?: object, signal?: AbortSignal) {
 
 export const api = {
   weather: (location: string, signal?: AbortSignal) => request<WeatherResponse>('/weather?' + new URLSearchParams({ location }), { signal }),
+  weatherAlerts: (location: string, signal?: AbortSignal) => request<WeatherAlerts>('/weather/alerts?' + new URLSearchParams({ location }), { signal }),
+  currency: (query: CurrencyQuery, signal?: AbortSignal) => post<CurrencyResponse>('/currency', query, signal),
   appearance: (signal?: AbortSignal) => request<SearchAppearance>('/appearance', { signal }),
   session: (signal?: AbortSignal) => request<{ user: SearchUser | null }>('/auth/session', { signal }),
   exchange: (code: string, codeVerifier: string) => post<{ user: SearchUser }>('/auth/exchange', { code, codeVerifier }),

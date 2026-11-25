@@ -509,9 +509,20 @@ summary::-webkit-details-marker { display: none; }
 .weather-days li > * { display: block; }
 .weather-days small { color: var(--muted); font-size: .75rem; }
 .weather-days span { font-variant-numeric: tabular-nums; }
+.weather-alerts { list-style: none; padding: 0; margin: .65rem 0 1rem; }
+.weather-alerts li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .65rem; padding: .45rem .65rem; border-inline-start: 3px solid var(--accent); background: var(--hover); }
+.weather-alerts li + li { margin-top: .25rem; }
+.weather-alerts small { color: var(--muted); }
+.weather-hourly h3 { margin: .8rem 0 .35rem; font-size: .875rem; }
+.weather-hourly-scroll { overflow-x: auto; padding-bottom: .4rem; }
+.weather-hourly ol { display: flex; gap: .4rem; list-style: none; padding: 0; margin: 0; }
+.weather-hourly li { flex: 0 0 5.7rem; display: grid; align-content: start; gap: .18rem; padding: .4rem .5rem; border: 1px solid var(--line); border-radius: .45rem; }
+.weather-hourly time, .weather-hourly small { color: var(--muted); font-size: .75rem; }
 .weather-footer { align-items: baseline; font-size: .75rem; color: var(--muted); }
 .weather-footer a { font-size: inherit; }
 .weather-web { padding-inline: 0; }
+.currency-answer .weather-footer { margin-top: .7rem; }
+.currency-answer .weather-web { margin-top: 0; }
 .page-actions {
   width: min(100%, var(--reading-width));
   display: flex;

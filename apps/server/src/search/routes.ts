@@ -12,6 +12,7 @@ import { db } from '../database/client.js'
 import { applicationSettings } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { parseWebToolsSettings } from '../settings/application-settings.js'
+import { registerSearchCurrencyRoute } from './currency.js'
 import { fetchSearchFavicon } from './favicon.js'
 import { filterSearchHosts, searchHostFilters, searchScopes } from './scope.js'
 import { registerSearchWeatherRoute } from './weather/routes.js'
@@ -55,6 +56,7 @@ function searchUser(request: FastifyRequest, reply: FastifyReply) {
 }
 
 export function registerSearchRoutes(app: FastifyInstance) {
+  registerSearchCurrencyRoute(app, searchUser)
   registerSearchWeatherRoute(app, searchUser)
 
   app.get<{ Params: { host: string } }>('/api/search/favicon/:host', {
@@ -86,6 +88,7 @@ export function registerSearchRoutes(app: FastifyInstance) {
     const defaultOrder = availableWebSearchProviders(settings)
     return {
       defaultOrder,
+      currency: true,
       weather: true,
       providers: defaultOrder.map((id) => ({
         id, ...providerCapabilities[id], dates, region: true, priceMicros: billedPrice(id, 'search', settings),

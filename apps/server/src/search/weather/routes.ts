@@ -50,4 +50,23 @@ export function registerSearchWeatherRoute(
     }
     return unavailable
   })
+
+  app.get('/api/search/weather/alerts', {
+    config: { rateLimit: { max: 12, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
+    authorize(request, reply)
+    reply.header('cache-control', 'no-store')
+    const { location } = weatherQuery.parse(request.query)
+    const resolution = await resolveWeatherLocation(location)
+    const unavailable = { status: 'unavailable' } as const
+    if (resolution.status !== 'found' || !supportsNws(resolution.location.countryCode)) return unavailable
+    try {
+      const weather = await lookup()
+      const result = await weather.alertsFor(resolution.location)
+      if (result) return { status: 'available', ...result }
+    } catch {
+      request.log.warn('Weather alerts unavailable')
+    }
+    return unavailable
+  })
 }

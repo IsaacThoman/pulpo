@@ -1,5 +1,5 @@
 export interface InstantAnswer {
-  label: 'Calculator' | 'Unit conversion' | 'Local time' | 'Time difference' | 'Calendar' | 'Number conversion'
+  label: 'Calculator' | 'Unit conversion' | 'Local time' | 'Time difference' | 'Time conversion' | 'Calendar' | 'Number conversion'
   expression: string
   result: string
   refreshAt?: number
@@ -102,8 +102,51 @@ function offsetAt(zone: TimeZone, now: Date) {
   return offset ? (offset[1] === '-' ? -1 : 1) * (Number(offset[2]) * 60 + Number(offset[3])) : undefined
 }
 
+function convertTime(expression: string, now: Date): InstantAnswer | undefined {
+  const match = /^(\d{1,2})(?::(\d{2}))?(?:\s*(am|pm))?\s+(?:in\s+)?(.+?)\s+to\s+(.+?)(?:\s+on\s+(\d{4}-\d{2}-\d{2}))?\??$/i.exec(expression)
+  if (!match) return
+  const [, hourText, minuteText, period, source, destination, dateText] = match
+  const from = lookupTimeZone(source)
+  const to = lookupTimeZone(destination)
+  const clockHour = Number(hourText)
+  const minutes = Number(minuteText ?? '0')
+  if (!from || !to || minutes > 59) return
+  if (period ? clockHour < 1 || clockHour > 12 : !minuteText || clockHour > 23) return
+  const hours = period ? clockHour % 12 + (period.toLowerCase() === 'pm' ? 12 : 0) : clockHour
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: from.id, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(now)
+  const { year, month, day } = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  const date = calendarDate(dateText ?? [year, month, day].join('-'))
+  if (!date) return
+  const wallTime = date.getTime() + (hours * 60 + minutes) * minute
+  const offsets = new Set([-calendarDay, 0, calendarDay]
+    .map(delta => offsetAt(from, new Date(wallTime + delta))).filter(offset => offset !== undefined))
+  if (!offsets.size) return
+  const instants = [...offsets].flatMap(offset => {
+    const instant = new Date(wallTime - offset * minute)
+    return offsetAt(from, instant) === offset ? [instant] : []
+  })
+  const describe = (zone: TimeZone, instant: Date) => new Intl.DateTimeFormat('en-US', {
+    timeZone: zone.id, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+  }).format(instant)
+  if (instants.length !== 1) return {
+    label: 'Time conversion',
+    expression: from.name + ' · ' + dateLabel.format(date),
+    result: instants.length ? 'This time occurs twice when clocks change' : 'This local time is skipped when clocks change',
+  }
+  return {
+    label: 'Time conversion',
+    expression: from.name + ' · ' + describe(from, instants[0]),
+    result: to.name + ' · ' + describe(to, instants[0]),
+    ...(dateText ? {} : { refreshAt: nextMinute(now) }),
+  }
+}
+
 function timeAnswer(expression: string, now: Date): InstantAnswer | undefined {
   if (!Number.isFinite(now.getTime())) return
+  const converted = convertTime(expression, now)
+  if (converted) return converted
   const comparison = timeDifference.exec(expression)
   if (comparison) {
     const from = lookupTimeZone(comparison[1])

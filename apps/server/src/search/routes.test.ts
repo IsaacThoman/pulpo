@@ -107,6 +107,7 @@ describe('Pulpo Search API', () => {
   it('requires a session for weather and resolves places without a provider call until known and covered', async () => {
     mocks.authenticated = false
     expect((await app.inject('/api/search/weather?location=Paris')).statusCode).toBe(401)
+    expect((await app.inject('/api/search/weather/alerts?location=Paris')).statusCode).toBe(401)
     mocks.authenticated = true
     const ambiguous = await app.inject('/api/search/weather?location=Paris')
     expect(ambiguous.json()).toMatchObject({
@@ -117,6 +118,7 @@ describe('Pulpo Search API', () => {
       status: 'unavailable', place: { name: 'Paris', country: 'France' },
     })
     expect((await app.inject('/api/search/weather?location=near%20me')).json()).toMatchObject({ status: 'not-found' })
+    expect((await app.inject('/api/search/weather/alerts?location=Paris%2C%20France')).json()).toEqual({ status: 'unavailable' })
     expect(mocks.fetch).not.toHaveBeenCalled()
     expect(mocks.reserve).not.toHaveBeenCalled()
   })

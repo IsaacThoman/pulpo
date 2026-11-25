@@ -26,6 +26,7 @@ interface ForecastPoint {
   windKph?: number
   precipitationMm?: number
   precipitationChance?: number
+  hourly?: boolean
 }
 interface Timeline {
   updatedAt: string
@@ -62,6 +63,25 @@ const nwsHourly = z.object({ properties: z.object({
     probabilityOfPrecipitation: z.object({ value: z.number().min(0).max(100).nullable() }).optional(),
   })).min(1).max(200),
 }) })
+const alertSeverities = ['Extreme', 'Severe', 'Moderate', 'Minor', 'Unknown'] as const
+const nwsAlerts = z.object({
+  type: z.literal('FeatureCollection'),
+  pagination: z.object({ next: z.string() }).nullish(),
+  features: z.array(z.object({
+    id: z.string().regex(/^https:\/\/api\.weather\.gov\/alerts\/[A-Za-z0-9._:%-]+$/).max(300),
+    properties: z.object({
+      status: z.enum(['Actual', 'Exercise', 'System', 'Test', 'Draft']),
+      messageType: z.enum(['Alert', 'Update', 'Cancel', 'Ack', 'Error']),
+      severity: z.enum(alertSeverities),
+      event: z.string().trim().min(1).max(120),
+      headline: z.string().max(500).nullish(),
+      effective: isoTime,
+      onset: isoTime.nullish(),
+      expires: isoTime,
+      ends: isoTime.nullish(),
+    }),
+  })).max(128),
+})
 const metForecast = z.object({ properties: z.object({
   meta: z.object({ updated_at: isoTime }),
   timeseries: z.array(z.object({
@@ -133,7 +153,7 @@ function dateAt(formatter: Intl.DateTimeFormat, value: string | number) {
   return [parts.year, parts.month, parts.day].join('-')
 }
 
-function renderForecast(timeline: Timeline, place: WeatherPlace, now: number) {
+function renderForecast(timeline: Timeline, place: WeatherPlace, now: number, nws: boolean) {
   const points = [...timeline.points].sort((a, b) => Date.parse(a.validAt) - Date.parse(b.validAt))
   const current = points.findLast(point => Date.parse(point.validAt) <= now) ?? points[0]
   if (!current || Date.parse(current.validAt) < now - 6 * hour) return null
@@ -154,16 +174,23 @@ function renderForecast(timeline: Timeline, place: WeatherPlace, now: number) {
     const condition = hours[Math.floor(hours.length / 2)]?.condition
     return { date, lowC: Math.min(...temperatures), highC: Math.max(...temperatures), ...(condition ? { condition } : {}) }
   })
-  return { updatedAt: timeline.updatedAt, ...current, daily }
+  const hourly = points.filter(point => {
+    const start = Date.parse(point.validAt)
+    return start > now && start <= now + 12 * hour && (nws || point.hourly)
+  }).slice(0, 12).map(({ validAt, temperatureC, condition, precipitationChance }) => ({
+    validAt, temperatureC, condition, precipitationChance,
+  }))
+  const { hourly: _hourly, ...conditions } = current
+  return { updatedAt: timeline.updatedAt, ...conditions, hourly, daily }
 }
 
 export function createWeatherClient(cache: WeatherCache, fetcher = fetch, now = Date.now) {
   const inFlight = new Map<string, Promise<unknown>>()
 
-  async function requestForecast(url: URL, headers: HeadersInit) {
+  async function requestForecast(url: URL, headers: HeadersInit, maxAttempts: number) {
     const signal = AbortSignal.timeout(3500)
     let target = url
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const response = await fetcher(target, { headers, signal, redirect: 'manual' })
       if (![301, 302, 303, 307, 308].includes(response.status)) return response
       await response.body?.cancel()
@@ -176,7 +203,7 @@ export function createWeatherClient(cache: WeatherCache, fetcher = fetch, now = 
     throw new Error('Weather provider redirected repeatedly')
   }
 
-  function cached<T>(url: URL, minimum: number, identification: string, parse: (data: unknown) => T): Promise<T | null> {
+  function cached<T>(url: URL, minimum: number, identification: string, parse: (data: unknown) => T, alertFeed = false): Promise<T | null> {
     const key = 'search:weather:v1:' + createHash('sha256').update(url.href).digest('hex')
     const existing = inFlight.get(key)
     if (existing) return existing as Promise<T | null>
@@ -184,25 +211,28 @@ export function createWeatherClient(cache: WeatherCache, fetcher = fetch, now = 
       const entry = readCacheEntry<T>(await cache.read(key))
       const at = now()
       if (entry && entry.freshUntil > at) return entry.value
+      const fallback = alertFeed ? null : entry?.value ?? null
       const pauseKey = 'search:weather:v1:pause:' + url.hostname
-      if (Number(await cache.read(pauseKey)) > at) return entry?.value ?? null
-      if (!await cache.lease(key + ':refresh', 10_000)) return entry?.value ?? null
+      if (Number(await cache.read(pauseKey)) > at) return fallback
+      if (!await cache.lease(key + ':refresh', 10_000)) return fallback
+      // NWS recommends at most one alert fetch every 30 seconds, shared across instances.
+      if (alertFeed && !await cache.lease('search:weather:v1:nws-alerts:upstream', 30_000)) return null
       // The shared lease caps starts below MET's limit across this instance, including redirects.
       let slot = await cache.lease('search:weather:v1:upstream', 125)
       for (let attempt = 0; !slot && attempt < 2; attempt++) {
         await setTimeout(125)
         slot = await cache.lease('search:weather:v1:upstream', 125)
       }
-      if (!slot) return entry?.value ?? null
+      if (!slot) return fallback
 
-      let next: CacheEntry<T> = { ...entry, value: entry?.value ?? null, freshUntil: at + minimum }
+      let next: CacheEntry<T> = { ...(alertFeed ? {} : entry), value: fallback, freshUntil: at + minimum }
       try {
         const response = await requestForecast(url, {
           'user-agent': 'PulpoSearch/1.0 (' + identification + ')',
           accept: 'application/geo+json, application/json',
           ...(entry?.modified ? { 'if-modified-since': entry.modified } : {}),
           ...(entry?.etag ? { 'if-none-match': entry.etag } : {}),
-        })
+        }, alertFeed ? 1 : 2)
         next.freshUntil = cacheFreshUntil(response, now(), minimum)
         if (response.status === 429) {
           const retry = response.headers.get('retry-after')
@@ -221,11 +251,15 @@ export function createWeatherClient(cache: WeatherCache, fetcher = fetch, now = 
             ...(modified && dateHeader(modified) && dateHeader(modified) <= now() ? { modified } : {}),
             ...(etag && etag.length < 256 ? { etag } : {}),
           }
-        } else await response.body?.cancel()
+        } else {
+          if (response.status === 304 && entry?.value != null) next = { ...entry, freshUntil: next.freshUntil }
+          await response.body?.cancel()
+        }
       } catch {
         // Retain the last usable forecast and honor the provider's refresh interval on failure.
       }
-      await cache.write(key, JSON.stringify(next), Math.max(7 * 24 * 3600, Math.ceil((next.freshUntil - now()) / 1000) + 3600))
+      const ttl = Math.ceil((next.freshUntil - now()) / 1000)
+      await cache.write(key, JSON.stringify(next), alertFeed ? Math.max(120, ttl + 60) : Math.max(7 * 24 * 3600, ttl + 3600))
       return next.value
     })().finally(() => inFlight.delete(key))
     inFlight.set(key, result)
@@ -264,6 +298,7 @@ export function createWeatherClient(cache: WeatherCache, fetcher = fetch, now = 
         const precipitation = point.next_1_hours?.details?.precipitation_amount
         return {
           validAt: time, temperatureC: air_temperature,
+          hourly: Boolean(point.next_1_hours?.summary),
           ...(condition ? { condition } : {}),
           ...(wind_speed === undefined ? {} : { windKph: rounded(wind_speed * 3.6) }),
           ...(precipitation === undefined ? {} : { precipitationMm: precipitation }),
@@ -272,17 +307,52 @@ export function createWeatherClient(cache: WeatherCache, fetcher = fetch, now = 
     })
   }
 
-  return async (place: WeatherPlace & { countryCode: string; latitude: number; longitude: number }, metContact: string | undefined) => {
+  async function forecastFor(place: WeatherPlace & { countryCode: string; latitude: number; longitude: number }, metContact: string | undefined) {
     const lat = decimal(place.latitude)
     const lon = decimal(place.longitude)
     if (supportsNws(place.countryCode)) {
       const timeline = await nws(lat, lon)
-      const forecast = timeline && renderForecast(timeline, place, now())
+      const forecast = timeline && renderForecast(timeline, place, now(), true)
       if (forecast) return { forecast, sources: [nwsSource, geonamesSource] }
     }
     if (!metContact) return null
     const timeline = await met(lat, lon, metContact)
-    const forecast = timeline && renderForecast(timeline, place, now())
+    const forecast = timeline && renderForecast(timeline, place, now(), false)
     return forecast ? { forecast, sources: [metSource, geonamesSource] } : null
   }
+
+  async function alertsFor(place: { countryCode: string; latitude: number; longitude: number }) {
+    if (!supportsNws(place.countryCode)) return null
+    const lat = decimal(place.latitude)
+    const lon = decimal(place.longitude)
+    const point = new URL('/alerts/active', nwsOrigin)
+    point.search = '?point=' + lat + ',' + lon
+    const active = await cached(point, 30_000, defaultContact, data => {
+      const feed = nwsAlerts.parse(data)
+      if (feed.pagination?.next) throw new Error('Weather alert feed is incomplete')
+      return feed.features.filter(({ properties }) => properties.status === 'Actual'
+        && (properties.messageType === 'Alert' || properties.messageType === 'Update'))
+    }, true)
+    if (!active) return null
+
+    const at = now()
+    const ongoing = active.filter(({ properties }) => Date.parse(properties.ends ?? properties.expires) > at)
+    const verified = ongoing.filter(({ properties }) => Date.parse(properties.expires) > at)
+    if (!verified.length && ongoing.length) return null
+    const alerts = verified.sort((a, b) => alertSeverities.indexOf(a.properties.severity) - alertSeverities.indexOf(b.properties.severity))
+      .slice(0, 8)
+      .map(({ id, properties }) => ({
+        event: properties.event,
+        ...(properties.headline ? { headline: properties.headline } : {}),
+        severity: properties.severity,
+        effectiveAt: properties.onset ?? properties.effective,
+        expiresAt: properties.ends ?? properties.expires,
+        url: id,
+      }))
+    const source = new URL('https://forecast.weather.gov/MapClick.php')
+    source.search = new URLSearchParams({ lat, lon }).toString()
+    return { alerts, source: { ...nwsSource, url: source.href } }
+  }
+
+  return Object.assign(forecastFor, { alertsFor })
 }

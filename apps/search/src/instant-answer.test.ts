@@ -91,6 +91,16 @@ describe('local time and dates', () => {
     expect(instantAnswer('time difference between London and UTC', summer)?.result).toBe('1 hour ahead')
   })
 
+  it('converts wall times across midnight using each location’s DST rules', () => {
+    const converted = instantAnswer('3pm New York to Tokyo', winter)
+    expect(converted?.expression).toMatch(/New York.*Nov 24.*3:00 PM EST/)
+    expect(converted?.result).toMatch(/Tokyo.*Nov 25.*5:00 AM GMT\+9/)
+    expect(instantAnswer('3pm in New York to Tokyo', summer)?.result).toMatch(/4:00 AM/)
+    expect(instantAnswer('15:00 New York to Tokyo', winter)?.result).toBe(converted?.result)
+    expect(instantAnswer('2:30 am New York to Tokyo on 2026-03-08', winter)?.result).toMatch(/skipped/)
+    expect(instantAnswer('1:30 am New York to Tokyo on 2026-11-01', winter)?.result).toMatch(/occurs twice/)
+  })
+
   it.each([
     ['day of week 2026-11-24', 'Tuesday'],
     ['what day of the week is 2024-02-29?', 'Thursday'],

@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
-import { api, type SearchConfig, type SearchUser } from './api'
+import { api, SearchApiError, type SearchConfig, type SearchUser } from './api'
 
 const user: SearchUser = { id: 'test-user', name: 'Casey', email: 'casey@example.com' }
 const config: SearchConfig = {
@@ -21,6 +21,8 @@ describe('Pulpo Search', () => {
   const logout = vi.spyOn(api, 'logout')
   const appearance = vi.spyOn(api, 'appearance')
   const weather = vi.spyOn(api, 'weather')
+  const weatherAlerts = vi.spyOn(api, 'weatherAlerts')
+  const currency = vi.spyOn(api, 'currency')
 
   beforeEach(() => {
     session.mockResolvedValue({ user })
@@ -36,6 +38,8 @@ describe('Pulpo Search', () => {
     logout.mockResolvedValue()
     appearance.mockResolvedValue({ theme: 'system', colorTheme: 'pulpo' })
     weather.mockResolvedValue({ status: 'not-found', sources: [] })
+    weatherAlerts.mockResolvedValue({ status: 'unavailable' })
+    currency.mockResolvedValue({ status: 'unavailable', source: { name: 'ECB', url: 'https://www.ecb.europa.eu/', description: 'Daily reference rates' } })
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
     const preferences = new Map<string, string>()
     vi.stubGlobal('localStorage', {
@@ -158,20 +162,65 @@ describe('Pulpo Search', () => {
       status: 'forecast', place: { name: 'Seattle', admin: 'Washington', country: 'United States', timeZone: 'America/Los_Angeles' },
       forecast: {
         temperatureC: 10, condition: 'Cloudy', validAt: '2026-11-24T12:00:00Z', updatedAt: '2026-11-24T10:00:00Z',
+        hourly: [{ validAt: '2026-11-24T13:00:00Z', temperatureC: 11, precipitationChance: 80 }],
         daily: [{ date: '2026-11-24', highC: 12, lowC: 4 }],
       },
       sources: [{ name: 'National Weather Service', url: 'https://www.weather.gov/', license: 'https://www.weather.gov/disclaimer' }],
+    })
+    weatherAlerts.mockResolvedValue({
+      status: 'available',
+      source: { name: 'National Weather Service', url: 'https://www.weather.gov/', license: 'https://www.weather.gov/disclaimer' },
+      alerts: [{ event: 'Wind Advisory', severity: 'Moderate', effectiveAt: '2026-11-24T12:00:00Z',
+        expiresAt: '2026-11-24T15:00:00Z', url: 'https://www.weather.gov/warnings' }],
     })
     window.history.replaceState(null, '', '/search?q=Seattle+weather')
     render(<App callback={null} />)
     const card = await screen.findByRole('region', { name: 'Weather forecast' })
     expect(weather).toHaveBeenCalledExactlyOnceWith('Seattle', expect.any(AbortSignal))
     expect(search).not.toHaveBeenCalled()
+    expect(within(card).getByRole('region', { name: 'Hourly forecast' })).toBeDefined()
+    expect((await within(card).findByRole('link', { name: 'Wind Advisory' })).getAttribute('href')).toBe('https://www.weather.gov/warnings')
     fireEvent.click(within(card).getByRole('button', { name: '°C' }))
     expect(within(card).getByText('10°C')).toBeDefined()
     fireEvent.click(within(card).getByRole('button', { name: 'Search the web' }))
     await screen.findByRole('link', { name: 'Seattle weather field guide' })
     expect(search).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders a dated currency quote without starting a paid search', async () => {
+    getConfig.mockResolvedValue({ ...config, currency: true })
+    currency.mockResolvedValue({
+      status: 'converted', amount: '100', from: 'USD', to: 'EUR', converted: '91.22', rate: '0.9122', referenceDate: '2026-11-24',
+      source: { name: 'European Central Bank', url: 'https://www.ecb.europa.eu/', description: 'Daily reference rates' },
+    })
+    window.history.replaceState(null, '', '/search?q=100+USD+to+EUR')
+    render(<App callback={null} />)
+    const card = await screen.findByRole('region', { name: 'Currency conversion' })
+    expect(within(card).getByText('91.22 EUR')).toBeDefined()
+    expect(within(card).getByRole('link', { name: 'European Central Bank' }).getAttribute('href')).toBe('https://www.ecb.europa.eu/')
+    expect(currency).toHaveBeenCalledExactlyOnceWith({ amount: '100', from: 'USD', to: 'EUR' }, expect.any(AbortSignal))
+    expect(search).not.toHaveBeenCalled()
+    fireEvent.click(within(card).getByRole('button', { name: 'Search the web' }))
+    await screen.findByRole('link', { name: '100 USD to EUR field guide' })
+  })
+
+  it('falls back to ordinary results when a currency quote is unavailable', async () => {
+    getConfig.mockResolvedValue({ ...config, currency: true })
+    window.history.replaceState(null, '', '/search?q=50+GBP+to+JPY')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: '50 GBP to JPY field guide' })
+    expect(currency).toHaveBeenCalledTimes(1)
+    expect(search).toHaveBeenCalledTimes(1)
+  })
+
+  it('recovers from a media provider error using Web results', async () => {
+    search.mockRejectedValueOnce(new SearchApiError('Try again in a moment.', 502))
+    window.history.replaceState(null, '', '/search?q=tide+pools&type=images')
+    render(<App callback={null} />)
+    await screen.findByRole('heading', { name: 'Couldn’t complete the search' })
+    fireEvent.click(screen.getByRole('button', { name: 'Try Web results' }))
+    await screen.findByRole('link', { name: 'tide pools field guide' })
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ category: 'web' }), expect.any(AbortSignal))
   })
 
   it('paginates only through a capable provider and restores a cached first page', async () => {

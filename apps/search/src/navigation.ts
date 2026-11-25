@@ -86,7 +86,8 @@ export function localMapSearch(query: string) {
   const intent = /^(?:directions to|map of)\s+/i.test(query)
     || /\b(?:restaurants?|coffee shops?|caf[eé]s?|bookstores?|pharmac(?:y|ies)|grocery stores?|museums?|hotels?|parks?)\s+(?:near|around|in)\s+\S/i.test(query)
   if (!intent) return
-  const destination = new URL('https://maps.apple.com/search')
+  const destination = new URL('https://www.google.com/maps/search/')
+  destination.searchParams.set('api', '1')
   destination.searchParams.set('query', query.replace(/^(?:directions to|map of)\s+/i, ''))
   return destination.href
 }

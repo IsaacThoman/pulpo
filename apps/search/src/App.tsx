@@ -6,6 +6,8 @@ import { buildAskPulpoUrl } from './ask-pulpo'
 import { consumeCallback, pulpoOrigin, startSignIn } from './auth'
 import { firstResultQuery, resolveBang, type CustomBang } from './bangs'
 import { Calculator } from './Calculator'
+import { CurrencyAnswer } from './CurrencyAnswer'
+import { parseCurrencyQuery } from './currency'
 import { instantAnswer } from './instant-answer'
 import { categories, homeLocation, localMapSearch, MAX_QUERY_LENGTH, parseSearchLocation, searchPath, searchScopes, withoutSiteOperators, type SearchLocation } from './navigation'
 import { compatibleProviders, loadPreferences, preferencesStorageKey, providerOrder, savePreferences, type DomainRule, type Preferences } from './preferences'
@@ -15,9 +17,10 @@ import { Results } from './Results'
 import { SearchBox } from './SearchBox'
 import { SearchFilters } from './SearchFilters'
 import { Bangs, BrowserSetup, Modal, Settings, Shortcuts, type Panel } from './Settings'
+import { useCurrencyQuote } from './use-currency'
 import { useSearch } from './use-search'
 import { WeatherAnswer } from './WeatherAnswer'
-import { useWeatherAnswer, weatherLocation } from './weather'
+import { useWeatherAlerts, useWeatherAnswer, weatherLocation } from './weather'
 
 const smiley = new URL('../../web/public/pulpo-smiley.png', import.meta.url).href
 const labels = { web: 'Web', images: 'Images', news: 'News', videos: 'Videos', podcasts: 'Podcasts' } as const
@@ -129,15 +132,21 @@ export function App({ callback }: { callback: Callback }) {
   const view = useMemo(() => bangDiscovery ? homeLocation
     : luckyQuery ? { ...location, query: luckyQuery, category: 'web' as const, page: undefined } : location,
   [bangDiscovery, luckyQuery, location])
-  const localAnswer = !bang && !luckyQuery && view.category === 'web' && !view.scope && !view.region && !view.date && !view.web && !view.page
-    ? instantAnswer(view.query) : undefined
-  const forecastLocation = config?.weather && !bang && !luckyQuery && !localAnswer && view.category === 'web'
+  const allowAnswers = !bang && !luckyQuery && view.category === 'web'
     && !view.scope && !view.region && !view.date && !view.web && !view.page && !view.provider
-    ? weatherLocation(view.query) : undefined
+  const localAnswer = allowAnswers ? instantAnswer(view.query) : undefined
+  const currencyQuery = allowAnswers && !localAnswer && config?.currency ? parseCurrencyQuery(view.query) : undefined
+  const currencyQuote = useCurrencyQuote(currencyQuery, user?.id)
+  const currencyPending = !!(user && currencyQuery && currencyQuote === undefined)
+  const showCurrency = currencyQuote?.status === 'converted'
+  const forecastLocation = allowAnswers && !localAnswer && !currencyQuery && config?.weather ? weatherLocation(view.query) : undefined
   const forecast = useWeatherAnswer(forecastLocation, user?.id)
   const forecastPending = !!(user && forecastLocation && forecast === undefined)
   const showForecast = forecast?.status === 'forecast' || forecast?.status === 'ambiguous'
-  const mapSearch = view.category === 'web' && !view.scope && !luckyQuery && !localAnswer && !showForecast
+  const alerts = useWeatherAlerts(forecast?.status === 'forecast' ? forecastLocation : undefined, user?.id)
+  const answerPending = forecastPending || currencyPending
+  const showAnswer = !!localAnswer || showForecast || showCurrency
+  const mapSearch = view.category === 'web' && !view.scope && !luckyQuery && !showAnswer && !answerPending
     ? localMapSearch(view.query) : undefined
   const refreshAt = localAnswer?.refreshAt
   useEffect(() => {
@@ -158,7 +167,8 @@ export function App({ callback }: { callback: Callback }) {
   const mediaCategories = enabledCategories.filter(category => category === 'videos' || category === 'podcasts')
   const filterDates = [...new Set(categoryProviders.flatMap(provider => provider.dates))]
   const filterRegion = categoryProviders.some(provider => provider.region)
-  const { state, refresh } = useSearch(user?.id, view.query && compatible.length && !bang && !localAnswer && !forecastPending && !showForecast ? {
+  const recoveryProviders = alternatives.filter(provider => !order.includes(provider.id))
+  const { state, refresh } = useSearch(user?.id, view.query && compatible.length && !bang && !showAnswer && !answerPending ? {
     query: view.query,
     providers: order.filter(id => compatible.some(provider => provider.id === id)),
     category: view.category,
@@ -437,9 +447,9 @@ export function App({ callback }: { callback: Callback }) {
               </div>
               <div className="result-controls">
                 {mapSearch && <a className="map-search" href={mapSearch} target="_blank" rel="noreferrer">
-                  <MapPin size={15} aria-hidden="true" /> Apple Maps <ExternalLink size={12} aria-hidden="true" />
+                  <MapPin size={15} aria-hidden="true" /> Google Maps <ExternalLink size={12} aria-hidden="true" />
                 </a>}
-                {view.category === 'web' && !localAnswer && !showForecast && !forecastPending && user && config && <label className="scope-select">
+                {view.category === 'web' && !showAnswer && !answerPending && user && config && <label className="scope-select">
                   <span className="sr-only">Search focus</span>
                   <select value={view.scope ?? ''} onChange={event => {
                     const scope = searchScopes.find(([id]) => id === event.target.value)?.[0] || undefined
@@ -449,8 +459,8 @@ export function App({ callback }: { callback: Callback }) {
                   </select>
                   <ChevronDown size={13} aria-hidden="true" />
                 </label>}
-                <SearchFilters date={view.date} region={view.region} dates={filterDates} allowRegion={filterRegion}
-                  onApply={filters => go({ ...view, ...filters, page: undefined })} />
+                {!showAnswer && !answerPending && <SearchFilters date={view.date} region={view.region} dates={filterDates} allowRegion={filterRegion}
+                  onApply={filters => go({ ...view, ...filters, page: undefined })} />}
               </div>
             </div>
             {authError && <p className="form-error results-auth-error" role="alert">{authError}</p>}
@@ -465,9 +475,11 @@ export function App({ callback }: { callback: Callback }) {
                 <button className="text-button" onClick={() => go({ ...view, web: true })}>Search the web</button>
               </section>
             ) : showForecast ? (
-              <WeatherAnswer response={forecast} onLocation={place => onSearch('weather in ' + place)}
+              <WeatherAnswer response={forecast} alerts={alerts} onLocation={place => onSearch('weather in ' + place)}
                 onWeb={() => go({ ...view, web: true })} />
-            ) : bang || waitingForSession || forecastPending ? <LoadingResults firstResult={Boolean(luckyQuery)} /> : user === null ? (
+            ) : showCurrency ? (
+              <CurrencyAnswer quote={currencyQuote} onWeb={() => go({ ...view, web: true })} />
+            ) : bang || waitingForSession || answerPending ? <LoadingResults firstResult={Boolean(luckyQuery)} /> : user === null ? (
               <section className="search-message">
                 <h2>Sign in to search</h2>
                 <p>Use your Pulpo account and shared credits.</p>
@@ -554,7 +566,14 @@ export function App({ callback }: { callback: Callback }) {
                 <p>{state.error.message}</p>
                 {state.error.status === 402 ? (
                   <a className="secondary-button" href={pulpoOrigin}>Open Pulpo</a>
-                ) : <button className="secondary-button" onClick={refresh}>Try again</button>}
+                ) : (
+                  <div className="empty-actions">
+                    <button className="secondary-button" onClick={refresh}>Try again</button>
+                    {recoveryProviders.map(provider => <button key={provider.id} className="secondary-button"
+                      onClick={() => go({ ...location, provider: provider.id })}>Try {providerNames[provider.id]}</button>)}
+                    {view.category !== 'web' && <button className="secondary-button" onClick={() => changeCategory('web')}>Try Web results</button>}
+                  </div>
+                )}
               </section>
             ) : <LoadingResults />}
           </div>
