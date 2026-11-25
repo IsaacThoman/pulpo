@@ -44,9 +44,21 @@ export interface SearchCustomBang {
   url: string
 }
 
+export type SearchProvider = 'kagi' | 'firecrawl'
+/** Search types that can use their own engines instead of following the Web choice. */
+export const searchProviderCategories = ['news', 'images', 'videos', 'podcasts'] as const
+export type SearchProviderCategory = (typeof searchProviderCategories)[number]
+
+export interface SearchProviderChoice {
+  defaultProvider: SearchProvider
+  fallbackProvider: SearchProvider | 'none' | ''
+}
+
 export interface SearchAccountPreferences {
-  defaultProvider: 'kagi' | 'firecrawl' | ''
-  fallbackProvider: 'kagi' | 'firecrawl' | 'none' | ''
+  defaultProvider: SearchProvider | ''
+  fallbackProvider: SearchProvider | 'none' | ''
+  /** A missing search type follows the Web choice. */
+  categoryProviders: Partial<Record<SearchProviderCategory, SearchProviderChoice>>
   limit: 10 | 20 | 40
   newTab: boolean
   keyboardShortcuts: boolean
@@ -60,6 +72,7 @@ export interface SearchAccountPreferences {
 export const defaultSearchAccountPreferences: SearchAccountPreferences = {
   defaultProvider: '',
   fallbackProvider: '',
+  categoryProviders: {},
   limit: 40,
   newTab: false,
   keyboardShortcuts: true,

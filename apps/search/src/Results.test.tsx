@@ -71,7 +71,24 @@ describe('search result presentation', () => {
     expect(unsourced?.querySelector('.result-media')).toBeNull()
   })
 
-  it('filters confirmed video runtimes on the current page and preserves ranking within each range', () => {
+  it('keeps pinned sites and site groups within the batch they loaded in', () => {
+    const first = [
+      { url: 'https://first.example.com/a', title: 'First A', snippet: '' },
+      { url: 'https://other.example.com/', title: 'Other', snippet: '' },
+    ]
+    const second = [
+      { url: 'https://other.example.com/more', title: 'Other more', snippet: '' },
+      { url: 'https://pinned.example.org/', title: 'Pinned later', snippet: '' },
+    ]
+    const preferences = { ...loadPreferences(), domains: { 'pinned.example.org': 'pin' as const } }
+    const { container } = render(<Results data={{ ...data, results: [...first, ...second] }}
+      batchOf={new Map([...first.map(item => [item, 0] as const), ...second.map(item => [item, 1] as const)])}
+      location={{ ...homeLocation, query: 'example' }} preferences={preferences} setDomain={vi.fn()} onQuery={vi.fn()} />)
+    expect([...container.querySelectorAll('.results-list > .result h2 .result-link')].map(link => link.textContent))
+      .toEqual(['First A', 'Other', 'Pinned later', 'Other more'])
+  })
+
+  it('filters confirmed video runtimes and preserves ranking within each range', () => {
     const videos: SearchResponse = { ...data, results: [
       { url: 'https://video.example.org/short', title: 'Short tutorial', snippet: '', duration: '04:59' },
       { url: 'https://video.example.org/medium', title: 'Medium tutorial', snippet: '', duration: '05:00' },
@@ -88,12 +105,12 @@ describe('search result presentation', () => {
     fireEvent.change(select, { target: { value: 'short' } })
     const visibleTitles = () => [...container.querySelectorAll('.result-link')].map(link => link.textContent)
     expect(visibleTitles()).toEqual(['Short tutorial', 'Shorter tutorial'])
-    expect(screen.getByText('2 of 6 videos on this page · 2 without a reported duration')).toBeDefined()
+    expect(screen.getByText('2 of 6 videos · 2 without a reported duration')).toBeDefined()
     fireEvent.change(select, { target: { value: 'medium' } })
     expect(visibleTitles()).toEqual(['Medium tutorial'])
     fireEvent.change(select, { target: { value: 'long' } })
     expect(visibleTitles()).toEqual(['Long tutorial'])
-    rerender(<Results {...props} location={{ ...props.location, page: 2 }} />)
+    rerender(<Results {...props} location={{ ...props.location, query: 'tutorials' }} />)
     expect(select.value).toBe('any')
     expect(visibleTitles()).toHaveLength(6)
   })

@@ -1,8 +1,9 @@
 import { ChevronDown, Copy, Globe2, ListFilter, Monitor, Settings2, X } from 'lucide-react'
 import { useLayoutEffect, useRef, useState, type ComponentProps, type FormEvent, type ReactNode } from 'react'
+import type { SearchProviderCategory } from '@pulpo/contracts/search'
 import { formatSearchPrice, providerNames, type Provider, type SearchConfig } from './api'
 import { searchBangs, validateCustomBang, type CustomBang } from './bangs'
-import { regions } from './navigation'
+import { categories, regions } from './navigation'
 import { placeProviderNames } from './places'
 import { providerOrder, type Preferences } from './preferences'
 import type { SearchPreferencesSyncStatus } from './use-search-preferences'
@@ -52,6 +53,62 @@ interface SettingsProps {
   clearRecentQueries: () => void
 }
 
+const categoryLabels = { images: 'Images', news: 'News', videos: 'Videos', podcasts: 'Podcasts' } as const
+
+/** Engine choices for a search type that more than one available engine supports. */
+function CategoryProviders({ category, config, preferences, update }: {
+  category: SearchProviderCategory
+  config: SearchConfig
+  preferences: Preferences
+  update: (next: Preferences) => void
+}) {
+  const supported = config.providers.filter(provider => provider.categories.includes(category)).map(provider => provider.id)
+  const choice = preferences.categoryProviders[category]
+  const inherited = providerOrder({ ...preferences, categoryProviders: {} }, config, category).find(provider => supported.includes(provider))
+  const automaticNews = category === 'news' && !preferences.defaultProvider && !preferences.fallbackProvider
+  const primary = choice && supported.includes(choice.defaultProvider) ? choice.defaultProvider : undefined
+  const label = categoryLabels[category]
+  const pager = config.providers.find(provider => provider.id !== primary && provider.categories.includes(category) && (provider.maxPage ?? 1) > 1)
+  const singlePage = primary && (config.providers.find(provider => provider.id === primary)?.maxPage ?? 1) <= 1
+  function choose(next: Preferences['categoryProviders'][SearchProviderCategory]) {
+    const categoryProviders = { ...preferences.categoryProviders }
+    if (next) categoryProviders[category] = next
+    else delete categoryProviders[category]
+    update({ ...preferences, categoryProviders })
+  }
+  return (
+    <fieldset className="settings-subgroup">
+      <legend>{label}</legend>
+      <div className="settings-row">
+        <label htmlFor={`search-provider-${category}-default`}>Default</label>
+        <SettingsSelect id={`search-provider-${category}-default`} value={primary ?? ''} onChange={event => {
+          const provider = supported.find(id => id === event.target.value)
+          choose(provider ? { defaultProvider: provider, fallbackProvider: choice?.fallbackProvider ?? '' } : undefined)
+        }}>
+          <option value="">{automaticNews ? 'Pulpo default' : 'Same as Web'}{inherited ? ' · ' + providerNames[inherited] : ''}</option>
+          {supported.map(provider => <option key={provider} value={provider}>{providerNames[provider]}</option>)}
+        </SettingsSelect>
+      </div>
+      {primary && <div className="settings-row">
+        <label htmlFor={`search-provider-${category}-fallback`}>Fallback</label>
+        <SettingsSelect id={`search-provider-${category}-fallback`}
+          value={choice?.fallbackProvider === 'none' || supported.some(provider => provider === choice?.fallbackProvider && provider !== primary)
+            ? choice?.fallbackProvider : ''}
+          onChange={event => {
+            const value = event.target.value
+            const fallbackProvider = value === 'none' ? 'none' : supported.find(id => id === value && id !== primary) ?? ''
+            choose({ defaultProvider: primary, fallbackProvider })
+          }}>
+          <option value="">Automatic</option>
+          {supported.filter(provider => provider !== primary).map(provider => <option key={provider} value={provider}>{providerNames[provider]}</option>)}
+          <option value="none">Off</option>
+        </SettingsSelect>
+      </div>}
+      {singlePage && pager && <p className="hint">{providerNames[primary]} returns one set of {label.toLowerCase()}. Load more continues with {providerNames[pager.id]}.</p>}
+    </fieldset>
+  )
+}
+
 const settingsSections = [
   { id: 'providers', label: 'Providers', icon: Settings2 },
   { id: 'results', label: 'Results', icon: ListFilter },
@@ -75,6 +132,8 @@ export function Settings({ config, preferences, update, syncStatus, retrySync, r
   const primaryLabel = config?.defaultOrder[0]
   const searchPrice = config?.providers.find(provider => provider.id === activePrimary)?.priceMicros ?? 0
   const publisherNewsPrice = config?.providers.find(provider => provider.id === 'firecrawl')?.newsPriceMicros
+  const ownEngineCategories = categories.filter((category): category is SearchProviderCategory => category !== 'web'
+    && (config?.providers.filter(provider => provider.categories.includes(category)).length ?? 0) > 1)
   return (
     <div className="settings-layout">
       <nav className="settings-navigation" aria-label="Settings sections">
@@ -90,27 +149,32 @@ export function Settings({ config, preferences, update, syncStatus, retrySync, r
           <legend>Search providers</legend>
           {available.length > 0 ? (
             <>
-              <div className="settings-row">
-                <label htmlFor="search-provider-default">Default</label>
-                <SettingsSelect id="search-provider-default" value={available.includes(preferences.defaultProvider as Provider) ? preferences.defaultProvider : ''}
-                  onChange={event => update({ ...preferences, defaultProvider: event.target.value as Preferences['defaultProvider'] })}>
-                  <option value="">Pulpo default{primaryLabel ? ' · ' + providerNames[primaryLabel] : ''}</option>
-                  {available.map(provider => <option key={provider} value={provider}>{providerNames[provider]}</option>)}
-                </SettingsSelect>
-              </div>
-              <div className="settings-row">
-                <label htmlFor="search-provider-fallback">Fallback</label>
-                <SettingsSelect id="search-provider-fallback" value={preferences.fallbackProvider === 'none' || available.some(
-                  provider => provider === preferences.fallbackProvider && provider !== activePrimary,
-                ) ? preferences.fallbackProvider : ''}
-                  onChange={event => update({ ...preferences, fallbackProvider: event.target.value as Preferences['fallbackProvider'] })}>
-                  <option value="">Automatic</option>
-                  {available.filter(provider => provider !== activePrimary).map(provider => (
-                    <option key={provider} value={provider}>{providerNames[provider]}</option>
-                  ))}
-                  <option value="none">Off</option>
-                </SettingsSelect>
-              </div>
+              <fieldset className="settings-subgroup">
+                <legend className={ownEngineCategories.length ? undefined : 'sr-only'}>Web</legend>
+                <div className="settings-row">
+                  <label htmlFor="search-provider-default">Default</label>
+                  <SettingsSelect id="search-provider-default" value={available.includes(preferences.defaultProvider as Provider) ? preferences.defaultProvider : ''}
+                    onChange={event => update({ ...preferences, defaultProvider: event.target.value as Preferences['defaultProvider'] })}>
+                    <option value="">Pulpo default{primaryLabel ? ' · ' + providerNames[primaryLabel] : ''}</option>
+                    {available.map(provider => <option key={provider} value={provider}>{providerNames[provider]}</option>)}
+                  </SettingsSelect>
+                </div>
+                <div className="settings-row">
+                  <label htmlFor="search-provider-fallback">Fallback</label>
+                  <SettingsSelect id="search-provider-fallback" value={preferences.fallbackProvider === 'none' || available.some(
+                    provider => provider === preferences.fallbackProvider && provider !== activePrimary,
+                  ) ? preferences.fallbackProvider : ''}
+                    onChange={event => update({ ...preferences, fallbackProvider: event.target.value as Preferences['fallbackProvider'] })}>
+                    <option value="">Automatic</option>
+                    {available.filter(provider => provider !== activePrimary).map(provider => (
+                      <option key={provider} value={provider}>{providerNames[provider]}</option>
+                    ))}
+                    <option value="none">Off</option>
+                  </SettingsSelect>
+                </div>
+              </fieldset>
+              {config && ownEngineCategories.map(category => <CategoryProviders key={category} category={category} config={config}
+                preferences={preferences} update={update} />)}
               <p className="hint">Provider changes apply to your next search. Pulpo can try your fallback when the default can’t complete it.</p>
               {searchPrice > 0 && <p className="hint">The default provider costs {formatSearchPrice(searchPrice)} per search from your shared Pulpo credits.</p>}
               {publisherNewsPrice && <p className="hint">Firecrawl News includes publisher details when available and costs {formatSearchPrice(publisherNewsPrice)} per search.</p>}
