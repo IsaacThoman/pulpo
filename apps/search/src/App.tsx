@@ -8,7 +8,7 @@ import { Calculator } from './Calculator'
 import { CurrencyAnswer } from './CurrencyAnswer'
 import { parseCurrencyQuery } from './currency'
 import { instantAnswer } from './instant-answer'
-import { categories, homeLocation, localMapSearch, MAX_QUERY_LENGTH, parseSearchLocation, searchPath, searchScopes, withoutSiteOperators, type SearchLocation } from './navigation'
+import { categories, homeLocation, localMapSearch, MAX_QUERY_LENGTH, parseSearchLocation, recentNewsQuery, searchPath, searchScopes, withoutSiteOperators, type SearchLocation } from './navigation'
 import { PlacesAnswer, PlacesLocation } from './PlacesAnswer'
 import { placeIntent } from './places'
 import { compatibleProviders, providerOrder, searchRegion, type DomainRule, type Preferences } from './preferences'
@@ -186,14 +186,16 @@ export function App({ callback }: { callback: Callback }) {
   const order = !config ? [] : view.provider
     ? config.providers.filter(provider => provider.id === view.provider).map(provider => provider.id)
     : defaultOrder
+  const recentNews = view.category === 'news' && recentNewsQuery(view.query)
+  const effectiveDate = view.date || (recentNews && !view.dateOverride && !view.dateRange ? 'week' : '')
   const alternatives = config?.providers.filter(provider => provider.categories.includes(view.category)
     && (provider.maxPage ?? 1) >= (view.page ?? 1)
-    && (!view.date || provider.dates.includes(view.date))
+    && (!effectiveDate || provider.dates.includes(effectiveDate))
     && (!view.dateRange || provider.customDateRanges?.includes(view.category))
     && (!view.region || provider.region)) ?? []
   const chosen = config?.providers.filter(provider => order.includes(provider.id)) ?? []
   const defaultProviders = config?.providers.filter(provider => defaultOrder.includes(provider.id)) ?? []
-  const compatible = config ? compatibleProviders(config, order, view) : []
+  const compatible = config ? compatibleProviders(config, order, { ...view, date: effectiveDate }) : []
   const categoryProviders = chosen.filter(provider => provider.categories.includes(view.category))
   const categorySources = view.provider ? [...chosen, ...defaultProviders] : chosen
   const enabledCategories = categories.filter(category => categorySources.some(provider => provider.categories.includes(category))
@@ -211,7 +213,7 @@ export function App({ callback }: { callback: Callback }) {
     query: view.query,
     providers: order.filter(id => compatible.some(provider => provider.id === id)),
     category: view.category,
-    date: view.date || undefined,
+    date: effectiveDate || undefined,
     ...(view.dateRange ? { dateRange: view.dateRange } : {}),
     region: effectiveRegion || undefined,
     safeSearch: view.safeSearch ?? searchPreferences.safeSearch,
@@ -402,7 +404,7 @@ export function App({ callback }: { callback: Callback }) {
       && window.matchMedia?.('(pointer: fine)').matches
     go({ ...view, query: trimmed, category: firstResultQuery(trimmed) ? 'web' : view.category,
       ...(firstResultQuery(trimmed) ? { reusableImages: undefined } : {}),
-      invalidDateRange: undefined, web: undefined, provider: undefined, page: undefined })
+      invalidDateRange: undefined, dateOverride: undefined, web: undefined, provider: undefined, page: undefined })
     if (!unknown && view.category === 'web' && /[?？]$/u.test(trimmed)) setSubmittedQuestion(trimmed)
     if (restoreInput) requestAnimationFrame(() => input.current?.focus())
   }
@@ -554,7 +556,7 @@ export function App({ callback }: { callback: Callback }) {
                   </select>
                   <ChevronDown size={13} aria-hidden="true" />
                 </label>}
-                {!showAnswer && !answerPending && !reuse && <SearchFilters date={view.date} dateRange={view.dateRange} region={view.region}
+                {!showAnswer && !answerPending && !reuse && <SearchFilters date={effectiveDate} dateRange={view.dateRange} region={view.region}
                   dates={filterDates} allowCustomDates={filterCustomDates} allowRegion={filterRegion}
                   regionOverride={view.regionOverride} safeSearch={view.safeSearch}
                   defaultRegion={searchPreferences.defaultRegion} defaultSafeSearch={searchPreferences.safeSearch}
@@ -564,7 +566,10 @@ export function App({ callback }: { callback: Callback }) {
                     choices: alternatives.map(provider => provider.id),
                     onChange: provider => go({ ...view, provider, page: undefined }),
                   } : undefined}
-                  onApply={filters => go({ ...view, ...filters, invalidDateRange: undefined, page: undefined })} />}
+                  onApply={filters => go({ ...view, ...filters,
+                    dateOverride: recentNews && !filters.date && !filters.dateRange ? true : undefined,
+                    invalidDateRange: undefined, page: undefined,
+                  })} />}
               </div>
             </div>
             {view.category === 'images' && !!user && config?.reusableImages && (
@@ -693,8 +698,9 @@ export function App({ callback }: { callback: Callback }) {
                         onClick={() => onSearch(withoutSiteOperators(view.query))}>Remove site operators</button>}
                       {view.scope && <button className="secondary-button"
                         onClick={() => go({ ...view, scope: undefined, page: undefined })}>Search all sites</button>}
-                      {(view.date || view.dateRange || effectiveRegion) && <button className="secondary-button"
+                      {(effectiveDate || view.dateRange || effectiveRegion) && <button className="secondary-button"
                         onClick={() => go({ ...view, date: '', dateRange: undefined, region: '', page: undefined,
+                          dateOverride: recentNews ? true : undefined,
                           regionOverride: searchPreferences.defaultRegion ? true : undefined,
                         })}>Clear date and region</button>}
                       {reuse && <button className="secondary-button" onClick={() => changeReusableImages(undefined)}>Search all images</button>}
@@ -706,7 +712,7 @@ export function App({ callback }: { callback: Callback }) {
                     <h2>No new images on this page</h2>
                     <p>These images are available on earlier pages.</p>
                   </section>
-                ) : <Results key={searchPath(view)} data={resultsData ?? state.data} location={view} preferences={preferences}
+                ) : <Results key={searchPath(view)} data={resultsData ?? state.data} location={{ ...view, date: effectiveDate }} preferences={preferences}
                   setDomain={setDomain} onQuery={onSearch} imageRefinements={imageBrowse.refinements} imagePagination={renderPages} />}
                 {(!imageBrowse.data?.results.length) && renderPages()}
               </>

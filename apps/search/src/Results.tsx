@@ -9,7 +9,7 @@ import {
   type ImageRefinements,
 } from './image-refinements'
 import { KnowledgeCard } from './KnowledgeCard'
-import { safeHttpUrl, searchPath, type SearchLocation } from './navigation'
+import { recentNewsQuery, safeHttpUrl, searchPath, type SearchLocation } from './navigation'
 import { domainRule, type DomainRule, type Preferences } from './preferences'
 import { ResultImage } from './ResultImage'
 import { groupResults, resultEntries, visibleEntries, type ResultWithUrl } from './result-order'
@@ -259,8 +259,7 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
   const now = Date.now()
   const newsEntries = news ? visible.map(entry => ({ entry, time: newsSourceTime(entry.result.publishedAt, now) })) : []
   const canSortNews = newsEntries.filter(item => item.time !== undefined).length >= 2
-  const wantsRecentNews = /\b(?:latest|today(?:'s)?|breaking|this week)\b/i.test(location.query)
-    || location.date === 'day' || location.date === 'week'
+  const wantsRecentNews = recentNewsQuery(location.query) || location.date === 'day' || location.date === 'week'
   const newestNews = newsOrder === undefined ? wantsRecentNews : newsOrder === 'newest'
   const videoEntries = videos ? visible.map(entry => ({ entry, duration: videoDurationBucket(entry.result.duration) })) : []
   const withoutDuration = videoEntries.filter(item => !item.duration).length

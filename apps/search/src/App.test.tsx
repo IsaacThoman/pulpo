@@ -414,6 +414,22 @@ describe('Pulpo Search', () => {
     }), expect.any(AbortSignal))
   })
 
+  it('narrows an explicitly recent News query and lets the user broaden it', async () => {
+    getConfig.mockResolvedValue({
+      ...config, newsDefaultOrder: ['firecrawl', 'kagi'],
+      providers: config.providers.map(provider => ({ ...provider, categories: ['web', 'news'] })),
+    })
+    window.history.replaceState(null, '', '/search?q=Artemis+latest+news&type=news')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'Artemis latest news field guide' })
+    expect(search).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ date: 'week', providers: ['firecrawl'] }), expect.any(AbortSignal))
+    expect(screen.getByLabelText('Filters, Past week')).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }))
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(2))
+    expect(search.mock.lastCall?.[0]).not.toHaveProperty('date')
+    expect(window.location.search).toBe('?q=Artemis+latest+news&type=news&date=any')
+  })
+
   it('keeps other search tabs available when switching News providers', async () => {
     getConfig.mockResolvedValue({ ...config, providers: config.providers.map(provider => provider.id === 'firecrawl'
       ? { ...provider, categories: ['web', 'images', 'news'] } : { ...provider, categories: ['web', 'news', 'videos'] }) })

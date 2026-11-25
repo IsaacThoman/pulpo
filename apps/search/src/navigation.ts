@@ -25,6 +25,7 @@ export interface SearchLocation {
   query: string
   category: Category
   date: SearchDate | ''
+  dateOverride?: true
   dateRange?: SearchDateRange
   invalidDateRange?: true
   region: string
@@ -38,6 +39,10 @@ export interface SearchLocation {
 }
 
 export const homeLocation: SearchLocation = { query: '', category: 'web', date: '', region: '' }
+
+export function recentNewsQuery(query: string) {
+  return /\b(?:latest|today|breaking|this week)\b/i.test(query)
+}
 
 export function parseSearchLocation(url: URL): SearchLocation {
   const query = (url.searchParams.get('q') ?? '').trim().slice(0, MAX_QUERY_LENGTH)
@@ -57,6 +62,7 @@ export function parseSearchLocation(url: URL): SearchLocation {
   const imageCategory = reusableImageCategories.find(value => value === url.searchParams.get('kind'))
   return {
     query, category, date, region,
+    ...(category === 'news' && url.searchParams.get('date') === 'any' ? { dateOverride: true as const } : {}),
     ...(dateRange ? { dateRange } : {}),
     ...(invalidDateRange ? { invalidDateRange: true as const } : {}),
     ...(regionOverride ? { regionOverride: true as const } : {}),
@@ -77,7 +83,7 @@ export function searchPath(input: SearchLocation) {
   else if (input.dateRange) {
     params.set('from', input.dateRange.from)
     params.set('to', input.dateRange.to)
-  }
+  } else if (input.category === 'news' && input.dateOverride) params.set('date', 'any')
   if (input.region) params.set('region', input.region)
   else if (input.regionOverride) params.set('region', 'any')
   if (input.safeSearch !== undefined) params.set('safe', input.safeSearch ? 'on' : 'off')
