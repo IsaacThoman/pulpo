@@ -1,10 +1,13 @@
 import { ChevronLeft, ChevronRight, ExternalLink, Image, X } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
+import { imageSourceTime } from './image-refinements'
 import { safeHttpUrl } from './navigation'
 import { ResultImage } from './ResultImage'
 import { licenseLabel } from './reusable-images'
 import type { ResultWithUrl } from './result-order'
 import './reusable-images.css'
+
+const imageDateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' })
 
 interface ImageViewerProps {
   entries: readonly ResultWithUrl[]
@@ -40,7 +43,8 @@ export function ImageViewer({ entries, startIndex, opener, newTab, close }: Imag
 
   if (!entry) return null
   const title = entry.result.title || entry.host
-  const { imageUrl, thumbnailUrl, imageDimensions, imageLicense } = entry.result
+  const { imageUrl, thumbnailUrl, imageDimensions, imageLicense, snippet, publishedAt } = entry.result
+  const sourceDate = imageSourceTime(publishedAt)
   const original = safeHttpUrl(imageUrl)
   const license = imageLicense && licenseLabel(imageLicense.code, imageLicense.version)
   const licenseUrl = safeHttpUrl(imageLicense?.url)
@@ -98,7 +102,10 @@ export function ImageViewer({ entries, startIndex, opener, newTab, close }: Imag
           </div>
           <div className="image-viewer-source">
             <h3>{title}</h3>
-            <span>{entry.host}{imageDimensions && ' · ' + imageDimensions.width + ' × ' + imageDimensions.height}</span>
+            <span>{entry.host}{imageDimensions && ' · ' + imageDimensions.width + ' × ' + imageDimensions.height}
+              {sourceDate !== undefined && <> · <time dateTime={new Date(sourceDate).toISOString()}>{imageDateFormat.format(sourceDate)}</time></>}
+            </span>
+            {snippet && <p className="image-viewer-description">{snippet}</p>}
             {imageLicense && <div className="image-viewer-license" role="group" aria-label="Image reuse details">
               <p><strong>Reported license</strong>{' '}
                 {licenseUrl ? <a href={licenseUrl.href} target={target} rel="noreferrer">{license}</a> : license}

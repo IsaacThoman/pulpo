@@ -200,7 +200,6 @@ export function App({ callback }: { callback: Callback }) {
   const categorySources = view.provider ? [...chosen, ...defaultProviders] : chosen
   const enabledCategories = categories.filter(category => categorySources.some(provider => provider.categories.includes(category))
     || (category === 'images' && config?.reusableImages))
-  const mediaCategories = enabledCategories.filter(category => category === 'videos' || category === 'podcasts')
   const filterDates = [...new Set(categoryProviders.flatMap(provider => provider.dates))]
   const filterCustomDates = categoryProviders.some(provider => provider.customDateRanges?.includes(view.category))
   const filterRegion = categoryProviders.some(provider => provider.region)
@@ -518,33 +517,11 @@ export function App({ callback }: { callback: Callback }) {
             <h1 className="sr-only">Search results for {view.query}</h1>
             <div className="search-tools">
               <div className="filter-bar">
-                <div className="categories" aria-label="Search type">
+                <div className="categories" role="group" aria-label="Search type">
                   {(enabledCategories.length ? enabledCategories : [view.category]).map(category => (
-                    <button key={category} className={'category-button' + (category === 'videos' || category === 'podcasts' ? ' desktop-media-tab' : '')} aria-pressed={category === view.category}
+                    <button key={category} className="category-button" aria-pressed={category === view.category}
                       onClick={() => changeCategory(category)}>{labels[category]}</button>
                   ))}
-                  {mediaCategories.length > 0 && <details className="provider-menu mobile-media-tabs" onKeyDown={event => {
-                    if (event.key !== 'Escape' || !event.currentTarget.open) return
-                    event.currentTarget.open = false
-                    event.currentTarget.querySelector('summary')?.focus()
-                  }} onBlur={event => {
-                    if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) {
-                      event.currentTarget.open = false
-                    }
-                  }}>
-                    <summary className="category-button" aria-label="Media search types" data-active={view.category === 'videos' || view.category === 'podcasts'}>
-                      {view.category === 'videos' || view.category === 'podcasts' ? labels[view.category] : 'Media'}
-                      <ChevronDown size={13} aria-hidden="true" />
-                    </summary>
-                    <div className="provider-options">
-                      {mediaCategories.map(category => <button key={category} onClick={event => {
-                        const menu = event.currentTarget.closest('details')
-                        menu?.removeAttribute('open')
-                        menu?.querySelector('summary')?.focus()
-                        changeCategory(category)
-                      }}>{labels[category]}</button>)}
-                    </div>
-                  </details>}
                 </div>
                 <div className="result-controls">
                   {mapSearch && <a className="map-search" href={mapSearch} target="_blank" rel="noreferrer">

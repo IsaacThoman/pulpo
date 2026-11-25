@@ -142,7 +142,9 @@ function ResultItem({ entry, additional, versions, preview, media, video, newsNo
     </a>
     {video && <VideoPreview url={url.href} title={title} newTab={newTab} overThumbnail />}
   </div>
+  const heading = <h2><a className="result-link" href={url.href} target={target} rel="noreferrer" title={preview ? title : undefined}>{title}</a></h2>
   const content = <>
+      {preview && heading}
       <div className="result-meta">
         <SiteIcon host={host} />
         <span className="site-path" title={path ? host + ' › ' + path : host}>{host}
@@ -185,14 +187,14 @@ function ResultItem({ entry, additional, versions, preview, media, video, newsNo
           </div>
         </details>
       </div>
-      <h2><a className="result-link" href={url.href} target={target} rel="noreferrer">{title}</a></h2>
+      {!preview && heading}
       {video && (videoDetails || date || videoDuration) && <p className="video-result-details">
         {thumbnail && videoDuration && <span className="sr-only">Duration {videoDuration}. </span>}
         {videoDetails && <span>{videoDetails}</span>}
         {videoDetails && date && ' · '}
         {reportedDate}
       </p>}
-      {(result.snippet || (!video && !news && (date || mediaDetails))) && (
+      {!preview && (result.snippet || (!video && !news && (date || mediaDetails))) && (
         <p className="result-snippet">
           {mediaDetails && <span className="result-date">{mediaDetails}</span>}
           {mediaDetails && (date || result.snippet) && ' · '}
