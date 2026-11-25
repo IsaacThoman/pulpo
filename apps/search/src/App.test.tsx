@@ -839,6 +839,35 @@ describe('Pulpo Search', () => {
     Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 })
   })
 
+  it('returns to where the reader last left a search after repeated Back and Forward', async () => {
+    const scrollTo = (top: number) => {
+      Object.defineProperty(window, 'scrollY', { configurable: true, value: top })
+      window.dispatchEvent(new Event('scroll'))
+    }
+    const traverse = async (path: string, link: string) => {
+      window.history.replaceState(null, '', path)
+      act(() => { window.dispatchEvent(new PopStateEvent('popstate')) })
+      await screen.findByRole('link', { name: link })
+    }
+    window.history.replaceState(null, '', '/search?q=tides')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'tides field guide' })
+    scrollTo(500)
+    submit('kelp')
+    await screen.findByRole('link', { name: 'kelp field guide' })
+
+    vi.mocked(window.scrollTo).mockClear()
+    await traverse('/search?q=tides', 'tides field guide')
+    await waitFor(() => expect(window.scrollTo).toHaveBeenCalledWith({ top: 500, behavior: 'instant' }))
+    scrollTo(900)
+    await traverse('/search?q=kelp', 'kelp field guide')
+    vi.mocked(window.scrollTo).mockClear()
+    await traverse('/search?q=tides', 'tides field guide')
+    await waitFor(() => expect(window.scrollTo).toHaveBeenCalledWith({ top: 900, behavior: 'instant' }))
+    expect(window.scrollTo).not.toHaveBeenCalledWith({ top: 500, behavior: 'instant' })
+    scrollTo(0)
+  })
+
   it('keeps image refinements and skips images that are already shown', async () => {
     getConfig.mockResolvedValue({
       ...config, providers: [

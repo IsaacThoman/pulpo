@@ -103,11 +103,16 @@ export function App({ callback }: { callback: Callback }) {
   // Reloading or going back returns to the results the reader loaded and where they were; a new search starts at the top.
   const restoreScroll = useRef<boolean>(undefined)
   restoreScroll.current ??= returningNavigation()
+  // Back and Forward within Search fire neither pagehide nor go(), and the browser has already scrolled the
+  // next entry by the time popstate runs, so the last position seen by scroll events is the one to keep.
+  const lastScroll = useRef(0)
+  const leaveResults = useRef<(scrollY: number) => void>(undefined)
   const pageColor = useSearchAppearance(user?.id, preferences.theme)
   const { recentQueries, rememberQuery, clearRecentQueries } = useRecentQueries(user?.id, preferences.rememberRecentQueries)
 
   useEffect(() => {
     function onPopState() {
+      leaveResults.current?.(lastScroll.current)
       const next = parseSearchLocation(new URL(window.location.href))
       setLocation(next)
       setDraft(firstResultQuery(next.query) ?? next.query)
@@ -281,12 +286,18 @@ export function App({ callback }: { callback: Callback }) {
     // Images size their rows after the first layout, so wait a frame before restoring the position.
     requestAnimationFrame(() => window.scrollTo({ top: savedScroll, behavior: 'instant' }))
   }, [resultsReady, savedScroll])
+  leaveResults.current = searchKey ? saveScroll : undefined
   useEffect(() => {
-    if (!searchKey) return
-    const save = () => saveScroll(window.scrollY)
+    const track = () => { lastScroll.current = window.scrollY }
+    const save = () => leaveResults.current?.(window.scrollY)
+    track()
+    window.addEventListener('scroll', track, { passive: true })
     window.addEventListener('pagehide', save)
-    return () => window.removeEventListener('pagehide', save)
-  }, [saveScroll, searchKey])
+    return () => {
+      window.removeEventListener('scroll', track)
+      window.removeEventListener('pagehide', save)
+    }
+  }, [])
   const waitingForSession = user === undefined
   const isResults = Boolean(view.query)
 
