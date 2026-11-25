@@ -56,7 +56,7 @@ function Keyboard({ frame, hidden }: { frame: DemoFrame; hidden: boolean }) {
     )
   }
   return (
-    <div className={cn('absolute inset-x-0 bottom-0 h-84 rounded-t-[calc(var(--spacing)*7)] bg-[#d2d5db] px-1.5 transition-transform duration-300 dark:bg-[#2b2b2d]', hidden && 'translate-y-full')}>
+    <div className={cn('absolute inset-x-0 bottom-0 h-84 rounded-t-[calc(var(--spacing)*7)] bg-[#d2d5db] px-1.5 transition-transform duration-300 motion-reduce:transition-none dark:bg-[#2b2b2d]', hidden && 'translate-y-full')}>
       <div className={cn('flex h-11 items-center text-black/60 dark:text-white/60', T16)}>
         {PREDICTIONS.map((word, index) => (
           <span key={word} className={cn('flex-1 text-center', index > 0 && 'border-l border-black/10 dark:border-white/15')}>{word}</span>
@@ -155,14 +155,9 @@ export function PhoneMock({ timeline, frame, keyboard = true }: { timeline: Demo
                         <span className="text-xs text-black/45 dark:text-white/50">{ui("just now")}</span>
                       </div>
                       {traced ? (
-                        <div className={cn('mt-1.5 flex items-center gap-1.5 text-black/50 dark:text-white/55', T15, phone.working && 'animate-pulse')}>{thinking ? <Brain className="size-4" /> : <Wrench className="size-4" />}{workLabel}<ChevronRight className="size-3.5" /></div>
+                        <div className={cn('mt-1 flex items-center gap-2 text-black/50 dark:text-white/55', T15)}>{thinking ? <Brain className="size-4" /> : <Wrench className="size-4" />}{workLabel}<ChevronRight className="size-3.5" /></div>
                       ) : pending ? (
-                        // The app's ResponsePendingIndicator: three 6pt dots in its muted color, rising in turn.
-                        <div className="mt-1 flex min-h-7 items-center gap-1 py-1">
-                          {[0, 150, 300].map((delay) => (
-                            <span key={delay} className="landing-phone-pending-dot size-1.5 rounded-full bg-[#68686f] dark:bg-[#a1a1a8]" style={{ animationDelay: `${delay}ms` }} />
-                          ))}
-                        </div>
+                        <span className="text-xs text-black/50 dark:text-white/55">…</span>
                       ) : null}
                       {phone.answer ? (
                         <div className="mt-1.5 space-y-2 leading-[1.4]">
@@ -190,7 +185,7 @@ export function PhoneMock({ timeline, frame, keyboard = true }: { timeline: Demo
                   </div>
                 )}
 
-                <div className={cn('absolute inset-x-3 z-10 rounded-[calc(var(--spacing)*6.5)] bg-white p-3 pb-2.5 shadow-lg ring-1 shadow-black/10 ring-black/[0.07] transition-[bottom] duration-300 dark:bg-[#1c1c1e] dark:shadow-none dark:ring-white/[0.08]', typing ? 'bottom-86' : 'bottom-7')}>
+                <div className={cn('absolute inset-x-3 bottom-7 z-10 rounded-[calc(var(--spacing)*6.5)] bg-white p-3 pb-2.5 shadow-lg ring-1 shadow-black/10 ring-black/[0.07] transition-transform duration-300 motion-reduce:transition-none dark:bg-[#1c1c1e] dark:shadow-none dark:ring-white/[0.08]', typing && '-translate-y-[calc(var(--spacing)*79)]')}>
                   <div className={cn('relative flex min-h-11 items-start justify-between gap-2 px-1', T17)}>
                     <p className={cn('min-w-0 leading-snug', !phone.draft && 'text-black/40 dark:text-white/40')}>
                       {phone.draft || ui("Message…")}

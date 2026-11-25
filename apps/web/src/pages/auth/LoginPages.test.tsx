@@ -44,7 +44,7 @@ describe('login pages', () => {
   it('keeps the password-first login design with a small options link', () => {
     const markup = renderToStaticMarkup(<MemoryRouter><LoginPage /></MemoryRouter>)
 
-    expect(markup).toContain('Welcome back')
+    expect(markup).toMatch(/<h1[^>]*>Sign in<\/h1>/)
     expect(markup).toContain('More login options')
     expect(markup).toContain('href="/login/options"')
     expect(markup).toContain('href="/forgot-password"')
@@ -61,7 +61,7 @@ describe('login pages', () => {
 
     expect(markup).toContain('Continue as')
     expect(markup).toContain('me@example.test')
-    expect(markup.indexOf('Continue as')).toBeLessThan(markup.indexOf('Welcome back'))
+    expect(markup.indexOf('Continue as')).toBeLessThan(markup.indexOf('<h1'))
   })
 
   it('shows the selected instance below the desktop login card', () => {
@@ -93,8 +93,8 @@ describe('login pages', () => {
 
     const markup = renderToStaticMarkup(<MemoryRouter><LoginPage /></MemoryRouter>)
 
-    expect(markup).toContain('Te damos la bienvenida')
-    expect(markup).toContain('Inicia sesión en tu cuenta de Pulpo.')
+    expect(markup).toMatch(/<h1[^>]*>Iniciar sesión<\/h1>/)
+    expect(markup).toContain('Tus conversaciones, modelos y ajustes se sincronizan entre dispositivos.')
     expect(markup).toContain('Más opciones de inicio de sesión')
     expect(markup).toContain('¿Olvidaste tu contraseña?')
   })

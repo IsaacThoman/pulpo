@@ -236,7 +236,7 @@ function FlashcardFace({ side, hidden, back = false, children }: { side: string;
         back && 'rotate-y-180',
       )}
     >
-      <span className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{side}</span>
+      <span className="text-xs font-medium text-muted-foreground">{side}</span>
       {children}
     </div>
   )

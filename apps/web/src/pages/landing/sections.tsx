@@ -61,7 +61,7 @@ function Section({ id, className, children }: { id: string; className?: string; 
 function Heading({ title, lead, centered }: { title: string; lead?: string; centered?: boolean }) {
   return (
     <div className={cn('max-w-2xl', centered && 'mx-auto text-center')}>
-      <h2 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">{title}</h2>
+      <h2 className="text-3xl font-medium text-balance sm:text-4xl">{title}</h2>
       {lead ? <p className="mt-4 text-base text-pretty text-muted-foreground sm:text-lg">{lead}</p> : null}
     </div>
   )
@@ -72,7 +72,7 @@ function Points({ items }: { items: Array<{ title: string; body: string }> }) {
     <dl className="mt-8 space-y-5">
       {items.map((item) => (
         <div key={item.title} className="flex gap-3">
-          <Check className="mt-1 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <Check className="mt-1 size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" />
           <div>
             <dt className="font-medium">{item.title}</dt>
             <dd className="mt-1 text-sm text-pretty text-muted-foreground">{item.body}</dd>
@@ -85,13 +85,8 @@ function Points({ items }: { items: Array<{ title: string; body: string }> }) {
 
 function TerminalWindow({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="overflow-hidden rounded-xl border bg-card shadow-2xl shadow-black/10 dark:shadow-black/40">
-      <div className="flex items-center gap-3 border-b px-4 py-2.5">
-        <span className="flex gap-1.5" aria-hidden="true">
-          <span className="size-2.5 rounded-full bg-[#ff5f57]" />
-          <span className="size-2.5 rounded-full bg-[#febc2e]" />
-          <span className="size-2.5 rounded-full bg-[#28c840]" />
-        </span>
+    <div className="overflow-hidden rounded-xl border bg-card">
+      <div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-3">
         <span className="truncate font-mono text-xs text-muted-foreground">{title}</span>
       </div>
       <pre className="overflow-x-auto px-4 py-4 font-mono text-[13px] leading-6">{children}</pre>
@@ -227,13 +222,13 @@ export function MoreSection() {
   ]
   return (
     <Section id="more">
-      <Heading title={ui("And everything else you'd expect")} />
+      <Heading title={ui("More tools for your chats")} />
       <ul className="mt-12 grid gap-x-8 gap-y-10 sm:grid-cols-2 lg:grid-cols-4">
         {features.map((feature) => (
           <li key={feature.title}>
-            <feature.icon className="size-5 text-muted-foreground" aria-hidden="true" />
+            <feature.icon className="size-4 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" />
             <h3 className="mt-3 font-medium">{feature.title}</h3>
-            <p className="mt-1.5 text-sm text-pretty text-muted-foreground">{feature.body}</p>
+            <p className="mt-2 text-sm text-pretty text-muted-foreground">{feature.body}</p>
           </li>
         ))}
       </ul>

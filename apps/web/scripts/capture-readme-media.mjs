@@ -51,7 +51,7 @@ async function isolate(page, selector, width) {
 async function openLanding(browser, colorScheme, scale, { clock = false } = {}) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme, deviceScaleFactor: scale })
   const page = await context.newPage()
-  // A clock the script advances itself, so every frame of the demo is a known moment of its loop.
+  // A clock the script advances itself, so every frame of the demo is a known moment of playback.
   if (clock) await page.clock.install({ time: new Date('2026-01-01T09:41:00') })
   await page.goto(landingUrl, { waitUntil: 'networkidle' })
   return { context, page }
@@ -77,25 +77,22 @@ async function captureDemo(browser, colorScheme) {
   const { context, page } = await openLanding(browser, colorScheme, DEMO.scale, { clock: true })
   const frames = await mkdtemp(join(tmpdir(), 'pulpo-readme-'))
   try {
-    // The demo with its scene tabs, which caption what is playing.
-    await page.evaluate(() => document.querySelector('main [role=img]')?.parentElement?.setAttribute('data-readme-demo', ''))
-    const clip = await isolate(page, '[data-readme-demo]', DEMO.width)
-    // Two changes keep the file small. Scenes cut instead of fading, since a fade repaints both screens on
-    // every frame. And the playing scene's tab is underlined in full instead of filling up: the bar sits on
-    // the transparent page, where a change on every frame makes the encoder store whole frames.
+    await page.clock.pauseAt(await page.evaluate(() => Date.now() + 100))
+    // Start playback while the demo still belongs to the React root.
+    const playing = page.locator('#landing-demo [data-demo-playback=playing]')
+    await page.locator('#landing-demo [data-demo-playback=idle]').click()
+    await playing.waitFor()
+    const clip = await isolate(page, '#landing-demo', DEMO.width)
+    // Cut between scenes to avoid repainting both screens on every frame of a fade.
     await page.addStyleTag({ content: `
       .landing-device [style*="opacity"] { opacity: 1 !important }
-      [data-readme-demo] [role=tab] > span > span { width: 0 !important }
-      [data-readme-demo] [role=tab][aria-selected=true] > span > span { width: 100% !important }
+      #landing-demo [data-demo-playback] { visibility: hidden }
     ` })
-    await page.clock.pauseAt(new Date('2026-01-01T09:41:05'))
-    await page.locator('[data-readme-demo] [role=tab]').first().click()
 
     let elapsed = 0
-    let lastScene = 0
     const files = []
     for (;;) {
-      const scene = await page.evaluate(async (elapsed) => {
+      await page.evaluate(async (elapsed) => {
         // Let React commit what the last step of the clock changed.
         for (let turn = 0; turn < 3; turn++) {
           await new Promise((resolve) => { const channel = new MessageChannel(); channel.port1.onmessage = resolve; channel.port2.postMessage(0) })
@@ -108,11 +105,8 @@ async function captureDemo(browser, colorScheme) {
           if (at >= (animation.effect?.getComputedTiming().endTime ?? Infinity)) animation.finish()
           else { animation.pause(); animation.currentTime = at }
         }
-        return [...document.querySelectorAll('[data-readme-demo] [role=tab]')].findIndex((tab) => tab.getAttribute('aria-selected') === 'true')
       }, elapsed)
-      // Back at the first scene: the loop is complete.
-      if (scene < lastScene) break
-      lastScene = scene
+      if (!(await playing.count())) break
       const file = join(frames, `${String(files.length).padStart(5, '0')}.png`)
       await page.screenshot({ path: file, clip, omitBackground: true })
       files.push(file)

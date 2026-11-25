@@ -1103,20 +1103,3 @@ html[data-desktop="true"] a {
   font-size: var(--text-base);
   line-height: 1.5;
 }
-
-/* The iPhone app's pending dots (ResponsePendingIndicator in apps/mobile): each rises 4pt and settles, 300ms each way. */
-.landing-phone-pending-dot {
-  animation: landing-phone-pending-dot 600ms ease-in-out infinite;
-}
-
-@keyframes landing-phone-pending-dot {
-  50% {
-    transform: translateY(calc(var(--spacing) * -1));
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .landing-phone-pending-dot {
-    animation: none;
-  }
-}

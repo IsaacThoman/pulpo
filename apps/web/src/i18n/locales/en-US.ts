@@ -64,7 +64,7 @@ const enUS = {
     sending: 'Sending…',
     setUp: 'Set up Pulpo',
     signIn: 'Sign in',
-    signInDescription: 'Sign in to your Pulpo account.',
+    signInDescription: 'Your conversations, models, and settings sync across devices.',
     signInPasskey: 'Sign in with a passkey',
     signOut: 'Sign out',
     signUp: 'Sign up',

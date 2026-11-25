@@ -80,7 +80,7 @@ export function LoginPage() {
       {!twoFactorStep && <SignedInAccountChooser returnTo={loginState?.from} />}
       <div className="rounded-xl border bg-card p-6 shadow-xs sm:p-8">
       <div className="mb-6">
-        <h1 className="text-lg font-semibold">{twoFactorStep ? t('auth.verifyIdentity') : t('auth.welcomeBack')}</h1>
+        <h1 className="text-xl font-medium">{twoFactorStep ? t('auth.verifyIdentity') : t('auth.signIn')}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {twoFactorStep ? (recoveryMode ? t('auth.enterRecovery') : t('auth.enterAuthenticator')) : t('auth.signInDescription')}
         </p>

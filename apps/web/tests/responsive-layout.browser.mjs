@@ -13,6 +13,30 @@ try {
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
   const origin = server.resolvedUrls.local[0]
+
+  // At 320px, even the longer Spanish labels must fit with registration open.
+  await page.addInitScript(() => {
+    if (location.pathname === '/') {
+      localStorage.setItem('pulpo-settings', JSON.stringify({ state: { language: 'es-ES' }, version: 0 }))
+    }
+  })
+  await page.route('**/api/auth/setup-status', route => route.fulfill({ json: { required: false } }))
+  await page.route('**/api/auth/settings', route => route.fulfill({ json: { signupEnabled: true } }))
+  await page.route('**/api/me', route => route.fulfill({ status: 401, json: {} }))
+  await page.setViewportSize({ width: 320, height: 720 })
+  await page.goto(origin)
+  await page.getByRole('link', { name: 'Registrarse' }).waitFor()
+  await page.getByRole('link', { name: 'Iniciar sesión', exact: true }).waitFor()
+  const landingFits = await page.locator('header nav').evaluate(async (nav) => {
+    await document.fonts.ready
+    return nav.scrollWidth <= nav.clientWidth && nav.getBoundingClientRect().right <= innerWidth
+  })
+  assert.ok(landingFits, 'The landing navigation must fit at 320px with Spanish registration enabled')
+  await page.getByRole('tab', { name: 'Sincronización' }).focus()
+  await page.keyboard.press('ArrowRight')
+  await page.getByRole('tab', { name: 'Cualquier modelo', selected: true }).waitFor()
+  await page.unrouteAll()
+
   let cases = 0
   for (const viewport of [320, 390, 640, 750, 900, 1280]) {
     for (const locale of ['en-US', 'es-ES']) {

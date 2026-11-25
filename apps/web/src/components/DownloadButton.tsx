@@ -15,12 +15,12 @@ const PLATFORM_NAMES: Record<DownloadPlatform, string> = {
 }
 
 /** Downloads the latest release for the visitor's platform, or opens the releases page when it is unknown. */
-export function DownloadButton() {
+export function DownloadButton({ className }: { className?: string }) {
   const [platform] = useState(() => detectPlatform())
   const release = useLatestRelease()
 
   return (
-    <Button asChild size="lg">
+    <Button asChild size="lg" className={className}>
       {platform
         ? <a href={downloadUrl(platform, release)}><Download />{uit`Download for ${PLATFORM_NAMES[platform]}`}</a>
         : <a href={GITHUB_LATEST_RELEASE_URL}><Download />{ui("Download")}</a>}

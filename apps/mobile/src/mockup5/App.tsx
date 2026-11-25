@@ -1301,13 +1301,12 @@ function SentFileReferences({ references }: { references: readonly FileReference
 const PULPO_MARK_SOURCE = require('./assets/pulpo-smiley.png') as ImageSourcePropType;
 
 function PulpoMark({ size = 40 }: { size?: number }) {
-  const { styles } = useChatStyles();
   return (
     <Image
       accessibilityIgnoresInvertColors
       accessibilityLabel="Pulpo"
       source={PULPO_MARK_SOURCE}
-      style={[styles.pulpoMark, { width: size, height: size, borderRadius: size / 2 }]}
+      style={{ width: size, height: size, borderRadius: size / 2 }}
     />
   );
 }
@@ -7971,12 +7970,11 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   temporaryLabelText: { color: '#6d28d9', fontSize: 12, fontWeight: '600' },
   temporaryLabelTextDark: { color: '#c4b5fd' },
   expirationLabelText: { color: COLORS.expiry, fontSize: 12, fontWeight: '600' },
-  pulpoMark: { shadowColor: COLORS.accent, shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: 6 } },
-  emptyModelLine: { flexDirection: 'row', alignItems: 'center', gap: 13 },
+  emptyModelLine: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   emptyModelLineAccessible: { flexDirection: 'column', width: '100%' },
-  emptyTitle: { color: COLORS.text, fontSize: 26, fontWeight: '600', letterSpacing: -0.8, textAlign: 'center' },
-  emptyProviderLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 7 },
-  emptyProvider: { color: COLORS.muted, fontSize: 13.5 },
+  emptyTitle: { color: COLORS.text, fontSize: 26, fontWeight: '500', textAlign: 'center' },
+  emptyProviderLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8 },
+  emptyProvider: { color: COLORS.muted, fontSize: 14 },
   userRow: { width: '100%', minWidth: 0, alignItems: 'flex-end', marginBottom: 30 },
   userMessageContent: { alignItems: 'flex-end', maxWidth: '88%', minWidth: 0, gap: 7 },
   // Invisible, and just above the message so screen readers reach it first.
@@ -8048,7 +8046,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   compactionSectionTitle: { color: COLORS.textSoft, fontSize: 12, fontWeight: '600' },
   compactionError: { color: COLORS.critical, fontSize: 12, lineHeight: 17 },
   compactionTurn: { borderRadius: 8, backgroundColor: COLORS.fill, paddingHorizontal: 9, paddingVertical: 7, gap: 3 },
-  compactionRole: { color: COLORS.muted, fontSize: 10, fontWeight: '700', letterSpacing: 0.7, textTransform: 'uppercase' },
+  compactionRole: { color: COLORS.muted, fontSize: 12, fontWeight: '500', textTransform: 'capitalize' },
   compactionContent: { color: COLORS.textSoft, fontSize: 12, lineHeight: 18 },
   recallSources: { gap: 8 },
   recallSource: { borderRadius: 9, backgroundColor: COLORS.fill, paddingHorizontal: 10, paddingVertical: 9, gap: 7 },
@@ -8205,7 +8203,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   drawerNewChatButtonHost: { minWidth: 123.75, minHeight: 48.75 },
   drawerNewChatButtonFallback: { width: 123.75, height: 48.75, borderRadius: 24.375, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7.5 },
   drawerNewChatButtonText: { color: COLORS.text, fontSize: 14.0625, fontWeight: '600' },
-  sectionLabel: { color: COLORS.muted, fontSize: 11, fontWeight: '600', marginTop: 16, marginBottom: 5, marginHorizontal: 12 },
+  sectionLabel: { color: COLORS.muted, fontSize: 12, fontWeight: '500', marginTop: 16, marginBottom: 4, marginHorizontal: 12 },
   chatContextMenuHost: { width: '100%', minHeight: 44 },
   chatRow: { minHeight: Platform.OS === 'android' ? 48 : 44, borderRadius: 13, paddingHorizontal: 12, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 10 },
   chatRowActive: { backgroundColor: COLORS.secondary },

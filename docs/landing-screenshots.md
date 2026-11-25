@@ -106,7 +106,7 @@ A different device model needs these values measured again.
 `apps/web/public/og-image.jpg` is the image link previews show, referenced by `og:image` in `apps/web/index.html`. It's composed from the landing page itself: the logo and the page's headline above the hero demo, in the light theme, at 1440×756.
 
 1. Start the web dev server: `npm run dev -w @pulpo/web`.
-2. Run the capture. It opens the page with reduced motion, so the demo holds the first scene finished:
+2. Run the capture. The demo starts with the finished first scene:
 
    ```sh
    npm run capture:og-image -w @pulpo/web

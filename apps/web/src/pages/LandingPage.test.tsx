@@ -38,12 +38,13 @@ describe('landing page', () => {
     expect(markup).not.toContain('href="/signup"')
     expect(markup).toContain('href="https://help.pulpo.baby"')
     expect(markup).toContain('href="https://github.com/IsaacThoman/pulpo"')
-    // The demo opens on a new chat with the scripted model, before anything is typed.
+    // The demo opens on the finished first conversation and waits for playback.
     expect(markup).toContain('landing-device-canvas')
     expect(markup).toContain('GPT-6 Luna')
-    expect(markup).toContain('Message…')
+    expect(markup).toContain('Find nice brunch places in Marietta this weekend')
+    expect(markup).toContain('aria-label="Play demo"')
     expect(markup).toContain('Download')
-    expect(markup).toContain('Open in your browser')
+    expect(markup).toContain('Open in browser')
   })
 
   it('presents models, workspaces, apps, and self-hosting', () => {
@@ -53,7 +54,7 @@ describe('landing page', () => {
     expect(markup).toContain('/ai-icons/claude-color.svg')
     // The demo's tabs, the still of its agent scene further down the page, and the app screenshots in both themes.
     expect(markup).toContain('role="tablist"')
-    expect(markup).toContain('Instant workspaces')
+    expect(markup).toContain('Agent workspaces')
     expect(markup).toContain('Started workspace')
     expect(markup).toContain('/landing/demo-agent.png')
     expect(markup).toContain('/landing/app-ios-models-light.webp')

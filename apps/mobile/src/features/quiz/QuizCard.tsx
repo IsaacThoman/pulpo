@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
   scoreDetail: { fontSize: 14 },
   resultActions: { alignSelf: 'stretch', gap: 8, marginTop: 4 },
   flashcard: { position: 'absolute', top: 0, left: 0, right: 0, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, padding: 14, gap: 8, backfaceVisibility: 'hidden' },
-  face: { fontSize: 11, fontWeight: '700', letterSpacing: 0.6, textTransform: 'uppercase' },
+  face: { fontSize: 12, fontWeight: '500' },
   faceText: { flex: 1, justifyContent: 'center' },
   flipHint: { fontSize: 12, textAlign: 'center' },
   cardNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 18 },

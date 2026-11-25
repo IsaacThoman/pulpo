@@ -2073,7 +2073,7 @@ export function Sidebar({
           <div className="px-2 pb-4 pt-2">
             {pinnedEntries.length > 0 && (
               <div className="mb-2" ref={pinnedZoneRef} data-pinned-zone>
-                <div id={`${listIdBase}-pinned`} className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                <div id={`${listIdBase}-pinned`} className="px-2 pb-1 text-xs font-medium text-muted-foreground">
                   {t('sidebar.pinned')}
                 </div>
                 <ul role="list" aria-labelledby={`${listIdBase}-pinned`} className="space-y-0.5">
@@ -2090,10 +2090,10 @@ export function Sidebar({
                 drag.drop?.kind === 'loose-target' && 'bg-sidebar-accent/40 ring-1 ring-foreground/10',
               )}
             >
-              <div className="flex items-center px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              <div className="flex min-h-6 items-center gap-2 px-2 pb-1 text-xs font-medium text-muted-foreground">
                 <button
                   type="button"
-                  className="cursor-pointer uppercase tracking-wider underline-offset-2 hover:text-foreground hover:underline focus-visible:text-foreground focus-visible:underline focus-visible:outline-none"
+                  className="cursor-pointer rounded-sm underline-offset-2 hover:text-foreground hover:underline focus-visible:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
                   onClick={toggleChatSortMode}
                   aria-label={t('sidebar.chatSort.toggle', {
                     mode: t(recentOrder ? 'sidebar.chatSort.recent' : 'sidebar.chatSort.default'),
@@ -2106,7 +2106,7 @@ export function Sidebar({
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      className="-my-0.5 ml-auto flex size-6 cursor-pointer items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground disabled:cursor-default disabled:opacity-50"
+                      className="ms-auto flex size-6 cursor-pointer items-center justify-center rounded text-muted-foreground hover:bg-sidebar-accent hover:text-foreground disabled:cursor-default disabled:opacity-50"
                       disabled={!sidebar}
                       onClick={() => newFolder()}
                       aria-label={t('sidebar.newFolder')}
@@ -2120,7 +2120,7 @@ export function Sidebar({
               {rootGroups.map(({ group, entries }) => (
                 <div key={group ?? 'default'} className={cn(group && group !== rootGroups[0]!.group && 'mt-3')}>
                   {group && (
-                    <div id={`${listIdBase}-${group}`} className="px-2 pb-1 pt-1 text-[11px] font-medium text-muted-foreground">
+                    <div id={`${listIdBase}-${group}`} className="px-2 py-1 text-xs font-medium text-muted-foreground">
                       {t(`sidebar.groups.${group}`)}
                     </div>
                   )}

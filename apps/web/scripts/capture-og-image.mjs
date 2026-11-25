@@ -13,7 +13,6 @@ const height = 756
 
 const browser = await chromium.launch()
 try {
-  // Reduced motion makes the demo hold each scene finished, so the capture doesn't depend on timing.
   const context = await browser.newContext({ viewport: { width, height }, colorScheme: 'light', reducedMotion: 'reduce', deviceScaleFactor: 2 })
   const page = await context.newPage()
   await page.goto(landingUrl, { waitUntil: 'networkidle' })
@@ -26,8 +25,6 @@ try {
     // A full-frame stage over the page, holding the brand, the headline, and the live demo moved out of the hero.
     const stage = document.createElement('div')
     stage.style.cssText = 'position:fixed;inset:0;z-index:9999;overflow:hidden;background:var(--background);color:var(--foreground);font-family:Inter,sans-serif'
-    const glow = document.createElement('div')
-    glow.style.cssText = 'position:absolute;left:14%;top:38%;width:72%;height:70%;border-radius:50%;background:oklch(0.86 0.17 98);opacity:0.16;filter:blur(110px)'
     const top = document.createElement('div')
     top.style.cssText = 'position:absolute;left:0;right:0;top:56px;display:flex;flex-direction:column;align-items:center;gap:22px'
     const brand = document.createElement('div')
@@ -37,10 +34,8 @@ try {
     title.textContent = headline
     title.style.cssText = 'font-size:56px;font-weight:600;letter-spacing:-0.025em'
     top.append(brand, title)
-    // The demo's own glow is sized for the page, so the stage draws one of its own instead.
-    demo.firstElementChild?.remove()
     demo.style.cssText = 'position:absolute;left:50%;top:268px;width:1180px;margin:0;padding:0;transform:translateX(-50%)'
-    stage.append(glow, top, demo)
+    stage.append(top, demo)
     document.body.append(stage)
     window.scrollTo(0, 0)
     await Promise.all([...stage.querySelectorAll('img')].map((image) => image.decode().catch(() => undefined)))

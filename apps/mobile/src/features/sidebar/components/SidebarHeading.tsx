@@ -112,7 +112,7 @@ export function SidebarHeading({ title, titleStyle, order, filesEnabled, canCrea
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, marginBottom: 0, marginLeft: 12, marginRight: 6, minHeight: 32 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, marginStart: 12, marginEnd: 8, minHeight: 32 },
   title: { flex: 1, marginTop: 0, marginBottom: 0, marginHorizontal: 0 },
   // 44-point targets that take up no more room than their 28-point glyphs.
   button: { width: 44, height: 44, marginVertical: -8, marginHorizontal: -8, alignItems: 'center', justifyContent: 'center', borderRadius: 22 },

@@ -82,7 +82,7 @@ function AuthShell({ title, subtitle, children, footer, colors }: PropsWithChild
   const compact = useCompactAuthLayout();
   // Side insets keep the form out of iPhone Duo's vertical status bar.
   return <KeyboardAvoidingView behavior={Platform.OS === 'android' ? 'padding' : undefined} style={[styles.root, { backgroundColor: colors.background, paddingLeft: insets.left, paddingRight: insets.right }]}>
-    <ScrollView alwaysBounceVertical={false} automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, compact && styles.compactContent, { paddingTop: insets.top + (compact ? 14 : 42), paddingBottom: insets.bottom + (compact ? 8 : 24) }]}>
+    <ScrollView alwaysBounceVertical={false} automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingTop: insets.top + (compact ? 16 : 40), paddingBottom: insets.bottom + (compact ? 8 : 24) }]}>
       <View style={[styles.brand, compact && styles.compactBrand]}>
         <Image accessible={false} accessibilityElementsHidden importantForAccessibility="no" source={require('../../assets/pulpo-smiley.png')} style={[styles.logo, compact && styles.compactLogo]} />
         <Text maxFontSizeMultiplier={2} style={[styles.brandName, compact && styles.compactBrandName, { color: colors.text }]}>Pulpo</Text>
@@ -470,7 +470,7 @@ export function AuthExperience() {
     <BackToSignIn colors={colors} onPress={() => goTo('login')} />
   </AuthShell>;
 
-  return <AuthShell colors={colors} title={signedInAccounts.length ? 'Add an account' : 'Welcome back'} subtitle={signedInAccounts.length ? 'Sign in to another Pulpo account. Your other accounts stay signed in.' : 'Sign in with your Pulpo account to sync conversations, models, and settings.'} footer={
+  return <AuthShell colors={colors} title={signedInAccounts.length ? 'Add an account' : 'Sign in to Pulpo'} subtitle={signedInAccounts.length ? 'Your other accounts stay signed in.' : 'Your conversations, models, and settings sync across devices.'} footer={
     <Pressable accessibilityRole="button" accessibilityLabel={`Change server, currently ${instance.url}`} onPress={() => goTo('instance')} style={styles.instanceButton}>
       <SymbolView name="server.rack" tintColor={colors.textFaint} size={14} />
       <Text style={[styles.instanceText, { color: colors.textMuted }]} numberOfLines={2}>{instance.url}</Text>
@@ -492,22 +492,21 @@ export function AuthExperience() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  content: { flexGrow: 1, width: '100%', maxWidth: FORM_CONTENT_MAX, alignSelf: 'center', paddingHorizontal: 22 },
-  compactContent: { paddingHorizontal: 20 },
-  brand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  compactBrand: { gap: 9 },
-  logo: { width: 42, height: 42, borderRadius: 13 },
-  compactLogo: { width: 36, height: 36, borderRadius: 11 },
-  brandName: { fontSize: 24, fontWeight: '700', letterSpacing: -0.7 },
+  content: { flexGrow: 1, width: '100%', maxWidth: FORM_CONTENT_MAX, alignSelf: 'center', paddingHorizontal: 20 },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  compactBrand: { gap: 8 },
+  logo: { width: 40, height: 40, borderRadius: 12 },
+  compactLogo: { width: 36, height: 36, borderRadius: 12 },
+  brandName: { fontSize: 24, fontWeight: '600' },
   compactBrandName: { fontSize: 22 },
-  heading: { marginTop: 72 },
-  compactHeading: { marginTop: 28 },
-  title: { fontSize: 34, lineHeight: 40, fontWeight: '700', letterSpacing: -1.1 },
-  compactTitle: { fontSize: 30, lineHeight: 35, letterSpacing: -0.9 },
-  subtitle: { marginTop: 9, fontSize: 17, lineHeight: 24 },
-  compactSubtitle: { marginTop: 6, fontSize: 15.5, lineHeight: 21 },
-  form: { marginTop: 32, gap: 14 },
-  compactForm: { marginTop: 20, gap: 10 },
+  heading: { marginTop: 48 },
+  compactHeading: { marginTop: 24 },
+  title: { fontSize: 32, lineHeight: 40, fontWeight: '500' },
+  compactTitle: { fontSize: 28, lineHeight: 36 },
+  subtitle: { marginTop: 8, fontSize: 16, lineHeight: 24 },
+  compactSubtitle: { fontSize: 15, lineHeight: 20 },
+  form: { marginTop: 24, gap: 12 },
+  compactForm: { marginTop: 20, gap: 8 },
   footer: { marginTop: 'auto', paddingTop: 32 },
   compactFooter: { paddingTop: 8 },
   field: { minHeight: 56, borderRadius: 16, borderWidth: 1, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },

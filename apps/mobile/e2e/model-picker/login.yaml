@@ -3,7 +3,7 @@ appId: com.isaacthoman.pulpo
 - launchApp:
     clearState: true
 - extendedWaitUntil:
-    visible: Welcome back
+    visible: Sign in to Pulpo
     timeout: 120000
 - tapOn: Email
 - inputText: picker@example.test

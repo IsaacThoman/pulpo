@@ -122,13 +122,12 @@ kbd {
   display: inline-flex;
   align-items: center;
   justify-self: start;
-  gap: .55rem;
+  gap: .5rem;
   padding-block: .3rem;
   color: var(--ink);
   font-size: 1rem;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.2;
-  letter-spacing: -.035em;
   white-space: nowrap;
   text-decoration: none;
 }
@@ -163,7 +162,7 @@ summary::-webkit-details-marker { display: none; }
   border-radius: 50%;
   background: var(--subtle);
   font-size: .9rem;
-  font-weight: 650;
+  font-weight: 500;
 }
 .account-menu summary:hover { background: var(--hover); }
 .account-content, .result-menu-content {
@@ -212,10 +211,10 @@ summary::-webkit-details-marker { display: none; }
   font-size: clamp(2rem, 5vw, 3.2rem);
   font-weight: 650;
   line-height: 1.1;
-  letter-spacing: -.052em;
+  letter-spacing: -.02em;
 }
-.hero-actions { display: flex; align-items: center; justify-content: center; gap: 1.4rem; margin-top: .75rem; }
-.hero-actions .text-button { min-height: 2.4rem; gap: .45rem; }
+.hero-actions { display: flex; align-items: center; justify-content: center; gap: 1.5rem; margin-top: .75rem; }
+.hero-actions .text-button { min-height: 2.5rem; gap: .5rem; }
 .hero .form-error { margin-top: 1rem; text-align: center; }
 
 .search-box {
@@ -775,7 +774,7 @@ summary::-webkit-details-marker { display: none; }
 }
 .image-grid .result:is(:hover, :focus-within, :has(.result-menu[open])) .image-caption { opacity: 1; }
 .image-grid .result:is(:hover, :focus-within, :has(.result-menu[open])) .image-caption :is(a, .result-menu) { pointer-events: auto; }
-.image-grid .result h2 { margin: 0; font-size: .875rem; letter-spacing: -.015em; }
+.image-grid .result h2 { margin: 0; font-size: .875rem; }
 .image-grid .result h2 .result-link { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .image-grid .result-meta { gap: .32rem; }
 .image-caption :is(.result-link, .site-path, .result-menu summary) { color: #fff; }

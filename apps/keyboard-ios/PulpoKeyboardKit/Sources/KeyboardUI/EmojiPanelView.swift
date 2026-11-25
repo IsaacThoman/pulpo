@@ -52,7 +52,7 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
     sections = [("recents", "Frequently Used", [])] + catalog.categories.map { ($0.id, $0.name, $0.emoji) }
     reloadRecents()
 
-    header.font = .systemFont(ofSize: 12, weight: .semibold)
+    header.font = .systemFont(ofSize: 12, weight: .medium)
     header.textAlignment = .right
     header.adjustsFontSizeToFitWidth = true
     header.minimumScaleFactor = 0.8
@@ -335,7 +335,7 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
 
   private func updateSelectedCategory() {
     let section = visibleSection
-    header.text = sections.indices.contains(section) ? sections[section].name.uppercased() : nil
+    header.text = sections.indices.contains(section) ? sections[section].name : nil
     for (index, button) in categoryButtons.enumerated() {
       button.tintColor = index == section ? style.label : style.secondaryLabel
     }

@@ -330,7 +330,7 @@ function CompactionStepRow({ item }: { item: CompactionItem }) {
               <div className="space-y-1.5">
                 {retained.map((entry, index) => (
                   <div key={`${entry.role}:${index}`} className="rounded-md bg-muted/40 px-2 py-1.5">
-                    <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{entry.role}</div>
+                    <div className="mb-1 text-xs font-medium text-muted-foreground capitalize">{entry.role}</div>
                     <pre className="whitespace-pre-wrap break-words font-sans text-[12px] leading-5">{entry.content}</pre>
                   </div>
                 ))}

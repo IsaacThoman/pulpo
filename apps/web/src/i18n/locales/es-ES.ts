@@ -70,7 +70,7 @@ const esES = {
     sending: 'Enviando…',
     setUp: 'Configurar Pulpo',
     signIn: 'Iniciar sesión',
-    signInDescription: 'Inicia sesión en tu cuenta de Pulpo.',
+    signInDescription: 'Tus conversaciones, modelos y ajustes se sincronizan entre dispositivos.',
     signInPasskey: 'Iniciar sesión con una clave de acceso',
     signOut: 'Cerrar sesión',
     signUp: 'Registrarse',
