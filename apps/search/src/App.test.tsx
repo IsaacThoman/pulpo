@@ -195,6 +195,59 @@ describe('Pulpo Search', () => {
     expect(cancelQuickAnswer).toHaveBeenCalledExactlyOnceWith('quick-answer-run')
   })
 
+  it('reattaches to the same answer when the stream fails', async () => {
+    getConfig.mockResolvedValue({ ...config, quickAnswer: { modelName: 'Pulpo Test Model' } })
+    streamQuickAnswer.mockRejectedValueOnce(new SearchApiError('The stream closed.', 0))
+    window.history.replaceState(null, '', '/search?q=tide+pools')
+    render(<App callback={null} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Quick answer' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Reconnect' }))
+    await screen.findByText('Quick answer ready.')
+    expect(quickAnswer).toHaveBeenCalledTimes(1)
+    expect(streamQuickAnswer.mock.calls.map(([id]) => id)).toEqual(['quick-answer-run', 'quick-answer-run'])
+    expect(cancelQuickAnswer).not.toHaveBeenCalled()
+  })
+
+  it('offers reconnection after an unacknowledged Stop instead of starting another answer', async () => {
+    getConfig.mockResolvedValue({ ...config, quickAnswer: { modelName: 'Pulpo Test Model' } })
+    streamQuickAnswer.mockImplementationOnce(async (_id, _onText, signal) => {
+      await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }))
+    })
+    cancelQuickAnswer.mockRejectedValueOnce(new SearchApiError('Cancellation unavailable.', 503))
+    window.history.replaceState(null, '', '/search?q=tide+pools')
+    render(<App callback={null} />)
+    const toggle = await screen.findByRole('button', { name: 'Quick answer' })
+    fireEvent.click(toggle)
+    await waitFor(() => expect(streamQuickAnswer).toHaveBeenCalledTimes(1))
+    const stop = await screen.findByRole('button', { name: 'Stop' })
+    stop.focus()
+    fireEvent.click(stop)
+    expect(document.activeElement).toBe(toggle)
+    fireEvent.click(await screen.findByRole('button', { name: 'Reconnect' }))
+    await screen.findByText('Quick answer ready.')
+    expect(quickAnswer).toHaveBeenCalledTimes(1)
+    expect(cancelQuickAnswer).toHaveBeenCalledTimes(1)
+  })
+
+  it('consumes the question shortcut once across results pagination', async () => {
+    getConfig.mockResolvedValue({ ...config, quickAnswer: { modelName: 'Pulpo Test Model' },
+      providers: [{ ...config.providers[0], maxPage: 10 }, config.providers[1]],
+    })
+    search.mockImplementation(async ({ page }) => ({
+      provider: 'kagi', hasMore: !page, results: [{ url: 'https://example.org/' + (page ?? 1), title: 'Page ' + (page ?? 1), snippet: '' }],
+    }))
+    render(<App callback={null} />)
+    await screen.findByLabelText('Pulpo account')
+    submit('Why do tides change?')
+    await screen.findByText('Quick answer ready.')
+    fireEvent.click(await screen.findByRole('button', { name: 'Next' }))
+    await screen.findByRole('link', { name: 'Page 2' })
+    fireEvent.click(screen.getByRole('button', { name: 'Previous' }))
+    await screen.findByRole('link', { name: 'Page 1' })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Quick answer' }).getAttribute('aria-expanded')).toBe('false'))
+    expect(quickAnswer).toHaveBeenCalledTimes(1)
+  })
+
   it('preserves requested image license filters without running a different provider', async () => {
     getConfig.mockResolvedValue({ ...config, reusableImages: true })
     reusableImages.mockResolvedValue({ provider: 'openverse', results: [{

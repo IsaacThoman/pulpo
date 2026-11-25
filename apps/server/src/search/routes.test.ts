@@ -177,6 +177,7 @@ describe('Pulpo Search API', () => {
       timeout.abort(new DOMException('upstream timeout', 'TimeoutError'))
       throw timeout.signal.reason
     }).mockResolvedValueOnce(new Response('private upstream details', { status: 503 }))
+      .mockResolvedValueOnce(new Response('private upstream timeout', { status: 504 }))
     try {
       const expired = await reusableImages({ query: 'Monet' })
       expect(expired.statusCode).toBe(504)
@@ -184,6 +185,9 @@ describe('Pulpo Search API', () => {
       const unavailable = await reusableImages({ query: 'van Gogh' })
       expect(unavailable.statusCode).toBe(502)
       expect(unavailable.json()).toEqual({ error: { code: 'reusable_images_unavailable' } })
+      const gatewayTimeout = await reusableImages({ query: 'Rembrandt' })
+      expect(gatewayTimeout.statusCode).toBe(504)
+      expect(gatewayTimeout.json()).toEqual({ error: { code: 'reusable_images_timeout' } })
     } finally { clock.mockRestore() }
   })
 

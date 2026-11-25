@@ -165,7 +165,7 @@ export function registerSearchRoutes(app: FastifyInstance) {
       }
       if (error instanceof ReusableImagesProviderError) {
         request.log.warn({ category: error.category, upstreamStatus: error.status }, 'Openverse lookup failed')
-        if (error.category === 'timeout') {
+        if (error.category === 'timeout' || error.status === 504) {
           throw new AppError(504, 'reusable_images_timeout', 'Openverse took too long to respond. Try again or switch to All images.', 'server_error')
         }
       }

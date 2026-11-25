@@ -225,7 +225,9 @@ async function streamQuickAnswer(responseId: string, onText: (delta: string) => 
         if (!line.startsWith('data:')) continue
         const event = JSON.parse(line.slice(5))
         if (event?.type === 'done') return
-        if (event?.type === 'error' && typeof event.message === 'string') throw new SearchApiError(event.message, 0)
+        if (event?.type === 'error' && typeof event.message === 'string') {
+          throw new SearchApiError(event.message, 0, event.retryable ? 'quick_answer_interrupted' : 'quick_answer_terminal')
+        }
         if (event?.type === 'text' && typeof event.text === 'string') onText(event.text)
       }
     }

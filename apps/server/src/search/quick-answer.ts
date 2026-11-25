@@ -166,7 +166,7 @@ export function quickAnswerText(output: unknown): string {
   return text.join('\n\n')
 }
 
-type QuickAnswerFrame = { type: 'text'; text: string } | { type: 'done' } | { type: 'error'; message: string }
+type QuickAnswerFrame = { type: 'text'; text: string } | { type: 'done' } | { type: 'error'; message: string; retryable?: true }
 function frame(payload: QuickAnswerFrame) {
   return `data: ${JSON.stringify(payload)}\n\n`
 }
@@ -216,13 +216,13 @@ export async function streamQuickAnswer(reply: FastifyReply, userId: string, res
         row = await load()
       }
     } catch {
-      if (!signal.aborted) yield frame({ type: 'error', message: 'Quick Answer temporarily lost its connection.' })
+      if (!signal.aborted) yield frame({ type: 'error', message: 'Quick Answer temporarily lost its connection.', retryable: true })
     } finally {
       reply.raw.off('close', close)
     }
     if (timeLimit.aborted && !disconnect.signal.aborted) {
       void requestCancellation(responseId).catch(() => {})
-      yield frame({ type: 'error', message: 'Quick Answer took too long. Try again.' })
+      yield frame({ type: 'error', message: 'Quick Answer took too long. Reconnect to check its status.', retryable: true })
     }
   }
   return reply.header('content-type', 'text/event-stream; charset=utf-8')

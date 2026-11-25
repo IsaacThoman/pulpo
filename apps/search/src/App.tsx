@@ -1,5 +1,5 @@
 import { ChevronDown, ExternalLink, Globe2, Image, Keyboard, MapPin, Newspaper, Podcast, Settings2, Sparkles, Video } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, providerNames, SearchApiError, type SearchConfig, type SearchUser } from './api'
 import { useSearchAppearance } from './appearance'
 import { buildAskPulpoUrl } from './ask-pulpo'
@@ -75,6 +75,7 @@ export function App({ callback }: { callback: Callback }) {
   const [configError, setConfigError] = useState('')
   const [configAttempt, setConfigAttempt] = useState(0)
   const [submittedQuestion, setSubmittedQuestion] = useState<string>()
+  const consumeSubmittedQuestion = useCallback(() => setSubmittedQuestion(undefined), [])
   const [answerWithWeb, setAnswerWithWeb] = useState<{ userId: string; path: string; expanded: boolean }>()
   const [, refreshInstantAnswer] = useState(0)
   const input = useRef<HTMLInputElement>(null)
@@ -344,7 +345,7 @@ export function App({ callback }: { callback: Callback }) {
     setDraft(firstResultQuery(next.query) ?? next.query)
     setSearchPreferences(preferences)
     setAnswerWithWeb(previous => previous?.path === answerPath(next) ? previous : undefined)
-    if (next.query !== view.query || next.category !== view.category) setSubmittedQuestion(undefined)
+    setSubmittedQuestion(undefined)
   }
 
   function toggleAnswerWeb() {
@@ -557,7 +558,7 @@ export function App({ callback }: { callback: Callback }) {
             {authError && <p className="form-error results-auth-error" role="alert">{authError}</p>}
             {user && config?.quickAnswer && view.category === 'web' && !bang && !luckyQuery && !view.page && !view.invalidDateRange && (
               <QuickAnswer key={user.id + '\n' + view.query} query={view.query} modelName={config.quickAnswer.modelName}
-                automatic={submittedQuestion === view.query} pulpoOrigin={pulpoOrigin} />
+                automatic={submittedQuestion === view.query} onAutomaticStart={consumeSubmittedQuestion} pulpoOrigin={pulpoOrigin} />
             )}
             {view.invalidDateRange ? (
               <section className="search-message" role="alert">
