@@ -2,7 +2,8 @@ import { ChevronDown, LoaderCircle, Sparkles, Square } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { api, SearchApiError, type QuickAnswerSession } from './api'
 
-const AnswerMarkdown = lazy(() => import('./QuickAnswerMarkdown'))
+const loadAnswerMarkdown = () => import('./QuickAnswerMarkdown')
+const AnswerMarkdown = lazy(loadAnswerMarkdown)
 
 type AnswerStatus = 'idle' | 'running' | 'stopping' | 'complete' | 'stopped' | 'error'
 
@@ -35,6 +36,7 @@ export function QuickAnswer({ query, modelName, automatic, onAutomaticStart, pul
 
   const run = useCallback(async () => {
     if (active.current || stopping.current) return
+    void loadAnswerMarkdown().catch(() => {})
     requestId.current ??= crypto.randomUUID()
     const attempt: ActiveAnswer = {
       controller: new AbortController(),

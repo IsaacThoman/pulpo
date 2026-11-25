@@ -24,7 +24,7 @@ import { isCancellationRequested, createResponseEventPublisher, publishSnapshot 
 import { toSnapshot } from '../responses/service.js'
 import { persistResponseItems } from '../responses/storage.js'
 import { extendBudgetReservationFixedCost, getActivePricing, releaseBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from '../accounting/service.js'
-import { WorkspaceManager } from './controller.js'
+import { releaseWorkspaceForChat, WorkspaceManager } from './controller.js'
 import { COMPUTER_UNAVAILABLE_MESSAGE, COMPUTER_UNAVAILABLE_USER_MESSAGE, ComputerWorkspace, describeComputer } from './computer-workspace.js'
 import { computerChangesItem as buildComputerChangesItem, routeRelayRequests } from './computer-relay.js'
 import { createComputerFolderRelay, describeComputerFolder } from '../computer/folder-relay.js'
@@ -151,21 +151,39 @@ async function finalizeUnhandledAgentFailure(responseId: string, error: unknown)
 }
 
 export async function processAgentGeneration(responseId: string, codexAllowed: boolean): Promise<void> {
+  const startedAt = Date.now()
+  let quickAnswerChatId: string | undefined
   try {
-    await runAgentGeneration(responseId, codexAllowed)
+    const [record] = await db.select({ response: responses, model: models, provider: providerConnections })
+      .from(responses).innerJoin(models, eq(responses.modelId, models.id)).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
+      .where(eq(responses.id, responseId)).limit(1)
+    if (!record || !record.response.agentMode) return
+    if (record.response.idempotencyScope === searchQuickAnswerScope) quickAnswerChatId = record.response.chatId
+    if (['completed', 'cancelled'].includes(record.response.status)) return
+    await runAgentGeneration(record, codexAllowed, startedAt)
   } catch (error) {
     await finalizeUnhandledAgentFailure(responseId, error)
     throw error
+  } finally {
+    if (quickAnswerChatId) {
+      // A Quick Answer has no follow-up turn that can reuse the workspace.
+      await releaseWorkspaceForChat(quickAnswerChatId).catch((error: unknown) => {
+        console.warn(JSON.stringify({
+          level: 'warn', service: 'pulpo-worker', event: 'search.workspace_release.failed', responseId,
+          error: error instanceof Error ? error.message : String(error),
+        }))
+      })
+    }
   }
 }
 
-async function runAgentGeneration(responseId: string, codexAllowed: boolean): Promise<void> {
-  const startedAt = Date.now()
+async function runAgentGeneration(record: {
+  response: typeof responses.$inferSelect
+  model: typeof models.$inferSelect
+  provider: typeof providerConnections.$inferSelect
+}, codexAllowed: boolean, startedAt: number): Promise<void> {
+  const responseId = record.response.id
   const config = getConfig()
-  const [record] = await db.select({ response: responses, model: models, provider: providerConnections })
-    .from(responses).innerJoin(models, eq(responses.modelId, models.id)).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
-    .where(eq(responses.id, responseId)).limit(1)
-  if (!record || !record.response.agentMode || ['completed', 'cancelled'].includes(record.response.status)) return
   const [settingsRow, webToolsRow, personalizationRow, preferencesRow, episodicMemorySettings, attachmentSettingsRow] = await Promise.all([
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1).then((rows) => rows[0]),
