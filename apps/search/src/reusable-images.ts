@@ -19,7 +19,10 @@ const connectingWord = /^(?:a|an|and|for|from|in|of|on|or|the|to|with)$/i
 
 export function shorterReusableImageQuery(query: string): string | undefined {
   const words = query.trim().split(/\s+/u)
-  if (words.length < 5 || !words.every(word => plainWord.test(word))) return
+  if (words.length < 4 || !words.every(word => plainWord.test(word))) return
   const [subject, medium] = words.slice(-2)
-  if (imageMedium.test(medium) && !connectingWord.test(subject)) return `${subject} ${medium}`
+  if (words.length >= 5 && imageMedium.test(medium) && !connectingWord.test(subject)) return `${subject} ${medium}`
+  const broader = words.slice(0, -1)
+  if (connectingWord.test(broader.at(-1)!)) broader.pop()
+  return broader.join(' ')
 }

@@ -346,6 +346,24 @@ describe('Pulpo Search', () => {
     expect(search).not.toHaveBeenCalled()
   })
 
+  it.each(['sparse gallery', 'provider timeout'])('offers to broaden after a %s without changing the license', async situation => {
+    getConfig.mockResolvedValue({ ...config, reusableImages: true })
+    reusableImages.mockResolvedValue({ provider: 'openverse', results: [{
+      url: 'https://example.org/blue-morpho', title: 'Blue morpho', snippet: '', imageUrl: 'https://example.org/blue-morpho.jpg',
+    }] })
+    if (situation === 'provider timeout') {
+      reusableImages.mockRejectedValueOnce(new SearchApiError('Openverse took too long to respond.', 504, 'reusable_images_timeout'))
+    }
+    window.history.replaceState(null, '', '/search?q=blue+morpho+butterfly+perched&type=images&reuse=1&license=commercial')
+    render(<App callback={null} />)
+    const broaden = await screen.findByRole('button', { name: 'Search for “blue morpho butterfly”' })
+    expect(reusableImages).toHaveBeenCalledTimes(1)
+    fireEvent.click(broaden)
+    await waitFor(() => expect(reusableImages).toHaveBeenCalledTimes(2))
+    expect(reusableImages).toHaveBeenLastCalledWith({ query: 'blue morpho butterfly', license: 'commercial' }, expect.any(AbortSignal))
+    expect(search).not.toHaveBeenCalled()
+  })
+
   it('suggests bangs without calling a provider', async () => {
     render(<App callback={null} />)
     await screen.findByLabelText('Pulpo account')

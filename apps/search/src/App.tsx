@@ -226,8 +226,9 @@ export function App({ callback }: { callback: Callback }) {
   const imageBrowse = useImageBrowse(view.category === 'images' && user
     ? JSON.stringify([user.id, searchPath({ ...view, page: undefined })]) : undefined,
   view.page ?? 1, state.status === 'success' ? state.data : undefined)
-  const shorterImageQuery = reuse && !view.page && state.status === 'success' && !state.data.results.length && !state.data.hasMore
-    ? shorterReusableImageQuery(view.query) : undefined
+  const sparseImages = state.status === 'success' && state.data.results.length < 4 && !state.data.hasMore
+  const imageTimeout = state.status === 'error' && state.error.code === 'reusable_images_timeout'
+  const shorterImageQuery = reuse && !view.page && (sparseImages || imageTimeout) ? shorterReusableImageQuery(view.query) : undefined
   const spelling = state.status === 'success' && view.category === 'web' && !view.page
     ? suggestedSpelling(view.query, state.data) : undefined
   const resultsData = state.status === 'success' && spelling ? {
@@ -715,6 +716,9 @@ export function App({ callback }: { callback: Callback }) {
                   </section>
                 ) : <Results key={searchPath(view)} data={resultsData ?? state.data} location={{ ...view, date: effectiveDate }} preferences={preferences}
                   setDomain={setDomain} onQuery={onSearch} imageRefinements={imageBrowse.refinements} imagePagination={renderPages} />}
+                {!!state.data.results.length && shorterImageQuery && <div className="image-show-more">
+                  <button className="secondary-button" onClick={() => onSearch(shorterImageQuery)}>Search for “{shorterImageQuery}”</button>
+                </div>}
                 {(!imageBrowse.data?.results.length) && renderPages()}
               </>
             ) : state.status === 'error' && state.error.status !== 401 ? (
@@ -726,6 +730,8 @@ export function App({ callback }: { callback: Callback }) {
                 ) : (
                   <div className="empty-actions">
                     <button className="secondary-button" onClick={refresh}>Try again</button>
+                    {shorterImageQuery && <button className="secondary-button"
+                      onClick={() => onSearch(shorterImageQuery)}>Search for “{shorterImageQuery}”</button>}
                     {!reuse && recoveryProviders.map(provider => <button key={provider.id} className="secondary-button"
                       onClick={() => go({ ...location, provider: provider.id })}>Try {providerNames[provider.id]}</button>)}
                     {reuse && <button className="secondary-button" onClick={() => changeReusableImages(undefined)}>Search all images</button>}
