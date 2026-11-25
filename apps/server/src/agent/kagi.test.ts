@@ -200,7 +200,8 @@ describe('Kagi client', () => {
         }],
         podcast: [
           { url: 'https://pod.example.com/show/', title: 'Trailer', props: { duration: '2:00' } },
-          { url: 'https://pod.example.com/episode', title: 'Episode', props: { duration: '1:04:49', group_id: 'opaque-feed-id' } },
+          { url: 'https://radio.example.com/', title: 'Episode', time: '2026-11-24', props: { duration: '1:04:49' } },
+          { url: 'https://pod.example.com/episode', title: 'Episode', time: '2026-11-24', props: { duration: '1:04:49', group_id: 'opaque-feed-id' } },
         ],
         podcast_creator: [{ url: 'https://pod.example.com/show', title: 'The show', props: { duration: '53:40' } }],
       },
@@ -214,9 +215,21 @@ describe('Kagi client', () => {
     }])
     const podcasts = await client.searchResults({ query: 'episode', category: 'podcasts' })
     expect(podcasts.results).toEqual([{
-      url: 'https://pod.example.com/episode', title: 'Episode', snippet: '', duration: '1:04:49',
+      url: 'https://pod.example.com/episode', title: 'Episode', snippet: '', duration: '1:04:49', publishedAt: '2026-11-24',
     }])
     expect(podcasts.podcastShows).toEqual([{ url: 'https://pod.example.com/show', title: 'The show', snippet: '' }])
+  })
+
+  it('ranks the named original episode ahead of its rerun unless the query names the rerun', async () => {
+    const rerun = { title: 'The Pool and the Stream (Redux)', url: 'https://example.com/redux' }
+    const original = { title: 'The Pool and the Stream', url: 'https://example.com/original' }
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json({ data: { podcast: [rerun, original] } }))))
+    const client = new KagiClient('secret')
+    const query = '99% Invisible The Pool and the Stream'
+    const originalSearch = await client.searchResults({ query, category: 'podcasts' })
+    expect(originalSearch.results.map(result => result.url)).toEqual([original.url, rerun.url])
+    const rerunSearch = await client.searchResults({ query: query + ' redux', category: 'podcasts' })
+    expect(rerunSearch.results.map(result => result.url)).toEqual([rerun.url, original.url])
   })
 
   it('never presents a Kagi News update timestamp as a publication date', async () => {

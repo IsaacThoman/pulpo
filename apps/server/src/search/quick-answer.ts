@@ -4,6 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { and, asc, eq, isNull, sql, type SQL } from 'drizzle-orm'
 import type { FastifyReply } from 'fastify'
 import type { z } from 'zod'
+import { DAILY_SPEND_LIMIT_CODE } from '../billing/usage-tiers.js'
 import { userModelEligibility } from '../catalog/user-models.js'
 import { accessibleChatCondition, temporaryChatExpiresAt } from '../chats/temporary.js'
 import { getConfig } from '../config.js'
@@ -71,7 +72,7 @@ export async function quickAnswerCapability(userId: string) {
 async function readQuickAnswer(userId: string, identity: SQL) {
   const [row] = await db.select({
     id: responses.id, chatId: chats.id, modelName: models.name, output: responses.output, status: responses.status,
-    fingerprint: responses.idempotencyFingerprint,
+    fingerprint: responses.idempotencyFingerprint, error: responses.error,
   }).from(responses).innerJoin(chats, eq(chats.id, responses.chatId)).innerJoin(models, eq(models.id, responses.modelId))
     .where(and(
       identity, eq(responses.userId, userId), eq(chats.userId, userId),
@@ -166,7 +167,17 @@ export function quickAnswerText(output: unknown): string {
   return text.join('\n\n')
 }
 
-type QuickAnswerFrame = { type: 'text'; text: string } | { type: 'done' } | { type: 'error'; message: string; retryable?: true }
+type QuickAnswerFrame = { type: 'text'; text: string } | { type: 'done' }
+  | { type: 'error'; message: string; retryable?: true; billing?: true }
+
+function terminalError(status: string, error: unknown): QuickAnswerFrame {
+  if (status === 'cancelled') return { type: 'error', message: 'Quick Answer was stopped.' }
+  const code = (error as { code?: unknown } | null)?.code
+  if (code === 'insufficient_balance') return { type: 'error', message: 'Add Pulpo credits to use Quick Answer.', billing: true }
+  if (code === DAILY_SPEND_LIMIT_CODE) return { type: 'error', message: 'You reached your Pulpo daily spending limit.', billing: true }
+  return { type: 'error', message: 'Pulpo couldn’t complete this Quick Answer.' }
+}
+
 function frame(payload: QuickAnswerFrame) {
   return `data: ${JSON.stringify(payload)}\n\n`
 }
@@ -205,7 +216,7 @@ export async function streamQuickAnswer(reply: FastifyReply, userId: string, res
         }
         if (!activeAnswer(row.status)) {
           if ((row.status === 'completed' || row.status === 'incomplete') && sent.trim() && text.startsWith(sent)) yield frame({ type: 'done' })
-          else yield frame({ type: 'error', message: row.status === 'cancelled' ? 'Quick Answer was stopped.' : 'Pulpo couldn’t complete this Quick Answer.' })
+          else yield frame(terminalError(row.status, row.error))
           return
         }
         if (Date.now() - lastPing >= heartbeatMs) {

@@ -1,7 +1,7 @@
 import { truncateUtf8 } from './output.js'
 import {
   normalizeResult, resultSnippet, resultText, resultUrl, searchQueryTokens, shortenResultText, uniqueResults,
-  type ProviderSearchInput, type SearchCategory, type SearchKnowledge, type SearchResults,
+  type ProviderSearchInput, type SearchCategory, type SearchKnowledge, type SearchResult, type SearchResults,
 } from './search-results.js'
 
 const KAGI_API_BASE = 'https://kagi.com/api/v1'
@@ -17,6 +17,36 @@ const resultGroups: Record<SearchCategory, string> = {
   images: 'image',
   videos: 'video',
   podcasts: 'podcast',
+}
+
+function preferEpisodeLinks(rows: Array<SearchResult | null>, query: string) {
+  const identity = (row: SearchResult) => row.duration && row.publishedAt
+    ? JSON.stringify([row.title.toLowerCase(), row.duration, row.publishedAt]) : undefined
+  const isHomepage = (url: string) => /^https?:\/\/[^/?#]+\/?$/.test(url)
+  const linkedEpisodes = new Set(rows.flatMap(row => {
+    const key = row && !isHomepage(row.url) ? identity(row) : undefined
+    return key ? [key] : []
+  }))
+  const episodes = rows.filter((row): row is SearchResult => row !== null
+    && (!isHomepage(row.url) || !linkedEpisodes.has(identity(row) ?? '')))
+  const words = (value: string) => value.normalize('NFC').toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu)?.join(' ') ?? ''
+  const queryWords = ' ' + words(query)
+  const originalIndex = episodes.findIndex(row => {
+    const title = words(row.title)
+    return title.length >= 10 && queryWords.endsWith(' ' + title)
+  })
+  if (originalIndex > 0) {
+    const original = episodes[originalIndex]!
+    const rerunIndex = episodes.findIndex((row, index) => {
+      const rerun = /^(.*)\s+\((?:redux|replay|encore|rebroadcast)\)$/i.exec(row.title)?.[1]
+      return index < originalIndex && rerun !== undefined && words(rerun) === words(original.title)
+    })
+    if (rerunIndex >= 0) {
+      episodes.splice(originalIndex, 1)
+      episodes.splice(rerunIndex, 0, original)
+    }
+  }
+  return episodes
 }
 
 type KagiMeta = { trace?: string; ms?: number }
@@ -216,7 +246,7 @@ export class KagiClient {
       })), 6, category)
       : []
     const showUrls = new Set(podcastShows.map(show => show.url.replace(/\/$/, '')))
-    const results = uniqueResults(rows.map((row) => normalizeResult({
+    const candidates = rows.map((row) => normalizeResult({
       url: row?.url,
       title: row?.title,
       snippet: row?.snippet,
@@ -229,7 +259,8 @@ export class KagiClient {
       viewCount: category === 'videos' ? row?.props?.view_count : undefined,
       // Kagi's timestamp can be the last update, including for News.
       publishedAt: category === 'news' ? undefined : row?.time,
-    }, category === 'images' ? undefined : input.query)).filter(row => !row || !showUrls.has(row.url.replace(/\/$/, ''))), limit, category)
+    }, category === 'images' ? undefined : input.query)).filter(row => !row || !showUrls.has(row.url.replace(/\/$/, '')))
+    const results = uniqueResults(category === 'podcasts' ? preferEpisodeLinks(candidates, input.query) : candidates, limit, category)
     const related = page > 1 ? [] : [...new Set([
       ...group('related_search').map((row) => resultText(row?.props?.query ?? row?.title, 200)),
       ...group('adjacent_question').map((row) => resultText(row?.props?.question ?? row?.title, 200)),

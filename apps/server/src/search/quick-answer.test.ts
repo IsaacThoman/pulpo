@@ -154,4 +154,18 @@ describe('Pulpo Agent Quick Answer', () => {
     expect(quickAnswerText([assistant('A'.repeat(24_500))])).toBe('A'.repeat(24_000))
     await expect(streamQuickAnswer({} as FastifyReply, userId, responseId)).rejects.toMatchObject({ statusCode: 404 })
   })
+
+  it.each([
+    ['insufficient_balance', 'Add Pulpo credits to use Quick Answer.', true],
+    ['daily_spend_limit_reached', 'You reached your Pulpo daily spending limit.', true],
+    ['upstream_error', 'Pulpo couldn’t complete this Quick Answer.', undefined],
+  ])('maps the terminal %s error without exposing worker messages', async (code, message, billing) => {
+    mocks.response.mockResolvedValueOnce([{ id: responseId, status: 'failed', error: { code, message: 'Private worker details' } }])
+    const app = Fastify()
+    app.get('/events', (_, reply) => streamQuickAnswer(reply, userId, responseId))
+    try {
+      const result = await app.inject('/events')
+      expect(result.body).toBe(`: connected\n\ndata: ${JSON.stringify({ type: 'error', message, billing })}\n\n`)
+    } finally { await app.close() }
+  })
 })
