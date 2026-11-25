@@ -1,5 +1,5 @@
-import { Copy, X } from 'lucide-react'
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { ChevronDown, Copy, Globe2, ListFilter, Monitor, Settings2, X } from 'lucide-react'
+import { useLayoutEffect, useRef, useState, type ComponentProps, type FormEvent, type ReactNode } from 'react'
 import { formatSearchPrice, providerNames, type Provider, type SearchConfig } from './api'
 import { searchBangs, validateCustomBang, type CustomBang } from './bangs'
 import { regions } from './navigation'
@@ -9,9 +9,9 @@ import type { SearchPreferencesSyncStatus } from './use-search-preferences'
 
 export type Panel = 'settings' | 'bangs' | 'shortcuts' | 'browser'
 
-export function Modal({ title, close, children }: { title: string; close: () => void; children: ReactNode }) {
+export function Modal({ title, close, children, settings = false }: { title: string; close: () => void; children: ReactNode; settings?: boolean }) {
   const dialog = useRef<HTMLDialogElement>(null)
-  useEffect(() => {
+  useLayoutEffect(() => {
     const element = dialog.current
     if (!element) return
     const opener = document.activeElement
@@ -26,7 +26,7 @@ export function Modal({ title, close, children }: { title: string; close: () => 
   return (
     <dialog
       ref={dialog}
-      className="dialog"
+      className={settings ? 'dialog settings-dialog' : 'dialog'}
       aria-labelledby="dialog-title"
       onCancel={event => { event.preventDefault(); close() }}
       onClick={event => { if (event.target === event.currentTarget) close() }}
@@ -52,7 +52,23 @@ interface SettingsProps {
   clearRecentQueries: () => void
 }
 
+const settingsSections = [
+  { id: 'providers', label: 'Providers', icon: Settings2 },
+  { id: 'results', label: 'Results', icon: ListFilter },
+  { id: 'browser', label: 'Browser', icon: Monitor },
+  { id: 'sites', label: 'Sites', icon: Globe2 },
+] as const
+
+function SettingsSelect(props: ComponentProps<'select'>) {
+  return <span className="filter-select settings-select">
+    <select {...props} />
+    <ChevronDown size={14} aria-hidden="true" />
+  </span>
+}
+
 export function Settings({ config, preferences, update, syncStatus, retrySync, recentQueryCount, clearRecentQueries }: SettingsProps) {
+  const [section, setSection] = useState<(typeof settingsSections)[number]['id']>('providers')
+  const preferencesScroll = useRef<HTMLDivElement>(null)
   const activePrimary = config ? providerOrder(preferences, config)[0] : undefined
   const domainEntries = Object.entries(preferences.domains).sort(([a], [b]) => a.localeCompare(b))
   const available = config?.providers.map(provider => provider.id) ?? []
@@ -60,122 +76,132 @@ export function Settings({ config, preferences, update, syncStatus, retrySync, r
   const searchPrice = config?.providers.find(provider => provider.id === activePrimary)?.priceMicros ?? 0
   const publisherNewsPrice = config?.providers.find(provider => provider.id === 'firecrawl')?.newsPriceMicros
   return (
-    <div className="settings">
-      <p className="hint" role="status">{syncStatus === 'browser' ? 'Search preferences are saved in this browser.'
+    <div className="settings-layout">
+      <nav className="settings-navigation" aria-label="Settings sections">
+        {settingsSections.map(({ id, label, icon: Icon }) => (
+          <button key={id} type="button" aria-current={section === id ? 'page' : undefined} onClick={() => {
+            setSection(id)
+            if (preferencesScroll.current) preferencesScroll.current.scrollTop = 0
+          }}><Icon size={16} aria-hidden="true" />{label}</button>
+        ))}
+      </nav>
+      <div className="settings-preferences" ref={preferencesScroll}>
+        <fieldset className="settings-group" hidden={section !== 'providers'}>
+          <legend>Search providers</legend>
+          {available.length > 0 ? (
+            <>
+              <div className="settings-row">
+                <label htmlFor="search-provider-default">Default</label>
+                <SettingsSelect id="search-provider-default" value={available.includes(preferences.defaultProvider as Provider) ? preferences.defaultProvider : ''}
+                  onChange={event => update({ ...preferences, defaultProvider: event.target.value as Preferences['defaultProvider'] })}>
+                  <option value="">Pulpo default{primaryLabel ? ' · ' + providerNames[primaryLabel] : ''}</option>
+                  {available.map(provider => <option key={provider} value={provider}>{providerNames[provider]}</option>)}
+                </SettingsSelect>
+              </div>
+              <div className="settings-row">
+                <label htmlFor="search-provider-fallback">Fallback</label>
+                <SettingsSelect id="search-provider-fallback" value={preferences.fallbackProvider === 'none' || available.some(
+                  provider => provider === preferences.fallbackProvider && provider !== activePrimary,
+                ) ? preferences.fallbackProvider : ''}
+                  onChange={event => update({ ...preferences, fallbackProvider: event.target.value as Preferences['fallbackProvider'] })}>
+                  <option value="">Automatic</option>
+                  {available.filter(provider => provider !== activePrimary).map(provider => (
+                    <option key={provider} value={provider}>{providerNames[provider]}</option>
+                  ))}
+                  <option value="none">Off</option>
+                </SettingsSelect>
+              </div>
+              <p className="hint">Provider changes apply to your next search. Pulpo can try your fallback when the default can’t complete it.</p>
+              {searchPrice > 0 && <p className="hint">The default provider costs {formatSearchPrice(searchPrice)} per search from your shared Pulpo credits.</p>}
+              {publisherNewsPrice && <p className="hint">Firecrawl News includes publisher details when available and costs {formatSearchPrice(publisherNewsPrice)} per search.</p>}
+            </>
+          ) : <p className="hint">Provider options appear when you’re signed in and search is available.</p>}
+          {config?.places && <>
+            <label className="settings-row">
+              Local places
+              <input type="checkbox" role="switch" checked={preferences.localPlaces}
+                onChange={event => update({ ...preferences, localPlaces: event.target.checked })} />
+            </label>
+            <p className="hint">Places searches use {placeProviderNames[config.places.provider]} and cost {formatSearchPrice(config.places.priceMicros)} from your shared Pulpo credits when listings are found.</p>
+          </>}
+        </fieldset>
+        <fieldset className="settings-group" hidden={section !== 'results'}>
+          <legend>Search results</legend>
+          <div className="settings-row">
+            <label htmlFor="search-limit">Results per search</label>
+            <SettingsSelect id="search-limit" value={preferences.limit} onChange={event => {
+              const limit = Number(event.target.value)
+              if (limit === 10 || limit === 20 || limit === 40) update({ ...preferences, limit })
+            }}>
+              <option value="10">10</option>
+              <option value="20">20</option>
+              <option value="40">Up to 40</option>
+            </SettingsSelect>
+          </div>
+          {config?.providers.some(provider => provider.expandedImages) && <p className="hint">Kagi image galleries show more results in batches of 24.</p>}
+          <div className="settings-row">
+            <label htmlFor="search-region-default">Default region</label>
+            <SettingsSelect id="search-region-default" value={preferences.defaultRegion} onChange={event => {
+              const region = regions.find(([value]) => value === event.target.value)?.[0]
+              if (region !== undefined) update({ ...preferences, defaultRegion: region })
+            }}>
+              {regions.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+            </SettingsSelect>
+          </div>
+          <label className="settings-row">
+            SafeSearch
+            <input type="checkbox" role="switch" checked={preferences.safeSearch} onChange={event => update({ ...preferences, safeSearch: event.target.checked })} />
+          </label>
+          <label className="settings-row">
+            Open links in a new tab
+            <input type="checkbox" role="switch" checked={preferences.newTab} onChange={event => update({ ...preferences, newTab: event.target.checked })} />
+          </label>
+          <label className="settings-row">
+            Single-key shortcuts
+            <input type="checkbox" role="switch" checked={preferences.keyboardShortcuts}
+              onChange={event => update({ ...preferences, keyboardShortcuts: event.target.checked })} />
+          </label>
+        </fieldset>
+        <fieldset className="settings-group" hidden={section !== 'browser'}>
+          <legend>This browser</legend>
+          <div className="settings-row">
+            <label htmlFor="search-theme">Theme</label>
+            <SettingsSelect id="search-theme" value={preferences.theme} onChange={event => update({ ...preferences, theme: event.target.value as Preferences['theme'] })}>
+              <option value="pulpo">Follow Pulpo</option>
+              <option value="system">Follow device</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </SettingsSelect>
+          </div>
+          <label className="settings-row">
+            Remember recent searches on this browser
+            <input type="checkbox" role="switch" checked={preferences.rememberRecentQueries}
+              onChange={event => update({ ...preferences, rememberRecentQueries: event.target.checked })} />
+          </label>
+          <button className="text-button" disabled={!recentQueryCount} onClick={clearRecentQueries}>Clear recent searches</button>
+        </fieldset>
+        <fieldset className="settings-group" hidden={section !== 'sites'}>
+          <legend>Sites</legend>
+          {domainEntries.length ? (
+            <ul className="settings-list">
+              {domainEntries.map(([domain, rule]) => (
+                <li key={domain}>
+                  <span className="settings-site">{domain} <small>{rule === 'pin' ? 'Pinned' : 'Hidden'}</small></span>
+                  <button className="text-button" aria-label={`Remove preference for ${domain}`} onClick={() => {
+                    const domains = { ...preferences.domains }
+                    delete domains[domain]
+                    update({ ...preferences, domains })
+                  }}>Remove</button>
+                </li>
+              ))}
+            </ul>
+          ) : <p className="hint">Pin or hide a site from its result menu.</p>}
+        </fieldset>
+      </div>
+      <p className="hint settings-sync" role="status">{syncStatus === 'browser' ? 'Search preferences are saved in this browser.'
         : syncStatus === 'syncing' ? 'Syncing Search preferences…'
         : syncStatus === 'synced' ? 'Search preferences sync with your Pulpo account.'
         : <>Search preferences are saved here until sync is available. <button className="text-button" onClick={retrySync}>Retry sync</button></>}</p>
-      <fieldset className="settings-group">
-        <legend>Search providers</legend>
-        {available.length > 0 ? (
-          <>
-            <div className="settings-row">
-              <label htmlFor="search-provider-default">Default</label>
-              <select id="search-provider-default" value={available.includes(preferences.defaultProvider as Provider) ? preferences.defaultProvider : ''}
-                onChange={event => update({ ...preferences, defaultProvider: event.target.value as Preferences['defaultProvider'] })}>
-                <option value="">Pulpo default{primaryLabel ? ' · ' + providerNames[primaryLabel] : ''}</option>
-                {available.map(provider => <option key={provider} value={provider}>{providerNames[provider]}</option>)}
-              </select>
-            </div>
-            <div className="settings-row">
-              <label htmlFor="search-provider-fallback">Fallback</label>
-              <select id="search-provider-fallback" value={preferences.fallbackProvider === 'none' || available.some(
-                provider => provider === preferences.fallbackProvider && provider !== activePrimary,
-              ) ? preferences.fallbackProvider : ''}
-                onChange={event => update({ ...preferences, fallbackProvider: event.target.value as Preferences['fallbackProvider'] })}>
-                <option value="">Automatic</option>
-                {available.filter(provider => provider !== activePrimary).map(provider => (
-                  <option key={provider} value={provider}>{providerNames[provider]}</option>
-                ))}
-                <option value="none">Off</option>
-              </select>
-            </div>
-            <p className="hint">Provider changes apply to your next search. Pulpo can try your fallback when the default can’t complete it.</p>
-            {searchPrice > 0 && <p className="hint">The default provider costs {formatSearchPrice(searchPrice)} per search from your shared Pulpo credits.</p>}
-            {publisherNewsPrice && <p className="hint">Firecrawl News includes publisher details when available and costs {formatSearchPrice(publisherNewsPrice)} per search.</p>}
-          </>
-        ) : <p className="hint">Provider options appear when you’re signed in and search is available.</p>}
-        {config?.places && <>
-          <label className="settings-row">
-            Local places
-            <input type="checkbox" checked={preferences.localPlaces}
-              onChange={event => update({ ...preferences, localPlaces: event.target.checked })} />
-          </label>
-          <p className="hint">Places searches use {placeProviderNames[config.places.provider]} and cost {formatSearchPrice(config.places.priceMicros)} from your shared Pulpo credits when listings are found.</p>
-        </>}
-      </fieldset>
-      <fieldset className="settings-group">
-        <legend>Search results</legend>
-        <div className="settings-row">
-          <label htmlFor="search-limit">Results per search</label>
-          <select id="search-limit" value={preferences.limit} onChange={event => {
-            const limit = Number(event.target.value)
-            if (limit === 10 || limit === 20 || limit === 40) update({ ...preferences, limit })
-          }}>
-            <option value="10">10</option>
-            <option value="20">20</option>
-            <option value="40">Up to 40</option>
-          </select>
-        </div>
-        {config?.providers.some(provider => provider.expandedImages) && <p className="hint">Kagi image galleries show more results in batches of 24.</p>}
-        <div className="settings-row">
-          <label htmlFor="search-region-default">Default region</label>
-          <select id="search-region-default" value={preferences.defaultRegion} onChange={event => {
-            const region = regions.find(([value]) => value === event.target.value)?.[0]
-            if (region !== undefined) update({ ...preferences, defaultRegion: region })
-          }}>
-            {regions.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
-          </select>
-        </div>
-        <label className="settings-row">
-          SafeSearch
-          <input type="checkbox" checked={preferences.safeSearch} onChange={event => update({ ...preferences, safeSearch: event.target.checked })} />
-        </label>
-        <label className="settings-row">
-          Open links in a new tab
-          <input type="checkbox" checked={preferences.newTab} onChange={event => update({ ...preferences, newTab: event.target.checked })} />
-        </label>
-        <label className="settings-row">
-          Single-key shortcuts
-          <input type="checkbox" checked={preferences.keyboardShortcuts}
-            onChange={event => update({ ...preferences, keyboardShortcuts: event.target.checked })} />
-        </label>
-      </fieldset>
-      <fieldset className="settings-group">
-        <legend>This browser</legend>
-        <div className="settings-row">
-          <label htmlFor="search-theme">Theme</label>
-          <select id="search-theme" value={preferences.theme} onChange={event => update({ ...preferences, theme: event.target.value as Preferences['theme'] })}>
-            <option value="pulpo">Follow Pulpo</option>
-            <option value="system">Follow device</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
-        </div>
-        <label className="settings-row">
-          Remember recent searches on this browser
-          <input type="checkbox" checked={preferences.rememberRecentQueries}
-            onChange={event => update({ ...preferences, rememberRecentQueries: event.target.checked })} />
-        </label>
-        <button className="text-button" disabled={!recentQueryCount} onClick={clearRecentQueries}>Clear recent searches</button>
-      </fieldset>
-      <fieldset className="settings-group">
-        <legend>Sites</legend>
-        {domainEntries.length ? (
-          <ul className="settings-list">
-            {domainEntries.map(([domain, rule]) => (
-              <li key={domain}>
-                <span className="settings-site">{domain} <small>{rule === 'pin' ? 'Pinned' : 'Hidden'}</small></span>
-                <button className="text-button" aria-label={`Remove preference for ${domain}`} onClick={() => {
-                  const domains = { ...preferences.domains }
-                  delete domains[domain]
-                  update({ ...preferences, domains })
-                }}>Remove</button>
-              </li>
-            ))}
-          </ul>
-        ) : <p className="hint">Pin or hide a site from its result menu.</p>}
-      </fieldset>
     </div>
   )
 }

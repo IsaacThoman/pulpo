@@ -136,13 +136,10 @@ describe('search result presentation', () => {
     expect(firstVisibleResultUrl(data, preferences)?.href).toBe(firstVisible)
   })
 
-  it('keeps related searches outside the primary results and submits them on selection', () => {
-    const onQuery = vi.fn()
+  it('keeps provider-supplied related searches out of the results layout', () => {
     render(<Results data={data} location={{ ...homeLocation, query: 'octopus' }}
-      preferences={loadPreferences()} setDomain={vi.fn()} onQuery={onQuery} />)
-    expect(screen.getByRole('complementary', { name: 'Related searches' })).toBeDefined()
-    fireEvent.click(screen.getByRole('button', { name: 'octopus habitat' }))
-    expect(onQuery).toHaveBeenCalledWith('octopus habitat')
+      preferences={loadPreferences()} setDomain={vi.fn()} onQuery={vi.fn()} />)
+    expect(screen.queryByText('octopus habitat')).toBeNull()
   })
 
   it('keeps adjacent links from a site together without changing their navigation order', () => {

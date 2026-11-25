@@ -1,5 +1,7 @@
 .reusable-images { display: grid; gap: .55rem; margin: .15rem 0 1rem; }
 .reusable-image-modes { display: flex; flex-wrap: wrap; gap: .4rem; }
+.reusable-image-modes button { min-height: 2rem; padding: .25rem .55rem; border: 0; background: transparent; color: var(--muted); }
+.reusable-image-modes button:is(:hover, [aria-pressed="true"]) { background: var(--subtle); color: var(--ink); }
 .reusable-image-credit { color: var(--muted); font-size: .875rem; }
 .reusable-image-credit strong { color: var(--ink); }
 .reusable-image-filters { display: flex; flex-wrap: wrap; align-items: end; gap: .45rem .65rem; min-width: 0; margin: 0; padding: 0; border: 0; }

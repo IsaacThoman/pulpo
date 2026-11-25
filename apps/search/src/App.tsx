@@ -1,4 +1,4 @@
-import { ChevronDown, ExternalLink, Globe2, Image, Keyboard, MapPin, Newspaper, Podcast, Settings2, Video } from 'lucide-react'
+import { ArrowUpRight, ChevronDown, ExternalLink, Keyboard, LogOut, MapPin, Settings2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, providerNames, SearchApiError, type SearchConfig, type SearchUser } from './api'
 import { useSearchAppearance } from './appearance'
@@ -33,7 +33,6 @@ import { useWeatherAlerts, useWeatherAnswer, weatherLocation } from './weather'
 
 const smiley = new URL('../../web/public/pulpo-smiley.png', import.meta.url).href
 const labels = { web: 'Web', images: 'Images', news: 'News', videos: 'Videos', podcasts: 'Podcasts' } as const
-const icons = { web: Globe2, images: Image, news: Newspaper, videos: Video, podcasts: Podcast }
 const isBangDiscovery = (query: string) => /^[!\s]+$/u.test(query)
 const answerPath = (location: SearchLocation) => searchPath({ ...location, page: undefined, provider: undefined })
 
@@ -477,7 +476,10 @@ export function App({ callback }: { callback: Callback }) {
           {isResults && <Logo onHome={() => { go(homeLocation); requestAnimationFrame(() => input.current?.focus()) }} />}
           {isResults && searchBox}
           <div className="app-actions">
-            <button className="icon-button header-settings" aria-label="Search settings" title="Search settings" onClick={() => setPanel('settings')}>
+            <button className="icon-button header-settings" aria-label="Search settings" title="Search settings" onClick={event => {
+              event.currentTarget.focus()
+              setPanel('settings')
+            }}>
               <Settings2 size={20} aria-hidden="true" />
             </button>
             {user ? (
@@ -490,8 +492,8 @@ export function App({ callback }: { callback: Callback }) {
                 <div className="account-content">
                   <strong>{user.name || 'Pulpo account'}</strong>
                   <span>{user.email}</span>
-                  <a href={pulpoOrigin}>Open Pulpo</a>
-                  <button onClick={signOut} disabled={authBusy}>Sign out</button>
+                  <a href={pulpoOrigin}><ArrowUpRight size={16} aria-hidden="true" /> Open Pulpo</a>
+                  <button onClick={signOut} disabled={authBusy}><LogOut size={16} aria-hidden="true" /> Sign out</button>
                 </div>
               </details>
             ) : !waitingForSession && <button className="secondary-button top-signin" onClick={signIn} disabled={authBusy}>Sign in</button>}
@@ -514,75 +516,77 @@ export function App({ callback }: { callback: Callback }) {
         <main id="main-content" className="results-main">
           <div className="results-content">
             <h1 className="sr-only">Search results for {view.query}</h1>
-            <div className="filter-bar">
-              <div className="categories" aria-label="Search type">
-                {(enabledCategories.length ? enabledCategories : [view.category]).map(category => {
-                  const Icon = icons[category]
-                  return <button key={category} className={'category-button' + (category === 'videos' || category === 'podcasts' ? ' desktop-media-tab' : '')} aria-pressed={category === view.category}
-                    onClick={() => changeCategory(category)}><Icon size={16} aria-hidden="true" /> {labels[category]}</button>
-                })}
-                {mediaCategories.length > 0 && <details className="provider-menu mobile-media-tabs" onKeyDown={event => {
-                  if (event.key !== 'Escape' || !event.currentTarget.open) return
-                  event.currentTarget.open = false
-                  event.currentTarget.querySelector('summary')?.focus()
-                }} onBlur={event => {
-                  if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) {
+            <div className="search-tools">
+              <div className="filter-bar">
+                <div className="categories" aria-label="Search type">
+                  {(enabledCategories.length ? enabledCategories : [view.category]).map(category => (
+                    <button key={category} className={'category-button' + (category === 'videos' || category === 'podcasts' ? ' desktop-media-tab' : '')} aria-pressed={category === view.category}
+                      onClick={() => changeCategory(category)}>{labels[category]}</button>
+                  ))}
+                  {mediaCategories.length > 0 && <details className="provider-menu mobile-media-tabs" onKeyDown={event => {
+                    if (event.key !== 'Escape' || !event.currentTarget.open) return
                     event.currentTarget.open = false
-                  }
-                }}>
-                  <summary className="category-button" aria-label="Media search types" data-active={view.category === 'videos' || view.category === 'podcasts'}>
-                    {view.category === 'videos' || view.category === 'podcasts' ? labels[view.category] : 'Media'}
-                    <ChevronDown size={13} aria-hidden="true" />
-                  </summary>
-                  <div className="provider-options">
-                    {mediaCategories.map(category => <button key={category} onClick={event => {
-                      const menu = event.currentTarget.closest('details')
-                      menu?.removeAttribute('open')
-                      menu?.querySelector('summary')?.focus()
-                      changeCategory(category)
-                    }}>{labels[category]}</button>)}
-                  </div>
-                </details>}
-              </div>
-              <div className="result-controls">
-                {mapSearch && <a className="map-search" href={mapSearch} target="_blank" rel="noreferrer">
-                  <MapPin size={15} aria-hidden="true" /> Google Maps <ExternalLink size={12} aria-hidden="true" />
-                </a>}
-                {view.category === 'web' && !showAnswer && !answerPending && user && config && <label className="scope-select">
-                  <span className="sr-only">Search focus</span>
-                  <select value={view.scope ?? ''} onChange={event => {
-                    const scope = searchScopes.find(([id]) => id === event.target.value)?.[0] || undefined
-                    go({ ...view, scope, page: undefined })
+                    event.currentTarget.querySelector('summary')?.focus()
+                  }} onBlur={event => {
+                    if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) {
+                      event.currentTarget.open = false
+                    }
                   }}>
-                    {searchScopes.map(([id, name]) => <option value={id} key={id}>{name}</option>)}
-                  </select>
-                  <ChevronDown size={13} aria-hidden="true" />
-                </label>}
-                {!showAnswer && !answerPending && !reuse && <SearchFilters date={effectiveDate} dateRange={view.dateRange} region={view.region}
-                  dates={filterDates} allowCustomDates={filterCustomDates} allowRegion={filterRegion}
-                  regionOverride={view.regionOverride} safeSearch={view.safeSearch}
-                  defaultRegion={searchPreferences.defaultRegion} defaultSafeSearch={searchPreferences.safeSearch}
-                  searchProvider={user && (alternatives.length > 1 || view.provider) ? {
-                    selected: view.provider,
-                    used: state.status === 'success' && state.data.provider !== 'openverse' ? state.data.provider : undefined,
-                    choices: alternatives.map(provider => provider.id),
-                    onChange: provider => go({ ...view, provider, page: undefined }),
-                  } : undefined}
-                  onApply={filters => go({ ...view, ...filters,
-                    dateOverride: recentNews && !filters.date && !filters.dateRange ? true : undefined,
-                    invalidDateRange: undefined, page: undefined,
-                  })} />}
+                    <summary className="category-button" aria-label="Media search types" data-active={view.category === 'videos' || view.category === 'podcasts'}>
+                      {view.category === 'videos' || view.category === 'podcasts' ? labels[view.category] : 'Media'}
+                      <ChevronDown size={13} aria-hidden="true" />
+                    </summary>
+                    <div className="provider-options">
+                      {mediaCategories.map(category => <button key={category} onClick={event => {
+                        const menu = event.currentTarget.closest('details')
+                        menu?.removeAttribute('open')
+                        menu?.querySelector('summary')?.focus()
+                        changeCategory(category)
+                      }}>{labels[category]}</button>)}
+                    </div>
+                  </details>}
+                </div>
+                <div className="result-controls">
+                  {mapSearch && <a className="map-search" href={mapSearch} target="_blank" rel="noreferrer">
+                    <MapPin size={15} aria-hidden="true" /> Google Maps <ExternalLink size={12} aria-hidden="true" />
+                  </a>}
+                  {view.category === 'web' && !showAnswer && !answerPending && user && config && <label className="scope-select">
+                    <span className="sr-only">Search focus</span>
+                    <select value={view.scope ?? ''} onChange={event => {
+                      const scope = searchScopes.find(([id]) => id === event.target.value)?.[0] || undefined
+                      go({ ...view, scope, page: undefined })
+                    }}>
+                      {searchScopes.map(([id, name]) => <option value={id} key={id}>{name}</option>)}
+                    </select>
+                    <ChevronDown size={13} aria-hidden="true" />
+                  </label>}
+                  {!showAnswer && !answerPending && !reuse && <SearchFilters date={effectiveDate} dateRange={view.dateRange} region={view.region}
+                    dates={filterDates} allowCustomDates={filterCustomDates} allowRegion={filterRegion}
+                    regionOverride={view.regionOverride} safeSearch={view.safeSearch}
+                    defaultRegion={searchPreferences.defaultRegion} defaultSafeSearch={searchPreferences.safeSearch}
+                    searchProvider={user && (alternatives.length > 1 || view.provider) ? {
+                      selected: view.provider,
+                      used: state.status === 'success' && state.data.provider !== 'openverse' ? state.data.provider : undefined,
+                      choices: alternatives.map(provider => provider.id),
+                      onChange: provider => go({ ...view, provider, page: undefined }),
+                    } : undefined}
+                    onApply={filters => go({ ...view, ...filters,
+                      dateOverride: recentNews && !filters.date && !filters.dateRange ? true : undefined,
+                      invalidDateRange: undefined, page: undefined,
+                    })} />}
+                </div>
               </div>
+              {user && preferencesReady && config?.quickAnswer && view.category === 'web' && !bang && !unrecognizedBang && !luckyQuery && !view.page && !view.invalidDateRange
+                && ((!showAnswer && !answerPending) || view.query.endsWith('?')) && (
+                <QuickAnswer key={user.id + '\n' + view.query} query={view.query}
+                  automatic={submittedQuestion === view.query} onAutomaticStart={consumeSubmittedQuestion} pulpoOrigin={pulpoOrigin} />
+              )}
             </div>
             {view.category === 'images' && !!user && config?.reusableImages && (
               <ReusableImageControls active={!!reuse} filters={reuse ?? {}}
                 onToggle={() => changeReusableImages(reuse ? undefined : {})} onFilters={changeReusableImages} />
             )}
             {authError && <p className="form-error results-auth-error" role="alert">{authError}</p>}
-            {user && preferencesReady && config?.quickAnswer && view.category === 'web' && !bang && !unrecognizedBang && !luckyQuery && !view.page && !view.invalidDateRange && (
-              <QuickAnswer key={user.id + '\n' + view.query} query={view.query}
-                automatic={submittedQuestion === view.query} onAutomaticStart={consumeSubmittedQuestion} pulpoOrigin={pulpoOrigin} />
-            )}
             {unrecognizedBang ? (
               <section className="search-message">
                 <h2>Unknown bang: {unrecognizedBang}</h2>
@@ -752,7 +756,7 @@ export function App({ callback }: { callback: Callback }) {
         </div>
       </footer>
       {panel && (
-        <Modal title={titles[panel]} close={() => setPanel(null)}>
+        <Modal title={titles[panel]} close={() => setPanel(null)} settings={panel === 'settings'}>
           {panel === 'settings' && <Settings config={config} preferences={preferences} update={update} syncStatus={syncStatus} retrySync={retrySync}
             recentQueryCount={recentQueries.length} clearRecentQueries={clearRecentQueries} />}
           {panel === 'bangs' && <Bangs customBangs={preferences.bangs} update={bangs => update({ ...preferences, bangs })} onChooseBang={handleBang} />}

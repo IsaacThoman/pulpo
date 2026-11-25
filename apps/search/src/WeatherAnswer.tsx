@@ -1,10 +1,22 @@
-import { useState } from 'react'
+import { Cloud, CloudFog, CloudLightning, CloudRain, CloudSnow, CloudSun, Sun } from 'lucide-react'
+import { useState, type CSSProperties } from 'react'
 import { type WeatherAlerts, type WeatherPlace, type WeatherResponse } from './api'
 import { safeHttpUrl } from './navigation'
 
 const dayLabel = new Intl.DateTimeFormat(undefined, { weekday: 'short', timeZone: 'UTC' })
 const fullDayLabel = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' })
 const placeLabel = ({ name, admin, country }: WeatherPlace) => [name, admin, country].filter(Boolean).join(', ')
+
+function WeatherSymbol({ condition, size = 19 }: { condition: string | undefined; size?: number }) {
+  const description = condition?.toLowerCase() ?? ''
+  const Icon = description.includes('thunder') ? CloudLightning
+    : /sleet|snow|ice/.test(description) ? CloudSnow
+    : /rain|drizzle|showers/.test(description) ? CloudRain
+    : /fog|mist/.test(description) ? CloudFog
+    : /fair|partly/.test(description) ? CloudSun
+    : /clear|sunny/.test(description) ? Sun : Cloud
+  return <Icon className="weather-symbol" size={size} strokeWidth={1.55} aria-hidden="true" />
+}
 
 export function WeatherAnswer({ response, alerts, onLocation, onWeb, webExpanded }: {
   response: Extract<WeatherResponse, { status: 'forecast' | 'ambiguous' }>
@@ -33,6 +45,9 @@ export function WeatherAnswer({ response, alerts, onLocation, onWeb, webExpanded
   const localHour = new Intl.DateTimeFormat(undefined, { timeZone: place.timeZone, hour: 'numeric', minute: '2-digit' })
   const today = new Intl.DateTimeFormat('sv-SE', { timeZone: place.timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
   const alertSource = alerts?.status === 'available' ? safeHttpUrl(alerts.source.url) : undefined
+  const dailyLow = Math.min(...forecast.daily.map(day => day.lowC))
+  const dailyHigh = Math.max(...forecast.daily.map(day => day.highC))
+  const dailySpan = Math.max(dailyHigh - dailyLow, 1)
   return (
     <section className="answer weather-answer" aria-label="Weather forecast">
       <div className="weather-heading">
@@ -42,8 +57,13 @@ export function WeatherAnswer({ response, alerts, onLocation, onWeb, webExpanded
           <button className="text-button" aria-pressed={fahrenheit} onClick={() => setFahrenheit(true)}>°F</button>
         </div>
       </div>
-      <output className="weather-reading">{degrees(forecast.temperatureC)}°{fahrenheit ? 'F' : 'C'}</output>
-      {forecast.condition && <p className="weather-condition">{forecast.condition}</p>}
+      <div className="weather-current">
+        {forecast.condition && <WeatherSymbol condition={forecast.condition} size={49} />}
+        <div>
+          <output className="weather-reading">{degrees(forecast.temperatureC)}°{fahrenheit ? 'F' : 'C'}</output>
+          {forecast.condition && <p className="weather-condition">{forecast.condition}</p>}
+        </div>
+      </div>
       <ul className="weather-details">
         {forecast.windKph !== undefined && <li>Wind {Math.round(fahrenheit ? forecast.windKph / 1.609344 : forecast.windKph)} {fahrenheit ? 'mph' : 'km/h'}</li>}
         {forecast.precipitationChance !== undefined && <li>Precipitation {forecast.precipitationChance}%</li>}
@@ -64,7 +84,10 @@ export function WeatherAnswer({ response, alerts, onLocation, onWeb, webExpanded
           <div className="weather-hourly-scroll" role="region" aria-label="Hourly forecast" tabIndex={0}>
             <ol>{forecast.hourly.map(hour => <li key={hour.validAt}>
               <time dateTime={hour.validAt}>{localHour.format(new Date(hour.validAt))}</time>
-              <strong>{degrees(hour.temperatureC)}°</strong>
+              <span className="weather-hour-reading">
+                {hour.condition && <WeatherSymbol condition={hour.condition} />}
+                <strong>{degrees(hour.temperatureC)}°</strong>
+              </span>
               {hour.precipitationChance !== undefined && <small aria-label={`Precipitation ${hour.precipitationChance}%`}>{hour.precipitationChance}% precip.</small>}
               {hour.condition && <small>{hour.condition}</small>}
             </li>)}</ol>
@@ -78,12 +101,17 @@ export function WeatherAnswer({ response, alerts, onLocation, onWeb, webExpanded
             const date = new Date(day.date + 'T12:00:00Z')
             const remaining = day.date === today
             return <li key={day.date}>
-              <time dateTime={day.date} title={fullDayLabel.format(date)}>{remaining ? 'Rest of today' : dayLabel.format(date)}</time>
+              <time dateTime={day.date} title={fullDayLabel.format(date)} aria-label={remaining ? 'Rest of today' : undefined}>{remaining ? 'Today' : dayLabel.format(date)}</time>
+              {day.condition && <WeatherSymbol condition={day.condition} />}
               <span className="weather-range">
                 <strong><span className="sr-only">High </span>{degrees(day.highC)}°</strong>
                 <span><span className="sr-only">Low </span>{degrees(day.lowC)}°</span>
               </span>
-              {day.condition && <small>{day.condition}</small>}
+              <span className="weather-range-track" aria-hidden="true" style={{
+                '--range-start': (day.lowC - dailyLow) / dailySpan * 100 + '%',
+                '--range-end': (dailyHigh - day.highC) / dailySpan * 100 + '%',
+              } as CSSProperties} />
+              {day.condition && <small className="weather-day-condition">{day.condition}</small>}
             </li>
           })}
         </ul>

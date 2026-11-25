@@ -13,10 +13,9 @@ interface ImageResultFiltersProps {
   withoutDimensions: number
   hasSourceDates: boolean
   sources: Array<[string, number]>
-  collapsed?: boolean
 }
 
-export function ImageResultFilters({ value, update, shown, total, matches, withoutDimensions, hasSourceDates, sources, collapsed }: ImageResultFiltersProps) {
+export function ImageResultFilters({ value, update, shown, total, matches, withoutDimensions, hasSourceDates, sources }: ImageResultFiltersProps) {
   const fieldset = useRef<HTMLFieldSetElement>(null)
   const id = useId()
   const active = hasImageRefinements(value)
@@ -31,7 +30,7 @@ export function ImageResultFilters({ value, update, shown, total, matches, witho
 
   const controls = (
     <fieldset className="image-refinements" ref={fieldset}>
-      <legend>Filter these results</legend>
+      <legend className="sr-only">Filter these results</legend>
       <div className="image-refinement-fields">
         {showDimensions && <>
           <div className="filter-field">
@@ -101,8 +100,10 @@ export function ImageResultFilters({ value, update, shown, total, matches, witho
       </div>}
     </fieldset>
   )
-  return collapsed ? <details className="image-refinements-menu">
-    <summary className="text-button">Refine images <ChevronDown size={14} aria-hidden="true" /></summary>
+  return <details className="image-refinements-menu">
+    <summary className="text-button">
+      {active ? 'Image filters applied' : 'Refine images'} <ChevronDown size={14} aria-hidden="true" />
+    </summary>
     {controls}
-  </details> : controls
+  </details>
 }

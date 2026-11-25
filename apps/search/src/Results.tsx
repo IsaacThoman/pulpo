@@ -1,5 +1,5 @@
 import { isSearchFaviconHost } from '@pulpo/contracts/search'
-import { ChevronDown, Ellipsis, Globe2, Image, Pin, Search } from 'lucide-react'
+import { ChevronDown, CircleHelp, Ellipsis, Globe2, Image, Pin } from 'lucide-react'
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { SearchResponse } from './api'
 import { ImageResultFilters } from './ImageResultFilters'
@@ -86,11 +86,12 @@ function SiteIcon({ host }: { host: string }) {
   </span>
 }
 
-function ImageThumbnail({ image, thumbnail, title, license, contain, open }: {
+function ImageThumbnail({ image, thumbnail, title, license, dimensions, contain, open }: {
   image: string | undefined
   thumbnail: string | undefined
   title: string
   license?: string
+  dimensions?: { width: number; height: number }
   contain: boolean
   open: (opener: HTMLButtonElement) => void
 }) {
@@ -98,6 +99,7 @@ function ImageThumbnail({ image, thumbnail, title, license, contain, open }: {
     aria-description={license ? 'Reported license: ' + license : undefined}
     data-contain={contain || undefined} onClick={event => open(event.currentTarget)}>
     <ResultImage sources={[thumbnail, image]} alt="" lazy fallback={<Image size={26} aria-hidden="true" />} />
+    {dimensions && <span className="image-dimensions-badge" aria-hidden="true">{dimensions.width} × {dimensions.height}</span>}
     {license && <span className="image-license-badge">{license}</span>}
   </button>
 }
@@ -218,6 +220,7 @@ function ResultItem({ entry, additional, versions, preview, media, video, newsNo
     <li className="result" data-video-thumbnail={Boolean(video && thumbnail) || undefined} data-news-thumbnail={Boolean(news && thumbnail) || undefined}>
       {preview && <ImageThumbnail key={result.imageUrl + ' ' + result.thumbnailUrl}
         thumbnail={result.thumbnailUrl} image={result.imageUrl} title={title} contain={containImage} open={preview}
+        dimensions={dimensions}
         license={result.imageLicense && licenseLabel(result.imageLicense.code, result.imageLicense.version)} />}
       {!news && mediaImage}
       {video || (news && thumbnail) ? <div className="media-result-content">{content}</div> : content}
@@ -286,7 +289,6 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
   const knowledgeUrl = safeHttpUrl(data.knowledge?.url)
   const knowledge = knowledgeUrl && domainRule(knowledgeUrl.hostname.replace(/\.$/, ''), preferences.domains) !== 'hide'
     ? data.knowledge : undefined
-  const related = [...new Set(data.related)].filter(query => query !== location.query).slice(0, 8)
   const terms = queryTerms(location.query)
   const searchSite = location.category === 'web' && location.query.length < 240 && !/\bsite:/i.test(location.query)
     ? (host: string) => onQuery(location.query + ' site:' + host)
@@ -306,7 +308,7 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
   }
 
   return (
-    <div className={images ? 'results-body image-results-body' : 'results-body'}>
+    <div className={'results-body' + (images ? ' image-results-body' : videoGrid ? ' video-results-body' : '')}>
       {knowledge && knowledgeUrl && <KnowledgeCard knowledge={knowledge} url={knowledgeUrl} newTab={preferences.newTab} />}
       <div className="results-column" tabIndex={-1}>
         <div className="sr-only" role="status" aria-live="polite">{shown.length} results for {location.query}</div>
@@ -322,13 +324,11 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
         {images && (
           <ImageResultFilters value={refinements} update={updateImageRefinements}
             shown={shown.length} total={visible.length} matches={ordered.length} withoutDimensions={withoutDimensions}
-            collapsed={data.provider === 'openverse'} hasSourceDates={visible.some(entry => imageSourceTime(entry.result.publishedAt) !== undefined)}
+            hasSourceDates={visible.some(entry => imageSourceTime(entry.result.publishedAt) !== undefined)}
             sources={imageSources(visible)} />
         )}
-        {news && (location.date || location.dateRange) &&
-          <p className="hint news-date-hint">The date filter includes articles updated during this period.</p>}
-        {canSortNews && <div className="result-refinements">
-          <label>
+        {news && (canSortNews || location.date || location.dateRange) && <div className="result-refinements">
+          {canSortNews && <label>
             <span>Sort news</span>
             <span className="filter-select">
               <select value={newestNews ? 'newest' : 'relevance'} onChange={event => setNewsOrder(event.target.value === 'newest' ? 'newest' : 'relevance')}>
@@ -337,7 +337,11 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
               </select>
               <ChevronDown size={14} aria-hidden="true" />
             </span>
-          </label>
+          </label>}
+          {(location.date || location.dateRange) && <details className="news-date-info">
+            <summary className="icon-button" aria-label="About news dates" title="About news dates"><CircleHelp size={16} aria-hidden="true" /></summary>
+            <p>The date filter includes articles updated during this period.</p>
+          </details>}
         </div>}
         {canFilterVideoDuration && <div className="result-refinements">
           <label>
@@ -398,14 +402,6 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
         </button>}
       </div>
       {images && imagePagination?.(imagesToReveal === 0)}
-      {related.length > 0 && (
-        <aside className="related" aria-label="Related searches">
-          <h2>Related searches</h2>
-          <ul>{related.map(query => <li key={query}><button className="secondary-button" onClick={() => onQuery(query)}>
-            <Search size={15} className="related-search-icon" aria-hidden="true" /><span>{query}</span>
-          </button></li>)}</ul>
-        </aside>
-      )}
       {images && preview && <ImageViewer {...preview} newTab={preferences.newTab} close={() => setPreview(undefined)} />}
     </div>
   )

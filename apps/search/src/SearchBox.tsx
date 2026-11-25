@@ -80,7 +80,9 @@ export function SearchBox({ value, setValue, onSearch, customBangs, recentQuerie
   return (
     <form className="search-box" role="search" onSubmit={submit}>
       <label className="sr-only" htmlFor={inputId}>Search the web</label>
-      <Search className="search-leading" size={20} aria-hidden="true" />
+      <button className="icon-button search-submit" type="submit" aria-label="Search" title="Search">
+        <Search size={19} aria-hidden="true" />
+      </button>
       <input
         id={inputId}
         ref={input}
@@ -113,10 +115,6 @@ export function SearchBox({ value, setValue, onSearch, customBangs, recentQuerie
           <X size={17} aria-hidden="true" />
         </button>
       )}
-      <button className="search-submit" type="submit" aria-label="Search" title="Search">
-        <span>Search</span>
-        <Search size={18} aria-hidden="true" />
-      </button>
       {matches.length > 0 && (
         <ul className="bang-suggestions" id={listId} role="listbox" aria-label={bangPrefix ? 'Bangs' : 'Recent searches'}>
           {matches.map((suggestion, index) => (
