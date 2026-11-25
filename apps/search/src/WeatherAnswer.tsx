@@ -131,6 +131,9 @@ export function WeatherAnswer({ response, alerts, onLocation, onWeb, webExpanded
           <output className="weather-reading">{degrees(forecast.temperatureC)}°{fahrenheit ? 'F' : 'C'}</output>
           {forecast.condition && <p className="weather-condition">{forecast.condition}</p>}
         </div>
+        <button className="text-button weather-web" aria-expanded={webExpanded} onClick={onWeb}>
+          {webExpanded ? 'Hide web results' : 'Show web results'}
+        </button>
       </div>
       <ul className="weather-details">
         {forecast.windKph !== undefined && <li>Wind {Math.round(fahrenheit ? forecast.windKph / 1.609344 : forecast.windKph)} {fahrenheit ? 'mph' : 'km/h'}</li>}
@@ -169,9 +172,6 @@ export function WeatherAnswer({ response, alerts, onLocation, onWeb, webExpanded
           })}
         </ul>
       </div>}
-      <button className="text-button weather-web" aria-expanded={webExpanded} onClick={onWeb}>
-        {webExpanded ? 'Hide web results' : 'Show web results'}
-      </button>
       <div className="weather-footer">
         <span>Sources {sources.map(source => {
           const url = safeHttpUrl(source.url)

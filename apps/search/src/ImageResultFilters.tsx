@@ -1,4 +1,4 @@
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, ListFilter } from 'lucide-react'
 import { useId, useRef } from 'react'
 import {
   defaultImageRefinements, hasDimensionFilters, hasImageRefinements, imageAspects, imageOrders, imageSizes, type ImageRefinements,
@@ -100,8 +100,14 @@ export function ImageResultFilters({ value, update, shown, total, matches, witho
       </div>}
     </fieldset>
   )
-  return <details className="image-refinements-menu">
+  return <details className="image-refinements-menu" onKeyDown={event => {
+    const menu = event.currentTarget
+    if (event.key !== 'Escape' || !menu.open) return
+    menu.open = false
+    menu.querySelector('summary')?.focus()
+  }}>
     <summary className="text-button">
+      <ListFilter className="image-refinement-icon" size={15} aria-hidden="true" />
       {active ? 'Image filters applied' : 'Refine images'} <ChevronDown size={14} aria-hidden="true" />
     </summary>
     {controls}

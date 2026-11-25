@@ -1,6 +1,7 @@
 import { isSearchFaviconHost } from '@pulpo/contracts/search'
 import { ChevronDown, CircleHelp, Ellipsis, Globe2, Image, Pin } from 'lucide-react'
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import type { SearchResponse } from './api'
 import { ImageResultFilters } from './ImageResultFilters'
 import { ImageViewer } from './ImageViewer'
@@ -243,10 +244,11 @@ interface ResultsProps {
   onQuery: (query: string) => void
   onClearScope?: () => void
   imageRefinements?: { value: ImageRefinements; update: (value: ImageRefinements) => void }
+  imageToolbar?: HTMLElement | null
   imagePagination?: (canAdvance: boolean) => ReactNode
 }
 
-export function Results({ data, location, preferences, setDomain, onQuery, onClearScope, imageRefinements, imagePagination }: ResultsProps) {
+export function Results({ data, location, preferences, setDomain, onQuery, onClearScope, imageRefinements, imageToolbar, imagePagination }: ResultsProps) {
   const [expandedQuery, setExpandedQuery] = useState<string | null>(null)
   const [preview, setPreview] = useState<{ entries: ResultWithUrl[]; startIndex: number; opener: HTMLButtonElement }>()
   const [imageRefinement, setImageRefinement] = useState<{ query: string; value: ImageRefinements }>()
@@ -295,6 +297,9 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
   const knowledgeUrl = safeHttpUrl(data.knowledge?.url)
   const knowledge = knowledgeUrl && domainRule(knowledgeUrl.hostname.replace(/\.$/, ''), preferences.domains) !== 'hide'
     ? data.knowledge : undefined
+  const knowledgeArticle = knowledge && data.provider === 'kagi'
+    ? data.results.find(result => safeHttpUrl(result.url)?.href === knowledgeUrl?.href) : undefined
+  const knowledgeImage = safeHttpUrl(knowledgeArticle?.thumbnailUrl ?? knowledgeArticle?.imageUrl)
   const terms = queryTerms(location.query)
   const searchSite = location.category === 'web' && location.query.length < 240 && !/\bsite:/i.test(location.query)
     ? (host: string) => onQuery(location.query + ' site:' + host)
@@ -312,10 +317,14 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
     if (imageRefinements) imageRefinements.update(next)
     else setImageRefinement({ query: location.query, value: next })
   }
+  const galleryFilters = images && <ImageResultFilters value={refinements} update={updateImageRefinements}
+    shown={shown.length} total={visible.length} matches={ordered.length} withoutDimensions={withoutDimensions}
+    hasSourceDates={visible.some(entry => imageSourceTime(entry.result.publishedAt) !== undefined)} sources={imageSources(visible)} />
 
   return (
     <div className={'results-body' + (images ? ' image-results-body' : videoGrid ? ' video-results-body' : '')}>
-      {knowledge && knowledgeUrl && <KnowledgeCard knowledge={knowledge} url={knowledgeUrl} newTab={preferences.newTab} />}
+      {knowledge && knowledgeUrl && <KnowledgeCard knowledge={knowledge} url={knowledgeUrl} newTab={preferences.newTab}
+        thumbnail={knowledgeImage?.origin === 'https://p.kagi.com' ? knowledgeImage.href : undefined} />}
       <div className="results-column" tabIndex={-1}>
         <div className="sr-only" role="status" aria-live="polite">{shown.length} results for {location.query}</div>
         {data.answer && (
@@ -327,12 +336,7 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
             </a>}
           </aside>
         )}
-        {images && (
-          <ImageResultFilters value={refinements} update={updateImageRefinements}
-            shown={shown.length} total={visible.length} matches={ordered.length} withoutDimensions={withoutDimensions}
-            hasSourceDates={visible.some(entry => imageSourceTime(entry.result.publishedAt) !== undefined)}
-            sources={imageSources(visible)} />
-        )}
+        {galleryFilters && (imageToolbar ? createPortal(galleryFilters, imageToolbar) : galleryFilters)}
         {news && (canSortNews || location.date || location.dateRange) && <div className="result-refinements">
           {canSortNews && <label>
             <span>Sort news</span>

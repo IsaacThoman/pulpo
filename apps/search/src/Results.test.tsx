@@ -283,7 +283,7 @@ describe('search result presentation', () => {
   })
 
   it('shows sourced knowledge facts and respects the result source preference', () => {
-    const featured = { ...data, knowledge: {
+    const featured = { ...data, results: data.results.map(result => ({ ...result, imageUrl: 'https://p.kagi.com/' + (result.url.includes('wikipedia') ? 'octopus' : 'other') })), knowledge: {
       title: 'Octopus', summary: 'A marine mollusc.', url: 'https://en.wikipedia.org/wiki/Octopus',
       facts: [{ label: 'Class', value: 'Cephalopoda' }],
     } }
@@ -294,6 +294,7 @@ describe('search result presentation', () => {
     const knowledge = screen.getByRole('complementary', { name: 'About Octopus' })
     expect(knowledge.textContent).toContain('Cephalopoda')
     expect(knowledge.querySelector('a')?.getAttribute('href')).toBe(featured.knowledge.url)
+    expect(knowledge.querySelector('img')?.getAttribute('src')).toBe('https://p.kagi.com/octopus')
     expect(screen.getByRole('link', { name: 'CC BY-SA 4.0' })).toBeDefined()
     expect(firstVisibleResultUrl(featured, preferences)?.hostname).toBe('github.com')
     rerender(<Results data={featured} location={location}

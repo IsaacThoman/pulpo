@@ -64,6 +64,7 @@ export function App({ callback }: { callback: Callback }) {
   const [location, setLocation] = useState(() => parseSearchLocation(new URL(window.location.href)))
   const [draft, setDraft] = useState(firstResultQuery(location.query) ?? location.query)
   const [panel, setPanel] = useState<Panel | null>(null)
+  const [imageToolbar, setImageToolbar] = useState<HTMLDivElement | null>(null)
   const [user, setUser] = useState<SearchUser | null | undefined>(undefined)
   const userId = user?.id
   const { preferences, initialAccountPreferences, update, syncStatus, retrySync } = useSearchPreferences(userId)
@@ -562,8 +563,11 @@ export function App({ callback }: { callback: Callback }) {
               )}
             </div>
             {view.category === 'images' && !!user && config?.reusableImages && (
-              <ReusableImageControls active={!!reuse} filters={reuse ?? {}}
-                onToggle={() => changeReusableImages(reuse ? undefined : {})} onFilters={changeReusableImages} />
+              <div className="image-tools">
+                <ReusableImageControls active={!!reuse} filters={reuse ?? {}}
+                  onToggle={() => changeReusableImages(reuse ? undefined : {})} onFilters={changeReusableImages} />
+                <div className="image-refinement-slot" ref={setImageToolbar} />
+              </div>
             )}
             {authError && <p className="form-error results-auth-error" role="alert">{authError}</p>}
             {unrecognizedBang ? (
@@ -698,7 +702,7 @@ export function App({ callback }: { callback: Callback }) {
                     <p>These images are available on earlier pages.</p>
                   </section>
                 ) : <Results key={searchPath(view)} data={resultsData ?? state.data} location={{ ...view, date: effectiveDate }} preferences={preferences}
-                  setDomain={setDomain} onQuery={onSearch} imageRefinements={imageBrowse.refinements} imagePagination={renderPages} />}
+                  setDomain={setDomain} onQuery={onSearch} imageRefinements={imageBrowse.refinements} imageToolbar={imageToolbar} imagePagination={renderPages} />}
                 {!!state.data.results.length && shorterImageQuery && <div className="image-show-more">
                   <button className="secondary-button" onClick={() => onSearch(shorterImageQuery)}>Search for “{shorterImageQuery}”</button>
                 </div>}
