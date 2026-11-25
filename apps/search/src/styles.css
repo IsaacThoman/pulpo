@@ -627,17 +627,6 @@ summary::-webkit-details-marker { display: none; }
 }
 .place-location-form { display: flex; flex-wrap: wrap; gap: .5rem; margin: .55rem 0; }
 .place-location-form input { flex: 1 1 14rem; min-width: 0; padding: .45rem .6rem; border: 1px solid var(--line); border-radius: .55rem; background: var(--surface); }
-.page-actions {
-  width: min(100%, var(--reading-width));
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 1rem;
-  margin-top: 1.5rem;
-  color: var(--muted);
-  font-size: .875rem;
-}
 .result-media {
   position: relative;
   float: right;
@@ -791,6 +780,11 @@ summary::-webkit-details-marker { display: none; }
   .image-caption .result-menu-content { top: 2.4rem; }
 }
 .image-show-more { display: flex; justify-content: center; margin-top: 1.25rem; }
+.load-more { display: grid; justify-items: center; gap: .45rem; margin-top: 1.5rem; text-align: center; }
+.load-more > .secondary-button { min-width: 9rem; max-width: 100%; white-space: normal; }
+.load-more .hint { margin: 0; }
+.load-more-error { display: grid; justify-items: center; gap: .55rem; }
+.load-more-error p { margin: 0; color: var(--muted); font-size: .875rem; }
 .image-show-more button { max-width: 100%; white-space: normal; }
 
 .dialog.image-viewer {
@@ -996,7 +990,12 @@ label.settings-row { cursor: pointer; }
 .settings-row input[role="switch"]::after { content: ''; width: .85rem; height: .85rem; border-radius: 50%; background: var(--muted); }
 .settings-row input[role="switch"]:checked { justify-items: end; border-color: var(--accent); background: var(--accent); }
 .settings-row input[role="switch"]:checked::after { background: var(--accent-ink); }
-.settings-select { width: 10.75rem; max-width: 53%; }
+.settings-select { width: 12.5rem; max-width: 53%; }
+.settings-subgroup { display: grid; gap: .15rem; min-width: 0; margin: 0; padding: 0; border: 0; }
+.settings-subgroup + .settings-subgroup { margin-top: .35rem; padding-top: .45rem; border-top: 1px solid var(--line); }
+/* A floated legend sits inside the group, below its divider, instead of on the border. */
+.settings-subgroup legend { float: left; width: 100%; padding: .35rem 0 0; color: var(--muted); font-size: .8125rem; font-weight: 650; }
+.settings-subgroup .hint { margin: 0 0 .35rem; }
 .settings-group > .text-button { justify-self: start; }
 @media (forced-colors: active) {
   .settings-row input[role="switch"] { appearance: auto; width: 1.25rem; }

@@ -1,5 +1,8 @@
-import { defaultSearchAccountPreferences, normalizeSearchBangTrigger, searchRegions, type SearchAccountPreferences, type SearchDomainRule } from '@pulpo/contracts/search'
-import type { Provider, SearchConfig } from './api'
+import {
+  defaultSearchAccountPreferences, normalizeSearchBangTrigger, searchProviderCategories, searchRegions,
+  type SearchAccountPreferences, type SearchDomainRule, type SearchProviderChoice,
+} from '@pulpo/contracts/search'
+import type { Category, Provider, SearchConfig } from './api'
 import { validateCustomBang, type CustomBang } from './bangs'
 import type { SearchLocation } from './navigation'
 
@@ -32,11 +35,26 @@ function isCustomBang(value: unknown): value is CustomBang {
   )
 }
 
+function isFallback(value: unknown): value is SearchProviderChoice['fallbackProvider'] {
+  return isProvider(value) || value === 'none' || value === ''
+}
+
+function readCategoryProviders(value: unknown): SearchAccountPreferences['categoryProviders'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const saved = value as Record<string, unknown>
+  return Object.fromEntries(searchProviderCategories.flatMap(category => {
+    const choice = Object.hasOwn(saved, category) ? saved[category] : undefined
+    if (!choice || typeof choice !== 'object' || !('defaultProvider' in choice) || !isProvider(choice.defaultProvider)) return []
+    const fallbackProvider = 'fallbackProvider' in choice && isFallback(choice.fallbackProvider) ? choice.fallbackProvider : ''
+    return [[category, { defaultProvider: choice.defaultProvider, fallbackProvider }]]
+  }))
+}
+
 export function accountPreferences({
-  defaultProvider, fallbackProvider, limit, newTab, keyboardShortcuts,
+  defaultProvider, fallbackProvider, categoryProviders, limit, newTab, keyboardShortcuts,
   localPlaces, defaultRegion, safeSearch, domains, bangs,
 }: Preferences): SearchAccountPreferences {
-  return { defaultProvider, fallbackProvider, limit, newTab, keyboardShortcuts, localPlaces, defaultRegion, safeSearch, domains, bangs }
+  return { defaultProvider, fallbackProvider, categoryProviders, limit, newTab, keyboardShortcuts, localPlaces, defaultRegion, safeSearch, domains, bangs }
 }
 
 export function readAccountPreferences(saved: Record<string, unknown>): SearchAccountPreferences {
@@ -49,6 +67,7 @@ export function readAccountPreferences(saved: Record<string, unknown>): SearchAc
   return {
     defaultProvider: isProvider(saved.defaultProvider) ? saved.defaultProvider : '',
     fallbackProvider: isProvider(saved.fallbackProvider) || saved.fallbackProvider === 'none' ? saved.fallbackProvider : '',
+    categoryProviders: readCategoryProviders(saved.categoryProviders),
     limit: saved.limit === 10 || saved.limit === 20 ? saved.limit : 40,
     newTab: saved.newTab === true,
     keyboardShortcuts: saved.keyboardShortcuts !== false,
@@ -82,13 +101,22 @@ export function savePreferences(prefs: Preferences) {
   }
 }
 
-export function providerOrder(prefs: Preferences, config: SearchConfig): Provider[] {
+/** The engine choice a search type uses: its own when one is saved, otherwise the Web choice. */
+export function categoryProviderChoice(prefs: SearchAccountPreferences, category: Category): SearchProviderChoice | undefined {
+  return category === 'web' ? undefined : prefs.categoryProviders[category]
+}
+
+export function providerOrder(prefs: SearchAccountPreferences, config: SearchConfig, category: Category = 'web'): Provider[] {
+  const choice = categoryProviderChoice(prefs, category)
+  const { defaultProvider, fallbackProvider } = choice ?? prefs
+  // News follows Pulpo's own order, which leads with Firecrawl's publisher details, until a provider is chosen.
+  const automaticNews = category === 'news' && !choice && !defaultProvider && !fallbackProvider ? config.newsDefaultOrder : undefined
   const available = config.providers.map(provider => provider.id)
-  const order = config.defaultOrder.filter(provider => available.includes(provider))
-  const primary = available.find(provider => provider === prefs.defaultProvider) ?? order[0]
+  const order = (automaticNews ?? config.defaultOrder).filter(provider => available.includes(provider))
+  const primary = available.find(provider => provider === defaultProvider) ?? order[0]
   if (!primary) return []
-  if (prefs.fallbackProvider === 'none') return [primary]
-  const fallback = available.find(provider => provider === prefs.fallbackProvider && provider !== primary)
+  if (fallbackProvider === 'none') return [primary]
+  const fallback = available.find(provider => provider === fallbackProvider && provider !== primary)
     ?? order.find(provider => provider !== primary)
   return fallback ? [primary, fallback] : [primary]
 }
@@ -96,7 +124,6 @@ export function providerOrder(prefs: Preferences, config: SearchConfig): Provide
 export function compatibleProviders(config: SearchConfig, order: Provider[], input: SearchLocation) {
   return config.providers.filter(provider => order.includes(provider.id)
     && provider.categories.includes(input.category)
-    && (provider.maxPage ?? 1) >= (input.page ?? 1)
     && (!input.date || provider.dates.includes(input.date))
     && (!input.dateRange || provider.customDateRanges?.includes(input.category))
     && (!input.region || provider.region))

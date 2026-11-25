@@ -82,13 +82,14 @@ describe('image result refinement', () => {
     expect(titles()).toEqual(['Earlier', 'Undated'])
   })
 
-  it('keeps a controlled source selection on another results page and can clear it', () => {
+  it('keeps a controlled source selection while more images can load and can clear it', () => {
     const update = vi.fn()
-    render(<Results data={{ ...data, hasMore: true }} location={{ ...location, page: 2 }} preferences={loadPreferences()}
+    render(<Results data={{ ...data, hasMore: true }} location={location} preferences={loadPreferences()}
+      more={{ next: { provider: 'kagi', switching: false }, loading: false, loadedMore: true, load: vi.fn() }}
       setDomain={vi.fn()} onQuery={vi.fn()} imageRefinements={{ value: { ...defaultImageRefinements, source: 'example.org' }, update }} />)
     expect(screen.getByRole('heading', { name: 'No images match these filters' })).toBeDefined()
     expect(screen.getByRole('option', { name: 'example.org (0)', selected: true })).toBeDefined()
-    expect(screen.getByText('Clear the image filters or try the next results page.')).toBeDefined()
+    expect(screen.getByText('Clear the image filters or load more images.')).toBeDefined()
     fireEvent.click(screen.getByRole('button', { name: 'Clear image filters' }))
     expect(update).toHaveBeenCalledWith(defaultImageRefinements)
   })
@@ -98,7 +99,7 @@ describe('image result refinement', () => {
     render(<Results data={{ ...data, results: Array.from({ length: 30 }, (_, i) => image('Octopus ' + (i + 1), 800, 600)) }}
       location={location} preferences={loadPreferences()} setDomain={vi.fn()} onQuery={onQuery} />)
     expect(screen.queryByRole('link', { name: 'Octopus 25' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Show 6 more images on this page' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
     expect(screen.getByRole('link', { name: 'Octopus 30' })).toBeDefined()
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Preview image: Octopus 25' }))
     expect(onQuery).not.toHaveBeenCalled()

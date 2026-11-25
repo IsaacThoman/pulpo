@@ -199,7 +199,10 @@ describe.skipIf(!enabled)('Search sessions and Pulpo account handoff', () => {
       patch({ initial: defaultSearchAccountPreferences, patch: { defaultRegion: 'gb', safeSearch: false } }),
     ])
     expect(concurrent.map(response => response.statusCode)).toEqual([200, 200])
-    const expected = { ...initial, newTab: true, defaultRegion: 'gb', safeSearch: false }
+    const categoryProviders = { images: { defaultProvider: 'firecrawl', fallbackProvider: 'none' } }
+    expect((await patch({ patch: { categoryProviders } })).statusCode).toBe(200)
+    expect((await patch({ patch: { categoryProviders: { web: categoryProviders.images } } })).statusCode).not.toBe(200)
+    const expected = { ...initial, newTab: true, defaultRegion: 'gb', safeSearch: false, categoryProviders }
     expect((await get()).json()).toEqual({ preferences: expected })
     const [row] = await db.select().from(userPreferences).where(eq(userPreferences.userId, accountId))
     expect(row?.values).toMatchObject({ theme: 'dark', unrelated: 'keep', searchPreferences: expected })
