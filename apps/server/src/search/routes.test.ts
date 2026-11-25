@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   authenticated: true,
   enabled: true,
   placeKey: undefined as string | undefined,
+  firecrawlPlacePrice: undefined as number | undefined,
   settings: {} as Record<string, unknown>,
   fetch: vi.fn(),
   reserve: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock('../config.js', () => ({
   getConfig: () => ({
     SEARCH_PUBLIC_URL: mocks.enabled ? 'https://search.example.com' : undefined,
     SEARCH_BRAVE_PLACES_API_KEY: mocks.placeKey,
+    SEARCH_FIRECRAWL_PLACES_PRICE_MICROS: mocks.firecrawlPlacePrice,
     ENCRYPTION_KEY: 'key',
   }),
 }))
@@ -47,6 +49,7 @@ beforeEach(async () => {
   mocks.authenticated = true
   mocks.enabled = true
   mocks.placeKey = undefined
+  mocks.firecrawlPlacePrice = undefined
   mocks.settings = {
     searchEnabled: true,
     searchProviderOrder: ['kagi', 'firecrawl'],
@@ -160,6 +163,57 @@ describe('Pulpo Search API', () => {
       metadata: { provider: 'brave', category: 'places', resultCount: 1 },
     })
     expect(mocks.release).not.toHaveBeenCalled()
+  })
+
+  it('selects the shared hosted Firecrawl key and configured Places price when opted in', async () => {
+    mocks.placeKey = 'brave-test-secret'
+    mocks.firecrawlPlacePrice = 12000
+    const config = await app.inject('/api/search/config')
+    expect(config.json().places).toEqual({ provider: 'firecrawl', priceMicros: 12000 })
+    expect(config.body).not.toContain('secret')
+    mocks.fetch.mockResolvedValueOnce(Response.json({ success: true, data: { alexandria: [{
+      provider: 'firecrawl-maps', capability: 'businesses/search', data: { results: [{ name: 'Coffee Shop', address: '12 Main St, Boston' }] },
+    }] } }))
+    const response = await places({ query: 'coffee', location: 'Boston' })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ provider: 'firecrawl', results: [{ name: 'Coffee Shop', address: '12 Main St, Boston' }] })
+    expect(mocks.reserve).toHaveBeenCalledExactlyOnceWith({ userId: 'search-user', costMicros: 12000 })
+    expect(mocks.reserve.mock.invocationCallOrder[0]).toBeLessThan(mocks.fetch.mock.invocationCallOrder[0]!)
+    expect(mocks.fetch).toHaveBeenCalledExactlyOnceWith('https://api.firecrawl.dev/v2/scrape', expect.objectContaining({
+      headers: expect.objectContaining({ authorization: 'Bearer firecrawl-secret' }),
+    }))
+    expect(mocks.settle).toHaveBeenCalledExactlyOnceWith({
+      reservationId: 'kagi-hold', costMicros: 12000, type: 'web_search',
+      metadata: { provider: 'firecrawl', category: 'places', resultCount: 1 },
+    })
+  })
+
+  it('disables Places for Firecrawl configurations without a hosted key', async () => {
+    mocks.placeKey = 'brave-test-secret'
+    mocks.firecrawlPlacePrice = 12000
+    mocks.settings.firecrawl = { baseUrl: 'https://firecrawl.example.com/v2' }
+    expect((await app.inject('/api/search/config')).json()).not.toHaveProperty('places')
+    expect((await places({ query: 'coffee' })).statusCode).toBe(404)
+    mocks.settings.firecrawl = { baseUrl: 'https://api.firecrawl.dev/v2' }
+    mocks.settings.encryptedFirecrawlApiKey = null
+    expect((await app.inject('/api/search/config')).json()).not.toHaveProperty('places')
+    expect((await places({ query: 'coffee' })).statusCode).toBe(404)
+    expect(mocks.reserve).not.toHaveBeenCalled()
+    expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+
+  it('releases failed Firecrawl Places billing without falling back or exposing upstream terms links', async () => {
+    mocks.placeKey = 'brave-test-secret'
+    mocks.firecrawlPlacePrice = 12000
+    mocks.fetch.mockResolvedValueOnce(Response.json({ success: false, code: 'THIRD_PARTY_DATA_TERMS_REQUIRED',
+      requiresAction: { url: 'https://example.com/private-action' },
+    }, { status: 403 }))
+    const response = await places({ query: 'coffee' })
+    expect(response.statusCode).toBe(502)
+    expect(response.json()).toEqual({ error: { code: 'places_unavailable' } })
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+    expect(mocks.release).toHaveBeenCalledExactlyOnceWith('kagi-hold')
+    expect(mocks.settle).not.toHaveBeenCalled()
   })
 
   it('releases empty and failed Places attempts and does not fetch when credits fall short', async () => {

@@ -12,12 +12,19 @@ export interface PlaceResult {
   category?: string
   coordinates?: [number, number]
   todayHours?: string[]
+  weeklyHours?: { day: string; hours: string }[]
   openNow?: boolean
   rating?: { value: number; max: number; count?: number }
 }
 
+export type PlaceProvider = 'brave' | 'firecrawl'
+
+export const placeProviderNames: Record<PlaceProvider, string> = {
+  brave: 'Brave', firecrawl: 'Firecrawl Maps',
+}
+
 export interface PlaceResponse {
-  provider: 'brave'
+  provider: PlaceProvider
   results: PlaceResult[]
   correction?: string
   unverifiedHours?: number

@@ -2,6 +2,7 @@ import { Copy, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { providerNames, type Provider, type SearchConfig } from './api'
 import { searchBangs, validateCustomBang, type CustomBang } from './bangs'
+import { placeProviderNames } from './places'
 import { providerOrder, type Preferences } from './preferences'
 
 export type Panel = 'settings' | 'bangs' | 'shortcuts' | 'browser'
@@ -95,7 +96,7 @@ export function Settings({ config, preferences, update, recentQueryCount, clearR
             <input type="checkbox" checked={preferences.localPlaces}
               onChange={event => update({ ...preferences, localPlaces: event.target.checked })} />
           </label>
-          <p className="hint">Places searches use Brave and cost {formatPrice(config.places.priceMicros)} from your shared Pulpo credits when listings are found.</p>
+          <p className="hint">Places searches use {placeProviderNames[config.places.provider]} and cost {formatPrice(config.places.priceMicros)} from your shared Pulpo credits when listings are found.</p>
         </>}
       </fieldset>
       <fieldset className="settings-group">

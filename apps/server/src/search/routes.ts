@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { webToolProviderSchema, type WebToolProvider } from '@pulpo/contracts'
 import { searchDateRange } from '@pulpo/contracts/search'
 import { releaseMeteredBudget, reserveMeteredBudget, settleMeteredBudget } from '../accounting/service.js'
+import { FIRECRAWL_DEFAULT_API_BASE } from '../agent/firecrawl.js'
 import { KAGI_IMAGE_RESULT_LIMIT, KAGI_MAX_SEARCH_PAGE } from '../agent/kagi.js'
 import { basicSearchCategories, searchCategories, type ProviderSearchInput, type SearchCategory, type SearchResults } from '../agent/search-results.js'
 import { availableWebSearchProviders, billedPrice, createWebProviderClients } from '../agent/web-tools.js'
@@ -11,11 +12,12 @@ import { requireUser } from '../auth/service.js'
 import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
 import { applicationSettings } from '../database/schema.js'
+import { decryptSecret } from '../lib/crypto.js'
 import { AppError } from '../lib/errors.js'
-import { parseWebToolsSettings } from '../settings/application-settings.js'
+import { parseWebToolsSettings, type StoredWebToolsSettings } from '../settings/application-settings.js'
 import { registerSearchCurrencyRoute } from './currency.js'
 import { fetchSearchFavicon } from './favicon.js'
-import { placesCapability, placeSearchInput, searchPlaces } from './places.js'
+import { placesCapability, placeSearchInput, searchFirecrawlPlaces, searchPlaces } from './places.js'
 import { filterSearchHosts, searchHostFilters, searchScopes } from './scope.js'
 import { registerSearchWeatherRoute } from './weather/routes.js'
 
@@ -54,6 +56,18 @@ async function readSearchSettings() {
   const [row] = await db.select({ value: applicationSettings.value }).from(applicationSettings)
     .where(eq(applicationSettings.key, 'webTools')).limit(1)
   return parseWebToolsSettings(row?.value)
+}
+
+async function configuredPlaces(settings?: StoredWebToolsSettings) {
+  const { SEARCH_FIRECRAWL_PLACES_PRICE_MICROS: priceMicros, SEARCH_BRAVE_PLACES_API_KEY: braveApiKey } = getConfig()
+  if (priceMicros !== undefined) {
+    const webTools = settings ?? await readSearchSettings()
+    if (webTools.firecrawl.baseUrl.replace(/\/+$/, '') === FIRECRAWL_DEFAULT_API_BASE && webTools.encryptedFirecrawlApiKey) {
+      return { provider: 'firecrawl' as const, priceMicros, encryptedApiKey: webTools.encryptedFirecrawlApiKey }
+    }
+    return
+  }
+  if (braveApiKey) return { ...placesCapability, apiKey: braveApiKey }
 }
 
 function searchOrigin() {
@@ -99,11 +113,12 @@ export function registerSearchRoutes(app: FastifyInstance) {
     searchUser(request, reply)
     const settings = await readSearchSettings()
     const defaultOrder = availableWebSearchProviders(settings)
+    const places = await configuredPlaces(settings)
     return {
       defaultOrder,
       currency: true,
       weather: true,
-      ...(getConfig().SEARCH_BRAVE_PLACES_API_KEY ? { places: placesCapability } : {}),
+      ...(places ? { places: { provider: places.provider, priceMicros: places.priceMicros } } : {}),
       providers: defaultOrder.map((id) => ({
         id, ...providerCapabilities[id], dates, customDateRanges, region: true, priceMicros: billedPrice(id, 'search', settings),
       })),
@@ -118,10 +133,10 @@ export function registerSearchRoutes(app: FastifyInstance) {
     } },
   }, async (request, reply) => {
     const user = searchUser(request, reply)
-    const apiKey = getConfig().SEARCH_BRAVE_PLACES_API_KEY
-    if (!apiKey) throw new AppError(404, 'places_disabled', 'Place search is unavailable')
+    const places = await configuredPlaces()
+    if (!places) throw new AppError(404, 'places_disabled', 'Place search is unavailable')
     const input = placeSearchInput.parse(request.body)
-    const { provider, priceMicros: costMicros } = placesCapability
+    const { provider, priceMicros: costMicros } = places
     const controller = new AbortController()
     const onClose = () => { if (!reply.raw.writableFinished) controller.abort() }
     reply.raw.on('close', onClose)
@@ -131,7 +146,9 @@ export function registerSearchRoutes(app: FastifyInstance) {
       reservationId = await reserveMeteredBudget({ userId: user.id, costMicros })
       let result
       try {
-        result = await searchPlaces(input, apiKey, controller.signal)
+        result = places.provider === 'firecrawl'
+          ? await searchFirecrawlPlaces(input, decryptSecret(places.encryptedApiKey, getConfig().ENCRYPTION_KEY), controller.signal)
+          : await searchPlaces(input, places.apiKey, controller.signal)
         controller.signal.throwIfAborted()
       } catch {
         if (controller.signal.aborted) throw new AppError(408, 'search_cancelled', 'Search was cancelled')

@@ -1,12 +1,14 @@
 import { isSearchFaviconHost } from '@pulpo/contracts/search'
 import { z } from 'zod'
+import { FIRECRAWL_DEFAULT_API_BASE } from '../agent/firecrawl.js'
 import { resultSnippet, resultUrl } from '../agent/search-results.js'
 
 const placeSearchUrl = 'https://api.search.brave.com/res/v1/local/place_search'
 const maximumResults = 15
 const maximumResponseBytes = 2 * 1024 * 1024
 const timeoutMs = 7500
-const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] as const
+type Weekday = (typeof weekdays)[number]
 
 export const placesCapability = { provider: 'brave', priceMicros: 5_000 } as const
 
@@ -26,12 +28,13 @@ export interface PlaceResult {
   coordinates?: [latitude: number, longitude: number]
   timezone?: string
   todayHours?: string[]
+  weeklyHours?: { day: string; hours: string }[]
   openNow?: boolean
   rating?: { value: number; max: number; count?: number }
 }
 
 export interface PlaceSearchResponse {
-  provider: 'brave'
+  provider: 'brave' | 'firecrawl'
   results: PlaceResult[]
   correction?: string
   unverifiedHours?: number
@@ -71,56 +74,94 @@ function placeRating(value: unknown): PlaceResult['rating'] {
 function localClock(timezone: unknown, now: Date) {
   if (typeof timezone !== 'string' || !/^[a-z][a-z\d_+\-/]{0,79}$/i.test(timezone)) return
   try {
-    const formatter = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'short', hour: 'numeric', minute: 'numeric', hourCycle: 'h23' })
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone, weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: 'numeric', minute: 'numeric', hourCycle: 'h23',
+    })
     const parts = formatter.formatToParts(now)
-    const weekday = parts.find(part => part.type === 'weekday')?.value
-    const day = weekdays.indexOf(weekday ?? '')
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(value => value.type === type)?.value
+    const day = weekdays.findIndex(weekday => weekday === part('weekday'))
     if (day === -1) return
     return {
       timezone: formatter.resolvedOptions().timeZone,
-      weekday,
-      yesterday: weekdays[(day + 6) % 7],
-      minute: Number(parts.find(part => part.type === 'hour')?.value) * 60 + Number(parts.find(part => part.type === 'minute')?.value),
+      weekday: weekdays[day]!,
+      yesterday: weekdays[(day + 6) % 7]!,
+      date: `${part('year')}-${part('month')}-${part('day')}`,
+      minute: Number(part('hour')) * 60 + Number(part('minute')),
     }
   } catch {
     return
   }
 }
 
-function dayPeriods(value: unknown, weekday: string | undefined) {
+interface OpeningPeriod { opens: number; closes: number }
+interface LabeledOpeningPeriod extends OpeningPeriod { label: string }
+
+function braveDayPeriods(value: unknown) {
   if (!Array.isArray(value) || !value.length || value.length > 6) return
-  const periods: Array<{ opens: number; closes: number; label: string }> = []
+  const periods: LabeledOpeningPeriod[] = []
+  let weekday: Weekday | undefined
   const clockPattern = /^(?:[01]\d|2[0-3]):[0-5]\d$/
   const clockMinutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3))
   for (const raw of value) {
     const period = record(raw)
-    const opens = period?.opens
-    const closes = period?.closes
-    if (period?.abbr_name !== weekday || typeof opens !== 'string' || !clockPattern.test(opens)
+    if (!period) return
+    const { abbr_name: short, full_name: full, opens, closes } = period
+    if (short == null && full == null) return
+    const day = weekdays.find(name => (short == null || short === name.slice(0, 3)) && (full == null || full === name))
+    if (!day || (weekday && day !== weekday) || typeof opens !== 'string' || !clockPattern.test(opens)
       || typeof closes !== 'string' || !(clockPattern.test(closes) || closes === '24:00') || opens === closes) return
+    weekday = day
     periods.push({ opens: clockMinutes(opens), closes: clockMinutes(closes), label: `${opens}–${closes}` })
   }
-  return periods
+  if (weekday) return { weekday, periods }
 }
 
-function placeHours(timezone: unknown, value: unknown, now: Date): Pick<PlaceResult, 'timezone' | 'todayHours' | 'openNow'> {
-  const clock = localClock(timezone, now)
-  if (!clock) return {}
+function isOpenDuring(today: OpeningPeriod[], yesterday: OpeningPeriod[] | undefined, minute: number) {
+  return today.some(({ opens, closes }) => minute >= opens && (minute < closes || closes < opens))
+    || yesterday?.some(({ opens, closes }) => closes < opens && minute < closes)
+}
+
+function bravePlaceHours(timezone: unknown, value: unknown, now: Date): Pick<PlaceResult, 'timezone' | 'todayHours' | 'weeklyHours' | 'openNow'> {
   const hours = record(value)
-  const today = dayPeriods(hours?.current_day, clock.weekday)
+  const schedule = new Map<Weekday, LabeledOpeningPeriod[]>()
+  const groups = Array.isArray(hours?.days) ? hours.days.slice(0, 7) : []
+  for (const group of groups) {
+    const day = braveDayPeriods(group)
+    if (day && !schedule.has(day.weekday)) schedule.set(day.weekday, day.periods)
+  }
+  // Brave can omit this weekday from days, and its current_day may differ from the venue's local day.
+  const current = braveDayPeriods(hours?.current_day)
+  if (current) schedule.set(current.weekday, current.periods)
+
+  const clock = localClock(timezone, now)
+  if (!clock) {
+    const weeklyHours = weekdays.flatMap(day => {
+      const periods = schedule.get(day)
+      return periods ? [{ day, hours: periods.map(period => period.label).join(', ') }] : []
+    })
+    return weeklyHours.length ? { weeklyHours } : {}
+  }
+
+  const today = schedule.get(clock.weekday)
   if (!today) return { timezone: clock.timezone }
-  const previousDay = Array.isArray(hours?.days) ? hours.days.slice(0, 7).find(day =>
-    Array.isArray(day) && record(day[0])?.abbr_name === clock.yesterday) : undefined
-  const yesterday = dayPeriods(previousDay, clock.yesterday)
-  const minute = clock.minute
-  const open = today.some(period => minute >= period.opens && (minute < period.closes || period.closes < period.opens))
-    || yesterday?.some(period => period.closes < period.opens && minute < period.closes)
+  const yesterday = schedule.get(clock.yesterday)
+  const open = isOpenDuring(today, yesterday, clock.minute)
   // Without yesterday's hours, an overnight period may still be active.
   return {
     timezone: clock.timezone,
     todayHours: today.map(period => period.label),
     ...(open ? { openNow: true } : yesterday ? { openNow: false } : {}),
   }
+}
+
+function placePhone(value: unknown) {
+  const phone = placeText(value, 60)
+  if (/^\+?[\d(][\d(). -]{5,30}(?:\s*(?:x|ext\.?)\s*\d{1,8})?$/i.test(phone)) return phone
+}
+
+function placeCategory(value: unknown) {
+  if (Array.isArray(value)) return value.slice(0, 10).map(item => placeText(item, 100)).find(Boolean)
 }
 
 function normalizePlace(value: unknown, now: Date): PlaceResult | undefined {
@@ -133,18 +174,92 @@ function normalizePlace(value: unknown, now: Date): PlaceResult | undefined {
   if (!name || !address) return
 
   const website = placeWebsite(row.url)
-  const phone = placeText(record(row.contact)?.telephone, 60)
-  const category = Array.isArray(row.categories) ? row.categories.slice(0, 10).map(item => placeText(item, 100)).find(Boolean) : undefined
+  const phone = placePhone(record(row.contact)?.telephone)
+  const category = placeCategory(row.categories)
   const coordinates = placeCoordinates(row.coordinates)
   const rating = placeRating(row.rating)
   return {
     name, address,
     ...(website ? { website } : {}),
-    ...(/^\+?[\d(][\d(). -]{5,30}(?:\s*(?:x|ext\.?)\s*\d{1,8})?$/i.test(phone) ? { phone } : {}),
+    ...(phone ? { phone } : {}),
     ...(category ? { category } : {}),
     ...(coordinates ? { coordinates } : {}),
     ...(rating ? { rating } : {}),
-    ...placeHours(row.timezone, row.opening_hours, now),
+    ...bravePlaceHours(row.timezone, row.opening_hours, now),
+  }
+}
+
+function firecrawlDayHours(rows: unknown[], date: string) {
+  const matches = rows.filter(day => record(day)?.date === date)
+  const hours = matches.length === 1 ? record(matches[0])?.hours : undefined
+  if (!Array.isArray(hours) || !hours.length || hours.length > 6) return
+  const labels = hours.map(hour => placeText(hour, 80))
+  if (labels.some(label => !label)) return
+  return labels
+}
+
+function firecrawlDayPeriods(labels: string[] | undefined): OpeningPeriod[] | undefined {
+  if (!labels) return
+  if (labels.length === 1 && /^closed$/i.test(labels[0]!)) return []
+  if (labels.length === 1 && /^open 24 hours$/i.test(labels[0]!)) return [{ opens: 0, closes: 1440 }]
+  const periods: OpeningPeriod[] = []
+  const clockMinutes = (hour: string, minute: string | undefined, meridiem: string) =>
+    (Number(hour) % 12 + (meridiem.toUpperCase() === 'PM' ? 12 : 0)) * 60 + Number(minute ?? 0)
+  for (const label of labels) {
+    const match = /^(1[0-2]|[1-9])(?::([0-5]\d))?\s*(AM|PM)?\s*[-–—]\s*(1[0-2]|[1-9])(?::([0-5]\d))?\s*(AM|PM)$/i.exec(label)
+    if (!match) return
+    const [, startHour, startMinute, startMeridiem, endHour, endMinute, endMeridiem] = match
+    const opens = clockMinutes(startHour!, startMinute, startMeridiem ?? endMeridiem!)
+    const closes = clockMinutes(endHour!, endMinute, endMeridiem!)
+    // A single meridiem only identifies the interval when both times fit in that half of the day.
+    if (opens === closes || (!startMeridiem && opens > closes)) return
+    periods.push({ opens, closes })
+  }
+  return periods
+}
+
+function firecrawlPlaceHours(row: Record<string, unknown>, now: Date): Pick<PlaceResult, 'timezone' | 'todayHours' | 'openNow'> {
+  const clock = localClock(row.timezone, now)
+  const timezone = clock ? { timezone: clock.timezone } : {}
+  if (row.business_status === 'temporarily_closed' || row.business_status === 'permanently_closed') return { ...timezone, openNow: false }
+  if (!clock || !Array.isArray(row.opening_hours)) return timezone
+
+  const days = row.opening_hours.slice(0, 14)
+  const previousDate = new Date(`${clock.date}T00:00:00Z`)
+  previousDate.setUTCDate(previousDate.getUTCDate() - 1)
+  const todayHours = firecrawlDayHours(days, clock.date)
+  const today = firecrawlDayPeriods(todayHours)
+  const yesterday = firecrawlDayPeriods(firecrawlDayHours(days, previousDate.toISOString().slice(0, 10)))
+  const open = isOpenDuring(today ?? [], yesterday, clock.minute)
+  const openNow = open ? true : today && (yesterday || !today.length) ? false : undefined
+  const statusKnown = row.business_status == null || row.business_status === 'operational'
+  return {
+    ...timezone,
+    ...(todayHours ? { todayHours } : {}),
+    ...(statusKnown && openNow !== undefined ? { openNow } : {}),
+  }
+}
+
+function normalizeFirecrawlPlace(value: unknown, now: Date): PlaceResult | undefined {
+  const row = record(value)
+  if (!row) return
+  const name = placeText(row.name, 180)
+  const address = placeText(row.address, 350)
+  if (!name || !address) return
+
+  const website = placeWebsite(row.website)
+  const phone = placePhone(row.phone) ?? placePhone(row.phone_e164)
+  const category = placeCategory(row.categories)
+  const coordinates = placeCoordinates([row.latitude, row.longitude])
+  const rating = placeRating({ ratingValue: row.rating, bestRating: 5, reviewCount: row.review_count })
+  return {
+    name, address,
+    ...(website ? { website } : {}),
+    ...(phone ? { phone } : {}),
+    ...(category ? { category } : {}),
+    ...(coordinates ? { coordinates } : {}),
+    ...(rating ? { rating } : {}),
+    ...firecrawlPlaceHours(row, now),
   }
 }
 
@@ -153,11 +268,19 @@ function normalizePlaces(value: unknown, input: PlaceSearchInput, now: Date): Pl
   const rows = payload?.results
   if (payload?.type !== 'locations' || (rows != null && !Array.isArray(rows))) throw new Error('Unexpected place search response')
   const correction = placeText(record(payload.query)?.altered, 500)
+  return {
+    provider: 'brave',
+    ...filterPlaces((rows ?? []).slice(0, maximumResults), input, now, normalizePlace),
+    ...(correction && correction !== input.query ? { correction } : {}),
+  }
+}
+
+function filterPlaces(rows: unknown[], input: PlaceSearchInput, now: Date, normalize: typeof normalizePlace) {
   const results: PlaceResult[] = []
   const seen = new Set<string>()
   let unverifiedHours = 0
-  for (const row of (rows ?? []).slice(0, maximumResults)) {
-    const result = normalizePlace(row, now)
+  for (const row of rows) {
+    const result = normalize(row, now)
     if (!result) continue
     const key = JSON.stringify([result.name.toLowerCase(), result.address.toLowerCase()])
     if (seen.has(key)) continue
@@ -167,12 +290,9 @@ function normalizePlaces(value: unknown, input: PlaceSearchInput, now: Date): Pl
       continue
     }
     results.push(result)
+    if (results.length >= maximumResults) break
   }
-  return {
-    provider: 'brave', results,
-    ...(correction && correction !== input.query ? { correction } : {}),
-    ...(unverifiedHours ? { unverifiedHours } : {}),
-  }
+  return { results, ...(unverifiedHours ? { unverifiedHours } : {}) }
 }
 
 async function readPlacesResponse(response: Response): Promise<unknown> {
@@ -213,4 +333,26 @@ export async function searchPlaces(input: PlaceSearchInput, apiKey: string, sign
   const result = normalizePlaces(await readPlacesResponse(response), input, new Date())
   requestSignal.throwIfAborted()
   return result
+}
+
+export async function searchFirecrawlPlaces(input: PlaceSearchInput, apiKey: string, signal?: AbortSignal): Promise<PlaceSearchResponse> {
+  const timeout = AbortSignal.timeout(timeoutMs)
+  const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout
+  requestSignal.throwIfAborted()
+  const query = input.location && !input.query.toLowerCase().includes(input.location.toLowerCase())
+    ? `${input.query} near ${input.location}` : input.query
+  const capability = 'businesses/search'
+  const response = await fetch(`${FIRECRAWL_DEFAULT_API_BASE}/scrape`, {
+    method: 'POST', redirect: 'error', signal: requestSignal,
+    headers: { accept: 'application/json', authorization: `Bearer ${apiKey}`, 'content-type': 'application/json', 'cache-control': 'no-cache' },
+    body: JSON.stringify({ alexandria: { provider: 'firecrawl-maps', capability, options: { query } } }),
+  })
+  const payload = record(await readPlacesResponse(response))
+  requestSignal.throwIfAborted()
+  const alexandria = record(payload?.data)?.alexandria
+  const result = Array.isArray(alexandria) && alexandria.length === 1 ? record(alexandria[0]) : undefined
+  const rows = record(result?.data)?.results
+  if (payload?.success !== true || result?.provider !== 'firecrawl-maps' || result.capability !== capability
+    || result.error || result.requiresAction || !Array.isArray(rows)) throw new Error('Unexpected place search response')
+  return { provider: 'firecrawl', ...filterPlaces(rows.slice(0, 50), input, new Date(), normalizeFirecrawlPlace) }
 }

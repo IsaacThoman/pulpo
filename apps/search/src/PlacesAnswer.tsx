@@ -19,8 +19,15 @@ export function PlacesAnswer({ response, openNow, onWeb }: {
   onWeb: () => void
 }) {
   const [onlyOpen, setOnlyOpen] = useState(false)
-  const places = onlyOpen ? response.results.filter(place => place.openNow) : response.results
+  const [ratingOrder, setRatingOrder] = useState(false)
+  const visible = onlyOpen ? response.results.filter(place => place.openNow) : response.results
+  const places = ratingOrder ? [...visible].sort((left, right) => {
+    const a = left.rating ? left.rating.value / left.rating.max : -1
+    const b = right.rating ? right.rating.value / right.rating.max : -1
+    return b - a || (right.rating?.count ?? 0) - (left.rating?.count ?? 0)
+  }) : visible
   const canFilterHours = !openNow && response.results.some(place => place.openNow !== undefined)
+  const canSortRatings = response.results.filter(place => place.rating).length > 1
   return (
     <section className="places-answer" aria-label="Local places">
       <div className="places-header">
@@ -28,9 +35,16 @@ export function PlacesAnswer({ response, openNow, onWeb }: {
         <button className="text-button" onClick={onWeb}>Search the web</button>
       </div>
       {response.correction && <p className="places-note">Showing places for {response.correction}</p>}
-      {canFilterHours && (
-        <button className="secondary-button place-open-filter" aria-pressed={onlyOpen} onClick={() => setOnlyOpen(!onlyOpen)}>Open now</button>
-      )}
+      {(canFilterHours || canSortRatings) && <div className="place-refinements">
+        {canFilterHours && (
+          <button className="secondary-button place-open-filter" aria-pressed={onlyOpen} onClick={() => setOnlyOpen(!onlyOpen)}>Open now</button>
+        )}
+        {canSortRatings && <select aria-label="Order places" value={ratingOrder ? 'ratings' : 'relevance'}
+          onChange={event => setRatingOrder(event.target.value === 'ratings')}>
+          <option value="relevance">Relevance</option>
+          <option value="ratings">Highest rated</option>
+        </select>}
+      </div>}
       {places.length ? (
         <ol className="place-list">
           {places.map(place => {
@@ -52,6 +66,16 @@ export function PlacesAnswer({ response, openNow, onWeb }: {
                     </span>
                   )}
                 </div>
+                {!!place.weeklyHours?.length && (
+                  <details className="place-hours">
+                    <summary>Weekly hours</summary>
+                    <dl>
+                      {place.weeklyHours.map(({ day, hours }) => (
+                        <div key={day}><dt>{day}</dt><dd>{hours}</dd></div>
+                      ))}
+                    </dl>
+                  </details>
+                )}
                 <div className="place-actions">
                   <a className="secondary-button result-link" href={directionsFor(place)} target="_blank" rel="noreferrer">
                     <MapPin size={14} aria-hidden="true" /> Directions
@@ -66,10 +90,14 @@ export function PlacesAnswer({ response, openNow, onWeb }: {
         </ol>
       ) : <p className="places-note">{onlyOpen || openNow ? 'No matches with listed hours showing they’re open.' : 'No places found.'}</p>}
       {!!response.unverifiedHours && <p className="places-note">Some places are missing usable opening hours.</p>}
-      <a className="place-source" href="https://brave.com/search/api/" rel="noreferrer">
-        Powered by <img className="brave-logo-light" src={braveLight} width={61} height={19} alt="Brave" />
-        <img className="brave-logo-dark" src={braveDark} width={61} height={19} alt="Brave" />
-      </a>
+      {response.provider === 'brave' ? (
+        <a className="place-source" href="https://brave.com/search/api/" rel="noreferrer">
+          Powered by <img className="brave-logo-light" src={braveLight} width={61} height={19} alt="Brave" />
+          <img className="brave-logo-dark" src={braveDark} width={61} height={19} alt="Brave" />
+        </a>
+      ) : (
+        <a className="place-source" href="https://alexandria.firecrawl.dev/providers/firecrawl-maps" rel="noreferrer">Firecrawl Maps</a>
+      )}
     </section>
   )
 }

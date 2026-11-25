@@ -1,6 +1,6 @@
 import type { SearchDateRange } from '@pulpo/contracts/search'
 import type { CurrencyQuery, CurrencyResponse } from './currency'
-import type { PlaceQuery, PlaceResponse } from './places'
+import type { PlaceProvider, PlaceQuery, PlaceResponse } from './places'
 
 export type Provider = 'kagi' | 'firecrawl'
 export type Category = 'web' | 'news' | 'images' | 'videos' | 'podcasts'
@@ -69,7 +69,7 @@ export interface SearchConfig {
   providers: ProviderConfig[]
   weather?: boolean
   currency?: boolean
-  places?: { provider: 'brave'; priceMicros: number }
+  places?: { provider: PlaceProvider; priceMicros: number }
 }
 
 export interface WeatherPlace { name: string; admin?: string; country: string; timeZone: string }

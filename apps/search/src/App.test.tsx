@@ -269,13 +269,15 @@ describe('Pulpo Search', () => {
     expect(search).toHaveBeenCalledTimes(1)
   })
 
-  it('asks for a typed location and filters reported open places without a second request', async () => {
-    getConfig.mockResolvedValue({ ...config, places: { provider: 'brave', priceMicros: 5000 } })
-    places.mockResolvedValue({ provider: 'brave', results: [
+  it.each(['brave', 'firecrawl'] as const)('asks for a typed location and filters reported open %s places without a second request', async provider => {
+    getConfig.mockResolvedValue({ ...config, places: { provider, priceMicros: 5000 } })
+    places.mockResolvedValue({ provider, results: [
       { name: 'Morning Cafe', address: '1 Elm Street', phone: '+1 555 321 9876 ext 1',
-        website: 'https://example.com/', todayHours: ['07:00–15:00'], openNow: true },
-      { name: 'Night Cafe', address: '2 Elm Street', openNow: false },
-      { name: 'Square Cafe', address: '3 Elm Street' },
+        website: 'https://example.com/', todayHours: ['07:00–15:00'], openNow: true, rating: { value: 4.6, max: 5 } },
+      { name: 'Night Cafe', address: '2 Elm Street', openNow: false, rating: { value: 4.8, max: 5 } },
+      { name: 'Square Cafe', address: '3 Elm Street', ...(provider === 'brave' ? {
+        weeklyHours: [{ day: 'Monday', hours: '07:00–15:00' }],
+      } : {}) },
     ] })
     window.history.replaceState(null, '', '/search?q=coffee+shops+near+me')
     render(<App callback={null} />)
@@ -285,8 +287,19 @@ describe('Pulpo Search', () => {
     fireEvent.change(within(choose).getByRole('textbox', { name: 'City or neighborhood' }), { target: { value: 'Davis Square' } })
     fireEvent.click(within(choose).getByRole('button', { name: 'Find places' }))
     const list = await screen.findByRole('region', { name: 'Local places' })
+    if (provider === 'brave') {
+      const square = within(list).getByRole('heading', { name: 'Square Cafe' }).closest('li')!
+      const weeklyHours = within(square).getByText('Weekly hours')
+      expect(weeklyHours.closest('details')?.open).toBe(false)
+      expect(within(square).getByText('Monday').tagName).toBe('DT')
+      expect(within(square).getByText('07:00–15:00').tagName).toBe('DD')
+      expect(within(square).queryByText(/Today|Open now|Closed/)).toBeNull()
+    }
+    if (provider === 'firecrawl') expect(within(list).getByRole('link', { name: 'Firecrawl Maps' })).toBeDefined()
     expect(places).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ query: 'coffee shops near Davis Square' }), expect.any(AbortSignal))
     expect(within(list).getAllByRole('heading', { level: 3 })).toHaveLength(3)
+    fireEvent.change(within(list).getByLabelText('Order places'), { target: { value: 'ratings' } })
+    expect(within(list).getAllByRole('heading', { level: 3 })[0].textContent).toBe('Night Cafe')
     fireEvent.click(within(list).getByRole('button', { name: 'Open now' }))
     expect(within(list).getAllByRole('heading', { level: 3 })).toHaveLength(1)
     expect(within(list).getByText('Today 07:00–15:00')).toBeDefined()
