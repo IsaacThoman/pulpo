@@ -43,16 +43,18 @@ describe('Search appearance', () => {
     const load = vi.spyOn(api, 'appearance').mockResolvedValueOnce(lagoon).mockResolvedValue({
       theme: 'light', colorTheme: 'pulpo',
     })
-    const { rerender } = renderHook(({ userId }: { userId?: string }) => useSearchAppearance(userId, 'pulpo'), {
+    const { result, rerender } = renderHook(({ userId }: { userId?: string }) => useSearchAppearance(userId, 'pulpo'), {
       initialProps: { userId: 'test' as string | undefined },
     })
     const root = document.documentElement
     await waitFor(() => expect(root.dataset.theme).toBe('dark'))
     await waitFor(() => expect(root.style.getPropertyValue('--page')).toBe('#102632'))
+    await waitFor(() => expect(result.current).toBe('#102632'))
     act(() => { window.dispatchEvent(new Event('focus')) })
     await waitFor(() => expect(root.dataset.theme).toBe('light'))
     expect(load).toHaveBeenCalledTimes(2)
     expect(root.style.getPropertyValue('--page')).toBe('')
+    await waitFor(() => expect(result.current).toBe(getComputedStyle(root).getPropertyValue('--page').trim()))
     rerender({ userId: undefined })
     expect(root.style.getPropertyValue('--accent')).toBe('')
   })

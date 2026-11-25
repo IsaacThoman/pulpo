@@ -103,7 +103,7 @@ export function App({ callback }: { callback: Callback }) {
   // Reloading or going back returns to the results the reader loaded and where they were; a new search starts at the top.
   const restoreScroll = useRef<boolean>(undefined)
   restoreScroll.current ??= returningNavigation()
-  useSearchAppearance(user?.id, preferences.theme)
+  const pageColor = useSearchAppearance(user?.id, preferences.theme)
   const { recentQueries, rememberQuery, clearRecentQueries } = useRecentQueries(user?.id, preferences.rememberRecentQueries)
 
   useEffect(() => {
@@ -742,7 +742,7 @@ export function App({ callback }: { callback: Callback }) {
                     </div>
                   </section>
                 ) : <Results key={searchPath(view)} data={resultsData ?? state.data} location={{ ...view, date: effectiveDate }} preferences={preferences}
-                  setDomain={setDomain} onQuery={onSearch} imageRefinements={imageRefinements} imageToolbar={imageToolbar}
+                  pageColor={pageColor} setDomain={setDomain} onQuery={onSearch} imageRefinements={imageRefinements} imageToolbar={imageToolbar}
                   mediaToolbar={mediaToolbar} batchOf={more.batchOf} more={moreControl}
                   gallery={{ limit: more.galleryLimit, setLimit: more.setGalleryLimit }} />}
                 {!!state.data.results.length && shorterImageQuery && <div className="image-show-more">

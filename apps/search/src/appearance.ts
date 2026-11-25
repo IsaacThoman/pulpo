@@ -12,6 +12,7 @@ export function searchColorScheme(preference: Theme, account: SearchAppearance |
 export function useSearchAppearance(userId: string | undefined, preference: Theme) {
   const [account, setAccount] = useState<{ id: string; value: SearchAppearance }>()
   const [systemDark, setSystemDark] = useState(() => window.matchMedia?.(schemeQuery).matches ?? false)
+  const [pageColor, setPageColor] = useState('')
 
   useEffect(() => {
     const media = window.matchMedia?.(schemeQuery)
@@ -51,14 +52,17 @@ export function useSearchAppearance(userId: string | undefined, preference: Them
     const root = document.documentElement
     const scheme = searchColorScheme(preference, appearance, systemDark)
     root.dataset.theme = scheme
+    setPageColor(getComputedStyle(root).getPropertyValue('--page').trim())
     let cancelled = false
     let applied: string[] = []
     if (appearance && appearance.colorTheme !== 'pulpo') {
       void import('./theme-palette').then(({ searchPalette }) => {
         if (cancelled) return
-        const colors = Object.entries(searchPalette(appearance, scheme))
+        const palette = searchPalette(appearance, scheme)
+        const colors = Object.entries(palette)
         applied = colors.map(([name]) => name)
         for (const [name, color] of colors) root.style.setProperty(name, color)
+        if (palette['--page']) setPageColor(palette['--page'])
       }).catch(() => {
         // The default Search palette remains usable if the theme chunk cannot load.
       })
@@ -69,4 +73,6 @@ export function useSearchAppearance(userId: string | undefined, preference: Them
       delete root.dataset.theme
     }
   }, [appearance, preference, systemDark])
+
+  return pageColor
 }
