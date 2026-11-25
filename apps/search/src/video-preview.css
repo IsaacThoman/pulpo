@@ -30,6 +30,19 @@
   font-size: .75rem;
   line-height: 1;
 }
+.result-media .video-thumbnail-play {
+  position: absolute;
+  inset: auto auto .35rem .35rem;
+  min-width: 2rem;
+  min-height: 2rem;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  color: #fff;
+  background: #18181bdb;
+}
+.result-media .video-thumbnail-play:hover { background: #18181b; }
+.result-media .video-thumbnail-play:focus-visible { outline-color: #fff; outline-offset: 2px; }
 .video-result-details { margin: .26rem 0 0; color: var(--muted); font-size: .875rem; overflow-wrap: anywhere; }
 .video-result-details .result-date { font-size: inherit; }
 

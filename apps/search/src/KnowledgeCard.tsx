@@ -1,3 +1,4 @@
+import { ArrowUpRight } from 'lucide-react'
 import { useState } from 'react'
 import type { Knowledge } from './api'
 
@@ -12,7 +13,7 @@ export function KnowledgeCard({ knowledge, url, newTab }: {
   const facts = expanded ? knowledge.facts : knowledge.facts.slice(0, 3)
   return (
     <aside className="answer knowledge-card" aria-label={'About ' + knowledge.title} data-collapsed={!expanded}>
-      <h2>{knowledge.title}</h2>
+      <h2><a href={url.href} rel="noreferrer" target={newTab ? '_blank' : undefined}>{knowledge.title}<ArrowUpRight size={15} aria-hidden="true" /></a></h2>
       <p className={canExpand && !expanded ? 'knowledge-summary-brief' : undefined}>{knowledge.summary}</p>
       {facts.length > 0 && (
         <dl>

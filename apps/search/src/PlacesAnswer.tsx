@@ -61,7 +61,7 @@ export function PlacesAnswer({ response, openNow, webExpanded, onWeb }: {
   const canFilterHours = !openNow && response.results.some(place => place.openNow !== undefined)
   const canSortRatings = response.results.filter(place => place.rating).length > 1
   return (
-    <section className="places-answer" aria-label="Local places">
+    <section className="places-answer" aria-label="Local places" data-map-open={showMap || undefined}>
       <div className="places-header">
         <h2>Places{openNow && ' open now'}</h2>
         <div className="places-header-actions">
@@ -86,62 +86,64 @@ export function PlacesAnswer({ response, openNow, webExpanded, onWeb }: {
           <option value="ratings">Highest rated</option>
         </select><ChevronDown size={14} aria-hidden="true" /></span>}
       </div>}
-      <div id={mapId} hidden={!showMap}>
-        {showMap && mapStyleUrl && (pins.length ? (
-          <Suspense fallback={<p className="places-note" role="status">Loading map…</p>}>
-            <PlacesMap pins={pins} styleUrl={mapStyleUrl} />
-          </Suspense>
-        ) : <p className="places-note">No mapped places in these results.</p>)}
-      </div>
-      {places.length ? (
-        <ol className="place-list">
-          {visiblePlaces.map(({ id, rank, place }) => {
-            const website = safeHttpUrl(place.website)
-            const [number, extension] = place.phone?.split(/\s*(?:ext\.?|x)\s*/i) ?? []
-            const telephone = number?.replace(/[^\d+]/g, '')
-            const hours = place.todayHours?.join(', ')
-            return (
-              <li className="place-card" key={place.name + '\n' + place.address}>
-                <h3 id={id} tabIndex={showMap ? -1 : undefined}>
-                  {showMap && rank !== undefined && <span className="place-map-number" aria-hidden="true">{rank}</span>}
-                  {place.name}
-                </h3>
-                {(place.category || place.priceLevel) && <p className="place-category">{[place.category, place.priceLevel].filter(Boolean).join(' · ')}</p>}
-                <p>{place.address}</p>
-                {place.summary && <p>{place.summary}</p>}
-                <div className="place-details">
-                  {place.openNow !== undefined && <strong data-open={place.openNow}>{place.openNow ? 'Open now' : 'Closed'}</strong>}
-                  {hours && <span>Today {hours}</span>}
-                  {place.rating && (
-                    <span className="place-rating" aria-label={'Rated ' + place.rating.value + ' out of ' + place.rating.max}>
-                      <Star size={13} aria-hidden="true" />{formatRating.format(place.rating.value)}{place.rating.count ? ' (' + place.rating.count.toLocaleString() + ')' : ''}
-                    </span>
+      <div className="places-map-and-list">
+        <div id={mapId} className="place-map-panel" hidden={!showMap}>
+          {showMap && mapStyleUrl && (pins.length ? (
+            <Suspense fallback={<p className="places-note" role="status">Loading map…</p>}>
+              <PlacesMap pins={pins} styleUrl={mapStyleUrl} />
+            </Suspense>
+          ) : <p className="places-note">No mapped places in these results.</p>)}
+        </div>
+        {places.length ? (
+          <ol className="place-list">
+            {visiblePlaces.map(({ id, rank, place }) => {
+              const website = safeHttpUrl(place.website)
+              const [number, extension] = place.phone?.split(/\s*(?:ext\.?|x)\s*/i) ?? []
+              const telephone = number?.replace(/[^\d+]/g, '')
+              const hours = place.todayHours?.join(', ')
+              return (
+                <li className="place-card" key={place.name + '\n' + place.address}>
+                  <h3 id={id} tabIndex={showMap ? -1 : undefined}>
+                    {showMap && rank !== undefined && <span className="place-map-number" aria-hidden="true">{rank}</span>}
+                    {place.name}
+                  </h3>
+                  {(place.category || place.priceLevel) && <p className="place-category">{[place.category, place.priceLevel].filter(Boolean).join(' · ')}</p>}
+                  <p>{place.address}</p>
+                  {place.summary && <p>{place.summary}</p>}
+                  <div className="place-details">
+                    {place.openNow !== undefined && <strong data-open={place.openNow}>{place.openNow ? 'Open now' : 'Closed'}</strong>}
+                    {hours && <span>Today {hours}</span>}
+                    {place.rating && (
+                      <span className="place-rating" aria-label={'Rated ' + place.rating.value + ' out of ' + place.rating.max}>
+                        <Star size={13} aria-hidden="true" />{formatRating.format(place.rating.value)}{place.rating.count ? ' (' + place.rating.count.toLocaleString() + ')' : ''}
+                      </span>
+                    )}
+                  </div>
+                  {!!place.weeklyHours?.length && (
+                    <details className="place-hours">
+                      <summary>Weekly hours</summary>
+                      <dl>
+                        {place.weeklyHours.map(({ day, hours }) => (
+                          <div key={day}><dt>{day}</dt><dd>{hours}</dd></div>
+                        ))}
+                      </dl>
+                    </details>
                   )}
-                </div>
-                {!!place.weeklyHours?.length && (
-                  <details className="place-hours">
-                    <summary>Weekly hours</summary>
-                    <dl>
-                      {place.weeklyHours.map(({ day, hours }) => (
-                        <div key={day}><dt>{day}</dt><dd>{hours}</dd></div>
-                      ))}
-                    </dl>
-                  </details>
-                )}
-                <div className="place-actions">
-                  <a className="secondary-button result-link" href={googleMapsUrl(place, 'directions')} target="_blank" rel="noreferrer">
-                    <MapPin size={14} aria-hidden="true" /> Directions
-                  </a>
-                  {website && <a className="secondary-button" href={website.href} rel="noreferrer">Website</a>}
-                  {place.googlePlaceId && <a className="secondary-button" href={googleMapsUrl(place, 'listing')} target="_blank" rel="noreferrer">Map listing</a>}
-                  {telephone && /^\+?\d{7,15}$/.test(telephone) && <a className="secondary-button"
-                    href={'tel:' + telephone + (extension && /^\d{1,8}$/.test(extension) ? ';ext=' + extension : '')}>Call</a>}
-                </div>
-              </li>
-            )
-          })}
-        </ol>
-      ) : <p className="places-note">{onlyOpen || openNow ? 'No matches with listed hours showing they’re open.' : 'No places found.'}</p>}
+                  <div className="place-actions">
+                    <a className="secondary-button result-link" href={googleMapsUrl(place, 'directions')} target="_blank" rel="noreferrer">
+                      <MapPin size={14} aria-hidden="true" /> Directions
+                    </a>
+                    {website && <a className="secondary-button" href={website.href} rel="noreferrer">Website</a>}
+                    {place.googlePlaceId && <a className="secondary-button" href={googleMapsUrl(place, 'listing')} target="_blank" rel="noreferrer">Map listing</a>}
+                    {telephone && /^\+?\d{7,15}$/.test(telephone) && <a className="secondary-button"
+                      href={'tel:' + telephone + (extension && /^\d{1,8}$/.test(extension) ? ';ext=' + extension : '')}>Call</a>}
+                  </div>
+                </li>
+              )
+            })}
+          </ol>
+        ) : <p className="places-note">{onlyOpen || openNow ? 'No matches with listed hours showing they’re open.' : 'No places found.'}</p>}
+      </div>
       {places.length > initialPlaceCount && (
         <button className="secondary-button place-show-more" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
           {showAll ? 'Show fewer places' : `Show all ${places.length} places`}

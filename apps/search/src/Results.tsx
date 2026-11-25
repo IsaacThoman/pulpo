@@ -129,16 +129,19 @@ function ResultItem({ entry, additional, versions, preview, media, video, newsNo
   const mediaDetails = media && !video ? [result.creatorName, result.duration].filter(Boolean).join(' · ') : ''
   const videoDuration = video && videoDurationBucket(result.duration) ? result.duration : undefined
   const views = result.viewCount === undefined ? undefined : compactCount.format(result.viewCount) + (result.viewCount === 1 ? ' view' : ' views')
-  const videoDetails = video ? [result.creatorName, videoDuration, views].filter(Boolean).join(' · ') : ''
+  const videoDetails = video ? [result.creatorName, !thumbnail && videoDuration, views].filter(Boolean).join(' · ') : ''
   const reportedDate = date && (date.iso
     ? <time className="result-date" dateTime={date.iso} title={date.absolute ?? 'Date reported by the search provider'}>{date.label}</time>
     : <span className="result-date" title="Date reported by the search provider">{date.label}</span>)
   const dimensions = result.imageDimensions
   const containImage = Boolean(dimensions && (dimensions.width >= 2 * dimensions.height || dimensions.height >= 1.6 * dimensions.width))
-  const mediaImage = thumbnail && <a className="result-media" href={url.href} target={target} rel="noreferrer" tabIndex={-1} aria-hidden="true">
-    <ResultImage key={thumbnail.href} sources={[thumbnail.href, result.imageUrl]} alt="" lazy fallback={<Image size={24} aria-hidden="true" />} />
-    {videoDuration && <span className="video-result-runtime">{videoDuration}</span>}
-  </a>
+  const mediaImage = thumbnail && <div className="result-media">
+    <a className="result-media-link" href={url.href} target={target} rel="noreferrer" tabIndex={-1} aria-hidden="true">
+      <ResultImage key={thumbnail.href} sources={[thumbnail.href, result.imageUrl]} alt="" lazy fallback={<Image size={24} aria-hidden="true" />} />
+      {videoDuration && <span className="video-result-runtime">{videoDuration}</span>}
+    </a>
+    {video && <VideoPreview url={url.href} title={title} newTab={newTab} overThumbnail />}
+  </div>
   const content = <>
       <div className="result-meta">
         <SiteIcon host={host} />
@@ -183,7 +186,8 @@ function ResultItem({ entry, additional, versions, preview, media, video, newsNo
         </details>
       </div>
       <h2><a className="result-link" href={url.href} target={target} rel="noreferrer">{title}</a></h2>
-      {video && (videoDetails || date) && <p className="video-result-details">
+      {video && (videoDetails || date || videoDuration) && <p className="video-result-details">
+        {thumbnail && videoDuration && <span className="sr-only">Duration {videoDuration}. </span>}
         {videoDetails && <span>{videoDetails}</span>}
         {videoDetails && date && ' · '}
         {reportedDate}
@@ -214,7 +218,7 @@ function ResultItem({ entry, additional, versions, preview, media, video, newsNo
           </ul>}
         </details>
       )}
-      {video && <VideoPreview url={url.href} title={title} newTab={newTab} />}
+      {video && !thumbnail && <VideoPreview url={url.href} title={title} newTab={newTab} />}
     </>
   return (
     <li className="result" data-video-thumbnail={Boolean(video && thumbnail) || undefined} data-news-thumbnail={Boolean(news && thumbnail) || undefined}>

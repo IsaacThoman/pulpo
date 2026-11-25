@@ -427,7 +427,12 @@ summary::-webkit-details-marker { display: none; }
 .quick-answer-toggle { max-width: 100%; white-space: normal; text-align: start; color: var(--muted); font-size: .875rem; }
 .quick-answer[data-expanded] .quick-answer-toggle { color: var(--ink); font-size: 1.125rem; font-weight: 650; }
 .quick-answer-content { margin-top: .55rem; overflow-wrap: anywhere; font-size: .9375rem; line-height: 1.55; }
-.quick-answer-preview[data-clipped] { max-height: 7.75em; max-height: 5lh; overflow: clip; }
+.quick-answer-preview[data-clipped] {
+  max-height: 7.75em;
+  max-height: 5lh;
+  overflow: clip;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 1lh), transparent);
+}
 .quick-answer-preview-body { display: flow-root; }
 .quick-answer-divider { display: flex; align-items: center; gap: .9rem; margin-block: .2rem; }
 .quick-answer-divider button[aria-expanded="true"] svg { transform: rotate(180deg); }
@@ -435,6 +440,9 @@ summary::-webkit-details-marker { display: none; }
 .quick-answer-markdown :is(p,ul,ol,pre,blockquote) { margin: 0 0 .65rem; }
 .quick-answer-markdown :is(ul,ol) { padding-inline-start: 1.3rem; }
 .quick-answer-markdown pre { overflow: auto; white-space: pre-wrap; background: var(--subtle); padding: .5rem; border-radius: .4rem; }
+.quick-answer-code { position: relative; }
+.quick-answer-code:has(button) pre { padding-inline-end: 2.55rem; }
+.quick-answer-code button { position: absolute; inset: .25rem .25rem auto auto; width: 2rem; height: 2rem; }
 .quick-answer-markdown a { color: var(--link); text-decoration: underline; text-underline-offset: .14em; }
 .quick-answer-progress { color: var(--muted); }
 .quick-answer-recovery p { margin-bottom: .5rem; }
@@ -482,7 +490,8 @@ summary::-webkit-details-marker { display: none; }
 .result-refinements { display: flex; flex-wrap: wrap; gap: .45rem .7rem; align-items: center; margin: 0 0 .9rem; font-size: .875rem; }
 .result-refinements label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .result-refinements p { margin: 0; color: var(--muted); }
-.result-refinements select, .place-refinements select { border-color: transparent; background: transparent; }
+.result-refinements select, .place-refinements select { width: auto; field-sizing: content; border-color: transparent; background: transparent; }
+.place-refinements select { padding-inline-start: 0; }
 .result-sitelinks { display: flex; flex-wrap: wrap; gap: .35rem 1rem; list-style: none; padding: 0; margin: .48rem 0 0; }
 .result-sitelinks li { min-width: 0; max-width: 100%; }
 .result-sitelinks .result-link { font-size: .875rem; font-weight: 500; overflow-wrap: anywhere; }
@@ -525,15 +534,23 @@ summary::-webkit-details-marker { display: none; }
 .weather-alerts li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .65rem; padding: .45rem .65rem; border-inline-start: 3px solid var(--accent); background: var(--hover); }
 .weather-alerts li + li { margin-top: .25rem; }
 .weather-alerts small { color: var(--muted); }
-.weather-hourly h3, .weather-outlook h3 { margin: .8rem 0 .35rem; font-size: .875rem; }
-.weather-hourly-scroll { overflow-x: auto; padding-bottom: .4rem; scroll-snap-type: x proximity; }
-.weather-hourly ol { display: flex; gap: .65rem; list-style: none; padding: 0; margin: 0; }
-.weather-hourly li { flex: 0 0 5.25rem; display: grid; align-content: start; gap: .18rem; padding-block: .3rem; scroll-snap-align: start; }
+.weather-hourly-heading { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+.weather-hourly h3, .weather-outlook h3 { margin: .3rem 0; font-size: .875rem; }
+.weather-hourly-actions { display: flex; gap: .2rem; }
+.weather-hourly-actions button { width: 2.2rem; height: 2.2rem; }
+.weather-hourly-actions button[aria-disabled="true"] { opacity: .45; cursor: default; background: transparent; }
+.weather-hourly-scroll { overflow-x: auto; padding-bottom: .4rem; }
+.weather-hourly-track { width: max(100%, calc(var(--hour-count) * 5.25rem)); }
+.weather-hourly-chart { color: var(--link); width: 100%; height: 3rem; }
+.weather-hourly ol { display: grid; grid-template-columns: repeat(var(--hour-count), minmax(0, 1fr)); list-style: none; padding: 0; margin: 0; }
+.weather-hourly li { display: grid; justify-items: center; align-content: start; gap: .18rem; padding: .3rem .25rem; text-align: center; }
+.weather-outlook { margin-top: .55rem; }
 .weather-hour-reading { display: flex; align-items: center; gap: .28rem; }
 .weather-hourly time, .weather-hourly small { color: var(--muted); font-size: .75rem; }
 .weather-footer { align-items: baseline; font-size: .75rem; color: var(--muted); }
 .weather-footer a { font-size: inherit; }
-.weather-web { padding-inline: 0; }
+.weather-web { padding-inline: 0; color: var(--link); }
+@media (prefers-reduced-motion: no-preference) { .weather-hourly-scroll { scroll-behavior: smooth; } }
 .currency-answer .weather-footer { margin-top: .7rem; }
 .currency-answer .weather-web { margin-top: 0; }
 .currency-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; margin-top: .9rem; }
@@ -557,7 +574,7 @@ summary::-webkit-details-marker { display: none; }
 .places-header { justify-content: space-between; margin-bottom: .55rem; }
 .places-header h2 { font-size: 1.2rem; }
 .places-header-actions { display: flex; flex-wrap: wrap; gap: .2rem .65rem; }
-.places-header-actions .text-button { display: inline-flex; align-items: center; gap: .3rem; }
+.places-header-actions .text-button { display: inline-flex; align-items: center; gap: .3rem; color: var(--link); }
 .places-note { padding-block: .4rem; color: var(--muted); font-size: .875rem; }
 .place-refinements { display: flex; flex-wrap: wrap; gap: .4rem; margin-bottom: .65rem; }
 .place-open-filter { min-height: 2.3rem; border: 0; background: transparent; }
@@ -571,12 +588,13 @@ summary::-webkit-details-marker { display: none; }
 .place-details:has(> *) { margin-top: .35rem; }
 .place-details strong[data-open="true"] { color: var(--ink); }
 .place-rating { display: inline-flex; align-items: center; gap: .22rem; }
+.place-rating svg { fill: currentColor; }
 .place-hours { margin-top: .4rem; font-size: .875rem; }
 .place-hours summary { width: fit-content; cursor: pointer; }
 .place-hours dl { margin: .35rem 0 0; color: var(--muted); }
 .place-hours dl div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 .75rem; }
 .place-hours dd { margin: 0; }
-.place-actions { margin-top: .56rem; }
+.place-actions { align-items: center; margin-top: .56rem; }
 .place-actions .secondary-button { min-height: 2rem; padding-inline: 0; border: 0; background: none; color: var(--link); }
 .place-actions .secondary-button:hover { text-decoration: underline; }
 .place-show-more { display: flex; margin-top: .65rem; }
@@ -602,6 +620,7 @@ summary::-webkit-details-marker { display: none; }
   font-size: .875rem;
 }
 .result-media {
+  position: relative;
   float: right;
   display: grid;
   place-items: center;
@@ -613,7 +632,8 @@ summary::-webkit-details-marker { display: none; }
   overflow: hidden;
   border-radius: .5rem;
 }
-.result-media img { width: 100%; height: 100%; object-fit: cover; }
+.result-media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.result-media-link { display: grid; place-items: center; position: absolute; inset: 0; color: inherit; }
 .result[data-news-thumbnail] {
   display: grid;
   grid-template-columns: minmax(0, 1fr) clamp(5rem, 20vw, 9rem);
@@ -692,7 +712,7 @@ summary::-webkit-details-marker { display: none; }
 .image-dimensions-badge { inset: auto .35rem .35rem auto; background: #18181bd9; color: #fafafa; }
 .image-preview:has(.image-license-badge) .image-dimensions-badge { inset: .35rem .35rem auto auto; }
 .image-preview:hover { box-shadow: 0 0 0 1px var(--accent-outline); }
-.image-preview img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.image-preview img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .image-preview[data-contain] img { object-fit: contain; }
 .image-grid .result h2 { font-size: .9375rem; }
 .image-grid .result h2 .result-link {
@@ -763,7 +783,10 @@ summary::-webkit-details-marker { display: none; }
 .search-message .button, .search-message .secondary-button { margin-top: .35rem; }
 
 .knowledge-card { align-self: start; min-width: 0; margin: 0; overflow-wrap: anywhere; }
-.knowledge-card h2 { margin-bottom: .5rem; }
+.knowledge-card h2 { margin-bottom: .5rem; font-size: clamp(1.22rem, 1.85vw, 1.65rem); }
+.knowledge-card h2 a { color: inherit; font-size: inherit; text-decoration: none; }
+.knowledge-card h2 a:hover { text-decoration: underline; }
+.knowledge-card h2 svg { display: inline-block; vertical-align: baseline; margin-inline-start: .25rem; color: var(--muted); }
 .knowledge-card p { display: block; }
 .knowledge-card .knowledge-summary-brief { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
 .knowledge-card dl { display: grid; gap: .65rem; margin: .75rem 0; font-size: .8125rem; }
@@ -933,9 +956,15 @@ label.settings-row { cursor: pointer; }
 .shortcut-list dd { margin: 0; }
 
 @media (min-width: 66rem) {
+  .image-preview { aspect-ratio: 16 / 10; }
+  .image-loading-grid .skeleton span:first-child { aspect-ratio: 16 / 10; }
   .results-body:has(.knowledge-card) { grid-template-columns: minmax(0, var(--reading-width)) minmax(12rem, 18rem); column-gap: var(--shell-gap); }
   .results-body:has(.knowledge-card) > .results-column { grid-column: 1; grid-row: 1; }
   .results-body:has(.knowledge-card) > .knowledge-card { grid-column: 2; grid-row: 1; }
+  .places-answer[data-map-open] { width: min(100%, 65rem); }
+  .places-map-and-list:has(.place-map-panel:not([hidden])) { display: grid; grid-template-columns: minmax(0, var(--reading-width)) minmax(17rem, 1fr); gap: 1.5rem; }
+  .places-map-and-list .place-map-panel { grid-column: 2; grid-row: 1; min-width: 0; }
+  .places-map-and-list .place-list, .places-map-and-list > .places-note { grid-column: 1; grid-row: 1; }
 }
 @media (max-width: 66rem) {
   :root { --shell-columns: 1.6rem minmax(0, var(--reading-width)) minmax(5.4rem, 1fr); }

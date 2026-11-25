@@ -1,11 +1,12 @@
-import { Cloud, CloudFog, CloudLightning, CloudRain, CloudSnow, CloudSun, Sun } from 'lucide-react'
-import { useState, type CSSProperties } from 'react'
+import { ChevronLeft, ChevronRight, Cloud, CloudFog, CloudLightning, CloudRain, CloudSnow, CloudSun, Sun } from 'lucide-react'
+import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from 'react'
 import { type WeatherAlerts, type WeatherPlace, type WeatherResponse } from './api'
 import { safeHttpUrl } from './navigation'
 
 const dayLabel = new Intl.DateTimeFormat(undefined, { weekday: 'short', timeZone: 'UTC' })
 const fullDayLabel = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' })
 const placeLabel = ({ name, admin, country }: WeatherPlace) => [name, admin, country].filter(Boolean).join(', ')
+type Forecast = Extract<WeatherResponse, { status: 'forecast' }>['forecast']
 
 function WeatherSymbol({ condition, size = 19 }: { condition: string | undefined; size?: number }) {
   const description = condition?.toLowerCase() ?? ''
@@ -16,6 +17,73 @@ function WeatherSymbol({ condition, size = 19 }: { condition: string | undefined
     : /fair|partly/.test(description) ? CloudSun
     : /clear|sunny/.test(description) ? Sun : Cloud
   return <Icon className="weather-symbol" size={size} strokeWidth={1.55} aria-hidden="true" />
+}
+
+function HourlyForecast({ hours, localHour, degrees }: {
+  hours: NonNullable<Forecast['hourly']>
+  localHour: Intl.DateTimeFormat
+  degrees: (celsius: number) => number
+}) {
+  const scroller = useRef<HTMLDivElement>(null)
+  const id = useId()
+  const [scrollEdges, setScrollEdges] = useState({ start: true, end: true })
+  const updateEdges = useCallback(() => {
+    const element = scroller.current
+    if (!element) return
+    const start = element.scrollLeft <= 1
+    const end = element.scrollWidth - element.clientWidth - element.scrollLeft <= 1
+    setScrollEdges(previous => previous.start === start && previous.end === end ? previous : { start, end })
+  }, [])
+  useEffect(() => {
+    updateEdges()
+    const element = scroller.current
+    if (!element || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(updateEdges)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [hours.length, updateEdges])
+
+  function move(direction: number) {
+    const element = scroller.current
+    if (element) element.scrollBy({ left: direction * element.clientWidth * .8 })
+  }
+
+  const temperatures = hours.map(hour => hour.temperatureC)
+  const low = Math.min(...temperatures)
+  const high = Math.max(...temperatures)
+  const points = temperatures.map((temperature, index) => [50 + index * 100, high === low ? 25 : 43 - (temperature - low) / (high - low) * 33])
+  const line = points.map(point => point.join(',')).join(' ')
+  return <div className="weather-hourly">
+    <div className="weather-hourly-heading">
+      <h3>Hourly</h3>
+      {(!scrollEdges.start || !scrollEdges.end) && <div className="weather-hourly-actions">
+        <button type="button" className="icon-button" aria-label="Earlier hours" aria-controls={id} aria-disabled={scrollEdges.start}
+          onClick={() => { if (!scrollEdges.start) move(-1) }}><ChevronLeft size={17} aria-hidden="true" /></button>
+        <button type="button" className="icon-button" aria-label="Later hours" aria-controls={id} aria-disabled={scrollEdges.end}
+          onClick={() => { if (!scrollEdges.end) move(1) }}><ChevronRight size={17} aria-hidden="true" /></button>
+      </div>}
+    </div>
+    <div id={id} ref={scroller} className="weather-hourly-scroll" role="region" aria-label="Hourly forecast" tabIndex={0} onScroll={updateEdges}>
+      <div className="weather-hourly-track" style={{ '--hour-count': hours.length } as CSSProperties}>
+        {points.length > 1 && <svg className="weather-hourly-chart" viewBox={`0 0 ${hours.length * 100} 50`} preserveAspectRatio="none" aria-hidden="true">
+          <defs><linearGradient id={id + '-temperature'} x2="0" y2="100%">
+            <stop stopColor="currentColor" stopOpacity=".18" /><stop offset="1" stopColor="currentColor" stopOpacity="0" />
+          </linearGradient></defs>
+          <polygon points={`50,50 ${line} ${points.at(-1)?.[0]},50`} fill={`url(#${id}-temperature)`} />
+          <polyline points={line} fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+        </svg>}
+        <ol>{hours.map(hour => <li key={hour.validAt}>
+          <time dateTime={hour.validAt}>{localHour.format(new Date(hour.validAt))}</time>
+          <span className="weather-hour-reading">
+            {hour.condition && <WeatherSymbol condition={hour.condition} />}
+            <strong>{degrees(hour.temperatureC)}°</strong>
+          </span>
+          {hour.precipitationChance !== undefined && <small aria-label={`Precipitation ${hour.precipitationChance}%`}>{hour.precipitationChance}% precip.</small>}
+          {hour.condition && <small>{hour.condition}</small>}
+        </li>)}</ol>
+      </div>
+    </div>
+  </div>
 }
 
 export function WeatherAnswer({ response, alerts, onLocation, onWeb, webExpanded }: {
@@ -78,22 +146,7 @@ export function WeatherAnswer({ response, alerts, onLocation, onWeb, webExpanded
           </li>
         })}
       </ul>}
-      {!!forecast.hourly?.length && (
-        <div className="weather-hourly">
-          <h3>Hourly</h3>
-          <div className="weather-hourly-scroll" role="region" aria-label="Hourly forecast" tabIndex={0}>
-            <ol>{forecast.hourly.map(hour => <li key={hour.validAt}>
-              <time dateTime={hour.validAt}>{localHour.format(new Date(hour.validAt))}</time>
-              <span className="weather-hour-reading">
-                {hour.condition && <WeatherSymbol condition={hour.condition} />}
-                <strong>{degrees(hour.temperatureC)}°</strong>
-              </span>
-              {hour.precipitationChance !== undefined && <small aria-label={`Precipitation ${hour.precipitationChance}%`}>{hour.precipitationChance}% precip.</small>}
-              {hour.condition && <small>{hour.condition}</small>}
-            </li>)}</ol>
-          </div>
-        </div>
-      )}
+      {!!forecast.hourly?.length && <HourlyForecast hours={forecast.hourly} localHour={localHour} degrees={degrees} />}
       {forecast.daily.length > 0 && <div className="weather-outlook">
         <h3>{forecast.daily.length}-day outlook</h3>
         <ul className="weather-days" role="list" aria-label="Daily forecast">
@@ -116,6 +169,9 @@ export function WeatherAnswer({ response, alerts, onLocation, onWeb, webExpanded
           })}
         </ul>
       </div>}
+      <button className="text-button weather-web" aria-expanded={webExpanded} onClick={onWeb}>
+        {webExpanded ? 'Hide web results' : 'Show web results'}
+      </button>
       <div className="weather-footer">
         <span>Sources {sources.map(source => {
           const url = safeHttpUrl(source.url)
@@ -124,9 +180,6 @@ export function WeatherAnswer({ response, alerts, onLocation, onWeb, webExpanded
             {license && <> (<a href={license.href} rel="noreferrer">license</a>)</>}
             {source.note && <> {source.note}</>}</span>
         })}</span>
-        <button className="text-button weather-web" aria-expanded={webExpanded} onClick={onWeb}>
-          {webExpanded ? 'Hide web results' : 'Show web results'}
-        </button>
       </div>
     </section>
   )
