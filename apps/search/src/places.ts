@@ -37,7 +37,7 @@ interface PlaceIntent extends PlaceQuery {
   needsLocation?: { term: string; connector: string }
 }
 
-const localType = /(?<![\p{L}\p{N}])(?:restaurants?|coffee(?:\s+shops?)?|caf[eé]s?|baker(?:y|ies)|pizza|bookstores?|pharmac(?:y|ies)|drugstores?|grocery\s+stores?|museums?|hotels?|parks?|hardware\s+stores?|movie\s+theat(?:er|re)s?|gas\s+stations?)(?![\p{L}\p{N}])/iu
+const localType = /(?<![\p{L}\p{N}])(?:restaurants?|coffee(?:\s+shops?)?|caf[eé]s?|baker(?:y|ies)|pizza|bookstores?|librar(?:y|ies)|pharmac(?:y|ies)|drugstores?|grocery\s+stores?|museums?|hotels?|parks?|hardware\s+stores?|movie\s+theat(?:er|re)s?|gas\s+stations?)(?![\p{L}\p{N}])/iu
 const diningType = /(?<![\p{L}\p{N}])(?:ramen|sushi|pho|tacos?|burritos?|burgers?|dumplings?|dim\s+sum|falafel|barbecue|bbq|ice\s+cream|gelato|boba|bubble\s+tea|(?:chinese|indian|japanese|korean|mexican|thai|vietnamese|vegan|vegetarian)\s+food)$/iu
 const informationalTerm = /\b(?:(?:history|origins?|ingredients|nutrition)\s+of|recipes?\s+for|how\s+to\s+(?:make|cook|prepare))\b|\b(?:recipes?|ingredients|nutrition|calories|history|origins?)$/i
 const openNowPattern = /\s+(?:that (?:are|is) )?(?:open now|currently open)(?=\s|$)/i

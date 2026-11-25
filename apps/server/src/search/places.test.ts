@@ -185,6 +185,16 @@ function firecrawlResponse(results: unknown[]) {
 }
 
 describe('Firecrawl Maps place search', () => {
+  it('prioritizes the requested venue category over the location landmark', async () => {
+    mockResponse(firecrawlResponse([
+      { name: 'Pike Place Market', address: '85 Pike St', categories: ['Market'] },
+      { name: 'Folio', address: '93 Pike St', categories: ['Library'] },
+      { name: 'Seattle Central Library', address: '1000 Fourth Ave', categories: ['Public library'] },
+    ]))
+    const result = await searchFirecrawlPlaces({ query: 'public libraries near Pike Place Market Seattle' }, 'test-key')
+    expect(result.results.map(place => place.name)).toEqual(['Seattle Central Library', 'Folio', 'Pike Place Market'])
+  })
+
   it('uses the hosted Alexandria endpoint and returns only normalized listing fields', async () => {
     const fetch = mockResponse(firecrawlResponse([null, { name: 'No address' }, firecrawlCafe, firecrawlCafe]))
     await expect(searchFirecrawlPlaces({ query: 'coffee shops', location: 'Grand Central Terminal New York' }, 'test-key')).resolves.toEqual({

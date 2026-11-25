@@ -303,7 +303,17 @@ function filterPlaces(rows: unknown[], input: PlaceSearchInput, now: Date, norma
     results.push(result)
     if (results.length >= maximumResults) break
   }
-  return { results, ...(unverifiedHours ? { unverifiedHours } : {}) }
+  const words = (value: string) => (value.toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? []).map(word => {
+    if (word.length > 4 && word.endsWith('ies')) return word.slice(0, -3) + 'y'
+    return word.length > 3 && word.endsWith('s') && !word.endsWith('ss') ? word.slice(0, -1) : word
+  }).join(' ')
+  const subject = ` ${words(input.query.split(/\s+(?:near|around|in)\s+/i, 1)[0] ?? '')} `
+  const ranked = results.map(place => {
+    const category = words(place.category ?? '')
+    return { place, score: category && subject.includes(` ${category} `) ? category.length : 0 }
+  })
+  ranked.sort((left, right) => right.score - left.score)
+  return { results: ranked.map(({ place }) => place), ...(unverifiedHours ? { unverifiedHours } : {}) }
 }
 
 async function readPlacesResponse(response: Response): Promise<unknown> {

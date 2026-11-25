@@ -590,18 +590,26 @@ describe('Pulpo Search', () => {
     expect(search).not.toHaveBeenCalled()
   })
 
-  it.each([
-    [402, 'Places search limit reached'],
-    [502, 'Couldn’t load places'],
-  ] as const)('shows a Places %s error before offering a separate Web search', async (status, title) => {
+  it('shows a Places credit error before offering a separate Web search', async () => {
     getConfig.mockResolvedValue({ ...config, places: { provider: 'firecrawl', priceMicros: 5000 } })
-    places.mockRejectedValueOnce(new SearchApiError('Places lookup failed.', status))
+    places.mockRejectedValueOnce(new SearchApiError('Places lookup failed.', 402))
     window.history.replaceState(null, '', '/search?q=coffee+shops+near+Grand+Central')
     render(<App callback={null} />)
-    await screen.findByRole('heading', { name: title })
+    await screen.findByRole('heading', { name: 'Places search limit reached' })
     expect(search).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Search the web' }))
     await screen.findByRole('link', { name: 'coffee shops near Grand Central field guide' })
+    expect(places).toHaveBeenCalledTimes(1)
+    expect(search).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back to Web after a Places provider failure', async () => {
+    getConfig.mockResolvedValue({ ...config, places: { provider: 'firecrawl', priceMicros: 5000 } })
+    places.mockRejectedValueOnce(new SearchApiError('Places lookup failed.', 502))
+    window.history.replaceState(null, '', '/search?q=coffee+shops+near+Grand+Central')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'coffee shops near Grand Central field guide' })
+    expect(screen.getByText('Showing web results while Places is unavailable.')).toBeDefined()
     expect(places).toHaveBeenCalledTimes(1)
     expect(search).toHaveBeenCalledTimes(1)
   })

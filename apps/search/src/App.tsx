@@ -163,12 +163,13 @@ export function App({ callback }: { callback: Callback }) {
   const choosePlaceLocation = user ? localIntent?.needsLocation : undefined
   const { result: placeResult, retry: retryPlaces } = usePlaces(choosePlaceLocation ? undefined : localIntent, user?.id)
   const placesError = placeResult instanceof SearchApiError ? placeResult : undefined
+  const placesUnavailable = placesError && placesError.status >= 500
   const places = placeResult instanceof SearchApiError ? undefined : placeResult
   const placesPending = !!(user && localIntent && !choosePlaceLocation && placeResult === undefined)
   const showPlaces = !!(places && (places.results.length || localIntent?.openNow))
   const showUnavailableForecast = forecast?.status === 'unavailable'
   const answerPending = forecastPending || currencyPending || placesPending
-  const showAnswer = !!localAnswer || showForecast || showCurrency || showPlaces || !!choosePlaceLocation || showUnavailableForecast || !!placesError
+  const showAnswer = !!localAnswer || showForecast || showCurrency || showPlaces || !!choosePlaceLocation || showUnavailableForecast || (!!placesError && !placesUnavailable)
   const keepCompanionLookup = !!companion && (showPlaces || forecast?.status === 'forecast')
   const webAlongsideAnswer = keepCompanionLookup && companion?.expanded === true
   const showWebResults = !view.invalidDateRange && (webAlongsideAnswer || (!showAnswer && !forecastPending && !placesPending))
@@ -632,12 +633,12 @@ export function App({ callback }: { callback: Callback }) {
             ) : placesError && placesError.status !== 401 ? (
               <section className="search-message" role="alert">
                 <h2>{placesError.status === 402 ? 'Places search limit reached' : 'Couldn’t load places'}</h2>
-                <p>{placesError.message}</p>
+                <p>{placesUnavailable ? 'Showing web results while Places is unavailable.' : placesError.message}</p>
                 <div className="empty-actions">
                   {placesError.status === 402
                     ? <a className="secondary-button" href={pulpoOrigin}>Open Pulpo</a>
                     : <button className="secondary-button" onClick={retryPlaces}>Try again</button>}
-                  <button className="secondary-button" onClick={() => go({ ...view, web: true })}>Search the web</button>
+                  {!placesUnavailable && <button className="secondary-button" onClick={() => go({ ...view, web: true })}>Search the web</button>}
                 </div>
               </section>
             ) : forecastPending || placesPending ? (

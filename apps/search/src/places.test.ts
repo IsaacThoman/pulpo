@@ -8,6 +8,7 @@ describe('local places intent', () => {
     })
     expect(placeIntent('hotels in Montréal?')).toEqual({ query: 'hotels in Montréal', location: 'Montréal', openNow: false })
     expect(placeIntent('café near Gare de Lyon')).toMatchObject({ query: 'café near Gare de Lyon' })
+    expect(placeIntent('public library near Pike Place Market Seattle')).toMatchObject({ query: 'public library near Pike Place Market Seattle' })
   })
 
   it('asks for a user-supplied area when the search only says near me', () => {
