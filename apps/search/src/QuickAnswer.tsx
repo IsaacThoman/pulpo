@@ -1,5 +1,7 @@
+import type { SearchAccountSummary } from '@pulpo/contracts/search'
 import { ChevronDown } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from 'react'
+import { LimitAction } from './AccountParts'
 import { api, SearchApiError, type QuickAnswerSession } from './api'
 
 const loadAnswerMarkdown = () => import('./QuickAnswerMarkdown')
@@ -12,11 +14,12 @@ interface ActiveAnswer {
   started: Promise<QuickAnswerSession>
 }
 
-export function QuickAnswer({ query, automatic, onAutomaticStart, pulpoOrigin }: {
+export function QuickAnswer({ query, automatic, onAutomaticStart, pulpoOrigin, account }: {
   query: string
   automatic: boolean
   onAutomaticStart: () => void
   pulpoOrigin: string
+  account?: SearchAccountSummary
 }) {
   const [status, setStatus] = useState<AnswerStatus>('idle')
   const [answer, setAnswer] = useState('')
@@ -70,7 +73,7 @@ export function QuickAnswer({ query, automatic, onAutomaticStart, pulpoOrigin }:
       }
     } catch (caught) {
       if (signal.aborted) return
-      if (caught instanceof SearchApiError && caught.code === 'quick_answer_terminal') {
+      if (caught instanceof SearchApiError && (caught.code === 'quick_answer_terminal' || caught.status === 402)) {
         unconfirmed.current = false
         session.current = undefined
         requestId.current = undefined
@@ -181,7 +184,7 @@ export function QuickAnswer({ query, automatic, onAutomaticStart, pulpoOrigin }:
         {status === 'error' && <div className="quick-answer-recovery" role="alert">
           <p>{error?.message}</p>
           {error?.status === 402
-            ? <a className="secondary-button" href={pulpoOrigin}>Open Pulpo</a>
+            ? <LimitAction error={error} account={account} />
             : <button className="secondary-button" onClick={() => void run()}>{session.current ? 'Reconnect' : 'Try again'}</button>}
         </div>}
         {status === 'stopped' && <div className="quick-answer-recovery">

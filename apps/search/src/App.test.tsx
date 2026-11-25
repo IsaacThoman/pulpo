@@ -3,6 +3,7 @@ import { defaultSearchAccountPreferences } from '@pulpo/contracts/search'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
+import { pulpoOrigin } from './auth'
 import { api, SearchApiError, type SearchConfig, type SearchUser } from './api'
 
 const user: SearchUser = { id: 'test-user', name: 'Casey', email: 'casey@example.com' }
@@ -32,6 +33,7 @@ describe('Pulpo Search', () => {
   const streamQuickAnswer = vi.spyOn(api, 'streamQuickAnswer')
   const cancelQuickAnswer = vi.spyOn(api, 'cancelQuickAnswer')
   const reusableImages = vi.spyOn(api, 'reusableImages')
+  const account = vi.spyOn(api, 'account')
 
   beforeEach(() => {
     session.mockResolvedValue({ user })
@@ -60,6 +62,7 @@ describe('Pulpo Search', () => {
     streamQuickAnswer.mockImplementation(async (_id, onText) => { onText('An answer.') })
     cancelQuickAnswer.mockResolvedValue()
     reusableImages.mockResolvedValue({ provider: 'openverse', results: [] })
+    account.mockResolvedValue({ billing: true, balanceMicros: 12_340_000, poolBalanceMicros: null, weeklyRemainingPercentage: 64.4 })
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
     const preferences = new Map<string, string>()
     vi.stubGlobal('localStorage', {
@@ -887,5 +890,41 @@ describe('Pulpo Search', () => {
     await screen.findByRole('heading', { name: 'Sign in to search' })
     expect(screen.queryByRole('link', { name: 'tides field guide' })).toBeNull()
     expect(logout).toHaveBeenCalledOnce()
+  })
+
+  it('shows the Pulpo profile picture, credits, and billing in the account menu', async () => {
+    session.mockResolvedValue({ user: { ...user, avatarUrl: '/api/search/avatar?v=3' } })
+    render(<App callback={null} />)
+    const summary = await screen.findByLabelText('Pulpo account')
+    expect(summary.querySelector('img')?.getAttribute('src')).toBe('/api/search/avatar?v=3')
+    fireEvent.click(summary)
+    const menu = summary.closest('details')!
+    await within(menu).findByText('$12.34')
+    expect(within(menu).getByText('64% left')).toBeTruthy()
+    expect(within(menu).queryByText('Pool')).toBeNull()
+    expect(within(menu).getByRole('link', { name: 'Credits and billing' }).getAttribute('href')).toBe(pulpoOrigin + '/billing')
+  })
+
+  it('uses initials when the account has no profile picture', async () => {
+    session.mockResolvedValue({ user: { ...user, name: 'Casey Jones', avatarUrl: null } })
+    render(<App callback={null} />)
+    const summary = await screen.findByLabelText('Pulpo account')
+    expect(summary.textContent).toBe('CJ')
+  })
+
+  it('sends an out-of-credits search to Pulpo billing', async () => {
+    search.mockRejectedValueOnce(new SearchApiError('Insufficient balance for metered usage', 402, 'insufficient_balance'))
+    window.history.replaceState(null, '', '/search?q=tides')
+    render(<App callback={null} />)
+    await screen.findByRole('heading', { name: 'Search limit reached' })
+    const action = await screen.findByRole('link', { name: 'Add credits in Pulpo' })
+    expect(action.getAttribute('href')).toBe(pulpoOrigin + '/billing?topup=1')
+  })
+
+  it('opens the Search panel Pulpo links to and drops the hash', async () => {
+    window.history.replaceState(null, '', '/#bangs')
+    render(<App callback={null} />)
+    expect(await screen.findByRole('dialog', { name: 'Bangs' })).toBeTruthy()
+    expect(window.location.hash).toBe('')
   })
 })

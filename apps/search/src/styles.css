@@ -1,19 +1,20 @@
 :root {
+  /* Palette tokens mirror Pulpo's default theme; theme-palette.test.ts keeps them in step. */
   color-scheme: light;
-  --page: #fff;
-  --surface: #fff;
+  --page: #ffffff;
+  --surface: #ffffff;
   --subtle: #f4f4f5;
-  --hover: #ededf0;
+  --hover: #f4f4f5;
   --line: #e4e4e7;
-  --ink: #18181b;
-  --muted: #55555f;
-  --faint: #64646f;
+  --ink: #09090b;
+  --muted: #686872;
+  --faint: #686872;
   --accent: #18181b;
   --accent-ink: #fafafa;
-  --accent-outline: #71717a;
+  --accent-outline: #71717b;
   --link: #214d9b;
   --link-visited: #684888;
-  --error: #a72832;
+  --error: #cd000f;
   --accent-hover: color-mix(in oklab, var(--accent) 87%, var(--accent-ink));
   --deep-shadow: 0 12px 40px #18181b20;
   --margin: clamp(1rem, 3.5vw, 3rem);
@@ -21,51 +22,51 @@
   --shell-width: 84rem;
   --shell-gap: clamp(1.15rem, 2.75vw, 2.75rem);
   --shell-columns: 9rem minmax(0, var(--reading-width)) minmax(6rem, 1fr);
-  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
+  font-family: 'Inter Variable', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', ui-sans-serif, system-ui, sans-serif;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --page: #101012;
-  --surface: #171719;
+  --page: #0d0d0f;
+  --surface: #131316;
   --subtle: #212124;
-  --hover: #28282c;
-  --line: #2e2e35;
+  --hover: #262629;
+  --line: #232325;
   --ink: #fafafa;
-  --muted: #b9b9c1;
-  --faint: #a2a2ac;
-  --accent: #e9e9ec;
+  --muted: #9f9fa9;
+  --faint: #9f9fa9;
+  --accent: #e4e4e7;
   --accent-ink: #18181b;
-  --accent-outline: #8b8b95;
+  --accent-outline: #71717b;
   --link: #a4c4ff;
   --link-visited: #d5b3ea;
-  --error: #ffa1a6;
+  --error: #f84b4e;
   --deep-shadow: 0 12px 40px #0008;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --page: #101012;
-    --surface: #171719;
+    --page: #0d0d0f;
+    --surface: #131316;
     --subtle: #212124;
-    --hover: #28282c;
-    --line: #2e2e35;
+    --hover: #262629;
+    --line: #232325;
     --ink: #fafafa;
-    --muted: #b9b9c1;
-    --faint: #a2a2ac;
-    --accent: #e9e9ec;
+    --muted: #9f9fa9;
+    --faint: #9f9fa9;
+    --accent: #e4e4e7;
     --accent-ink: #18181b;
-    --accent-outline: #8b8b95;
+    --accent-outline: #71717b;
     --link: #a4c4ff;
     --link-visited: #d5b3ea;
-    --error: #ffa1a6;
+    --error: #f84b4e;
     --deep-shadow: 0 12px 40px #0008;
   }
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--page); color: var(--ink); line-height: 1.5; }
+body { margin: 0; background: var(--page); color: var(--ink); line-height: 1.5; -webkit-font-smoothing: antialiased; }
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .55; }
@@ -159,13 +160,44 @@ summary::-webkit-details-marker { display: none; }
   width: 2.35rem;
   height: 2.35rem;
   place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  background: var(--subtle);
-  font-size: .9rem;
-  font-weight: 650;
+  border-radius: .65rem;
 }
 .account-menu summary:hover { background: var(--hover); }
+/* Mirrors Pulpo's ProfileAvatar: a square picture, or initials on zinc. */
+.account-avatar {
+  display: grid;
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  place-items: center;
+  overflow: hidden;
+  background: #3f3f46;
+  color: #f4f4f5;
+  font-size: .6875rem;
+  font-weight: 600;
+  line-height: 1;
+}
+.account-avatar img { width: 100%; height: 100%; object-fit: contain; }
+:root[data-theme="dark"] .account-avatar { background: #d4d4d8; color: #18181b; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .account-avatar { background: #d4d4d8; color: #18181b; }
+}
+.account-identity { display: flex; align-items: center; gap: .65rem; padding: .35rem .55rem .5rem; }
+.account-identity > div { display: flex; min-width: 0; flex-direction: column; }
+.account-identity .account-avatar { width: 2rem; height: 2rem; font-size: .75rem; }
+.account-content .account-identity strong, .account-content .account-identity span { padding: 0; margin: 0; }
+.account-credits {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: .2rem 1rem;
+  margin: 0 .2rem .35rem;
+  padding: .55rem .6rem;
+  border-radius: .55rem;
+  background: var(--subtle);
+  font-size: .8125rem;
+}
+.account-content .account-credits span { padding: 0; margin: 0; color: var(--muted); font-size: inherit; }
+.account-content .account-credits .account-credits-value { color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; font-weight: 550; }
 .account-content, .result-menu-content {
   position: absolute;
   right: 0;
