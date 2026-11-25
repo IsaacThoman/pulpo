@@ -290,22 +290,38 @@ summary::-webkit-details-marker { display: none; }
 .result-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; min-width: 0; }
 .map-search { display: inline-flex; align-items: center; gap: .35rem; min-height: 2.3rem; color: var(--muted); font-size: .875rem; }
 .map-search:hover { color: var(--ink); }
-.scope-select { position: relative; display: inline-flex; align-items: center; max-width: 100%; }
-.scope-select select {
-  appearance: none;
-  min-height: 2.3rem;
+.scope-select {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
   max-width: 100%;
-  padding: .25rem 1.25rem .25rem .4rem;
-  border: 0;
-  border-radius: .4rem;
-  background: transparent;
+  min-height: 2.3rem;
+  padding: 0 .4rem;
+  border-radius: .45rem;
   color: var(--muted);
-  font: inherit;
   font-size: .875rem;
+  white-space: nowrap;
+}
+.scope-select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The native picker stays the real, focusable control; it covers the visible
+   label so the trigger is only as wide as the chosen scope. */
+.scope-select select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  appearance: none;
+  font-size: 1rem;
   cursor: pointer;
 }
-.scope-select select:hover, .scope-select:has(select:focus-visible) select { background: var(--hover); color: var(--ink); }
-.scope-select svg { position: absolute; right: .25rem; pointer-events: none; color: var(--muted); }
+.scope-select:hover, .scope-select:has(select:focus-visible) { background: var(--subtle); color: var(--ink); }
+.scope-select:has(select:focus-visible) { outline: 2px solid var(--accent-outline); outline-offset: 3px; }
+.scope-select svg { pointer-events: none; }
 .provider-menu { position: relative; }
 .provider-menu summary { list-style: none; }
 .provider-menu summary::-webkit-details-marker { display: none; }
@@ -848,29 +864,47 @@ summary::-webkit-details-marker { display: none; }
 .dialog-header h2 { font-size: 1.3rem; letter-spacing: -.035em; }
 .dialog-header .icon-button { margin-right: -.32rem; }
 .settings-dialog {
-  width: min(calc(100% - 1.5rem), 45rem);
-  height: min(34rem, calc(100dvh - 1.5rem));
-  max-height: calc(100dvh - 1.5rem);
+  --settings-sidebar: color-mix(in oklab, var(--subtle) 62%, var(--surface));
+  width: min(calc(100% - 2rem), 47rem);
+  height: min(35rem, calc(100dvh - 2rem));
+  max-height: calc(100dvh - 2rem);
   overflow: hidden;
 }
-.settings-dialog .dialog-content { height: 100%; display: flex; flex-direction: column; padding: 0; }
-.settings-dialog .dialog-header { flex: none; margin: 0; padding: .5rem 1.1rem .5rem 1rem; }
+.settings-dialog .dialog-content { position: relative; height: 100%; display: flex; flex-direction: column; padding: 0; }
+/* The title sits at the top of the section sidebar and the close button floats
+   over the content corner, so both columns use the dialog's full height. */
+.settings-dialog .dialog-header {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 1;
+  margin: 0;
+  padding: .6rem .6rem 0 1.25rem;
+  pointer-events: none;
+}
+.settings-dialog .dialog-header > * { pointer-events: auto; }
 .settings-dialog .dialog-header h2 { font-size: 1rem; letter-spacing: -.02em; }
+.settings-dialog .dialog-header .icon-button { margin: 0; }
 .settings-layout {
   display: grid;
   flex: 1;
   min-height: 0;
-  grid-template-columns: 10.75rem minmax(0, 1fr);
+  grid-template-columns: 12rem minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) auto;
 }
-.settings-navigation { grid-row: 1 / -1; padding: .55rem; background: color-mix(in oklab, var(--subtle) 62%, var(--surface)); }
+.settings-navigation {
+  display: grid;
+  align-content: start;
+  gap: .15rem;
+  padding: 3.4rem .65rem .65rem;
+  background: var(--settings-sidebar);
+}
 .settings-navigation button {
   display: flex;
   align-items: center;
   gap: .6rem;
   width: 100%;
   min-height: 2.5rem;
-  padding: .4rem .56rem;
+  padding: .4rem .6rem;
   border: 0;
   border-radius: .5rem;
   background: transparent;
@@ -881,8 +915,9 @@ summary::-webkit-details-marker { display: none; }
 }
 .settings-navigation button:is(:hover, [aria-current]) { color: var(--ink); background: var(--hover); }
 .settings-navigation button[aria-current] { font-weight: 650; }
-.settings-preferences { overflow-y: auto; overscroll-behavior: contain; padding: 1.15rem 1.4rem; }
-.settings-sync { padding: .6rem 1.4rem; border-top: 1px solid var(--line); }
+.settings-preferences { grid-column: 2; grid-row: 1 / -1; overflow-y: auto; overscroll-behavior: contain; padding: 1.05rem 1.75rem 1.5rem; }
+.hint.settings-sync { grid-column: 1; grid-row: 2; padding: .75rem 1.25rem 1rem; background: var(--settings-sidebar); font-size: .8125rem; line-height: 1.45; }
+.settings-sync .text-button { min-height: 1.75rem; font-size: inherit; }
 .settings { display: grid; gap: 1rem; }
 .hint, .form-error { color: var(--muted); font-size: .875rem; }
 .form-error { color: var(--error); }
@@ -982,6 +1017,19 @@ label.settings-row { cursor: pointer; }
   .home-main { padding-top: clamp(4.5rem, 16svh, 7rem); }
 }
 @media (max-width: 34rem) {
+  /* Phones: brand and account actions share a slim row so the query gets the
+     full width of the page. */
+  .results-page .app-header-inner {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "brand actions" "search search";
+    row-gap: .3rem;
+    min-height: 0;
+    padding-block: .35rem .6rem;
+  }
+  .results-page .wordmark { grid-area: brand; }
+  .results-page .wordmark span { display: inline; }
+  .results-page .app-header-inner > .search-box { grid-area: search; }
+  .results-page .app-actions { grid-area: actions; }
   .image-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .95rem .65rem; }
   .search-tools { position: relative; gap: 0 .65rem; margin-bottom: 1.1rem; }
   .filter-bar { position: relative; flex-wrap: wrap; min-height: 2.75rem; gap: 0 .35rem; }
@@ -990,10 +1038,14 @@ label.settings-row { cursor: pointer; }
   .filter-trigger > svg:last-child { display: none; }
   .filter-trigger[data-active="true"] > svg:first-child { display: none; }
   .clear-filters { width: 1.85rem; }
-  .result-controls { margin-inline-start: auto; }
+  .result-controls { margin-inline-start: auto; gap: .15rem; }
+  /* Web searches: type tabs own the first row; scope, filters and the Quick
+     Answer toggle share one compact action row beneath them. */
   .search-tools:has(.quick-answer:not([data-expanded])) .filter-bar { display: contents; }
-  .search-tools:has(.quick-answer:not([data-expanded])) .result-controls { grid-row: 2; grid-column: 1 / -1; margin-inline-start: 0; }
-  .quick-answer:not([data-expanded]) { grid-area: 1 / 2; justify-self: end; }
+  .search-tools:has(.quick-answer:not([data-expanded])) .categories { grid-column: 1 / -1; }
+  .search-tools:has(.quick-answer:not([data-expanded])) .result-controls { grid-row: 2; grid-column: 1; margin-inline-start: -.4rem; }
+  .search-tools:has(.quick-answer:not([data-expanded])) .filter-controls { margin-inline-start: 0; }
+  .quick-answer:not([data-expanded]) { grid-area: 2 / 2; justify-self: end; }
   .category-button[aria-pressed="true"]::after, .mobile-media-tabs .category-button[data-active="true"]::after { inset-inline: .15rem; }
   .knowledge-card[data-collapsed="true"] .knowledge-summary-brief { -webkit-line-clamp: 2; }
   .knowledge-card[data-collapsed="true"] dl { display: none; }
@@ -1009,18 +1061,18 @@ label.settings-row { cursor: pointer; }
   .weather-day-condition { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .hero-shortcuts, .app-footer .footer-keyboard { display: none; }
   .image-grid .result:nth-child(odd) .result-menu-content { left: 0; right: auto; }
+  .settings-dialog { width: calc(100% - 1rem); height: min(36rem, calc(100dvh - 1rem)); max-height: calc(100dvh - 1rem); }
+  .settings-dialog .dialog-header { position: static; padding: .4rem .45rem 0 1rem; background: var(--settings-sidebar); }
   .settings-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
-  .settings-navigation { grid-row: auto; display: flex; gap: .2rem; overflow-x: auto; padding: .4rem .55rem; }
-  .settings-navigation button { width: auto; flex: none; }
+  /* Every section stays visible: labels share the row and wrap rather than scroll. */
+  .settings-navigation { display: flex; flex-wrap: wrap; gap: .2rem; padding: .3rem .5rem .5rem; border-bottom: 1px solid var(--line); }
+  .settings-navigation button { flex: 1 1 auto; justify-content: center; width: auto; min-height: 2.35rem; padding-inline: .45rem; }
+  .settings-navigation button[aria-current] { font-weight: inherit; }
+  .settings-navigation svg { display: none; }
+  .settings-preferences, .hint.settings-sync { grid-column: 1; grid-row: auto; }
   .settings-preferences { padding: 1rem; }
-  .settings-sync { padding: .55rem 1rem; }
+  .hint.settings-sync { padding: .6rem 1rem; border-top: 1px solid var(--line); background: none; }
 }
 @media (max-width: 23rem) {
-  .settings-navigation svg { display: none; }
-  .search-tools:has(.quick-answer:not([data-expanded])) .categories { grid-column: 1 / -1; }
-  .search-tools:has(.quick-answer:not([data-expanded])) .result-controls { grid-column: 1; }
-  .quick-answer:not([data-expanded]) { grid-area: 2 / 2; }
   .filter-trigger { gap: .3rem; padding-inline: .45rem; }
-  .search-box { gap: .1rem; padding-inline: .2rem; }
-  .search-box .icon-button { flex-basis: 1.85rem; width: 1.85rem; }
 }

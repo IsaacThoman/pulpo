@@ -550,16 +550,18 @@ export function App({ callback }: { callback: Callback }) {
                   {mapSearch && <a className="map-search" href={mapSearch} target="_blank" rel="noreferrer">
                     <MapPin size={15} aria-hidden="true" /> Google Maps <ExternalLink size={12} aria-hidden="true" />
                   </a>}
-                  {view.category === 'web' && !showAnswer && !answerPending && user && config && <label className="scope-select">
-                    <span className="sr-only">Search focus</span>
-                    <select value={view.scope ?? ''} onChange={event => {
+                  {view.category === 'web' && !showAnswer && !answerPending && user && config && <span className="scope-select">
+                    <span className="scope-select-value" aria-hidden="true">
+                      {searchScopes.find(([id]) => id === (view.scope ?? ''))?.[1] ?? searchScopes[0][1]}
+                    </span>
+                    <select aria-label="Search focus" value={view.scope ?? ''} onChange={event => {
                       const scope = searchScopes.find(([id]) => id === event.target.value)?.[0] || undefined
                       go({ ...view, scope, page: undefined })
                     }}>
                       {searchScopes.map(([id, name]) => <option value={id} key={id}>{name}</option>)}
                     </select>
                     <ChevronDown size={13} aria-hidden="true" />
-                  </label>}
+                  </span>}
                   {!showAnswer && !answerPending && !reuse && <SearchFilters date={effectiveDate} dateRange={view.dateRange} region={view.region}
                     dates={filterDates} allowCustomDates={filterCustomDates} allowRegion={filterRegion}
                     regionOverride={view.regionOverride} safeSearch={view.safeSearch}
