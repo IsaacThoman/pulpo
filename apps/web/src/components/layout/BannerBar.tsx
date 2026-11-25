@@ -16,7 +16,7 @@ export function BannerBar({ signupPromo = true }: { signupPromo?: boolean }) {
   const [banners, setBanners] = useState<Banner[]>([])
   const instanceReady = useAuth((state) => state.instanceReady)
   const networkReady = !isDesktopRuntime() || instanceReady
-  const promo = useSignupPromoOffer()
+  const promo = useSignupPromoOffer(signupPromo)
   useEffect(() => {
     if (!networkReady) return
     void apiRequest<{ data: Banner[] }>('/api/banners').then((result) => {

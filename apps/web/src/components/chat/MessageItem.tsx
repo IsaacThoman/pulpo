@@ -8,7 +8,7 @@ import { speechPlayback } from '@/features/speech/state'
 import { ToolImagePreview } from './ToolImagePreview'
 import { collapseIntermediateReplies, collapsedWorkDurationMs, initialActivityTiming } from '@pulpo/client-core'
 import { memo, useEffect, useId, useMemo, useState } from 'react'
-import { SignupPromoChatAction } from '@/components/billing/SignupPromoClaim'
+import { SignupPromoChatAction } from '@/components/billing/SignupPromoChatAction'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import {
   Brain,

@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SignupPromoOffer } from '@/components/layout/signup-promo'
-import { SignupPromoChatAction, SignupPromoClaim } from './SignupPromoClaim'
+import { SignupPromoChatAction } from './SignupPromoChatAction'
 
 const apiRequest = vi.hoisted(() => vi.fn())
 const auth = vi.hoisted(() => ({ instanceReady: true, billingEnabled: true, user: { id: 'user-1' } }))
@@ -24,11 +24,6 @@ function serve(promo: SignupPromoOffer | null) {
   })
 }
 
-function renderClaim() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={client}><SignupPromoClaim /></QueryClientProvider>)
-}
-
 function renderChatAction() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={client}><SignupPromoChatAction fallback={<a href="/billing">View billing</a>} /></QueryClientProvider>)
@@ -36,44 +31,13 @@ function renderChatAction() {
 
 beforeEach(() => {
   auth.billingEnabled = true
-  // A dismissed banner must not hide these fallbacks.
+  // A dismissed banner must not hide the chat action.
   localStorage.setItem('pulpo.signupPromo.dismissed', JSON.stringify(['user-1']))
 })
 afterEach(() => {
   cleanup()
   apiRequest.mockReset()
   localStorage.clear()
-})
-
-describe('SignupPromoClaim', () => {
-  it('confirms a claim from the billing page', async () => {
-    serve(offer())
-    renderClaim()
-    expect(await screen.findByText('New here? Claim $1.00 in free credits.')).toBeTruthy()
-    expect(screen.queryByText('Banner-only copy')).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Claim $1.00' }))
-    expect(await screen.findByText('$1.00 in credits was added to your balance.')).toBeTruthy()
-  })
-
-  it('shows on the billing page with the reset time while the budget is used up', async () => {
-    serve(offer({ available: false }))
-    renderClaim()
-    expect(await screen.findByText('New here? Claim $1.00 in free credits.')).toBeTruthy()
-    expect(screen.getByText(/Check back after/)).toBeTruthy()
-    expect((screen.getByRole('button', { name: 'Claim $1.00' }) as HTMLButtonElement).disabled).toBe(true)
-  })
-
-  it('renders nothing without an offer or where billing is off', async () => {
-    serve(null)
-    const view = renderClaim()
-    await vi.waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/billing/signup-promo'))
-    expect(view.container.textContent).toBe('')
-    cleanup()
-    apiRequest.mockClear()
-    auth.billingEnabled = false
-    renderClaim()
-    expect(apiRequest).not.toHaveBeenCalled()
-  })
 })
 
 describe('SignupPromoChatAction', () => {

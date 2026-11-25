@@ -18,7 +18,6 @@ import {
   Zap,
 } from 'lucide-react'
 import { useAuth } from '@/stores/auth'
-import { SignupPromoClaim } from '@/components/billing/SignupPromoClaim'
 import { formatBalance, formatDate } from '@/lib/format'
 import { creditCentsFromInput } from '@/lib/billing-pricing'
 import { apiRequest } from '@/lib/api'
@@ -351,7 +350,6 @@ export function BillingPage() {
                     <p className="mt-0.5 text-xs text-muted-foreground">{ui("The combined account balances available to your Pool.")}{summary.poolBalancePendingMicros !== null && summary.poolBalancePendingMicros > 0 && <> {formatBalance(summary.poolBalancePendingMicros / 1_000_000)} {ui("reserved")}.</>}</p>
                   </div>
                 )}
-                <SignupPromoClaim className="mt-4" />
                 <AutoTopUpStatus className="mt-4" autoTopUp={summary?.autoTopUp} />
               </div>
               <div className="pt-1">

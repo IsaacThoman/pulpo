@@ -124,10 +124,11 @@ describe('signup promo banner', () => {
     expect(await screen.findByRole('button', { name: 'Claim $1.00' })).toBeTruthy()
   })
 
-  it('leaves the promo to pages that offer it inline', async () => {
+  it('skips the signup promo on Billing and still shows site banners', async () => {
     apiRequest.mockImplementation(async (path: string) => path === '/api/banners' ? { data: [banner('a')] } : { offer: offer() })
     renderBar({ signupPromo: false })
     expect(await screen.findByText('Banner a')).toBeTruthy()
+    expect(apiRequest).not.toHaveBeenCalledWith('/api/billing/signup-promo')
     expect(screen.queryByRole('button', { name: 'Claim $1.00' })).toBeNull()
   })
 

@@ -24,7 +24,7 @@ function signupPromoQueryKey(userId: string | undefined) {
 }
 
 /** The promo offer for the signed-in account; never fetched where billing is off. */
-export function useSignupPromoOffer() {
+export function useSignupPromoOffer(enabled = true) {
   const userId = useAuth((state) => state.user?.id)
   const billingEnabled = useAuth((state) => state.billingEnabled)
   const instanceReady = useAuth((state) => state.instanceReady)
@@ -32,7 +32,7 @@ export function useSignupPromoOffer() {
   return useQuery({
     queryKey: signupPromoQueryKey(userId),
     queryFn: () => apiRequest<{ offer: SignupPromoOffer | null }>('/api/billing/signup-promo'),
-    enabled: networkReady && billingEnabled && Boolean(userId),
+    enabled: enabled && networkReady && billingEnabled && Boolean(userId),
     staleTime: 60_000,
     select: (result) => result.offer,
   })

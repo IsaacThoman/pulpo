@@ -3120,7 +3120,6 @@ const esUi: Record<string, string> = {
   "{{count}} claims": "{{count}} reclamaciones",
   "Could not load the signup promo.": "No se pudo cargar la promoción de registro.",
   "{{amount}} in credits was added to your balance. Regenerate this response to continue.": "Se añadieron {{amount}} en créditos a tu saldo. Regenera esta respuesta para continuar.",
-  "New here? Claim {{amount}} in free credits.": "¿Eres nuevo? Reclama {{amount}} en créditos gratis.",
 }
 
 export default esUi
