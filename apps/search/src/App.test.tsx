@@ -839,6 +839,26 @@ describe('Pulpo Search', () => {
     Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 })
   })
 
+  it('starts a search over when it is opened again from Search', async () => {
+    getConfig.mockResolvedValue({ ...config, providers: [{ ...config.providers[0], maxPage: 10 }, config.providers[1]] })
+    search.mockImplementation(async ({ query, page }) => ({
+      provider: 'kagi', hasMore: !page,
+      results: Array.from({ length: 3 }, (_, index) => ({
+        url: `https://example.com/${query}/${page ?? 1}/${index}`, title: `${query} ${page ?? 1}.${index}`, snippet: '',
+      })),
+    }))
+    window.history.replaceState(null, '', '/search?q=tides')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'tides 1.0' })
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    await screen.findByRole('link', { name: 'tides 2.0' })
+    fireEvent.click(screen.getByRole('link', { name: 'Pulpo Search home' }))
+    submit('tides')
+    await screen.findByRole('link', { name: 'tides 1.0' })
+    expect(screen.queryByRole('link', { name: 'tides 2.0' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeDefined()
+  })
+
   it('returns to where the reader last left a search after repeated Back and Forward', async () => {
     const scrollTo = (top: number) => {
       Object.defineProperty(window, 'scrollY', { configurable: true, value: top })

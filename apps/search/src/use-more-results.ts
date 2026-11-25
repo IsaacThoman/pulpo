@@ -21,6 +21,8 @@ interface Stored {
 
 interface MoreState {
   key: string
+  /** Each time a search becomes active is a new visit; state from an earlier visit is never reused directly. */
+  visit: number
   batches: ResultBatch[]
   galleryLimit: number
   loading: boolean
@@ -50,9 +52,11 @@ function writeStored(entry: Omit<Stored, 'savedAt'>) {
   }
 }
 
+let visits = 0
+
 function initialState(key: string, restore: boolean): MoreState {
   const stored = key && restore ? readStored().find(entry => entry.key === key) : undefined
-  return { key, batches: stored?.batches ?? [], galleryLimit: stored?.galleryLimit ?? imageBatchSize, loading: false, scrollY: stored?.scrollY }
+  return { key, visit: ++visits, batches: stored?.batches ?? [], galleryLimit: stored?.galleryLimit ?? imageBatchSize, loading: false, scrollY: stored?.scrollY }
 }
 
 function fetchBatch(request: SearchRequest, target: NextBatch, expandedImages: boolean, signal: AbortSignal): Promise<SearchResponse> {
@@ -88,7 +92,7 @@ export function useMoreResults({ key, request, first, category, pagers, restore 
   const activation = useRef<{ state: MoreState; restored: boolean }>(undefined)
   if (activation.current?.state.key !== key) activation.current = { state: initialState(key, restore), restored: restore }
   const base = activation.current.state
-  const current = state.key === key ? state : undefined
+  const current = state.key === key && state.visit === base.visit ? state : undefined
   const active = current ?? base
   const pagerPages = pagers.map(pager => ({ id: pager.id, maxPage: pager.maxPage ?? 1 }))
   const firstBatch: ResultBatch | undefined = first && {
@@ -118,7 +122,7 @@ export function useMoreResults({ key, request, first, category, pagers, restore 
   function update(change: (state: MoreState) => Partial<MoreState>) {
     if (key !== latestKey.current) return
     setState(previous => {
-      const from = previous.key === key ? previous : base
+      const from = previous.key === key && previous.visit === base.visit ? previous : base
       return { ...from, ...change(from) }
     })
   }
