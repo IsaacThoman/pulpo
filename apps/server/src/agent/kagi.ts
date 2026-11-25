@@ -38,8 +38,8 @@ function preferEpisodeLinks(rows: Array<SearchResult | null>, query: string) {
   if (originalIndex > 0) {
     const original = episodes[originalIndex]!
     const rerunIndex = episodes.findIndex((row, index) => {
-      const rerun = /^(.*)\s+\((?:redux|replay|encore|rebroadcast)\)$/i.exec(row.title)?.[1]
-      return index < originalIndex && rerun !== undefined && words(rerun) === words(original.title)
+      const rerun = /^(.*) (?:redux|replay|encore|rebroadcast)$/.exec(words(row.title))?.[1]
+      return index < originalIndex && rerun === words(original.title)
     })
     if (rerunIndex >= 0) {
       episodes.splice(originalIndex, 1)

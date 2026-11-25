@@ -108,6 +108,7 @@ export interface ProviderConfig {
   customDateRanges?: Category[]
   region: boolean
   priceMicros: number
+  newsPriceMicros?: number
   maxPage?: number
   expandedImages?: true
 }

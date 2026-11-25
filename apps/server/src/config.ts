@@ -41,6 +41,7 @@ const configSchema = z.object({
   })),
   SEARCH_BRAVE_PLACES_API_KEY: optionalEnvironmentValue(z.string().trim().regex(/^[!-~]{1,512}$/)),
   SEARCH_FIRECRAWL_PLACES_PRICE_MICROS: optionalEnvironmentValue(z.coerce.number().int().positive()),
+  SEARCH_FIRECRAWL_NEWS_PRICE_MICROS: optionalEnvironmentValue(z.coerce.number().int().positive()),
   SEARCH_OPENVERSE_ENABLED: booleanString,
   // Setting a contact opts this deployment into MET Norway's weather service.
   SEARCH_WEATHER_MET_CONTACT: optionalEnvironmentValue(z.string().trim().max(250).pipe(z.union([

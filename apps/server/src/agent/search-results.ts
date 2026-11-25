@@ -18,6 +18,7 @@ export interface ProviderSearchInput {
   category?: SearchCategory
   region?: string
   safeSearch?: boolean
+  includePublisherMetadata?: true
 }
 
 export interface SearchResult {

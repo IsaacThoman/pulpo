@@ -58,6 +58,7 @@ export function Settings({ config, preferences, update, syncStatus, retrySync, r
   const available = config?.providers.map(provider => provider.id) ?? []
   const primaryLabel = config?.defaultOrder[0]
   const searchPrice = config?.providers.find(provider => provider.id === activePrimary)?.priceMicros ?? 0
+  const publisherNewsPrice = config?.providers.find(provider => provider.id === 'firecrawl')?.newsPriceMicros
   return (
     <div className="settings">
       <p className="hint" role="status">{syncStatus === 'browser' ? 'Search preferences are saved in this browser.'
@@ -91,6 +92,7 @@ export function Settings({ config, preferences, update, syncStatus, retrySync, r
             </div>
             <p className="hint">Provider changes apply to your next search. Pulpo can try your fallback when the default can’t complete it.</p>
             {searchPrice > 0 && <p className="hint">The default provider costs {formatSearchPrice(searchPrice)} per search from your shared Pulpo credits.</p>}
+            {publisherNewsPrice && <p className="hint">Firecrawl News includes publisher details when available and costs {formatSearchPrice(publisherNewsPrice)} per search.</p>}
           </>
         ) : <p className="hint">Provider options appear when you’re signed in and search is available.</p>}
         {config?.places && <>

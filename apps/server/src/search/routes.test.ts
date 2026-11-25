@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   enabled: true,
   placeKey: undefined as string | undefined,
   firecrawlPlacePrice: undefined as number | undefined,
+  firecrawlNewsPrice: undefined as number | undefined,
   quickCapability: vi.fn(),
   quickStart: vi.fn(),
   quickStream: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('../config.js', () => ({
     SEARCH_PUBLIC_URL: mocks.enabled ? 'https://search.example.com' : undefined,
     SEARCH_BRAVE_PLACES_API_KEY: mocks.placeKey,
     SEARCH_FIRECRAWL_PLACES_PRICE_MICROS: mocks.firecrawlPlacePrice,
+    SEARCH_FIRECRAWL_NEWS_PRICE_MICROS: mocks.firecrawlNewsPrice,
     SEARCH_OPENVERSE_ENABLED: mocks.openverse,
     ENCRYPTION_KEY: 'key',
   }),
@@ -63,6 +65,7 @@ beforeEach(async () => {
   mocks.enabled = true
   mocks.placeKey = undefined
   mocks.firecrawlPlacePrice = undefined
+  mocks.firecrawlNewsPrice = undefined
   mocks.quickCapability.mockReset().mockResolvedValue(undefined)
   mocks.quickStart.mockReset()
   mocks.quickStream.mockReset()
@@ -403,6 +406,29 @@ describe('Pulpo Search API', () => {
     expect(mocks.fetch).toHaveBeenCalledTimes(1)
     expect(JSON.parse(mocks.fetch.mock.calls[0]![1].body)).toMatchObject({ limit: 20, sources: ['news'], safe: false })
     expect(mocks.settle).toHaveBeenCalledTimes(1)
+  })
+
+  it('prices optional hosted News enrichment and uses only publisher publication metadata', async () => {
+    mocks.firecrawlNewsPrice = 15_000
+    const config = (await app.inject('/api/search/config')).json()
+    expect(config.providers.find((provider: { id: string }) => provider.id === 'firecrawl')).toMatchObject({ newsPriceMicros: 15_000 })
+    mocks.fetch.mockResolvedValueOnce(Response.json({ success: true, data: { news: [
+      { url: 'https://example.com/article', title: 'Article', date: '17 hours ago', metadata: {
+        'article:published_time': '2025-11-18T11:00:00-05:00', ogDescription: 'Publisher summary', ogImage: 'https://example.com/article.jpg',
+      } },
+      { url: 'https://example.com/other', title: 'Other article', date: '3 hours ago', metadata: {
+        publishedTime: '2025-02-30', dateModified: '2025-11-19T11:00:00Z',
+      } },
+    ] } }))
+    const result = await query({ query: 'news', category: 'news', limit: 40 })
+    expect(result.statusCode).toBe(200)
+    expect(result.json().results).toEqual([
+      { url: 'https://example.com/article', title: 'Article', snippet: 'Publisher summary', imageUrl: 'https://example.com/article.jpg', publishedAt: '2025-11-18T16:00:00.000Z' },
+      { url: 'https://example.com/other', title: 'Other article', snippet: '' },
+    ])
+    expect(JSON.parse(mocks.fetch.mock.calls[0]![1].body)).toMatchObject({ limit: 10, scrapeOptions: { onlyMainContent: true } })
+    expect(mocks.reserve).toHaveBeenCalledExactlyOnceWith({ userId: 'search-user', costMicros: 15_000 })
+    expect(mocks.settle).toHaveBeenCalledWith(expect.objectContaining({ costMicros: 15_000 }))
   })
 
   it('follows the requested order and returns empty successes without billing', async () => {

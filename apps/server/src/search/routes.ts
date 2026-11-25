@@ -67,6 +67,12 @@ function defaultNewsOrder(providers: WebToolProvider[]): WebToolProvider[] {
   return providers.includes('firecrawl') ? ['firecrawl', ...providers.filter(provider => provider !== 'firecrawl')] : providers
 }
 
+function firecrawlNewsPrice(settings: StoredWebToolsSettings) {
+  if (settings.firecrawl.baseUrl.replace(/\/+$/, '') === FIRECRAWL_DEFAULT_API_BASE && settings.encryptedFirecrawlApiKey) {
+    return getConfig().SEARCH_FIRECRAWL_NEWS_PRICE_MICROS
+  }
+}
+
 async function configuredPlaces(settings?: StoredWebToolsSettings) {
   const { SEARCH_FIRECRAWL_PLACES_PRICE_MICROS: priceMicros, SEARCH_BRAVE_PLACES_API_KEY: braveApiKey } = getConfig()
   if (priceMicros !== undefined) {
@@ -124,6 +130,7 @@ export function registerSearchRoutes(app: FastifyInstance) {
     const settings = await readSearchSettings()
     const defaultOrder = availableWebSearchProviders(settings)
     const places = await configuredPlaces(settings)
+    const newsPriceMicros = defaultOrder.includes('firecrawl') ? firecrawlNewsPrice(settings) : undefined
     const quickAnswer = await quickAnswerCapability(user.id)
     return {
       defaultOrder,
@@ -135,6 +142,7 @@ export function registerSearchRoutes(app: FastifyInstance) {
       ...(getConfig().SEARCH_OPENVERSE_ENABLED ? { reusableImages: true } : {}),
       providers: defaultOrder.map((id) => ({
         id, ...providerCapabilities[id], dates, customDateRanges, region: true, priceMicros: billedPrice(id, 'search', settings),
+        ...(id === 'firecrawl' && newsPriceMicros ? { newsPriceMicros } : {}),
       })),
     }
   })
@@ -273,6 +281,7 @@ export function registerSearchRoutes(app: FastifyInstance) {
     }
     const settings = await readSearchSettings()
     const available = availableWebSearchProviders(settings)
+    const newsPriceMicros = input.category === 'news' ? firecrawlNewsPrice(settings) : undefined
     const selected = input.providers?.filter((provider) => available.includes(provider))
       ?? (input.category === 'news' ? defaultNewsOrder(available) : available)
     if (!selected.length) throw new AppError(503, 'search_provider_unavailable', 'No selected search provider is available', 'server_error')
@@ -301,7 +310,8 @@ export function registerSearchRoutes(app: FastifyInstance) {
     try {
       for (const provider of providers) {
         controller.signal.throwIfAborted()
-        const costMicros = billedPrice(provider, 'search', settings)
+        const publisherPrice = provider === 'firecrawl' ? newsPriceMicros : undefined
+        const costMicros = publisherPrice ?? billedPrice(provider, 'search', settings)
         let reservationId: string | undefined
         if (costMicros > 0) {
           try {
@@ -317,11 +327,10 @@ export function registerSearchRoutes(app: FastifyInstance) {
         try {
           let result: SearchResults
           try {
-            const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(8000)])
+            const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(publisherPrice ? 12_000 : 8000)])
             signal.throwIfAborted()
-            const requestInput = provider === 'kagi' && input.expandedImages
-              ? { ...providerInput, limit: KAGI_IMAGE_RESULT_LIMIT }
-              : providerInput
+            const requestInput: ProviderSearchInput = publisherPrice ? { ...providerInput, includePublisherMetadata: true }
+              : provider === 'kagi' && input.expandedImages ? { ...providerInput, limit: KAGI_IMAGE_RESULT_LIMIT } : providerInput
             result = filterSearchHosts(await clients[provider]!.searchResults(requestInput, signal), filters)
             signal.throwIfAborted()
           } catch {

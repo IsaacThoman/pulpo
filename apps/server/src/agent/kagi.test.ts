@@ -220,8 +220,8 @@ describe('Kagi client', () => {
     expect(podcasts.podcastShows).toEqual([{ url: 'https://pod.example.com/show', title: 'The show', snippet: '' }])
   })
 
-  it('ranks the named original episode ahead of its rerun unless the query names the rerun', async () => {
-    const rerun = { title: 'The Pool and the Stream (Redux)', url: 'https://example.com/redux' }
+  it.each(['The Pool and the Stream (Redux)', 'The Pool and the Stream Redux'])('ranks the named original ahead of %s unless the query names the rerun', async (title) => {
+    const rerun = { title, url: 'https://example.com/redux' }
     const original = { title: 'The Pool and the Stream', url: 'https://example.com/original' }
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(Response.json({ data: { podcast: [rerun, original] } }))))
     const client = new KagiClient('secret')

@@ -1,3 +1,4 @@
+import { searchDateRange } from '@pulpo/contracts/search'
 import { publicHttpsUrl, webFetchOutput, type KagiSearchInput, type KagiResult, type WebPage } from './kagi.js'
 import { normalizeResult, uniqueResults, type BasicSearchCategory, type ProviderSearchInput, type SearchResults } from './search-results.js'
 
@@ -14,6 +15,14 @@ type FirecrawlSearchResult = {
   imageWidth?: number
   imageHeight?: number
   date?: string
+  metadata?: {
+    publishedTime?: unknown
+    'article:published_time'?: unknown
+    datePublished?: unknown
+    description?: string
+    ogDescription?: string
+    ogImage?: string
+  }
 }
 
 type FirecrawlSearchResponse = {
@@ -71,6 +80,17 @@ function providerDate(date: string) {
   return `${month}/${day}/${year}`
 }
 
+function publisherDate(metadata: FirecrawlSearchResult['metadata']) {
+  for (const value of [metadata?.['article:published_time'], metadata?.datePublished, metadata?.publishedTime]) {
+    if (typeof value !== 'string') continue
+    const date = value.slice(0, 10)
+    const calendarDate = value === date
+    if (!searchDateRange(date, date) || (!calendarDate && !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)$/.test(value))) continue
+    const timestamp = Date.parse(value)
+    if (Number.isFinite(timestamp) && timestamp <= Date.now() + 86_400_000) return calendarDate ? date : new Date(timestamp).toISOString()
+  }
+}
+
 export function firecrawlCloudRequiresApiKey(baseUrl: string): boolean {
   return new URL(baseUrl).hostname.toLowerCase() === 'api.firecrawl.dev'
 }
@@ -123,7 +143,8 @@ export class FirecrawlClient {
     if (category === 'videos' || category === 'podcasts' || (input.page ?? 1) !== 1) {
       throw new FirecrawlError('Firecrawl does not support this search type or page')
     }
-    const limit = Math.min(20, Math.max(1, Math.floor(input.limit ?? 10)))
+    const includePublisherMetadata = category === 'news' && input.includePublisherMetadata
+    const limit = Math.min(includePublisherMetadata ? 10 : 20, Math.max(1, Math.floor(input.limit ?? 10)))
     const payload = await this.querySearch({ ...input, category }, limit, signal)
     if (!payload.data || typeof payload.data !== 'object' || Array.isArray(payload.data)) {
       throw new FirecrawlError('Firecrawl search response did not contain a result set')
@@ -134,12 +155,12 @@ export class FirecrawlClient {
       results: uniqueResults(rows.map((row) => normalizeResult({
         url: row?.url,
         title: row?.title,
-        snippet: searchPreview(row),
-        imageUrl: row?.imageUrl,
+        snippet: searchPreview(row) || row?.metadata?.ogDescription || row?.metadata?.description,
+        imageUrl: row?.imageUrl || row?.metadata?.ogImage,
         imageWidth: category === 'images' ? row?.imageWidth : undefined,
         imageHeight: category === 'images' ? row?.imageHeight : undefined,
         // Search dates can reflect indexing or updates rather than publication.
-        publishedAt: category === 'news' ? undefined : row?.date,
+        publishedAt: category === 'news' ? (includePublisherMetadata ? publisherDate(row?.metadata) : undefined) : row?.date,
       }, category === 'images' ? undefined : input.query)), limit, category),
     }
   }
@@ -162,6 +183,9 @@ export class FirecrawlClient {
       ...(!includeDomains && excludeDomains ? { excludeDomains } : {}),
       ...(tbs ? { tbs } : {}),
       ...(input.region ? { country: input.region } : {}),
+      ...(input.category === 'news' && input.includePublisherMetadata ? {
+        scrapeOptions: { formats: ['markdown'], onlyMainContent: true },
+      } : {}),
     }, signal)
   }
 
