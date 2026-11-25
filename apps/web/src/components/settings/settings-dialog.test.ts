@@ -13,6 +13,7 @@ describe('settings dialog sections', () => {
       'appearance',
       'interface',
       'agent',
+      'search',
       'billing',
       'api',
       'data',

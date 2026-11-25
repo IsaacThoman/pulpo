@@ -165,7 +165,7 @@ describe('Pulpo Agent Quick Answer', () => {
     app.get('/events', (_, reply) => streamQuickAnswer(reply, userId, responseId))
     try {
       const result = await app.inject('/events')
-      expect(result.body).toBe(`: connected\n\ndata: ${JSON.stringify({ type: 'error', message, billing })}\n\n`)
+      expect(result.body).toBe(`: connected\n\ndata: ${JSON.stringify({ type: 'error', message, billing, code: billing ? code : undefined })}\n\n`)
     } finally { await app.close() }
   })
 })

@@ -34,7 +34,6 @@ export interface SearchLocation {
   scope?: SearchScope
   web?: true
   provider?: Provider
-  page?: number
   reusableImages?: ReusableImageFilters
 }
 
@@ -56,7 +55,6 @@ export function parseSearchLocation(url: URL): SearchLocation {
   const safeSearch = url.searchParams.get('safe')
   const scope = searchScopes.find(([value]) => value === url.searchParams.get('scope'))?.[0] || undefined
   const provider = url.searchParams.get('provider')
-  const page = Number(url.searchParams.get('page'))
   const reusable = category === 'images' && url.searchParams.get('reuse') === '1'
   const license = reusableImageLicenses.find(value => value === url.searchParams.get('license'))
   const imageCategory = reusableImageCategories.find(value => value === url.searchParams.get('kind'))
@@ -70,7 +68,6 @@ export function parseSearchLocation(url: URL): SearchLocation {
     ...(category === 'web' && scope ? { scope } : {}),
     ...(url.searchParams.get('web') === '1' ? { web: true as const } : {}),
     ...(provider === 'kagi' || provider === 'firecrawl' ? { provider } : {}),
-    ...(Number.isInteger(page) && page >= 2 && page <= 10 ? { page } : {}),
     ...(reusable ? { reusableImages: { ...(license ? { license } : {}), ...(imageCategory ? { category: imageCategory } : {}) } } : {}),
   }
 }
@@ -90,7 +87,6 @@ export function searchPath(input: SearchLocation) {
   if (input.scope && input.category === 'web') params.set('scope', input.scope)
   if (input.web) params.set('web', '1')
   if (input.provider) params.set('provider', input.provider)
-  if (input.page && input.page > 1) params.set('page', String(input.page))
   if (input.category === 'images' && input.reusableImages) {
     params.set('reuse', '1')
     if (input.reusableImages.license) params.set('license', input.reusableImages.license)

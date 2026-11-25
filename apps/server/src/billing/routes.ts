@@ -251,7 +251,7 @@ export function usageLimitsPlans(settings: Pick<ReturnType<typeof parseBillingSe
   }
 }
 
-async function loadCustomLimitSummaries(userId: string, plan: BillingEntitlements['plan']) {
+export async function loadCustomLimitSummaries(userId: string, plan: BillingEntitlements['plan']) {
   return db.transaction(async (tx) => {
     const usage = await loadCustomAllowances(tx, { userId, plan })
     const modelNames = await customLimitModelNames(tx, usage)

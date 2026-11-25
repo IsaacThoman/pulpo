@@ -3,6 +3,7 @@ import { defaultSearchAccountPreferences } from '@pulpo/contracts/search'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
+import { pulpoOrigin } from './auth'
 import { api, SearchApiError, type SearchConfig, type SearchUser } from './api'
 
 const user: SearchUser = { id: 'test-user', name: 'Casey', email: 'casey@example.com' }
@@ -32,6 +33,7 @@ describe('Pulpo Search', () => {
   const streamQuickAnswer = vi.spyOn(api, 'streamQuickAnswer')
   const cancelQuickAnswer = vi.spyOn(api, 'cancelQuickAnswer')
   const reusableImages = vi.spyOn(api, 'reusableImages')
+  const account = vi.spyOn(api, 'account')
 
   beforeEach(() => {
     session.mockResolvedValue({ user })
@@ -60,6 +62,10 @@ describe('Pulpo Search', () => {
     streamQuickAnswer.mockImplementation(async (_id, onText) => { onText('An answer.') })
     cancelQuickAnswer.mockResolvedValue()
     reusableImages.mockResolvedValue({ provider: 'openverse', results: [] })
+    account.mockResolvedValue({ billing: true, balanceMicros: 12_340_000, poolBalanceMicros: null, limits: [
+      { id: 'weekly', label: 'Weekly usage', remainingPercentage: 64, availableBarPercentage: 64, pendingBarPercentage: 2 },
+      { id: 'five_hour', label: '5-hour usage', remainingPercentage: 90, availableBarPercentage: 90, pendingBarPercentage: 0 },
+    ] })
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
     const preferences = new Map<string, string>()
     vi.stubGlobal('localStorage', {
@@ -72,6 +78,7 @@ describe('Pulpo Search', () => {
       HTMLDialogElement.prototype.close = function () { this.open = false }
     }
     window.history.replaceState(null, '', '/')
+    window.sessionStorage.clear()
   })
 
   afterEach(() => {
@@ -158,6 +165,60 @@ describe('Pulpo Search', () => {
       query: 'kelp', category: 'images', providers: ['firecrawl'],
     }), expect.any(AbortSignal)))
     expect(window.location.search).toContain('type=images')
+  })
+
+  it('uses a separate engine for a search type that more than one engine supports', async () => {
+    getConfig.mockResolvedValue({ ...config, providers: [
+      { ...config.providers[0], categories: ['web', 'news', 'images', 'videos'] },
+      { ...config.providers[1], categories: ['web', 'news', 'images'] },
+    ] })
+    window.history.replaceState(null, '', '/search?q=tides')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'tides field guide' })
+    fireEvent.click(screen.getByRole('button', { name: 'Search settings' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).queryByRole('group', { name: 'Videos' })).toBeNull()
+    const images = within(dialog).getByRole('group', { name: 'Images' })
+    expect(within(images).queryByLabelText('Fallback')).toBeNull()
+    const imageEngine = within(images).getByLabelText<HTMLSelectElement>('Default')
+    expect(imageEngine.selectedOptions[0]?.textContent).toBe('Same as Web · Kagi')
+    fireEvent.change(imageEngine, { target: { value: 'firecrawl' } })
+    fireEvent.change(within(images).getByLabelText('Fallback'), { target: { value: 'none' } })
+    await waitFor(() => expect(writePreferences).toHaveBeenLastCalledWith(user.id, {
+      categoryProviders: { images: { defaultProvider: 'firecrawl', fallbackProvider: 'none' } },
+    }, undefined, expect.any(AbortSignal)))
+    expect((within(within(dialog).getByRole('group', { name: 'Web' })).getByLabelText('Default') as HTMLSelectElement).value).toBe('')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Close' }))
+
+    submit('kelp')
+    await screen.findByRole('link', { name: 'kelp field guide' })
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ category: 'web', providers: ['kagi', 'firecrawl'] }), expect.any(AbortSignal))
+    fireEvent.click(screen.getByRole('button', { name: 'Images' }))
+    await waitFor(() => expect(search).toHaveBeenLastCalledWith(expect.objectContaining({
+      query: 'kelp', category: 'images', providers: ['firecrawl'],
+    }), expect.any(AbortSignal)))
+    fireEvent.click(screen.getByRole('button', { name: 'News' }))
+    await waitFor(() => expect(search).toHaveBeenLastCalledWith(expect.objectContaining({
+      category: 'news', providers: ['kagi', 'firecrawl'],
+    }), expect.any(AbortSignal)))
+  })
+
+  it('does not carry a one-off engine into a search type with its own engine', async () => {
+    getConfig.mockResolvedValue({ ...config, providers: [
+      { ...config.providers[0], categories: ['web', 'images'] },
+      { ...config.providers[1], categories: ['web', 'images'] },
+    ] })
+    readPreferences.mockResolvedValue({ preferences: { ...defaultSearchAccountPreferences,
+      categoryProviders: { images: { defaultProvider: 'kagi', fallbackProvider: 'none' } } } })
+    window.history.replaceState(null, '', '/search?q=tides&provider=firecrawl')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'tides field guide' })
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ providers: ['firecrawl'] }), expect.any(AbortSignal))
+    fireEvent.click(screen.getByRole('button', { name: 'Images' }))
+    await waitFor(() => expect(search).toHaveBeenLastCalledWith(expect.objectContaining({
+      category: 'images', providers: ['kagi'],
+    }), expect.any(AbortSignal)))
+    expect(window.location.search).not.toContain('provider=')
   })
 
   it('applies site preferences to results without another provider request', async () => {
@@ -278,7 +339,7 @@ describe('Pulpo Search', () => {
     expect(cancelQuickAnswer).toHaveBeenCalledTimes(1)
   })
 
-  it('consumes the question shortcut once across results pagination', async () => {
+  it('consumes the question shortcut once while more results load', async () => {
     getConfig.mockResolvedValue({ ...config, quickAnswer: { modelName: 'Pulpo Test Model' },
       providers: [{ ...config.providers[0], maxPage: 10 }, config.providers[1]],
     })
@@ -289,11 +350,11 @@ describe('Pulpo Search', () => {
     await screen.findByLabelText('Pulpo account')
     submit('Why do tides change?')
     await screen.findByText('Quick answer ready.')
-    fireEvent.click(await screen.findByRole('button', { name: 'Next' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }))
     await screen.findByRole('link', { name: 'Page 2' })
-    fireEvent.click(screen.getByRole('button', { name: 'Previous' }))
-    await screen.findByRole('link', { name: 'Page 1' })
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Quick answer' }).getAttribute('aria-expanded')).toBe('false'))
+    expect(screen.getByRole('link', { name: 'Page 1' })).toBeDefined()
+    expect(screen.getByText('Quick answer ready.')).toBeDefined()
+    expect(window.location.search).not.toContain('page=')
     expect(quickAnswer).toHaveBeenCalledTimes(1)
   })
 
@@ -656,39 +717,184 @@ describe('Pulpo Search', () => {
     await screen.findByRole('link', { name: 'Web page 1' })
     expect(search).toHaveBeenCalledTimes(1)
     expect(within(local).getAllByRole('listitem')).toHaveLength(8)
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
     await screen.findByRole('link', { name: 'Web page 2' })
     expect(within(local).getAllByRole('listitem')).toHaveLength(8)
     fireEvent.click(within(local).getByRole('button', { name: 'Hide web results' }))
     expect(screen.queryByRole('link', { name: 'Web page 2' })).toBeNull()
     fireEvent.click(within(local).getByRole('button', { name: 'Show web results' }))
     await screen.findByRole('link', { name: 'Web page 1' })
+    expect(screen.getByRole('link', { name: 'Web page 2' })).toBeDefined()
     expect(places).toHaveBeenCalledTimes(1)
     expect(search).toHaveBeenCalledTimes(2)
   })
 
-  it('paginates only through a capable provider and restores a cached first page', async () => {
+  it('appends the same engine\'s next page below the results shown so far', async () => {
     getConfig.mockResolvedValue({
       ...config, providers: config.providers.map(provider => ({ ...provider, maxPage: provider.id === 'kagi' ? 10 : 1 })),
     })
     search.mockImplementation(async ({ page }) => ({
       provider: 'kagi', hasMore: !page,
-      results: [{ url: 'https://example.com/page-' + (page ?? 1), title: 'Result page ' + (page ?? 1), snippet: '' }],
+      results: Array.from({ length: 3 }, (_, index) => ({
+        url: `https://example.com/page-${page ?? 1}-${index}`, title: `Result ${page ?? 1}.${index}`, snippet: '',
+      })),
     }))
     window.history.replaceState(null, '', '/search?q=tides')
     render(<App callback={null} />)
-    const first = await screen.findByRole('link', { name: 'Result page 1' })
-    expect(first).toBeDefined()
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
-    await screen.findByRole('link', { name: 'Result page 2' })
+    await screen.findByRole('link', { name: 'Result 1.0' })
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    await screen.findByRole('link', { name: 'Result 2.0' })
     expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ providers: ['kagi'], page: 2 }), expect.any(AbortSignal))
-    expect(window.location.search).toContain('page=2')
-    fireEvent.click(screen.getByRole('button', { name: 'Previous' }))
-    await screen.findByRole('link', { name: 'Result page 1' })
+    expect([...document.querySelectorAll('.results-list .result-link')].map(link => link.textContent))
+      .toEqual(['Result 1.0', 'Result 1.1', 'Result 1.2', 'Result 2.0', 'Result 2.1', 'Result 2.2'])
+    expect(document.activeElement).toBe(screen.getByRole('link', { name: 'Result 2.0' }))
+    expect(window.location.search).not.toContain('page=')
+    expect(screen.queryByRole('button', { name: 'Load more' })).toBeNull()
+    expect(screen.getByText('No more results.')).toBeDefined()
     expect(search).toHaveBeenCalledTimes(2)
   })
 
-  it('keeps image refinements and skips previously shown images on a later page', async () => {
+  it('continues a single-page engine with Kagi and adds only results it has not shown', async () => {
+    getConfig.mockResolvedValue({
+      ...config, defaultOrder: ['firecrawl', 'kagi'],
+      providers: config.providers.map(provider => ({ ...provider, maxPage: provider.id === 'kagi' ? 10 : 1 })),
+    })
+    search.mockImplementation(async ({ providers, page }) => providers?.[0] === 'kagi' ? {
+      provider: 'kagi', hasMore: !page,
+      results: page ? [
+        { url: 'https://example.org/kagi-2', title: 'Kagi second page', snippet: '' },
+      ] : [
+        { url: 'http://www.example.com/shared/?utm_source=kagi', title: 'Shared result from Kagi', snippet: '' },
+        ...['one', 'two', 'three'].map(name => ({ url: 'https://example.org/kagi-' + name, title: 'Kagi ' + name, snippet: '' })),
+      ],
+    } : {
+      provider: 'firecrawl',
+      results: [{ url: 'https://example.com/shared', title: 'Shared result', snippet: '' }],
+    })
+    window.history.replaceState(null, '', '/search?q=tides')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'Shared result' })
+    expect(screen.getByText('Kagi continues these results for $0.002 per search.')).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Load more from Kagi' }))
+    await screen.findByRole('link', { name: 'Kagi three' })
+    expect(search).toHaveBeenLastCalledWith(expect.not.objectContaining({ page: expect.anything() }), expect.any(AbortSignal))
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ providers: ['kagi'] }), expect.any(AbortSignal))
+    expect(screen.queryByRole('link', { name: 'Shared result from Kagi' })).toBeNull()
+    expect(search).toHaveBeenCalledTimes(2)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    await screen.findByRole('link', { name: 'Kagi second page' })
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ providers: ['kagi'], page: 2 }), expect.any(AbortSignal))
+    expect(search).toHaveBeenCalledTimes(3)
+  })
+
+  it('fetches once more when a batch only repeats results, and keeps results when loading more fails', async () => {
+    getConfig.mockResolvedValue({ ...config, providers: [{ ...config.providers[0], maxPage: 10 }, config.providers[1]] })
+    search.mockImplementation(async ({ page }) => {
+      if (page === 3) throw new SearchApiError('You have reached your search limit.', 402)
+      return {
+        provider: 'kagi', hasMore: true,
+        results: page === 2 ? [{ url: 'https://example.com/second', title: 'Second page', snippet: '' }]
+          : [{ url: 'https://example.com/first', title: 'First page', snippet: '' }],
+      }
+    })
+    window.history.replaceState(null, '', '/search?q=tides')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'First page' })
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    await screen.findByRole('alert')
+    expect(search).toHaveBeenCalledTimes(3)
+    expect(screen.getByRole('link', { name: 'First page' })).toBeDefined()
+    expect(screen.getByRole('link', { name: 'Second page' })).toBeDefined()
+    expect(screen.getByText('Search limit reached. Add credits in Pulpo to load more.')).toBeDefined()
+    expect(within(screen.getByRole('alert')).getByRole('link', { name: 'Open Pulpo' })).toBeDefined()
+  })
+
+  it('restores loaded results and the scroll position after the page reloads', async () => {
+    getConfig.mockResolvedValue({ ...config, providers: [{ ...config.providers[0], maxPage: 10 }, config.providers[1]] })
+    search.mockImplementation(async ({ page }) => ({
+      provider: 'kagi', hasMore: !page,
+      results: Array.from({ length: 3 }, (_, index) => ({
+        url: `https://example.com/${page ?? 1}/${index}`, title: `Result ${page ?? 1}.${index}`, snippet: '',
+      })),
+    }))
+    window.history.replaceState(null, '', '/search?q=tides')
+    const first = render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'Result 1.0' })
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    await screen.findByRole('link', { name: 'Result 2.2' })
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 640 })
+    window.dispatchEvent(new Event('pagehide'))
+    first.unmount()
+    vi.mocked(window.scrollTo).mockClear()
+
+    const navigation = vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type: 'reload' } as PerformanceNavigationTiming])
+    const reloaded = render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'Result 2.2' })
+    expect(search).toHaveBeenCalledTimes(3)
+    await waitFor(() => expect(window.scrollTo).toHaveBeenCalledWith({ top: 640, behavior: 'instant' }))
+    reloaded.unmount()
+
+    // Opening the same search fresh starts over at the top.
+    navigation.mockReturnValue([{ type: 'navigate' } as PerformanceNavigationTiming])
+    vi.mocked(window.scrollTo).mockClear()
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'Result 1.2' })
+    expect(screen.queryByRole('link', { name: 'Result 2.0' })).toBeNull()
+    expect(window.scrollTo).not.toHaveBeenCalledWith({ top: 640, behavior: 'instant' })
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 })
+  })
+
+  it('starts a search over when it is opened again from Search', async () => {
+    getConfig.mockResolvedValue({ ...config, providers: [{ ...config.providers[0], maxPage: 10 }, config.providers[1]] })
+    search.mockImplementation(async ({ query, page }) => ({
+      provider: 'kagi', hasMore: !page,
+      results: Array.from({ length: 3 }, (_, index) => ({
+        url: `https://example.com/${query}/${page ?? 1}/${index}`, title: `${query} ${page ?? 1}.${index}`, snippet: '',
+      })),
+    }))
+    window.history.replaceState(null, '', '/search?q=tides')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'tides 1.0' })
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    await screen.findByRole('link', { name: 'tides 2.0' })
+    fireEvent.click(screen.getByRole('link', { name: 'Pulpo Search home' }))
+    submit('tides')
+    await screen.findByRole('link', { name: 'tides 1.0' })
+    expect(screen.queryByRole('link', { name: 'tides 2.0' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeDefined()
+  })
+
+  it('returns to where the reader last left a search after repeated Back and Forward', async () => {
+    const scrollTo = (top: number) => {
+      Object.defineProperty(window, 'scrollY', { configurable: true, value: top })
+      window.dispatchEvent(new Event('scroll'))
+    }
+    const traverse = async (path: string, link: string) => {
+      window.history.replaceState(null, '', path)
+      act(() => { window.dispatchEvent(new PopStateEvent('popstate')) })
+      await screen.findByRole('link', { name: link })
+    }
+    window.history.replaceState(null, '', '/search?q=tides')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'tides field guide' })
+    scrollTo(500)
+    submit('kelp')
+    await screen.findByRole('link', { name: 'kelp field guide' })
+
+    vi.mocked(window.scrollTo).mockClear()
+    await traverse('/search?q=tides', 'tides field guide')
+    await waitFor(() => expect(window.scrollTo).toHaveBeenCalledWith({ top: 500, behavior: 'instant' }))
+    scrollTo(900)
+    await traverse('/search?q=kelp', 'kelp field guide')
+    vi.mocked(window.scrollTo).mockClear()
+    await traverse('/search?q=tides', 'tides field guide')
+    await waitFor(() => expect(window.scrollTo).toHaveBeenCalledWith({ top: 900, behavior: 'instant' }))
+    expect(window.scrollTo).not.toHaveBeenCalledWith({ top: 500, behavior: 'instant' })
+    scrollTo(0)
+  })
+
+  it('keeps image refinements and skips images that are already shown', async () => {
     getConfig.mockResolvedValue({
       ...config, providers: [
         { ...config.providers[0], categories: ['web', 'news', 'images'], maxPage: 10 },
@@ -709,33 +915,35 @@ describe('Pulpo Search', () => {
     await screen.findByRole('button', { name: 'Preview image: Repeated' })
     fireEvent.click(screen.getByText('Refine images'))
     fireEvent.change(screen.getByLabelText('Size'), { target: { value: 'large' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
     await screen.findByRole('button', { name: 'Preview image: New large image' })
-    expect(screen.queryByRole('button', { name: 'Preview image: Repeated' })).toBeNull()
+    expect(screen.getAllByRole('button', { name: 'Preview image: Repeated' })).toHaveLength(1)
     expect(screen.queryByRole('button', { name: 'Preview image: New small image' })).toBeNull()
     fireEvent.click(screen.getByText('Image filters applied'))
     expect((screen.getByLabelText('Size') as HTMLSelectElement).value).toBe('large')
     expect(search).toHaveBeenCalledTimes(2)
   })
 
-  it('reveals already downloaded images before allowing a new metered page', async () => {
+  it('reveals already downloaded images before running another metered search', async () => {
     getConfig.mockResolvedValue({ ...config, providers: [
       { ...config.providers[0], categories: ['images'], expandedImages: true, maxPage: 10 },
     ] })
-    search.mockResolvedValue({
-      provider: 'kagi', hasMore: true,
+    search.mockImplementation(async ({ page }) => ({
+      provider: 'kagi', hasMore: !page,
       results: Array.from({ length: 26 }, (_, i) => ({
-        title: 'Photo ' + i, url: 'https://example.com/' + i, imageUrl: 'https://img.example.com/' + i, snippet: '',
+        title: `Photo ${page ?? 1}.${i}`, url: `https://example.com/${page ?? 1}/${i}`, imageUrl: `https://img.example.com/${page ?? 1}/${i}`, snippet: '',
       })),
-    })
+    }))
     window.history.replaceState(null, '', '/search?q=tides&type=images')
     render(<App callback={null} />)
-    const next = await screen.findByRole<HTMLButtonElement>('button', { name: 'Next' })
-    expect(next.disabled).toBe(true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more' }))
+    expect(screen.getByRole('button', { name: 'Preview image: Photo 1.25' })).toBeDefined()
     expect(search).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ expandedImages: true }), expect.any(AbortSignal))
-    fireEvent.click(screen.getByRole('button', { name: 'Show 2 more images on this page' }))
-    expect(next.disabled).toBe(false)
-    expect(search).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    await screen.findByRole('button', { name: 'Preview image: Photo 2.0' })
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ expandedImages: true, page: 2, providers: ['kagi'] }), expect.any(AbortSignal))
+    expect(screen.getByRole('button', { name: 'Preview image: Photo 2.25' })).toBeDefined()
+    expect(search).toHaveBeenCalledTimes(2)
   })
 
   it('offers a supported spelling change without automatically running it', async () => {
@@ -887,5 +1095,42 @@ describe('Pulpo Search', () => {
     await screen.findByRole('heading', { name: 'Sign in to search' })
     expect(screen.queryByRole('link', { name: 'tides field guide' })).toBeNull()
     expect(logout).toHaveBeenCalledOnce()
+  })
+
+  it('shows the Pulpo profile picture, credits, and billing in the account menu', async () => {
+    session.mockResolvedValue({ user: { ...user, avatarUrl: '/api/search/avatar/test-user?v=3' } })
+    render(<App callback={null} />)
+    const summary = await screen.findByLabelText('Pulpo account')
+    expect(summary.querySelector('img')?.getAttribute('src')).toBe('/api/search/avatar/test-user?v=3')
+    fireEvent.click(summary)
+    const menu = summary.closest('details')!
+    await within(menu).findByText('$12.34')
+    expect(within(menu).getByRole('progressbar', { name: 'Weekly usage' }).getAttribute('aria-valuenow')).toBe('64')
+    expect(within(menu).getByRole('progressbar', { name: '5-hour usage' }).getAttribute('aria-valuetext')).toBe('90% left')
+    expect(within(menu).queryByText('Pool')).toBeNull()
+    expect(within(menu).getByRole('link', { name: 'Credits and billing' }).getAttribute('href')).toBe(pulpoOrigin + '/billing')
+  })
+
+  it('uses initials when the account has no profile picture', async () => {
+    session.mockResolvedValue({ user: { ...user, name: 'Casey Jones', avatarUrl: null } })
+    render(<App callback={null} />)
+    const summary = await screen.findByLabelText('Pulpo account')
+    expect(summary.textContent).toBe('CJ')
+  })
+
+  it('sends an out-of-credits search to Pulpo billing', async () => {
+    search.mockRejectedValueOnce(new SearchApiError('Insufficient balance for metered usage', 402, 'insufficient_balance'))
+    window.history.replaceState(null, '', '/search?q=tides')
+    render(<App callback={null} />)
+    await screen.findByRole('heading', { name: 'Search limit reached' })
+    const action = await screen.findByRole('link', { name: 'Add credits in Pulpo' })
+    expect(action.getAttribute('href')).toBe(pulpoOrigin + '/billing?topup=1')
+  })
+
+  it('opens the Search panel Pulpo links to and drops the hash', async () => {
+    window.history.replaceState(null, '', '/#bangs')
+    render(<App callback={null} />)
+    expect(await screen.findByRole('dialog', { name: 'Bangs' })).toBeTruthy()
+    expect(window.location.hash).toBe('')
   })
 })

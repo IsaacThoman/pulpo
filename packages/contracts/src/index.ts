@@ -157,7 +157,7 @@ export const searchConnectInputSchema = z.object({
   codeChallenge: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
   state: z.string().regex(/^[A-Za-z0-9_-]{32,128}$/),
 })
-export const searchSessionUserSchema = userSchema.pick({ id: true, name: true, email: true })
+export const searchSessionUserSchema = userSchema.pick({ id: true, name: true, email: true, avatarUrl: true })
 export type SearchSessionUser = z.infer<typeof searchSessionUserSchema>
 
 export const nativeLoginInputSchema = loginInputSchema.and(nativeDeviceSchema)

@@ -1,8 +1,9 @@
 import { isSearchFaviconHost } from '@pulpo/contracts/search'
 import { ChevronDown, CircleHelp, Ellipsis, Globe2, Image, Pin } from 'lucide-react'
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { SearchResponse } from './api'
+import type { SearchResponse, SearchResult } from './api'
+import { faviconBackdrop, sampleFavicon } from './favicon-contrast'
 import { ImageResultFilters } from './ImageResultFilters'
 import { galleryGap, sizeImageTiles, type ImageTileSize } from './image-layout'
 import { ImageViewer } from './ImageViewer'
@@ -11,17 +12,18 @@ import {
   type ImageRefinements,
 } from './image-refinements'
 import { KnowledgeCard } from './KnowledgeCard'
+import { LoadMore, type MoreResultsControl } from './LoadMore'
 import { recentNewsQuery, safeHttpUrl, searchPath, type SearchLocation } from './navigation'
 import { domainRule, type DomainRule, type Preferences } from './preferences'
 import { ResultImage } from './ResultImage'
 import { groupResults, resultEntries, visibleEntries, type ResultWithUrl } from './result-order'
 import { licenseLabel } from './reusable-images'
+import { imageBatchSize } from './use-more-results'
 import { VideoPreview } from './VideoPreview'
 import { videoDurationBucket, videoDurationOptions, type VideoDuration } from './video-duration'
 
 const wordPattern = /[\p{L}\p{N}][\p{L}\p{M}\p{N}]*/gu
 const commonWords = new Set(['and', 'are', 'for', 'how', 'the', 'this', 'was', 'what', 'where', 'which', 'with'])
-const imageBatchSize = 24
 const newsAgeInSeconds = { minute: 60, hour: 3600, day: 86400, week: 604800, month: 2592000, year: 31536000 }
 const compactCount = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 })
 
@@ -76,15 +78,18 @@ function pathLabel(url: URL) {
   return (segments.length > 3 ? [segments[0], '…', segments[segments.length - 1]] : segments).join(' › ')
 }
 
-function SiteIcon({ host }: { host: string }) {
+function SiteIcon({ host, pageColor }: { host: string; pageColor: string | undefined }) {
   const src = isSearchFaviconHost(host) ? '/api/search/favicon/' + host : undefined
-  const [loaded, setLoaded] = useState(false)
-  const [failed, setFailed] = useState(false)
-  return <span className="site-icon" aria-hidden="true">
+  const [favicon, setFavicon] = useState<Uint8ClampedArray | 'loaded' | 'failed'>()
+  const loaded = favicon !== undefined && favicon !== 'failed'
+  const backgroundColor = useMemo(() => (
+    pageColor && favicon instanceof Uint8ClampedArray ? faviconBackdrop(favicon, pageColor) : undefined
+  ), [favicon, pageColor])
+  return <span className="site-icon" aria-hidden="true" style={{ backgroundColor }}>
     {!loaded && <Globe2 size={14} style={{ gridArea: '1 / 1' }} />}
-    {src && !failed && <img src={src} alt="" width="16" height="16" loading="lazy" decoding="async" fetchPriority="low"
+    {src && favicon !== 'failed' && <img src={src} alt="" width="16" height="16" loading="lazy" decoding="async" fetchPriority="low"
       referrerPolicy="no-referrer" style={{ opacity: loaded ? 1 : 0, gridArea: '1 / 1' }}
-      onLoad={() => setLoaded(true)} onError={() => { setFailed(true); setLoaded(false) }} />}
+      onLoad={event => setFavicon(sampleFavicon(event.currentTarget) ?? 'loaded')} onError={() => setFavicon('failed')} />}
   </span>
 }
 
@@ -109,7 +114,7 @@ function ImageThumbnail({ image, thumbnail, title, source, license, dimensions, 
   </button>
 }
 
-function ResultItem({ entry, additional, versions, preview, imageTile, media, video, newsNow, newTab, setDomain, showHidden, searchSite, terms }: {
+function ResultItem({ entry, additional, versions, preview, imageTile, media, video, newsNow, newTab, setDomain, showHidden, searchSite, terms, pageColor }: {
   entry: ResultWithUrl
   additional: ResultWithUrl[]
   versions: { url: URL; label: string }[]
@@ -123,6 +128,7 @@ function ResultItem({ entry, additional, versions, preview, imageTile, media, vi
   showHidden: boolean
   searchSite?: (host: string) => void
   terms: Set<string>
+  pageColor?: string
 }) {
   const [versionsOpen, setVersionsOpen] = useState(false)
   const { result, url, host, rule } = entry
@@ -150,7 +156,7 @@ function ResultItem({ entry, additional, versions, preview, imageTile, media, vi
   </div>
   const heading = <h2><a className="result-link" href={url.href} target={target} rel="noreferrer" title={preview ? title : undefined}>{title}</a></h2>
   const metadata = <div className="result-meta">
-        {!preview && <SiteIcon host={host} />}
+        {!preview && <SiteIcon host={host} pageColor={pageColor} />}
         <span className="site-path" title={path ? host + ' › ' + path : host}>{host}
           {path && <span className="result-path"> › {path}</span>}
         </span>
@@ -247,24 +253,40 @@ interface ResultsProps {
   data: SearchResponse
   location: SearchLocation
   preferences: Preferences
+  pageColor?: string
   setDomain: (host: string, rule: DomainRule | undefined) => void
   onQuery: (query: string) => void
   onClearScope?: () => void
   imageRefinements?: { value: ImageRefinements; update: (value: ImageRefinements) => void }
   imageToolbar?: HTMLElement | null
   mediaToolbar?: HTMLElement | null
-  imagePagination?: (canAdvance: boolean) => ReactNode
+  /** The batch each result arrived in. Ordering and grouping stay within a batch so loaded results land at the end. */
+  batchOf?: ReadonlyMap<SearchResult, number>
+  more?: MoreResultsControl
+  gallery?: { limit: number; setLimit: (value: number | ((current: number) => number)) => void }
 }
 
-export function Results({ data, location, preferences, setDomain, onQuery, onClearScope, imageRefinements, imageToolbar, mediaToolbar, imagePagination }: ResultsProps) {
+function withinBatches<T extends { result: SearchResult }, U>(entries: T[], batchOf: ResultsProps['batchOf'], arrange: (entries: T[]) => U[]): U[] {
+  if (!batchOf?.size) return arrange(entries)
+  const batches = new Map<number, T[]>()
+  for (const entry of entries) {
+    const batch = batchOf.get(entry.result) ?? 0
+    batches.set(batch, [...batches.get(batch) ?? [], entry])
+  }
+  return [...batches].sort(([left], [right]) => left - right).flatMap(([, items]) => arrange(items))
+}
+
+export function Results({ data, location, preferences, pageColor, setDomain, onQuery, onClearScope, imageRefinements, imageToolbar, mediaToolbar, batchOf, more, gallery }: ResultsProps) {
   const [expandedQuery, setExpandedQuery] = useState<string | null>(null)
   const [preview, setPreview] = useState<{ entries: ResultWithUrl[]; startIndex: number; opener: HTMLButtonElement }>()
   const [imageRefinement, setImageRefinement] = useState<{ query: string; value: ImageRefinements }>()
   const [videoDuration, setVideoDuration] = useState<{ scope: string; value: VideoDuration }>()
   const [newsOrder, setNewsOrder] = useState<'relevance' | 'newest'>()
-  const [galleryLimit, setGalleryLimit] = useState(imageBatchSize)
+  const [localGalleryLimit, setLocalGalleryLimit] = useState(imageBatchSize)
+  const galleryLimit = gallery?.limit ?? localGalleryLimit
+  const setGalleryLimit = gallery?.setLimit ?? setLocalGalleryLimit
   const [galleryWidth, setGalleryWidth] = useState(0)
-  const gallery = useRef<HTMLOListElement>(null)
+  const list = useRef<HTMLOListElement>(null)
   const firstRevealed = useRef<number>(undefined)
   const showHidden = expandedQuery === location.query
   const images = location.category === 'images'
@@ -275,7 +297,7 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
   const podcastShows = location.category === 'podcasts' && data.podcastShows
     ? visibleEntries(resultEntries({ ...data, results: data.podcastShows }, preferences), false) : []
   const hiddenCount = results.filter(item => item.rule === 'hide').length
-  const visible = visibleEntries(results, showHidden)
+  const visible = withinBatches(results, batchOf, entries => visibleEntries(entries, showHidden))
   const now = Date.now()
   const newsEntries = news ? visible.map(entry => ({ entry, time: newsSourceTime(entry.result.publishedAt, now) })) : []
   const canSortNews = newsEntries.filter(item => item.time !== undefined).length >= 2
@@ -290,14 +312,15 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
   const refinements = imageRefinements?.value ?? (imageRefinement?.query === location.query ? imageRefinement.value : defaultImageRefinements)
   const refiningImages = images && hasImageFilters(refinements)
   const matching = refiningImages ? visible.filter(entry => matchesImageRefinements(entry, refinements)) : visible
-  const ordered = images ? orderImageEntries(matching, refinements.order) : newestNews && canSortNews
-    ? newsEntries.sort((left, right) => Number(right.entry.rule === 'pin') - Number(left.entry.rule === 'pin')
-      || (right.time === left.time ? 0 : (right.time ?? -Infinity) - (left.time ?? -Infinity))).map(item => item.entry)
+  const ordered = images ? withinBatches(matching, batchOf, entries => orderImageEntries(entries, refinements.order))
+    : newestNews && canSortNews ? withinBatches(newsEntries.map(item => ({ ...item, result: item.entry.result })), batchOf, entries => entries
+      .sort((left, right) => Number(right.entry.rule === 'pin') - Number(left.entry.rule === 'pin')
+        || (right.time === left.time ? 0 : (right.time ?? -Infinity) - (left.time ?? -Infinity)))).map(item => item.entry)
     : matching
   const shown = images ? ordered.slice(0, galleryLimit)
     : duration !== 'any' ? videoEntries.filter(item => item.duration === duration).map(item => item.entry) : ordered
   const videoGrid = videos && shown.length >= 2 && shown.filter(({ result }) => result.thumbnailUrl || result.imageUrl).length > shown.length / 2
-  const groups = groupResults(shown, location.category === 'web' ? location.query : undefined)
+  const groups = withinBatches(shown, batchOf, entries => groupResults(entries, location.category === 'web' ? location.query : undefined))
   const hasGallery = images && shown.length > 0
   const imageTiles = hasGallery && galleryWidth > 0 ? sizeImageTiles(groups.map(({ lead }) => {
     const dimensions = lead.result.imageDimensions
@@ -323,19 +346,24 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
     const index = firstRevealed.current
     if (index === undefined) return
     firstRevealed.current = undefined
-    gallery.current?.children[index]?.querySelector<HTMLButtonElement>('.image-preview')?.focus()
-  }, [shown.length])
+    list.current?.children[index]?.querySelector<HTMLElement>('.image-preview, .result-link')?.focus()
+  }, [groups.length])
 
   useLayoutEffect(() => {
-    const list = gallery.current
-    if (!list) return
-    const resize = () => setGalleryWidth(list.clientWidth)
+    const element = list.current
+    if (!element || !hasGallery) return
+    const resize = () => setGalleryWidth(element.clientWidth)
     resize()
     if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(resize)
-    observer.observe(list)
+    observer.observe(element)
     return () => observer.disconnect()
   }, [hasGallery])
+
+  function revealImages() {
+    firstRevealed.current = shown.length
+    setGalleryLimit(current => current + imageBatchSize)
+  }
 
   function updateImageRefinements(next: ImageRefinements) {
     setGalleryLimit(imageBatchSize)
@@ -351,7 +379,7 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
       <select aria-label="Sort news" value={newestNews ? 'newest' : 'relevance'}
         onChange={event => setNewsOrder(event.target.value === 'newest' ? 'newest' : 'relevance')}>
         <option value="relevance">Relevance</option>
-        <option value="newest">Newest on this page</option>
+        <option value="newest">Newest</option>
       </select>
       <ChevronDown size={13} aria-hidden="true" />
     </span>}
@@ -389,7 +417,7 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
         {galleryFilters && (imageToolbar ? createPortal(galleryFilters, imageToolbar) : galleryFilters)}
         {(canSortNews || (news && (location.date || location.dateRange)) || canFilterVideoDuration) && (mediaToolbar
           ? createPortal(mediaFilters, mediaToolbar) : <div className="media-toolbar-slot standalone-media-filters">{mediaFilters}</div>)}
-        {duration !== 'any' && <p className="filtered-video-count">{shown.length} of {visible.length} videos on this page
+        {duration !== 'any' && <p className="filtered-video-count">{shown.length} of {visible.length} videos
           {withoutDuration > 0 && ` · ${withoutDuration} without a reported duration`}
         </p>}
         {podcastShows.length > 0 && <section className="podcast-shows" aria-label="Podcast shows">
@@ -404,7 +432,7 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
         {shown.length > 0 ? (
           <>
           {podcastShows.length > 0 && <h2 className="episode-heading">Episodes</h2>}
-          <ol ref={images ? gallery : undefined} className={images ? 'results-list image-grid' : videoGrid ? 'results-list video-results-grid' : 'results-list'}
+          <ol ref={list} className={images ? 'results-list image-grid' : videoGrid ? 'results-list video-results-grid' : 'results-list'}
             data-justified={imageTiles.length > 0 || undefined} style={imageTiles.length > 0 ? { gap: galleryGap } : undefined}>
             {groups.map(({ lead: entry, additional, versions }, index) => (
               <ResultItem key={entry.url.href + (entry.result.imageUrl ?? '')} entry={entry}
@@ -412,30 +440,25 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
                 preview={images ? opener => setPreview({ entries: ordered, startIndex: index, opener }) : undefined}
                 imageTile={imageTiles[index]}
                 media={media} video={videos} newsNow={news ? now : undefined}
-                newTab={preferences.newTab} setDomain={setDomain} showHidden={showHidden} searchSite={searchSite} terms={terms} />
+                newTab={preferences.newTab} setDomain={setDomain} showHidden={showHidden} searchSite={searchSite} terms={terms} pageColor={pageColor} />
             ))}
           </ol>
           </>
         ) : !data.answer && !knowledge && !podcastShows.length && (
           <section className="search-message">
             <h2>{noMatchingImages ? 'No images match these filters' : noMatchingVideos ? 'No videos match this duration' : hiddenCount ? 'All results are hidden' : 'No results found'}</h2>
-            {noMatchingImages && <p>{data.hasMore ? 'Clear the image filters or try the next results page.' : 'Clear the image filters to see all images on this page.'}</p>}
+            {noMatchingImages && <p>{more?.next ? 'Clear the image filters or load more images.' : 'Clear the image filters to see every image.'}</p>}
             {noMatchingVideos && <p>Try another duration or set it to Any duration.</p>}
             {!noMatchingImages && !noMatchingVideos && !hiddenCount && <p>Try fewer words or change your filters.</p>}
             {!noMatchingImages && !noMatchingVideos && !hiddenCount && onClearScope && <button className="secondary-button" onClick={onClearScope}>Search all sites</button>}
           </section>
         )}
-        {images && imagesToReveal > 0 && <div className="image-show-more">
-          <button type="button" className="secondary-button" onClick={() => {
-            firstRevealed.current = shown.length
-            setGalleryLimit(current => current + imageBatchSize)
-          }}>Show {imagesToReveal} more {imagesToReveal === 1 ? 'image' : 'images'} on this page</button>
-        </div>}
         {hiddenCount > 0 && <button className="text-button hidden-toggle" onClick={() => setExpandedQuery(showHidden ? null : location.query)}>
           {showHidden ? 'Hide filtered results' : `Show ${hiddenCount} hidden ${hiddenCount === 1 ? 'result' : 'results'}`}
         </button>}
+        <LoadMore control={more} reveal={imagesToReveal > 0 ? revealImages : undefined}
+          onLoad={images ? revealImages : () => { firstRevealed.current = groups.length }} />
       </div>
-      {images && imagePagination?.(imagesToReveal === 0)}
       {images && preview && <ImageViewer {...preview} newTab={preferences.newTab} close={() => setPreview(undefined)} />}
     </div>
   )

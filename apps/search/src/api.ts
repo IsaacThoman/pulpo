@@ -1,4 +1,4 @@
-import type { SearchAccountPreferences, SearchDateRange } from '@pulpo/contracts/search'
+import type { SearchAccountPreferences, SearchAccountSummary, SearchDateRange } from '@pulpo/contracts/search'
 import type { CurrencyQuery, CurrencyResponse } from './currency'
 import type { PlaceProvider, PlaceQuery, PlaceResponse } from './places'
 import type { ReusableImageFilters } from './reusable-images'
@@ -147,6 +147,7 @@ export interface SearchUser {
   id: string
   name: string
   email: string
+  avatarUrl?: string | null
 }
 
 export interface SearchAppearance {
@@ -236,7 +237,8 @@ async function streamQuickAnswer(responseId: string, onText: (delta: string) => 
         if (event?.type === 'done') return
         if (event?.type === 'error' && typeof event.message === 'string') {
           throw new SearchApiError(event.message, event.billing === true ? 402 : 0,
-            event.retryable ? 'quick_answer_interrupted' : 'quick_answer_terminal')
+            event.billing === true && typeof event.code === 'string' ? event.code
+              : event.retryable ? 'quick_answer_interrupted' : 'quick_answer_terminal')
         }
         if (event?.type === 'text' && typeof event.text === 'string') onText(event.text)
       }
@@ -268,6 +270,7 @@ export const api = {
     }
   },
   appearance: (signal?: AbortSignal) => request<SearchAppearance>('/appearance', { signal }),
+  account: (signal?: AbortSignal) => request<SearchAccountSummary>('/account', { signal }),
   preferences: (accountId: string, signal?: AbortSignal) => request<SearchPreferencesResponse>(
     '/preferences?' + new URLSearchParams({ accountId }), { signal },
   ),
