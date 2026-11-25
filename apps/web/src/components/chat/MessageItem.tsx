@@ -8,7 +8,7 @@ import { speechPlayback } from '@/features/speech/state'
 import { ToolImagePreview } from './ToolImagePreview'
 import { collapseIntermediateReplies, collapsedWorkDurationMs, initialActivityTiming } from '@pulpo/client-core'
 import { memo, useEffect, useId, useMemo, useState } from 'react'
-import { SignupPromoClaim } from '@/components/billing/SignupPromoClaim'
+import { SignupPromoChatAction } from '@/components/billing/SignupPromoClaim'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import {
   Brain,
@@ -986,10 +986,11 @@ export const MessageItem = memo(function MessageItem({
                   <p>{t('chat.usageLimitReached')}</p>
                   {billingEnabled && <>
                     <p>{t('chat.usageLimitBillingHint')}</p>
-                    <SignupPromoClaim context="chat" />
-                    <Button asChild size="sm" variant="outline">
-                      <Link to="/billing">{t('chat.viewBilling')}</Link>
-                    </Button>
+                    <SignupPromoChatAction fallback={(
+                      <Button asChild size="sm" variant="outline">
+                        <Link to="/billing">{t('chat.viewBilling')}</Link>
+                      </Button>
+                    )} />
                   </>}
                 </div>
               ) : message.error}
