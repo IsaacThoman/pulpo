@@ -457,6 +457,100 @@ describe('chat store branching integration', () => {
     },
   )
 
+  it.each(['new', 'existing'] as const)(
+    'sends an insufficient-balance message again when it is regenerated in a %s chat',
+    async (kind) => {
+      const existingChatId = crypto.randomUUID()
+      if (kind === 'existing') {
+        const initial = { ...detail(responseAId, [response(responseAId, 'completed')]), id: existingChatId }
+        queryClient.setQueryData(['chat', userId, existingChatId], initial)
+        useChat.getState().setDetailedChat(initial)
+      }
+      const targetChatId = useChat.getState().sendMessage(kind === 'existing' ? existingChatId : null, 'one prompt', 'test-model')
+      await vi.waitFor(() => expect(requests).toHaveLength(1))
+      const failedId = useChat.getState().chats.find((chat) => chat.id === targetChatId)!.messages.at(-1)!.id
+      const balanceError = 'Insufficient balance for the maximum request cost'
+      requests[0]!.resolve({ error: { code: 'insufficient_balance', message: balanceError } }, 402)
+      await vi.waitFor(() => expect(
+        useChat.getState().chats.find((chat) => chat.id === targetChatId)?.messages.at(-1),
+      ).toMatchObject({ id: failedId, done: true, error: balanceError }))
+
+      // The server never stored the refused turn, so another failure must replace the refusal in view.
+      const selection = { modelId: 'test-model', presetSelections: { reasoning: 'high' }, agentMode: false }
+      useChat.getState().regenerate(targetChatId, failedId, selection)
+      await vi.waitFor(() => expect(requests).toHaveLength(2))
+      requests[1]!.resolve({ error: { code: 'server_error', message: 'Provider unavailable' } }, 500)
+      await vi.waitFor(() => expect(
+        useChat.getState().chats.find((chat) => chat.id === targetChatId)?.messages.at(-1),
+      ).toMatchObject({ id: failedId, error: 'Provider unavailable' }))
+
+      useChat.getState().regenerate(targetChatId, failedId, selection)
+      await vi.waitFor(() => expect(requests).toHaveLength(3))
+      expect(requests[2]).toMatchObject({
+        path: kind === 'existing' ? `/api/chats/${targetChatId}/responses` : '/api/chats/start',
+        method: 'POST',
+      })
+      const body = requests[2]!.body as { response?: Record<string, unknown> } & Record<string, unknown>
+      const submitted = kind === 'existing' ? body : body.response!
+      expect(submitted).toMatchObject({
+        modelId: 'test-model', input: 'one prompt', presetSelections: { reasoning: 'high' }, agentMode: false,
+        parentResponseId: kind === 'existing' ? responseAId : null,
+      })
+      const retriedId = submitted.clientId as string
+      requests[2]!.resolve({ response: response(retriedId, 'queued').snapshot }, 202)
+      await vi.waitFor(() => expect(
+        queryClient.getQueryData<ServerChat>(['chat', userId, targetChatId])?.responses?.some((item) => item.id === failedId),
+      ).toBe(false))
+      expect(useChat.getState().chats.find((chat) => chat.id === targetChatId)?.messages.at(-1)).toMatchObject({ id: retriedId })
+    },
+  )
+
+  it('retries a refused regenerate from the reply it branched from', async () => {
+    const initial = detail(responseAId, [response(responseAId, 'completed')])
+    queryClient.setQueryData(['chat', userId, chatId], initial)
+    useChat.getState().setDetailedChat(initial)
+    const selection = { modelId: 'test-model', presetSelections: {}, agentMode: false }
+    const balanceError = 'Insufficient balance for the maximum request cost'
+    const cachedIds = () => queryClient.getQueryData<ServerChat>(['chat', userId, chatId])?.responses?.map((item) => item.id)
+    const cachedResponse = (id: string) => queryClient.getQueryData<ServerChat>(['chat', userId, chatId])?.responses?.find((item) => item.id === id)
+
+    useChat.getState().regenerate(chatId, responseAId, selection)
+    const firstId = queryClient.getQueryData<ServerChat>(['chat', userId, chatId])!.activeBranchLeafId!
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]).toMatchObject({ path: `/api/messages/${responseAId}/regenerate`, method: 'POST' })
+    requests[0]!.resolve({ error: { code: 'insufficient_balance', message: balanceError } }, 402)
+    await vi.waitFor(() => expect(cachedResponse(firstId)?.failedRegenerate).toEqual({ sourceResponseId: responseAId }))
+    expectOnly(responseAId)
+    // The server never stored the refused branch, so switching to it stays local.
+    useChat.getState().activateBranch(chatId, firstId)
+    expectOnly(firstId)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(requests).toHaveLength(1)
+
+    // Refused again: the new attempt takes the old one's place and keeps the refusal in view.
+    useChat.getState().regenerate(chatId, firstId, selection)
+    const secondId = queryClient.getQueryData<ServerChat>(['chat', userId, chatId])!.activeBranchLeafId!
+    await vi.waitFor(() => expect(requests).toHaveLength(2))
+    expect(requests[1]).toMatchObject({ path: `/api/messages/${responseAId}/regenerate`, method: 'POST' })
+    requests[1]!.resolve({ error: { code: 'insufficient_balance', message: balanceError } }, 402)
+    await vi.waitFor(() => expect(cachedResponse(secondId)?.failedRegenerate).toEqual({ sourceResponseId: responseAId }))
+    expect(cachedIds()).toEqual([responseAId, secondId])
+    expectOnly(secondId)
+    expect(useChat.getState().chats.find((chat) => chat.id === chatId)?.messages.at(-1)).toMatchObject({ error: balanceError })
+
+    useChat.getState().regenerate(chatId, secondId, selection)
+    const thirdId = queryClient.getQueryData<ServerChat>(['chat', userId, chatId])!.activeBranchLeafId!
+    await vi.waitFor(() => expect(requests).toHaveLength(3))
+    expect(requests[2]).toMatchObject({ path: `/api/messages/${responseAId}/regenerate`, method: 'POST' })
+    requests[2]!.resolve({ response: response(thirdId, 'queued').snapshot }, 202)
+    await vi.waitFor(() => expect(cachedIds()).toEqual([responseAId, thirdId]))
+    expect(cachedResponse(thirdId)?.failedRegenerate).toBeUndefined()
+    const completed = response(thirdId, 'completed')
+    useChat.getState().applyResponseSnapshot(completed.snapshot)
+    useChat.getState().setDetailedChat(detail(thirdId, [response(responseAId, 'completed'), completed]))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
   it('keeps a newly sent message visible in paginated history', async () => {
     const initial = { ...detail(responseAId, [response(responseAId, 'completed')]),
       history: { offset: 500, hasMore: true, before: responseAId, leafId: responseAId } }
