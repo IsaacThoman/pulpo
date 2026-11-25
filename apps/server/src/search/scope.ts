@@ -80,6 +80,7 @@ export function filterSearchHosts(result: SearchResults, filters: ReturnType<typ
   }
   return {
     results: result.results.filter(row => matches(row.url)),
+    ...(result.podcastShows ? { podcastShows: result.podcastShows.filter(row => matches(row.url)) } : {}),
     ...(result.hasMore === undefined ? {} : { hasMore: result.hasMore }),
     ...(result.answer?.url && matches(result.answer.url) ? { answer: result.answer } : {}),
     // Related queries do not carry typed operators. Keep the active scope without broadening typed filters.

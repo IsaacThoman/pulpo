@@ -31,6 +31,12 @@ describe('search result excerpts', () => {
       .toBe('Server-side rendering & caching Learn more.')
   })
 
+  it('keeps useful code text while removing fenced markup and pilcrow permalink markers', () => {
+    expect(resultSnippet('Data classes&#182;\n```python\nfrom dataclasses import dataclass\n```\nExample: ``` run() ```')).toBe(
+      'Data classes from dataclasses import dataclass Example: run()',
+    )
+  })
+
   it('bounds long snippets without cutting a word or splitting an emoji', () => {
     expect(resultSnippet('Some helpful detail about search engines. More useful information.', 30))
       .toBe('Some helpful detail about…')

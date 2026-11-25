@@ -1,4 +1,4 @@
-import { Map as MapIcon, MapPin, Star } from 'lucide-react'
+import { ChevronDown, Map as MapIcon, MapPin, Star } from 'lucide-react'
 import { lazy, Suspense, useId, useMemo, useState } from 'react'
 import braveLight from './assets/brave-logo-light.png'
 import braveDark from './assets/brave-logo-dark.png'
@@ -76,11 +76,11 @@ export function PlacesAnswer({ response, openNow, webExpanded, onWeb }: {
         {canFilterHours && (
           <button className="secondary-button place-open-filter" aria-pressed={onlyOpen} onClick={() => setOnlyOpen(!onlyOpen)}>Open now</button>
         )}
-        {canSortRatings && <select aria-label="Order places" value={ratingOrder ? 'ratings' : 'relevance'}
+        {canSortRatings && <span className="filter-select"><select aria-label="Order places" value={ratingOrder ? 'ratings' : 'relevance'}
           onChange={event => setRatingOrder(event.target.value === 'ratings')}>
           <option value="relevance">Relevance</option>
           <option value="ratings">Highest rated</option>
-        </select>}
+        </select><ChevronDown size={14} aria-hidden="true" /></span>}
       </div>}
       <div id={mapId} hidden={!showMap}>
         {showMap && mapStyleUrl && (pins.length ? (

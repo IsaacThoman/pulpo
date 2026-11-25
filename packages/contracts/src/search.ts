@@ -19,6 +19,83 @@ export function searchDateRange(from: string, to: string): SearchDateRange | und
   return isSearchCalendarDate(from) && isSearchCalendarDate(to) && from <= to ? { from, to } : undefined
 }
 
+export const searchRegions = [
+  ['', 'Any region'],
+  ['us', 'United States'],
+  ['gb', 'United Kingdom'],
+  ['au', 'Australia'],
+  ['br', 'Brazil'],
+  ['ca', 'Canada'],
+  ['fr', 'France'],
+  ['de', 'Germany'],
+  ['in', 'India'],
+  ['it', 'Italy'],
+  ['jp', 'Japan'],
+  ['nl', 'Netherlands'],
+  ['es', 'Spain'],
+] as const
+
+export type SearchRegion = (typeof searchRegions)[number][0]
+export type SearchDomainRule = 'pin' | 'hide'
+
+export interface SearchCustomBang {
+  trigger: string
+  name: string
+  url: string
+}
+
+export interface SearchAccountPreferences {
+  defaultProvider: 'kagi' | 'firecrawl' | ''
+  fallbackProvider: 'kagi' | 'firecrawl' | 'none' | ''
+  limit: 10 | 20 | 40
+  newTab: boolean
+  keyboardShortcuts: boolean
+  localPlaces: boolean
+  defaultRegion: SearchRegion
+  safeSearch: boolean
+  domains: Record<string, SearchDomainRule>
+  bangs: SearchCustomBang[]
+}
+
+export const defaultSearchAccountPreferences: SearchAccountPreferences = {
+  defaultProvider: '',
+  fallbackProvider: '',
+  limit: 40,
+  newTab: false,
+  keyboardShortcuts: true,
+  localPlaces: true,
+  defaultRegion: '',
+  safeSearch: true,
+  domains: {},
+  bangs: [],
+}
+
+export const SEARCH_ACCOUNT_PREFERENCES_KEY = 'searchPreferences'
+
+export function normalizeSearchBangTrigger(trigger: string): string {
+  return trigger.trim().replace(/^!/, '').toLowerCase()
+}
+
+export function validateSearchCustomBang(bang: SearchCustomBang): string | null {
+  if (!/^[a-z0-9][a-z0-9_-]{0,23}$/.test(normalizeSearchBangTrigger(bang.trigger))) {
+    return 'Use 1–24 letters, digits, hyphens, or underscores for the shortcut.'
+  }
+  if (!bang.name.trim() || bang.name.length > 80) return 'Enter a name up to 80 characters.'
+  const url = bang.url.trim()
+  const marker = 'pulpo-search-bang-query-placeholder'
+  if (!url.includes('{query}') || url.includes(marker) || url.length > 2_048) {
+    return 'Enter a destination URL with {query} in its path or query string.'
+  }
+  try {
+    const parsed = new URL(url.replaceAll('{query}', marker))
+    if (parsed.protocol === 'https:' && !parsed.username && !parsed.password && !parsed.host.includes(marker)
+      && !parsed.hash.includes(marker) && (parsed.pathname.includes(marker) || parsed.search.includes(marker))) return null
+  } catch {
+    // Use the same validation message for malformed URLs.
+  }
+  return 'Use an HTTPS destination with {query} only in its path or query string.'
+}
+
 export const SEARCH_HANDOFF_PATH = '/search/ask'
 
 const MAX_HANDOFF_QUERY_LENGTH = 500

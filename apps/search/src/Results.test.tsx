@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SearchResponse } from './api'
 import { homeLocation } from './navigation'
@@ -185,6 +185,28 @@ describe('search result presentation', () => {
     fireEvent.change(screen.getByRole('combobox', { name: 'Sort news' }), { target: { value: 'newest' } })
     expect(titles()).toEqual(['Recent news', 'Earlier news', 'Undated'])
     expect(screen.getByText('2 hours ago')).toBeDefined()
+  })
+
+  it('shows thumbnails and snippets when the news provider supplies both', () => {
+    const news: SearchResponse = { provider: 'firecrawl', results: [{
+      url: 'https://example.com/article', title: 'Reporting', snippet: 'Publisher preview', imageUrl: 'https://example.com/cover.jpg',
+    }] }
+    const { container } = render(<Results data={news} location={{ ...homeLocation, category: 'news', query: 'space' }}
+      preferences={loadPreferences()} setDomain={vi.fn()} onQuery={vi.fn()} />)
+    expect(screen.getByText('Publisher preview')).toBeDefined()
+    expect(container.querySelector('[data-news-thumbnail] .result-media img')?.getAttribute('src')).toBe('https://example.com/cover.jpg')
+  })
+
+  it('presents official show pages separately from podcast episodes', () => {
+    const podcast: SearchResponse = { provider: 'kagi', results: [{
+      url: 'https://example.com/episode', title: 'Latest episode', snippet: 'Episode preview', creatorName: 'Example Show',
+    }], podcastShows: [{ url: 'https://example.com/show', title: 'Example Show', snippet: '' }] }
+    render(<Results data={podcast} location={{ ...homeLocation, category: 'podcasts', query: 'example show' }}
+      preferences={loadPreferences()} setDomain={vi.fn()} onQuery={vi.fn()} />)
+    expect(within(screen.getByRole('region', { name: 'Podcast shows' })).getByRole('link', { name: 'Example Show' }).getAttribute('href'))
+      .toBe('https://example.com/show')
+    expect(screen.getByRole('heading', { name: 'Episodes' })).toBeDefined()
+    expect(screen.getByRole('link', { name: 'Latest episode' })).toBeDefined()
   })
 
   it('shows the relative age of recent timestamps and preserves date-only stories', () => {

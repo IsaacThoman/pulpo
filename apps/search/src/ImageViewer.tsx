@@ -2,6 +2,7 @@ import { ChevronLeft, ChevronRight, ExternalLink, Image, X } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { safeHttpUrl } from './navigation'
 import { ResultImage } from './ResultImage'
+import { licenseLabel } from './reusable-images'
 import type { ResultWithUrl } from './result-order'
 import './reusable-images.css'
 
@@ -11,13 +12,6 @@ interface ImageViewerProps {
   opener: HTMLButtonElement
   newTab: boolean
   close: () => void
-}
-
-function licenseLabel(code: string, version: string | undefined) {
-  const abbreviation = code.toUpperCase()
-  const name = /^BY(?:-(?:SA|ND|NC|NC-SA|NC-ND))?$/.test(abbreviation)
-    ? `CC ${abbreviation}` : abbreviation === 'PDM' ? 'Public Domain Mark' : abbreviation === 'CC0' ? 'CC0' : code
-  return version ? `${name} ${version}` : name
 }
 
 export function ImageViewer({ entries, startIndex, opener, newTab, close }: ImageViewerProps) {

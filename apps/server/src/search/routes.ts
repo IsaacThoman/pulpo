@@ -5,7 +5,7 @@ import { webToolProviderSchema, type WebToolProvider } from '@pulpo/contracts'
 import { searchDateRange } from '@pulpo/contracts/search'
 import { releaseMeteredBudget, reserveMeteredBudget, settleMeteredBudget } from '../accounting/service.js'
 import { FIRECRAWL_DEFAULT_API_BASE } from '../agent/firecrawl.js'
-import { KAGI_IMAGE_RESULT_LIMIT, KAGI_MAX_SEARCH_PAGE } from '../agent/kagi.js'
+import { KAGI_IMAGE_RESULT_LIMIT, KAGI_MAX_SEARCH_PAGE, KAGI_RESULT_LIMIT } from '../agent/kagi.js'
 import { basicSearchCategories, searchCategories, type ProviderSearchInput, type SearchCategory, type SearchResults } from '../agent/search-results.js'
 import { availableWebSearchProviders, billedPrice, createWebProviderClients } from '../agent/web-tools.js'
 import { requireUser } from '../auth/service.js'
@@ -37,12 +37,13 @@ const searchInputSchema = z.object({
   providers: z.array(webToolProviderSchema).min(1).max(2)
     .refine((providers) => new Set(providers).size === providers.length, 'Choose different primary and fallback providers')
     .optional(),
-  limit: z.number().int().min(1).max(20).default(10),
+  limit: z.number().int().min(1).max(KAGI_RESULT_LIMIT).default(KAGI_RESULT_LIMIT),
   expandedImages: z.literal(true).optional(),
   page: z.number().int().min(1).max(KAGI_MAX_SEARCH_PAGE).default(1),
   category: z.enum(searchCategories).default('web'),
   scope: z.enum(searchScopes).optional(),
   region: z.string().regex(/^[a-z]{2}$/i, 'Choose a two-letter country code').toUpperCase().optional(),
+  safeSearch: z.boolean().optional(),
   date: z.enum(dates).optional(),
   dateRange: dateRangeSchema.optional(),
 }).strict().refine(input => !input.scope || input.category === 'web', {
@@ -59,6 +60,11 @@ async function readSearchSettings() {
   const [row] = await db.select({ value: applicationSettings.value }).from(applicationSettings)
     .where(eq(applicationSettings.key, 'webTools')).limit(1)
   return parseWebToolsSettings(row?.value)
+}
+
+function defaultNewsOrder(providers: WebToolProvider[]): WebToolProvider[] {
+  // Firecrawl supplies article descriptions and thumbnails with its news results.
+  return providers.includes('firecrawl') ? ['firecrawl', ...providers.filter(provider => provider !== 'firecrawl')] : providers
 }
 
 async function configuredPlaces(settings?: StoredWebToolsSettings) {
@@ -121,6 +127,7 @@ export function registerSearchRoutes(app: FastifyInstance) {
     const quickAnswer = await quickAnswerCapability(user.id)
     return {
       defaultOrder,
+      newsDefaultOrder: defaultNewsOrder(defaultOrder),
       currency: true,
       weather: true,
       ...(places ? { places: { provider: places.provider, priceMicros: places.priceMicros } } : {}),
@@ -266,7 +273,8 @@ export function registerSearchRoutes(app: FastifyInstance) {
     }
     const settings = await readSearchSettings()
     const available = availableWebSearchProviders(settings)
-    const selected = input.providers?.filter((provider) => available.includes(provider)) ?? available
+    const selected = input.providers?.filter((provider) => available.includes(provider))
+      ?? (input.category === 'news' ? defaultNewsOrder(available) : available)
     if (!selected.length) throw new AppError(503, 'search_provider_unavailable', 'No selected search provider is available', 'server_error')
     const providers = selected.filter((provider) => {
       const capabilities = providerCapabilities[provider]
@@ -278,6 +286,7 @@ export function registerSearchRoutes(app: FastifyInstance) {
     const clients = createWebProviderClients(settings, getConfig().ENCRYPTION_KEY)
     const providerInput: ProviderSearchInput = {
       query: filters.query, limit: input.limit, page: input.page, category: input.category, region: input.region, timeRelative: input.date,
+      safeSearch: input.safeSearch ?? true,
       ...(input.dateRange ? { dateRange: input.dateRange } : {}),
       ...(filters.includeDomains.length ? { includeDomains: filters.includeDomains } : {}),
       ...(filters.excludeDomains.length ? { excludeDomains: filters.excludeDomains } : {}),
@@ -320,7 +329,7 @@ export function registerSearchRoutes(app: FastifyInstance) {
             request.log.warn({ provider }, 'Search provider failed')
             continue
           }
-          if (!result.results.length && !result.answer && !result.knowledge) {
+          if (!result.results.length && !result.answer && !result.knowledge && !result.podcastShows?.length) {
             empty ??= { provider, ...result }
             continue
           }

@@ -17,6 +17,7 @@ export interface ProviderSearchInput {
   dateRange?: SearchDateRange
   category?: SearchCategory
   region?: string
+  safeSearch?: boolean
 }
 
 export interface SearchResult {
@@ -28,6 +29,7 @@ export interface SearchResult {
   imageDimensions?: { width: number; height: number }
   duration?: string
   creatorName?: string
+  viewCount?: number
   publishedAt?: string
 }
 
@@ -44,6 +46,7 @@ export interface SearchResults {
   related?: string[]
   answer?: { title: string; snippet: string; url?: string }
   knowledge?: SearchKnowledge
+  podcastShows?: SearchResult[]
 }
 
 export function searchQueryTokens(query: string): string[] {
@@ -80,6 +83,7 @@ export function resultSnippet(value: unknown, limit = 245, query?: string): stri
   const lines = value.slice(0, maxResultTextLength)
     .replace(/<!--[\s\S]*?-->/g, ' ')
     .replace(/<(script|style|noscript)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
+    .replace(/^[ \t]*(?:`{3,}|~{3,})[ \t]*[\w.+-]*[ \t]*$/gm, ' ')
     // Some previews put the entire link menu and heading on one line.
     .replace(/\)\s+(?=#{1,6}[ \t])/g, ')\n')
     .split(/\r?\n/)
@@ -104,6 +108,7 @@ export function resultSnippet(value: unknown, limit = 245, query?: string): stri
   }
 
   const text = resultText((paragraphs.length ? paragraphs : headings).join(' '), maxResultTextLength)
+    .replace(/`{3,}|¶/g, '').replace(/\s+/g, ' ').trim()
   const leading = shortenResultText(text, limit)
   return query && text.length > limit ? relevantExcerpt(text, query, leading, limit) : leading
 }
@@ -169,6 +174,7 @@ interface RawSearchResult {
   imageHeight?: unknown
   duration?: unknown
   creatorName?: unknown
+  viewCount?: unknown
   publishedAt?: unknown
 }
 
@@ -188,6 +194,7 @@ export function normalizeResult(row: RawSearchResult, query?: string): SearchRes
     : undefined
   const duration = typeof row.duration === 'string' && /^\d{1,4}:[0-5]\d(?::[0-5]\d)?$/.test(row.duration) ? row.duration : undefined
   const creatorName = resultText(row.creatorName, 120)
+  const viewCount = typeof row.viewCount === 'string' && /^\d{1,15}$/.test(row.viewCount) ? Number(row.viewCount) : row.viewCount
   const publishedAt = resultText(row.publishedAt, 50)
   return {
     url, title, snippet: resultSnippet(row.snippet, 245, query),
@@ -196,6 +203,7 @@ export function normalizeResult(row: RawSearchResult, query?: string): SearchRes
     ...(imageDimensions ? { imageDimensions } : {}),
     ...(duration ? { duration } : {}),
     ...(creatorName ? { creatorName } : {}),
+    ...(typeof viewCount === 'number' && Number.isSafeInteger(viewCount) && viewCount >= 0 ? { viewCount } : {}),
     ...(publishedAt ? { publishedAt } : {}),
   }
 }

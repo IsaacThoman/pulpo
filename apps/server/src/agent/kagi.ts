@@ -10,6 +10,7 @@ export const KAGI_SEARCH_COST_MICROS = 12_000
 export const KAGI_EXTRACT_COST_MICROS = 4_000
 export const KAGI_MAX_SEARCH_PAGE = 10
 export const KAGI_IMAGE_RESULT_LIMIT = 120
+export const KAGI_RESULT_LIMIT = 40
 const resultGroups: Record<SearchCategory, string> = {
   web: 'search',
   news: 'news',
@@ -30,6 +31,7 @@ type KagiSearchResult = {
     query?: string
     duration?: string
     creator_name?: string
+    view_count?: number | string
     thumbnail?: { url?: string }
     infobox?: unknown
   }
@@ -201,13 +203,19 @@ export class KagiClient {
   async searchResults(input: ProviderSearchInput, signal?: AbortSignal): Promise<SearchResults> {
     const category = input.category ?? 'web'
     const page = input.page ?? 1
-    const limit = Math.min(category === 'images' ? KAGI_IMAGE_RESULT_LIMIT : 20, Math.max(1, Math.floor(input.limit ?? 10)))
+    const limit = Math.min(category === 'images' ? KAGI_IMAGE_RESULT_LIMIT : KAGI_RESULT_LIMIT, Math.max(1, Math.floor(input.limit ?? 10)))
     const payload = await this.querySearch(input, limit, signal)
     if (!payload.data || typeof payload.data !== 'object' || Array.isArray(payload.data)) {
       throw new Error('Kagi search response did not contain a result set')
     }
     const group = (key: string) => Array.isArray(payload.data?.[key]) ? payload.data[key] : []
     const rows = group(resultGroups[category])
+    const podcastShows = category === 'podcasts' && page === 1
+      ? uniqueResults(group('podcast_creator').map(row => normalizeResult({
+        url: row?.url, title: row?.title, snippet: row?.snippet, imageUrl: row?.image?.url,
+      })), 6, category)
+      : []
+    const showUrls = new Set(podcastShows.map(show => show.url.replace(/\/$/, '')))
     const results = uniqueResults(rows.map((row) => normalizeResult({
       url: row?.url,
       title: row?.title,
@@ -218,8 +226,10 @@ export class KagiClient {
       imageHeight: category === 'images' ? row?.image?.height : undefined,
       duration: category === 'videos' || category === 'podcasts' ? row?.props?.duration : undefined,
       creatorName: category === 'videos' || category === 'podcasts' ? row?.props?.creator_name : undefined,
-      publishedAt: row?.time,
-    }, category === 'images' ? undefined : input.query)), limit, category)
+      viewCount: category === 'videos' ? row?.props?.view_count : undefined,
+      // Kagi's timestamp can be the last update, including for News.
+      publishedAt: category === 'news' ? undefined : row?.time,
+    }, category === 'images' ? undefined : input.query)).filter(row => !row || !showUrls.has(row.url.replace(/\/$/, ''))), limit, category)
     const related = page > 1 ? [] : [...new Set([
       ...group('related_search').map((row) => resultText(row?.props?.query ?? row?.title, 200)),
       ...group('adjacent_question').map((row) => resultText(row?.props?.question ?? row?.title, 200)),
@@ -239,6 +249,7 @@ export class KagiClient {
       ...(related.length ? { related } : {}),
       ...(title && snippet ? { answer: { title, snippet, ...(url ? { url } : {}) } } : {}),
       ...(knowledge ? { knowledge } : {}),
+      ...(podcastShows.length ? { podcastShows } : {}),
     }
   }
 
@@ -256,7 +267,7 @@ export class KagiClient {
       limit,
       ...(input.page && input.page > 1 ? { page: input.page } : {}),
       filters: {
-        safe_search: true, ...(input.region ? { region: input.region } : {}),
+        safe_search: input.safeSearch ?? true, ...(input.region ? { region: input.region } : {}),
         ...(after ? { after } : {}), ...(before ? { before } : {}),
       },
       ...((sitesIncluded || sitesExcluded || timeRelative) ? { lens: {

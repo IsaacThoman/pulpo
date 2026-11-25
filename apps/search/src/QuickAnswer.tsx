@@ -150,6 +150,7 @@ export function QuickAnswer({ query, automatic, onAutomaticStart, pulpoOrigin }:
             if (status === 'idle') void run()
           }}>
             Quick answer
+            {status === 'idle' && <ChevronDown size={14} aria-hidden="true" />}
           </button>
         </h2>
         {(status === 'running' || status === 'stopping') && <button ref={stopButton} className="text-button quick-answer-stop"

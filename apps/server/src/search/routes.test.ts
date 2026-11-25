@@ -377,11 +377,11 @@ describe('Pulpo Search API', () => {
     mocks.fetch.mockResolvedValueOnce(Response.json({
       success: true, data: { news: [{ url: 'https://example.com/article', title: 'Article', snippet: 'Some news', date: '2026-11-01' }] },
     }))
-    const response = await query({ query: 'current events', category: 'news', region: 'ca', date: 'year' })
+    const response = await query({ query: 'current events', category: 'news', providers: ['kagi', 'firecrawl'], region: 'ca', date: 'year' })
     expect(response.statusCode).toBe(200)
     expect(response.json()).toEqual({
       provider: 'firecrawl',
-      results: [{ url: 'https://example.com/article', title: 'Article', snippet: 'Some news', publishedAt: '2026-11-01' }],
+      results: [{ url: 'https://example.com/article', title: 'Article', snippet: 'Some news' }],
     })
     expect(JSON.parse(mocks.fetch.mock.calls[1]![1].body)).toMatchObject({ sources: ['news'], country: 'CA', tbs: 'qdr:y' })
     expect(mocks.reserve.mock.calls).toEqual([[{ userId: 'search-user', costMicros: 12_000 }], [{ userId: 'search-user', costMicros: 7_000 }]])
@@ -391,6 +391,18 @@ describe('Pulpo Search API', () => {
       reservationId: 'firecrawl-hold', costMicros: 7_000, type: 'web_search',
       metadata: { provider: 'firecrawl', category: 'news', resultCount: 1 },
     })
+  })
+
+  it('uses a single News-optimized default request and preserves explicit SafeSearch controls', async () => {
+    mocks.fetch.mockResolvedValueOnce(Response.json({
+      success: true, data: { news: [{ url: 'https://example.com/article', title: 'Article', description: 'News preview', imageUrl: 'https://example.com/article.jpg' }] },
+    }))
+    expect((await query({ query: 'news', category: 'news', safeSearch: false })).json()).toMatchObject({
+      provider: 'firecrawl', results: [{ snippet: 'News preview', imageUrl: 'https://example.com/article.jpg' }],
+    })
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(mocks.fetch.mock.calls[0]![1].body)).toMatchObject({ limit: 20, sources: ['news'], safe: false })
+    expect(mocks.settle).toHaveBeenCalledTimes(1)
   })
 
   it('follows the requested order and returns empty successes without billing', async () => {
@@ -507,18 +519,19 @@ describe('Pulpo Search API', () => {
   it.each([
     { category: 'videos', group: 'video', url: 'https://www.youtube.com/watch?v=Tuw8hxrFBH8' },
     { category: 'podcasts', group: 'podcast', url: 'https://open.spotify.com/episode/pulpo' },
-  ])('uses Kagi’s native $category workflow and consumes only its corresponding result group', async ({ category, group, url }) => {
+  ])('uses Kagi’s native $category workflow and its matching results', async ({ category, group, url }) => {
     const imageUrl = 'https://p.kagi.com/proxy/thumbnail'
     mocks.fetch.mockResolvedValueOnce(Response.json({ data: {
       [group]: [{ url, title: 'Playback source', snippet: 'Match', image: { url: imageUrl }, time: '2026-11-20' }],
       search: [{ url: 'https://example.com/related', title: 'Unrelated page' }],
-      podcast_creator: [{ url: 'https://example.com/creator', title: 'Different result group' }],
+      podcast_creator: [{ url: 'https://example.com/creator', title: 'Podcast show' }],
       direct_answer: [{ url: 'https://example.com/answer', title: 'Unrelated answer', snippet: 'Answer text' }],
     } }))
     const response = await query({ query: 'example media', category, providers: ['firecrawl', 'kagi'], limit: 1 })
     expect(response.statusCode).toBe(200)
     expect(response.json()).toEqual({
       provider: 'kagi', results: [{ url, title: 'Playback source', snippet: 'Match', imageUrl, publishedAt: '2026-11-20' }], hasMore: true,
+      ...(category === 'podcasts' ? { podcastShows: [{ url: 'https://example.com/creator', title: 'Podcast show', snippet: '' }] } : {}),
     })
     expect(mocks.fetch).toHaveBeenCalledExactlyOnceWith('https://kagi.com/api/v1/search', expect.objectContaining({
       body: expect.stringContaining('"workflow":"' + category + '"'),
@@ -559,11 +572,11 @@ describe('Pulpo Search API', () => {
       { url: 'https://example.com/story', title: 'In range', description: 'Example story', date: '2024-02-29' },
     ] } }))
     const response = await query({
-      query: 'example story', category: 'news', region: 'gb', dateRange: { from: '2024-02-28', to: '2024-02-29' },
+      query: 'example story', category: 'news', providers: ['kagi', 'firecrawl'], region: 'gb', dateRange: { from: '2024-02-28', to: '2024-02-29' },
     })
     expect(response.statusCode).toBe(200)
     expect(response.json()).toMatchObject({
-      provider: 'firecrawl', results: [{ title: 'In range', publishedAt: '2024-02-29' }],
+      provider: 'firecrawl', results: [{ title: 'In range' }],
     })
     expect(JSON.parse(mocks.fetch.mock.calls[0]![1].body)).toMatchObject({
       workflow: 'news', filters: { after: '2024-02-28', before: '2024-03-01', region: 'GB' },
@@ -604,7 +617,8 @@ describe('Pulpo Search API', () => {
     mocks.enabled = false
     expect((await query({ query: 'something' })).statusCode).toBe(404)
     mocks.enabled = true
-    expect((await query({ query: 'something', providers: ['kagi', 'kagi'], limit: 21 })).statusCode).toBe(400)
+    expect((await query({ query: 'something', limit: 41 })).statusCode).toBe(400)
+    expect((await query({ query: 'something', providers: ['kagi', 'kagi'] })).statusCode).toBe(400)
     expect(mocks.fetch).not.toHaveBeenCalled()
   })
 })

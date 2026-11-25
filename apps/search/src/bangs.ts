@@ -1,10 +1,7 @@
+import { normalizeSearchBangTrigger as normalizeTrigger, validateSearchCustomBang as validateCustomBang, type SearchCustomBang as CustomBang } from '@pulpo/contracts/search'
 import { queryTokens } from './query-tokens'
 
-export interface CustomBang {
-  trigger: string
-  name: string
-  url: string
-}
+export { validateCustomBang, type CustomBang }
 
 const builtIns: readonly CustomBang[] = [
   { trigger: 'g', name: 'Google', url: 'https://www.google.com/search?q={query}' },
@@ -48,30 +45,6 @@ const builtIns: readonly CustomBang[] = [
 
 const triggerPattern = /^[a-z0-9][a-z0-9_-]{0,23}$/
 const placeholder = '{query}'
-const pathMarker = 'pulpo-search-bang-query-placeholder'
-
-function normalizeTrigger(trigger: string): string {
-  return trigger.trim().replace(/^!/, '').toLowerCase()
-}
-
-export function validateCustomBang(bang: CustomBang): string | null {
-  if (!triggerPattern.test(normalizeTrigger(bang.trigger))) return 'Use 1–24 letters, digits, hyphens, or underscores for the shortcut.'
-  if (!bang.name.trim() || bang.name.length > 80) return 'Enter a name up to 80 characters.'
-  const url = bang.url.trim()
-  if (!url.includes(placeholder) || url.includes(pathMarker) || url.length > 2_048) {
-    return 'Enter a destination URL with {query} in its path or query string.'
-  }
-  try {
-    const parsed = new URL(url.replaceAll(placeholder, pathMarker))
-    if (parsed.protocol === 'https:' && !parsed.username && !parsed.password && !parsed.host.includes(pathMarker)
-      && !parsed.hash.includes(pathMarker) && (parsed.pathname.includes(pathMarker) || parsed.search.includes(pathMarker))) {
-      return null
-    }
-  } catch {
-    // Report an invalid template using the same guidance.
-  }
-  return 'Use an HTTPS destination with {query} only in its path or query string.'
-}
 
 function allBangs(customBangs: readonly CustomBang[]): Map<string, CustomBang> {
   const bangs = new Map(builtIns.map(bang => [bang.trigger, bang]))
@@ -104,6 +77,16 @@ export function searchBangs(query: string, customBangs: readonly CustomBang[] = 
   if (!value) return bangs
   const matches = bangs.filter(bang => bang.trigger.includes(value) || bang.name.toLowerCase().includes(value))
   return matches.sort((a, b) => rank(a.trigger, value) - rank(b.trigger, value))
+}
+
+export function suggestBangs(prefix: string, customBangs: readonly CustomBang[] = []): CustomBang[] {
+  const value = normalizeTrigger(prefix)
+  return [...allBangs(customBangs).values()].filter(bang => bang.trigger.startsWith(value))
+    .sort((a, b) => rank(a.trigger, value) - rank(b.trigger, value))
+}
+
+export function unknownBang(query: string): string | undefined {
+  return queryTokens(query).find(({ text }) => text.startsWith('!') && triggerPattern.test(normalizeTrigger(text)))?.text
 }
 
 /** A standalone exclamation mark opens the first result. Named bangs are resolved separately. */

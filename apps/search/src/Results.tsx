@@ -13,6 +13,7 @@ import { safeHttpUrl, searchPath, type SearchLocation } from './navigation'
 import { domainRule, type DomainRule, type Preferences } from './preferences'
 import { ResultImage } from './ResultImage'
 import { groupResults, resultEntries, visibleEntries, type ResultWithUrl } from './result-order'
+import { licenseLabel } from './reusable-images'
 import { VideoPreview } from './VideoPreview'
 import { videoDurationBucket, videoDurationOptions, type VideoDuration } from './video-duration'
 
@@ -20,6 +21,7 @@ const wordPattern = /[\p{L}\p{N}][\p{L}\p{M}\p{N}]*/gu
 const commonWords = new Set(['and', 'are', 'for', 'how', 'the', 'this', 'was', 'what', 'where', 'which', 'with'])
 const imageBatchSize = 24
 const newsAgeInSeconds = { minute: 60, hour: 3600, day: 86400, week: 604800, month: 2592000, year: 31536000 }
+const compactCount = new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 })
 
 function queryTerms(query: string) {
   const withoutOperators = query.replace(/(^|\s)-?[a-z][a-z-]*:(?:"[^"]*"|\S+)/gi, '$1')
@@ -84,16 +86,19 @@ function SiteIcon({ host }: { host: string }) {
   </span>
 }
 
-function ImageThumbnail({ image, thumbnail, title, contain, open }: {
+function ImageThumbnail({ image, thumbnail, title, license, contain, open }: {
   image: string | undefined
   thumbnail: string | undefined
   title: string
+  license?: string
   contain: boolean
   open: (opener: HTMLButtonElement) => void
 }) {
   return <button type="button" className="image-preview" aria-label={'Preview image: ' + title} aria-haspopup="dialog"
+    aria-description={license ? 'Reported license: ' + license : undefined}
     data-contain={contain || undefined} onClick={event => open(event.currentTarget)}>
     <ResultImage sources={[thumbnail, image]} alt="" lazy fallback={<Image size={26} aria-hidden="true" />} />
+    {license && <span className="image-license-badge">{license}</span>}
   </button>
 }
 
@@ -116,17 +121,22 @@ function ResultItem({ entry, additional, versions, preview, media, video, newsNo
   const news = newsNow !== undefined
   const date = formatDate(result.publishedAt, newsNow)
   const target = newTab ? '_blank' : undefined
-  const path = preview || news ? '' : pathLabel(url)
+  const path = preview || news || media ? '' : pathLabel(url)
   const title = result.title || host
-  const thumbnail = media ? safeHttpUrl(result.thumbnailUrl) ?? safeHttpUrl(result.imageUrl) : undefined
+  const thumbnail = media || news ? safeHttpUrl(result.thumbnailUrl) ?? safeHttpUrl(result.imageUrl) : undefined
   const mediaDetails = media && !video ? [result.creatorName, result.duration].filter(Boolean).join(' · ') : ''
   const videoDuration = video && videoDurationBucket(result.duration) ? result.duration : undefined
-  const videoDetails = video ? [result.creatorName, videoDuration].filter(Boolean).join(' · ') : ''
+  const views = result.viewCount === undefined ? undefined : compactCount.format(result.viewCount) + (result.viewCount === 1 ? ' view' : ' views')
+  const videoDetails = video ? [result.creatorName, videoDuration, views].filter(Boolean).join(' · ') : ''
   const reportedDate = date && (date.iso
     ? <time className="result-date" dateTime={date.iso} title={date.absolute ?? 'Date reported by the search provider'}>{date.label}</time>
     : <span className="result-date" title="Date reported by the search provider">{date.label}</span>)
   const dimensions = result.imageDimensions
   const containImage = Boolean(dimensions && (dimensions.width >= 2 * dimensions.height || dimensions.height >= 1.6 * dimensions.width))
+  const mediaImage = thumbnail && <a className="result-media" href={url.href} target={target} rel="noreferrer" tabIndex={-1} aria-hidden="true">
+    <ResultImage key={thumbnail.href} sources={[thumbnail.href, result.imageUrl]} alt="" lazy fallback={<Image size={24} aria-hidden="true" />} />
+    {videoDuration && <span className="video-result-runtime">{videoDuration}</span>}
+  </a>
   const content = <>
       <div className="result-meta">
         <SiteIcon host={host} />
@@ -205,14 +215,13 @@ function ResultItem({ entry, additional, versions, preview, media, video, newsNo
       {video && <VideoPreview url={url.href} title={title} newTab={newTab} />}
     </>
   return (
-    <li className="result" data-video-thumbnail={Boolean(video && thumbnail) || undefined}>
+    <li className="result" data-video-thumbnail={Boolean(video && thumbnail) || undefined} data-news-thumbnail={Boolean(news && thumbnail) || undefined}>
       {preview && <ImageThumbnail key={result.imageUrl + ' ' + result.thumbnailUrl}
-        thumbnail={result.thumbnailUrl} image={result.imageUrl} title={title} contain={containImage} open={preview} />}
-      {thumbnail && <a className="result-media" href={url.href} target={target} rel="noreferrer" tabIndex={-1} aria-hidden="true">
-        <ResultImage key={thumbnail.href} sources={[thumbnail.href, result.imageUrl]} alt="" lazy fallback={<Image size={24} aria-hidden="true" />} />
-        {videoDuration && <span className="video-result-runtime">{videoDuration}</span>}
-      </a>}
-      {video ? <div className="video-result-content">{content}</div> : content}
+        thumbnail={result.thumbnailUrl} image={result.imageUrl} title={title} contain={containImage} open={preview}
+        license={result.imageLicense && licenseLabel(result.imageLicense.code, result.imageLicense.version)} />}
+      {!news && mediaImage}
+      {video || (news && thumbnail) ? <div className="media-result-content">{content}</div> : content}
+      {news && mediaImage}
     </li>
   )
 }
@@ -243,6 +252,8 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
   const news = location.category === 'news'
   const media = videos || location.category === 'podcasts'
   const results = resultEntries(data, preferences)
+  const podcastShows = location.category === 'podcasts' && data.podcastShows
+    ? visibleEntries(resultEntries({ ...data, results: data.podcastShows }, preferences), false) : []
   const hiddenCount = results.filter(item => item.rule === 'hide').length
   const visible = visibleEntries(results, showHidden)
   const now = Date.now()
@@ -309,8 +320,11 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
         {images && (
           <ImageResultFilters value={refinements} update={updateImageRefinements}
             shown={shown.length} total={visible.length} matches={ordered.length} withoutDimensions={withoutDimensions}
-            hasSourceDates={visible.some(entry => imageSourceTime(entry.result.publishedAt) !== undefined)} sources={imageSources(visible)} />
+            collapsed={data.provider === 'openverse'} hasSourceDates={visible.some(entry => imageSourceTime(entry.result.publishedAt) !== undefined)}
+            sources={imageSources(visible)} />
         )}
+        {news && (location.date || location.dateRange) &&
+          <p className="hint news-date-hint">The date filter includes articles updated during this period.</p>}
         {canSortNews && <div className="result-refinements">
           <label>
             <span>Sort news</span>
@@ -340,7 +354,18 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
             {withoutDuration > 0 && ` · ${withoutDuration} without a reported duration`}
           </p>}
         </div>}
+        {podcastShows.length > 0 && <section className="podcast-shows" aria-label="Podcast shows">
+          <h2>Shows</h2>
+          <ul>{podcastShows.map(({ result, url }) => <li key={url.href}>
+            <a href={url.href} rel="noreferrer" target={preferences.newTab ? '_blank' : undefined}>
+              {result.imageUrl && <ResultImage sources={[result.imageUrl]} alt="" lazy fallback={null} />}
+              <span>{result.title}</span>
+            </a>
+          </li>)}</ul>
+        </section>}
         {shown.length > 0 ? (
+          <>
+          {podcastShows.length > 0 && <h2 className="episode-heading">Episodes</h2>}
           <ol ref={images ? gallery : undefined} className={images ? 'results-list image-grid' : videoGrid ? 'results-list video-results-grid' : 'results-list'}>
             {groups.map(({ lead: entry, additional, versions }, index) => (
               <ResultItem key={entry.url.href + (entry.result.imageUrl ?? '')} entry={entry}
@@ -350,7 +375,8 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
                 newTab={preferences.newTab} setDomain={setDomain} showHidden={showHidden} searchSite={searchSite} terms={terms} />
             ))}
           </ol>
-        ) : !data.answer && !knowledge && (
+          </>
+        ) : !data.answer && !knowledge && !podcastShows.length && (
           <section className="search-message">
             <h2>{noMatchingImages ? 'No images match these filters' : noMatchingVideos ? 'No videos match this duration' : hiddenCount ? 'All results are hidden' : 'No results found'}</h2>
             {noMatchingImages && <p>{data.hasMore ? 'Clear the image filters or try the next results page.' : 'Clear the image filters to see all images on this page.'}</p>}

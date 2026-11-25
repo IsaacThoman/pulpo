@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, providerNames, SearchApiError, type SearchConfig, type SearchUser } from './api'
 import { useSearchAppearance } from './appearance'
 import { consumeCallback, pulpoOrigin, startSignIn } from './auth'
-import { firstResultQuery, resolveBang, type CustomBang } from './bangs'
+import { firstResultQuery, resolveBang, unknownBang, type CustomBang } from './bangs'
 import { Calculator } from './Calculator'
 import { CurrencyAnswer } from './CurrencyAnswer'
 import { parseCurrencyQuery } from './currency'
@@ -11,7 +11,7 @@ import { instantAnswer } from './instant-answer'
 import { categories, homeLocation, localMapSearch, MAX_QUERY_LENGTH, parseSearchLocation, searchPath, searchScopes, withoutSiteOperators, type SearchLocation } from './navigation'
 import { PlacesAnswer, PlacesLocation } from './PlacesAnswer'
 import { placeIntent } from './places'
-import { compatibleProviders, loadPreferences, preferencesStorageKey, providerOrder, savePreferences, type DomainRule, type Preferences } from './preferences'
+import { compatibleProviders, providerOrder, searchRegion, type DomainRule, type Preferences } from './preferences'
 import { QuickAnswer } from './QuickAnswer'
 import { ReusableImageControls } from './ReusableImageControls'
 import { shorterReusableImageQuery, type ReusableImageFilters } from './reusable-images'
@@ -27,6 +27,7 @@ import { useCurrencyQuote } from './use-currency'
 import { useImageBrowse } from './use-image-browse'
 import { usePlaces } from './use-places'
 import { useSearch } from './use-search'
+import { useSearchPreferences } from './use-search-preferences'
 import { WeatherAnswer } from './WeatherAnswer'
 import { useWeatherAlerts, useWeatherAnswer, weatherLocation } from './weather'
 
@@ -48,10 +49,10 @@ function Logo({ onHome }: { onHome: () => void }) {
   }}><PulpoMark size={27} /> <span>Pulpo Search</span></a>
 }
 
-function LoadingResults({ firstResult = false }: { firstResult?: boolean }) {
+function LoadingResults({ firstResult = false, images = false }: { firstResult?: boolean; images?: boolean }) {
   return (
-    <div className="skeleton-list" role="status" aria-label={firstResult ? 'Opening first result' : 'Searching'}>
-      {[0, 1, 2, 3].map(index => (
+    <div className={images ? 'results-list image-grid image-loading-grid' : 'skeleton-list'} role="status" aria-label={firstResult ? 'Opening first result' : 'Searching'}>
+      {Array.from({ length: images ? 12 : 4 }, (_, index) => (
         <div className="skeleton" key={index} aria-hidden="true"><span /><span /><span /></div>
       ))}
     </div>
@@ -63,10 +64,14 @@ type Callback = ReturnType<typeof consumeCallback>
 export function App({ callback }: { callback: Callback }) {
   const [location, setLocation] = useState(() => parseSearchLocation(new URL(window.location.href)))
   const [draft, setDraft] = useState(firstResultQuery(location.query) ?? location.query)
-  const [preferences, setPreferences] = useState(loadPreferences)
-  const [searchPreferences, setSearchPreferences] = useState(preferences)
   const [panel, setPanel] = useState<Panel | null>(null)
   const [user, setUser] = useState<SearchUser | null | undefined>(undefined)
+  const userId = user?.id
+  const { preferences, initialAccountPreferences, update, syncStatus, retrySync } = useSearchPreferences(userId)
+  const [appliedPreferences, setAppliedPreferences] = useState<{ userId: string | undefined; preferences: Preferences }>()
+  const preferencesReady = !userId || Boolean(initialAccountPreferences)
+  const searchPreferences = appliedPreferences && appliedPreferences.userId === userId
+    ? appliedPreferences.preferences : initialAccountPreferences ? { ...preferences, ...initialAccountPreferences } : preferences
   const [authError, setAuthError] = useState(callback && 'error' in callback ? callback.error : '')
   const [authBusy, setAuthBusy] = useState(false)
   const [authAttempt, setAuthAttempt] = useState(0)
@@ -78,7 +83,9 @@ export function App({ callback }: { callback: Callback }) {
   const [answerWithWeb, setAnswerWithWeb] = useState<{ userId: string; path: string; expanded: boolean }>()
   const [, refreshInstantAnswer] = useState(0)
   const input = useRef<HTMLInputElement>(null)
-  const activePreferences = useRef(preferences)
+  const preferenceSnapshot = preferencesReady ? { userId, preferences } : undefined
+  const activePreferences = useRef(preferenceSnapshot)
+  activePreferences.current = preferenceSnapshot
   const callbackRef = useRef(callback && 'code' in callback ? callback : null)
   const accountMenu = useRef<HTMLDetailsElement>(null)
   const luckyRedirect = useRef('')
@@ -90,23 +97,12 @@ export function App({ callback }: { callback: Callback }) {
       const next = parseSearchLocation(new URL(window.location.href))
       setLocation(next)
       setDraft(firstResultQuery(next.query) ?? next.query)
-      setSearchPreferences(activePreferences.current)
+      setAppliedPreferences(activePreferences.current)
       setAnswerWithWeb(previous => previous?.path === answerPath(next) ? previous : undefined)
       setSubmittedQuestion(undefined)
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
-  }, [])
-
-  useEffect(() => {
-    function syncPreferences(event: StorageEvent) {
-      if (event.key !== null && event.key !== preferencesStorageKey) return
-      const next = loadPreferences()
-      activePreferences.current = next
-      setPreferences(next)
-    }
-    window.addEventListener('storage', syncPreferences)
-    return () => window.removeEventListener('storage', syncPreferences)
   }, [])
 
   useEffect(() => {
@@ -140,14 +136,16 @@ export function App({ callback }: { callback: Callback }) {
     return () => controller.abort()
   }, [user, configAttempt])
 
-  const bang = location.query ? resolveBang(location.query, preferences.bangs) : null
-  const luckyQuery = bang ? null : firstResultQuery(location.query)
+  const activeBangs = user !== undefined && preferencesReady ? preferences.bangs : []
+  const bang = location.query ? resolveBang(location.query, activeBangs) : null
+  const unrecognizedBang = !bang && !location.web && user !== undefined && preferencesReady ? unknownBang(location.query) : undefined
+  const luckyQuery = bang || unrecognizedBang ? null : firstResultQuery(location.query)
   const bangDiscovery = isBangDiscovery(location.query)
   const view = useMemo(() => bangDiscovery ? homeLocation
     : luckyQuery ? { ...location, query: luckyQuery, category: 'web' as const, page: undefined, reusableImages: undefined } : location,
   [bangDiscovery, luckyQuery, location])
   const companion = answerWithWeb?.userId === user?.id && answerWithWeb?.path === answerPath(view) ? answerWithWeb : undefined
-  const allowAnswers = !bang && !luckyQuery && view.category === 'web'
+  const allowAnswers = !bang && !unrecognizedBang && !luckyQuery && view.category === 'web'
     && !view.scope && !view.region && !view.date && !view.dateRange && !view.invalidDateRange && !view.web
     && (companion?.expanded || (!view.page && !view.provider))
   const localAnswer = allowAnswers ? instantAnswer(view.query) : undefined
@@ -160,7 +158,7 @@ export function App({ callback }: { callback: Callback }) {
   const forecastPending = !!(user && forecastLocation && forecast === undefined)
   const showForecast = forecast?.status === 'forecast' || forecast?.status === 'ambiguous'
   const alerts = useWeatherAlerts(forecast?.status === 'forecast' ? forecastLocation : undefined, user?.id)
-  const localIntent = allowAnswers && config?.places && searchPreferences.localPlaces && !forecastLocation && !localAnswer && !currencyQuery
+  const localIntent = preferencesReady && allowAnswers && config?.places && searchPreferences.localPlaces && !forecastLocation && !localAnswer && !currencyQuery
     ? placeIntent(view.query) : undefined
   const choosePlaceLocation = user ? localIntent?.needsLocation : undefined
   const { result: placeResult, retry: retryPlaces } = usePlaces(choosePlaceLocation ? undefined : localIntent, user?.id)
@@ -182,7 +180,9 @@ export function App({ callback }: { callback: Callback }) {
     const timer = window.setTimeout(() => refreshInstantAnswer(value => value + 1), Math.max(0, refreshAt - Date.now()) + 25)
     return () => window.clearTimeout(timer)
   }, [refreshAt])
-  const defaultOrder = config ? providerOrder(searchPreferences, config) : []
+  const automaticNewsOrder = view.category === 'news' && !searchPreferences.defaultProvider && !searchPreferences.fallbackProvider
+    ? config?.newsDefaultOrder : undefined
+  const defaultOrder = config ? providerOrder(searchPreferences, automaticNewsOrder ? { ...config, defaultOrder: automaticNewsOrder } : config) : []
   const order = !config ? [] : view.provider
     ? config.providers.filter(provider => provider.id === view.provider).map(provider => provider.id)
     : defaultOrder
@@ -202,9 +202,10 @@ export function App({ callback }: { callback: Callback }) {
   const filterDates = [...new Set(categoryProviders.flatMap(provider => provider.dates))]
   const filterCustomDates = categoryProviders.some(provider => provider.customDateRanges?.includes(view.category))
   const filterRegion = categoryProviders.some(provider => provider.region)
+  const effectiveRegion = filterRegion ? searchRegion(view, searchPreferences.defaultRegion) : ''
   const recoveryProviders = alternatives.filter(provider => !order.includes(provider.id))
   const reuse = view.category === 'images' ? view.reusableImages : undefined
-  const { state, refresh } = useSearch(user?.id, reuse ? config?.reusableImages && view.query.length <= 200 && !view.invalidDateRange ? {
+  const { state, refresh } = useSearch(userId, unrecognizedBang || !preferencesReady ? null : reuse ? config?.reusableImages && view.query.length <= 200 && !view.invalidDateRange ? {
     reusable: true, query: view.query, page: view.page, ...reuse,
   } : null : view.query && compatible.length && !bang && (!showAnswer || keepCompanionLookup) && !answerPending && !view.invalidDateRange ? {
     query: view.query,
@@ -212,7 +213,8 @@ export function App({ callback }: { callback: Callback }) {
     category: view.category,
     date: view.date || undefined,
     ...(view.dateRange ? { dateRange: view.dateRange } : {}),
-    region: view.region || undefined,
+    region: effectiveRegion || undefined,
+    safeSearch: view.safeSearch ?? searchPreferences.safeSearch,
     scope: view.category === 'web' ? view.scope : undefined,
     page: view.page,
     limit: searchPreferences.limit,
@@ -228,9 +230,6 @@ export function App({ callback }: { callback: Callback }) {
   const resultsData = state.status === 'success' && spelling ? {
     ...state.data, related: state.data.related?.filter(query => query !== spelling),
   } : imageBrowse.data
-  const newsAlternative = state.status === 'success' && view.category === 'news' && !view.page
-    && ((!view.provider && !view.dateRange) || (view.dateRange && state.data.results.length < 3))
-    ? alternatives.find(provider => provider.id !== state.data.provider) : undefined
   const waitingForSession = user === undefined
   const isResults = Boolean(view.query)
 
@@ -304,7 +303,7 @@ export function App({ callback }: { callback: Callback }) {
       const arrow = event.key === 'ArrowDown' || event.key === 'ArrowUp'
       const shortcut = preferences.keyboardShortcuts && (event.key === 'j' || event.key === 'k')
       if (!arrow && !shortcut) return
-      const links = [...document.querySelectorAll<HTMLAnchorElement>('.result-link')]
+      const links = [...document.querySelectorAll<HTMLAnchorElement>('.results-list > .result h2 > .result-link')]
       if (!links.length) return
       const current = links.indexOf(document.activeElement as HTMLAnchorElement)
       if (arrow && current < 0 && !browsingFromSearch) return
@@ -320,12 +319,6 @@ export function App({ callback }: { callback: Callback }) {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [panel, preferences.keyboardShortcuts])
-
-  function update(next: Preferences) {
-    activePreferences.current = next
-    setPreferences(next)
-    savePreferences(next)
-  }
 
   function setDomain(host: string, rule: DomainRule | undefined) {
     const domains = { ...preferences.domains }
@@ -345,7 +338,7 @@ export function App({ callback }: { callback: Callback }) {
     }
     setLocation(next)
     setDraft(firstResultQuery(next.query) ?? next.query)
-    setSearchPreferences(preferences)
+    setAppliedPreferences(preferenceSnapshot)
     setAnswerWithWeb(previous => previous?.path === answerPath(next) ? previous : undefined)
     setSubmittedQuestion(undefined)
   }
@@ -393,7 +386,7 @@ export function App({ callback }: { callback: Callback }) {
       go(homeLocation)
       return
     }
-    const shortcut = resolveBang(trimmed, preferences.bangs)
+    const shortcut = resolveBang(trimmed, activeBangs)
     if (shortcut) {
       window.location.assign(shortcut.url)
       return
@@ -403,13 +396,14 @@ export function App({ callback }: { callback: Callback }) {
       setPanel('bangs')
       return
     }
-    rememberQuery(firstResultQuery(trimmed) ?? trimmed)
+    const unknown = unknownBang(trimmed)
+    if (!unknown) rememberQuery(firstResultQuery(trimmed) ?? trimmed)
     const restoreInput = !isResults && input.current === document.activeElement
       && window.matchMedia?.('(pointer: fine)').matches
     go({ ...view, query: trimmed, category: firstResultQuery(trimmed) ? 'web' : view.category,
       ...(firstResultQuery(trimmed) ? { reusableImages: undefined } : {}),
       invalidDateRange: undefined, web: undefined, provider: undefined, page: undefined })
-    if (view.category === 'web' && /[?？]$/u.test(trimmed)) setSubmittedQuestion(trimmed)
+    if (!unknown && view.category === 'web' && /[?？]$/u.test(trimmed)) setSubmittedQuestion(trimmed)
     if (restoreInput) requestAnimationFrame(() => input.current?.focus())
   }
 
@@ -562,6 +556,8 @@ export function App({ callback }: { callback: Callback }) {
                 </label>}
                 {!showAnswer && !answerPending && !reuse && <SearchFilters date={view.date} dateRange={view.dateRange} region={view.region}
                   dates={filterDates} allowCustomDates={filterCustomDates} allowRegion={filterRegion}
+                  regionOverride={view.regionOverride} safeSearch={view.safeSearch}
+                  defaultRegion={searchPreferences.defaultRegion} defaultSafeSearch={searchPreferences.safeSearch}
                   searchProvider={user && (alternatives.length > 1 || view.provider) ? {
                     selected: view.provider,
                     used: state.status === 'success' && state.data.provider !== 'openverse' ? state.data.provider : undefined,
@@ -576,11 +572,22 @@ export function App({ callback }: { callback: Callback }) {
                 onToggle={() => changeReusableImages(reuse ? undefined : {})} onFilters={changeReusableImages} />
             )}
             {authError && <p className="form-error results-auth-error" role="alert">{authError}</p>}
-            {user && config?.quickAnswer && view.category === 'web' && !bang && !luckyQuery && !view.page && !view.invalidDateRange && (
+            {user && preferencesReady && config?.quickAnswer && view.category === 'web' && !bang && !unrecognizedBang && !luckyQuery && !view.page && !view.invalidDateRange && (
               <QuickAnswer key={user.id + '\n' + view.query} query={view.query}
                 automatic={submittedQuestion === view.query} onAutomaticStart={consumeSubmittedQuestion} pulpoOrigin={pulpoOrigin} />
             )}
-            {view.invalidDateRange ? (
+            {unrecognizedBang ? (
+              <section className="search-message">
+                <h2>Unknown bang: {unrecognizedBang}</h2>
+                <div className="empty-actions">
+                  <button className="secondary-button" onClick={() => {
+                    rememberQuery(view.query)
+                    go({ ...view, category: 'web', reusableImages: undefined, page: undefined, web: true })
+                  }}>Search the web as written</button>
+                  <button className="text-button" onClick={() => setPanel('bangs')}>Browse bangs</button>
+                </div>
+              </section>
+            ) : view.invalidDateRange ? (
               <section className="search-message" role="alert">
                 <h2>Invalid date range</h2>
                 <p>Choose a start and end date in order, or clear the range.</p>
@@ -634,7 +641,7 @@ export function App({ callback }: { callback: Callback }) {
                 <button className="secondary-button" onClick={() => go({ ...view, web: true })}>Search the web</button>
               </section>
             ) : null}
-            {showWebResults && (bang || waitingForSession || currencyPending ? <LoadingResults firstResult={Boolean(luckyQuery)} /> : user === null ? (
+            {!unrecognizedBang && showWebResults && (bang || waitingForSession || currencyPending ? <LoadingResults firstResult={Boolean(luckyQuery)} /> : user === null ? (
               <section className="search-message">
                 <h2>Sign in to search</h2>
                 <p>Use your Pulpo account and shared credits.</p>
@@ -651,7 +658,7 @@ export function App({ callback }: { callback: Callback }) {
                 <p>{configError}</p>
                 <button className="secondary-button" onClick={() => { setConfigError(''); setConfigAttempt(value => value + 1) }}>Try again</button>
               </section>
-            ) : !config || state.status === 'loading' ? <LoadingResults firstResult={Boolean(luckyQuery)} /> : reuse && (!config.reusableImages || view.query.length > 200) ? (
+            ) : !config || !preferencesReady || state.status === 'loading' ? <LoadingResults firstResult={Boolean(luckyQuery)} images={view.category === 'images'} /> : reuse && (!config.reusableImages || view.query.length > 200) ? (
               <section className="search-message">
                 <h2>{config.reusableImages ? 'Shorten your image query' : 'Reusable images are unavailable'}</h2>
                 {config.reusableImages && <p>Reusable images supports up to 200 characters.</p>}
@@ -673,12 +680,7 @@ export function App({ callback }: { callback: Callback }) {
                 {spelling && <p className="spelling-suggestion">
                   Did you mean <button className="text-button" onClick={() => onSearch(spelling)}>{spelling}</button>?
                 </p>}
-                {newsAlternative && <div className="alternate-news">
-                  <button className="secondary-button" onClick={() => go({ ...view, provider: newsAlternative.id })}>
-                    Try {providerNames[newsAlternative.id]} {view.dateRange ? 'for these dates' : 'for news'}
-                  </button>
-                </div>}
-                {!state.data.results.length && !state.data.answer && !state.data.knowledge ? (
+                {!state.data.results.length && !state.data.answer && !state.data.knowledge && !state.data.podcastShows?.length ? (
                   <section className="search-message">
                     <h2>No results found</h2>
                     <p>Try fewer words or change your filters.</p>
@@ -691,8 +693,10 @@ export function App({ callback }: { callback: Callback }) {
                         onClick={() => onSearch(withoutSiteOperators(view.query))}>Remove site operators</button>}
                       {view.scope && <button className="secondary-button"
                         onClick={() => go({ ...view, scope: undefined, page: undefined })}>Search all sites</button>}
-                      {(view.date || view.dateRange || view.region) && <button className="secondary-button"
-                        onClick={() => go({ ...view, date: '', dateRange: undefined, region: '', page: undefined })}>Clear date and region</button>}
+                      {(view.date || view.dateRange || effectiveRegion) && <button className="secondary-button"
+                        onClick={() => go({ ...view, date: '', dateRange: undefined, region: '', page: undefined,
+                          regionOverride: searchPreferences.defaultRegion ? true : undefined,
+                        })}>Clear date and region</button>}
                       {reuse && <button className="secondary-button" onClick={() => changeReusableImages(undefined)}>Search all images</button>}
                       {!reuse && view.category !== 'web' && <button className="secondary-button" onClick={() => changeCategory('web')}>Try Web results</button>}
                     </div>
@@ -736,7 +740,7 @@ export function App({ callback }: { callback: Callback }) {
       </footer>
       {panel && (
         <Modal title={titles[panel]} close={() => setPanel(null)}>
-          {panel === 'settings' && <Settings config={config} preferences={preferences} update={update}
+          {panel === 'settings' && <Settings config={config} preferences={preferences} update={update} syncStatus={syncStatus} retrySync={retrySync}
             recentQueryCount={recentQueries.length} clearRecentQueries={clearRecentQueries} />}
           {panel === 'bangs' && <Bangs customBangs={preferences.bangs} update={bangs => update({ ...preferences, bangs })} onChooseBang={handleBang} />}
           {panel === 'shortcuts' && <Shortcuts singleKeys={preferences.keyboardShortcuts} />}

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import cookie from '@fastify/cookie'
+import { defaultSearchAccountPreferences } from '@pulpo/contracts/search'
 import { eq } from 'drizzle-orm'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -7,6 +8,7 @@ import { db, queryClient } from '../database/client.js'
 import { searchAuthCodes, sessions, userPreferences, users } from '../database/schema.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { AppError } from '../lib/errors.js'
+import { applyManagementSettings, loadManagementSettings } from '../management/settings.js'
 import { registerAccountSwitchingRoutes, signedInAccountsCookieName } from './accounts.js'
 import { authenticateApplicationRequest, registerSearchAuthRoutes } from './search-routes.js'
 import { requireUser } from './service.js'
@@ -166,6 +168,47 @@ describe.skipIf(!enabled)('Search sessions and Pulpo account handoff', () => {
         light: { colors: {}, tokenColors: [] },
       },
     })
+  })
+
+  it('isolates Search preferences and atomically imports local defaults only into a new account', async () => {
+    const url = '/api/search/preferences'
+    const accountId = testUser.id
+    const readUrl = `${url}?accountId=${accountId}`
+    expect((await app.inject({ url: readUrl, headers: searchHeaders })).statusCode).toBe(401)
+    await db.insert(userPreferences).values({ userId: accountId, values: { theme: 'dark', unrelated: 'keep' } })
+    const exchanged = await exchange(await authorize())
+    const headers = { ...searchHeaders, cookie: (exchanged.headers['set-cookie'] as string).split(';')[0] }
+    const get = (id = accountId) => app.inject({ url: `${url}?accountId=${id}`, headers })
+    const patch = (payload: object, origin = searchHeaders.origin) => app.inject({
+      method: 'PATCH', url, headers: { ...headers, origin }, payload: { accountId, ...payload },
+    })
+
+    const before = await get()
+    expect(before.headers['cache-control']).toBe('no-store')
+    expect(before.json()).toEqual({ preferences: null })
+    expect((await get(randomUUID())).statusCode).toBe(403)
+    expect((await patch({ accountId: randomUUID(), patch: { limit: 10 } })).statusCode).toBe(403)
+    expect((await patch({ patch: { limit: 10 } }, pulpoHeaders.origin)).statusCode).toBe(403)
+
+    const initial = { ...defaultSearchAccountPreferences, limit: 20, domains: { 'example.com': 'hide' } }
+    const imported = await patch({ initial, patch: {} })
+    expect(imported.statusCode).toBe(200)
+    expect(imported.json()).toEqual({ preferences: initial })
+    const concurrent = await Promise.all([
+      patch({ patch: { newTab: true } }),
+      patch({ initial: defaultSearchAccountPreferences, patch: { defaultRegion: 'gb', safeSearch: false } }),
+    ])
+    expect(concurrent.map(response => response.statusCode)).toEqual([200, 200])
+    const expected = { ...initial, newTab: true, defaultRegion: 'gb', safeSearch: false }
+    expect((await get()).json()).toEqual({ preferences: expected })
+    const [row] = await db.select().from(userPreferences).where(eq(userPreferences.userId, accountId))
+    expect(row?.values).toMatchObject({ theme: 'dark', unrelated: 'keep', searchPreferences: expected })
+
+    const document = await loadManagementSettings(accountId)
+    document.account.theme = 'light'
+    const updated = await applyManagementSettings(accountId, accountId, document, document.revision, {}, 'account')
+    expect(updated.account.theme).toBe('light')
+    expect((await get()).json()).toEqual({ preferences: expected })
   })
 
   it('rejects a grant after the source session is revoked or the code expires', async () => {

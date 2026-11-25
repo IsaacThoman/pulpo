@@ -1,4 +1,4 @@
-import type { SearchDateRange } from '@pulpo/contracts/search'
+import type { SearchAccountPreferences, SearchDateRange } from '@pulpo/contracts/search'
 import type { CurrencyQuery, CurrencyResponse } from './currency'
 import type { PlaceProvider, PlaceQuery, PlaceResponse } from './places'
 import type { ReusableImageFilters } from './reusable-images'
@@ -25,6 +25,7 @@ export interface SearchInput {
   expandedImages?: true
   category?: Category
   region?: string
+  safeSearch?: boolean
   date?: SearchDate
   dateRange?: SearchDateRange
   scope?: SearchScope
@@ -74,6 +75,7 @@ export interface SearchResult {
   imageLicense?: ImageLicense
   duration?: string
   creatorName?: string
+  viewCount?: number
   publishedAt?: string
 }
 
@@ -90,6 +92,7 @@ export interface SearchResponse {
   related?: string[]
   answer?: { title: string; snippet: string; url?: string }
   knowledge?: Knowledge
+  podcastShows?: SearchResult[]
   hasMore?: boolean
 }
 
@@ -111,6 +114,7 @@ export interface ProviderConfig {
 
 export interface SearchConfig {
   defaultOrder: Provider[]
+  newsDefaultOrder?: Provider[]
   providers: ProviderConfig[]
   weather?: boolean
   currency?: boolean
@@ -149,6 +153,10 @@ export interface SearchAppearance {
   colorTheme: string
   customTheme?: CustomTheme
   instanceTheme?: CustomTheme
+}
+
+interface SearchPreferencesResponse {
+  preferences: SearchAccountPreferences | null
 }
 
 export class SearchApiError extends Error {
@@ -258,6 +266,13 @@ export const api = {
     }
   },
   appearance: (signal?: AbortSignal) => request<SearchAppearance>('/appearance', { signal }),
+  preferences: (accountId: string, signal?: AbortSignal) => request<SearchPreferencesResponse>(
+    '/preferences?' + new URLSearchParams({ accountId }), { signal },
+  ),
+  updatePreferences: (accountId: string, patch: Partial<SearchAccountPreferences>, initial?: SearchAccountPreferences, signal?: AbortSignal) =>
+    request<SearchPreferencesResponse>('/preferences', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId, patch, initial }), signal,
+    }),
   session: (signal?: AbortSignal) => request<{ user: SearchUser | null }>('/auth/session', { signal }),
   exchange: (code: string, codeVerifier: string) => post<{ user: SearchUser }>('/auth/exchange', { code, codeVerifier }),
   logout: () => post<void>('/auth/logout'),

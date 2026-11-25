@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { providerNames, type Provider } from './api'
 import { dateOptions, regions, type SearchLocation } from './navigation'
 
-type Filters = Pick<SearchLocation, 'date' | 'dateRange' | 'region'>
+type Filters = Pick<SearchLocation, 'date' | 'dateRange' | 'region' | 'regionOverride' | 'safeSearch'>
 type DateSelection = Filters['date'] | 'custom'
 
 interface FilterDraft {
@@ -12,12 +12,15 @@ interface FilterDraft {
   from: string
   to: string
   region: string
+  safeSearch: string
 }
 
 interface SearchFiltersProps extends Filters {
   dates: readonly SearchLocation['date'][]
   allowCustomDates: boolean
   allowRegion: boolean
+  defaultRegion: string
+  defaultSafeSearch: boolean
   onApply: (filters: Filters) => void
   searchProvider?: {
     selected: Provider | undefined
@@ -27,14 +30,20 @@ interface SearchFiltersProps extends Filters {
   }
 }
 
-const empty: Filters = { date: '', dateRange: undefined, region: '' }
+const empty: Filters = { date: '', dateRange: undefined, region: '', regionOverride: undefined, safeSearch: undefined }
 const dateLabel = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' })
 
-function filterDraft({ date, dateRange, region }: Filters): FilterDraft {
-  return { date: dateRange ? 'custom' : date, from: dateRange?.from ?? '', to: dateRange?.to ?? '', region }
+function filterDraft({ date, dateRange, region, regionOverride, safeSearch }: Filters): FilterDraft {
+  return {
+    date: dateRange ? 'custom' : date, from: dateRange?.from ?? '', to: dateRange?.to ?? '',
+    region: regionOverride ? 'any' : region, safeSearch: safeSearch === undefined ? '' : safeSearch ? 'on' : 'off',
+  }
 }
 
-export function SearchFilters({ date, dateRange, region, dates, allowCustomDates, allowRegion, onApply, searchProvider }: SearchFiltersProps) {
+export function SearchFilters({
+  date, dateRange, region, regionOverride, safeSearch, dates, allowCustomDates, allowRegion,
+  defaultRegion, defaultSafeSearch, onApply, searchProvider,
+}: SearchFiltersProps) {
   const menu = useRef<HTMLDetailsElement>(null)
   const summary = useRef<HTMLElement>(null)
   const dateId = useId()
@@ -42,18 +51,23 @@ export function SearchFilters({ date, dateRange, region, dates, allowCustomDates
   const toId = useId()
   const errorId = useId()
   const regionId = useId()
+  const safeSearchId = useId()
   const providerId = useId()
-  const [draft, setDraft] = useState(() => filterDraft({ date, dateRange, region }))
+  const currentDraft = filterDraft({ date, dateRange, region, regionOverride, safeSearch })
+  const [draft, setDraft] = useState(currentDraft)
   const rangeDraft = draft.date === 'custom' ? searchDateRange(draft.from, draft.to) : undefined
   const reversed = draft.date === 'custom' && !!draft.to && draft.from > draft.to
   const nextDate = draft.date === 'custom' ? '' : draft.date
-  const active = Boolean(date || dateRange || region)
+  const active = Boolean(date || dateRange || region || regionOverride || safeSearch !== undefined)
   const changed = date !== nextDate || dateRange?.from !== rangeDraft?.from
-    || dateRange?.to !== rangeDraft?.to || region !== draft.region
+    || dateRange?.to !== rangeDraft?.to || currentDraft.region !== draft.region || currentDraft.safeSearch !== draft.safeSearch
   const valid = draft.date !== 'custom' || !!rangeDraft
   const appliedDateLabel = dateRange ? dateLabel.formatRange(new Date(dateRange.from), new Date(dateRange.to))
     : date && dateOptions.find(([id]) => id === date)?.[1]
-  const appliedLabels = [appliedDateLabel, regions.find(([id]) => id === region && region)?.[1]].filter(Boolean).join(' · ')
+  const defaultRegionLabel = regions.find(([id]) => id === defaultRegion)?.[1]
+  const appliedRegionLabel = regionOverride ? 'Any region' : region && regions.find(([id]) => id === region)?.[1]
+  const appliedSafeSearchLabel = safeSearch === undefined ? '' : safeSearch ? 'SafeSearch on' : 'SafeSearch off'
+  const appliedLabels = [appliedDateLabel, appliedRegionLabel, appliedSafeSearchLabel].filter(Boolean).join(' · ')
 
   useEffect(() => {
     function dismiss(event: PointerEvent) {
@@ -76,7 +90,7 @@ export function SearchFilters({ date, dateRange, region, dates, allowCustomDates
         if (event.key === 'Escape' && event.currentTarget.open) close()
       }}>
         <summary className="filter-trigger" ref={summary} aria-label={active ? 'Filters, ' + appliedLabels : 'Filters'} data-active={active}
-          onClick={() => { if (!menu.current?.open) setDraft(filterDraft({ date, dateRange, region })) }}>
+          onClick={() => { if (!menu.current?.open) setDraft(currentDraft) }}>
           <ListFilter size={16} aria-hidden="true" />
           <span>{appliedLabels || 'Filters'}</span>
           <ChevronDown size={13} aria-hidden="true" />
@@ -85,7 +99,11 @@ export function SearchFilters({ date, dateRange, region, dates, allowCustomDates
           event.preventDefault()
           if (!valid) return
           close()
-          if (changed) onApply({ date: nextDate, dateRange: rangeDraft, region: draft.region })
+          if (changed) onApply({
+            date: nextDate, dateRange: rangeDraft, region: draft.region === 'any' ? '' : draft.region,
+            regionOverride: draft.region === 'any' ? true : undefined,
+            safeSearch: draft.safeSearch === '' ? undefined : draft.safeSearch === 'on',
+          })
         }}>
           {searchProvider && <div className="filter-field">
             <label htmlFor={providerId}>Search provider</label>
@@ -125,17 +143,31 @@ export function SearchFilters({ date, dateRange, region, dates, allowCustomDates
               {reversed && <p className="filter-error" id={errorId}>End date must be on or after the start date.</p>}
             </div>
           </>}
-          {allowRegion && <div className="filter-field">
+          {(allowRegion || region || regionOverride) && <div className="filter-field">
             <label htmlFor={regionId}>Region</label>
             <span className="filter-select">
               <select id={regionId} value={draft.region} onChange={event => setDraft({ ...draft, region: event.target.value })}>
-                {regions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                <option value="">{defaultRegion ? `Default (${defaultRegionLabel})` : 'Any region'}</option>
+                {(defaultRegion || regionOverride) && <option value="any">Any region</option>}
+                {regions.slice(1).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select>
               <ChevronDown size={14} aria-hidden="true" />
             </span>
           </div>}
+          <div className="filter-field">
+            <label htmlFor={safeSearchId}>SafeSearch</label>
+            <span className="filter-select">
+              <select id={safeSearchId} value={draft.safeSearch} onChange={event => setDraft({ ...draft, safeSearch: event.target.value })}>
+                <option value="">Default ({defaultSafeSearch ? 'on' : 'off'})</option>
+                <option value="on">On</option>
+                <option value="off">Off</option>
+              </select>
+              <ChevronDown size={14} aria-hidden="true" />
+            </span>
+          </div>
           <div className="filter-actions">
-            <button type="button" className="text-button" onClick={() => setDraft(filterDraft(empty))} disabled={!draft.date && !draft.region}>Reset</button>
+            <button type="button" className="text-button" onClick={() => setDraft(filterDraft(empty))}
+              disabled={!draft.date && !draft.region && !draft.safeSearch}>Reset</button>
             <button className="button" type="submit" disabled={!changed || !valid}>Apply</button>
           </div>
         </form>

@@ -2,8 +2,10 @@ import { Copy, X } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { formatSearchPrice, providerNames, type Provider, type SearchConfig } from './api'
 import { searchBangs, validateCustomBang, type CustomBang } from './bangs'
+import { regions } from './navigation'
 import { placeProviderNames } from './places'
 import { providerOrder, type Preferences } from './preferences'
+import type { SearchPreferencesSyncStatus } from './use-search-preferences'
 
 export type Panel = 'settings' | 'bangs' | 'shortcuts' | 'browser'
 
@@ -44,11 +46,13 @@ interface SettingsProps {
   config: SearchConfig | undefined
   preferences: Preferences
   update: (next: Preferences) => void
+  syncStatus: SearchPreferencesSyncStatus
+  retrySync: () => void
   recentQueryCount: number
   clearRecentQueries: () => void
 }
 
-export function Settings({ config, preferences, update, recentQueryCount, clearRecentQueries }: SettingsProps) {
+export function Settings({ config, preferences, update, syncStatus, retrySync, recentQueryCount, clearRecentQueries }: SettingsProps) {
   const activePrimary = config ? providerOrder(preferences, config)[0] : undefined
   const domainEntries = Object.entries(preferences.domains).sort(([a], [b]) => a.localeCompare(b))
   const available = config?.providers.map(provider => provider.id) ?? []
@@ -56,7 +60,10 @@ export function Settings({ config, preferences, update, recentQueryCount, clearR
   const searchPrice = config?.providers.find(provider => provider.id === activePrimary)?.priceMicros ?? 0
   return (
     <div className="settings">
-      <p className="hint">Search preferences are saved in this browser.</p>
+      <p className="hint" role="status">{syncStatus === 'browser' ? 'Search preferences are saved in this browser.'
+        : syncStatus === 'syncing' ? 'Syncing Search preferences…'
+        : syncStatus === 'synced' ? 'Search preferences sync with your Pulpo account.'
+        : <>Search preferences are saved here until sync is available. <button className="text-button" onClick={retrySync}>Retry sync</button></>}</p>
       <fieldset className="settings-group">
         <legend>Search providers</legend>
         {available.length > 0 ? (
@@ -96,24 +103,32 @@ export function Settings({ config, preferences, update, recentQueryCount, clearR
         </>}
       </fieldset>
       <fieldset className="settings-group">
-        <legend>Appearance and results</legend>
-        <div className="settings-row">
-          <label htmlFor="search-theme">Theme</label>
-          <select id="search-theme" value={preferences.theme} onChange={event => update({ ...preferences, theme: event.target.value as Preferences['theme'] })}>
-            <option value="pulpo">Follow Pulpo</option>
-            <option value="system">Follow device</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
-        </div>
+        <legend>Search results</legend>
         <div className="settings-row">
           <label htmlFor="search-limit">Results per search</label>
-          <select id="search-limit" value={preferences.limit} onChange={event => update({ ...preferences, limit: event.target.value === '20' ? 20 : 10 })}>
+          <select id="search-limit" value={preferences.limit} onChange={event => {
+            const limit = Number(event.target.value)
+            if (limit === 10 || limit === 20 || limit === 40) update({ ...preferences, limit })
+          }}>
             <option value="10">10</option>
             <option value="20">20</option>
+            <option value="40">Up to 40</option>
           </select>
         </div>
         {config?.providers.some(provider => provider.expandedImages) && <p className="hint">Kagi image galleries show more results in batches of 24.</p>}
+        <div className="settings-row">
+          <label htmlFor="search-region-default">Default region</label>
+          <select id="search-region-default" value={preferences.defaultRegion} onChange={event => {
+            const region = regions.find(([value]) => value === event.target.value)?.[0]
+            if (region !== undefined) update({ ...preferences, defaultRegion: region })
+          }}>
+            {regions.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+          </select>
+        </div>
+        <label className="settings-row">
+          SafeSearch
+          <input type="checkbox" checked={preferences.safeSearch} onChange={event => update({ ...preferences, safeSearch: event.target.checked })} />
+        </label>
         <label className="settings-row">
           Open links in a new tab
           <input type="checkbox" checked={preferences.newTab} onChange={event => update({ ...preferences, newTab: event.target.checked })} />
@@ -125,7 +140,16 @@ export function Settings({ config, preferences, update, recentQueryCount, clearR
         </label>
       </fieldset>
       <fieldset className="settings-group">
-        <legend>Search history</legend>
+        <legend>This browser</legend>
+        <div className="settings-row">
+          <label htmlFor="search-theme">Theme</label>
+          <select id="search-theme" value={preferences.theme} onChange={event => update({ ...preferences, theme: event.target.value as Preferences['theme'] })}>
+            <option value="pulpo">Follow Pulpo</option>
+            <option value="system">Follow device</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
         <label className="settings-row">
           Remember recent searches on this browser
           <input type="checkbox" checked={preferences.rememberRecentQueries}

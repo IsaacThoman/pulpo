@@ -1,4 +1,4 @@
-import { searchDateRange, type SearchDateRange } from '@pulpo/contracts/search'
+import { searchDateRange, searchRegions, type SearchDateRange } from '@pulpo/contracts/search'
 import type { Category, Provider, SearchDate, SearchScope } from './api'
 import { queryTokens } from './query-tokens'
 import { reusableImageCategories, reusableImageLicenses, type ReusableImageFilters } from './reusable-images'
@@ -19,21 +19,7 @@ export const dateOptions = [
   ['year', 'Past year'],
 ] as const
 
-export const regions = [
-  ['', 'Any region'],
-  ['us', 'United States'],
-  ['gb', 'United Kingdom'],
-  ['au', 'Australia'],
-  ['br', 'Brazil'],
-  ['ca', 'Canada'],
-  ['fr', 'France'],
-  ['de', 'Germany'],
-  ['in', 'India'],
-  ['it', 'Italy'],
-  ['jp', 'Japan'],
-  ['nl', 'Netherlands'],
-  ['es', 'Spain'],
-] as const
+export const regions = searchRegions
 
 export interface SearchLocation {
   query: string
@@ -42,6 +28,8 @@ export interface SearchLocation {
   dateRange?: SearchDateRange
   invalidDateRange?: true
   region: string
+  regionOverride?: true
+  safeSearch?: boolean
   scope?: SearchScope
   web?: true
   provider?: Provider
@@ -59,6 +47,8 @@ export function parseSearchLocation(url: URL): SearchLocation {
   const dateRange = !date && searchDateRange(url.searchParams.get('from') ?? '', url.searchParams.get('to') ?? '')
   const invalidDateRange = !dateRange && (url.searchParams.has('from') || url.searchParams.has('to'))
   const region = regions.find(([value]) => value === url.searchParams.get('region'))?.[0] ?? ''
+  const regionOverride = url.searchParams.get('region') === 'any'
+  const safeSearch = url.searchParams.get('safe')
   const scope = searchScopes.find(([value]) => value === url.searchParams.get('scope'))?.[0] || undefined
   const provider = url.searchParams.get('provider')
   const page = Number(url.searchParams.get('page'))
@@ -69,6 +59,8 @@ export function parseSearchLocation(url: URL): SearchLocation {
     query, category, date, region,
     ...(dateRange ? { dateRange } : {}),
     ...(invalidDateRange ? { invalidDateRange: true as const } : {}),
+    ...(regionOverride ? { regionOverride: true as const } : {}),
+    ...(safeSearch === 'on' || safeSearch === 'off' ? { safeSearch: safeSearch === 'on' } : {}),
     ...(category === 'web' && scope ? { scope } : {}),
     ...(url.searchParams.get('web') === '1' ? { web: true as const } : {}),
     ...(provider === 'kagi' || provider === 'firecrawl' ? { provider } : {}),
@@ -87,6 +79,8 @@ export function searchPath(input: SearchLocation) {
     params.set('to', input.dateRange.to)
   }
   if (input.region) params.set('region', input.region)
+  else if (input.regionOverride) params.set('region', 'any')
+  if (input.safeSearch !== undefined) params.set('safe', input.safeSearch ? 'on' : 'off')
   if (input.scope && input.category === 'web') params.set('scope', input.scope)
   if (input.web) params.set('web', '1')
   if (input.provider) params.set('provider', input.provider)

@@ -194,19 +194,21 @@ describe('Kagi client', () => {
       data: {
         video: [{
           url: 'https://video.example.com/concert', title: 'Concert',
-          props: { creator_name: '<b>Music</b> &amp; Live', duration: '05:31', creator_id: 'unused' },
+          props: { creator_name: '<b>Music</b> &amp; Live', duration: '05:31', view_count: '547099', creator_id: 'unused' },
         }, {
           url: 'https://video.example.com/session', title: 'Session', props: { duration: '10:99' },
         }],
         podcast: [
+          { url: 'https://pod.example.com/show/', title: 'Trailer', props: { duration: '2:00' } },
           { url: 'https://pod.example.com/episode', title: 'Episode', props: { duration: '1:04:49', group_id: 'opaque-feed-id' } },
         ],
+        podcast_creator: [{ url: 'https://pod.example.com/show', title: 'The show', props: { duration: '53:40' } }],
       },
     }))))
     const client = new KagiClient('secret')
     const videos = await client.searchResults({ query: 'concert', category: 'videos' })
     expect(videos.results).toEqual([{
-      url: 'https://video.example.com/concert', title: 'Concert', snippet: '', creatorName: 'Music & Live', duration: '05:31',
+      url: 'https://video.example.com/concert', title: 'Concert', snippet: '', creatorName: 'Music & Live', duration: '05:31', viewCount: 547099,
     }, {
       url: 'https://video.example.com/session', title: 'Session', snippet: '',
     }])
@@ -214,6 +216,19 @@ describe('Kagi client', () => {
     expect(podcasts.results).toEqual([{
       url: 'https://pod.example.com/episode', title: 'Episode', snippet: '', duration: '1:04:49',
     }])
+    expect(podcasts.podcastShows).toEqual([{ url: 'https://pod.example.com/show', title: 'The show', snippet: '' }])
+  })
+
+  it('never presents a Kagi News update timestamp as a publication date', async () => {
+    const fetch = vi.fn().mockResolvedValue(Response.json({ data: { news: [{
+      url: 'https://example.com/article', title: 'Article', time: '2026-11-24T08:26:22Z',
+    }] } }))
+    vi.stubGlobal('fetch', fetch)
+    const { results } = await new KagiClient('secret').searchResults({
+      query: 'starship', category: 'news', timeRelative: 'week', limit: 40, safeSearch: false,
+    })
+    expect(results).toEqual([{ url: 'https://example.com/article', title: 'Article', snippet: '' }])
+    expect(JSON.parse(fetch.mock.calls[0]![1].body)).toMatchObject({ limit: 40, filters: { safe_search: false }, lens: { time_relative: 'week' } })
   })
 
   it('truncates extracted Markdown before returning it to the model', async () => {

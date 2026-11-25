@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { defaultSearchAccountPreferences } from '@pulpo/contracts/search'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
@@ -21,6 +22,8 @@ describe('Pulpo Search', () => {
   const exchange = vi.spyOn(api, 'exchange')
   const logout = vi.spyOn(api, 'logout')
   const appearance = vi.spyOn(api, 'appearance')
+  const readPreferences = vi.spyOn(api, 'preferences')
+  const writePreferences = vi.spyOn(api, 'updatePreferences')
   const weather = vi.spyOn(api, 'weather')
   const weatherAlerts = vi.spyOn(api, 'weatherAlerts')
   const currency = vi.spyOn(api, 'currency')
@@ -43,6 +46,12 @@ describe('Pulpo Search', () => {
     }))
     logout.mockResolvedValue()
     appearance.mockResolvedValue({ theme: 'system', colorTheme: 'pulpo' })
+    let saved: typeof defaultSearchAccountPreferences | null = null
+    readPreferences.mockImplementation(async () => ({ preferences: saved }))
+    writePreferences.mockImplementation(async (_accountId, patch, initial) => {
+      saved = { ...(saved ?? initial ?? defaultSearchAccountPreferences), ...patch }
+      return { preferences: saved }
+    })
     weather.mockResolvedValue({ status: 'not-found', sources: [] })
     weatherAlerts.mockResolvedValue({ status: 'unavailable' })
     currency.mockResolvedValue({ status: 'unavailable', source: { name: 'ECB', url: 'https://www.ecb.europa.eu/', description: 'Daily reference rates' } })
@@ -109,6 +118,27 @@ describe('Pulpo Search', () => {
     expect(exchange).toHaveBeenCalledWith('code', 'verifier')
   })
 
+  it('uses account filter defaults for the first search and supports query overrides', async () => {
+    readPreferences.mockResolvedValue({ preferences: { ...defaultSearchAccountPreferences, defaultRegion: 'ca', safeSearch: false } })
+    window.history.replaceState(null, '', '/search?q=tide+pools&region=any&safe=on')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'tide pools field guide' })
+    expect(search).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      safeSearch: true, limit: 40,
+    }), expect.any(AbortSignal))
+    expect(search.mock.calls[0][0]).not.toHaveProperty('region')
+    search.mockResolvedValueOnce({ provider: 'kagi', results: [] })
+    await act(async () => {
+      window.history.pushState(null, '', '/search?q=kelp')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    const clear = await screen.findByRole('button', { name: 'Clear date and region' })
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ region: 'ca', safeSearch: false }), expect.any(AbortSignal))
+    fireEvent.click(clear)
+    await screen.findByRole('link', { name: 'kelp field guide' })
+    expect(search.mock.lastCall?.[0]).not.toHaveProperty('region')
+  })
+
   it('uses provider and fallback changes on the next search and shows compatible filters', async () => {
     window.history.replaceState(null, '', '/search?q=tides')
     render(<App callback={null} />)
@@ -163,7 +193,7 @@ describe('Pulpo Search', () => {
     expect(quickAnswer).not.toHaveBeenCalled()
     fireEvent.click(button)
     const card = screen.getByRole('region', { name: 'Quick answer' })
-    const source = await within(card).findByRole('link', { name: 'a source' })
+    const source = await within(card).findByRole('link', { name: 'a source' }, { timeout: 5000 })
     expect(source.getAttribute('href')).toBe('https://example.org/guide')
     expect(within(card).queryByRole('img')).toBeNull()
     expect(within(card).queryByText('Pulpo Test Model')).toBeNull()
@@ -352,7 +382,7 @@ describe('Pulpo Search', () => {
     expect(window.location.search).toBe('?q=eclipse')
   })
 
-  it('offers a second provider for sparse dated News only after an explicit click', async () => {
+  it('keeps provider selection for dated News inside Filters', async () => {
     getConfig.mockResolvedValue({ ...config, providers: config.providers.map(provider => provider.id === 'firecrawl'
       ? { ...provider, categories: ['web', 'images', 'news'], customDateRanges: ['web', 'news'] } : provider) })
     search.mockImplementation(async ({ providers }) => ({
@@ -361,12 +391,26 @@ describe('Pulpo Search', () => {
     }))
     window.history.replaceState(null, '', '/search?q=Starliner&type=news&from=2024-06-05&to=2024-06-06')
     render(<App callback={null} />)
-    const alternative = await screen.findByRole('button', { name: 'Try Firecrawl for these dates' })
+    await screen.findByRole('link', { name: 'Starliner launch' })
     expect(search).toHaveBeenCalledTimes(1)
-    fireEvent.click(alternative)
+    fireEvent.click(screen.getByLabelText(/^Filters/))
+    fireEvent.change(screen.getByLabelText('Search provider'), { target: { value: 'firecrawl' } })
     await waitFor(() => expect(search).toHaveBeenCalledTimes(2))
     expect(search).toHaveBeenLastCalledWith(expect.objectContaining({
       providers: ['firecrawl'], category: 'news', dateRange: { from: '2024-06-05', to: '2024-06-06' },
+    }), expect.any(AbortSignal))
+  })
+
+  it('uses the recommended News provider on automatic settings', async () => {
+    getConfig.mockResolvedValue({
+      ...config, newsDefaultOrder: ['firecrawl', 'kagi'],
+      providers: config.providers.map(provider => ({ ...provider, categories: ['web', 'news'] })),
+    })
+    window.history.replaceState(null, '', '/search?q=Starship&type=news')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'Starship field guide' })
+    expect(search).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      category: 'news', providers: ['firecrawl', 'kagi'],
     }), expect.any(AbortSignal))
   })
 
@@ -702,6 +746,36 @@ describe('Pulpo Search', () => {
     await screen.findByRole('dialog', { name: 'Bangs' })
     expect(window.location.pathname).toBe('/')
     expect(search).not.toHaveBeenCalled()
+  })
+
+  it('offers an explicit web search when a bang is unrecognized', async () => {
+    window.history.replaceState(null, '', '/search?q=%21zz+octopus')
+    render(<App callback={null} />)
+    await screen.findByLabelText('Pulpo account')
+    await screen.findByRole('heading', { name: 'Unknown bang: !zz' })
+    expect(search).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Search the web as written' }))
+    await screen.findByRole('link', { name: '!zz octopus field guide' })
+    expect(search).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ query: '!zz octopus' }), expect.any(AbortSignal))
+  })
+
+  it('uses j and k to move between primary results without stepping into sitelinks', async () => {
+    search.mockResolvedValueOnce({ provider: 'kagi', results: [
+      { title: 'Main result', url: 'https://example.com/', snippet: '' },
+      { title: 'Sitelink', url: 'https://example.com/about', snippet: '' },
+      { title: 'Next result', url: 'https://other.example.com/', snippet: '' },
+    ] })
+    window.history.replaceState(null, '', '/search?q=example')
+    render(<App callback={null} />)
+    const first = await screen.findByRole('link', { name: 'Main result' })
+    const next = screen.getByRole('link', { name: 'Next result' })
+    expect(screen.getByRole('link', { name: 'Sitelink' })).toBeDefined()
+    fireEvent.keyDown(document.body, { key: 'j' })
+    expect(document.activeElement).toBe(first)
+    fireEvent.keyDown(first, { key: 'j' })
+    expect(document.activeElement).toBe(next)
+    fireEvent.keyDown(next, { key: 'k' })
+    expect(document.activeElement).toBe(first)
   })
 
   it('searches the clean lucky query once and removes the bang when no result can open', async () => {

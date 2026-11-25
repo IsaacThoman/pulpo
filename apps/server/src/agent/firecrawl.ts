@@ -138,7 +138,8 @@ export class FirecrawlClient {
         imageUrl: row?.imageUrl,
         imageWidth: category === 'images' ? row?.imageWidth : undefined,
         imageHeight: category === 'images' ? row?.imageHeight : undefined,
-        publishedAt: row?.date,
+        // Search dates can reflect indexing or updates rather than publication.
+        publishedAt: category === 'news' ? undefined : row?.date,
       }, category === 'images' ? undefined : input.query)), limit, category),
     }
   }
@@ -156,7 +157,7 @@ export class FirecrawlClient {
       query,
       limit,
       sources: [input.category ?? 'web'],
-      safe: true,
+      safe: input.safeSearch ?? true,
       ...(includeDomains ? { includeDomains } : {}),
       ...(!includeDomains && excludeDomains ? { excludeDomains } : {}),
       ...(tbs ? { tbs } : {}),

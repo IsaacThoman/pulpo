@@ -74,12 +74,15 @@ export function groupResults(entries: ResultWithUrl[], webQuery: string | undefi
   if (webQuery === undefined || /\bsite:/i.test(webQuery)) return groups
 
   const siteGroups: ResultGroup[] = []
+  let additionalLinksRemaining = Math.max(2, groups.length - 10)
   let previousRank = -1
   for (const group of groups) {
     const previous = siteGroups.at(-1)
-    if (!group.versions.length && group.rank === previousRank + 1 && previous?.lead.host === group.lead.host
-      && previous.additional.length < 2) previous.additional.push(group.lead)
-    else siteGroups.push(group)
+    if (additionalLinksRemaining > 0 && !group.versions.length && group.rank === previousRank + 1 && previous?.lead.host === group.lead.host
+      && previous.additional.length < 2) {
+      previous.additional.push(group.lead)
+      additionalLinksRemaining -= 1
+    } else siteGroups.push(group)
     previousRank = group.rank
   }
   return siteGroups

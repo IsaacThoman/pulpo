@@ -1,6 +1,6 @@
 import { History, Search, X } from 'lucide-react'
 import { useId, useState, type FormEvent, type KeyboardEvent, type RefObject } from 'react'
-import { searchBangs, type CustomBang } from './bangs'
+import { suggestBangs, type CustomBang } from './bangs'
 import { MAX_QUERY_LENGTH } from './navigation'
 import { queryTokens } from './query-tokens'
 import { matchRecentQueries } from './recent-queries'
@@ -26,7 +26,7 @@ export function SearchBox({ value, setValue, onSearch, customBangs, recentQuerie
   const bangPrefix = lastToken?.end === value.length && lastToken.text.startsWith('!')
     ? /^\s*!([\w-]*)$/.exec(value) ?? /\s!([\w-]+)$/.exec(value) : null
   const candidates: Suggestion[] = bangPrefix
-    ? searchBangs(bangPrefix[1], customBangs).slice(0, 6).map(bang => ({ trigger: bang.trigger, label: bang.name }))
+    ? suggestBangs(bangPrefix[1], customBangs).slice(0, 6).map(bang => ({ trigger: bang.trigger, label: bang.name }))
     : matchRecentQueries(recentQueries, value).map(query => ({ label: query }))
   const matches = open ? candidates : []
 

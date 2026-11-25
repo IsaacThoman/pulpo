@@ -1,35 +1,21 @@
+import { defaultSearchAccountPreferences, normalizeSearchBangTrigger, searchRegions, type SearchAccountPreferences, type SearchDomainRule } from '@pulpo/contracts/search'
 import type { Provider, SearchConfig } from './api'
 import { validateCustomBang, type CustomBang } from './bangs'
 import type { SearchLocation } from './navigation'
 
 export type Theme = 'pulpo' | 'system' | 'light' | 'dark'
-export type DomainRule = 'pin' | 'hide'
+export type DomainRule = SearchDomainRule
 
-export interface Preferences {
+export interface Preferences extends SearchAccountPreferences {
   theme: Theme
-  defaultProvider: Provider | ''
-  fallbackProvider: Provider | 'none' | ''
-  limit: 10 | 20
-  newTab: boolean
-  keyboardShortcuts: boolean
   rememberRecentQueries: boolean
-  localPlaces: boolean
-  domains: Record<string, DomainRule>
-  bangs: CustomBang[]
 }
 
 export const preferencesStorageKey = 'pulpo-search-settings-v1'
 const defaults: Preferences = {
+  ...defaultSearchAccountPreferences,
   theme: 'pulpo',
-  defaultProvider: '',
-  fallbackProvider: '',
-  limit: 10,
-  newTab: false,
-  keyboardShortcuts: true,
   rememberRecentQueries: false,
-  localPlaces: true,
-  domains: {},
-  bangs: [],
 }
 
 function isProvider(value: unknown): value is Provider {
@@ -46,24 +32,42 @@ function isCustomBang(value: unknown): value is CustomBang {
   )
 }
 
+export function accountPreferences({
+  defaultProvider, fallbackProvider, limit, newTab, keyboardShortcuts,
+  localPlaces, defaultRegion, safeSearch, domains, bangs,
+}: Preferences): SearchAccountPreferences {
+  return { defaultProvider, fallbackProvider, limit, newTab, keyboardShortcuts, localPlaces, defaultRegion, safeSearch, domains, bangs }
+}
+
+export function readAccountPreferences(saved: Record<string, unknown>): SearchAccountPreferences {
+  const domains = saved.domains && typeof saved.domains === 'object' && !Array.isArray(saved.domains)
+    ? Object.entries(saved.domains).filter((entry): entry is [string, DomainRule] => entry[0].length > 0 && entry[0].length <= 253
+      && (entry[1] === 'pin' || entry[1] === 'hide')).slice(0, 100) : []
+  const bangs = Array.isArray(saved.bangs) ? saved.bangs.filter(isCustomBang).slice(0, 30).map(bang => ({
+    trigger: normalizeSearchBangTrigger(bang.trigger), name: bang.name.trim(), url: bang.url.trim(),
+  })) : []
+  return {
+    defaultProvider: isProvider(saved.defaultProvider) ? saved.defaultProvider : '',
+    fallbackProvider: isProvider(saved.fallbackProvider) || saved.fallbackProvider === 'none' ? saved.fallbackProvider : '',
+    limit: saved.limit === 10 || saved.limit === 20 ? saved.limit : 40,
+    newTab: saved.newTab === true,
+    keyboardShortcuts: saved.keyboardShortcuts !== false,
+    localPlaces: saved.localPlaces !== false,
+    defaultRegion: searchRegions.find(([value]) => value === saved.defaultRegion)?.[0] ?? '',
+    safeSearch: saved.safeSearch !== false,
+    domains: Object.fromEntries(domains),
+    bangs,
+  }
+}
+
 export function loadPreferences(): Preferences {
   try {
     const saved = JSON.parse(window.localStorage.getItem(preferencesStorageKey) ?? 'null')
-    if (!saved || typeof saved !== 'object') return defaults
-    const domains = Object.entries(saved.domains ?? {})
-      .filter((entry): entry is [string, DomainRule] => entry[1] === 'pin' || entry[1] === 'hide')
-      .slice(0, 100)
+    if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return defaults
     return {
+      ...readAccountPreferences(saved),
       theme: saved.theme === 'light' || saved.theme === 'dark' || (saved.theme === 'system' && saved.appearanceVersion === 1) ? saved.theme : 'pulpo',
-      defaultProvider: isProvider(saved.defaultProvider) ? saved.defaultProvider : '',
-      fallbackProvider: isProvider(saved.fallbackProvider) || saved.fallbackProvider === 'none' ? saved.fallbackProvider : '',
-      limit: saved.limit === 20 ? 20 : 10,
-      newTab: saved.newTab === true,
-      keyboardShortcuts: saved.keyboardShortcuts !== false,
       rememberRecentQueries: saved.rememberRecentQueries === true,
-      localPlaces: saved.localPlaces !== false,
-      domains: Object.fromEntries(domains),
-      bangs: Array.isArray(saved.bangs) ? saved.bangs.filter(isCustomBang).slice(0, 30) : [],
     }
   } catch {
     return defaults
@@ -96,6 +100,10 @@ export function compatibleProviders(config: SearchConfig, order: Provider[], inp
     && (!input.date || provider.dates.includes(input.date))
     && (!input.dateRange || provider.customDateRanges?.includes(input.category))
     && (!input.region || provider.region))
+}
+
+export function searchRegion(input: Pick<SearchLocation, 'region' | 'regionOverride'>, defaultRegion: Preferences['defaultRegion']): string {
+  return input.region || (input.regionOverride ? '' : defaultRegion)
 }
 
 export function domainRule(host: string, rules: Preferences['domains']): DomainRule | undefined {

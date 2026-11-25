@@ -6,6 +6,13 @@ export interface ReusableImageFilters {
   category?: (typeof reusableImageCategories)[number]
 }
 
+export function licenseLabel(code: string, version?: string) {
+  const abbreviation = code.toUpperCase()
+  const name = /^BY(?:-(?:SA|ND|NC|NC-SA|NC-ND))?$/.test(abbreviation)
+    ? `CC ${abbreviation}` : abbreviation === 'PDM' ? 'Public Domain Mark' : abbreviation === 'CC0' ? 'CC0' : code
+  return version ? `${name} ${version}` : name
+}
+
 const plainWord = /^[\p{L}\p{N}][\p{L}\p{M}\p{N}\p{Pd}]*$/u
 const imageMedium = /^(?:drawing|engraving|etching|illustration|lithograph|painting|photo|photograph|portrait|poster|print|sketch|woodcut)s?$/i
 const connectingWord = /^(?:a|an|and|for|from|in|of|on|or|the|to|with)$/i
