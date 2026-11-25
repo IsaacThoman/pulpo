@@ -121,6 +121,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       messageReportsEnabled,
       dictationEnabled: dictation.enabled && dictationProviderConfigured(dictation, Boolean(getWhisperConnection(config))),
       urlImportEnabled: filesEnabled && webExtractAvailable(parseWebToolsSettings(byKey.get('webTools'))),
+      searchUrl: config.SEARCH_PUBLIC_URL ?? null,
     }
   })
 

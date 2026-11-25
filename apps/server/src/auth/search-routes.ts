@@ -11,6 +11,7 @@ import { hashToken, randomToken } from '../lib/crypto.js'
 import { AppError, forbidden, notFound, unauthorized } from '../lib/errors.js'
 import { patchAccountPreferences } from '../settings/account-preferences.js'
 import { parseInstanceColorThemes } from '../settings/instance-color-themes.js'
+import { getBlobStore } from '../storage/index.js'
 import { savedSearchPreferences, searchPreferencesAccountQuery, searchPreferencesUpdate } from '../settings/search-preferences.js'
 import { authenticateSession, authenticateSessionToken, currentSessionId, newSessionCredentials, requireUser } from './service.js'
 
@@ -60,8 +61,19 @@ export async function authenticateApplicationRequest(request: FastifyRequest) {
   return authenticateSessionToken(token, resolveClientIp(request.raw, getConfig()), 'search')
 }
 
-function sessionUser(user: SearchSessionUser): SearchSessionUser {
-  return { id: user.id, name: user.name, email: user.email }
+/** Search runs on its own origin, so the profile picture is served through a Search route. */
+function searchAvatarUrl(version: number | null): string | null {
+  return version === null ? null : `${SEARCH_API_PATH}/avatar?v=${version}`
+}
+
+function avatarVersion(avatarUrl: string | null): number | null {
+  if (!avatarUrl) return null
+  const version = Number(new URL(avatarUrl, 'http://pulpo.invalid').searchParams.get('v'))
+  return Number.isSafeInteger(version) ? version : 0
+}
+
+function sessionUser(user: Pick<SearchSessionUser, 'id' | 'name' | 'email'>, avatar: number | null): SearchSessionUser {
+  return { id: user.id, name: user.name, email: user.email, avatarUrl: searchAvatarUrl(avatar) }
 }
 
 export function registerSearchAuthRoutes(app: FastifyInstance) {
@@ -118,7 +130,7 @@ export function registerSearchAuthRoutes(app: FastifyInstance) {
       ))
       const { token, session } = newSessionCredentials(row.user.id, request)
       await tx.insert(sessions).values({ ...session, appType: 'search', deviceLabel: 'Pulpo Search' })
-      return { token, expires: session.expiresAt, user: sessionUser(row.user) }
+      return { token, expires: session.expiresAt, user: sessionUser(row.user, row.user.avatarObjectKey ? row.user.avatarVersion : null) }
     })
     if (!result) throw unauthorized('Search sign-in has expired. Start again from Pulpo Search.')
 
@@ -130,7 +142,18 @@ export function registerSearchAuthRoutes(app: FastifyInstance) {
   app.get('/api/search/auth/session', async (request, reply) => {
     reply.header('cache-control', 'no-store')
     const user = request.user
-    return { user: user && user.role !== 'pending' ? sessionUser(user) : null }
+    return { user: user && user.role !== 'pending' ? sessionUser(user, avatarVersion(user.avatarUrl)) : null }
+  })
+
+  app.get('/api/search/avatar', async (request, reply) => {
+    const user = requireUser(request)
+    const [profile] = await db.select({ key: users.avatarObjectKey, version: users.avatarVersion })
+      .from(users).where(eq(users.id, user.id)).limit(1)
+    if (!profile?.key) throw notFound('Profile picture')
+    const etag = `"search-avatar-${user.id}-${profile.version}"`
+    reply.header('cache-control', 'private, max-age=31536000, immutable').header('etag', etag)
+    if (request.headers['if-none-match'] === etag) return reply.code(304).send()
+    return reply.type('image/webp').send(Buffer.from(await getBlobStore().get(profile.key)))
   })
 
   app.get('/api/search/appearance', async (request, reply) => {

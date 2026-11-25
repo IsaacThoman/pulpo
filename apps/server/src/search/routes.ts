@@ -15,6 +15,7 @@ import { applicationSettings } from '../database/schema.js'
 import { decryptSecret } from '../lib/crypto.js'
 import { AppError } from '../lib/errors.js'
 import { parseWebToolsSettings, type StoredWebToolsSettings } from '../settings/application-settings.js'
+import { registerSearchAccountRoute } from './account.js'
 import { registerSearchCurrencyRoute } from './currency.js'
 import { fetchSearchFavicon } from './favicon.js'
 import { placesCapability, placeSearchInput, searchFirecrawlPlaces, searchPlaces } from './places.js'
@@ -99,6 +100,7 @@ function searchUser(request: FastifyRequest, reply: FastifyReply) {
 
 export function registerSearchRoutes(app: FastifyInstance) {
   let openverseRetryAt = 0
+  registerSearchAccountRoute(app, searchUser)
   registerSearchCurrencyRoute(app, searchUser)
   registerSearchWeatherRoute(app, searchUser)
 

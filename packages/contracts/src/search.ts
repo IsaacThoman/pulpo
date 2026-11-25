@@ -72,6 +72,18 @@ export const defaultSearchAccountPreferences: SearchAccountPreferences = {
 
 export const SEARCH_ACCOUNT_PREFERENCES_KEY = 'searchPreferences'
 
+/** Pulpo credits available to a signed-in Search user. Amounts are in micro-dollars. */
+export interface SearchAccountSummary {
+  billing: boolean
+  balanceMicros: number
+  poolBalanceMicros: number | null
+  weeklyRemainingPercentage: number | null
+}
+
+/** Search panels that Pulpo can open directly with `#<panel>` on the Search home page. */
+export const SEARCH_LINKED_PANELS = ['settings', 'bangs', 'browser'] as const
+export type SearchLinkedPanel = (typeof SEARCH_LINKED_PANELS)[number]
+
 export function normalizeSearchBangTrigger(trigger: string): string {
   return trigger.trim().replace(/^!/, '').toLowerCase()
 }
