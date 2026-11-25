@@ -1098,10 +1098,10 @@ describe('Pulpo Search', () => {
   })
 
   it('shows the Pulpo profile picture, credits, and billing in the account menu', async () => {
-    session.mockResolvedValue({ user: { ...user, avatarUrl: '/api/search/avatar?v=3' } })
+    session.mockResolvedValue({ user: { ...user, avatarUrl: '/api/search/avatar/test-user?v=3' } })
     render(<App callback={null} />)
     const summary = await screen.findByLabelText('Pulpo account')
-    expect(summary.querySelector('img')?.getAttribute('src')).toBe('/api/search/avatar?v=3')
+    expect(summary.querySelector('img')?.getAttribute('src')).toBe('/api/search/avatar/test-user?v=3')
     fireEvent.click(summary)
     const menu = summary.closest('details')!
     await within(menu).findByText('$12.34')

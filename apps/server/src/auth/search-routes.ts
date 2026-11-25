@@ -61,9 +61,12 @@ export async function authenticateApplicationRequest(request: FastifyRequest) {
   return authenticateSessionToken(token, resolveClientIp(request.raw, getConfig()), 'search')
 }
 
-/** Search runs on its own origin, so the profile picture is served through a Search route. */
-function searchAvatarUrl(version: number | null): string | null {
-  return version === null ? null : `${SEARCH_API_PATH}/avatar?v=${version}`
+/**
+ * Search runs on its own origin, so the profile picture is served through a Search route. The URL
+ * names the account, so a browser never reuses one account's cached picture for another.
+ */
+function searchAvatarUrl(userId: string, version: number | null): string | null {
+  return version === null ? null : `${SEARCH_API_PATH}/avatar/${userId}?v=${version}`
 }
 
 function avatarVersion(avatarUrl: string | null): number | null {
@@ -73,7 +76,7 @@ function avatarVersion(avatarUrl: string | null): number | null {
 }
 
 function sessionUser(user: Pick<SearchSessionUser, 'id' | 'name' | 'email'>, avatar: number | null): SearchSessionUser {
-  return { id: user.id, name: user.name, email: user.email, avatarUrl: searchAvatarUrl(avatar) }
+  return { id: user.id, name: user.name, email: user.email, avatarUrl: searchAvatarUrl(user.id, avatar) }
 }
 
 export function registerSearchAuthRoutes(app: FastifyInstance) {
@@ -145,8 +148,10 @@ export function registerSearchAuthRoutes(app: FastifyInstance) {
     return { user: user && user.role !== 'pending' ? sessionUser(user, avatarVersion(user.avatarUrl)) : null }
   })
 
-  app.get('/api/search/avatar', async (request, reply) => {
+  app.get('/api/search/avatar/:userId', async (request, reply) => {
     const user = requireUser(request)
+    // Each Search session may read only its own account's picture.
+    if (z.object({ userId: z.string() }).parse(request.params).userId !== user.id) throw notFound('Profile picture')
     const [profile] = await db.select({ key: users.avatarObjectKey, version: users.avatarVersion })
       .from(users).where(eq(users.id, user.id)).limit(1)
     if (!profile?.key) throw notFound('Profile picture')

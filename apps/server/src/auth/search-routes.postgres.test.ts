@@ -236,17 +236,19 @@ describe.skipIf(!enabled)('Search sessions and Pulpo account handoff', () => {
     await db.update(users).set({ avatarObjectKey: `users/${testUser.id}/avatar/test.webp`, avatarVersion: 4, balanceMicros: 7_250_000 })
       .where(eq(users.id, testUser.id))
     const response = await exchange(await authorize())
-    expect(response.json()).toEqual({ user: { ...testUser, avatarUrl: '/api/search/avatar?v=4' } })
+    expect(response.json()).toEqual({ user: { ...testUser, avatarUrl: `/api/search/avatar/${testUser.id}?v=4` } })
     const searchCookie = (response.headers['set-cookie'] as string).split(';')[0]!
     const session = await app.inject({ url: searchSessionUrl, headers: { ...searchHeaders, cookie: searchCookie } })
-    expect(session.json().user.avatarUrl).toBe('/api/search/avatar?v=4')
+    expect(session.json().user.avatarUrl).toBe(`/api/search/avatar/${testUser.id}?v=4`)
+    const otherAccount = await app.inject({ url: `/api/search/avatar/${randomUUID()}`, headers: { ...searchHeaders, cookie: searchCookie } })
+    expect(otherAccount.statusCode).toBe(404)
     expect(await searchAccountSummary(testUser.id)).toEqual({
       billing: false, balanceMicros: 7_250_000, poolBalanceMicros: null, limits: [],
     })
 
     await db.update(users).set({ avatarObjectKey: null }).where(eq(users.id, testUser.id))
-    const avatar = await app.inject({ url: '/api/search/avatar', headers: { ...searchHeaders, cookie: searchCookie } })
+    const avatar = await app.inject({ url: `/api/search/avatar/${testUser.id}`, headers: { ...searchHeaders, cookie: searchCookie } })
     expect(avatar.statusCode).toBe(404)
-    expect((await app.inject({ url: '/api/search/avatar', headers: searchHeaders })).statusCode).toBe(401)
+    expect((await app.inject({ url: `/api/search/avatar/${testUser.id}`, headers: searchHeaders })).statusCode).toBe(401)
   })
 })
