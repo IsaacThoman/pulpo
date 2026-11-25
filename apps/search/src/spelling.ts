@@ -37,6 +37,7 @@ export function suggestedSpelling(query: string, data: SearchResponse) {
     }] : []
   })
 
+  let providerSuggestion: string | undefined
   let combined: string | undefined
   for (const [position, suggestion] of (data.related ?? []).slice(0, 8).entries()) {
     if (!plainQuery.test(suggestion)) continue
@@ -45,10 +46,10 @@ export function suggestedSpelling(query: string, data: SearchResponse) {
     const differences = original.flatMap((word, index) => word === candidate[index] ? [] : [index])
     const replacements = differences.filter(index => singleEdit(original[index], candidate[index])
       && !sources.some(source => source.title.has(original[index])))
-    if (differences.length === 1 && replacements.length === 1) {
+    if (!providerSuggestion && differences.length === 1 && replacements.length === 1) {
       const agreement = sources.filter(source => source.title.has(candidate[replacements[0]]))
       if (new Set(agreement.map(source => source.host)).size >= 2
-        || (position === 0 && agreement[0] === sources[0] && new Set(agreement.map(source => source.page)).size >= 2)) return suggestion
+        || (position === 0 && agreement[0] === sources[0] && new Set(agreement.map(source => source.page)).size >= 2)) providerSuggestion = suggestion
     }
     if (combined || replacements.length !== 2 || differences.length > 3) continue
     const corrected = replacements.map(index => candidate[index])
@@ -63,7 +64,7 @@ export function suggestedSpelling(query: string, data: SearchResponse) {
 
   // Some providers omit spelling metadata. Propose edits only when independent result
   // hosts corroborate them and a ranked result contains the edits and a retained term.
-  if (original.length < 2 || original.length > 12) return
+  if (original.length < 2 || original.length > 12) return providerSuggestion
   const leadingWords = new Set(sources.slice(0, 6).flatMap(source => [...source.title]))
   const contains = (source: (typeof sources)[number], word: string) => source.title.has(word) || source.excerpt.has(word)
   const corrected = original.map(word => {
@@ -74,8 +75,8 @@ export function suggestedSpelling(query: string, data: SearchResponse) {
   })
   const changed = corrected.filter((word, index) => word !== original[index])
   const anchors = original.filter((word, index) => word.length >= 4 && word === corrected[index])
-  if (changed.length === 0 || changed.length > 2
+  if (changed.length === 0 || changed.length > 2 || (changed.length === 1 && providerSuggestion)
     || !sources.slice(0, 6).some(source => changed.every(word => contains(source, word))
-      && anchors.some(word => contains(source, word)))) return
+      && anchors.some(word => contains(source, word)))) return providerSuggestion
   return queryWords.map((word, index) => corrected[index] === original[index] ? word : corrected[index]).join(' ')
 }

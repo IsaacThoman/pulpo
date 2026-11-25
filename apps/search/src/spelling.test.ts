@@ -58,4 +58,12 @@ describe('search spelling suggestions', () => {
       .toBe('stanford online machine learning cs229 syllabus')
     expect(suggestedSpelling('Stantford online machine learning "cs229" syllabus', data)).toBeUndefined()
   })
+
+  it('prefers a corroborated complete correction to an earlier partial suggestion', () => {
+    const data: SearchResponse = { provider: 'kagi', results: [
+      { title: 'USPS Change of Address', url: 'https://usps.com/move', snippet: '' },
+      { title: 'How to Change Your Address', url: 'https://usa.gov/move', snippet: 'Change your mailing address with USPS.' },
+    ], related: ['usps chang of address'] }
+    expect(suggestedSpelling('usps chang of adress', data)).toBe('usps change of address')
+  })
 })

@@ -77,7 +77,8 @@ export function groupResults(entries: ResultWithUrl[], webQuery: string | undefi
   let previousRank = -1
   for (const group of groups) {
     const previous = siteGroups.at(-1)
-    if (!group.versions.length && group.rank === previousRank + 1 && previous?.lead.host === group.lead.host) previous.additional.push(group.lead)
+    if (!group.versions.length && group.rank === previousRank + 1 && previous?.lead.host === group.lead.host
+      && previous.additional.length < 2) previous.additional.push(group.lead)
     else siteGroups.push(group)
     previousRank = group.rank
   }

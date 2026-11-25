@@ -19,6 +19,7 @@ import { videoDurationBucket, videoDurationOptions, type VideoDuration } from '.
 const wordPattern = /[\p{L}\p{N}][\p{L}\p{M}\p{N}]*/gu
 const commonWords = new Set(['and', 'are', 'for', 'how', 'the', 'this', 'was', 'what', 'where', 'which', 'with'])
 const imageBatchSize = 24
+const newsAgeInSeconds = { minute: 60, hour: 3600, day: 86400, week: 604800, month: 2592000, year: 31536000 }
 
 function queryTerms(query: string) {
   const withoutOperators = query.replace(/(^|\s)-?[a-z][a-z-]*:(?:"[^"]*"|\S+)/gi, '$1')
@@ -43,6 +44,16 @@ function formatDate(value: string | undefined) {
     return { label: formatter.format(date), iso: dateOnly ? value : date.toISOString() }
   }
   return { label: value, iso: undefined }
+}
+
+function newsSourceTime(value: string | undefined, now: number) {
+  const timestamp = imageSourceTime(value)
+  if (timestamp !== undefined) return timestamp
+  // Firecrawl also supplies rounded ages. Use those for ordering and retain the original label.
+  const age = value?.match(/^(\d{1,4}) (minute|hour|day|week|month|year)s? ago$/i)
+  if (!age) return
+  const unit = age[2].toLowerCase() as keyof typeof newsAgeInSeconds
+  return now - Number(age[1]) * newsAgeInSeconds[unit] * 1000
 }
 
 function pathLabel(url: URL) {
@@ -77,13 +88,14 @@ function ImageThumbnail({ image, thumbnail, title, contain, open }: {
   </button>
 }
 
-function ResultItem({ entry, additional, versions, preview, media, video, newTab, setDomain, showHidden, searchSite, terms }: {
+function ResultItem({ entry, additional, versions, preview, media, video, news, newTab, setDomain, showHidden, searchSite, terms }: {
   entry: ResultWithUrl
   additional: ResultWithUrl[]
   versions: { url: URL; label: string }[]
   preview?: (opener: HTMLButtonElement) => void
   media: boolean
   video: boolean
+  news: boolean
   newTab: boolean
   setDomain: (host: string, rule: DomainRule | undefined) => void
   showHidden: boolean
@@ -94,7 +106,7 @@ function ResultItem({ entry, additional, versions, preview, media, video, newTab
   const { result, url, host, rule } = entry
   const date = formatDate(result.publishedAt)
   const target = newTab ? '_blank' : undefined
-  const path = preview ? '' : pathLabel(url)
+  const path = preview || news ? '' : pathLabel(url)
   const title = result.title || host
   const thumbnail = media ? safeHttpUrl(result.thumbnailUrl) ?? safeHttpUrl(result.imageUrl) : undefined
   const mediaDetails = media && !video ? [result.creatorName, result.duration].filter(Boolean).join(' · ') : ''
@@ -111,6 +123,7 @@ function ResultItem({ entry, additional, versions, preview, media, video, newTab
         <span className="site-path" title={path ? host + ' › ' + path : host}>{host}
           {path && <span className="result-path"> › {path}</span>}
         </span>
+        {news && date && <span className="news-result-date"> · {reportedDate}</span>}
         {rule === 'pin' && <Pin size={13} className="result-pin" aria-label="Pinned site" />}
         <details className="result-menu" onKeyDown={event => {
           if (event.key !== 'Escape' || !event.currentTarget.open) return
@@ -153,12 +166,12 @@ function ResultItem({ entry, additional, versions, preview, media, video, newTab
         {videoDetails && date && ' · '}
         {reportedDate}
       </p>}
-      {(result.snippet || (!video && (date || mediaDetails))) && (
+      {(result.snippet || (!video && !news && (date || mediaDetails))) && (
         <p className="result-snippet">
           {mediaDetails && <span className="result-date">{mediaDetails}</span>}
           {mediaDetails && (date || result.snippet) && ' · '}
-          {!video && reportedDate}
-          {!video && date && result.snippet && ' · '}
+          {!video && !news && reportedDate}
+          {!video && !news && date && result.snippet && ' · '}
           <Highlight text={result.snippet} terms={terms} />
         </p>
       )}
@@ -210,16 +223,21 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
   const [preview, setPreview] = useState<{ entries: ResultWithUrl[]; startIndex: number; opener: HTMLButtonElement }>()
   const [imageRefinement, setImageRefinement] = useState<{ query: string; value: ImageRefinements }>()
   const [videoDuration, setVideoDuration] = useState<{ scope: string; value: VideoDuration }>()
+  const [newestNews, setNewestNews] = useState(false)
   const [galleryLimit, setGalleryLimit] = useState(imageBatchSize)
   const gallery = useRef<HTMLOListElement>(null)
   const firstRevealed = useRef<number>(undefined)
   const showHidden = expandedQuery === location.query
   const images = location.category === 'images'
   const videos = location.category === 'videos'
+  const news = location.category === 'news'
   const media = videos || location.category === 'podcasts'
   const results = resultEntries(data, preferences)
   const hiddenCount = results.filter(item => item.rule === 'hide').length
   const visible = visibleEntries(results, showHidden)
+  const now = Date.now()
+  const newsEntries = news ? visible.map(entry => ({ entry, time: newsSourceTime(entry.result.publishedAt, now) })) : []
+  const canSortNews = newsEntries.filter(item => item.time !== undefined).length >= 2
   const videoEntries = videos ? visible.map(entry => ({ entry, duration: videoDurationBucket(entry.result.duration) })) : []
   const withoutDuration = videoEntries.filter(item => !item.duration).length
   const knownDurations = videoEntries.length - withoutDuration
@@ -229,9 +247,13 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
   const refinements = imageRefinements?.value ?? (imageRefinement?.query === location.query ? imageRefinement.value : defaultImageRefinements)
   const refiningImages = images && hasImageFilters(refinements)
   const matching = refiningImages ? visible.filter(entry => matchesImageRefinements(entry, refinements)) : visible
-  const ordered = images ? orderImageEntries(matching, refinements.order) : matching
+  const ordered = images ? orderImageEntries(matching, refinements.order) : newestNews && canSortNews
+    ? newsEntries.sort((left, right) => Number(right.entry.rule === 'pin') - Number(left.entry.rule === 'pin')
+      || (right.time === left.time ? 0 : (right.time ?? -Infinity) - (left.time ?? -Infinity))).map(item => item.entry)
+    : matching
   const shown = images ? ordered.slice(0, galleryLimit)
     : duration !== 'any' ? videoEntries.filter(item => item.duration === duration).map(item => item.entry) : ordered
+  const videoGrid = videos && shown.length >= 2 && shown.filter(({ result }) => result.thumbnailUrl || result.imageUrl).length > shown.length / 2
   const groups = groupResults(shown, location.category === 'web' ? location.query : undefined)
   const withoutDimensions = images ? visible.filter(entry => !entry.result.imageDimensions).length : 0
   const noMatchingImages = refiningImages && (visible.length > 0 || !hiddenCount) && shown.length === 0
@@ -279,7 +301,19 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
             shown={shown.length} total={visible.length} matches={ordered.length} withoutDimensions={withoutDimensions}
             hasSourceDates={visible.some(entry => imageSourceTime(entry.result.publishedAt) !== undefined)} sources={imageSources(visible)} />
         )}
-        {canFilterVideoDuration && <div className="video-duration-filter">
+        {canSortNews && <div className="result-refinements">
+          <label>
+            <span>Sort news</span>
+            <span className="filter-select">
+              <select value={newestNews ? 'newest' : 'relevance'} onChange={event => setNewestNews(event.target.value === 'newest')}>
+                <option value="relevance">Relevance</option>
+                <option value="newest">Newest on this page</option>
+              </select>
+              <ChevronDown size={14} aria-hidden="true" />
+            </span>
+          </label>
+        </div>}
+        {canFilterVideoDuration && <div className="result-refinements">
           <label>
             <span>Duration</span>
             <span className="filter-select">
@@ -297,12 +331,12 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
           </p>}
         </div>}
         {shown.length > 0 ? (
-          <ol ref={images ? gallery : undefined} className={images ? 'results-list image-grid' : 'results-list'}>
+          <ol ref={images ? gallery : undefined} className={images ? 'results-list image-grid' : videoGrid ? 'results-list video-results-grid' : 'results-list'}>
             {groups.map(({ lead: entry, additional, versions }, index) => (
               <ResultItem key={entry.url.href + (entry.result.imageUrl ?? '')} entry={entry}
                 additional={additional} versions={versions}
                 preview={images ? opener => setPreview({ entries: ordered, startIndex: index, opener }) : undefined}
-                media={media} video={videos}
+                media={media} video={videos} news={news}
                 newTab={preferences.newTab} setDomain={setDomain} showHidden={showHidden} searchSite={searchSite} terms={terms} />
             ))}
           </ol>

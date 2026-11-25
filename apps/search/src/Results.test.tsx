@@ -162,6 +162,31 @@ describe('search result presentation', () => {
     expect(screen.queryByRole('list', { name: 'More from github.com' })).toBeNull()
   })
 
+  it('keeps snippets visible after the first two adjacent same-site links', () => {
+    const grouped = { ...data, results: Array.from({ length: 4 }, (_, index) => ({
+      url: 'https://example.org/' + index, title: 'Result ' + index, snippet: 'Details for result ' + index,
+    })) }
+    render(<Results data={grouped} location={{ ...homeLocation, query: 'sample' }}
+      preferences={loadPreferences()} setDomain={vi.fn()} onQuery={vi.fn()} />)
+    expect(screen.getByRole('list', { name: 'More from example.org' }).querySelectorAll('a')).toHaveLength(2)
+    expect(screen.getByText('Details for result 3')).toBeDefined()
+  })
+
+  it('sorts dated news on this page and preserves reported relative labels', () => {
+    const news = { ...data, results: [
+      { url: 'https://a.example.org/story', title: 'Undated', snippet: '' },
+      { url: 'https://b.example.org/story', title: 'Earlier news', snippet: '', publishedAt: '3 days ago' },
+      { url: 'https://c.example.org/story', title: 'Recent news', snippet: '', publishedAt: '2 hours ago' },
+    ] }
+    const { container } = render(<Results data={news} location={{ ...homeLocation, category: 'news', query: 'telescope' }}
+      preferences={loadPreferences()} setDomain={vi.fn()} onQuery={vi.fn()} />)
+    const titles = () => [...container.querySelectorAll('.result-link')].map(link => link.textContent)
+    expect(titles()).toEqual(['Undated', 'Earlier news', 'Recent news'])
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort news' }), { target: { value: 'newest' } })
+    expect(titles()).toEqual(['Recent news', 'Earlier news', 'Undated'])
+    expect(screen.getByText('2 hours ago')).toBeDefined()
+  })
+
   it('puts nearby versions of the same documentation behind the top-ranked result on site searches', async () => {
     const docs: SearchResponse = { ...data, results: [
       docsResult('3/library/tomllib.html', 'tomllib'),

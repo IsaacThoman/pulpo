@@ -227,7 +227,8 @@ export function App({ callback }: { callback: Callback }) {
   const askUrl = state.status === 'success' && view.category === 'web' && !luckyQuery
     ? buildAskPulpoUrl(pulpoOrigin, view.query, groupResults(visibleEntries(resultEntries(state.data, preferences), false), view.query)
       .flatMap(({ lead, additional }) => [lead.result, ...additional.map(({ result }) => result)])) : undefined
-  const newsAlternative = state.status === 'success' && view.category === 'news' && view.dateRange && state.data.results.length < 3
+  const newsAlternative = state.status === 'success' && view.category === 'news' && !view.page
+    && ((!view.provider && !view.dateRange) || (view.dateRange && state.data.results.length < 3))
     ? alternatives.find(provider => provider.id !== state.data.provider) : undefined
   const waitingForSession = user === undefined
   const isResults = Boolean(view.query)
@@ -519,14 +520,24 @@ export function App({ callback }: { callback: Callback }) {
                   return <button key={category} className={'category-button' + (category === 'videos' || category === 'podcasts' ? ' desktop-media-tab' : '')} aria-pressed={category === view.category}
                     onClick={() => changeCategory(category)}><Icon size={16} aria-hidden="true" /> {labels[category]}</button>
                 })}
-                {mediaCategories.length > 0 && <details className="provider-menu mobile-media-tabs" key={view.category}>
+                {mediaCategories.length > 0 && <details className="provider-menu mobile-media-tabs" onKeyDown={event => {
+                  if (event.key !== 'Escape' || !event.currentTarget.open) return
+                  event.currentTarget.open = false
+                  event.currentTarget.querySelector('summary')?.focus()
+                }} onBlur={event => {
+                  if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget)) {
+                    event.currentTarget.open = false
+                  }
+                }}>
                   <summary className="category-button" aria-label="Media search types" data-active={view.category === 'videos' || view.category === 'podcasts'}>
                     {view.category === 'videos' || view.category === 'podcasts' ? labels[view.category] : 'Media'}
                     <ChevronDown size={13} aria-hidden="true" />
                   </summary>
                   <div className="provider-options">
                     {mediaCategories.map(category => <button key={category} onClick={event => {
-                      event.currentTarget.closest('details')?.removeAttribute('open')
+                      const menu = event.currentTarget.closest('details')
+                      menu?.removeAttribute('open')
+                      menu?.querySelector('summary')?.focus()
                       changeCategory(category)
                     }}>{labels[category]}</button>)}
                   </div>
@@ -681,7 +692,7 @@ export function App({ callback }: { callback: Callback }) {
                 </p>}
                 {newsAlternative && <div className="alternate-news">
                   <button className="secondary-button" onClick={() => go({ ...view, provider: newsAlternative.id })}>
-                    Try {providerNames[newsAlternative.id]} for these dates
+                    Try {providerNames[newsAlternative.id]} {view.dateRange ? 'for these dates' : 'for news'}
                   </button>
                 </div>}
                 {!state.data.results.length && !state.data.answer && !state.data.knowledge ? (

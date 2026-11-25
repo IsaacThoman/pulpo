@@ -141,7 +141,7 @@ export function QuickAnswer({ query, modelName, automatic, onAutomaticStart, pul
         {status === 'running' && !answer && <p className="quick-answer-progress" role="status">
           <LoaderCircle size={15} aria-hidden="true" /> Pulpo is working…
         </p>}
-        {answer && <Suspense fallback={<p className="quick-answer-plain">{answer}</p>}>
+        {answer && <Suspense fallback={<p className="quick-answer-progress" role="status">Formatting answer…</p>}>
           <AnswerMarkdown text={answer} />
         </Suspense>}
         {status === 'error' && <div className="quick-answer-recovery" role="alert">
