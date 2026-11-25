@@ -513,7 +513,7 @@ export function App({ callback }: { callback: Callback }) {
           </div>
         </main>
       ) : (
-        <main id="main-content" className="results-main">
+        <main id="main-content" className={'results-main' + (view.category === 'images' ? ' gallery-main' : '')}>
           <div className="results-content">
             <h1 className="sr-only">Search results for {view.query}</h1>
             <div className="search-tools">

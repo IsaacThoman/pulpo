@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type { SearchResponse } from './api'
 import { ImageResultFilters } from './ImageResultFilters'
+import { galleryGap, sizeImageTiles, type ImageTileSize } from './image-layout'
 import { ImageViewer } from './ImageViewer'
 import {
   defaultImageRefinements, hasImageFilters, imageSources, imageSourceTime, matchesImageRefinements, orderImageEntries,
@@ -87,29 +88,31 @@ function SiteIcon({ host }: { host: string }) {
   </span>
 }
 
-function ImageThumbnail({ image, thumbnail, title, license, dimensions, contain, open }: {
+function ImageThumbnail({ image, thumbnail, title, license, dimensions, contain, open, tileHeight }: {
   image: string | undefined
   thumbnail: string | undefined
   title: string
   license?: string
   dimensions?: { width: number; height: number }
   contain: boolean
+  tileHeight?: number
   open: (opener: HTMLButtonElement) => void
 }) {
   return <button type="button" className="image-preview" aria-label={'Preview image: ' + title} aria-haspopup="dialog"
     aria-description={license ? 'Reported license: ' + license : undefined}
-    data-contain={contain || undefined} onClick={event => open(event.currentTarget)}>
+    data-contain={contain || undefined} style={tileHeight ? { height: tileHeight } : undefined} onClick={event => open(event.currentTarget)}>
     <ResultImage sources={[thumbnail, image]} alt="" lazy fallback={<Image size={26} aria-hidden="true" />} />
     {dimensions && <span className="image-dimensions-badge" aria-hidden="true">{dimensions.width} × {dimensions.height}</span>}
     {license && <span className="image-license-badge">{license}</span>}
   </button>
 }
 
-function ResultItem({ entry, additional, versions, preview, media, video, newsNow, newTab, setDomain, showHidden, searchSite, terms }: {
+function ResultItem({ entry, additional, versions, preview, imageTile, media, video, newsNow, newTab, setDomain, showHidden, searchSite, terms }: {
   entry: ResultWithUrl
   additional: ResultWithUrl[]
   versions: { url: URL; label: string }[]
   preview?: (opener: HTMLButtonElement) => void
+  imageTile?: ImageTileSize
   media: boolean
   video: boolean
   newsNow?: number
@@ -144,10 +147,8 @@ function ResultItem({ entry, additional, versions, preview, media, video, newsNo
     {video && <VideoPreview url={url.href} title={title} newTab={newTab} overThumbnail />}
   </div>
   const heading = <h2><a className="result-link" href={url.href} target={target} rel="noreferrer" title={preview ? title : undefined}>{title}</a></h2>
-  const content = <>
-      {preview && heading}
-      <div className="result-meta">
-        <SiteIcon host={host} />
+  const metadata = <div className="result-meta">
+        {!preview && <SiteIcon host={host} />}
         <span className="site-path" title={path ? host + ' › ' + path : host}>{host}
           {path && <span className="result-path"> › {path}</span>}
         </span>
@@ -188,7 +189,8 @@ function ResultItem({ entry, additional, versions, preview, media, video, newsNo
           </div>
         </details>
       </div>
-      {!preview && heading}
+  const content = <>
+      {preview ? <div className="image-caption">{heading}{metadata}</div> : <>{metadata}{heading}</>}
       {video && (videoDetails || date || videoDuration) && <p className="video-result-details">
         {thumbnail && videoDuration && <span className="sr-only">Duration {videoDuration}. </span>}
         {videoDetails && <span>{videoDetails}</span>}
@@ -224,10 +226,12 @@ function ResultItem({ entry, additional, versions, preview, media, video, newsNo
       {video && !thumbnail && <VideoPreview url={url.href} title={title} newTab={newTab} />}
     </>
   return (
-    <li className="result" data-video-thumbnail={Boolean(video && thumbnail) || undefined} data-news-thumbnail={Boolean(news && thumbnail) || undefined}>
+    <li className="result" data-video-thumbnail={Boolean(video && thumbnail) || undefined} data-news-thumbnail={Boolean(news && thumbnail) || undefined}
+      data-row-start={imageTile?.rowStart || undefined} style={imageTile ? { width: imageTile.width } : undefined}>
       {preview && <ImageThumbnail key={result.imageUrl + ' ' + result.thumbnailUrl}
         thumbnail={result.thumbnailUrl} image={result.imageUrl} title={title} contain={containImage} open={preview}
         dimensions={dimensions}
+        tileHeight={imageTile?.height}
         license={result.imageLicense && licenseLabel(result.imageLicense.code, result.imageLicense.version)} />}
       {!news && mediaImage}
       {video || (news && thumbnail) ? <div className="media-result-content">{content}</div> : content}
@@ -255,6 +259,7 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
   const [videoDuration, setVideoDuration] = useState<{ scope: string; value: VideoDuration }>()
   const [newsOrder, setNewsOrder] = useState<'relevance' | 'newest'>()
   const [galleryLimit, setGalleryLimit] = useState(imageBatchSize)
+  const [galleryWidth, setGalleryWidth] = useState(0)
   const gallery = useRef<HTMLOListElement>(null)
   const firstRevealed = useRef<number>(undefined)
   const showHidden = expandedQuery === location.query
@@ -289,6 +294,11 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
     : duration !== 'any' ? videoEntries.filter(item => item.duration === duration).map(item => item.entry) : ordered
   const videoGrid = videos && shown.length >= 2 && shown.filter(({ result }) => result.thumbnailUrl || result.imageUrl).length > shown.length / 2
   const groups = groupResults(shown, location.category === 'web' ? location.query : undefined)
+  const hasGallery = images && shown.length > 0
+  const imageTiles = hasGallery && galleryWidth > 0 ? sizeImageTiles(groups.map(({ lead }) => {
+    const dimensions = lead.result.imageDimensions
+    return dimensions ? dimensions.width / dimensions.height : undefined
+  }), galleryWidth) : []
   const withoutDimensions = images ? visible.filter(entry => !entry.result.imageDimensions).length : 0
   const noMatchingImages = refiningImages && (visible.length > 0 || !hiddenCount) && shown.length === 0
   const noMatchingVideos = duration !== 'any' && shown.length === 0
@@ -311,6 +321,17 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
     firstRevealed.current = undefined
     gallery.current?.children[index]?.querySelector<HTMLButtonElement>('.image-preview')?.focus()
   }, [shown.length])
+
+  useLayoutEffect(() => {
+    const list = gallery.current
+    if (!list) return
+    const resize = () => setGalleryWidth(list.clientWidth)
+    resize()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(resize)
+    observer.observe(list)
+    return () => observer.disconnect()
+  }, [hasGallery])
 
   function updateImageRefinements(next: ImageRefinements) {
     setGalleryLimit(imageBatchSize)
@@ -382,11 +403,13 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
         {shown.length > 0 ? (
           <>
           {podcastShows.length > 0 && <h2 className="episode-heading">Episodes</h2>}
-          <ol ref={images ? gallery : undefined} className={images ? 'results-list image-grid' : videoGrid ? 'results-list video-results-grid' : 'results-list'}>
+          <ol ref={images ? gallery : undefined} className={images ? 'results-list image-grid' : videoGrid ? 'results-list video-results-grid' : 'results-list'}
+            data-justified={imageTiles.length > 0 || undefined} style={imageTiles.length > 0 ? { gap: galleryGap } : undefined}>
             {groups.map(({ lead: entry, additional, versions }, index) => (
               <ResultItem key={entry.url.href + (entry.result.imageUrl ?? '')} entry={entry}
                 additional={additional} versions={versions}
                 preview={images ? opener => setPreview({ entries: ordered, startIndex: index, opener }) : undefined}
+                imageTile={imageTiles[index]}
                 media={media} video={videos} newsNow={news ? now : undefined}
                 newTab={preferences.newTab} setDomain={setDomain} showHidden={showHidden} searchSite={searchSite} terms={terms} />
             ))}
