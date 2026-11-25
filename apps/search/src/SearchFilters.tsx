@@ -16,6 +16,7 @@ interface FilterDraft {
 }
 
 interface SearchFiltersProps extends Filters {
+  label?: string
   dates: readonly SearchLocation['date'][]
   allowCustomDates: boolean
   allowRegion: boolean
@@ -41,7 +42,7 @@ function filterDraft({ date, dateRange, region, regionOverride, safeSearch }: Fi
 }
 
 export function SearchFilters({
-  date, dateRange, region, regionOverride, safeSearch, dates, allowCustomDates, allowRegion,
+  label = 'Filters', date, dateRange, region, regionOverride, safeSearch, dates, allowCustomDates, allowRegion,
   defaultRegion, defaultSafeSearch, onApply, searchProvider,
 }: SearchFiltersProps) {
   const menu = useRef<HTMLDetailsElement>(null)
@@ -89,10 +90,10 @@ export function SearchFilters({
       <details className="filter-menu" ref={menu} onKeyDown={event => {
         if (event.key === 'Escape' && event.currentTarget.open) close()
       }}>
-        <summary className="filter-trigger" ref={summary} aria-label={active ? 'Filters, ' + appliedLabels : 'Filters'} data-active={active}
+        <summary className="filter-trigger" ref={summary} aria-label={active ? label + ', ' + appliedLabels : label} data-active={active}
           onClick={() => { if (!menu.current?.open) setDraft(currentDraft) }}>
           <ListFilter size={16} aria-hidden="true" />
-          <span>{appliedLabels || 'Filters'}</span>
+          <span>{appliedLabels || label}</span>
           <ChevronDown size={13} aria-hidden="true" />
         </summary>
         <form className="search-filter-form" onSubmit={event => {

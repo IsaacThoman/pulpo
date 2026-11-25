@@ -1,4 +1,4 @@
-import { ChevronDown, Map as MapIcon, MapPin, Star } from 'lucide-react'
+import { ChevronDown, Map as MapIcon, Route, Star } from 'lucide-react'
 import { lazy, Suspense, useId, useMemo, useState } from 'react'
 import braveLight from './assets/brave-logo-light.png'
 import braveDark from './assets/brave-logo-dark.png'
@@ -66,8 +66,9 @@ export function PlacesAnswer({ response, openNow, webExpanded, onWeb }: {
       <div className="places-header">
         <h2>Places{openNow && ' open now'}</h2>
         <div className="places-header-actions">
-          <button className="text-button" aria-expanded={webExpanded} onClick={onWeb}>
+          <button className="text-button specialty-web-toggle" aria-expanded={webExpanded} onClick={onWeb}>
             {webExpanded ? 'Hide web results' : 'Show web results'}
+            <ChevronDown size={15} aria-hidden="true" />
           </button>
         </div>
       </div>
@@ -132,10 +133,10 @@ export function PlacesAnswer({ response, openNow, webExpanded, onWeb }: {
                   )}
                   <div className="place-actions">
                     <a className="secondary-button result-link" href={googleMapsUrl(place, 'directions')} target="_blank" rel="noreferrer">
-                      <MapPin size={14} aria-hidden="true" /> Directions
+                      <Route size={14} aria-hidden="true" /> Directions
                     </a>
                     {website && <a className="secondary-button" href={website.href} rel="noreferrer">Website</a>}
-                    {place.googlePlaceId && <a className="secondary-button" href={googleMapsUrl(place, 'listing')} target="_blank" rel="noreferrer">Map listing</a>}
+                    {place.googlePlaceId && <a className="secondary-button" href={googleMapsUrl(place, 'listing')} target="_blank" rel="noreferrer">Google Maps</a>}
                     {telephone && /^\+?\d{7,15}$/.test(telephone) && <a className="secondary-button"
                       href={'tel:' + telephone + (extension && /^\d{1,8}$/.test(extension) ? ';ext=' + extension : '')}>Call</a>}
                   </div>

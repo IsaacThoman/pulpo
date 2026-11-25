@@ -32,7 +32,7 @@ describe('Places map disclosure', () => {
     showPlaces()
     expect(screen.getByText('Independent bookseller.')).toBeDefined()
     expect(screen.getByText('Bookshop · $$')).toBeDefined()
-    const listing = screen.getByRole('link', { name: 'Map listing' }) as HTMLAnchorElement
+    const listing = screen.getByRole('link', { name: 'Google Maps' }) as HTMLAnchorElement
     expect(new URL(listing.href).searchParams.get('query_place_id')).toBe('ChIJMarketBooks')
     const directions = screen.getAllByRole('link', { name: 'Directions' })[0] as HTMLAnchorElement
     expect(new URL(directions.href).searchParams.get('destination_place_id')).toBe('ChIJMarketBooks')

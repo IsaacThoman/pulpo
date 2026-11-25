@@ -88,10 +88,11 @@ function SiteIcon({ host }: { host: string }) {
   </span>
 }
 
-function ImageThumbnail({ image, thumbnail, title, license, dimensions, contain, open, tileHeight }: {
+function ImageThumbnail({ image, thumbnail, title, source, license, dimensions, contain, open, tileHeight }: {
   image: string | undefined
   thumbnail: string | undefined
   title: string
+  source: string
   license?: string
   dimensions?: { width: number; height: number }
   contain: boolean
@@ -99,9 +100,10 @@ function ImageThumbnail({ image, thumbnail, title, license, dimensions, contain,
   open: (opener: HTMLButtonElement) => void
 }) {
   return <button type="button" className="image-preview" aria-label={'Preview image: ' + title} aria-haspopup="dialog"
-    aria-description={license ? 'Reported license: ' + license : undefined}
+    aria-description={[source, dimensions && `${dimensions.width} × ${dimensions.height}`, license && 'Reported license: ' + license].filter(Boolean).join(' · ')}
     data-contain={contain || undefined} style={tileHeight ? { height: tileHeight } : undefined} onClick={event => open(event.currentTarget)}>
     <ResultImage sources={[thumbnail, image]} alt="" lazy fallback={<Image size={26} aria-hidden="true" />} />
+    <span className="image-source-label" aria-hidden="true">{source}</span>
     {dimensions && <span className="image-dimensions-badge" aria-hidden="true">{dimensions.width} × {dimensions.height}</span>}
     {license && <span className="image-license-badge">{license}</span>}
   </button>
@@ -166,6 +168,7 @@ function ResultItem({ entry, additional, versions, preview, imageTile, media, vi
         }}>
           <summary className="icon-button" aria-label={`Options for ${host}`}><Ellipsis size={18} /></summary>
           <div className="result-menu-content">
+            {preview && dimensions && <p className="image-menu-dimensions">{dimensions.width} × {dimensions.height} px</p>}
             {searchSite && isSearchFaviconHost(host) && <button onClick={() => searchSite(host)}>Search this site</button>}
             <button onClick={event => {
               const menu = event.currentTarget.closest('details')
@@ -229,7 +232,7 @@ function ResultItem({ entry, additional, versions, preview, imageTile, media, vi
     <li className="result" data-video-thumbnail={Boolean(video && thumbnail) || undefined} data-news-thumbnail={Boolean(news && thumbnail) || undefined}
       data-row-start={imageTile?.rowStart || undefined} style={imageTile ? { width: imageTile.width } : undefined}>
       {preview && <ImageThumbnail key={result.imageUrl + ' ' + result.thumbnailUrl}
-        thumbnail={result.thumbnailUrl} image={result.imageUrl} title={title} contain={containImage} open={preview}
+        thumbnail={result.thumbnailUrl} image={result.imageUrl} title={title} source={host} contain={containImage} open={preview}
         dimensions={dimensions}
         tileHeight={imageTile?.height}
         license={result.imageLicense && licenseLabel(result.imageLicense.code, result.imageLicense.version)} />}

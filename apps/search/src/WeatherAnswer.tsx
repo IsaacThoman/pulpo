@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Cloud, CloudFog, CloudLightning, CloudRain, CloudSnow, CloudSun, Droplet, Sun } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Cloud, CloudFog, CloudLightning, CloudRain, CloudSnow, CloudSun, Droplet, Sun } from 'lucide-react'
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from 'react'
 import { type WeatherAlerts, type WeatherPlace, type WeatherResponse } from './api'
 import { safeHttpUrl } from './navigation'
@@ -137,8 +137,9 @@ export function WeatherAnswer({ response, alerts, onLocation, onWeb, webExpanded
           <output className="weather-reading">{degrees(forecast.temperatureC)}°{fahrenheit ? 'F' : 'C'}</output>
           {forecast.condition && <p className="weather-condition">{forecast.condition}</p>}
         </div>
-        <button className="text-button weather-web" aria-expanded={webExpanded} onClick={onWeb}>
+        <button className="text-button weather-web specialty-web-toggle" aria-expanded={webExpanded} onClick={onWeb}>
           {webExpanded ? 'Hide web results' : 'Show web results'}
+          <ChevronDown size={15} aria-hidden="true" />
         </button>
       </div>
       <ul className="weather-details">

@@ -543,6 +543,7 @@ export function App({ callback }: { callback: Callback }) {
                   </span>}
                   {(view.category === 'news' || view.category === 'videos') && <div className="media-toolbar-slot" ref={setMediaToolbar} />}
                   {!showAnswer && !answerPending && !reuse && <SearchFilters date={effectiveDate} dateRange={view.dateRange} region={view.region}
+                    label={view.category === 'images' ? 'Options' : undefined}
                     dates={filterDates} allowCustomDates={filterCustomDates} allowRegion={filterRegion}
                     regionOverride={view.regionOverride} safeSearch={view.safeSearch}
                     defaultRegion={searchPreferences.defaultRegion} defaultSafeSearch={searchPreferences.safeSearch}
