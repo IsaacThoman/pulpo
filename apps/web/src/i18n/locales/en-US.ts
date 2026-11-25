@@ -208,6 +208,7 @@ const enUS = {
       personalization: 'Personalization',
       appearance: 'Appearance',
       interface: 'Interface',
+      search: 'Search',
       billing: 'Billing',
       api: 'API keys',
       data: 'Data controls',

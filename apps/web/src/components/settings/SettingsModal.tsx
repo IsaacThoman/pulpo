@@ -24,6 +24,7 @@ import {
   ExternalLink,
   Plug,
   Monitor,
+  Search,
   Moon,
   Palette,
   ShieldCheck,
@@ -73,6 +74,7 @@ import { PasswordSettings } from './PasswordSettings'
 import { PasskeySettings } from './PasskeySettings'
 import { TwoFactorSettings } from './TwoFactorSettings'
 import { UsernameSettings } from './UsernameSettings'
+import { SearchSettings } from './SearchSettings'
 import { AvatarCropEditor } from './AvatarCropEditor'
 import { DEFAULT_AVATAR_CROP, prepareAvatarUpload } from './avatar-crop'
 import { SETTINGS_SECTION_IDS, type SettingsSectionId } from './settings-dialog'
@@ -99,6 +101,7 @@ const SECTION_CONFIG = {
   appearance: { labelKey: 'settings.sections.appearance', icon: Palette },
   interface: { labelKey: 'settings.sections.interface', icon: Monitor },
   agent: { labelKey: 'settings.sections.agent', icon: Bot },
+  search: { labelKey: 'settings.sections.search', icon: Search },
   billing: { labelKey: 'settings.sections.billing', icon: CreditCard },
   api: { labelKey: 'settings.sections.api', icon: KeyRound },
   data: { labelKey: 'settings.sections.data', icon: Database },
@@ -370,6 +373,7 @@ export function SettingsModal({
   const signOutActiveAccount = useAuth((a) => a.signOutActiveAccount)
   const billingEnabled = useAuth((a) => a.billingEnabled)
   const codexEnabled = useAuth((a) => a.codexEnabled)
+  const searchUrl = useAuth((a) => a.searchUrl) || null
   const filesEnabled = useAuth((a) => a.filesEnabled)
   const replaceUser = useAuth((a) => a.replaceUser)
   const navigate = useNavigate()
@@ -436,7 +440,8 @@ export function SettingsModal({
   useEffect(() => { if (open) void refreshInstanceFeatures() }, [open])
   useEffect(() => {
     if (!codexEnabled && section === 'connections') setSection('general')
-  }, [codexEnabled, section])
+    if (!searchUrl && section === 'search') setSection('general')
+  }, [codexEnabled, searchUrl, section])
 
   useEffect(() => () => { if (avatarCandidate) URL.revokeObjectURL(avatarCandidate.url) }, [avatarCandidate])
 
@@ -683,6 +688,7 @@ export function SettingsModal({
                 (sec.id !== 'api' || useAuth.getState().apiKeysEnabled)
                 && (sec.id !== 'billing' || billingEnabled)
                 && (sec.id !== 'connections' || codexEnabled)
+                && (sec.id !== 'search' || searchUrl)
               )).map((sec) => (
                 <button
                   key={sec.id}
@@ -1203,6 +1209,8 @@ export function SettingsModal({
                     <KeyRound /> {ui("Manage API keys")} </Button>
                 </div>
               )}
+
+              {searchUrl && section === 'search' && <SearchSettings searchUrl={searchUrl} />}
 
               {billingEnabled && section === 'billing' && (
                 <div>
