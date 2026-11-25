@@ -1037,7 +1037,8 @@ label.settings-row { cursor: pointer; }
   .weather-answer[data-wide-forecast] :is(.weather-heading, .weather-current) { width: min(100%, var(--reading-width)); }
   .weather-answer[data-wide-forecast] .weather-outlook { margin-top: 0; }
   .weather-answer[data-wide-forecast] .weather-days { grid-template-columns: minmax(0, 1fr); gap: .18rem; margin-bottom: 0; }
-  .weather-answer[data-wide-forecast] .weather-days li { display: grid; grid-template-columns: 2.3rem 1.25rem minmax(4rem, 1fr) minmax(1.6rem, 1.2fr) 3.8rem; align-items: center; gap: .35rem; }
+  .weather-answer[data-wide-forecast] .weather-days li { display: grid; grid-template-columns: minmax(2.8rem, max-content) 1.25rem minmax(4rem, 1fr) minmax(1.6rem, 1.2fr) 3.8rem; align-items: center; gap: .35rem; }
+  .weather-answer[data-wide-forecast] .weather-days time { white-space: nowrap; }
   .weather-answer[data-wide-forecast] .weather-days .weather-range { grid-column: 5; grid-row: 1; justify-content: end; }
   .weather-answer[data-wide-forecast] .weather-range-track { grid-column: 4; grid-row: 1; margin: 0; }
   .weather-answer[data-wide-forecast] .weather-days .weather-day-condition { grid-column: 3; grid-row: 1; overflow-wrap: anywhere; }
