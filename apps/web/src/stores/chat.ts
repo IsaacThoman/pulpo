@@ -196,6 +196,8 @@ export interface ServerResponse {
   detailAvailable?: boolean
   // Local-only: a rejected reservation leaves no server response to edit.
   rejectedSend?: { startChat?: { temporary: boolean; autoExpire: boolean } }
+  // Local-only: a refused regenerate leaves no server response, so trying it again regenerates its source.
+  failedRegenerate?: { sourceResponseId: string }
 }
 
 export interface ServerAttachment {
@@ -359,6 +361,8 @@ interface ChatState {
     attachments: Attachment[]
     agentMode: boolean
     computer?: ComputerSelection
+    /** Defaults to the model's saved preset choices. */
+    presetSelections?: Record<string, string>
   }) => Promise<void>
   editAssistantMessage: (chatId: string, messageId: string, content: string) => void
   deleteMessage: (chatId: string, messageId: string) => void
@@ -609,9 +613,18 @@ function mergePendingOptimisticResponses(row: ServerChat): ServerChat {
     if (pending.chatId !== row.id) continue
     if (serverIds.has(responseId)) {
       const serverResponse = responses.find((response) => response.id === responseId)
-      const pendingTerminal = !['queued', 'in_progress'].includes(pending.response.status)
-      const serverTerminal = serverResponse && !['queued', 'in_progress'].includes(serverResponse.status)
-      if (pendingTerminal && serverTerminal) pendingOptimisticResponses.delete(responseId)
+      if (pending.response.failedRegenerate) {
+        // The server never stored a refused regenerate, so this row is a stale local copy, e.g. from a
+        // visited page. The pending copy stays the source of truth until another attempt replaces it.
+        if (serverResponse && serverResponse !== pending.response && !serverResponse.failedRegenerate) {
+          responses = responses.map((response) => response === serverResponse ? { ...pending.response, branches: serverResponse.branches } : response)
+          changed = true
+        }
+      } else {
+        const pendingTerminal = !['queued', 'in_progress'].includes(pending.response.status)
+        const serverTerminal = serverResponse && !['queued', 'in_progress'].includes(serverResponse.status)
+        if (pendingTerminal && serverTerminal) pendingOptimisticResponses.delete(responseId)
+      }
       for (const attachment of pending.attachments) {
         if (attachmentIds.has(attachment.id)) continue
         attachmentIds.add(attachment.id)
@@ -808,6 +821,7 @@ function cacheOptimisticBranch(input: {
     branches: { user: { ids: [input.responseId], index: 0 }, assistant: { ids: [input.responseId], index: 0 } },
     userMessageId: input.editedInput === undefined ? source.userMessageId : crypto.randomUUID(),
     agentMode: input.agentMode ?? source.agentMode,
+    failedRegenerate: undefined,
   }
   const attachmentRows = (input.editedAttachments ?? []).map((attachment) => ({
     id: attachment.id,
@@ -1016,24 +1030,43 @@ function failOptimisticResponse(
   message: string,
 ): ServerChat | undefined {
   const current = queryClient.getQueryData<ServerChat>(chatKey(chatId))
-  if (!current?.responses?.some((response) => response.id === responseId)) return current
+  const optimistic = current?.responses?.find((response) => response.id === responseId)
+  if (!current?.responses || !optimistic) return current
   const failedAt = new Date().toISOString()
-  const restoreFallback = branchSelectionIntents.isCurrent(chatId, selectionVersion)
+  const failedResponse: ServerResponse = {
+    ...optimistic,
+    status: 'failed',
+    error: { message },
+    completedAt: failedAt,
+    snapshot: { ...hydratedResponseSnapshot(optimistic), status: 'failed', error: { message }, updatedAt: failedAt },
+  }
+  let restoreFallback = branchSelectionIntents.isCurrent(chatId, selectionVersion)
     && current.activeBranchLeafId === responseId
+  let page: Pick<ServerChat, 'responses' | 'attachments' | 'history'> = {
+    responses: current.responses.map((response) => response.id === responseId ? failedResponse : response),
+  }
+  // A paged chat holds only the selected lineage, so selecting the attempt dropped the fallback from
+  // the page. Bring back the fallback's page, or keep the failure in view if that page is gone.
+  if (restoreFallback && current.history && !current.responses.some((response) => response.id === fallbackResponseId)) {
+    const owner = queryClient.getQueryCache().find({ queryKey: chatKey(chatId), exact: true })
+    const window = owner ? branchHistories.find(owner, fallbackResponseId) : undefined
+    if (window?.responses) {
+      page = {
+        responses: withInsertedBranchResponse(window.responses.filter((response) => response.id !== responseId), failedResponse),
+        history: window.history,
+        attachments: [...new Map([...(window.attachments ?? []), ...(current.attachments ?? [])].map((row) => [row.id, row])).values()],
+      }
+    } else {
+      restoreFallback = false
+    }
+  }
   const updated: ServerChat = {
     ...current,
+    ...page,
     activeResponseId: restoreFallback ? fallbackResponseId : current.activeResponseId,
     activeBranchLeafId: restoreFallback ? fallbackResponseId : current.activeBranchLeafId,
-    responses: current.responses.map((response) => response.id !== responseId ? response : {
-      ...response,
-      status: 'failed',
-      error: { message },
-      completedAt: failedAt,
-      snapshot: { ...hydratedResponseSnapshot(response), status: 'failed', error: { message }, updatedAt: failedAt },
-    }),
   }
-  const failedResponse = updated.responses?.find((response) => response.id === responseId)
-  if (failedResponse) pendingOptimisticResponses.set(responseId, {
+  pendingOptimisticResponses.set(responseId, {
     chatId,
     response: failedResponse,
     attachments: pendingOptimisticResponses.get(responseId)?.attachments ?? [],
@@ -1041,6 +1074,32 @@ function failOptimisticResponse(
   if (restoreFallback) branchSelectionIntents.select(chatId, fallbackResponseId)
   queryClient.setQueryData(chatKey(chatId), updated)
   return updated
+}
+
+/** Changes a response that only exists on this device, in the cached chat and in what survives a refetch. */
+function patchLocalResponse(
+  chatId: string,
+  responseId: string,
+  patch: (response: ServerResponse) => ServerResponse,
+): ServerChat | undefined {
+  const pending = pendingOptimisticResponses.get(responseId)
+  if (pending) pendingOptimisticResponses.set(responseId, { ...pending, response: patch(pending.response) })
+  return queryClient.setQueryData<ServerChat>(chatKey(chatId), (chat) => chat?.responses && ({
+    ...chat,
+    responses: chat.responses.map((response) => response.id === responseId ? patch(response) : response),
+  }))
+}
+
+/** Removes a response that only exists on this device, once another attempt replaces it. */
+function dropLocalResponse(chatId: string, responseId: string): ServerChat | undefined {
+  pendingOptimisticResponses.delete(responseId)
+  useChat.setState((state) => ({ streamingIds: removeStreamingId(state.streamingIds, responseId) }))
+  const owner = queryClient.getQueryCache().find({ queryKey: chatKey(chatId), exact: true })
+  if (owner) branchHistories.withoutResponse(owner, responseId, (responses) => withoutBranchResponse(responses, responseId))
+  return queryClient.setQueryData<ServerChat>(chatKey(chatId), (chat) => chat?.responses && ({
+    ...chat,
+    responses: withoutBranchResponse(chat.responses, responseId),
+  }))
 }
 
 export const useChat = create<ChatState>()((set, get) => ({
@@ -1978,6 +2037,41 @@ export const useChat = create<ChatState>()((set, get) => ({
     const agentMode = selection.agentMode
       && Boolean(getCatalogModel(modelId).agentEnabled)
       && useCatalog.getState().agentAvailable
+    // A regenerated Agent reply uses the chat's computer like a new message would, with its own session.
+    const computerChoiceForReply = agentMode ? activeComputerChoice(chatId) : null
+    const cached = queryClient.getQueryData<ServerChat>(chatKey(chatId))
+    const source = cached?.responses?.find((response) => response.id === messageId)
+    // A turn refused for a usage limit never reached the server, so there is no reply to regenerate: send it again.
+    if (source?.rejectedSend) {
+      const userMessage = messagesFromResponses([source], cached?.attachments ?? [])[0]!
+      void (async () => {
+        const prepared = computerChoiceForReply ? await prepareComputerSend(computerChoiceForReply) : undefined
+        if (prepared && !prepared.ok) throw new Error(prepared.message)
+        await get().editUserMessage({
+          chatId,
+          messageId,
+          content: userMessage.content,
+          modelId,
+          attachments: userMessage.attachments ?? [],
+          agentMode,
+          presetSelections: selection.presetSelections,
+          ...(prepared?.selection ? { computer: prepared.selection } : {}),
+        })
+      })().catch((error: unknown) => {
+        // The refused turn stays, so it shows why this attempt failed rather than the earlier refusal.
+        const message = error instanceof Error ? error.message : 'Unable to send the message'
+        const failed = patchLocalResponse(chatId, messageId, (response) => ({
+          ...response,
+          error: { message },
+          snapshot: { ...response.snapshot, error: { message } },
+        }))
+        if (failed) get().setDetailedChat(failed)
+      })
+      return
+    }
+    // A refused regenerate left only a local branch, so trying it again regenerates the reply it came from.
+    const replacedId = source?.failedRegenerate ? messageId : undefined
+    const targetId = source?.failedRegenerate?.sourceResponseId ?? messageId
     const responseId = crypto.randomUUID()
     const optimistic = cacheOptimisticBranch({
       chatId,
@@ -1991,15 +2085,15 @@ export const useChat = create<ChatState>()((set, get) => ({
     const selectionVersion = optimistic?.selectionVersion
       ?? branchSelectionIntents.select(chatId, responseId).version
     if (optimistic) get().setDetailedChat(optimistic.chat)
-    // A regenerated Agent reply uses the chat's computer like a new message would, with its own session.
-    const computerChoiceForReply = agentMode ? activeComputerChoice(chatId) : null
+    let dispatched = false
     void enqueueChatMutation(chatId, async () => {
       const prepared = computerChoiceForReply ? await prepareComputerSend(computerChoiceForReply) : undefined
       if (prepared && !prepared.ok) throw new Error(prepared.message)
       const computer = prepared?.selection
       if (computer) linkComputerSessionToResponse(computer.sessionId, responseId)
       try {
-        return await optimisticRequest('POST', `/api/messages/${messageId}/regenerate`, {
+        dispatched = true
+        return await optimisticRequest('POST', `/api/messages/${targetId}/regenerate`, {
           timeZone: deviceTimeZone(),
           clientId: responseId,
           modelId,
@@ -2013,6 +2107,10 @@ export const useChat = create<ChatState>()((set, get) => ({
       }
     }).then((result) => {
       if (result === undefined) return
+      if (replacedId) {
+        const detail = dropLocalResponse(chatId, replacedId)
+        if (detail) get().setDetailedChat(detail)
+      }
       branchSelectionIntents.clear(chatId, selectionVersion)
       void queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
     }).catch((error: unknown) => {
@@ -2021,17 +2119,25 @@ export const useChat = create<ChatState>()((set, get) => ({
       const message = expired
         ? 'This temporary chat has expired and cannot be recovered.'
         : error instanceof Error ? error.message : 'Unable to regenerate the response'
-      const failed = failOptimisticResponse(chatId, responseId, messageId, selectionVersion, message)
+      // Retrying a refused regenerate keeps the new attempt in its place, so its error stays in view.
+      let failed = failOptimisticResponse(chatId, responseId, replacedId ? responseId : messageId, selectionVersion, message)
+      // The server stored nothing if the request never left (e.g. computer setup failed) or got a 4xx;
+      // after a network or server error the reply may still exist.
+      const refused = !dispatched || (error instanceof ApiError && error.status >= 400 && error.status < 500)
+      if (refused && failed?.responses?.some((response) => response.id === responseId)) {
+        failed = patchLocalResponse(chatId, responseId, (response) => ({ ...response, failedRegenerate: { sourceResponseId: targetId } }))
+        if (replacedId) failed = dropLocalResponse(chatId, replacedId)
+      }
       if (failed) get().setDetailedChat(failed)
       if (expired) get().markTemporaryExpired(chatId)
     })
   },
-  editUserMessage: async ({ chatId, messageId, content, modelId, attachments: editedAttachments, agentMode, computer: requestedComputer }) => {
+  editUserMessage: async ({ chatId, messageId, content, modelId, attachments: editedAttachments, agentMode, computer: requestedComputer, presetSelections }) => {
     const computer = agentMode ? requestedComputer : undefined
     if (requestedComputer && !computer) endComputerSession(requestedComputer.sessionId)
     const generation = resolveGeneration(
       chatOptionsFor(getCatalogModel(modelId), useModelConfig.getState().overrides),
-      useSettings.getState().generation[modelId],
+      presetSelections ?? useSettings.getState().generation[modelId],
       modelId,
     )
     const sourceResponseId = messageId.endsWith(':input') ? messageId.slice(0, -6) : messageId
@@ -2113,6 +2219,8 @@ export const useChat = create<ChatState>()((set, get) => ({
         pendingOptimisticResponses.delete(responseId)
         failed = { ...failed, responses: withoutBranchResponse(failed.responses ?? [], responseId) }
         queryClient.setQueryData(chatKey(chatId), failed)
+        // Once the attempt is gone nothing can finish it, so it must stop counting as generating.
+        set((state) => ({ streamingIds: removeStreamingId(state.streamingIds, responseId) }))
       }
       if (failed) get().setDetailedChat(failed)
       if (expired) get().markTemporaryExpired(chatId)
@@ -2142,9 +2250,13 @@ export const useChat = create<ChatState>()((set, get) => ({
     const key = chatKey(chatId)
     const owner = queryClient.getQueryCache().find({ queryKey: key, exact: true })
     let cached = queryClient.getQueryData<ServerChat>(key)
+    // A refused regenerate sits beside its saved sibling on the current page, never on a page of its own.
+    // After a reload only the saved chat still marks it; before that, visited pages may hold stale copies.
+    const cachedCopy = cached?.responses?.find((response) => response.id === responseId)
+    const localOnly = Boolean(cachedCopy && (cachedCopy.failedRegenerate || pendingOptimisticResponses.get(responseId)?.response.failedRegenerate))
     if (owner && cached?.history) {
       branchHistories.remember(owner, cached)
-      const window = branchHistories.find(owner, responseId)
+      const window = localOnly ? undefined : branchHistories.find(owner, responseId)
       if (window) cached = mergeServerChatDetails(cached, { ...cached, ...window })
     }
     const intendedLeafId = cached?.responses?.some((response) => response.id === responseId)
@@ -2158,6 +2270,8 @@ export const useChat = create<ChatState>()((set, get) => ({
       const updated = { ...cached, activeResponseId: intendedLeafId, activeBranchLeafId: intendedLeafId }
       queryClient.setQueryData(chatKey(chatId), updated)
       get().setDetailedChat(updated)
+      // The server never stored a refused regenerate; the selection intent keeps it shown across refetches.
+      if (localOnly) return
     }
     void enqueueChatMutation(chatId, () => optimisticRequest('POST', `/api/messages/${responseId}/activate${cached?.history ? `?historyLimit=${HISTORY_PAGE_TURNS}` : ''}`, undefined, {
       queueOffline: !get().chats.some((chat) => chat.id === chatId && chat.temporary),
