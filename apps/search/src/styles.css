@@ -587,7 +587,7 @@ summary::-webkit-details-marker { display: none; }
 .currency-controls .secondary-button { min-height: 2.1rem; padding-inline: .6rem; }
 .places-answer { width: min(100%, var(--reading-width)); margin-top: 1rem; min-width: 0; }
 .places-header, .place-details, .place-actions { display: flex; align-items: baseline; flex-wrap: wrap; gap: .35rem .65rem; }
-.places-header { justify-content: space-between; margin-bottom: .55rem; }
+.places-header { width: min(100%, var(--reading-width)); justify-content: space-between; margin-bottom: .55rem; }
 .places-header h2 { font-size: 1.2rem; }
 .places-header-actions { display: flex; flex-wrap: wrap; gap: .2rem .65rem; }
 .places-header-actions .text-button { display: inline-flex; align-items: center; gap: .3rem; color: var(--link); }
@@ -1075,4 +1075,5 @@ label.settings-row { cursor: pointer; }
 }
 @media (max-width: 23rem) {
   .filter-trigger { gap: .3rem; padding-inline: .45rem; }
+  .settings-select:has(#search-provider-default) { width: 12rem; max-width: 69%; }
 }
