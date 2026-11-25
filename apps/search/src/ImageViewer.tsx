@@ -22,6 +22,7 @@ function licenseLabel(code: string, version: string | undefined) {
 
 export function ImageViewer({ entries, startIndex, opener, newTab, close }: ImageViewerProps) {
   const [index, setIndex] = useState(startIndex)
+  const [copyFeedback, setCopyFeedback] = useState<{ index: number; copied: boolean }>()
   const dialog = useRef<HTMLDialogElement>(null)
   const gesture = useRef<{ pointer: number; x: number; y: number } | null>(null)
   const titleId = useId()
@@ -50,6 +51,7 @@ export function ImageViewer({ entries, startIndex, opener, newTab, close }: Imag
   const license = imageLicense && licenseLabel(imageLicense.code, imageLicense.version)
   const licenseUrl = safeHttpUrl(imageLicense?.url)
   const creatorUrl = safeHttpUrl(imageLicense?.creatorUrl)
+  const attribution = imageLicense?.attribution
   const target = newTab ? '_blank' : undefined
 
   return (
@@ -110,9 +112,24 @@ export function ImageViewer({ entries, startIndex, opener, newTab, close }: Imag
                   ? <a href={creatorUrl.href} target={target} rel="noreferrer">{imageLicense.creator}</a>
                   : imageLicense.creator}</>}
               </p>
-              {imageLicense.attribution && <details>
+              {attribution && <details>
                 <summary>Attribution</summary>
-                <p>{imageLicense.attribution}</p>
+                <p>{attribution}</p>
+                {typeof navigator.clipboard?.writeText === 'function' && (
+                  <div className="image-viewer-attribution-actions">
+                    <button type="button" className="text-button" onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText([attribution, entry.url.href, licenseUrl?.href].filter(Boolean).join('\n'))
+                        setCopyFeedback({ index, copied: true })
+                      } catch {
+                        setCopyFeedback({ index, copied: false })
+                      }
+                    }}>Copy attribution</button>
+                    {copyFeedback?.index === index && <span role="status">
+                      {copyFeedback.copied ? 'Attribution copied' : 'Select the attribution text to copy it.'}
+                    </span>}
+                  </div>
+                )}
               </details>}
               <p>Check the original source before reusing this image.</p>
             </div>}

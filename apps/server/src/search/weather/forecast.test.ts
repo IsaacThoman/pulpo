@@ -209,6 +209,20 @@ describe('Weather forecasts', () => {
     expect(fetcher).toHaveBeenCalledTimes(3)
   })
 
+  it('retries a failed NOAA points lookup promptly while honoring its explicit Retry-After', async () => {
+    const { client, fetcher, setTime } = fixture()
+    fetcher.mockResolvedValueOnce(new Response(null, { status: 503, headers: { 'cache-control': 'max-age=86400', 'retry-after': '90' } }))
+    fetcher.mockResolvedValueOnce(portlandGrid())
+    fetcher.mockResolvedValueOnce(portlandForecast())
+    expect(await client(portland, undefined)).toBeNull()
+    setTime(now + 89_000)
+    expect(await client(portland, undefined)).toBeNull()
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    setTime(now + 90_000)
+    expect(await client(portland, undefined)).toMatchObject({ forecast: { temperatureC: 5 } })
+    expect(fetcher).toHaveBeenCalledTimes(3)
+  })
+
   it('pauses all lookups to a throttled host and never follows cross-origin redirects', async () => {
     const { client, fetcher } = fixture()
     fetcher.mockResolvedValueOnce(new Response(null, { status: 429, headers: { 'retry-after': '300' } }))

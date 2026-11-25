@@ -1,5 +1,5 @@
 import rateLimit from '@fastify/rate-limit'
-import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
+import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppError, unauthorized } from '../lib/errors.js'
 import { registerSearchRoutes } from './routes.js'
@@ -9,8 +9,10 @@ const mocks = vi.hoisted(() => ({
   enabled: true,
   placeKey: undefined as string | undefined,
   firecrawlPlacePrice: undefined as number | undefined,
-  quickAnswerKey: undefined as string | undefined,
-  quickAnswerPrice: undefined as number | undefined,
+  quickCapability: vi.fn(),
+  quickStart: vi.fn(),
+  quickStream: vi.fn(),
+  quickCancel: vi.fn(),
   openverse: false,
   settings: {} as Record<string, unknown>,
   fetch: vi.fn(),
@@ -24,8 +26,6 @@ vi.mock('../config.js', () => ({
     SEARCH_PUBLIC_URL: mocks.enabled ? 'https://search.example.com' : undefined,
     SEARCH_BRAVE_PLACES_API_KEY: mocks.placeKey,
     SEARCH_FIRECRAWL_PLACES_PRICE_MICROS: mocks.firecrawlPlacePrice,
-    SEARCH_KAGI_ANSWER_API_KEY: mocks.quickAnswerKey,
-    SEARCH_KAGI_ANSWER_PRICE_MICROS: mocks.quickAnswerPrice,
     SEARCH_OPENVERSE_ENABLED: mocks.openverse,
     ENCRYPTION_KEY: 'key',
   }),
@@ -45,9 +45,13 @@ vi.mock('../accounting/service.js', () => ({
 vi.mock('../database/client.js', () => ({
   db: { select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ value: mocks.settings }] }) }) }) },
 }))
+vi.mock('./quick-answer.js', () => ({
+  quickAnswerCapability: mocks.quickCapability, startQuickAnswer: mocks.quickStart,
+  streamQuickAnswer: mocks.quickStream, cancelQuickAnswer: mocks.quickCancel,
+}))
 
 let app: FastifyInstance
-const testFastGptKey = 'synthetic-fastgpt-token'
+const quickId = '00000000-0000-4000-8000-000000000001'
 const query = (payload: Record<string, unknown>) => app.inject({ method: 'POST', url: '/api/search/query', payload })
 const places = (payload: Record<string, unknown>, remoteAddress?: string) =>
   app.inject({ method: 'POST', url: '/api/search/places', payload, remoteAddress })
@@ -59,8 +63,10 @@ beforeEach(async () => {
   mocks.enabled = true
   mocks.placeKey = undefined
   mocks.firecrawlPlacePrice = undefined
-  mocks.quickAnswerKey = undefined
-  mocks.quickAnswerPrice = undefined
+  mocks.quickCapability.mockReset().mockResolvedValue(undefined)
+  mocks.quickStart.mockReset()
+  mocks.quickStream.mockReset()
+  mocks.quickCancel.mockReset()
   mocks.openverse = false
   mocks.settings = {
     searchEnabled: true,
@@ -163,6 +169,24 @@ describe('Pulpo Search API', () => {
     expect(mocks.fetch).toHaveBeenCalledOnce()
   })
 
+  it('distinguishes Openverse timeouts from other upstream failures without returning provider data', async () => {
+    mocks.openverse = true
+    const timeout = new AbortController()
+    const clock = vi.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(timeout.signal)
+    mocks.fetch.mockImplementationOnce(async () => {
+      timeout.abort(new DOMException('upstream timeout', 'TimeoutError'))
+      throw timeout.signal.reason
+    }).mockResolvedValueOnce(new Response('private upstream details', { status: 503 }))
+    try {
+      const expired = await reusableImages({ query: 'Monet' })
+      expect(expired.statusCode).toBe(504)
+      expect(expired.json()).toEqual({ error: { code: 'reusable_images_timeout' } })
+      const unavailable = await reusableImages({ query: 'van Gogh' })
+      expect(unavailable.statusCode).toBe(502)
+      expect(unavailable.json()).toEqual({ error: { code: 'reusable_images_unavailable' } })
+    } finally { clock.mockRestore() }
+  })
+
   it('advertises Places through the session-bound config only when its server key is set', async () => {
     expect((await app.inject('/api/search/config')).json()).not.toHaveProperty('places')
     expect((await places({ query: 'coffee' })).statusCode).toBe(404)
@@ -180,88 +204,41 @@ describe('Pulpo Search API', () => {
     expect(mocks.fetch).not.toHaveBeenCalled()
   })
 
-  it('requires an authenticated Search session, a dedicated FastGPT token and an explicit price for Quick Answer', async () => {
+  it('lists the agent model for an authenticated Search session and validates the Quick Answer start contract', async () => {
     expect((await app.inject('/api/search/config')).json()).not.toHaveProperty('quickAnswer')
-    expect((await quickAnswer({ query: 'tide pools' })).statusCode).toBe(404)
-    mocks.quickAnswerPrice = 15000
-    expect((await app.inject('/api/search/config')).json()).not.toHaveProperty('quickAnswer')
-    expect((await quickAnswer({ query: 'tide pools' })).statusCode).toBe(404)
-    mocks.quickAnswerKey = testFastGptKey
-    mocks.quickAnswerPrice = undefined
-    expect((await app.inject('/api/search/config')).json()).not.toHaveProperty('quickAnswer')
-    expect((await quickAnswer({ query: 'tide pools' })).statusCode).toBe(404)
-    mocks.quickAnswerPrice = 15000
-    mocks.settings.encryptedKagiApiKey = null
-    const config = await app.inject('/api/search/config')
-    expect(config.json().quickAnswer).toEqual({ provider: 'kagi', priceMicros: 15000 })
-    expect(config.body).not.toContain(testFastGptKey)
-    mocks.authenticated = false
-    expect((await quickAnswer({ query: 'tide pools' })).statusCode).toBe(401)
-    expect((await app.inject('/api/search/config')).statusCode).toBe(401)
-    expect(mocks.reserve).not.toHaveBeenCalled()
-    expect(mocks.fetch).not.toHaveBeenCalled()
-  })
-
-  it('validates before reserving and settles one successful sourced Quick Answer', async () => {
-    mocks.quickAnswerKey = testFastGptKey
-    mocks.quickAnswerPrice = 15000
-    for (const input of [{ query: ' ' }, { query: 'a'.repeat(501) }, { query: 'good', providers: ['kagi'] }]) {
+    mocks.quickCapability.mockResolvedValue({ modelName: 'Default model' })
+    expect((await app.inject('/api/search/config')).json().quickAnswer).toEqual({ modelName: 'Default model' })
+    for (const input of [{ query: 'hi' }, { query: ' ', requestId: quickId }, { query: 'a'.repeat(501), requestId: quickId },
+      { query: 'hi', requestId: 'invalid' }, { query: 'hi', requestId: quickId, modelId: 'untrusted' }]) {
       expect((await quickAnswer(input)).statusCode).toBe(400)
     }
+    expect(mocks.quickStart).not.toHaveBeenCalled()
+    mocks.quickStart.mockResolvedValueOnce({ responseId: quickId, modelName: 'Default model' })
+    const response = await quickAnswer({ query: ' tide pools ', requestId: quickId })
+    expect(response.statusCode).toBe(202)
+    expect(response.headers['cache-control']).toBe('no-store')
+    expect(response.json()).toEqual({ responseId: quickId, modelName: 'Default model' })
+    expect(mocks.quickStart).toHaveBeenCalledExactlyOnceWith('search-user', { query: 'tide pools', requestId: quickId }, undefined)
     expect(mocks.reserve).not.toHaveBeenCalled()
     expect(mocks.fetch).not.toHaveBeenCalled()
-    const source = { url: 'https://www.nps.gov/tide-pools', title: 'National Park Service' }
-    mocks.fetch.mockResolvedValueOnce(Response.json({ data: { output: 'An answer.[1]', references: [source] } }))
-    const response = await quickAnswer({ query: ' tide pools ' })
-    expect(response.statusCode).toBe(200)
-    expect(response.headers['cache-control']).toBe('no-store')
-    expect(response.json()).toEqual({ provider: 'kagi', answer: 'An answer.[1]', references: [{ index: 1, ...source }] })
-    expect(mocks.reserve).toHaveBeenCalledExactlyOnceWith({ userId: 'search-user', costMicros: 15000 })
-    expect(mocks.reserve.mock.invocationCallOrder[0]).toBeLessThan(mocks.fetch.mock.invocationCallOrder[0]!)
-    expect(mocks.fetch).toHaveBeenCalledExactlyOnceWith('https://kagi.com/api/v0/fastgpt', expect.objectContaining({
-      headers: expect.objectContaining({ authorization: `Bot ${testFastGptKey}` }), body: JSON.stringify({ query: 'tide pools' }),
-    }))
-    expect(mocks.settle).toHaveBeenCalledExactlyOnceWith({
-      reservationId: 'kagi-hold', costMicros: 15000, type: 'web_search',
-      metadata: { provider: 'kagi', category: 'quick_answer', referenceCount: 1 },
-    })
-    expect(mocks.release).not.toHaveBeenCalled()
   })
 
-  it('releases failed or unsourced Quick Answers and makes no provider call on insufficient credit', async () => {
-    mocks.quickAnswerKey = testFastGptKey
-    mocks.quickAnswerPrice = 15000
-    mocks.fetch.mockResolvedValueOnce(Response.json({ data: { output: 'An unsourced answer.', references: [] } }))
-      .mockResolvedValueOnce(new Response('private upstream response and credentials', { status: 401 }))
-    for (let call = 0; call < 2; call++) {
-      const response = await quickAnswer({ query: 'tide pools' })
-      expect(response.statusCode).toBe(502)
-      expect(response.json()).toEqual({ error: { code: 'quick_answer_unavailable' } })
-    }
-    expect(mocks.release.mock.calls).toEqual([['kagi-hold'], ['firecrawl-hold']])
-    mocks.reserve.mockRejectedValueOnce(new AppError(402, 'insufficient_balance', 'Insufficient balance'))
-    expect((await quickAnswer({ query: 'tide pools' })).statusCode).toBe(402)
-    expect(mocks.fetch).toHaveBeenCalledTimes(2)
-    expect(mocks.settle).not.toHaveBeenCalled()
-  })
-
-  it('cancels the Quick Answer lookup on disconnect and releases its reservation', async () => {
-    mocks.quickAnswerKey = testFastGptKey
-    mocks.quickAnswerPrice = 15000
-    let disconnect: (() => void) | undefined
-    let providerSignal: AbortSignal | null | undefined
-    app.addHook('onRequest', async (request, reply) => {
-      if (request.url === '/api/search/quick-answer') disconnect = () => { reply.raw.emit('close') }
-    })
-    mocks.fetch.mockImplementationOnce(async (_url, options: RequestInit) => {
-      providerSignal = options.signal
-      disconnect?.()
-      throw options.signal?.reason
-    })
-    await expect(quickAnswer({ query: 'tide pools' })).rejects.toThrow('response destroyed before completion')
-    expect(providerSignal?.aborted).toBe(true)
-    await vi.waitFor(() => expect(mocks.release).toHaveBeenCalledExactlyOnceWith('kagi-hold'))
-    expect(mocks.settle).not.toHaveBeenCalled()
+  it('requires a Search session for Quick Answer start, stream and cancel', async () => {
+    const events = '/api/search/quick-answer/' + quickId + '/events'
+    const cancel = '/api/search/quick-answer/' + quickId + '/cancel'
+    mocks.authenticated = false
+    expect((await quickAnswer({ query: 'tide pools', requestId: quickId })).statusCode).toBe(401)
+    expect((await app.inject(events)).statusCode).toBe(401)
+    expect((await app.inject({ method: 'POST', url: cancel })).statusCode).toBe(401)
+    expect(mocks.quickStart).not.toHaveBeenCalled()
+    expect(mocks.quickStream).not.toHaveBeenCalled()
+    expect(mocks.quickCancel).not.toHaveBeenCalled()
+    mocks.authenticated = true
+    mocks.quickStream.mockImplementationOnce((reply: FastifyReply) => reply.type('text/event-stream').send('data: {"type":"done"}\n\n'))
+    expect((await app.inject(events)).body).toBe('data: {"type":"done"}\n\n')
+    expect(mocks.quickStream).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'search-user', quickId)
+    expect((await app.inject({ method: 'POST', url: cancel })).statusCode).toBe(204)
+    expect(mocks.quickCancel).toHaveBeenCalledExactlyOnceWith('search-user', quickId)
   })
 
   it('validates typed place inputs and reserves credits before fetching results', async () => {

@@ -31,6 +31,7 @@ export function WeatherAnswer({ response, alerts, onLocation, onWeb, webExpanded
   const { place, forecast, sources } = response
   const localTime = new Intl.DateTimeFormat(undefined, { timeZone: place.timeZone, weekday: 'short', hour: 'numeric', minute: '2-digit' })
   const localHour = new Intl.DateTimeFormat(undefined, { timeZone: place.timeZone, hour: 'numeric', minute: '2-digit' })
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: place.timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
   const alertSource = alerts?.status === 'available' ? safeHttpUrl(alerts.source.url) : undefined
   return (
     <section className="answer weather-answer" aria-label="Weather forecast">
@@ -75,8 +76,9 @@ export function WeatherAnswer({ response, alerts, onLocation, onWeb, webExpanded
         <ul className="weather-days" role="list" aria-label="Daily forecast">
           {forecast.daily.map(day => {
             const date = new Date(day.date + 'T12:00:00Z')
+            const remaining = day.date === today
             return <li key={day.date}>
-              <time dateTime={day.date} title={fullDayLabel.format(date)}>{dayLabel.format(date)}</time>
+              <time dateTime={day.date} title={fullDayLabel.format(date)}>{remaining ? 'Rest of today' : dayLabel.format(date)}</time>
               <span className="weather-range">
                 <strong><span className="sr-only">High </span>{degrees(day.highC)}°</strong>
                 <span><span className="sr-only">Low </span>{degrees(day.lowC)}°</span>

@@ -25,6 +25,8 @@ describe('Pulpo Search', () => {
   const currency = vi.spyOn(api, 'currency')
   const places = vi.spyOn(api, 'places')
   const quickAnswer = vi.spyOn(api, 'quickAnswer')
+  const streamQuickAnswer = vi.spyOn(api, 'streamQuickAnswer')
+  const cancelQuickAnswer = vi.spyOn(api, 'cancelQuickAnswer')
   const reusableImages = vi.spyOn(api, 'reusableImages')
 
   beforeEach(() => {
@@ -44,7 +46,9 @@ describe('Pulpo Search', () => {
     weatherAlerts.mockResolvedValue({ status: 'unavailable' })
     currency.mockResolvedValue({ status: 'unavailable', source: { name: 'ECB', url: 'https://www.ecb.europa.eu/', description: 'Daily reference rates' } })
     places.mockResolvedValue({ provider: 'brave', results: [] })
-    quickAnswer.mockResolvedValue({ provider: 'kagi', answer: 'An answer.', references: [] })
+    quickAnswer.mockResolvedValue({ responseId: 'quick-answer-run', modelName: 'Pulpo Test Model' })
+    streamQuickAnswer.mockImplementation(async (_id, onText) => { onText('An answer.') })
+    cancelQuickAnswer.mockResolvedValue()
     reusableImages.mockResolvedValue({ provider: 'openverse', results: [] })
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
     const preferences = new Map<string, string>()
@@ -147,31 +151,48 @@ describe('Pulpo Search', () => {
     expect(search).toHaveBeenCalledTimes(1)
   })
 
-  it('requests a cited quick answer once, while keeping the Web results visible', async () => {
-    getConfig.mockResolvedValue({ ...config, quickAnswer: { provider: 'kagi', priceMicros: 15000 } })
-    quickAnswer.mockResolvedValue({
-      provider: 'kagi', answer: 'A **short answer** [1] with an invalid reference [2].',
-      references: [
-        { index: 1, title: 'Source page', url: 'https://example.org/guide' },
-        { index: 2, url: 'javascript:alert(1)' },
-      ],
+  it('streams a cited default-model answer once, while keeping the Web results visible', async () => {
+    getConfig.mockResolvedValue({ ...config, quickAnswer: { modelName: 'Pulpo Test Model' } })
+    streamQuickAnswer.mockImplementation(async (_id, onText) => {
+      onText('A **short answer** with [a source]')
+      onText('(https://example.org/guide) and ![an untrusted embed](https://example.org/pixel.png).')
     })
     window.history.replaceState(null, '', '/search?q=tide+pools')
     render(<App callback={null} />)
     const button = await screen.findByRole('button', { name: /^Quick answer/ })
-    expect(button.textContent).toContain('0.015')
     expect(quickAnswer).not.toHaveBeenCalled()
     fireEvent.click(button)
     const card = screen.getByRole('region', { name: 'Quick answer' })
-    const source = await within(card).findByRole('link', { name: 'Source 1, Source page' })
+    const source = await within(card).findByRole('link', { name: 'a source' })
     expect(source.getAttribute('href')).toBe('https://example.org/guide')
-    expect(within(card).queryByRole('link', { name: /^Source 2/ })).toBeNull()
-    expect(screen.getByRole('link', { name: 'tide pools field guide' })).toBeDefined()
-    fireEvent.click(screen.getByRole('button', { name: 'Hide quick answer' }))
-    expect(screen.queryByRole('region', { name: 'Quick answer' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: /^Quick answer/ }))
-    expect(screen.getByRole('region', { name: 'Quick answer' })).toBeDefined()
-    expect(quickAnswer).toHaveBeenCalledExactlyOnceWith('tide pools', expect.any(AbortSignal))
+    expect(within(card).queryByRole('img')).toBeNull()
+    expect(within(card).getByText('Pulpo Test Model')).toBeDefined()
+    await screen.findByRole('link', { name: 'tide pools field guide' })
+    fireEvent.click(button)
+    expect(button.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(button)
+    expect(within(card).getByRole('link', { name: 'a source' })).toBeDefined()
+    expect(quickAnswer).toHaveBeenCalledExactlyOnceWith('tide pools', expect.any(String))
+    expect(streamQuickAnswer).toHaveBeenCalledTimes(1)
+  })
+
+  it('automatically runs an answer for a question submitted in Search and cancels on Stop', async () => {
+    getConfig.mockResolvedValue({ ...config, quickAnswer: { modelName: 'Pulpo Test Model' } })
+    streamQuickAnswer.mockImplementation(async (_id, onText, signal) => {
+      onText('Working from the sources.')
+      await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }))
+    })
+    window.history.replaceState(null, '', '/search?q=linked%20question%3F')
+    render(<App callback={null} />)
+    await screen.findByRole('button', { name: 'Quick answer' })
+    expect(quickAnswer).not.toHaveBeenCalled()
+    submit('When do tide pools flood?')
+    const stop = await screen.findByRole('button', { name: 'Stop' })
+    await waitFor(() => expect(streamQuickAnswer).toHaveBeenCalledTimes(1))
+    expect(quickAnswer).toHaveBeenCalledExactlyOnceWith('When do tide pools flood?', expect.any(String))
+    fireEvent.click(stop)
+    await screen.findByText('Answer stopped.')
+    expect(cancelQuickAnswer).toHaveBeenCalledExactlyOnceWith('quick-answer-run')
   })
 
   it('preserves requested image license filters without running a different provider', async () => {
@@ -226,6 +247,24 @@ describe('Pulpo Search', () => {
     await screen.findByRole('link', { name: 'eclipse field guide' })
     expect(search).toHaveBeenCalledTimes(1)
     expect(window.location.search).toBe('?q=eclipse')
+  })
+
+  it('offers a second provider for sparse dated News only after an explicit click', async () => {
+    getConfig.mockResolvedValue({ ...config, providers: config.providers.map(provider => provider.id === 'firecrawl'
+      ? { ...provider, categories: ['web', 'images', 'news'], customDateRanges: ['web', 'news'] } : provider) })
+    search.mockImplementation(async ({ providers }) => ({
+      provider: providers?.[0] ?? 'kagi',
+      results: [{ url: 'https://example.com/launch', title: 'Starliner launch', snippet: 'A dated report.' }],
+    }))
+    window.history.replaceState(null, '', '/search?q=Starliner&type=news&from=2024-06-05&to=2024-06-06')
+    render(<App callback={null} />)
+    const alternative = await screen.findByRole('button', { name: 'Try Firecrawl for these dates' })
+    expect(search).toHaveBeenCalledTimes(1)
+    fireEvent.click(alternative)
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(2))
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({
+      providers: ['firecrawl'], category: 'news', dateRange: { from: '2024-06-05', to: '2024-06-06' },
+    }), expect.any(AbortSignal))
   })
 
   it('answers exact math signed out without a provider request and offers ordinary web results', async () => {

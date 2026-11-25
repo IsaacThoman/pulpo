@@ -443,14 +443,31 @@ summary::-webkit-details-marker { display: none; }
 .results-summary { display: flex; justify-content: flex-end; min-height: 2.35rem; padding-top: .25rem; }
 .spelling-suggestion { margin: .1rem 0 .75rem; color: var(--muted); font-size: .875rem; overflow-wrap: anywhere; }
 .spelling-suggestion button { color: var(--link); font-weight: 650; text-decoration: underline; text-align: start; }
-.quick-answer { width: min(100%, var(--reading-width)); margin-bottom: .9rem; min-width: 0; }
-.quick-answer > button { gap: .45rem; min-height: 2.25rem; }
-.quick-answer-price, .quick-answer-provider { color: var(--muted); font-size: .75rem; }
-.quick-answer-card { margin-top: .55rem; overflow-wrap: anywhere; }
-.quick-answer-card h2 { font-size: 1.125rem; margin-bottom: .65rem; }
-.quick-answer-text { white-space: pre-wrap; line-height: 1.55; }
-.quick-answer-text a, .quick-answer-sources a { color: var(--link); }
-.quick-answer-sources { display: flex; gap: .4rem 1rem; flex-wrap: wrap; padding: 0; margin: .65rem 0; list-style: none; font-size: .875rem; }
+.alternate-news { margin: .25rem 0 .8rem; width: min(100%, var(--reading-width)); }
+.quick-answer { width: min(100%, var(--reading-width)); margin-block: .55rem .3rem; min-width: 0; }
+.quick-answer[data-expanded] { border: 1px solid var(--line); border-radius: .85rem; background: var(--surface); margin-bottom: .75rem; }
+.quick-answer-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: .1rem .6rem; min-height: 2.4rem; }
+.quick-answer[data-expanded] .quick-answer-toolbar { padding: .35rem .65rem; border-bottom: 1px solid var(--line); }
+.quick-answer-toolbar h2 { margin: 0; min-width: 0; max-width: 100%; font-size: .9rem; }
+.quick-answer-toggle, .quick-answer-stop { display: inline-flex; gap: .5rem; align-items: center; min-height: 2.35rem; color: var(--ink); }
+.quick-answer-toggle { max-width: 100%; white-space: normal; text-align: start; }
+.quick-answer-icon { display: grid; place-items: center; flex: none; border-radius: .5rem; width: 1.55rem; height: 1.55rem; background: var(--accent); color: var(--accent-ink); }
+.quick-answer-chevron { flex: none; }
+.quick-answer-chevron, .quick-answer-model, .quick-answer-stop { color: var(--muted); }
+.quick-answer[data-expanded] .quick-answer-chevron { transform: rotate(180deg); }
+.quick-answer-model, .quick-answer-stop { font-size: .75rem; overflow-wrap: anywhere; }
+.quick-answer-stop { margin-inline-start: auto; }
+.quick-answer-content { padding: .8rem .95rem; overflow-wrap: anywhere; font-size: .9375rem; line-height: 1.55; }
+.quick-answer-plain { white-space: pre-wrap; }
+.quick-answer-markdown :is(p,ul,ol,pre,blockquote) { margin: 0 0 .65rem; }
+.quick-answer-markdown :is(ul,ol) { padding-inline-start: 1.3rem; }
+.quick-answer-markdown pre { overflow: auto; background: var(--subtle); padding: .5rem; border-radius: .4rem; }
+.quick-answer-markdown a { color: var(--link); text-decoration: underline; text-underline-offset: .14em; }
+.quick-answer-progress { display: flex; align-items: center; gap: .55rem; color: var(--muted); }
+.quick-answer-progress svg { animation: quick-answer-spin 1s linear infinite; }
+.quick-answer-recovery p { margin-bottom: .5rem; }
+@keyframes quick-answer-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .quick-answer-progress svg { animation: none; } }
 .provider-indicator { min-height: 2rem; padding-inline: .35rem; color: var(--faint); font-size: .8125rem; }
 .results-body { display: grid; grid-template-columns: minmax(0, var(--reading-width)); gap: 1.5rem; }
 .results-column { min-width: 0; }
@@ -870,8 +887,8 @@ summary::-webkit-details-marker { display: none; }
   .app-header-inner, .results-main { display: block; }
   .results-page .app-header { position: static; }
   .app-header-inner { display: grid; grid-template-columns: minmax(0, 1fr) auto; row-gap: .75rem; min-height: 4.25rem; }
-  .wordmark { min-width: 0; }
-  .wordmark span { display: inline; overflow: hidden; text-overflow: ellipsis; }
+  .wordmark { min-width: 0; max-width: 100%; }
+  .wordmark span { display: inline; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .app-header .search-box { grid-area: 2 / 1 / 3 / -1; }
   .app-actions { grid-area: 1 / 2 / 2 / 3; }
   .hero h1 .pulpo-mark { width: 40px; height: 40px; }

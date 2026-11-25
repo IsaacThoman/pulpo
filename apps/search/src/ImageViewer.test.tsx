@@ -133,4 +133,30 @@ describe('image result viewer', () => {
     expect(details.getByText(/CC0 1\.0 · By Reef Lab/)).toBeDefined()
     expect(details.queryByRole('link')).toBeNull()
   })
+
+  it('copies supplied attribution with the original source and license after the clipboard action', async () => {
+    const attribution = 'Reef octopus by Reef Lab, CC BY 4.0.'
+    const imageLicense = { code: 'by', version: '4.0', url: 'https://creativecommons.org/licenses/by/4.0/', attribution }
+    const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard')
+    const writeText = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('Clipboard permission denied'))
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    try {
+      render(<Results data={{ ...data, results: [{ ...data.results[0], imageLicense }] }}
+        location={{ ...homeLocation, category: 'images', query: 'octopus' }} preferences={loadPreferences()}
+        setDomain={vi.fn()} onQuery={vi.fn()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Preview image: Reef octopus' }))
+      const details = within(screen.getByRole('group', { name: 'Image reuse details' }))
+      fireEvent.click(details.getByText('Attribution'))
+      expect(writeText).not.toHaveBeenCalled()
+      const copy = details.getByRole('button', { name: 'Copy attribution' })
+      fireEvent.click(copy)
+      expect(writeText).toHaveBeenCalledExactlyOnceWith([attribution, data.results[0].url, imageLicense.url].join('\n'))
+      expect(await details.findByText('Attribution copied')).toBeDefined()
+      fireEvent.click(copy)
+      expect(await details.findByText('Select the attribution text to copy it.')).toBeDefined()
+    } finally {
+      if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard)
+      else Reflect.deleteProperty(navigator, 'clipboard')
+    }
+  })
 })

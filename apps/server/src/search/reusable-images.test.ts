@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ReusableImagesRateLimitError, reusableImagesInput, searchReusableImages } from './reusable-images.js'
+import { ReusableImagesProviderError, ReusableImagesRateLimitError, reusableImagesInput, searchReusableImages } from './reusable-images.js'
 
 const imageId = '81d79a7a-f3c2-458d-9d5c-1b4867ef4680'
 const image = {
@@ -31,6 +31,7 @@ function mockResponse(response: Response) {
 }
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -132,8 +133,8 @@ describe('Openverse reusable images', () => {
     })
     fetcher.mockResolvedValueOnce(new Response(streamed))
 
-    await expect(searchReusableImages({ query: 'wave' })).rejects.toThrow('Openverse response unavailable')
-    await expect(searchReusableImages({ query: 'wave' })).rejects.toThrow('Openverse response exceeds the size limit')
+    await expect(searchReusableImages({ query: 'wave' })).rejects.toMatchObject({ category: 'body-limit' })
+    await expect(searchReusableImages({ query: 'wave' })).rejects.toMatchObject({ category: 'body-limit' })
     expect(cancel).toHaveBeenCalledTimes(2)
   })
 
@@ -155,8 +156,80 @@ describe('Openverse reusable images', () => {
     const search = searchReusableImages({ query: 'wave' }, controller.signal)
     controller.abort()
     await expect(search).rejects.toMatchObject({ name: 'AbortError' })
+    expect(fetcher.mock.calls[0]?.[1]?.signal?.aborted).toBe(true)
     await expect(searchReusableImages({ query: 'wave' }, controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
-    expect(timeout).toHaveBeenCalledWith(15_000)
+    expect(timeout).toHaveBeenCalledWith(20_000)
     expect(fetcher).toHaveBeenCalledTimes(1)
+    fetcher.mockResolvedValueOnce(Response.json(imagePage([])))
+    await expect(searchReusableImages({ query: 'wave' })).resolves.toMatchObject({ results: [] })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('distinguishes upstream HTTP errors from connection errors without exposing provider diagnostics', async () => {
+    const fetcher = mockResponse(new Response('Raw provider message', { status: 502 }))
+    fetcher.mockRejectedValueOnce(new TypeError('Raw transport diagnostics'))
+
+    const http = await searchReusableImages({ query: 'connection test' }).catch((error: unknown) => error)
+    expect(http).toBeInstanceOf(ReusableImagesProviderError)
+    expect(http).toMatchObject({ category: 'http', status: 502, message: 'Openverse response unavailable' })
+    await expect(searchReusableImages({ query: 'connection test' })).rejects.toMatchObject({
+      category: 'network', message: 'Could not reach Openverse. Try again or switch to All images.',
+    })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('identifies its own deadline separately from caller cancellation', async () => {
+    const deadline = new AbortController()
+    vi.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(deadline.signal)
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockImplementation((_url, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+    })))
+
+    const pending = searchReusableImages({ query: 'deadline test' })
+    deadline.abort(new DOMException('Low-level timeout', 'TimeoutError'))
+    await expect(pending).rejects.toMatchObject({
+      category: 'timeout', message: 'Openverse took too long to respond. Try again or switch to All images.',
+    })
+  })
+
+  it('coalesces identical filters while allowing one caller to cancel independently', async () => {
+    let resolveResponse!: (response: Response) => void
+    const response = new Promise<Response>(resolve => { resolveResponse = resolve })
+    const fetcher = vi.fn<typeof fetch>().mockReturnValueOnce(response)
+    vi.stubGlobal('fetch', fetcher)
+    const caller = new AbortController()
+
+    const cancelled = searchReusableImages({ query: ' same image ', license: 'commercial' }, caller.signal)
+    const continued = searchReusableImages({ query: 'same image', license: 'commercial', page: 1 })
+    caller.abort()
+    await expect(cancelled).rejects.toMatchObject({ name: 'AbortError' })
+    expect(fetcher.mock.calls[0]?.[1]?.signal?.aborted).toBe(false)
+
+    resolveResponse(Response.json(imagePage([image])))
+    const result = await continued
+    expect(result.results).toHaveLength(1)
+    await expect(searchReusableImages({ query: 'same image', license: 'commercial' })).resolves.toEqual(result)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
+  it('isolates cached pages by selected filters and refreshes them after the short cache window', async () => {
+    vi.useFakeTimers()
+    const fetcher = mockResponse(Response.json(imagePage([image])))
+    fetcher.mockResolvedValueOnce(Response.json(imagePage([{ ...image, category: 'photograph' }])))
+    fetcher.mockResolvedValueOnce(Response.json(imagePage([image])))
+    const query = 'separate filtered searches'
+
+    await expect(searchReusableImages({ query, category: 'illustration' })).resolves.toMatchObject({
+      results: [{ category: 'illustration' }],
+    })
+    await expect(searchReusableImages({ query, category: 'photograph' })).resolves.toMatchObject({
+      results: [{ category: 'photograph' }],
+    })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(60_001)
+    await expect(searchReusableImages({ query, category: 'illustration' })).resolves.toMatchObject({
+      results: [{ category: 'illustration' }],
+    })
+    expect(fetcher).toHaveBeenCalledTimes(3)
   })
 })

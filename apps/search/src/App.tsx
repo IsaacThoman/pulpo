@@ -74,6 +74,7 @@ export function App({ callback }: { callback: Callback }) {
   const [config, setConfig] = useState<SearchConfig>()
   const [configError, setConfigError] = useState('')
   const [configAttempt, setConfigAttempt] = useState(0)
+  const [submittedQuestion, setSubmittedQuestion] = useState<string>()
   const [answerWithWeb, setAnswerWithWeb] = useState<{ userId: string; path: string; expanded: boolean }>()
   const [, refreshInstantAnswer] = useState(0)
   const input = useRef<HTMLInputElement>(null)
@@ -91,6 +92,7 @@ export function App({ callback }: { callback: Callback }) {
       setDraft(firstResultQuery(next.query) ?? next.query)
       setSearchPreferences(activePreferences.current)
       setAnswerWithWeb(previous => previous?.path === answerPath(next) ? previous : undefined)
+      setSubmittedQuestion(undefined)
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
@@ -224,6 +226,8 @@ export function App({ callback }: { callback: Callback }) {
   const askUrl = state.status === 'success' && view.category === 'web' && !luckyQuery
     ? buildAskPulpoUrl(pulpoOrigin, view.query, groupResults(visibleEntries(resultEntries(state.data, preferences), false), view.query)
       .flatMap(({ lead, additional }) => [lead.result, ...additional.map(({ result }) => result)])) : undefined
+  const newsAlternative = state.status === 'success' && view.category === 'news' && view.dateRange && state.data.results.length < 3
+    ? alternatives.find(provider => provider.id !== state.data.provider) : undefined
   const waitingForSession = user === undefined
   const isResults = Boolean(view.query)
 
@@ -340,6 +344,7 @@ export function App({ callback }: { callback: Callback }) {
     setDraft(firstResultQuery(next.query) ?? next.query)
     setSearchPreferences(preferences)
     setAnswerWithWeb(previous => previous?.path === answerPath(next) ? previous : undefined)
+    if (next.query !== view.query || next.category !== view.category) setSubmittedQuestion(undefined)
   }
 
   function toggleAnswerWeb() {
@@ -399,6 +404,7 @@ export function App({ callback }: { callback: Callback }) {
     go({ ...view, query: trimmed, category: firstResultQuery(trimmed) ? 'web' : view.category,
       ...(firstResultQuery(trimmed) ? { reusableImages: undefined } : {}),
       invalidDateRange: undefined, web: undefined, provider: undefined, page: undefined })
+    if (view.category === 'web' && /[?？]$/u.test(trimmed)) setSubmittedQuestion(trimmed)
     if (restoreInput) requestAnimationFrame(() => input.current?.focus())
   }
 
@@ -549,6 +555,10 @@ export function App({ callback }: { callback: Callback }) {
                 onToggle={() => changeReusableImages(reuse ? undefined : {})} onFilters={changeReusableImages} />
             )}
             {authError && <p className="form-error results-auth-error" role="alert">{authError}</p>}
+            {user && config?.quickAnswer && view.category === 'web' && !bang && !luckyQuery && !view.page && !view.invalidDateRange && (
+              <QuickAnswer key={user.id + '\n' + view.query} query={view.query} modelName={config.quickAnswer.modelName}
+                automatic={submittedQuestion === view.query} pulpoOrigin={pulpoOrigin} />
+            )}
             {view.invalidDateRange ? (
               <section className="search-message" role="alert">
                 <h2>Invalid date range</h2>
@@ -668,9 +678,11 @@ export function App({ callback }: { callback: Callback }) {
                 {spelling && <p className="spelling-suggestion">
                   Did you mean <button className="text-button" onClick={() => onSearch(spelling)}>{spelling}</button>?
                 </p>}
-                {allowAnswers && config.quickAnswer && (
-                  <QuickAnswer key={searchPath(view)} query={view.query} priceMicros={config.quickAnswer.priceMicros} pulpoOrigin={pulpoOrigin} />
-                )}
+                {newsAlternative && <div className="alternate-news">
+                  <button className="secondary-button" onClick={() => go({ ...view, provider: newsAlternative.id })}>
+                    Try {providerNames[newsAlternative.id]} for these dates
+                  </button>
+                </div>}
                 {!state.data.results.length && !state.data.answer && !state.data.knowledge ? (
                   <section className="search-message">
                     <h2>No results found</h2>
@@ -684,7 +696,8 @@ export function App({ callback }: { callback: Callback }) {
                         onClick={() => go({ ...view, scope: undefined, page: undefined })}>Search all sites</button>}
                       {(view.date || view.dateRange || view.region) && <button className="secondary-button"
                         onClick={() => go({ ...view, date: '', dateRange: undefined, region: '', page: undefined })}>Clear date and region</button>}
-                      {view.category !== 'web' && <button className="secondary-button" onClick={() => changeCategory('web')}>Try Web results</button>}
+                      {reuse && <button className="secondary-button" onClick={() => changeReusableImages(undefined)}>Search all images</button>}
+                      {!reuse && view.category !== 'web' && <button className="secondary-button" onClick={() => changeCategory('web')}>Try Web results</button>}
                     </div>
                   </section>
                 ) : imageBrowse.data?.results.length === 0 ? (
@@ -705,9 +718,10 @@ export function App({ callback }: { callback: Callback }) {
                 ) : (
                   <div className="empty-actions">
                     <button className="secondary-button" onClick={refresh}>Try again</button>
-                    {recoveryProviders.map(provider => <button key={provider.id} className="secondary-button"
+                    {!reuse && recoveryProviders.map(provider => <button key={provider.id} className="secondary-button"
                       onClick={() => go({ ...location, provider: provider.id })}>Try {providerNames[provider.id]}</button>)}
-                    {view.category !== 'web' && <button className="secondary-button" onClick={() => changeCategory('web')}>Try Web results</button>}
+                    {reuse && <button className="secondary-button" onClick={() => changeReusableImages(undefined)}>Search all images</button>}
+                    {!reuse && view.category !== 'web' && <button className="secondary-button" onClick={() => changeCategory('web')}>Try Web results</button>}
                   </div>
                 )}
               </section>

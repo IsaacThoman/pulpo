@@ -1,4 +1,6 @@
 import { isSearchFaviconHost } from '@pulpo/contracts/search'
+import { createHash } from 'node:crypto'
+import { addAbortListener } from 'node:events'
 import { z } from 'zod'
 import { resultText, resultUrl } from '../agent/search-results.js'
 
@@ -8,7 +10,9 @@ const openverseImagesEndpoint = 'https://api.openverse.org/v1/images/'
 const pageSize = 20
 const maximumPage = 10
 const maximumResponseBytes = 512 * 1024
-const timeoutMs = 15_000
+const timeoutMs = 20_000
+const cacheTtlMs = 60_000
+const maximumCachedPages = 32
 const imageCategories = ['photograph', 'illustration', 'digitized_artwork'] as const
 const licenseCodes = ['by', 'by-nc', 'by-nc-nd', 'by-nc-sa', 'by-nd', 'by-sa', 'cc0', 'nc-sampling+', 'pdm', 'sampling+'] as const
 type LicenseCode = (typeof licenseCodes)[number]
@@ -56,6 +60,30 @@ export class ReusableImagesRateLimitError extends Error {
     this.name = 'ReusableImagesRateLimitError'
   }
 }
+
+const providerMessages = {
+  timeout: 'Openverse took too long to respond. Try again or switch to All images.',
+  network: 'Could not reach Openverse. Try again or switch to All images.',
+  http: 'Openverse response unavailable',
+  'invalid-response': 'Unexpected Openverse response',
+  'body-limit': 'Openverse response exceeds the size limit',
+}
+
+export class ReusableImagesProviderError extends Error {
+  constructor(readonly category: keyof typeof providerMessages, readonly status?: number) {
+    super(providerMessages[category])
+    this.name = 'ReusableImagesProviderError'
+  }
+}
+
+interface PendingPage {
+  controller: AbortController
+  result: Promise<ReusableImagesResponse>
+  waiters: number
+}
+
+const cachedPages = new Map<string, { result: ReusableImagesResponse; expiresAt: number }>()
+const pendingPages = new Map<string, PendingPage>()
 
 const imageResponse = z.object({
   page_count: z.number().int().nonnegative(),
@@ -144,10 +172,15 @@ function retryAfterSeconds(value: string | null): number | undefined {
 
 async function readOpenverseJson(response: Response): Promise<unknown> {
   const body = response.body
-  if (!response.ok || !body || Number(response.headers.get('content-length')) > maximumResponseBytes) {
+  if (!response.ok) {
     await body?.cancel().catch(() => {})
     if (response.status === 429) throw new ReusableImagesRateLimitError(retryAfterSeconds(response.headers.get('retry-after')))
-    throw new Error('Openverse response unavailable')
+    throw new ReusableImagesProviderError('http', response.status)
+  }
+  if (!body) throw new ReusableImagesProviderError('invalid-response')
+  if (Number(response.headers.get('content-length')) > maximumResponseBytes) {
+    await body.cancel().catch(() => {})
+    throw new ReusableImagesProviderError('body-limit')
   }
   const reader = body.getReader()
   const chunks: Uint8Array[] = []
@@ -157,7 +190,7 @@ async function readOpenverseJson(response: Response): Promise<unknown> {
       const { value, done } = await reader.read()
       if (done) break
       bytes += value.byteLength
-      if (bytes > maximumResponseBytes) throw new Error('Openverse response exceeds the size limit')
+      if (bytes > maximumResponseBytes) throw new ReusableImagesProviderError('body-limit')
       chunks.push(value)
     }
   } finally {
@@ -166,11 +199,53 @@ async function readOpenverseJson(response: Response): Promise<unknown> {
   try {
     return JSON.parse(Buffer.concat(chunks, bytes).toString('utf8'))
   } catch {
-    throw new Error('Unexpected Openverse response')
+    throw new ReusableImagesProviderError('invalid-response')
   }
 }
 
+async function requestPage(url: URL, filters: ReusableImagesInput, page: number, signal: AbortSignal): Promise<ReusableImagesResponse> {
+  const timeout = AbortSignal.timeout(timeoutMs)
+  const requestSignal = AbortSignal.any([signal, timeout])
+  let payload: unknown
+  try {
+    requestSignal.throwIfAborted()
+    const response = await fetch(url, {
+      redirect: 'error', signal: requestSignal, headers: { accept: 'application/json' },
+    })
+    payload = await readOpenverseJson(response)
+    requestSignal.throwIfAborted()
+  } catch (error) {
+    signal.throwIfAborted()
+    if (timeout.aborted) throw new ReusableImagesProviderError('timeout')
+    if (error instanceof ReusableImagesProviderError || error instanceof ReusableImagesRateLimitError) throw error
+    throw new ReusableImagesProviderError('network')
+  }
+  const parsed = imageResponse.safeParse(payload)
+  if (!parsed.success || parsed.data.page !== page) throw new ReusableImagesProviderError('invalid-response')
+  const seen = new Set<string>()
+  const results = parsed.data.results.flatMap(value => {
+    const image = normalizeImage(value, filters)
+    if (!image || seen.has(image.id)) return []
+    seen.add(image.id)
+    return [image]
+  })
+  return { provider: 'openverse', page, hasMore: page < Math.min(parsed.data.page_count, maximumPage), results }
+}
+
+function cachePage(key: string, result: ReusableImagesResponse) {
+  if (cachedPages.size >= maximumCachedPages) {
+    const oldest = cachedPages.keys().next()
+    if (!oldest.done) cachedPages.delete(oldest.value)
+  }
+  cachedPages.set(key, { result, expiresAt: Date.now() + cacheTtlMs })
+  setTimeout(() => {
+    const entry = cachedPages.get(key)
+    if (entry && entry.expiresAt <= Date.now()) cachedPages.delete(key)
+  }, cacheTtlMs).unref()
+}
+
 export async function searchReusableImages(input: ReusableImagesInput, signal?: AbortSignal): Promise<ReusableImagesResponse> {
+  signal?.throwIfAborted()
   const filters = reusableImagesInput.parse(input)
   const page = filters.page ?? 1
   const url = new URL(openverseImagesEndpoint)
@@ -182,23 +257,45 @@ export async function searchReusableImages(input: ReusableImagesInput, signal?: 
     ...(filters.license ? { license: licenseGroups[filters.license].join(',') } : {}),
     ...(filters.category ? { category: filters.category } : {}),
   }).toString()
-  const timeout = AbortSignal.timeout(timeoutMs)
-  const requestSignal = signal ? AbortSignal.any([signal, timeout]) : timeout
-  requestSignal.throwIfAborted()
-  const response = await fetch(url, {
-    redirect: 'error',
-    signal: requestSignal,
-    headers: { accept: 'application/json' },
-  })
-  const parsed = imageResponse.safeParse(await readOpenverseJson(response))
-  requestSignal.throwIfAborted()
-  if (!parsed.success || parsed.data.page !== page) throw new Error('Unexpected Openverse response')
-  const seen = new Set<string>()
-  const results = parsed.data.results.flatMap(value => {
-    const image = normalizeImage(value, filters)
-    if (!image || seen.has(image.id)) return []
-    seen.add(image.id)
-    return [image]
-  })
-  return { provider: 'openverse', page, hasMore: page < Math.min(parsed.data.page_count, maximumPage), results }
+
+  const key = createHash('sha256').update(url.href).digest('hex')
+  const cached = cachedPages.get(key)
+  if (cached && cached.expiresAt > Date.now()) return cached.result
+  cachedPages.delete(key)
+
+  let pending = pendingPages.get(key)
+  if (!pending) {
+    const controller = new AbortController()
+    const entry: PendingPage = {
+      controller,
+      waiters: 0,
+      result: requestPage(url, filters, page, controller.signal).then(result => {
+        if (!controller.signal.aborted && result.results.length > 0) cachePage(key, result)
+        return result
+      }).finally(() => {
+        if (pendingPages.get(key) === entry) pendingPages.delete(key)
+      }),
+    }
+    pendingPages.set(key, entry)
+    pending = entry
+  }
+
+  pending.waiters += 1
+  let subscription: ReturnType<typeof addAbortListener> | undefined
+  try {
+    const cancelled = signal && new Promise<never>((_resolve, reject) => {
+      subscription = addAbortListener(signal, () => reject(signal.reason))
+    })
+    const result = cancelled ? await Promise.race([pending.result, cancelled]) : await pending.result
+    signal?.throwIfAborted()
+    return result
+  } finally {
+    subscription?.[Symbol.dispose]()
+    pending.waiters -= 1
+    // An abandoned response should stop using time and upstream connections.
+    if (pending.waiters === 0 && pendingPages.get(key) === pending) {
+      pendingPages.delete(key)
+      pending.controller.abort()
+    }
+  }
 }

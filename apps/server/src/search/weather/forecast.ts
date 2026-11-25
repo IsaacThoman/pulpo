@@ -253,8 +253,9 @@ export function createWeatherClient(cache: WeatherCache, fetcher = fetch, now = 
         }, alertFeed ? 1 : 2, timeoutMs)
         const atResponse = now()
         const transient = nwsForecast && response.status >= 500
-        next.freshUntil = cacheFreshUntil(response, atResponse, transient ? minute : minimum)
-        if (transient) next.freshUntil = Math.max(next.freshUntil, retryAfter(response, atResponse))
+        next.freshUntil = transient
+          ? Math.max(atResponse + minute, retryAfter(response, atResponse))
+          : cacheFreshUntil(response, atResponse, minimum)
         if (response.status === 429) {
           const retryUntil = retryAfter(response, atResponse)
           next.freshUntil = Math.max(next.freshUntil, retryUntil)

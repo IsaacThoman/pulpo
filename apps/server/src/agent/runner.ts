@@ -92,6 +92,7 @@ import { codexInferenceReferenceCostMicros } from '../codex/reference-cost.js'
 import { agentSettlementAmounts } from './settlement.js'
 import { costLimitPause, redisCostLimitApproval, waitForCostLimitDecision } from './cost-limit.js'
 import { createThoughtSignatureStore, isGeminiApiBaseUrl } from '../upstream/thought-signatures.js'
+import { searchQuickAnswerInstructions, searchQuickAnswerScope } from '../search/quick-answer-policy.js'
 
 function toolResultText(result: unknown): string {
   const content = (result as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content
@@ -175,6 +176,9 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1).then((rows) => rows[0]),
   ])
   const settings = parseAgentSettings(settingsRow?.value)
+  const quickAnswer = record.response.idempotencyScope === searchQuickAnswerScope
+  const workspaceDesktop = settings.workspaceDesktop && !quickAnswer
+  const answerInstructions = quickAnswer ? searchQuickAnswerInstructions : ''
   const webToolsSettings = parseWebToolsSettings(webToolsRow?.value)
   const preferenceValues = (preferencesRow?.values ?? {}) as Record<string, unknown>
   const costLimitMicros = agentCostLimitMicros(preferenceValues)
@@ -220,7 +224,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   const { memoryContext, recallContext, recallItem } = memory
   let toolsDisabled = record.response.agentCapacityAction === 'continue_without_agent'
   const toolsDisabledSystemPrompt = () => withGenerationTimeContext(
-    [buildToolsDisabledSystemPrompt(record.model.systemPrompt, customInstructions, memoryContext), recallContext].filter(Boolean).join('\n\n'),
+    [buildToolsDisabledSystemPrompt(record.model.systemPrompt, customInstructions, memoryContext), recallContext, answerInstructions].filter(Boolean).join('\n\n'),
     record.response, Date.now(),
   )
   const baseAgentSystemPrompt = buildAgentSystemPrompt(
@@ -228,12 +232,12 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
     record.model.agentInstructions,
     customInstructions,
     memoryContext,
-    computerFullAccess ? computerAgentPrompt(computerDescription) : cloudAgentPrompt({ screen: settings.workspaceDesktop }),
+    computerFullAccess ? computerAgentPrompt(computerDescription) : cloudAgentPrompt({ screen: workspaceDesktop }),
   )
   const computerFolderContext = computerFolderMode && computerSelection?.folder
     ? describeComputerFolder({ folder: computerSelection.folder, mode: computerFolderMode })
     : ''
-  const currentAgentSystemPrompt = [baseAgentSystemPrompt, fileScopeContext, computerFolderContext, recallContext].filter(Boolean).join('\n\n')
+  const currentAgentSystemPrompt = [baseAgentSystemPrompt, fileScopeContext, computerFolderContext, recallContext, answerInstructions].filter(Boolean).join('\n\n')
   if (!settings.enabled || !record.model.agentEnabled) throw new Error('Agent mode is no longer available')
   const allHistory = await db.select().from(responses).where(and(
     eq(responses.chatId, record.response.chatId),
@@ -535,6 +539,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   const waitAtCostLimit = async (signal?: AbortSignal): Promise<boolean> => {
     const paused = costLimitPause({ responseId, thresholdMicros: costLimitMicros, costMicros: currentCostMicros(), current: findCostLimitItem(costLimitItems), agentTurn: modelTurns })
     if (!paused) return true
+    if (quickAnswer) throw new Error('Pulpo Agent reached its cost limit')
     const setCostLimitItem = (item: CostLimitItem) => {
       const index = costLimitItems.findIndex((candidate) => candidate.id === item.id)
       if (index >= 0) costLimitItems[index] = item
@@ -931,7 +936,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
         // Other apps' windows, where the computer's app can show and control them.
         ...(manager instanceof ComputerWorkspace && computerDescription?.apps ? createAppTools(manager, computerDescription, markToolStarted, storeImagePreview) : []),
         // The windows on a cloud workspace's screen, where the instance gives workspaces one.
-        ...(manager instanceof WorkspaceManager && settings.workspaceDesktop ? createAppTools(manager, 'workspace', markToolStarted, storeImagePreview) : []),
+        ...(manager instanceof WorkspaceManager && workspaceDesktop ? createAppTools(manager, 'workspace', markToolStarted, storeImagePreview) : []),
         ...configuredWebTools,
         ...imageTools,
         ...memoryTools,
@@ -1210,6 +1215,7 @@ async function runAgentGeneration(responseId: string, codexAllowed: boolean): Pr
   })
   await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
   try {
+    if (quickAnswer && await isCancellationRequested(responseId)) throw new Error('Generation cancelled')
     await resizeBudgetReservation({
       responseId, accruedCostMicros: accruedCostMicros + accruedToolCostMicros + sidecarCostMicros,
       accruedExtraCostMicros: accruedToolCostMicros + sidecarCostMicros,

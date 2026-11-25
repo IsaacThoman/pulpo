@@ -9,3 +9,4 @@
 .image-viewer-license strong { color: var(--ink); }
 .image-viewer-license summary { width: fit-content; cursor: pointer; }
 .image-viewer-license details > p { margin-top: .15rem; white-space: pre-line; }
+.image-viewer-attribution-actions { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 .6rem; }
