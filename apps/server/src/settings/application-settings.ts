@@ -91,6 +91,31 @@ export function parseBillingSettings(value: unknown): BillingSettings {
   return parsed.success ? parsed.data : billingSettingsSchema.parse({})
 }
 
+export const SIGNUP_PROMO_BUDGET_PERIODS = ['hour', 'day'] as const
+export type SignupPromoBudgetPeriod = typeof SIGNUP_PROMO_BUDGET_PERIODS[number]
+
+/**
+ * A one-time credit grant new accounts can claim from a banner. The budget caps what the
+ * whole instance gives away in each UTC hour or day, whoever claims it.
+ */
+export const signupPromoSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  amountMicros: z.number().int().positive().max(1_000_000_000).default(1_000_000),
+  // Shown in the banner; empty uses the app's default copy.
+  message: z.string().trim().max(500).default(''),
+  // Accounts younger than this many days can claim.
+  eligibleDays: z.number().int().min(1).max(365).default(7),
+  budgetMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(25_000_000),
+  budgetPeriod: z.enum(SIGNUP_PROMO_BUDGET_PERIODS).default('day'),
+})
+
+export type SignupPromoSettings = z.infer<typeof signupPromoSettingsSchema>
+
+export function parseSignupPromoSettings(value: unknown): SignupPromoSettings {
+  const parsed = signupPromoSettingsSchema.safeParse(value)
+  return parsed.success ? parsed.data : signupPromoSettingsSchema.parse({})
+}
+
 export const ocrSettingsSchema = instanceOcrSettingsSchema.extend({
   // Retained only so provider-based settings from older releases can be mapped
   // to a configured catalog model.

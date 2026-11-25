@@ -393,7 +393,7 @@ export function AppLayout() {
           <div className="contents" inert={drawerOpen}>
           <SidePanelLayout mobile={mobile} full={panelFull} enabled={!adminChatView}>
             <main id="main-content" tabIndex={-1} className={cn('app-main relative min-w-0 flex-1 overflow-hidden outline-none', panelFull && 'hidden')}>
-              <BannerBar />
+              <BannerBar signupPromo={!/(^|\/)billing\/*$/i.test(location.pathname)} />
               <Suspense fallback={<div className="h-full bg-background" aria-label={ui("Loading view")} />}>
                 <Outlet />
               </Suspense>
