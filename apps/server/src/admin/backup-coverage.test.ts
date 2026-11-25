@@ -10,6 +10,7 @@ const excluded = {
   sessions: 'Existing sessions must be invalidated on recovery',
   passkey_ceremonies: 'Short-lived authentication challenges',
   mobile_passkey_auth_codes: 'Short-lived authentication exchanges',
+  search_auth_codes: 'Short-lived authentication exchanges',
   password_reset_tokens: 'Short-lived password reset grants',
   user_totp_enrollments: 'Unfinished second-factor enrollment',
   codex_login_attempts: 'Unfinished provider login exchanges',

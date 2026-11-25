@@ -20,7 +20,7 @@ export function serializeDeviceSession(row: Session, currentId: string): DeviceS
       : row.deviceLabel ? (platform === 'ios' || platform === 'android' || row.deviceLabel === 'Pulpo Mobile' ? 'mobile' : 'unknown') : parsed.browser.name ? 'web' : 'unknown'
   const appType = sessionAppTypeSchema.safeParse(row.appType).data ?? legacyApp
   const platformLabel = { ios: 'iOS', android: 'Android', windows: 'Windows', macos: 'Mac', linux: 'Linux', unknown: 'Unknown platform' }[platform]
-  const browser = appType === 'web' ? parsed.browser.name ?? null : null
+  const browser = appType === 'web' || appType === 'search' ? parsed.browser.name ?? null : null
   const deviceLabel = appType === 'desktop' && (!row.deviceLabel || row.deviceLabel === 'Pulpo for Mac')
     ? platform === 'unknown' ? 'Pulpo Desktop' : `Pulpo for ${platformLabel}`
     : row.deviceLabel ?? (browser ? `${browser} on ${platformLabel}` : 'Unknown device')

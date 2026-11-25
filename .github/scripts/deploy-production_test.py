@@ -7,7 +7,7 @@ import unittest
 
 
 class ProductionDeploymentTests(unittest.TestCase):
-    def run_deployment(self, fail_on="", duplicate=False, remove_orphans=False):
+    def run_deployment(self, fail_on="", duplicate=False, remove_orphans=False, search=""):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             shutil.copy(Path(__file__).with_name("deploy-production.sh"), root)
@@ -41,6 +41,7 @@ class ProductionDeploymentTests(unittest.TestCase):
                 env={**os.environ, "COOLIFY_APP_UUID": "api",
                      "COOLIFY_URL": "https://coolify.example.invalid", "COOLIFY_TOKEN": "test-token",
                      "COOLIFY_WORKER_APP_UUID": "api" if duplicate else "worker",
+                     "COOLIFY_SEARCH_APP_UUID": search,
                      "COOLIFY_WEB_APP_UUID": "web", "FAIL_ON": fail_on,
                      "ORPHANS": "1" if remove_orphans else "false",
                      "PATH": str(root) + os.pathsep + os.environ["PATH"],
@@ -64,6 +65,23 @@ class ProductionDeploymentTests(unittest.TestCase):
         self.assertNotEqual(status, 0)
         self.assertEqual(events[-1], "wait worker")
         self.assertFalse(any("deploy web" in event for event in events))
+
+    def test_rolls_out_search_after_web_from_same_commit_when_configured(self):
+        status, events = self.run_deployment(search="search")
+        self.assertEqual(status, 0)
+        self.assertEqual(events, [event for name in ["api", "worker", "web", "search"]
+                                 for event in [f"deploy {name} {'a' * 40}", f"wait {name}"]])
+
+    def test_failed_web_prevents_search_deploy(self):
+        status, events = self.run_deployment(fail_on="web", search="search")
+        self.assertNotEqual(status, 0)
+        self.assertEqual(events[-1], "wait web")
+        self.assertFalse(any("deploy search" in event for event in events))
+
+    def test_rejects_search_id_matching_another_application(self):
+        status, events = self.run_deployment(search="web")
+        self.assertNotEqual(status, 0)
+        self.assertEqual(events, [])
 
     def test_rejects_accidental_shared_application_ids_before_deploying(self):
         status, events = self.run_deployment(duplicate=True)

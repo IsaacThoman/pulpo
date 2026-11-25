@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
-import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, KeyRound, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { browserSupportsWebAuthn } from '@/lib/passkeys'
 import { useAuth } from '@/stores/auth'
 import { isDesktopRuntime } from '@/lib/runtime'
+import { searchConnectLoginState } from '@/lib/search-connect'
 import { AuthFormError } from './auth-form'
 
 export function LoginOptionsPage() {
@@ -14,13 +15,15 @@ export function LoginOptionsPage() {
   const passkeyLogin = useAuth((state) => state.passkeyLogin)
   const setupRequired = useAuth((state) => state.setupRequired)
   const navigate = useNavigate()
+  const loginState = searchConnectLoginState(useLocation().state)
+  const returnTo = loginState?.from ?? '/'
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const passkeySupported = isDesktopRuntime() || browserSupportsWebAuthn()
 
   if (user?.role === 'pending') return <Navigate to="/pending" replace />
-  if (user) return <Navigate to="/" replace />
-  if (setupRequired) return <Navigate to="/setup" replace />
+  if (user) return <Navigate to={returnTo} replace />
+  if (setupRequired) return <Navigate to="/setup" state={loginState} replace />
 
   const submitPasskey = async () => {
     setError(null)
@@ -32,7 +35,7 @@ export function LoginOptionsPage() {
       return
     }
     const currentUser = useAuth.getState().user
-    navigate(currentUser?.role === 'pending' ? '/pending' : '/')
+    navigate(currentUser?.role === 'pending' ? '/pending' : returnTo, { replace: Boolean(loginState) })
   }
 
   return (
@@ -52,7 +55,7 @@ export function LoginOptionsPage() {
         {error && <AuthFormError id="login-options-error">{error}</AuthFormError>}
 
         <Button asChild type="button" variant="ghost" className="w-full">
-          <Link to="/login"><ArrowLeft /> {t('common.back')}</Link>
+          <Link to="/login" state={loginState}><ArrowLeft /> {t('common.back')}</Link>
         </Button>
       </div>
     </div>

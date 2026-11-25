@@ -7,7 +7,7 @@ import { sessions, users } from '../database/schema.js'
 import { getConfig } from '../config.js'
 import { hashToken } from '../lib/crypto.js'
 import { AppError, unauthorized } from '../lib/errors.js'
-import { serializeUser } from './service.js'
+import { pulpoSessionFilter, serializeUser } from './service.js'
 
 // Browsers keep the active account in the regular HTTP-only session cookie and
 // the other signed-in accounts' session tokens in a second HTTP-only cookie.
@@ -37,7 +37,7 @@ async function resolveTokens(tokens: string[]): Promise<Map<string, ResolvedAcco
   const byHash = new Map(tokens.map((token) => [hashToken(token), token]))
   const rows = await db.select({ session: sessions, user: users }).from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
-    .where(and(inArray(sessions.tokenHash, [...byHash.keys()]), gt(sessions.expiresAt, new Date())))
+    .where(and(inArray(sessions.tokenHash, [...byHash.keys()]), gt(sessions.expiresAt, new Date()), pulpoSessionFilter()))
   const resolved = new Map<string, ResolvedAccount>()
   for (const row of rows) {
     const token = byHash.get(row.session.tokenHash)

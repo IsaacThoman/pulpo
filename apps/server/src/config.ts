@@ -31,6 +31,14 @@ const configSchema = z.object({
     try { trustedProxyAddresses(value); return true } catch { return false }
   }, 'Use comma-separated proxy IPs/CIDRs; blanket trust and hop counts are not supported'),
   PUBLIC_URL: z.url().default('http://localhost:5173'),
+  SEARCH_PUBLIC_URL: optionalEnvironmentValue(z.url({ protocol: /^https?$/ }).transform((value, context) => {
+    const url = new URL(value)
+    if (url.href !== url.origin + '/' || (url.protocol !== 'https:' && !LOOPBACK_HOSTS.has(url.hostname))) {
+      context.addIssue({ code: 'custom', message: 'Use an HTTPS origin or a loopback HTTP origin' })
+      return z.NEVER
+    }
+    return url.origin
+  })),
   PULPO_ANDROID_CERTIFICATE_FINGERPRINTS: z.string().default('').refine((value) => { try { androidCertificateFingerprints(value); return true } catch { return false } }, 'Use comma-separated SHA-256 signing certificate fingerprints'),
   INSTANCE_NAME: z.string().trim().min(1).default('Pulpo'),
   PULPO_VERSION: z.string().trim().min(1).default('0.1.0'),
@@ -153,6 +161,9 @@ export function parseConfig(environment: NodeJS.ProcessEnv): Config {
       ...(previewOllamaUrl ? { PULPO_OLLAMA_URL: previewOllamaUrl } : {}),
     } : {}),
   })
+  if (config.SEARCH_PUBLIC_URL === new URL(config.PUBLIC_URL).origin) {
+    throw new Error('SEARCH_PUBLIC_URL must differ from PUBLIC_URL')
+  }
   if (config.PULPO_BILLING_ENABLED) {
     const required = [
       'STRIPE_SECRET_KEY',

@@ -88,8 +88,8 @@ export function AccountSwitcherMenuItems({ open }: { open: boolean }) {
 }
 
 /** Signed-in accounts on the sign-in page, so adding an account can be abandoned. */
-export function SignedInAccountChooser() {
-  const accounts = useSignedInAccounts()
+export function SignedInAccountChooser({ returnTo, hideActive = false }: { returnTo?: string; hideActive?: boolean } = {}) {
+  const accounts = useSignedInAccounts().filter((account) => !hideActive || !account.active)
   const switchAccount = useAuth((state) => state.switchAccount)
   const [pending, setPending] = useState<string | null>(null)
   const [error, setError] = useState('')
@@ -99,7 +99,7 @@ export function SignedInAccountChooser() {
     setPending(userId)
     setError('')
     try {
-      await switchAccount(userId)
+      await switchAccount(userId, returnTo)
     } catch (next) {
       setError(errorMessage(next, ui('Could not switch accounts.')))
       setPending(null)
@@ -109,7 +109,7 @@ export function SignedInAccountChooser() {
 
   return (
     <div className="mb-4 rounded-xl border bg-card p-4 shadow-xs">
-      <h2 className="mb-2 text-sm font-medium">{ui('Continue as')}</h2>
+      <h2 className="mb-2 text-sm font-medium">{hideActive ? ui('Other signed-in accounts') : ui('Continue as')}</h2>
       <div className="space-y-1">
         {accounts.map((account) => (
           <button

@@ -8,6 +8,7 @@ import { apiRequest, ApiError } from '@/lib/api'
 import { clearLocalUserData, indexedDbPersister } from '@/lib/local-first/database'
 import { clearRuntimeComposerDrafts } from '@/lib/local-first/composer-drafts'
 import { queryClient } from '@/lib/query-client'
+import { searchConnectReturn } from '@/lib/search-connect'
 import { DEFAULT_MAX_INLINE_IMAGES, DEFAULT_MAX_ATTACHMENT_BYTES, DEFAULT_USAGE_VISIBILITY, type MobileConfig, type NativeAuthResponse, type PasskeyCeremony, type SignedInAccount, type UsageVisibility } from '@pulpo/contracts'
 import { authenticateWithPasskey, passkeyErrorMessage } from '@/lib/passkeys'
 import { normalizeInstanceUrl } from '@pulpo/client-core'
@@ -110,7 +111,7 @@ interface AuthState {
   /** Keeps the active account signed in and reloads to the sign-in page. */
   addAccount: () => Promise<void>
   /** Activates another signed-in account and reloads the app as that account. */
-  switchAccount: (userId: string) => Promise<void>
+  switchAccount: (userId: string, returnTo?: string) => Promise<void>
   signOutAccount: (userId: string) => Promise<void>
   /** Signs out the active account; returns whether another account was activated. */
   signOutActiveAccount: () => Promise<boolean>
@@ -569,12 +570,12 @@ export const useAuth = create<AuthState>()((set, get) => ({
     window.location.assign('/login')
   },
 
-  switchAccount: async (userId) => {
+  switchAccount: async (userId, returnTo) => {
     const user = normalizeUser(await activateSignedInAccount(userId, get().user) as ServerUser)
     invalidateBootstrap()
     cacheProfile(user)
     await forgetActiveAccountQueries()
-    window.location.assign('/')
+    window.location.assign(searchConnectReturn(returnTo) ?? '/')
   },
 
   signOutAccount: async (userId) => {

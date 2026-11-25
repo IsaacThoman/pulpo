@@ -7,8 +7,12 @@ commit_sha="${1:?release commit SHA is required}"
 : "${COOLIFY_APP_UUID:?API UUID is required}"
 : "${COOLIFY_WORKER_APP_UUID:?worker UUID is required}"
 : "${COOLIFY_WEB_APP_UUID:?web UUID is required}"
-if [[ "$COOLIFY_APP_UUID" == "$COOLIFY_WORKER_APP_UUID" || "$COOLIFY_APP_UUID" == "$COOLIFY_WEB_APP_UUID" || "$COOLIFY_WORKER_APP_UUID" == "$COOLIFY_WEB_APP_UUID" ]]; then
-  echo 'API, worker, and web must be separate Coolify applications.' >&2
+application_uuids=("$COOLIFY_APP_UUID" "$COOLIFY_WORKER_APP_UUID" "$COOLIFY_WEB_APP_UUID")
+if [[ -n "${COOLIFY_SEARCH_APP_UUID:-}" ]]; then
+  application_uuids+=("$COOLIFY_SEARCH_APP_UUID")
+fi
+if [[ -n "$(printf '%s\n' "${application_uuids[@]}" | sort | uniq -d)" ]]; then
+  echo 'API, worker, web, and Search must be separate Coolify applications.' >&2
   exit 1
 fi
 
@@ -16,7 +20,7 @@ fi
 # deletes the serving container before replacement readiness is known.
 coolify_api_url="${COOLIFY_URL%/}"
 if [[ "$coolify_api_url" != */api/v1 ]]; then coolify_api_url="$coolify_api_url/api/v1"; fi
-for application_uuid in "$COOLIFY_APP_UUID" "$COOLIFY_WORKER_APP_UUID" "$COOLIFY_WEB_APP_UUID"; do
+for application_uuid in "${application_uuids[@]}"; do
   coolify app get "$application_uuid" --format json | \
     jq -e '.build_pack == "dockerfile" and .health_check_enabled == true' >/dev/null || {
       echo "Application $application_uuid must use Dockerfile deployment with health checks." >&2
@@ -40,7 +44,7 @@ trap 'rm -f "$deployment_output"' EXIT
 # The API image runs locked migrations before opening its listener. Coolify
 # retains the previous API unless the replacement's readiness check passes.
 # Do not update consumers or clients until that schema/API gate succeeds.
-for application_uuid in "$COOLIFY_APP_UUID" "$COOLIFY_WORKER_APP_UUID" "$COOLIFY_WEB_APP_UUID"; do
+for application_uuid in "${application_uuids[@]}"; do
   : > "$deployment_output"
   COOLIFY_APP_UUID="$application_uuid" GITHUB_OUTPUT="$deployment_output" \
     bash "$script_dir/deploy-coolify-commit.sh" "$commit_sha"

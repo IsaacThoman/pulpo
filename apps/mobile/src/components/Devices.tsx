@@ -9,7 +9,7 @@ import { Card, PageHeader, Screen } from '../mockup5/src/components/PrototypeUI'
 import { useAppTheme } from '../mockup5/src/theme'
 
 const platforms = { ios: 'iOS', android: 'Android', windows: 'Windows', macos: 'macOS', linux: 'Linux', unknown: 'Unknown platform' }
-const apps = { web: 'Web', mobile: 'Mobile app', desktop: 'Desktop app', cli: 'CLI', unknown: 'Unknown app' }
+const apps = { web: 'Web', mobile: 'Mobile app', desktop: 'Desktop app', cli: 'CLI', search: 'Search', unknown: 'Unknown app' }
 
 export function DevicesScreen({ navigation }: { navigation: { goBack(): void } }) {
   const theme = useAppTheme()

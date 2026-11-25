@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
-import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/stores/auth'
 import { ui } from '@/i18n/ui'
+import { searchConnectLoginState } from '@/lib/search-connect'
 import { AuthFormError, PasswordVisibilityToggle } from './auth-form'
 import { errorFieldProps } from './error-field-props'
 
@@ -19,6 +20,8 @@ export function SignupPage() {
   const signupEnabled = useAuth((s) => s.signupEnabled)
   const setupRequired = useAuth((s) => s.setupRequired)
   const navigate = useNavigate()
+  const loginState = searchConnectLoginState(useLocation().state)
+  const returnTo = loginState?.from ?? '/'
 
   const [name, setName] = useState('')
   const [username, setUsername] = useState('')
@@ -31,8 +34,8 @@ export function SignupPage() {
   const [loading, setLoading] = useState(false)
 
   if (user?.role === 'pending') return <Navigate to="/pending" replace />
-  if (user) return <Navigate to="/" replace />
-  if (setupRequired) return <Navigate to="/setup" replace />
+  if (user) return <Navigate to={returnTo} replace />
+  if (setupRequired) return <Navigate to="/setup" state={loginState} replace />
 
   if (!signupEnabled) {
     return (
@@ -42,7 +45,7 @@ export function SignupPage() {
           {t('auth.signUpsClosedDescription')}
         </p>
         <Button asChild className="mt-6 w-full" variant="outline">
-          <Link to="/login">{t('auth.backToSignIn')}</Link>
+          <Link to="/login" state={loginState}>{t('auth.backToSignIn')}</Link>
         </Button>
       </div>
     )
@@ -65,7 +68,7 @@ export function SignupPage() {
       return
     }
     const currentUser = useAuth.getState().user
-    navigate(currentUser?.role === 'pending' ? '/pending' : '/')
+    navigate(currentUser?.role === 'pending' ? '/pending' : returnTo, { replace: Boolean(loginState) })
   }
 
   return (
@@ -165,7 +168,7 @@ export function SignupPage() {
 
       <p className="mt-6 text-center text-sm text-muted-foreground">
         {t('auth.hasAccount')}{' '}
-        <Link to="/login" className="font-medium text-foreground underline-offset-4 hover:underline">
+        <Link to="/login" state={loginState} className="font-medium text-foreground underline-offset-4 hover:underline">
           {t('auth.signIn')}
         </Link>
       </p>

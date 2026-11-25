@@ -2,6 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { getStorageCorsOrigins, getWorkspaceInstanceId, isAllowedOrigin, isAllowedRequestOrigin, parseConfig } from './config.js'
 
 describe('server configuration', () => {
+  it('accepts a separate Pulpo Search origin only when explicitly enabled', () => {
+    expect(parseConfig({ SEARCH_PUBLIC_URL: '' }).SEARCH_PUBLIC_URL).toBeUndefined()
+    expect(parseConfig({ SEARCH_PUBLIC_URL: 'https://search.pulpo.baby/' }).SEARCH_PUBLIC_URL).toBe('https://search.pulpo.baby')
+    expect(parseConfig({ SEARCH_PUBLIC_URL: 'http://127.0.0.1:5175' }).SEARCH_PUBLIC_URL).toBe('http://127.0.0.1:5175')
+    expect(() => parseConfig({ SEARCH_PUBLIC_URL: 'https://search.pulpo.baby/auth/callback' })).toThrow()
+    expect(() => parseConfig({ SEARCH_PUBLIC_URL: 'http://search.pulpo.baby' })).toThrow()
+    expect(() => parseConfig({ PUBLIC_URL: 'https://pulpo.baby', SEARCH_PUBLIC_URL: 'https://pulpo.baby' })).toThrow(/must differ/)
+  })
+
   it('keeps billing disabled unless explicitly and completely configured', () => {
     expect(parseConfig({}).PULPO_BILLING_ENABLED).toBe(false)
     expect(() => parseConfig({ PULPO_BILLING_ENABLED: 'true' })).toThrow(/STRIPE_SECRET_KEY/)
