@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Cloud, CloudFog, CloudLightning, CloudRain, CloudSnow, CloudSun, Sun } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Cloud, CloudFog, CloudLightning, CloudRain, CloudSnow, CloudSun, Droplet, Sun } from 'lucide-react'
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties } from 'react'
 import { type WeatherAlerts, type WeatherPlace, type WeatherResponse } from './api'
 import { safeHttpUrl } from './navigation'
@@ -51,8 +51,8 @@ function HourlyForecast({ hours, localHour, degrees }: {
   const temperatures = hours.map(hour => hour.temperatureC)
   const low = Math.min(...temperatures)
   const high = Math.max(...temperatures)
-  const points = temperatures.map((temperature, index) => [50 + index * 100, high === low ? 25 : 43 - (temperature - low) / (high - low) * 33])
-  const line = points.map(point => point.join(',')).join(' ')
+  const readings = temperatures.map(temperature => high === low ? 60 : 84 - (temperature - low) / (high - low) * 50)
+  const line = readings.map((y, index) => `${50 + index * 100},${y}`).join(' ')
   return <div className="weather-hourly">
     <div className="weather-hourly-heading">
       <h3>Hourly</h3>
@@ -63,23 +63,29 @@ function HourlyForecast({ hours, localHour, degrees }: {
           onClick={() => { if (!scrollEdges.end) move(1) }}><ChevronRight size={17} aria-hidden="true" /></button>
       </div>}
     </div>
-    <div id={id} ref={scroller} className="weather-hourly-scroll" role="region" aria-label="Hourly forecast" tabIndex={0} onScroll={updateEdges}>
+    <div id={id} ref={scroller} className="weather-hourly-scroll" data-scroll-start={scrollEdges.start || undefined}
+      data-scroll-end={scrollEdges.end || undefined} role="region" aria-label="Hourly forecast" tabIndex={0} onScroll={updateEdges}>
       <div className="weather-hourly-track" style={{ '--hour-count': hours.length } as CSSProperties}>
-        {points.length > 1 && <svg className="weather-hourly-chart" viewBox={`0 0 ${hours.length * 100} 50`} preserveAspectRatio="none" aria-hidden="true">
+        {hours.length > 1 && <svg className="weather-hourly-chart" viewBox={`0 0 ${hours.length * 100} 100`} preserveAspectRatio="none" aria-hidden="true">
           <defs><linearGradient id={id + '-temperature'} x2="0" y2="100%">
-            <stop stopColor="currentColor" stopOpacity=".18" /><stop offset="1" stopColor="currentColor" stopOpacity="0" />
+            <stop stopColor="currentColor" stopOpacity=".24" /><stop offset="1" stopColor="currentColor" stopOpacity="0" />
           </linearGradient></defs>
-          <polygon points={`50,50 ${line} ${points.at(-1)?.[0]},50`} fill={`url(#${id}-temperature)`} />
+          <polygon points={`50,100 ${line} ${hours.length * 100 - 50},100`} fill={`url(#${id}-temperature)`} />
           <polyline points={line} fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         </svg>}
-        <ol>{hours.map(hour => <li key={hour.validAt}>
+        <ol>{hours.map((hour, index) => <li key={hour.validAt}>
           <time dateTime={hour.validAt}>{localHour.format(new Date(hour.validAt))}</time>
-          <span className="weather-hour-reading">
-            {hour.condition && <WeatherSymbol condition={hour.condition} />}
+          <span className="weather-hour-reading" style={{
+            '--reading-position': readings[index]! / 100,
+            '--hour-position': `${(index + .5) / hours.length * 100}%`,
+          } as CSSProperties}>
             <strong>{degrees(hour.temperatureC)}°</strong>
           </span>
-          {hour.precipitationChance !== undefined && <small aria-label={`Precipitation ${hour.precipitationChance}%`}>{hour.precipitationChance}% precip.</small>}
+          {hour.condition && <WeatherSymbol condition={hour.condition} />}
           {hour.condition && <small>{hour.condition}</small>}
+          {hour.precipitationChance !== undefined && <small className="weather-hour-precipitation" aria-label={`Precipitation ${hour.precipitationChance}%`}>
+            <Droplet size={11} aria-hidden="true" />{hour.precipitationChance}%
+          </small>}
         </li>)}</ol>
       </div>
     </div>
@@ -117,7 +123,7 @@ export function WeatherAnswer({ response, alerts, onLocation, onWeb, webExpanded
   const dailyHigh = Math.max(...forecast.daily.map(day => day.highC))
   const dailySpan = Math.max(dailyHigh - dailyLow, 1)
   return (
-    <section className="answer weather-answer" aria-label="Weather forecast">
+    <section className="answer weather-answer" aria-label="Weather forecast" data-wide-forecast={Boolean(forecast.hourly?.length && forecast.daily.length) || undefined}>
       <div className="weather-heading">
         <div><h2>{placeLabel(place)}</h2><p>Forecast for {localTime.format(new Date(forecast.validAt))} local time</p></div>
         <div className="weather-units" aria-label="Temperature unit">
@@ -149,29 +155,31 @@ export function WeatherAnswer({ response, alerts, onLocation, onWeb, webExpanded
           </li>
         })}
       </ul>}
-      {!!forecast.hourly?.length && <HourlyForecast hours={forecast.hourly} localHour={localHour} degrees={degrees} />}
-      {forecast.daily.length > 0 && <div className="weather-outlook">
-        <h3>{forecast.daily.length}-day outlook</h3>
-        <ul className="weather-days" role="list" aria-label="Daily forecast">
-          {forecast.daily.map(day => {
-            const date = new Date(day.date + 'T12:00:00Z')
-            const remaining = day.date === today
-            return <li key={day.date}>
-              <time dateTime={day.date} title={fullDayLabel.format(date)} aria-label={remaining ? 'Rest of today' : undefined}>{remaining ? 'Today' : dayLabel.format(date)}</time>
-              {day.condition && <WeatherSymbol condition={day.condition} />}
-              <span className="weather-range">
-                <strong><span className="sr-only">High </span>{degrees(day.highC)}°</strong>
-                <span><span className="sr-only">Low </span>{degrees(day.lowC)}°</span>
-              </span>
-              <span className="weather-range-track" aria-hidden="true" style={{
-                '--range-start': (day.lowC - dailyLow) / dailySpan * 100 + '%',
-                '--range-end': (dailyHigh - day.highC) / dailySpan * 100 + '%',
-              } as CSSProperties} />
-              {day.condition && <small className="weather-day-condition">{day.condition}</small>}
-            </li>
-          })}
-        </ul>
-      </div>}
+      <div className="weather-forecast">
+        {!!forecast.hourly?.length && <HourlyForecast hours={forecast.hourly} localHour={localHour} degrees={degrees} />}
+        {forecast.daily.length > 0 && <div className="weather-outlook">
+          <h3>{forecast.daily.length}-day outlook</h3>
+          <ul className="weather-days" role="list" aria-label="Daily forecast">
+            {forecast.daily.map(day => {
+              const date = new Date(day.date + 'T12:00:00Z')
+              const remaining = day.date === today
+              return <li key={day.date}>
+                <time dateTime={day.date} title={fullDayLabel.format(date)} aria-label={remaining ? 'Rest of today' : undefined}>{remaining ? 'Today' : dayLabel.format(date)}</time>
+                {day.condition && <WeatherSymbol condition={day.condition} />}
+                <span className="weather-range">
+                  <strong><span className="sr-only">High </span>{degrees(day.highC)}°</strong>
+                  <span><span className="sr-only">Low </span>{degrees(day.lowC)}°</span>
+                </span>
+                <span className="weather-range-track" aria-hidden="true" style={{
+                  '--range-start': (day.lowC - dailyLow) / dailySpan * 100 + '%',
+                  '--range-end': (dailyHigh - day.highC) / dailySpan * 100 + '%',
+                } as CSSProperties} />
+                {day.condition && <small className="weather-day-condition">{day.condition}</small>}
+              </li>
+            })}
+          </ul>
+        </div>}
+      </div>
       <div className="weather-footer">
         <span>Sources {sources.map(source => {
           const url = safeHttpUrl(source.url)

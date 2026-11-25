@@ -12,6 +12,12 @@ export interface PlaceMapPin {
   coordinates: [longitude: number, latitude: number]
 }
 
+interface MapMarker {
+  marker: Marker
+  button: HTMLButtonElement
+  ids: string[]
+}
+
 const tileOrigin = 'https://tiles.openfreemap.org'
 setWorkerUrl(workerUrl)
 
@@ -25,10 +31,11 @@ export default function PlacesMap({ pins, styleUrl }: { pins: PlaceMapPin[]; sty
   const container = useRef<HTMLDivElement>(null)
   const map = useRef<LibreMap | null>(null)
   const initialCenter = useRef(pins[0]!.coordinates)
-  const markerButtons = useRef<HTMLButtonElement[]>([])
+  const markers = useRef<MapMarker[]>([])
+  const selectedIds = useRef<string[]>([])
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading')
-  const [activeId, setActiveId] = useState<string>()
-  const active = pins.find(pin => pin.id === activeId)
+  const [activeIds, setActiveIds] = useState<string[]>([])
+  const active = pins.filter(pin => activeIds.includes(pin.id))
 
   useEffect(() => {
     if (!container.current) return
@@ -82,29 +89,50 @@ export default function PlacesMap({ pins, styleUrl }: { pins: PlaceMapPin[]; sty
     if (!instance) return
     const center = pins[0]!.coordinates
     const bounds = new LngLatBounds(center, center)
-    const buttons: HTMLButtonElement[] = []
-    const markers = pins.map(pin => {
-      const element = document.createElement('button')
-      element.type = 'button'
-      element.className = 'places-map-pin'
-      element.dataset.listing = pin.id
-      element.textContent = String(pin.rank)
-      element.setAttribute('aria-label', `${pin.rank}. ${pin.name}, ${pin.address}`)
-      element.addEventListener('click', () => setActiveId(pin.id))
-      buttons.push(element)
+    const wrappedPins = pins.map(pin => {
       const [longitude, latitude] = pin.coordinates
-      const nearestLongitude = center[0] + ((longitude - center[0] + 540) % 360) - 180
-      bounds.extend([nearestLongitude, latitude])
-      return new Marker({ element, anchor: 'center' }).setLngLat(pin.coordinates).addTo(instance)
+      const coordinates: PlaceMapPin['coordinates'] = [center[0] + ((longitude - center[0] + 540) % 360) - 180, latitude]
+      bounds.extend(coordinates)
+      return { pin, coordinates }
     })
-    markerButtons.current = buttons
+    const updateMarkers = () => {
+      const groups: Array<{ first: PlaceMapPin; coordinates: PlaceMapPin['coordinates']; x: number; y: number; ids: string[] }> = []
+      for (const { pin, coordinates } of wrappedPins) {
+        const { x, y } = instance.project(coordinates)
+        const group = groups.find(other => Math.hypot(other.x - x, other.y - y) < 33)
+        if (group) group.ids.push(pin.id)
+        else groups.push({ first: pin, coordinates, x, y, ids: [pin.id] })
+      }
+      if (groups.length === markers.current.length && groups.every((group, index) =>
+        group.ids.join() === markers.current[index]?.ids.join())) return
+      markers.current.forEach(({ marker }) => marker.remove())
+      markers.current = groups.map(({ first, coordinates, ids }) => {
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = 'places-map-pin'
+        if (ids.length > 1) button.dataset.cluster = 'true'
+        button.textContent = ids.length > 1 ? `+${ids.length}` : String(first.rank)
+        button.setAttribute('aria-label', ids.length > 1 ? `${ids.length} places close together` : `${first.rank}. ${first.name}, ${first.address}`)
+        button.setAttribute('aria-pressed', String(ids.some(id => selectedIds.current.includes(id))))
+        button.addEventListener('click', () => setActiveIds(ids))
+        const marker = new Marker({ element: button, anchor: 'center' }).setLngLat(coordinates).addTo(instance)
+        return { marker, button, ids }
+      })
+    }
     instance.fitBounds(bounds, { maxZoom: 16, padding: 42, duration: 0 })
-    return () => markers.forEach(marker => marker.remove())
+    updateMarkers()
+    instance.on('zoomend', updateMarkers)
+    return () => {
+      instance.off('zoomend', updateMarkers)
+      markers.current.forEach(({ marker }) => marker.remove())
+      markers.current = []
+    }
   }, [pins])
 
   useEffect(() => {
-    for (const button of markerButtons.current) button.setAttribute('aria-pressed', String(button.dataset.listing === active?.id))
-  }, [active, pins])
+    selectedIds.current = activeIds
+    for (const { button, ids } of markers.current) button.setAttribute('aria-pressed', String(ids.some(id => activeIds.includes(id))))
+  }, [activeIds, pins])
 
   if (status === 'unavailable') return <p className="places-note" role="status">Couldn’t load the map. Use the listings below.</p>
   return (
@@ -115,11 +143,13 @@ export default function PlacesMap({ pins, styleUrl }: { pins: PlaceMapPin[]; sty
         <div className="places-map-canvas" ref={container} data-loading={status === 'loading' || undefined} />
         {status === 'loading' && <p className="places-map-loading" role="status">Loading map…</p>}
       </div>
-      <div className="sr-only" role="status">{active && `${active.name}, ${active.address}`}</div>
-      {status === 'ready' && active && <div className="places-map-selection">
-        <div><strong>{active.name}</strong><p>{active.address}</p></div>
-        <button className="text-button" onClick={() => document.getElementById(active.id)?.focus()}>Go to listing</button>
-      </div>}
+      <div className="sr-only" role="status">{active.map(pin => `${pin.name}, ${pin.address}`).join('. ')}</div>
+      {status === 'ready' && active.length > 0 && <ul className="places-map-selections">
+        {active.map(pin => <li className="places-map-selection" key={pin.id}>
+          <div><strong>{pin.name}</strong><p>{pin.address}</p></div>
+          <button className="text-button" aria-label={`Go to listing for ${pin.name}`} onClick={() => document.getElementById(pin.id)?.focus()}>Go to listing</button>
+        </li>)}
+      </ul>}
       <div className="places-map-attribution">
         <a href="https://openfreemap.org/" rel="noreferrer" target="_blank">OpenFreeMap</a>
         <a href="https://openmaptiles.org/" rel="noreferrer" target="_blank">© OpenMapTiles</a>

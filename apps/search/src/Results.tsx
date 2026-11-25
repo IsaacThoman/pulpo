@@ -249,10 +249,11 @@ interface ResultsProps {
   onClearScope?: () => void
   imageRefinements?: { value: ImageRefinements; update: (value: ImageRefinements) => void }
   imageToolbar?: HTMLElement | null
+  mediaToolbar?: HTMLElement | null
   imagePagination?: (canAdvance: boolean) => ReactNode
 }
 
-export function Results({ data, location, preferences, setDomain, onQuery, onClearScope, imageRefinements, imageToolbar, imagePagination }: ResultsProps) {
+export function Results({ data, location, preferences, setDomain, onQuery, onClearScope, imageRefinements, imageToolbar, mediaToolbar, imagePagination }: ResultsProps) {
   const [expandedQuery, setExpandedQuery] = useState<string | null>(null)
   const [preview, setPreview] = useState<{ entries: ResultWithUrl[]; startIndex: number; opener: HTMLButtonElement }>()
   const [imageRefinement, setImageRefinement] = useState<{ query: string; value: ImageRefinements }>()
@@ -341,6 +342,31 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
   const galleryFilters = images && <ImageResultFilters value={refinements} update={updateImageRefinements}
     shown={shown.length} total={visible.length} matches={ordered.length} withoutDimensions={withoutDimensions}
     hasSourceDates={visible.some(entry => imageSourceTime(entry.result.publishedAt) !== undefined)} sources={imageSources(visible)} />
+  const mediaFilters = <>
+    {canSortNews && <span className="scope-select">
+      <span className="scope-select-value" aria-hidden="true">{newestNews ? 'Newest' : 'Relevance'}</span>
+      <select aria-label="Sort news" value={newestNews ? 'newest' : 'relevance'}
+        onChange={event => setNewsOrder(event.target.value === 'newest' ? 'newest' : 'relevance')}>
+        <option value="relevance">Relevance</option>
+        <option value="newest">Newest on this page</option>
+      </select>
+      <ChevronDown size={13} aria-hidden="true" />
+    </span>}
+    {news && (location.date || location.dateRange) && <details className="news-date-info">
+      <summary className="icon-button" aria-label="About news dates" title="About news dates"><CircleHelp size={16} aria-hidden="true" /></summary>
+      <p>The date filter includes articles updated during this period.</p>
+    </details>}
+    {canFilterVideoDuration && <span className="scope-select">
+      <span className="scope-select-value" aria-hidden="true">{videoDurationOptions.find(([value]) => value === duration)?.[1]}</span>
+      <select aria-label="Duration" value={duration} onChange={event => {
+        const value = videoDurationOptions.find(([option]) => option === event.target.value)?.[0] ?? 'any'
+        setVideoDuration({ scope: durationScope, value })
+      }}>
+        {videoDurationOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </select>
+      <ChevronDown size={13} aria-hidden="true" />
+    </span>}
+  </>
 
   return (
     <div className={'results-body' + (images ? ' image-results-body' : videoGrid ? ' video-results-body' : '')}>
@@ -358,39 +384,11 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
           </aside>
         )}
         {galleryFilters && (imageToolbar ? createPortal(galleryFilters, imageToolbar) : galleryFilters)}
-        {news && (canSortNews || location.date || location.dateRange) && <div className="result-refinements">
-          {canSortNews && <label>
-            <span>Sort news</span>
-            <span className="filter-select">
-              <select value={newestNews ? 'newest' : 'relevance'} onChange={event => setNewsOrder(event.target.value === 'newest' ? 'newest' : 'relevance')}>
-                <option value="relevance">Relevance</option>
-                <option value="newest">Newest on this page</option>
-              </select>
-              <ChevronDown size={14} aria-hidden="true" />
-            </span>
-          </label>}
-          {(location.date || location.dateRange) && <details className="news-date-info">
-            <summary className="icon-button" aria-label="About news dates" title="About news dates"><CircleHelp size={16} aria-hidden="true" /></summary>
-            <p>The date filter includes articles updated during this period.</p>
-          </details>}
-        </div>}
-        {canFilterVideoDuration && <div className="result-refinements">
-          <label>
-            <span>Duration</span>
-            <span className="filter-select">
-              <select value={duration} onChange={event => {
-                const value = videoDurationOptions.find(([option]) => option === event.target.value)?.[0] ?? 'any'
-                setVideoDuration({ scope: durationScope, value })
-              }}>
-                {videoDurationOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
-              <ChevronDown size={14} aria-hidden="true" />
-            </span>
-          </label>
-          {duration !== 'any' && <p>{shown.length} of {visible.length} videos on this page
-            {withoutDuration > 0 && ` · ${withoutDuration} without a reported duration`}
-          </p>}
-        </div>}
+        {(canSortNews || (news && (location.date || location.dateRange)) || canFilterVideoDuration) && (mediaToolbar
+          ? createPortal(mediaFilters, mediaToolbar) : <div className="media-toolbar-slot standalone-media-filters">{mediaFilters}</div>)}
+        {duration !== 'any' && <p className="filtered-video-count">{shown.length} of {visible.length} videos on this page
+          {withoutDuration > 0 && ` · ${withoutDuration} without a reported duration`}
+        </p>}
         {podcastShows.length > 0 && <section className="podcast-shows" aria-label="Podcast shows">
           <h2>Shows</h2>
           <ul>{podcastShows.map(({ result, url }) => <li key={url.href}>

@@ -65,6 +65,7 @@ export function App({ callback }: { callback: Callback }) {
   const [draft, setDraft] = useState(firstResultQuery(location.query) ?? location.query)
   const [panel, setPanel] = useState<Panel | null>(null)
   const [imageToolbar, setImageToolbar] = useState<HTMLDivElement | null>(null)
+  const [mediaToolbar, setMediaToolbar] = useState<HTMLDivElement | null>(null)
   const [user, setUser] = useState<SearchUser | null | undefined>(undefined)
   const userId = user?.id
   const { preferences, initialAccountPreferences, update, syncStatus, retrySync } = useSearchPreferences(userId)
@@ -540,6 +541,7 @@ export function App({ callback }: { callback: Callback }) {
                     </select>
                     <ChevronDown size={13} aria-hidden="true" />
                   </span>}
+                  {(view.category === 'news' || view.category === 'videos') && <div className="media-toolbar-slot" ref={setMediaToolbar} />}
                   {!showAnswer && !answerPending && !reuse && <SearchFilters date={effectiveDate} dateRange={view.dateRange} region={view.region}
                     dates={filterDates} allowCustomDates={filterCustomDates} allowRegion={filterRegion}
                     regionOverride={view.regionOverride} safeSearch={view.safeSearch}
@@ -702,7 +704,8 @@ export function App({ callback }: { callback: Callback }) {
                     <p>These images are available on earlier pages.</p>
                   </section>
                 ) : <Results key={searchPath(view)} data={resultsData ?? state.data} location={{ ...view, date: effectiveDate }} preferences={preferences}
-                  setDomain={setDomain} onQuery={onSearch} imageRefinements={imageBrowse.refinements} imageToolbar={imageToolbar} imagePagination={renderPages} />}
+                  setDomain={setDomain} onQuery={onSearch} imageRefinements={imageBrowse.refinements} imageToolbar={imageToolbar}
+                  mediaToolbar={mediaToolbar} imagePagination={renderPages} />}
                 {!!state.data.results.length && shorterImageQuery && <div className="image-show-more">
                   <button className="secondary-button" onClick={() => onSearch(shorterImageQuery)}>Search for “{shorterImageQuery}”</button>
                 </div>}
