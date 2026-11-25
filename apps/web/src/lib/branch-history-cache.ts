@@ -42,6 +42,13 @@ export class BranchHistoryCache {
     return entry!.window
   }
 
+  /** Drops a response from every visited lineage that holds it, once it no longer exists anywhere. */
+  withoutResponse(owner: object, responseId: string, remove: (responses: NonNullable<ServerChat['responses']>) => NonNullable<ServerChat['responses']>) {
+    this.entries = this.entries.map((entry) => entry.owner !== owner || !entry.window.responses?.some(row => row.id === responseId)
+      ? entry
+      : { ...entry, window: { ...entry.window, responses: remove(entry.window.responses) } })
+  }
+
   delete(owner: object) {
     this.entries = this.entries.filter(entry => entry.owner !== owner)
   }
