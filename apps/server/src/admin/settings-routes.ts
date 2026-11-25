@@ -117,7 +117,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
   app.get('/api/admin/settings', async (request) => {
     requireAdmin(request)
     const rows = await db.select().from(applicationSettings)
-    return { values: Object.fromEntries(rows.filter((row) => !['ocr', 'webTools', 'dictation', 'episodicMemory', 'backups', 'diagnosticCleanup'].includes(row.key)).map((row) => [row.key, row.value])) }
+    return { values: Object.fromEntries(rows.filter((row) => !['ocr', 'webTools', 'dictation', 'episodicMemory', 'backups', 'diagnosticCleanup', 'signupPromo'].includes(row.key)).map((row) => [row.key, row.value])) }
   })
 
   app.patch('/api/admin/settings', async (request) => {
@@ -170,6 +170,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     if (values.dictation !== undefined) throw new AppError(400, 'dedicated_dictation_endpoint', 'Use /api/admin/settings/dictation for dictation settings')
     if (values.episodicMemory !== undefined) throw new AppError(400, 'dedicated_episodic_memory_endpoint', 'Use /api/admin/settings/episodic-memory for episodic memory settings')
     if (values.backups !== undefined) throw new AppError(400, 'dedicated_backups_endpoint', 'Use /api/admin/settings/backups for backup settings')
+    if (values.signupPromo !== undefined) throw new AppError(400, 'dedicated_signup_promo_endpoint', 'Use /api/admin/billing/signup-promo for signup credit promotions')
     const changes = await db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
       let storageRevisions: Array<{ userId: string; revision: number }> = []

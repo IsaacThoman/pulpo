@@ -241,6 +241,7 @@ import { AssistantMarkdown } from '../features/quiz/AssistantMarkdown';
 import { QuizComposerContext } from '../features/quiz/composer';
 import { isQuizFileName } from '@pulpo/client-core/quiz';
 import { ModelWarningBanner } from './src/components/ModelWarningBanner';
+import { SignupPromoBanner } from './src/components/SignupPromoBanner';
 import { AttachmentImageViewer, type AttachmentImagePreviewItem, type AttachmentImageTransitionOrigin } from '../components/AttachmentImageViewer';
 import { useFilesCapabilityRefresh, useFilesEnabled } from '../features/files/availability';
 import { openFilesLinkInApp, parseFilesLink, useFilesLinkInbox } from '../features/files/links';
@@ -6994,6 +6995,7 @@ function ChatView({
                       }}
                     />
                 </ComposerQueueSection>
+              <SignupPromoBanner />
               <ModelWarningBanner
                 model={prototypeModel}
                 onSelectModel={(id) => {

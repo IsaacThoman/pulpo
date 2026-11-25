@@ -226,6 +226,7 @@ export const mobileConfigSchema = z.object({
     messageReports: z.boolean().optional().default(false),
     /** Whether the instance bills usage, so accounts can have plan usage limits. Older servers omit it. */
     usageLimits: z.boolean().optional().default(false),
+    signupPromo: z.boolean().optional(),
     /**
      * Files and its collaborative documents. Older servers omit it; clients then hide Files.
      * `docSchemaVersion` is the document schema the server accepts edits in, so a client whose
@@ -2331,3 +2332,4 @@ export * from "./workspace-screen.js"
 export * from "./trash.js"
 export * from "./message-reports.js"
 export * from "./audio-transcription.js"
+export * from "./signup-promo.js"

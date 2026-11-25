@@ -68,6 +68,7 @@ export const users = pgTable('users', {
   avatarObjectKey: text('avatar_object_key'),
   avatarVersion: integer('avatar_version').notNull().default(0),
   inviteCodeQuota: integer('invite_code_quota').notNull().default(0),
+  signedUp: boolean('signed_up').notNull().default(false),
   ...timestamps,
 }, (table) => [
   uniqueIndex('users_email_unique').on(sql`lower(${table.email})`),
@@ -1302,6 +1303,17 @@ export const creditLedger = pgTable('credit_ledger', {
   metadata: jsonb('metadata').notNull().default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [index('ledger_user_created_idx').on(table.userId, table.createdAt)])
+
+export const signupPromoClaims = pgTable('signup_promo_claims', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  amountCents: integer('amount_cents').notNull(),
+  claimedAt: timestamp('claimed_at', { withTimezone: true }).notNull(),
+}, (table) => [
+  uniqueIndex('signup_promo_claims_user_idx').on(table.userId),
+  index('signup_promo_claims_claimed_at_idx').on(table.claimedAt),
+  check('signup_promo_claims_amount_check', sql`${table.amountCents} > 0`),
+])
 
 export const usageEvents = pgTable('usage_events', {
   id: uuid('id').primaryKey(),

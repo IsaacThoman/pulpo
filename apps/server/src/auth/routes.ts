@@ -210,6 +210,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         name: input.name,
         username: input.username,
         role: authSettings.defaultSignupRole,
+        signedUp: true,
         balanceMicros: authSettings.defaultBalanceMicros,
         storageLimitBytes: await newUserStorageLimit(tx),
       })

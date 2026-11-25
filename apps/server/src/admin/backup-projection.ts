@@ -81,6 +81,7 @@ export const FULL_BACKUP_TEMPORARY_DATA_POLICY = {
   daily_usage_rollups: 'preserve',
   application_settings: 'preserve',
   banners: 'preserve',
+  signup_promo_claims: 'preserve',
   request_logs: 'request-log',
   generation_attempts: 'generation-attempt',
   diagnostic_policy: 'preserve',

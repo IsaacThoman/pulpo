@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, ChartColumn, CreditCard, ExternalLink, Gauge, Minus, Pencil, Plus, RefreshCw, Repeat2, Search, SlidersHorizontal, Trash2, UsersRound, WalletCards } from 'lucide-react'
+import { AlertTriangle, ChartColumn, CreditCard, ExternalLink, Gauge, Gift, Minus, Pencil, Plus, RefreshCw, Repeat2, Search, SlidersHorizontal, Trash2, UsersRound, WalletCards } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis, matchByDataKey } from 'recharts'
 import { apiRequest } from '@/lib/api'
 import { formatBalance, formatDate } from '@/lib/format'
@@ -22,6 +22,7 @@ import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import type { Model } from '@/lib/types'
 import { UserListEditor } from './ModelAccessEditor'
 import { useAdminUserDirectory, type UserDirectory } from './user-directory'
+import { SignupPromoSettings } from './SignupPromoSettings'
 
 type Range = '7d' | '30d' | '90d' | 'all'
 /** animate bars by full date so a range change keeps each day in place */
@@ -362,6 +363,9 @@ export function AdminBillingPage() {
         </Panel>
       </div>
 
+      <Panel icon={<Gift className="size-3" />} title={ui("Signup credit promotion")}>
+        <SignupPromoSettings />
+      </Panel>
       {settingsQuery.data && <UsageTiersPanel tiers={settingsQuery.data.usageTiers} onSaved={() => void settingsQuery.refetch()} />}
 
       <CustomLimitsPanel />

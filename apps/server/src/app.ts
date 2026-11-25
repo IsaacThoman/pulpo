@@ -49,6 +49,7 @@ import { registerPoolRoutes } from './pools/routes.js'
 import { registerProfileRoutes } from './profile/routes.js'
 import { registerBillingRoutes } from './billing/routes.js'
 import { registerAdminBillingRoutes } from './billing/admin-routes.js'
+import { registerSignupPromoRoutes } from './billing/signup-promo.js'
 import { registerInviteCodeRoutes } from './invite-codes/routes.js'
 import { registerDictationRoutes } from './dictation/routes.js'
 import { registerCodexRoutes } from './codex/routes.js'
@@ -224,6 +225,7 @@ export async function buildApp() {
   await registerAdminInsightsRoutes(app)
   await registerAdminBillingRoutes(app)
   await registerBillingRoutes(app)
+  registerSignupPromoRoutes(app)
   await registerMessageRoutes(app)
   await registerAttachmentRoutes(app)
   await registerFileRoutes(app)
