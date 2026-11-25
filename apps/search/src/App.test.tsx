@@ -320,6 +320,20 @@ describe('Pulpo Search', () => {
     }), expect.any(AbortSignal))
   })
 
+  it('keeps other search tabs available when switching News providers', async () => {
+    getConfig.mockResolvedValue({ ...config, providers: config.providers.map(provider => provider.id === 'firecrawl'
+      ? { ...provider, categories: ['web', 'images', 'news'] } : { ...provider, categories: ['web', 'news', 'videos'] }) })
+    window.history.replaceState(null, '', '/search?q=Starliner&type=news&provider=firecrawl')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'Starliner field guide' })
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ category: 'news', providers: ['firecrawl'] }), expect.any(AbortSignal))
+    fireEvent.click(screen.getByRole('button', { name: 'Videos', pressed: false }))
+    await waitFor(() => expect(search).toHaveBeenLastCalledWith(expect.objectContaining({
+      category: 'videos', providers: ['kagi'],
+    }), expect.any(AbortSignal)))
+    expect(window.location.search).not.toContain('provider=')
+  })
+
   it('answers exact math signed out without a provider request and offers ordinary web results', async () => {
     session.mockResolvedValue({ user: null })
     window.history.replaceState(null, '', '/search?q=18.5%25+of+249')

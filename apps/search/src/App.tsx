@@ -183,18 +183,21 @@ export function App({ callback }: { callback: Callback }) {
     const timer = window.setTimeout(() => refreshInstantAnswer(value => value + 1), Math.max(0, refreshAt - Date.now()) + 25)
     return () => window.clearTimeout(timer)
   }, [refreshAt])
+  const defaultOrder = config ? providerOrder(searchPreferences, config) : []
   const order = !config ? [] : view.provider
     ? config.providers.filter(provider => provider.id === view.provider).map(provider => provider.id)
-    : providerOrder(searchPreferences, config)
+    : defaultOrder
   const alternatives = config?.providers.filter(provider => provider.categories.includes(view.category)
     && (provider.maxPage ?? 1) >= (view.page ?? 1)
     && (!view.date || provider.dates.includes(view.date))
     && (!view.dateRange || provider.customDateRanges?.includes(view.category))
     && (!view.region || provider.region)) ?? []
   const chosen = config?.providers.filter(provider => order.includes(provider.id)) ?? []
+  const defaultProviders = config?.providers.filter(provider => defaultOrder.includes(provider.id)) ?? []
   const compatible = config ? compatibleProviders(config, order, view) : []
   const categoryProviders = chosen.filter(provider => provider.categories.includes(view.category))
-  const enabledCategories = categories.filter(category => chosen.some(provider => provider.categories.includes(category))
+  const categorySources = view.provider ? [...chosen, ...defaultProviders] : chosen
+  const enabledCategories = categories.filter(category => categorySources.some(provider => provider.categories.includes(category))
     || (category === 'images' && config?.reusableImages))
   const mediaCategories = enabledCategories.filter(category => category === 'videos' || category === 'podcasts')
   const filterDates = [...new Set(categoryProviders.flatMap(provider => provider.dates))]
@@ -361,7 +364,8 @@ export function App({ callback }: { callback: Callback }) {
 
   function changeCategory(category: SearchLocation['category']) {
     if (category === view.category) return
-    const providers = chosen.filter(provider => provider.categories.includes(category))
+    const provider = view.provider && chosen.some(item => item.categories.includes(category)) ? view.provider : undefined
+    const providers = (provider ? chosen : defaultProviders).filter(item => item.categories.includes(category))
     const date = view.date
     const matchingDate = providers.filter(provider => (!date || provider.dates.includes(date))
       && (!view.dateRange || provider.customDateRanges?.includes(category)))
@@ -369,6 +373,7 @@ export function App({ callback }: { callback: Callback }) {
     go({
       ...view,
       category,
+      provider,
       page: undefined,
       scope: category === 'web' ? view.scope : undefined,
       date: matchingDate.length ? date : '',
