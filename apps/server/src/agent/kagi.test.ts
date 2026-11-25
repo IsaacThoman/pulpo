@@ -145,12 +145,26 @@ describe('Kagi client', () => {
 
   it.each([
     { category: 'news' }, { page: 2 }, { region: 'CA' }, { timeRelative: 'day' },
+    { dateRange: { from: '2024-01-01', to: '2024-01-01' } },
     { includeDomains: ['wikipedia.org'] }, { excludeDomains: ['example.com'] },
     { query: 'Marie Curie site:wikipedia.org' }, { query: 'Marie Curie AND (-site:example.com OR site:wikipedia.org)' },
   ] satisfies Array<Partial<ProviderSearchInput>>)('omits knowledge for restricted searches %j', async (input) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ data: { infobox: [curieInfobox] } })))
 
     await expect(new KagiClient('secret').searchResults({ query: 'Marie Curie', ...input })).resolves.not.toHaveProperty('knowledge')
+  })
+
+  it('includes the entire final day and omits undated direct answers about filtered results', async () => {
+    const fetch = vi.fn().mockResolvedValue(Response.json({ data: {
+      direct_answer: [{ title: 'Answer', snippet: 'Undated answer' }],
+    } }))
+    vi.stubGlobal('fetch', fetch)
+    await expect(new KagiClient('secret').searchResults({
+      query: 'new year', dateRange: { from: '2024-12-31', to: '2024-12-31' },
+    })).resolves.not.toHaveProperty('answer')
+    expect(JSON.parse(fetch.mock.calls[0]![1].body).filters).toEqual({
+      safe_search: true, after: '2024-12-31', before: '2025-01-01',
+    })
   })
 
   it('keeps image dimensions and separate provider thumbnails, with validated URL fallbacks', async () => {

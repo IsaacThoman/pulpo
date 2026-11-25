@@ -1,3 +1,4 @@
+import type { SearchDateRange } from '@pulpo/contracts/search'
 import type { CurrencyQuery, CurrencyResponse } from './currency'
 import type { PlaceQuery, PlaceResponse } from './places'
 
@@ -18,6 +19,7 @@ export interface SearchInput {
   category?: Category
   region?: string
   date?: SearchDate
+  dateRange?: SearchDateRange
   scope?: SearchScope
   page?: number
 }
@@ -54,6 +56,7 @@ export interface ProviderConfig {
   id: Provider
   categories: Category[]
   dates: SearchDate[]
+  customDateRanges?: Category[]
   region: boolean
   priceMicros: number
   maxPage?: number

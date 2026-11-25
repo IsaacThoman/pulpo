@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight, Image, X } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
+import { safeHttpUrl } from './navigation'
 import { ResultImage } from './ResultImage'
 import type { ResultWithUrl } from './result-order'
 
@@ -37,6 +38,8 @@ export function ImageViewer({ entries, startIndex, opener, newTab, close }: Imag
   if (!entry) return null
   const title = entry.result.title || entry.host
   const { imageUrl, thumbnailUrl, imageDimensions } = entry.result
+  const original = safeHttpUrl(imageUrl)
+  const target = newTab ? '_blank' : undefined
 
   return (
     <dialog ref={dialog} className="dialog image-viewer" aria-labelledby={titleId}
@@ -90,7 +93,10 @@ export function ImageViewer({ entries, startIndex, opener, newTab, close }: Imag
             <h3>{title}</h3>
             <span>{entry.host}{imageDimensions && ' · ' + imageDimensions.width + ' × ' + imageDimensions.height}</span>
           </div>
-          <a className="button" href={entry.url.href} target={newTab ? '_blank' : undefined} rel="noreferrer">Visit site</a>
+          <div className="image-viewer-actions">
+            {original && <a className="secondary-button" href={original.href} target={target} rel="noreferrer">Open image</a>}
+            <a className="button" href={entry.url.href} target={target} rel="noreferrer">Visit site</a>
+          </div>
         </footer>
       </div>
     </dialog>

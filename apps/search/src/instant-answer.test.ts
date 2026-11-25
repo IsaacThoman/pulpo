@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { evaluateCalculation, instantAnswer } from './instant-answer'
+import { compatibleUnits, evaluateCalculation, evaluateUnitConversion, instantAnswer } from './instant-answer'
 
 describe('local instant answers', () => {
   it.each([
@@ -59,6 +59,33 @@ describe('editable calculator expressions', () => {
   it.each(['tan(90)', 'sqrt(-1)^0', '1/(1/0)', '171!', '2.5!', '3!!', 'log(0)', '2 +', 'sin(1, 2)', 'constructor(0)', '(() => 1)()', '1'.repeat(101)])(
     'rejects invalid math: %s', query => expect(evaluateCalculation(query)).toBeUndefined(),
   )
+})
+
+describe('editable unit conversions', () => {
+  it('shares canonical unit values when the query uses natural-language aliases', () => {
+    expect(instantAnswer('What is 5 miles in kilometers?')).toMatchObject({
+      label: 'Unit conversion', expression: '5 mi', result: '8.04672 km',
+      conversion: { amount: '5', from: 'mi', to: 'km' },
+    })
+    expect(instantAnswer('convert 37 mi/h to kmh')?.result).toBe('59.545728 km/h')
+    expect(instantAnswer('How to convert 37 mph to km/h')).toBeUndefined()
+  })
+
+  it('offers each compatible unit once and preserves affine conversion in either direction', () => {
+    expect(compatibleUnits('fahrenheit')).toEqual([
+      { id: 'c', label: '°C' }, { id: 'f', label: '°F' }, { id: 'k', label: 'K' },
+    ])
+    expect(evaluateUnitConversion({ amount: '32', from: 'f', to: 'c' })?.result).toBe('0 °C')
+    expect(evaluateUnitConversion({ amount: '-40', from: 'c', to: 'f' })?.result).toBe('-40 °F')
+    expect(evaluateUnitConversion({ amount: '5', from: 'km', to: 'km' })?.result).toBe('5 km')
+  })
+
+  it('requires a finite decimal and compatible dimensions', () => {
+    expect(evaluateUnitConversion({ amount: '5', from: 'km', to: 'kg' })).toBeUndefined()
+    for (const amount of ['', '1e3', '5 apples', '1,000', '0x10', '1'.repeat(100)]) {
+      expect(evaluateUnitConversion({ amount, from: 'km', to: 'mi' })).toBeUndefined()
+    }
+  })
 })
 
 describe('local time and dates', () => {

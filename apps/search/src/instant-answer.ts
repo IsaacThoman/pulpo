@@ -1,12 +1,29 @@
-export interface InstantAnswer {
-  label: 'Calculator' | 'Unit conversion' | 'Local time' | 'Time difference' | 'Time conversion' | 'Calendar' | 'Number conversion'
+interface AnswerText {
   expression: string
   result: string
   refreshAt?: number
 }
 
+export interface UnitConversionInput {
+  amount: string
+  from: string
+  to: string
+}
+
+interface UnitConversionAnswer extends AnswerText {
+  label: 'Unit conversion'
+  conversion: UnitConversionInput
+}
+
+export type InstantAnswer = UnitConversionAnswer | (AnswerText & {
+  label: 'Calculator' | 'Local time' | 'Time difference' | 'Time conversion' | 'Calendar' | 'Number conversion'
+})
+
 const decimal = String.raw`(?:\d+(?:\.\d+)?|\.\d+)`
-const unitPattern = new RegExp(String.raw`^([+-]?${decimal})\s*([a-z°/]+)\s+(?:to|in)\s+([a-z°/]+)$`, 'i')
+const signedDecimal = `[+-]?${decimal}`
+const unitPattern = new RegExp(String.raw`^(?:(?:convert|what is)\s+)?(${signedDecimal})\s*([a-z°/]+)\s+(?:to|in)\s+([a-z°/]+)\??$`, 'i')
+const unitAmountPattern = new RegExp('^' + signedDecimal + '$')
+const instantAnswerMaxLength = 100
 const percentPattern = new RegExp(String.raw`^([+-]?${decimal})\s*%\s+of\s+([+-]?${decimal})$`, 'i')
 const format = new Intl.NumberFormat('en-US', { maximumSignificantDigits: 12 })
 const minute = 60_000
@@ -223,14 +240,16 @@ function calendarAnswer(expression: string): InstantAnswer | undefined {
 
 interface Unit {
   dimension: string
+  id: string
   factor: number
   offset: number
   label: string
 }
 
 const units = new Map<string, Unit>()
-function unit(dimension: string, factor: number, label: string, aliases: string[], offset = 0) {
-  for (const alias of aliases) units.set(alias, { dimension, factor, offset, label })
+function unit(dimension: string, factor: number, label: string, aliases: [string, ...string[]], offset = 0) {
+  const definition = { dimension, id: aliases[0], factor, offset, label }
+  for (const alias of aliases) units.set(alias, definition)
 }
 
 unit('length', .001, 'mm', ['mm', 'millimeter', 'millimeters'])
@@ -258,7 +277,31 @@ unit('duration', 3600, 'h', ['h', 'hr', 'hour', 'hours'])
 unit('duration', 86400, 'days', ['day', 'days'])
 unit('speed', 1, 'm/s', ['m/s', 'mps'])
 unit('speed', 1000 / 3600, 'km/h', ['km/h', 'kmh', 'kph'])
-unit('speed', 1609.344 / 3600, 'mph', ['mi/h', 'mph'])
+unit('speed', 1609.344 / 3600, 'mph', ['mph', 'mi/h'])
+
+const canonicalUnits = [...new Set(units.values())]
+
+export function compatibleUnits(unitId: string) {
+  const dimension = units.get(unitId.toLowerCase())?.dimension
+  return canonicalUnits.filter(unit => unit.dimension === dimension).map(({ id, label }) => ({ id, label }))
+}
+
+export function evaluateUnitConversion(input: UnitConversionInput): UnitConversionAnswer | undefined {
+  const amount = input.amount.trim()
+  const from = units.get(input.from.toLowerCase())
+  const to = units.get(input.to.toLowerCase())
+  if (!from || !to || from.dimension !== to.dimension || !unitAmountPattern.test(amount)) return
+  if (amount.length + from.id.length + to.id.length + 5 > instantAnswerMaxLength) return
+  const value = Number(amount)
+  const result = from === to ? value : (value * from.factor + from.offset - to.offset) / to.factor
+  if (!Number.isFinite(result)) return
+  return {
+    label: 'Unit conversion',
+    expression: format.format(value) + ' ' + from.label,
+    result: format.format(result) + ' ' + to.label,
+    conversion: { amount, from: from.id, to: to.id },
+  }
+}
 
 const operators: Record<string, [number, (left: number, right: number) => number]> = {
   '+': [1, (left, right) => left + right],
@@ -428,17 +471,12 @@ function numericConversion(expression: string): InstantAnswer | undefined {
 
 export function instantAnswer(query: string, now = new Date()): InstantAnswer | undefined {
   const expression = query.trim()
-  if (!expression || expression.length > 100) return
+  if (!expression || expression.length > instantAnswerMaxLength) return
   const direct = timeAnswer(expression, now) ?? calendarAnswer(expression) ?? numericConversion(expression)
   if (direct) return direct
   const conversion = unitPattern.exec(expression)
   if (conversion) {
-    const from = units.get(conversion[2].toLowerCase())
-    const to = units.get(conversion[3].toLowerCase())
-    if (!from || !to || from.dimension !== to.dimension || from === to) return
-    const result = (Number(conversion[1]) * from.factor + from.offset - to.offset) / to.factor
-    if (!Number.isFinite(result)) return
-    return { label: 'Unit conversion', expression: format.format(Number(conversion[1])) + ' ' + from.label, result: format.format(result) + ' ' + to.label }
+    return evaluateUnitConversion({ amount: conversion[1], from: conversion[2], to: conversion[3] })
   }
   return calculationAnswer(expression)
 }

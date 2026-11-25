@@ -36,4 +36,14 @@ describe('search result excerpts', () => {
       .toBe('Some helpful detail about…')
     expect(resultSnippet('abc📷def', 5)).toBe('abc…')
   })
+
+  it('chooses a bounded provider excerpt with the most requested details', () => {
+    const intro = 'The reference describes methods for working with files and directories. '.repeat(6)
+    const example = 'Path.walk() can follow directory links if follow_symlinks is enabled.'
+    const snippet = resultSnippet(intro + example, 180, 'site:docs.python.org pathlib Path.walk follow_symlinks')
+    expect(snippet).toContain(example)
+    expect(snippet).toMatch(/^… /)
+    expect(snippet.length).toBeLessThanOrEqual(180)
+    expect(resultSnippet(intro + example, 180, 'unrelated topic')).toBe(resultSnippet(intro + example, 180))
+  })
 })

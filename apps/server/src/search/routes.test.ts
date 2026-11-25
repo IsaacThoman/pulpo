@@ -113,8 +113,8 @@ describe('Pulpo Search API', () => {
       defaultOrder: ['kagi', 'firecrawl'],
       weather: true,
       providers: [
-        { id: 'kagi', categories: ['web', 'news', 'images', 'videos', 'podcasts'], maxPage: 10, dates: ['day', 'week', 'month', 'year'], region: true, priceMicros: 12_000 },
-        { id: 'firecrawl', categories: ['web', 'news', 'images'], maxPage: 1, priceMicros: 7_000 },
+        { id: 'kagi', categories: ['web', 'news', 'images', 'videos', 'podcasts'], maxPage: 10, dates: ['day', 'week', 'month', 'year'], customDateRanges: ['web', 'news'], region: true, priceMicros: 12_000 },
+        { id: 'firecrawl', categories: ['web', 'news', 'images'], maxPage: 1, customDateRanges: ['web', 'news'], priceMicros: 7_000 },
       ],
     })
     expect(response.body).not.toContain('secret')
@@ -380,6 +380,42 @@ describe('Pulpo Search API', () => {
     expect((await query({ query: 'media', category: 'podcasts', providers: ['kagi', 'firecrawl'] })).statusCode).toBe(502)
     expect(mocks.fetch).toHaveBeenCalledTimes(1)
     expect(mocks.release).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves the requested date range when the configured fallback answers', async () => {
+    mocks.fetch.mockResolvedValueOnce(Response.json({ data: { news: [] } }))
+    mocks.fetch.mockResolvedValueOnce(Response.json({ data: { news: [
+      { url: 'https://example.com/story', title: 'In range', description: 'Example story', date: '2024-02-29' },
+    ] } }))
+    const response = await query({
+      query: 'example story', category: 'news', region: 'gb', dateRange: { from: '2024-02-28', to: '2024-02-29' },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      provider: 'firecrawl', results: [{ title: 'In range', publishedAt: '2024-02-29' }],
+    })
+    expect(JSON.parse(mocks.fetch.mock.calls[0]![1].body)).toMatchObject({
+      workflow: 'news', filters: { after: '2024-02-28', before: '2024-03-01', region: 'GB' },
+    })
+    expect(JSON.parse(mocks.fetch.mock.calls[1]![1].body)).toMatchObject({
+      sources: ['news'], tbs: 'cdr:1,cd_min:02/28/2024,cd_max:02/29/2024', country: 'GB',
+    })
+  })
+
+  it('rejects impossible dates, reversed ranges, and incompatible filters before billing', async () => {
+    const range = { from: '2024-02-29', to: '2024-02-29' }
+    for (const filters of [
+      { dateRange: { ...range, to: '2024-02-28' } },
+      { dateRange: { ...range, to: '2024-02-30' } },
+      { dateRange: { ...range, from: '0000-02-29' } },
+      { dateRange: { from: range.from } },
+      { dateRange: range, date: 'week' },
+      { dateRange: range, category: 'images' },
+    ]) {
+      expect((await query({ query: 'example', ...filters })).statusCode).toBe(400)
+    }
+    expect(mocks.reserve).not.toHaveBeenCalled()
+    expect(mocks.fetch).not.toHaveBeenCalled()
   })
 
   it('avoids unfunded provider calls and never expands a one-provider selection', async () => {

@@ -47,6 +47,9 @@ describe('image result viewer', () => {
     expect(source.getAttribute('href')).toBe('https://aquarium.example.com/octopus')
     expect(source.getAttribute('target')).toBe('_blank')
     expect(source.getAttribute('rel')).toBe('noreferrer')
+    const original = overlay.getByRole('link', { name: 'Open image' })
+    expect(original.getAttribute('href')).toBe('https://cdn.example.com/giant.jpg')
+    expect(original.getAttribute('rel')).toBe('noreferrer')
     fireEvent.error(nextImage)
     expect(overlay.getByText('Image unavailable')).toBeDefined()
     expect(overlay.getByRole('link', { name: 'Visit site' })).toBe(source)
@@ -69,6 +72,7 @@ describe('image result viewer', () => {
     const overlay = within(screen.getByRole('dialog'))
     expect(overlay.getByText('Image unavailable')).toBeDefined()
     expect(overlay.queryByRole('img')).toBeNull()
+    expect(overlay.queryByRole('link', { name: 'Open image' })).toBeNull()
     expect(overlay.getByRole('link', { name: 'Visit site' }).hasAttribute('target')).toBe(false)
   })
 

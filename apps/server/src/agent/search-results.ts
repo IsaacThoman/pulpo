@@ -1,3 +1,4 @@
+import type { SearchDateRange } from '@pulpo/contracts/search'
 import { isIP } from 'node:net'
 
 export const basicSearchCategories = ['web', 'news', 'images'] as const
@@ -13,6 +14,7 @@ export interface ProviderSearchInput {
   includeDomains?: string[]
   excludeDomains?: string[]
   timeRelative?: SearchDate
+  dateRange?: SearchDateRange
   category?: SearchCategory
   region?: string
 }
@@ -73,7 +75,7 @@ export function resultText(value: unknown, limit: number): string {
 }
 
 /** Turn compact provider snippets or scraped page previews into a short, plain-text excerpt. */
-export function resultSnippet(value: unknown, limit = 245): string {
+export function resultSnippet(value: unknown, limit = 245, query?: string): string {
   if (typeof value !== 'string') return ''
   const lines = value.slice(0, maxResultTextLength)
     .replace(/<!--[\s\S]*?-->/g, ' ')
@@ -101,7 +103,42 @@ export function resultSnippet(value: unknown, limit = 245): string {
     else paragraphs.push(text)
   }
 
-  return shortenResultText(resultText((paragraphs.length ? paragraphs : headings).join(' '), maxResultTextLength), limit)
+  const text = resultText((paragraphs.length ? paragraphs : headings).join(' '), maxResultTextLength)
+  const leading = shortenResultText(text, limit)
+  return query && text.length > limit ? relevantExcerpt(text, query, leading, limit) : leading
+}
+
+const excerptWord = /[\p{L}\p{N}]+(?:[._-][\p{L}\p{N}]+)*/gu
+const weakTerms = new Set(['and', 'are', 'can', 'does', 'for', 'from', 'how', 'near', 'not', 'the', 'this', 'was', 'what', 'when', 'where', 'which', 'with'])
+
+function relevantExcerpt(text: string, query: string, leading: string, limit: number): string {
+  const terms = searchQueryTokens(query).filter(term => !/^-?[a-z][a-z-]*:/i.test(term))
+    .join(' ').toLowerCase().match(excerptWord) ?? []
+  const wanted = new Set(terms.filter(word => word.length > 2 && !weakTerms.has(word)).slice(0, 14))
+  if (!wanted.size) return leading
+
+  function score(candidate: string) {
+    const matches = new Set(candidate.toLowerCase().match(excerptWord))
+    return [...wanted].reduce((total, word) => matches.has(word) ? total + (/[._]/.test(word) ? 2 : 1) : total, 0)
+  }
+
+  let best = leading
+  let bestScore = score(leading)
+  let previous = 0
+  let considered = 0
+  for (const hit of text.slice(0, 8_000).matchAll(excerptWord)) {
+    if (!wanted.has(hit[0].toLowerCase()) || hit.index < limit / 2 || hit.index - previous < 36) continue
+    const start = text.lastIndexOf(' ', hit.index - 42) + 1
+    const candidate = '… ' + shortenResultText(text.slice(start), limit - 2)
+    const candidateScore = score(candidate)
+    if (candidateScore > bestScore) {
+      best = candidate
+      bestScore = candidateScore
+    }
+    previous = hit.index
+    if (++considered >= 32) break
+  }
+  return best
 }
 
 export function shortenResultText(text: string, limit: number): string {
@@ -139,7 +176,7 @@ function isImageDimension(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= 100_000
 }
 
-export function normalizeResult(row: RawSearchResult): SearchResult | null {
+export function normalizeResult(row: RawSearchResult, query?: string): SearchResult | null {
   const url = resultUrl(row.url)
   const title = resultText(row.title, 300)
   if (!url || !title) return null
@@ -153,7 +190,7 @@ export function normalizeResult(row: RawSearchResult): SearchResult | null {
   const creatorName = resultText(row.creatorName, 120)
   const publishedAt = resultText(row.publishedAt, 50)
   return {
-    url, title, snippet: resultSnippet(row.snippet),
+    url, title, snippet: resultSnippet(row.snippet, 245, query),
     ...(imageUrl ? { imageUrl } : {}),
     ...(thumbnailUrl && thumbnailUrl !== imageUrl ? { thumbnailUrl } : {}),
     ...(imageDimensions ? { imageDimensions } : {}),

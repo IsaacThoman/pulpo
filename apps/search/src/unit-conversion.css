@@ -1,0 +1,62 @@
+.unit-conversion {
+  width: min(100%, var(--reading-width));
+  margin-top: 1rem;
+}
+
+.unit-conversion-values {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: end;
+  gap: .4rem;
+  max-width: 29rem;
+  margin-top: .75rem;
+}
+
+.unit-conversion-field {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: .25rem;
+  align-self: stretch;
+  min-width: 0;
+}
+
+.unit-conversion-field > label:not(.sr-only), .unit-conversion-field > span {
+  color: var(--muted);
+  font-size: .8125rem;
+}
+
+.unit-conversion-field input, .unit-conversion-field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.25rem;
+  padding: .35rem .5rem;
+  border: 1px solid var(--line);
+  border-radius: .5rem;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+
+.unit-conversion-field output {
+  align-self: center;
+  min-width: 0;
+  font-size: clamp(1.125rem, 3vw, 1.6rem);
+  font-weight: 650;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.unit-conversion-swap {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2.25rem;
+}
+
+.unit-conversion-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .5rem .75rem;
+  margin-top: .75rem;
+}

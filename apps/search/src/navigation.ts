@@ -1,3 +1,4 @@
+import { searchDateRange, type SearchDateRange } from '@pulpo/contracts/search'
 import type { Category, Provider, SearchDate, SearchScope } from './api'
 
 export const MAX_QUERY_LENGTH = 500
@@ -36,6 +37,7 @@ export interface SearchLocation {
   query: string
   category: Category
   date: SearchDate | ''
+  dateRange?: SearchDateRange
   region: string
   scope?: SearchScope
   web?: true
@@ -50,12 +52,14 @@ export function parseSearchLocation(url: URL): SearchLocation {
   if (!query) return homeLocation
   const category = categories.find(value => value === url.searchParams.get('type')) ?? 'web'
   const date = dateOptions.find(([value]) => value === url.searchParams.get('date'))?.[0] ?? ''
+  const dateRange = !date && searchDateRange(url.searchParams.get('from') ?? '', url.searchParams.get('to') ?? '')
   const region = regions.find(([value]) => value === url.searchParams.get('region'))?.[0] ?? ''
   const scope = searchScopes.find(([value]) => value === url.searchParams.get('scope'))?.[0] || undefined
   const provider = url.searchParams.get('provider')
   const page = Number(url.searchParams.get('page'))
   return {
     query, category, date, region,
+    ...(dateRange ? { dateRange } : {}),
     ...(category === 'web' && scope ? { scope } : {}),
     ...(url.searchParams.get('web') === '1' ? { web: true as const } : {}),
     ...(provider === 'kagi' || provider === 'firecrawl' ? { provider } : {}),
@@ -68,6 +72,10 @@ export function searchPath(input: SearchLocation) {
   const params = new URLSearchParams({ q: input.query })
   if (input.category !== 'web') params.set('type', input.category)
   if (input.date) params.set('date', input.date)
+  else if (input.dateRange) {
+    params.set('from', input.dateRange.from)
+    params.set('to', input.dateRange.to)
+  }
   if (input.region) params.set('region', input.region)
   if (input.scope && input.category === 'web') params.set('scope', input.scope)
   if (input.web) params.set('web', '1')

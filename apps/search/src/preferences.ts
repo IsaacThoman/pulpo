@@ -94,6 +94,7 @@ export function compatibleProviders(config: SearchConfig, order: Provider[], inp
     && provider.categories.includes(input.category)
     && (provider.maxPage ?? 1) >= (input.page ?? 1)
     && (!input.date || provider.dates.includes(input.date))
+    && (!input.dateRange || provider.customDateRanges?.includes(input.category))
     && (!input.region || provider.region))
 }
 

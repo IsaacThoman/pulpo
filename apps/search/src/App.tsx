@@ -19,7 +19,10 @@ import { Results } from './Results'
 import { SearchBox } from './SearchBox'
 import { SearchFilters } from './SearchFilters'
 import { Bangs, BrowserSetup, Modal, Settings, Shortcuts, type Panel } from './Settings'
+import { suggestedSpelling } from './spelling'
+import { UnitConversion } from './UnitConversion'
 import { useCurrencyQuote } from './use-currency'
+import { useImageBrowse } from './use-image-browse'
 import { usePlaces } from './use-places'
 import { useSearch } from './use-search'
 import { WeatherAnswer } from './WeatherAnswer'
@@ -136,7 +139,7 @@ export function App({ callback }: { callback: Callback }) {
     : luckyQuery ? { ...location, query: luckyQuery, category: 'web' as const, page: undefined } : location,
   [bangDiscovery, luckyQuery, location])
   const allowAnswers = !bang && !luckyQuery && view.category === 'web'
-    && !view.scope && !view.region && !view.date && !view.web && !view.page && !view.provider
+    && !view.scope && !view.region && !view.date && !view.dateRange && !view.web && !view.page && !view.provider
   const localAnswer = allowAnswers ? instantAnswer(view.query) : undefined
   const currencyQuery = allowAnswers && !localAnswer && config?.currency ? parseCurrencyQuery(view.query) : undefined
   const currencyQuote = useCurrencyQuote(currencyQuery, user?.id)
@@ -169,13 +172,16 @@ export function App({ callback }: { callback: Callback }) {
     : providerOrder(searchPreferences, config)
   const alternatives = config?.providers.filter(provider => provider.categories.includes(view.category)
     && (provider.maxPage ?? 1) >= (view.page ?? 1)
-    && (!view.date || provider.dates.includes(view.date)) && (!view.region || provider.region)) ?? []
+    && (!view.date || provider.dates.includes(view.date))
+    && (!view.dateRange || provider.customDateRanges?.includes(view.category))
+    && (!view.region || provider.region)) ?? []
   const chosen = config?.providers.filter(provider => order.includes(provider.id)) ?? []
   const compatible = config ? compatibleProviders(config, order, view) : []
   const categoryProviders = chosen.filter(provider => provider.categories.includes(view.category))
   const enabledCategories = categories.filter(category => chosen.some(provider => provider.categories.includes(category)))
   const mediaCategories = enabledCategories.filter(category => category === 'videos' || category === 'podcasts')
   const filterDates = [...new Set(categoryProviders.flatMap(provider => provider.dates))]
+  const filterCustomDates = categoryProviders.some(provider => provider.customDateRanges?.includes(view.category))
   const filterRegion = categoryProviders.some(provider => provider.region)
   const recoveryProviders = alternatives.filter(provider => !order.includes(provider.id))
   const { state, refresh } = useSearch(user?.id, view.query && compatible.length && !bang && !showAnswer && !answerPending ? {
@@ -183,11 +189,20 @@ export function App({ callback }: { callback: Callback }) {
     providers: order.filter(id => compatible.some(provider => provider.id === id)),
     category: view.category,
     date: view.date || undefined,
+    ...(view.dateRange ? { dateRange: view.dateRange } : {}),
     region: view.region || undefined,
     scope: view.category === 'web' ? view.scope : undefined,
     page: view.page,
     limit: searchPreferences.limit,
   } : null)
+  const imageBrowse = useImageBrowse(view.category === 'images' && user
+    ? JSON.stringify([user.id, searchPath({ ...view, page: undefined })]) : undefined,
+  view.page ?? 1, state.status === 'success' ? state.data : undefined)
+  const spelling = state.status === 'success' && view.category === 'web' && !view.page
+    ? suggestedSpelling(view.query, state.data) : undefined
+  const resultsData = state.status === 'success' && spelling ? {
+    ...state.data, related: state.data.related?.filter(query => query !== spelling),
+  } : imageBrowse.data
   const askUrl = state.status === 'success' && view.category === 'web' && !luckyQuery
     ? buildAskPulpoUrl(pulpoOrigin, view.query, state.data.results) : undefined
   const waitingForSession = user === undefined
@@ -311,13 +326,15 @@ export function App({ callback }: { callback: Callback }) {
     if (category === view.category) return
     const providers = chosen.filter(provider => provider.categories.includes(category))
     const date = view.date
-    const matchingDate = date ? providers.filter(provider => provider.dates.includes(date)) : providers
+    const matchingDate = providers.filter(provider => (!date || provider.dates.includes(date))
+      && (!view.dateRange || provider.customDateRanges?.includes(category)))
     go({
       ...view,
       category,
       page: undefined,
       scope: category === 'web' ? view.scope : undefined,
       date: matchingDate.length ? date : '',
+      dateRange: matchingDate.length ? view.dateRange : undefined,
       region: (matchingDate.length ? matchingDate : providers).some(provider => provider.region) ? view.region : '',
     })
   }
@@ -469,7 +486,8 @@ export function App({ callback }: { callback: Callback }) {
                   </select>
                   <ChevronDown size={13} aria-hidden="true" />
                 </label>}
-                {!showAnswer && !answerPending && <SearchFilters date={view.date} region={view.region} dates={filterDates} allowRegion={filterRegion}
+                {!showAnswer && !answerPending && <SearchFilters date={view.date} dateRange={view.dateRange} region={view.region}
+                  dates={filterDates} allowCustomDates={filterCustomDates} allowRegion={filterRegion}
                   onApply={filters => go({ ...view, ...filters, page: undefined })} />}
               </div>
             </div>
@@ -477,6 +495,9 @@ export function App({ callback }: { callback: Callback }) {
             {localAnswer?.label === 'Calculator' ? (
               <Calculator key={view.query} initialExpression={localAnswer.expression}
                 onSearchWeb={query => go({ ...view, query, web: true })} />
+            ) : localAnswer?.label === 'Unit conversion' ? (
+              <UnitConversion key={view.query} initialConversion={localAnswer.conversion}
+                onConvert={onSearch} onSearchWeb={query => go({ ...view, query, web: true })} />
             ) : localAnswer ? (
               <section className="answer instant-answer" aria-label={localAnswer.label}>
                 <h2>{localAnswer.label}</h2>
@@ -529,7 +550,9 @@ export function App({ callback }: { callback: Callback }) {
               </section>
             ) : !compatible.length ? (
               <section className="search-message"><h2>These filters are unavailable</h2><p>Try Web results with no filters.</p>
-                <button className="secondary-button" onClick={() => go({ ...view, category: 'web', date: '', region: '', page: undefined })}>Reset filters</button>
+                <button className="secondary-button" onClick={() => go({
+                  ...view, category: 'web', date: '', dateRange: undefined, region: '', page: undefined,
+                })}>Reset filters</button>
               </section>
             ) : state.status === 'success' && luckyQuery ? <LoadingResults firstResult /> : state.status === 'success' ? (
               <>
@@ -559,6 +582,9 @@ export function App({ callback }: { callback: Callback }) {
                     </div>
                   </details>
                 </div>
+                {spelling && <p className="spelling-suggestion">
+                  Did you mean <button className="text-button" onClick={() => onSearch(spelling)}>{spelling}</button>?
+                </p>}
                 {!state.data.results.length && !state.data.answer && !state.data.knowledge ? (
                   <section className="search-message">
                     <h2>No results found</h2>
@@ -570,13 +596,18 @@ export function App({ callback }: { callback: Callback }) {
                         onClick={() => onSearch(withoutSiteOperators(view.query))}>Remove site operators</button>}
                       {view.scope && <button className="secondary-button"
                         onClick={() => go({ ...view, scope: undefined, page: undefined })}>Search all sites</button>}
-                      {(view.date || view.region) && <button className="secondary-button"
-                        onClick={() => go({ ...view, date: '', region: '', page: undefined })}>Clear date and region</button>}
+                      {(view.date || view.dateRange || view.region) && <button className="secondary-button"
+                        onClick={() => go({ ...view, date: '', dateRange: undefined, region: '', page: undefined })}>Clear date and region</button>}
                       {view.category !== 'web' && <button className="secondary-button" onClick={() => changeCategory('web')}>Try Web results</button>}
                     </div>
                   </section>
-                ) : <Results key={searchPath(view)} data={state.data} location={view} preferences={preferences}
-                  setDomain={setDomain} onQuery={onSearch} />}
+                ) : imageBrowse.data?.results.length === 0 ? (
+                  <section className="search-message">
+                    <h2>No new images on this page</h2>
+                    <p>These images appeared on a previous page.</p>
+                  </section>
+                ) : <Results key={searchPath(view)} data={resultsData ?? state.data} location={view} preferences={preferences}
+                  setDomain={setDomain} onQuery={onSearch} imageRefinements={imageBrowse.refinements} />}
                 {(view.page || state.data.hasMore) && (
                   <nav className="page-actions" aria-label="Result pages">
                     <button className="secondary-button" disabled={!view.page} onClick={() => go({ ...view, page: view.page && view.page > 2 ? view.page - 1 : undefined })}>Previous</button>

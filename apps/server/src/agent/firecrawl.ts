@@ -11,6 +11,8 @@ type FirecrawlSearchResult = {
   snippet?: string
   url?: string
   imageUrl?: string
+  imageWidth?: number
+  imageHeight?: number
   date?: string
 }
 
@@ -62,6 +64,11 @@ function searchPreview(row: FirecrawlSearchResult | undefined) {
   const snippet = typeof row?.snippet === 'string' ? row.snippet.trim() : ''
   const description = typeof row?.description === 'string' ? row.description.trim() : ''
   return !snippet || (snippet.length > 300 && description && description.length < snippet.length) ? description : snippet
+}
+
+function providerDate(date: string) {
+  const [year, month, day] = date.split('-')
+  return `${month}/${day}/${year}`
 }
 
 export function firecrawlCloudRequiresApiKey(baseUrl: string): boolean {
@@ -129,8 +136,10 @@ export class FirecrawlClient {
         title: row?.title,
         snippet: searchPreview(row),
         imageUrl: row?.imageUrl,
+        imageWidth: category === 'images' ? row?.imageWidth : undefined,
+        imageHeight: category === 'images' ? row?.imageHeight : undefined,
         publishedAt: row?.date,
-      })), limit, category),
+      }, category === 'images' ? undefined : input.query)), limit, category),
     }
   }
 
@@ -140,6 +149,9 @@ export class FirecrawlClient {
     const query = includeDomains && excludeDomains
       ? `${input.query.trim()} ${excludeDomains.map((domain) => `-site:${domain}`).join(' ')}`
       : input.query.trim()
+    const tbs = input.dateRange
+      ? `cdr:1,cd_min:${providerDate(input.dateRange.from)},cd_max:${providerDate(input.dateRange.to)}`
+      : input.timeRelative ? `qdr:${{ day: 'd', week: 'w', month: 'm', year: 'y' }[input.timeRelative]}` : undefined
     return await this.post<FirecrawlSearchResponse>('/search', {
       query,
       limit,
@@ -147,7 +159,7 @@ export class FirecrawlClient {
       safe: true,
       ...(includeDomains ? { includeDomains } : {}),
       ...(!includeDomains && excludeDomains ? { excludeDomains } : {}),
-      ...(input.timeRelative ? { tbs: `qdr:${{ day: 'd', week: 'w', month: 'm', year: 'y' }[input.timeRelative]}` } : {}),
+      ...(tbs ? { tbs } : {}),
       ...(input.region ? { country: input.region } : {}),
     }, signal)
   }

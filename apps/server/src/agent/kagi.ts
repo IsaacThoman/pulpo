@@ -9,6 +9,7 @@ const KAGI_API_BASE = 'https://kagi.com/api/v1'
 export const KAGI_SEARCH_COST_MICROS = 12_000
 export const KAGI_EXTRACT_COST_MICROS = 4_000
 export const KAGI_MAX_SEARCH_PAGE = 10
+export const KAGI_IMAGE_RESULT_LIMIT = 120
 const resultGroups: Record<SearchCategory, string> = {
   web: 'search',
   news: 'news',
@@ -88,6 +89,14 @@ function cleanDomains(value: string[] | undefined): string[] | undefined {
 function combineSignals(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs)
   return signal ? AbortSignal.any([signal, timeout]) : timeout
+}
+
+function nextCalendarDate(value: string): string | undefined {
+  // The provider's before boundary is exclusive. Include the user's end date.
+  if (value === '9999-12-31') return
+  const date = new Date(value + 'T00:00:00Z')
+  date.setUTCDate(date.getUTCDate() + 1)
+  return date.toISOString().slice(0, 10)
 }
 
 const wikipediaHost = /^(?!www\.)[a-z]{2,3}(?:-[a-z0-9]+)*(?:\.m)?\.wikipedia\.org$/
@@ -192,7 +201,7 @@ export class KagiClient {
   async searchResults(input: ProviderSearchInput, signal?: AbortSignal): Promise<SearchResults> {
     const category = input.category ?? 'web'
     const page = input.page ?? 1
-    const limit = Math.min(20, Math.max(1, Math.floor(input.limit ?? 10)))
+    const limit = Math.min(category === 'images' ? KAGI_IMAGE_RESULT_LIMIT : 20, Math.max(1, Math.floor(input.limit ?? 10)))
     const payload = await this.querySearch(input, limit, signal)
     if (!payload.data || typeof payload.data !== 'object' || Array.isArray(payload.data)) {
       throw new Error('Kagi search response did not contain a result set')
@@ -210,16 +219,16 @@ export class KagiClient {
       duration: category === 'videos' || category === 'podcasts' ? row?.props?.duration : undefined,
       creatorName: category === 'videos' || category === 'podcasts' ? row?.props?.creator_name : undefined,
       publishedAt: row?.time,
-    })), limit, category)
+    }, category === 'images' ? undefined : input.query)), limit, category)
     const related = page > 1 ? [] : [...new Set([
       ...group('related_search').map((row) => resultText(row?.props?.query ?? row?.title, 200)),
       ...group('adjacent_question').map((row) => resultText(row?.props?.question ?? row?.title, 200)),
     ].filter(Boolean))].slice(0, 8)
-    const directAnswer = category === 'web' && page === 1 ? group('direct_answer')[0] : undefined
+    const directAnswer = category === 'web' && page === 1 && !input.dateRange ? group('direct_answer')[0] : undefined
     const title = resultText(directAnswer?.title, 300)
     const snippet = resultSnippet(directAnswer?.snippet, 500)
     const url = resultUrl(directAnswer?.url)
-    const knowledge = category === 'web' && page === 1 && !input.timeRelative && !input.region
+    const knowledge = category === 'web' && page === 1 && !input.timeRelative && !input.dateRange && !input.region
       && !input.includeDomains?.length && !input.excludeDomains?.length
       && !searchQueryTokens(input.query).some(token => /^[()+-]*site:[^)\s]/i.test(token))
       ? wikipediaKnowledge(group('infobox')) : undefined
@@ -237,14 +246,19 @@ export class KagiClient {
     const sitesIncluded = cleanDomains(input.includeDomains)
     const sitesExcluded = cleanDomains(input.excludeDomains)
     const timeRelative = input.timeRelative === 'year' ? undefined : input.timeRelative
-    const after = input.timeRelative === 'year' ? new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10) : undefined
+    const after = input.dateRange?.from ?? (input.timeRelative === 'year'
+      ? new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10) : undefined)
+    const before = input.dateRange ? nextCalendarDate(input.dateRange.to) : undefined
     const payload = await this.post<KagiSearchResponse>('/search', {
       query: input.query.trim(),
       workflow: input.category && input.category !== 'web' ? input.category : 'search',
       format: 'json',
       limit,
       ...(input.page && input.page > 1 ? { page: input.page } : {}),
-      filters: { safe_search: true, ...(input.region ? { region: input.region } : {}), ...(after ? { after } : {}) },
+      filters: {
+        safe_search: true, ...(input.region ? { region: input.region } : {}),
+        ...(after ? { after } : {}), ...(before ? { before } : {}),
+      },
       ...((sitesIncluded || sitesExcluded || timeRelative) ? { lens: {
         ...(sitesIncluded ? { sites_included: sitesIncluded } : {}),
         ...(sitesExcluded ? { sites_excluded: sitesExcluded } : {}),

@@ -8,8 +8,8 @@ const user: SearchUser = { id: 'test-user', name: 'Casey', email: 'casey@example
 const config: SearchConfig = {
   defaultOrder: ['kagi', 'firecrawl'],
   providers: [
-    { id: 'kagi', categories: ['web', 'news'], dates: ['day', 'year'], region: true, priceMicros: 2000 },
-    { id: 'firecrawl', categories: ['web', 'images'], dates: ['day', 'week'], region: true, priceMicros: 1000 },
+    { id: 'kagi', categories: ['web', 'news'], dates: ['day', 'year'], customDateRanges: ['web', 'news'], region: true, priceMicros: 2000 },
+    { id: 'firecrawl', categories: ['web', 'images'], dates: ['day', 'week'], customDateRanges: ['web'], region: true, priceMicros: 1000 },
   ],
 }
 
@@ -294,6 +294,52 @@ describe('Pulpo Search', () => {
     expect(search).toHaveBeenCalledTimes(2)
   })
 
+  it('keeps image refinements and skips previously shown images on a later page', async () => {
+    getConfig.mockResolvedValue({
+      ...config, providers: [
+        { ...config.providers[0], categories: ['web', 'news', 'images'], maxPage: 10 },
+        config.providers[1],
+      ],
+    })
+    const picture = (title: string, width: number) => ({
+      title, url: 'https://example.com/' + title, imageUrl: 'https://images.example.com/' + title + '.jpg',
+      imageDimensions: { width, height: 800 }, snippet: '',
+    })
+    const repeated = picture('Repeated', 3000)
+    search.mockImplementation(async ({ page }) => ({
+      provider: 'kagi', hasMore: page !== 2,
+      results: page === 2 ? [repeated, picture('New large image', 3000), picture('New small image', 800)] : [repeated],
+    }))
+    window.history.replaceState(null, '', '/search?q=tides&type=images')
+    render(<App callback={null} />)
+    await screen.findByRole('button', { name: 'Preview image: Repeated' })
+    fireEvent.change(screen.getByLabelText('Size'), { target: { value: 'large' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await screen.findByRole('button', { name: 'Preview image: New large image' })
+    expect(screen.queryByRole('button', { name: 'Preview image: Repeated' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Preview image: New small image' })).toBeNull()
+    expect((screen.getByLabelText('Size') as HTMLSelectElement).value).toBe('large')
+    expect(search).toHaveBeenCalledTimes(2)
+  })
+
+  it('offers a supported spelling change without automatically running it', async () => {
+    search.mockResolvedValueOnce({
+      provider: 'kagi', related: ['equidistant definition'],
+      results: [
+        { title: 'Equidistant Definition', url: 'https://dictionary.example/', snippet: '' },
+        { title: 'Equidistant Points', url: 'https://geometry.example/', snippet: '' },
+      ],
+    })
+    window.history.replaceState(null, '', '/search?q=equidistnat+definition')
+    render(<App callback={null} />)
+    const suggestion = await screen.findByRole('button', { name: 'equidistant definition' })
+    expect(search).toHaveBeenCalledTimes(1)
+    expect(window.location.search).toContain('equidistnat')
+    fireEvent.click(suggestion)
+    await screen.findByRole('link', { name: 'equidistant definition field guide' })
+    expect(search).toHaveBeenCalledTimes(2)
+  })
+
   it('applies a shareable focus and can clear an empty scope', async () => {
     window.history.replaceState(null, '', '/search?q=tides')
     render(<App callback={null} />)
@@ -355,6 +401,35 @@ describe('Pulpo Search', () => {
     fireEvent.click(screen.getByRole('button', { name: 'News' }))
     await waitFor(() => expect(search).toHaveBeenCalledTimes(3))
     expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ category: 'news', date: 'day', region: 'ca' }), expect.any(AbortSignal))
+  })
+
+  it('shares custom dates and leaves presets and media compatible', async () => {
+    window.history.replaceState(null, '', '/search?q=tides&from=2024-02-01&to=2024-02-29')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'tides field guide' })
+    expect(search).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      category: 'web', dateRange: { from: '2024-02-01', to: '2024-02-29' },
+    }), expect.any(AbortSignal))
+    const trigger = screen.getByLabelText(/^Filters,/)
+    fireEvent.click(trigger)
+    expect((screen.getByLabelText('Start date') as HTMLInputElement).value).toBe('2024-02-01')
+    fireEvent.change(screen.getByLabelText('End date'), { target: { value: '2024-01-31' } })
+    expect(screen.getByText('End date must be on or after the start date.')).toBeDefined()
+    expect((screen.getByRole('button', { name: 'Apply' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText('End date'), { target: { value: '2024-02-02' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(document.activeElement).toBe(trigger)
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(2))
+    expect(window.location.search).toBe('?q=tides&from=2024-02-01&to=2024-02-02')
+    fireEvent.click(screen.getByRole('button', { name: 'News' }))
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(3))
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({
+      category: 'news', dateRange: { from: '2024-02-01', to: '2024-02-02' }, providers: ['kagi'],
+    }), expect.any(AbortSignal))
+    fireEvent.click(screen.getByRole('button', { name: 'Images' }))
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(4))
+    expect(search.mock.lastCall?.[0]).not.toHaveProperty('dateRange')
+    expect(window.location.search).toBe('?q=tides&type=images')
   })
 
   it('clears search results on sign-out', async () => {

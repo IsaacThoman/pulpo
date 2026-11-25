@@ -1,10 +1,13 @@
 import { isSearchFaviconHost } from '@pulpo/contracts/search'
 import { Ellipsis, Globe2, Image, Pin, Search } from 'lucide-react'
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import type { SearchResponse } from './api'
 import { ImageResultFilters } from './ImageResultFilters'
 import { ImageViewer } from './ImageViewer'
-import { defaultImageRefinements, hasImageRefinements, matchesImageRefinements, type ImageRefinements } from './image-refinements'
+import {
+  defaultImageRefinements, hasImageFilters, imageSources, imageSourceTime, matchesImageRefinements, orderImageEntries,
+  type ImageRefinements,
+} from './image-refinements'
 import { KnowledgeCard } from './KnowledgeCard'
 import { safeHttpUrl, type SearchLocation } from './navigation'
 import { domainRule, type DomainRule, type Preferences } from './preferences'
@@ -13,6 +16,7 @@ import { consecutiveSiteResults, resultEntries, visibleEntries, type ResultWithU
 
 const wordPattern = /[\p{L}\p{N}][\p{L}\p{M}\p{N}]*/gu
 const commonWords = new Set(['and', 'are', 'for', 'how', 'the', 'this', 'was', 'what', 'where', 'which', 'with'])
+const imageBatchSize = 24
 
 function queryTerms(query: string) {
   const withoutOperators = query.replace(/(^|\s)-?[a-z][a-z-]*:(?:"[^"]*"|\S+)/gi, '$1')
@@ -58,14 +62,15 @@ function SiteIcon({ host }: { host: string }) {
   </span>
 }
 
-function ImageThumbnail({ image, thumbnail, title, open }: {
+function ImageThumbnail({ image, thumbnail, title, contain, open }: {
   image: string | undefined
   thumbnail: string | undefined
   title: string
+  contain: boolean
   open: (opener: HTMLButtonElement) => void
 }) {
   return <button type="button" className="image-preview" aria-label={'Preview image: ' + title} aria-haspopup="dialog"
-    onClick={event => open(event.currentTarget)}>
+    data-contain={contain || undefined} onClick={event => open(event.currentTarget)}>
     <ResultImage sources={[thumbnail, image]} alt="" lazy fallback={<Image size={26} aria-hidden="true" />} />
   </button>
 }
@@ -88,10 +93,12 @@ function ResultItem({ entry, additional, preview, media, newTab, setDomain, show
   const title = result.title || host
   const thumbnail = media ? safeHttpUrl(result.thumbnailUrl) ?? safeHttpUrl(result.imageUrl) : undefined
   const mediaDetails = media ? [result.creatorName, result.duration].filter(Boolean).join(' · ') : ''
+  const dimensions = result.imageDimensions
+  const containImage = Boolean(dimensions && (dimensions.width >= 2 * dimensions.height || dimensions.height >= 1.6 * dimensions.width))
   return (
     <li className="result">
       {preview && <ImageThumbnail key={result.imageUrl + ' ' + result.thumbnailUrl}
-        thumbnail={result.thumbnailUrl} image={result.imageUrl} title={title} open={preview} />}
+        thumbnail={result.thumbnailUrl} image={result.imageUrl} title={title} contain={containImage} open={preview} />}
       {thumbnail && <a className="result-media" href={url.href} target={target} rel="noreferrer" tabIndex={-1} aria-hidden="true">
         <ResultImage key={thumbnail.href} sources={[thumbnail.href, result.imageUrl]} alt="" lazy fallback={<Image size={24} aria-hidden="true" />} />
       </a>}
@@ -166,24 +173,31 @@ interface ResultsProps {
   setDomain: (host: string, rule: DomainRule | undefined) => void
   onQuery: (query: string) => void
   onClearScope?: () => void
+  imageRefinements?: { value: ImageRefinements; update: (value: ImageRefinements) => void }
 }
 
-export function Results({ data, location, preferences, setDomain, onQuery, onClearScope }: ResultsProps) {
+export function Results({ data, location, preferences, setDomain, onQuery, onClearScope, imageRefinements }: ResultsProps) {
   const [expandedQuery, setExpandedQuery] = useState<string | null>(null)
   const [preview, setPreview] = useState<{ entries: ResultWithUrl[]; startIndex: number; opener: HTMLButtonElement }>()
   const [imageRefinement, setImageRefinement] = useState<{ query: string; value: ImageRefinements }>()
+  const [galleryLimit, setGalleryLimit] = useState(imageBatchSize)
+  const gallery = useRef<HTMLOListElement>(null)
+  const firstRevealed = useRef<number>(undefined)
   const showHidden = expandedQuery === location.query
   const images = location.category === 'images'
   const media = location.category === 'videos' || location.category === 'podcasts'
   const results = resultEntries(data, preferences)
   const hiddenCount = results.filter(item => item.rule === 'hide').length
   const visible = visibleEntries(results, showHidden)
-  const refinements = imageRefinement?.query === location.query ? imageRefinement.value : defaultImageRefinements
-  const refiningImages = images && hasImageRefinements(refinements)
-  const shown = refiningImages ? visible.filter(entry => matchesImageRefinements(entry.result, refinements)) : visible
+  const refinements = imageRefinements?.value ?? (imageRefinement?.query === location.query ? imageRefinement.value : defaultImageRefinements)
+  const refiningImages = images && hasImageFilters(refinements)
+  const matching = refiningImages ? visible.filter(entry => matchesImageRefinements(entry, refinements)) : visible
+  const ordered = images ? orderImageEntries(matching, refinements.order) : matching
+  const shown = images ? ordered.slice(0, galleryLimit) : ordered
   const groups = consecutiveSiteResults(shown, location.category === 'web' && !/\bsite:/i.test(location.query))
   const withoutDimensions = images ? visible.filter(entry => !entry.result.imageDimensions).length : 0
-  const noMatchingImages = refiningImages && visible.length > 0 && shown.length === 0
+  const noMatchingImages = refiningImages && (visible.length > 0 || !hiddenCount) && shown.length === 0
+  const imagesToReveal = Math.min(imageBatchSize, ordered.length - shown.length)
   const answerUrl = safeHttpUrl(data.answer?.url)
   const knowledgeUrl = safeHttpUrl(data.knowledge?.url)
   const knowledge = knowledgeUrl && domainRule(knowledgeUrl.hostname.replace(/\.$/, ''), preferences.domains) !== 'hide'
@@ -194,8 +208,21 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
     ? (host: string) => onQuery(location.query + ' site:' + host)
     : undefined
 
+  useLayoutEffect(() => {
+    const index = firstRevealed.current
+    if (index === undefined) return
+    firstRevealed.current = undefined
+    gallery.current?.children[index]?.querySelector<HTMLButtonElement>('.image-preview')?.focus()
+  }, [shown.length])
+
+  function updateImageRefinements(next: ImageRefinements) {
+    setGalleryLimit(imageBatchSize)
+    if (imageRefinements) imageRefinements.update(next)
+    else setImageRefinement({ query: location.query, value: next })
+  }
+
   return (
-    <div className="results-body">
+    <div className={images ? 'results-body image-results-body' : 'results-body'}>
       {knowledge && knowledgeUrl && <KnowledgeCard knowledge={knowledge} url={knowledgeUrl} newTab={preferences.newTab} />}
       <div className="results-column" tabIndex={-1}>
         <div className="sr-only" role="status" aria-live="polite">{shown.length} results for {location.query}</div>
@@ -208,16 +235,17 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
             </a>}
           </aside>
         )}
-        {images && (withoutDimensions < visible.length || refiningImages) && (
-          <ImageResultFilters value={refinements} update={value => setImageRefinement({ query: location.query, value })}
-            shown={shown.length} total={visible.length} withoutDimensions={withoutDimensions} />
+        {images && (
+          <ImageResultFilters value={refinements} update={updateImageRefinements}
+            shown={shown.length} total={visible.length} matches={ordered.length} withoutDimensions={withoutDimensions}
+            hasSourceDates={visible.some(entry => imageSourceTime(entry.result.publishedAt) !== undefined)} sources={imageSources(visible)} />
         )}
         {shown.length > 0 ? (
-          <ol className={images ? 'results-list image-grid' : 'results-list'}>
+          <ol ref={images ? gallery : undefined} className={images ? 'results-list image-grid' : 'results-list'}>
             {groups.map(({ lead: entry, additional }, index) => (
               <ResultItem key={entry.url.href + (entry.result.imageUrl ?? '')} entry={entry}
                 additional={additional}
-                preview={images ? opener => setPreview({ entries: shown, startIndex: index, opener }) : undefined}
+                preview={images ? opener => setPreview({ entries: ordered, startIndex: index, opener }) : undefined}
                 media={media}
                 newTab={preferences.newTab} setDomain={setDomain} showHidden={showHidden} searchSite={searchSite} terms={terms} />
             ))}
@@ -225,10 +253,17 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
         ) : !data.answer && !knowledge && (
           <section className="search-message">
             <h2>{noMatchingImages ? 'No images match these filters' : hiddenCount ? 'All results are hidden' : 'No results found'}</h2>
+            {noMatchingImages && <p>{data.hasMore ? 'Clear the image filters or try the next results page.' : 'Clear the image filters to see all images on this page.'}</p>}
             {!noMatchingImages && !hiddenCount && <p>Try fewer words or change your filters.</p>}
             {!noMatchingImages && !hiddenCount && onClearScope && <button className="secondary-button" onClick={onClearScope}>Search all sites</button>}
           </section>
         )}
+        {images && imagesToReveal > 0 && <div className="image-show-more">
+          <button type="button" className="secondary-button" onClick={() => {
+            firstRevealed.current = shown.length
+            setGalleryLimit(current => current + imageBatchSize)
+          }}>Show {imagesToReveal} more {imagesToReveal === 1 ? 'image' : 'images'} on this page</button>
+        </div>}
         {hiddenCount > 0 && <button className="text-button hidden-toggle" onClick={() => setExpandedQuery(showHidden ? null : location.query)}>
           {showHidden ? 'Hide filtered results' : `Show ${hiddenCount} hidden ${hiddenCount === 1 ? 'result' : 'results'}`}
         </button>}

@@ -2,8 +2,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { webToolProviderSchema, type WebToolProvider } from '@pulpo/contracts'
+import { searchDateRange } from '@pulpo/contracts/search'
 import { releaseMeteredBudget, reserveMeteredBudget, settleMeteredBudget } from '../accounting/service.js'
-import { KAGI_MAX_SEARCH_PAGE } from '../agent/kagi.js'
+import { KAGI_IMAGE_RESULT_LIMIT, KAGI_MAX_SEARCH_PAGE } from '../agent/kagi.js'
 import { basicSearchCategories, searchCategories, type ProviderSearchInput, type SearchCategory, type SearchResults } from '../agent/search-results.js'
 import { availableWebSearchProviders, billedPrice, createWebProviderClients } from '../agent/web-tools.js'
 import { requireUser } from '../auth/service.js'
@@ -23,6 +24,9 @@ const providerCapabilities: Record<WebToolProvider, { categories: readonly Searc
   firecrawl: { categories: basicSearchCategories, maxPage: 1 },
 }
 const dates = ['day', 'week', 'month', 'year'] as const
+const customDateRanges: readonly SearchCategory[] = ['web', 'news']
+const dateRangeSchema = z.strictObject({ from: z.string().length(10), to: z.string().length(10) })
+  .refine(range => Boolean(searchDateRange(range.from, range.to)), 'Choose valid dates with the start on or before the end.')
 const searchInputSchema = z.object({
   query: z.string().trim().min(1).max(500),
   providers: z.array(webToolProviderSchema).min(1).max(2)
@@ -34,8 +38,13 @@ const searchInputSchema = z.object({
   scope: z.enum(searchScopes).optional(),
   region: z.string().regex(/^[a-z]{2}$/i, 'Choose a two-letter country code').toUpperCase().optional(),
   date: z.enum(dates).optional(),
+  dateRange: dateRangeSchema.optional(),
 }).strict().refine(input => !input.scope || input.category === 'web', {
   path: ['scope'], message: 'Search focus applies to web results',
+}).refine(input => !input.date || !input.dateRange, {
+  path: ['dateRange'], message: 'Choose a preset or a custom date range.',
+}).refine(input => !input.dateRange || customDateRanges.includes(input.category), {
+  path: ['dateRange'], message: 'Custom dates are available for Web and News.',
 })
 
 async function readSearchSettings() {
@@ -93,7 +102,7 @@ export function registerSearchRoutes(app: FastifyInstance) {
       weather: true,
       ...(getConfig().SEARCH_BRAVE_PLACES_API_KEY ? { places: placesCapability } : {}),
       providers: defaultOrder.map((id) => ({
-        id, ...providerCapabilities[id], dates, region: true, priceMicros: billedPrice(id, 'search', settings),
+        id, ...providerCapabilities[id], dates, customDateRanges, region: true, priceMicros: billedPrice(id, 'search', settings),
       })),
     }
   })
@@ -163,6 +172,7 @@ export function registerSearchRoutes(app: FastifyInstance) {
     const clients = createWebProviderClients(settings, getConfig().ENCRYPTION_KEY)
     const providerInput: ProviderSearchInput = {
       query: filters.query, limit: input.limit, page: input.page, category: input.category, region: input.region, timeRelative: input.date,
+      ...(input.dateRange ? { dateRange: input.dateRange } : {}),
       ...(filters.includeDomains.length ? { includeDomains: filters.includeDomains } : {}),
       ...(filters.excludeDomains.length ? { excludeDomains: filters.excludeDomains } : {}),
     }
@@ -194,7 +204,10 @@ export function registerSearchRoutes(app: FastifyInstance) {
           try {
             const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(8000)])
             signal.throwIfAborted()
-            result = filterSearchHosts(await clients[provider]!.searchResults(providerInput, signal), filters)
+            const requestInput = provider === 'kagi' && input.category === 'images'
+              ? { ...providerInput, limit: KAGI_IMAGE_RESULT_LIMIT }
+              : providerInput
+            result = filterSearchHosts(await clients[provider]!.searchResults(requestInput, signal), filters)
             signal.throwIfAborted()
           } catch {
             controller.signal.throwIfAborted()
