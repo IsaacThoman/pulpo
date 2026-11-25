@@ -2085,12 +2085,14 @@ export const useChat = create<ChatState>()((set, get) => ({
     const selectionVersion = optimistic?.selectionVersion
       ?? branchSelectionIntents.select(chatId, responseId).version
     if (optimistic) get().setDetailedChat(optimistic.chat)
+    let dispatched = false
     void enqueueChatMutation(chatId, async () => {
       const prepared = computerChoiceForReply ? await prepareComputerSend(computerChoiceForReply) : undefined
       if (prepared && !prepared.ok) throw new Error(prepared.message)
       const computer = prepared?.selection
       if (computer) linkComputerSessionToResponse(computer.sessionId, responseId)
       try {
+        dispatched = true
         return await optimisticRequest('POST', `/api/messages/${targetId}/regenerate`, {
           timeZone: deviceTimeZone(),
           clientId: responseId,
@@ -2119,8 +2121,9 @@ export const useChat = create<ChatState>()((set, get) => ({
         : error instanceof Error ? error.message : 'Unable to regenerate the response'
       // Retrying a refused regenerate keeps the new attempt in its place, so its error stays in view.
       let failed = failOptimisticResponse(chatId, responseId, replacedId ? responseId : messageId, selectionVersion, message)
-      // A 4xx means the server stored nothing; after a network or server error the reply may still exist.
-      const refused = error instanceof ApiError && error.status >= 400 && error.status < 500
+      // The server stored nothing if the request never left (e.g. computer setup failed) or got a 4xx;
+      // after a network or server error the reply may still exist.
+      const refused = !dispatched || (error instanceof ApiError && error.status >= 400 && error.status < 500)
       if (refused && failed?.responses?.some((response) => response.id === responseId)) {
         failed = patchLocalResponse(chatId, responseId, (response) => ({ ...response, failedRegenerate: { sourceResponseId: targetId } }))
         if (replacedId) failed = dropLocalResponse(chatId, replacedId)
