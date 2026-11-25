@@ -6,7 +6,7 @@ import { agentRuns, apiKeys, applicationSettings, billingAccounts, billingOrders
 import { utcDayStart } from '../billing/plans.js'
 import { assertDailySpendAvailable, loadDailySpend } from '../billing/usage-tiers.js'
 import { publishStateChange } from '../responses/events.js'
-import { chargeMeteredUsage, closeAbandonedReservation, extendBudgetReservationFixedCost, releaseBudget, releaseBudgetReservationFixedCost, reserveBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget } from './service.js'
+import { chargeMeteredUsage, closeAbandonedReservation, extendBudgetReservationFixedCost, releaseBudget, releaseBudgetReservationFixedCost, releaseMeteredBudget, reserveBudget, reserveMeteredBudget, resizeBudgetReservation, retainBudgetReservation, settleBudget, settleMeteredBudget } from './service.js'
 
 vi.mock('../responses/events.js', () => ({ publishStateChange: vi.fn() }))
 vi.mock('../config.js', async original => {
@@ -77,6 +77,7 @@ describe.skipIf(!enabled)('budget-aware reservations in PostgreSQL', () => {
     if (poolIds.length) await db.delete(pools).where(inArray(pools.id, poolIds))
     if (userIds.length) {
       await db.delete(usageEvents).where(inArray(usageEvents.userId, userIds))
+      await db.delete(budgetReservations).where(inArray(budgetReservations.userId, userIds))
       await db.delete(chats).where(inArray(chats.userId, userIds))
       await db.delete(users).where(inArray(users.id, userIds))
     }
@@ -118,6 +119,36 @@ describe.skipIf(!enabled)('budget-aware reservations in PostgreSQL', () => {
     expect(results.filter(result => result.status === 'rejected')).toHaveLength(1)
     const rows = await db.select().from(budgetReservations).where(eq(budgetReservations.userId, userId))
     expect(rows.reduce((sum, row) => sum + row.amountMicros, 0)).toBe(12_001)
+  })
+
+  it('holds standalone search funding against chat, then settles exact cost only once', async () => {
+    const userId = await account(4_000, 8_000)
+    const reservationId = await reserveMeteredBudget({ userId, costMicros: 10_000 })
+    const input = await request(userId, 2_000)
+    await expect(reserveBudget({ ...input, minimumOutputReservationTokens: 2_000 })).rejects.toMatchObject({ code: 'insufficient_balance' })
+    await expect(reserveMeteredBudget({ userId, costMicros: 3_000 })).rejects.toMatchObject({ code: 'insufficient_balance' })
+    const selection = { reservationId, costMicros: 10_000, type: 'web_search', metadata: { provider: 'kagi' } }
+    await expect(Promise.all([settleMeteredBudget(selection), settleMeteredBudget(selection)])).resolves.toEqual([10_000, 10_000])
+    await releaseMeteredBudget(reservationId)
+    expect(await spent(weeklyUsagePeriods, userId)).toBe(8_000)
+    expect(await spent(fiveHourUsagePeriods, userId)).toBe(8_000)
+    const [user] = await db.select().from(users).where(eq(users.id, userId))
+    expect(user?.balanceMicros).toBe(2_000)
+    const ledger = await db.select().from(creditLedger).where(eq(creditLedger.userId, userId))
+    expect(ledger).toEqual([expect.objectContaining({
+      responseId: null, type: 'web_search', amountMicros: -2_000,
+      metadata: expect.objectContaining({ provider: 'kagi', reservationId, totalCostMicros: 10_000, weeklyCostMicros: 8_000 }),
+    })])
+  })
+
+  it('releases a failed standalone search without charging the user', async () => {
+    const userId = await account(10_000)
+    const first = await reserveMeteredBudget({ userId, costMicros: 10_000 })
+    await releaseMeteredBudget(first)
+    const second = await reserveMeteredBudget({ userId, costMicros: 10_000 })
+    expect(first).not.toBe(second)
+    expect(await db.select().from(creditLedger).where(eq(creditLedger.userId, userId))).toEqual([])
+    await releaseMeteredBudget(second)
   })
 
   it('uses the tighter subscription window plus available balance', async () => {

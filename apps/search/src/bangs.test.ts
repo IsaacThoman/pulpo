@@ -1,0 +1,37 @@
+import { describe, expect, it } from 'vitest'
+import { resolveBang, searchBangs, validateCustomBang } from './bangs'
+
+describe('bangs', () => {
+  it('redirects a standalone bang anywhere in a query with safely encoded terms', () => {
+    expect(resolveBang('climate & !W oceans')?.url).toBe('https://en.wikipedia.org/w/index.php?search=climate%20%26%20oceans')
+    expect(resolveBang('hello!w world')).toBeNull()
+    expect(resolveBang('!unknown hello')).toBeNull()
+  })
+
+  it('keeps unknown and subsequent bang tokens in the destination query', () => {
+    expect(resolveBang('!noop !gh fetch !g')?.url).toBe('https://github.com/search?q=!noop%20fetch%20!g')
+  })
+
+  it('finds bangs by exact shortcut first, prefix, or name', () => {
+    expect(searchBangs('!g')[0]?.trigger).toBe('g')
+    expect(searchBangs('duckduckgo').map(bang => bang.trigger)).toEqual(['ddg'])
+  })
+
+  it('allows a browser shortcut to override a built-in bang', () => {
+    const custom = { trigger: '!G', name: 'My search', url: 'https://example.org/find/{query}?again={query}' }
+    expect(validateCustomBang(custom)).toBeNull()
+    expect(resolveBang('!g /a?b#c', [custom])?.url).toBe('https://example.org/find/%2Fa%3Fb%23c?again=%2Fa%3Fb%23c')
+  })
+
+  it.each([
+    'javascript:alert("{query}")',
+    'https://{query}.example.org/?q={query}',
+    'https://user:{query}@example.org/?q={query}',
+    'https://example.org/?q=static#{query}',
+    'https://example.org/?q=static',
+  ])('ignores unsafe or invalid custom URL %s', url => {
+    const custom = { trigger: 'mine', name: 'Custom', url }
+    expect(validateCustomBang(custom)).toBeTruthy()
+    expect(resolveBang('test !mine', [custom])).toBeNull()
+  })
+})

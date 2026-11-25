@@ -232,6 +232,17 @@ export const sessions = pgTable('sessions', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [uniqueIndex('sessions_token_hash_unique').on(table.tokenHash), index('sessions_user_idx').on(table.userId)])
 
+export const searchAuthCodes = pgTable('search_auth_codes', {
+  tokenHash: text('token_hash').primaryKey(),
+  sourceSessionId: uuid('source_session_id').notNull().references(() => sessions.id, { onDelete: 'cascade' }),
+  pkceChallenge: text('pkce_challenge').notNull(),
+  searchOrigin: text('search_origin').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+}, (table) => [
+  index('search_auth_codes_expiry_idx').on(table.expiresAt),
+  index('search_auth_codes_session_idx').on(table.sourceSessionId),
+])
+
 export const passkeyCeremonies = pgTable('passkey_ceremonies', {
   tokenHash: text('token_hash').primaryKey(),
   challenge: text('challenge').notNull(),
@@ -1200,7 +1211,8 @@ export const budgetReservations = pgTable('budget_reservations', {
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   apiKeyId: uuid('api_key_id').references(() => apiKeys.id),
-  responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
+  // Standalone metered actions reserve funds without creating a chat response.
+  responseId: uuid('response_id').references(() => responses.id, { onDelete: 'cascade' }),
   poolId: uuid('pool_id').references(() => pools.id, { onDelete: 'set null' }),
   amountMicros: bigint('amount_micros', { mode: 'number' }).notNull(),
   weeklyPeriodStart: timestamp('weekly_period_start', { withTimezone: true }),
@@ -1229,6 +1241,7 @@ export const budgetReservations = pgTable('budget_reservations', {
 }, (table) => [
   uniqueIndex('reservation_response_unique').on(table.responseId),
   index('reservation_user_status_idx').on(table.userId, table.status),
+  index('reservation_standalone_pending_idx').on(table.createdAt).where(sql`${table.responseId} is null and ${table.status} = 'pending'`),
   check('reservation_source_split_check', sql`${table.weeklyReservedMicros} >= 0 and ${table.sharedReservedMicros} >= 0 and ${table.balanceReservedMicros} >= 0 and ${table.customReservedMicros} >= 0 and ${table.customReservedMicros} + ${table.weeklyReservedMicros} + ${table.sharedReservedMicros} + ${table.balanceReservedMicros} = ${table.amountMicros}`),
   check('reservation_five_hour_match_check', sql`${table.fiveHourReservedMicros} >= 0 and ${table.fiveHourReservedMicros} = ${table.weeklyReservedMicros}`),
   check('reservation_extra_check', sql`${table.extraReservedMicros} >= 0`),

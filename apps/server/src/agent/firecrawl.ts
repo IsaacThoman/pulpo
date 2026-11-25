@@ -1,16 +1,20 @@
 import { publicHttpsUrl, webFetchOutput, type KagiSearchInput, type KagiResult, type WebPage } from './kagi.js'
+import { normalizeResult, uniqueResults, type ProviderSearchInput, type SearchCategory, type SearchResults } from './search-results.js'
 
 export const FIRECRAWL_DEFAULT_API_BASE = 'https://api.firecrawl.dev/v2'
 
 type FirecrawlSearchResult = {
   title?: string
   description?: string
+  snippet?: string
   url?: string
+  imageUrl?: string
+  date?: string
 }
 
 type FirecrawlSearchResponse = {
   success?: boolean
-  data?: { web?: FirecrawlSearchResult[] }
+  data?: Partial<Record<SearchCategory, FirecrawlSearchResult[]>>
   id?: string
   error?: string
   message?: string
@@ -82,20 +86,7 @@ export class FirecrawlClient {
 
   async search(input: KagiSearchInput, signal?: AbortSignal): Promise<FirecrawlResult> {
     const limit = Math.min(20, Math.max(1, Math.floor(input.limit ?? 10)))
-    const includeDomains = cleanDomains(input.includeDomains)
-    const excludeDomains = cleanDomains(input.excludeDomains)
-    const query = includeDomains && excludeDomains
-      ? `${input.query.trim()} ${excludeDomains.map((domain) => `-site:${domain}`).join(' ')}`
-      : input.query.trim()
-    const payload = await this.post<FirecrawlSearchResponse>('/search', {
-      query,
-      limit,
-      sources: ['web'],
-      safe: true,
-      ...(includeDomains ? { includeDomains } : {}),
-      ...(!includeDomains && excludeDomains ? { excludeDomains } : {}),
-      ...(input.timeRelative ? { tbs: `qdr:${{ day: 'd', week: 'w', month: 'm' }[input.timeRelative]}` } : {}),
-    }, signal)
+    const payload = await this.querySearch(input, limit, signal)
     const rows = (payload.data?.web ?? []).filter((row): row is Required<Pick<FirecrawlSearchResult, 'title' | 'url'>> & FirecrawlSearchResult => (
       typeof row.title === 'string' && Boolean(row.title.trim()) && typeof row.url === 'string' && Boolean(row.url.trim())
     )).slice(0, limit)
@@ -110,6 +101,44 @@ export class FirecrawlClient {
       ].join('\n')).join('\n\n'),
       requestId: payload.id,
     }
+  }
+
+  async searchResults(input: ProviderSearchInput, signal?: AbortSignal): Promise<SearchResults> {
+    const category = input.category ?? 'web'
+    const limit = Math.min(20, Math.max(1, Math.floor(input.limit ?? 10)))
+    const payload = await this.querySearch(input, limit, signal)
+    if (!payload.data || typeof payload.data !== 'object' || Array.isArray(payload.data)) {
+      throw new FirecrawlError('Firecrawl search response did not contain a result set')
+    }
+    const group = payload.data[category]
+    const rows = Array.isArray(group) ? group : []
+    return {
+      results: uniqueResults(rows.map((row) => normalizeResult({
+        url: row?.url,
+        title: row?.title,
+        snippet: row?.snippet ?? row?.description,
+        imageUrl: row?.imageUrl,
+        publishedAt: row?.date,
+      })), limit, category),
+    }
+  }
+
+  private async querySearch(input: ProviderSearchInput, limit: number, signal?: AbortSignal): Promise<FirecrawlSearchResponse> {
+    const includeDomains = cleanDomains(input.includeDomains)
+    const excludeDomains = cleanDomains(input.excludeDomains)
+    const query = includeDomains && excludeDomains
+      ? `${input.query.trim()} ${excludeDomains.map((domain) => `-site:${domain}`).join(' ')}`
+      : input.query.trim()
+    return await this.post<FirecrawlSearchResponse>('/search', {
+      query,
+      limit,
+      sources: [input.category ?? 'web'],
+      safe: true,
+      ...(includeDomains ? { includeDomains } : {}),
+      ...(!includeDomains && excludeDomains ? { excludeDomains } : {}),
+      ...(input.timeRelative ? { tbs: `qdr:${{ day: 'd', week: 'w', month: 'm', year: 'y' }[input.timeRelative]}` } : {}),
+      ...(input.region ? { country: input.region } : {}),
+    }, signal)
   }
 
   async extract(url: string, maxBytes: number, maxAgeSeconds: number, signal?: AbortSignal): Promise<FirecrawlResult> {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
-import { Link, Navigate, useNavigate } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Loader2, Server, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { browserSupportsWebAuthn, browserSupportsWebAuthnAutofill, cancelPasskeyCeremony } from '@/lib/passkeys'
 import { useAuth } from '@/stores/auth'
 import { isDesktopRuntime } from '@/lib/runtime'
+import { searchConnectLoginState } from '@/lib/search-connect'
 import { ui } from '@/i18n/ui'
 import { SignedInAccountChooser } from '@/components/layout/AccountSwitcher'
 import { AuthFormError, PasswordVisibilityToggle } from './auth-form'
@@ -25,6 +26,8 @@ export function LoginPage() {
   const instanceUrl = useAuth((s) => s.instanceUrl)
   const chooseInstance = useAuth((s) => s.chooseInstance)
   const navigate = useNavigate()
+  const loginState = searchConnectLoginState(useLocation().state)
+  const returnTo = loginState?.from ?? '/'
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -44,14 +47,14 @@ export function LoginPage() {
       const result = await passkeyLogin(true)
       if (!active || !result.ok) return
       const currentUser = useAuth.getState().user
-      navigate(currentUser?.role === 'pending' ? '/pending' : '/')
+      navigate(currentUser?.role === 'pending' ? '/pending' : returnTo, { replace: returnTo !== '/' })
     })
     return () => { active = false; cancelPasskeyCeremony() }
-  }, [navigate, passkeyLogin, passkeySupported, setupRequired, user])
+  }, [navigate, passkeyLogin, passkeySupported, setupRequired, user, returnTo])
 
   if (user?.role === 'pending') return <Navigate to="/pending" replace />
-  if (user) return <Navigate to="/" replace />
-  if (setupRequired) return <Navigate to="/setup" replace />
+  if (user) return <Navigate to={returnTo} replace />
+  if (setupRequired) return <Navigate to="/setup" state={loginState} replace />
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -69,12 +72,12 @@ export function LoginPage() {
       return
     }
     const currentUser = useAuth.getState().user
-    navigate(currentUser?.role === 'pending' ? '/pending' : '/')
+    navigate(currentUser?.role === 'pending' ? '/pending' : returnTo, { replace: Boolean(loginState) })
   }
 
   return (
     <>
-      {!twoFactorStep && <SignedInAccountChooser />}
+      {!twoFactorStep && <SignedInAccountChooser returnTo={loginState?.from} />}
       <div className="rounded-xl border bg-card p-6 shadow-xs sm:p-8">
       <div className="mb-6">
         <h1 className="text-lg font-semibold">{twoFactorStep ? t('auth.verifyIdentity') : t('auth.welcomeBack')}</h1>
@@ -151,10 +154,10 @@ export function LoginPage() {
 
       {!twoFactorStep && (
         <div className="mt-4 flex flex-col items-center gap-2">
-          <Link to="/login/options" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+          <Link to="/login/options" state={loginState} className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
             {t('auth.moreLoginOptions')}
           </Link>
-          <Link to="/forgot-password" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+          <Link to="/forgot-password" state={loginState} className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
             {t('auth.forgotPassword')}
           </Link>
         </div>
@@ -163,7 +166,7 @@ export function LoginPage() {
       {!twoFactorStep && signupEnabled && (
         <p className="mt-6 text-center text-sm text-muted-foreground">
           {t('auth.noAccount')}{' '}
-          <Link to="/signup" className="font-medium text-foreground underline-offset-4 hover:underline">
+          <Link to="/signup" state={loginState} className="font-medium text-foreground underline-offset-4 hover:underline">
             {t('auth.signUp')}
           </Link>
         </p>

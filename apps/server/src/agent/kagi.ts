@@ -1,4 +1,5 @@
 import { truncateUtf8 } from './output.js'
+import { normalizeResult, resultText, resultUrl, uniqueResults, type ProviderSearchInput, type SearchResults } from './search-results.js'
 
 const KAGI_API_BASE = 'https://kagi.com/api/v1'
 
@@ -6,7 +7,14 @@ export const KAGI_SEARCH_COST_MICROS = 12_000
 export const KAGI_EXTRACT_COST_MICROS = 4_000
 
 type KagiMeta = { trace?: string; ms?: number }
-type KagiSearchResult = { url: string; title: string; snippet?: string; time?: string }
+type KagiSearchResult = {
+  url: string
+  title: string
+  snippet?: string
+  time?: string
+  image?: { url?: string }
+  props?: { question?: string; query?: string }
+}
 type KagiSearchResponse = { meta?: KagiMeta; data?: Record<string, KagiSearchResult[]>; error?: Array<{ message?: string }> }
 type KagiExtractResponse = { meta?: KagiMeta; data?: Array<{ url: string; markdown?: string | null; error?: string }>; error?: Array<{ message?: string }> }
 
@@ -82,20 +90,7 @@ export class KagiClient {
 
   async search(input: KagiSearchInput, signal?: AbortSignal): Promise<KagiResult> {
     const limit = Math.min(20, Math.max(1, Math.floor(input.limit ?? 10)))
-    const sitesIncluded = cleanDomains(input.includeDomains)
-    const sitesExcluded = cleanDomains(input.excludeDomains)
-    const payload = await this.post<KagiSearchResponse>('/search', {
-      query: input.query.trim(),
-      workflow: 'search',
-      format: 'json',
-      limit,
-      safe_search: true,
-      ...((sitesIncluded || sitesExcluded || input.timeRelative) ? { lens: {
-        ...(sitesIncluded ? { sites_included: sitesIncluded } : {}),
-        ...(sitesExcluded ? { sites_excluded: sitesExcluded } : {}),
-        ...(input.timeRelative ? { time_relative: input.timeRelative } : {}),
-      } } : {}),
-    }, signal)
+    const payload = await this.querySearch(input, limit, signal)
     const results = Object.entries(payload.data ?? {}).flatMap(([kind, rows]) => (
       Array.isArray(rows) ? rows.map((row) => ({ kind, ...row })) : []
     )).filter((row) => row.url && row.title).slice(0, limit)
@@ -106,6 +101,58 @@ export class KagiClient {
       ...(row.snippet ? [`   ${row.snippet.replace(/\s+/g, ' ').trim()}`] : []),
     ].join('\n')).join('\n\n')
     return { output, trace: payload.meta?.trace }
+  }
+
+  async searchResults(input: ProviderSearchInput, signal?: AbortSignal): Promise<SearchResults> {
+    const category = input.category ?? 'web'
+    const limit = Math.min(20, Math.max(1, Math.floor(input.limit ?? 10)))
+    const payload = await this.querySearch(input, limit, signal)
+    if (!payload.data || typeof payload.data !== 'object' || Array.isArray(payload.data)) {
+      throw new Error('Kagi search response did not contain a result set')
+    }
+    const group = (key: string) => Array.isArray(payload.data?.[key]) ? payload.data[key] : []
+    const rows = category === 'web' ? group('search') : category === 'news' ? group('news') : group('image')
+    const results = uniqueResults(rows.map((row) => normalizeResult({
+      url: row?.url,
+      title: row?.title,
+      snippet: row?.snippet,
+      imageUrl: row?.image?.url,
+      publishedAt: row?.time,
+    })), limit, category)
+    const related = [...new Set([
+      ...group('related_search').map((row) => resultText(row?.props?.query ?? row?.title, 200)),
+      ...group('adjacent_question').map((row) => resultText(row?.props?.question ?? row?.title, 200)),
+    ].filter(Boolean))].slice(0, 8)
+    const directAnswer = group('direct_answer')[0]
+    const title = resultText(directAnswer?.title, 300)
+    const snippet = resultText(directAnswer?.snippet, 1200)
+    const url = resultUrl(directAnswer?.url)
+    return {
+      results,
+      ...(related.length ? { related } : {}),
+      ...(title && snippet ? { answer: { title, snippet, ...(url ? { url } : {}) } } : {}),
+    }
+  }
+
+  private async querySearch(input: ProviderSearchInput, limit: number, signal?: AbortSignal): Promise<KagiSearchResponse> {
+    const sitesIncluded = cleanDomains(input.includeDomains)
+    const sitesExcluded = cleanDomains(input.excludeDomains)
+    const timeRelative = input.timeRelative === 'year' ? undefined : input.timeRelative
+    const after = input.timeRelative === 'year' ? new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10) : undefined
+    const payload = await this.post<KagiSearchResponse>('/search', {
+      query: input.query.trim(),
+      workflow: input.category && input.category !== 'web' ? input.category : 'search',
+      format: 'json',
+      limit,
+      filters: { safe_search: true, ...(input.region ? { region: input.region } : {}), ...(after ? { after } : {}) },
+      ...((sitesIncluded || sitesExcluded || timeRelative) ? { lens: {
+        ...(sitesIncluded ? { sites_included: sitesIncluded } : {}),
+        ...(sitesExcluded ? { sites_excluded: sitesExcluded } : {}),
+        ...(timeRelative ? { time_relative: timeRelative } : {}),
+      } } : {}),
+    }, signal)
+    if (payload.error?.length) throw new Error(errorMessage(502, payload))
+    return payload
   }
 
   async extract(url: string, maxBytes: number, signal?: AbortSignal): Promise<KagiResult> {

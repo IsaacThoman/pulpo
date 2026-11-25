@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { eq, inArray } from 'drizzle-orm'
 import { db, queryClient } from '../database/client.js'
 import { budgetReservations, chats, modelPricingVersions, models, providerConnections, requestLogs, responses, users } from '../database/schema.js'
-import { reserveBudget } from '../accounting/service.js'
+import { reserveBudget, reserveMeteredBudget } from '../accounting/service.js'
 
 const { advanceMessageQueue, publishSnapshot } = vi.hoisted(() => ({ advanceMessageQueue: vi.fn(), publishSnapshot: vi.fn() }))
 vi.mock('./events.js', () => ({ publishSnapshot, publishStateChange: vi.fn() }))
@@ -24,12 +24,17 @@ const userIds: string[] = []
 // The shared test database also holds other suites' reservations; only ours are dead.
 const dead = new Set<string>()
 const generationIsLive = async (responseId: string) => !dead.has(responseId)
-const afterGrace = () => new Date(Date.now() + ABANDONED_RESERVATION_GRACE_MS + 60_000)
+const beforeGrace = () => new Date(Date.now() - ABANDONED_RESERVATION_GRACE_MS - 60_000)
 
-async function reserved(status: typeof responses.$inferSelect.status, balanceMicros = 20_000) {
-  const userId = randomUUID(), chatId = randomUUID(), responseId = randomUUID()
+async function account(balanceMicros: number) {
+  const userId = randomUUID()
   userIds.push(userId)
   await db.insert(users).values({ id: userId, email: `${userId}@example.test`, username: userId, name: 'Abandoned QA', balanceMicros })
+  return userId
+}
+
+async function reserved(status: typeof responses.$inferSelect.status, balanceMicros = 20_000) {
+  const userId = await account(balanceMicros), chatId = randomUUID(), responseId = randomUUID()
   await db.insert(chats).values({ id: chatId, userId, modelId })
   await db.insert(responses).values({ id: responseId, userId, chatId, modelId, input: [], status })
   await db.insert(requestLogs).values({ id: randomUUID(), responseId, userId, requestedModelId: modelId, status })
@@ -38,6 +43,10 @@ async function reserved(status: typeof responses.$inferSelect.status, balanceMic
 }
 async function reservationOf(responseId: string) {
   return (await db.select().from(budgetReservations).where(eq(budgetReservations.responseId, responseId)))[0]!
+}
+
+async function ageReservation(id: string) {
+  await db.update(budgetReservations).set({ createdAt: beforeGrace() }).where(eq(budgetReservations.id, id))
 }
 
 describe.skipIf(!enabled)('abandoned reservation sweep in PostgreSQL', () => {
@@ -49,6 +58,7 @@ describe.skipIf(!enabled)('abandoned reservation sweep in PostgreSQL', () => {
   beforeEach(() => { dead.clear(); advanceMessageQueue.mockClear(); publishSnapshot.mockClear() })
   afterAll(async () => {
     if (userIds.length) {
+      await db.delete(budgetReservations).where(inArray(budgetReservations.userId, userIds))
       await db.delete(chats).where(inArray(chats.userId, userIds))
       await db.delete(users).where(inArray(users.id, userIds))
     }
@@ -60,7 +70,8 @@ describe.skipIf(!enabled)('abandoned reservation sweep in PostgreSQL', () => {
   it('releases holds of finished responses that no job owns', async () => {
     const cancelled = await reserved('cancelled')
     dead.add(cancelled.responseId)
-    await sweepAbandonedReservations({ generationIsLive, now: afterGrace() })
+    await ageReservation((await reservationOf(cancelled.responseId)).id)
+    await sweepAbandonedReservations({ generationIsLive })
     expect(await reservationOf(cancelled.responseId)).toMatchObject({ status: 'released' })
     const [response] = await db.select().from(responses).where(eq(responses.id, cancelled.responseId))
     expect(response!.status).toBe('cancelled')
@@ -70,7 +81,8 @@ describe.skipIf(!enabled)('abandoned reservation sweep in PostgreSQL', () => {
   it('fails running responses whose job is gone, then releases their holds', async () => {
     const stuck = await reserved('in_progress')
     dead.add(stuck.responseId)
-    await sweepAbandonedReservations({ generationIsLive, now: afterGrace() })
+    await ageReservation((await reservationOf(stuck.responseId)).id)
+    await sweepAbandonedReservations({ generationIsLive })
     expect(await reservationOf(stuck.responseId)).toMatchObject({ status: 'released' })
     const [response] = await db.select().from(responses).where(eq(responses.id, stuck.responseId))
     expect(response).toMatchObject({ status: 'failed', error: { message: 'Generation stopped unexpectedly', category: 'worker' } })
@@ -83,13 +95,22 @@ describe.skipIf(!enabled)('abandoned reservation sweep in PostgreSQL', () => {
   it('leaves holds alone while a job owns them or within the grace period', async () => {
     const live = await reserved('in_progress'), recent = await reserved('cancelled')
     dead.add(recent.responseId)
-    await sweepAbandonedReservations({ generationIsLive, now: afterGrace() })
+    await ageReservation((await reservationOf(live.responseId)).id)
+    await sweepAbandonedReservations({ generationIsLive })
     expect(await reservationOf(live.responseId)).toMatchObject({ status: 'pending' })
-    const fresh = await reserved('cancelled')
-    dead.add(fresh.responseId)
-    await sweepAbandonedReservations({ generationIsLive, now: new Date() })
-    expect(await reservationOf(fresh.responseId)).toMatchObject({ status: 'pending' })
+    expect(await reservationOf(recent.responseId)).toMatchObject({ status: 'pending' })
     const [response] = await db.select().from(responses).where(eq(responses.id, live.responseId))
     expect(response!.status).toBe('in_progress')
+  })
+
+  it('reclaims stale standalone holds and keeps active ones', async () => {
+    const userId = await account(20_000)
+    const stale = await reserveMeteredBudget({ userId, costMicros: 10_000 })
+    const fresh = await reserveMeteredBudget({ userId, costMicros: 6_000 })
+    await ageReservation(stale)
+    await sweepAbandonedReservations({ generationIsLive })
+    const rows = await db.select().from(budgetReservations).where(eq(budgetReservations.userId, userId))
+    expect(rows).toEqual([expect.objectContaining({ id: fresh, status: 'pending' })])
+    await expect(reserveMeteredBudget({ userId, costMicros: 14_000 })).resolves.toEqual(expect.any(String))
   })
 })

@@ -1,15 +1,17 @@
 import { useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { ArrowLeft, CheckCircle2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { apiRequest } from '@/lib/api'
+import { searchConnectLoginState } from '@/lib/search-connect'
 import { ui } from '@/i18n/ui'
 
 export function ForgotPasswordPage() {
   const { t } = useTranslation()
+  const loginState = searchConnectLoginState(useLocation().state)
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
@@ -37,7 +39,7 @@ export function ForgotPasswordPage() {
             {t('auth.checkEmailDescription', { email })}
           </p>
           <Button asChild className="mt-6 w-full" variant="outline">
-            <Link to="/login">{t('auth.backToSignIn')}</Link>
+            <Link to="/login" state={loginState}>{t('auth.backToSignIn')}</Link>
           </Button>
         </div>
       ) : (
@@ -70,6 +72,7 @@ export function ForgotPasswordPage() {
 
           <Link
             to="/login"
+            state={loginState}
             className="mt-6 flex items-center justify-center gap-1.5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           >
             <ArrowLeft className="size-3.5" />

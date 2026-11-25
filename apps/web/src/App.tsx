@@ -49,6 +49,7 @@ const AdminChatsPage = lazy(() => import('@/pages/admin/AdminChatsPage').then((m
 const AdminChatPage = lazy(() => import('@/pages/admin/AdminChatPage').then((module) => ({ default: module.AdminChatPage })))
 const AccountDeletionPage = lazy(() => import('@/pages/auth/AccountDeletionPage').then((module) => ({ default: module.AccountDeletionPage })))
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then((module) => ({ default: module.LoginPage })))
+const ConnectSearchPage = lazy(() => import('@/pages/auth/ConnectSearchPage').then((module) => ({ default: module.ConnectSearchPage })))
 const LoginOptionsPage = lazy(() => import('@/pages/auth/LoginOptionsPage').then((module) => ({ default: module.LoginOptionsPage })))
 const SetupPage = lazy(() => import('@/pages/auth/SetupPage').then((module) => ({ default: module.SetupPage })))
 const SignupPage = lazy(() => import('@/pages/auth/SignupPage').then((module) => ({ default: module.SignupPage })))
@@ -123,6 +124,7 @@ export default function App() {
           <Route path="setup" element={<LocalizedRoute><SetupPage /></LocalizedRoute>} />
           <Route path="account-deletion" element={<LocalizedRoute><AccountDeletionPage /></LocalizedRoute>} />
           <Route path="login" element={<LocalizedRoute><LoginPage /></LocalizedRoute>} />
+          <Route path="connect/search" element={<LocalizedRoute><ConnectSearchPage /></LocalizedRoute>} />
           <Route path="login/options" element={<LocalizedRoute><LoginOptionsPage /></LocalizedRoute>} />
           <Route path="signup" element={<LocalizedRoute><SignupPage /></LocalizedRoute>} />
           <Route path="forgot-password" element={<LocalizedRoute><ForgotPasswordPage /></LocalizedRoute>} />
