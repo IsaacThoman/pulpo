@@ -91,6 +91,7 @@ export function SearchFilters({
         if (event.key === 'Escape' && event.currentTarget.open) close()
       }}>
         <summary className="filter-trigger" ref={summary} aria-label={active ? label + ', ' + appliedLabels : label} data-active={active}
+          title={appliedLabels || label}
           onClick={() => { if (!menu.current?.open) setDraft(currentDraft) }}>
           <ListFilter size={16} aria-hidden="true" />
           <span>{appliedLabels || label}</span>

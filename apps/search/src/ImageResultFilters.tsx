@@ -106,9 +106,11 @@ export function ImageResultFilters({ value, update, shown, total, matches, witho
     menu.open = false
     menu.querySelector('summary')?.focus()
   }}>
-    <summary className="text-button">
+    <summary className="text-button" aria-label={active ? 'Image filters applied' : 'Refine images'}>
       <ListFilter className="image-refinement-icon" size={15} aria-hidden="true" />
-      {active ? 'Image filters applied' : 'Refine images'} <ChevronDown size={14} aria-hidden="true" />
+      <span className="image-refinement-label">{active ? 'Image filters applied' : 'Refine images'}</span>
+      <span className="image-refinement-short" aria-hidden="true">{active ? 'Filters on' : 'Refine'}</span>
+      <ChevronDown size={14} aria-hidden="true" />
     </summary>
     {controls}
   </details>

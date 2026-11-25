@@ -125,11 +125,12 @@ export function WeatherAnswer({ response, alerts, onLocation, onWeb, webExpanded
   return (
     <section className="answer weather-answer" aria-label="Weather forecast" data-wide-forecast={Boolean(forecast.hourly?.length && forecast.daily.length) || undefined}>
       <div className="weather-heading">
-        <div><h2>{placeLabel(place)}</h2><p>Forecast for {localTime.format(new Date(forecast.validAt))} local time</p></div>
-        <div className="weather-units" aria-label="Temperature unit">
-          <button className="text-button" aria-pressed={!fahrenheit} onClick={() => setFahrenheit(false)}>°C</button>
-          <button className="text-button" aria-pressed={fahrenheit} onClick={() => setFahrenheit(true)}>°F</button>
-        </div>
+        <h2>{placeLabel(place)}</h2>
+        <p>Forecast for {localTime.format(new Date(forecast.validAt))} local time</p>
+        <button className="text-button weather-web specialty-web-toggle" aria-expanded={webExpanded} onClick={onWeb}>
+          {webExpanded ? 'Hide web results' : 'Show web results'}
+          <ChevronDown size={15} aria-hidden="true" />
+        </button>
       </div>
       <div className="weather-current">
         {forecast.condition && <WeatherSymbol condition={forecast.condition} size={49} />}
@@ -137,10 +138,10 @@ export function WeatherAnswer({ response, alerts, onLocation, onWeb, webExpanded
           <output className="weather-reading">{degrees(forecast.temperatureC)}°{fahrenheit ? 'F' : 'C'}</output>
           {forecast.condition && <p className="weather-condition">{forecast.condition}</p>}
         </div>
-        <button className="text-button weather-web specialty-web-toggle" aria-expanded={webExpanded} onClick={onWeb}>
-          {webExpanded ? 'Hide web results' : 'Show web results'}
-          <ChevronDown size={15} aria-hidden="true" />
-        </button>
+        <div className="weather-units" aria-label="Temperature unit">
+          <button className="text-button" aria-pressed={!fahrenheit} onClick={() => setFahrenheit(false)}>°C</button>
+          <button className="text-button" aria-pressed={fahrenheit} onClick={() => setFahrenheit(true)}>°F</button>
+        </div>
       </div>
       <ul className="weather-details">
         {forecast.windKph !== undefined && <li>Wind {Math.round(fahrenheit ? forecast.windKph / 1.609344 : forecast.windKph)} {fahrenheit ? 'mph' : 'km/h'}</li>}

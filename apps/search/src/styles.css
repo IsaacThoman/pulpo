@@ -499,13 +499,16 @@ summary::-webkit-details-marker { display: none; }
 .instant-answer output { display: block; font-size: clamp(1.7rem, 6vw, 2.6rem); font-weight: 650; overflow-wrap: anywhere; }
 .instant-answer button { display: block; margin-top: .65rem; padding-inline: 0; }
 .weather-answer { width: min(100%, var(--reading-width)); margin-top: 1rem; }
-.weather-heading, .weather-footer { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: .5rem; }
-.weather-heading p { margin: .2rem 0; font-size: .875rem; }
+.weather-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 .6rem; }
+.weather-heading h2 { margin: 0; }
+.weather-heading p { grid-column: 1 / -1; margin: .2rem 0; font-size: .875rem; }
+.weather-footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem; }
 .weather-units { display: flex; gap: .15rem; }
 .weather-units button { min-width: 2.2rem; border-radius: 1rem; }
 .weather-units button[aria-pressed="true"] { color: var(--ink); background: var(--subtle); }
 .weather-current { display: flex; align-items: center; gap: .9rem; margin-top: .9rem; }
-.weather-current .weather-web { margin-inline-start: auto; white-space: normal; text-align: end; }
+.weather-heading .weather-web { grid-area: 1 / 2; text-align: end; }
+.weather-current .weather-units { margin-inline-start: auto; }
 .text-button.specialty-web-toggle { display: inline-flex; align-items: center; gap: .3rem; }
 .specialty-web-toggle > svg { flex: none; }
 .specialty-web-toggle[aria-expanded="true"] > svg { transform: rotate(180deg); }
@@ -685,6 +688,7 @@ summary::-webkit-details-marker { display: none; }
   border: 0;
 }
 .image-refinements-menu { margin-bottom: .5rem; }
+.image-refinement-short { display: none; }
 .image-refinements-menu summary::-webkit-details-marker { display: none; }
 .image-refinements-menu[open] summary svg:last-child { transform: rotate(180deg); }
 .image-tools { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: .4rem 1rem; margin: .1rem 0 1rem; }
@@ -845,7 +849,8 @@ summary::-webkit-details-marker { display: none; }
 
 .knowledge-card { align-self: start; min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .knowledge-overview:has(> img) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .7rem; align-items: start; }
-.knowledge-overview > img { width: clamp(3.75rem, 11vw, 5rem); aspect-ratio: 4/5; object-fit: cover; border-radius: .45rem; }
+.knowledge-overview:has(> img) > div { grid-area: 1 / 1; }
+.knowledge-overview > img { grid-area: 1 / 2; width: clamp(3.75rem, 11vw, 5rem); aspect-ratio: 4/5; object-fit: cover; border-radius: .45rem; }
 .knowledge-card h2 { margin-bottom: .5rem; font-size: clamp(1.22rem, 1.85vw, 1.65rem); }
 .knowledge-card h2 a { color: inherit; font-size: inherit; text-decoration: none; }
 .knowledge-card h2 a:hover { text-decoration: underline; }
@@ -1106,6 +1111,7 @@ label.settings-row { cursor: pointer; }
   .search-tools:has(.quick-answer:not([data-expanded])) .categories { grid-column: 1 / -1; }
   .search-tools:has(.quick-answer:not([data-expanded])) .result-controls { grid-row: 2; grid-column: 1; margin-inline-start: -.4rem; }
   .search-tools:has(.quick-answer:not([data-expanded])) .filter-controls { margin-inline-start: 0; }
+  .search-tools:has(.quick-answer[data-expanded]) .result-controls { margin-inline-start: -.4rem; }
   .quick-answer:not([data-expanded]) { grid-area: 2 / 2; justify-self: end; }
   .category-button[aria-pressed="true"]::after { inset-inline: .15rem; }
   .knowledge-card[data-collapsed="true"] .knowledge-summary-brief { -webkit-line-clamp: 2; }
@@ -1113,13 +1119,19 @@ label.settings-row { cursor: pointer; }
   .knowledge-card[data-collapsed="true"] dl > div:nth-child(n + 3) { display: none; }
   .knowledge-card[data-collapsed="true"] dl > div { grid-template-columns: clamp(4.25rem, 28%, 7rem) minmax(0, 1fr); }
   .knowledge-card[data-collapsed="true"] dd { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .knowledge-card[data-collapsed="false"] .knowledge-overview:has(> img) { display: flow-root; }
+  .knowledge-card[data-collapsed="false"] .knowledge-overview > img { float: inline-end; margin-inline-start: .7rem; margin-block-end: .35rem; }
+  .knowledge-card[data-collapsed="false"] .knowledge-overview p { overflow: visible; }
   .knowledge-card .knowledge-mobile-expand { display: inline-flex; }
   .filter-controls { max-width: 100%; margin-inline-start: auto; padding-block: .25rem; gap: .2rem; }
   .filter-menu { position: static; }
   .search-filter-form { width: min(17rem, 100%); }
   .filter-trigger { max-width: 9rem; }
   .filter-controls:has(.clear-filters) .filter-trigger { max-width: 7.2rem; }
-  .gallery-main .filter-trigger:not([data-active="true"]) > svg:last-child { display: none; }
+  .gallery-main .filter-trigger { justify-content: center; width: 2.4rem; }
+  .gallery-main .filter-trigger > svg:first-child { display: block; }
+  .gallery-main .filter-trigger > :is(span, svg:last-child) { display: none; }
+  .gallery-main .filter-trigger[data-active="true"] { background: var(--subtle); }
   .search-tools:has(.media-toolbar-slot:not(:empty)) .categories { flex-basis: 100%; }
   .search-tools:has(.media-toolbar-slot:not(:empty)) .result-controls { margin-inline-start: -.4rem; width: 100%; }
   .news-date-info p { right: auto; left: 0; }
@@ -1146,8 +1158,12 @@ label.settings-row { cursor: pointer; }
   .hint.settings-sync { padding: .6rem 1rem; border-top: 1px solid var(--line); background: none; }
 }
 @media (max-width: 23rem) {
+  .gallery-main .categories { gap: 0 .25rem; }
+  .gallery-main .category-button { padding-inline: .1rem; font-size: .8125rem; }
   .image-tools :is(.reusable-image-modes button, .image-refinements-menu summary) { font-size: .8125rem; }
   .image-tools .reusable-image-modes { gap: .15rem; }
   .image-tools .reusable-image-modes button { padding-inline: .3rem; }
+  .image-tools .image-refinement-label { display: none; }
+  .image-tools .image-refinement-short { display: inline; }
   .settings-select:has(#search-provider-default) { width: 12rem; max-width: 69%; }
 }
