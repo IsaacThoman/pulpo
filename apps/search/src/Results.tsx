@@ -5,8 +5,9 @@ import type { SearchResponse } from './api'
 import { ImageResultFilters } from './ImageResultFilters'
 import { ImageViewer } from './ImageViewer'
 import { defaultImageRefinements, hasImageRefinements, matchesImageRefinements, type ImageRefinements } from './image-refinements'
+import { KnowledgeCard } from './KnowledgeCard'
 import { safeHttpUrl, type SearchLocation } from './navigation'
-import type { DomainRule, Preferences } from './preferences'
+import { domainRule, type DomainRule, type Preferences } from './preferences'
 import { ResultImage } from './ResultImage'
 import { resultEntries, visibleEntries, type ResultWithUrl } from './result-order'
 
@@ -175,6 +176,9 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
   const withoutDimensions = images ? visible.filter(entry => !entry.result.imageDimensions).length : 0
   const noMatchingImages = refiningImages && visible.length > 0 && shown.length === 0
   const answerUrl = safeHttpUrl(data.answer?.url)
+  const knowledgeUrl = safeHttpUrl(data.knowledge?.url)
+  const knowledge = knowledgeUrl && domainRule(knowledgeUrl.hostname.replace(/\.$/, ''), preferences.domains) !== 'hide'
+    ? data.knowledge : undefined
   const related = [...new Set(data.related)].filter(query => query !== location.query).slice(0, 8)
   const terms = queryTerms(location.query)
   const searchSite = location.category === 'web' && location.query.length < 240 && !/\bsite:/i.test(location.query)
@@ -183,6 +187,7 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
 
   return (
     <div className="results-body">
+      {knowledge && knowledgeUrl && <KnowledgeCard knowledge={knowledge} url={knowledgeUrl} newTab={preferences.newTab} />}
       <div className="results-column" tabIndex={-1}>
         <div className="sr-only" role="status" aria-live="polite">{shown.length} results for {location.query}</div>
         {data.answer && (
@@ -207,7 +212,7 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
                 newTab={preferences.newTab} setDomain={setDomain} showHidden={showHidden} searchSite={searchSite} terms={terms} />
             ))}
           </ol>
-        ) : !data.answer && (
+        ) : !data.answer && !knowledge && (
           <section className="search-message">
             <h2>{noMatchingImages ? 'No images match these filters' : hiddenCount ? 'All results are hidden' : 'No results found'}</h2>
             {!noMatchingImages && !hiddenCount && <p>Try fewer words or change your filters.</p>}

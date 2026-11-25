@@ -154,10 +154,28 @@ describe('Pulpo Search API', () => {
     expect(mocks.settle).not.toHaveBeenCalled()
   })
 
+  it('returns knowledge-only Kagi results without calling a second provider', async () => {
+    const infobox = { url: 'https://en.wikipedia.org/wiki/Tallinn', title: 'Tallinn', snippet: '<b>Tallinn</b> is the capital of Estonia.' }
+    mocks.fetch.mockResolvedValueOnce(Response.json({ data: { infobox: [infobox] } }))
+
+    const response = await query({ query: 'Tallinn Estonia' })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      provider: 'kagi', results: [], hasMore: false,
+      knowledge: { url: infobox.url, title: infobox.title, summary: 'Tallinn is the capital of Estonia.', facts: [] },
+    })
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+    expect(mocks.settle).toHaveBeenCalledExactlyOnceWith({
+      reservationId: 'kagi-hold', costMicros: 12_000, type: 'web_search',
+      metadata: { provider: 'kagi', category: 'web', resultCount: 0 },
+    })
+  })
+
   it('keeps scoped provider attempts and fallback inside the same allowed domains', async () => {
     mocks.fetch.mockResolvedValueOnce(Response.json({ data: {
       search: [{ url: 'https://stackoverflow.com/reference', title: 'Outside explicit site', snippet: 'Outside' }],
       direct_answer: [{ url: 'https://stackoverflow.com/reference', title: 'Outside site', snippet: 'Outside' }],
+      infobox: [{ url: 'https://en.wikipedia.org/wiki/Python_(programming_language)', title: 'Outside knowledge', snippet: 'Outside' }],
     } }))
     mocks.fetch.mockResolvedValueOnce(Response.json({ success: true, data: { web: [
       { url: 'https://docs.python.org.evil.example/article', title: 'Wrong domain', snippet: 'Outside' },

@@ -1,5 +1,8 @@
 import { truncateUtf8 } from './output.js'
-import { normalizeResult, resultSnippet, resultText, resultUrl, uniqueResults, type ProviderSearchInput, type SearchCategory, type SearchResults } from './search-results.js'
+import {
+  normalizeResult, resultSnippet, resultText, resultUrl, searchQueryTokens, shortenResultText, uniqueResults,
+  type ProviderSearchInput, type SearchCategory, type SearchKnowledge, type SearchResults,
+} from './search-results.js'
 
 const KAGI_API_BASE = 'https://kagi.com/api/v1'
 
@@ -27,6 +30,7 @@ type KagiSearchResult = {
     duration?: string
     creator_name?: string
     thumbnail?: { url?: string }
+    infobox?: unknown
   }
 }
 type KagiSearchResponse = { meta?: KagiMeta; data?: Record<string, KagiSearchResult[]>; error?: Array<{ message?: string }> }
@@ -84,6 +88,74 @@ function cleanDomains(value: string[] | undefined): string[] | undefined {
 function combineSignals(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs)
   return signal ? AbortSignal.any([signal, timeout]) : timeout
+}
+
+const wikipediaHost = /^(?!www\.)[a-z]{2,3}(?:-[a-z0-9]+)*(?:\.m)?\.wikipedia\.org$/
+const wikipediaNamespace = /^(?:book|category|draft|file|gadget(?:[ _]definition)?|help|image|media|mediawiki|module|portal|project|special|talk|template|timedtext|topic|user|wikipedia|wp)(?:[ _]talk)?:/i
+const wikiCitation = /\s*\[\s*(?:\d+(?:\s*[,–-]\s*\d+)*|[a-z]|citation needed|note\s+\d+)\s*\]/gi
+const hiddenWikiMarkup = /<!--[\s\S]*?-->|<(script|style|noscript)(?=[\s/>])(?:[^"'<>]|"[^"]*"|'[^']*')*>[\s\S]*?<\/\1\s*>/gi
+const wikiReferenceTags = /<sup\b[^<>]*\b(?:reference|cite_ref)\b[^<>]*>[\s\S]*?<\/sup\s*>/gi
+const wikiTags = /<\/?[a-z](?:[^"'<>]|"[^"]*"|'[^']*')*>/gi
+const wikiBlockTags = /^<(?:br|hr)\b|^<\/(?:dd|div|dt|h[1-6]|li|p|td|th|tr)\b/i
+
+function wikipediaArticleUrl(value: unknown): string | undefined {
+  const href = resultUrl(value)
+  if (!href) return
+  const url = new URL(href)
+  if (url.protocol !== 'https:' || url.port || url.search || !wikipediaHost.test(url.hostname) || !url.pathname.startsWith('/wiki/')) return
+
+  let article: string
+  try {
+    article = decodeURIComponent(url.pathname.slice('/wiki/'.length))
+  } catch {
+    return
+  }
+  if (!/[\p{L}\p{N}]/u.test(article) || /[\p{Cc}#<>[\]{}|\\?]/u.test(article) || wikipediaNamespace.test(article)) return
+  url.hash = ''
+  return url.href
+}
+
+function wikipediaText(value: unknown, limit: number): string {
+  if (typeof value !== 'string') return ''
+  const markup = value.slice(0, 20_000)
+    .replace(hiddenWikiMarkup, ' ')
+    .replace(wikiReferenceTags, '')
+  if (/<\/?(?:script|style|noscript)(?=[\s/>])/i.test(markup)) return ''
+
+  const text = resultSnippet(markup.replace(wikiTags, tag => wikiBlockTags.test(tag) ? ' ' : ''), 20_000)
+    .replace(wikiCitation, '')
+    .replace(/\p{Cc}/gu, '')
+    .trim()
+
+  // Entity decoding can uncover markup the provider encoded inside a text field.
+  if (!/[\p{L}\p{N}]/u.test(text) || /<(?:\/?[a-z]|[!?])/i.test(text)) return ''
+  return shortenResultText(text, limit)
+}
+
+function wikipediaKnowledge(rows: KagiSearchResult[]): SearchKnowledge | undefined {
+  for (const row of rows.slice(0, 20)) {
+    const url = wikipediaArticleUrl(row?.url)
+    if (!url) continue
+    const title = wikipediaText(row.title, 200)
+    const summary = wikipediaText(row.snippet, 800)
+    if (!title || !summary) continue
+
+    const facts: SearchKnowledge['facts'] = []
+    const labels = new Set<string>()
+    const entries = row.props?.infobox
+    if (Array.isArray(entries)) {
+      for (const entry of entries.slice(0, 30)) {
+        const label = wikipediaText(entry?.key, 72)
+        const value = wikipediaText(entry?.value, 300)
+        const key = label.toLowerCase()
+        if (!label || !value || labels.has(key)) continue
+        labels.add(key)
+        facts.push({ label, value })
+        if (facts.length === 8) break
+      }
+    }
+    return { title, summary, url, facts }
+  }
 }
 
 export class KagiClient {
@@ -147,12 +219,17 @@ export class KagiClient {
     const title = resultText(directAnswer?.title, 300)
     const snippet = resultSnippet(directAnswer?.snippet, 500)
     const url = resultUrl(directAnswer?.url)
+    const knowledge = category === 'web' && page === 1 && !input.timeRelative && !input.region
+      && !input.includeDomains?.length && !input.excludeDomains?.length
+      && !searchQueryTokens(input.query).some(token => /^[()+-]*site:[^)\s]/i.test(token))
+      ? wikipediaKnowledge(group('infobox')) : undefined
     return {
       results,
       // The API supplies no total or cursor, but can accept an additional page after a full result group.
       hasMore: page < KAGI_MAX_SEARCH_PAGE && rows.length >= limit,
       ...(related.length ? { related } : {}),
       ...(title && snippet ? { answer: { title, snippet, ...(url ? { url } : {}) } } : {}),
+      ...(knowledge ? { knowledge } : {}),
     }
   }
 

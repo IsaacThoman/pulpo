@@ -155,7 +155,7 @@ export function registerSearchRoutes(app: FastifyInstance) {
             request.log.warn({ provider }, 'Search provider failed')
             continue
           }
-          if (!result.results.length && !result.answer) {
+          if (!result.results.length && !result.answer && !result.knowledge) {
             empty ??= { provider, ...result }
             continue
           }

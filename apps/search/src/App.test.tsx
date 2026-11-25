@@ -200,8 +200,16 @@ describe('Pulpo Search', () => {
     expect(within(card).getByRole('link', { name: 'European Central Bank' }).getAttribute('href')).toBe('https://www.ecb.europa.eu/')
     expect(currency).toHaveBeenCalledExactlyOnceWith({ amount: '100', from: 'USD', to: 'EUR' }, expect.any(AbortSignal))
     expect(search).not.toHaveBeenCalled()
-    fireEvent.click(within(card).getByRole('button', { name: 'Search the web' }))
-    await screen.findByRole('link', { name: '100 USD to EUR field guide' })
+    currency.mockResolvedValueOnce({
+      status: 'converted', amount: '200', from: 'USD', to: 'EUR', converted: '182.44', rate: '0.9122', referenceDate: '2026-11-24',
+      source: { name: 'European Central Bank', url: 'https://www.ecb.europa.eu/', description: 'Daily reference rates' },
+    })
+    fireEvent.change(within(card).getByRole('textbox', { name: 'Amount' }), { target: { value: '200' } })
+    fireEvent.click(within(card).getByRole('button', { name: 'Convert' }))
+    await screen.findByText('182.44 EUR')
+    expect(search).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Search the web' }))
+    await screen.findByRole('link', { name: '200 USD to EUR field guide' })
   })
 
   it('falls back to ordinary results when a currency quote is unavailable', async () => {

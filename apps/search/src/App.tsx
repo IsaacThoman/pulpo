@@ -478,7 +478,7 @@ export function App({ callback }: { callback: Callback }) {
               <WeatherAnswer response={forecast} alerts={alerts} onLocation={place => onSearch('weather in ' + place)}
                 onWeb={() => go({ ...view, web: true })} />
             ) : showCurrency ? (
-              <CurrencyAnswer quote={currencyQuote} onWeb={() => go({ ...view, web: true })} />
+              <CurrencyAnswer key={view.query} quote={currencyQuote} onConvert={onSearch} onWeb={() => go({ ...view, web: true })} />
             ) : bang || waitingForSession || answerPending ? <LoadingResults firstResult={Boolean(luckyQuery)} /> : user === null ? (
               <section className="search-message">
                 <h2>Sign in to search</h2>
@@ -533,7 +533,7 @@ export function App({ callback }: { callback: Callback }) {
                     </div>
                   </details>
                 </div>
-                {!state.data.results.length && !state.data.answer ? (
+                {!state.data.results.length && !state.data.answer && !state.data.knowledge ? (
                   <section className="search-message">
                     <h2>No results found</h2>
                     <p>Try fewer words or change your filters.</p>

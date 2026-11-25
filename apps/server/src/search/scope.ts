@@ -1,4 +1,4 @@
-import type { SearchResults } from '../agent/search-results.js'
+import { searchQueryTokens, type SearchResults } from '../agent/search-results.js'
 
 export const searchScopes = ['developer', 'discussions', 'academic'] as const
 type SearchScope = typeof searchScopes[number]
@@ -26,7 +26,7 @@ function isDomainOrSubdomain(host: string, domain: string): boolean {
 
 function parseSiteOperators(query: string) {
   // Preserve quoted phrases and pass Boolean expressions through for the provider to interpret.
-  const tokens = query.match(/(?:[^\s"]+|"(?:\\.|[^"\\])*(?:"|$))+/g) ?? []
+  const tokens = searchQueryTokens(query)
   if (tokens.some((token) => /^(?:AND|OR|NOT)$/.test(token))) {
     return { query, included: [], excluded: [] }
   }

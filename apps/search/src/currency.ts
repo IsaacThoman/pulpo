@@ -17,10 +17,11 @@ export type CurrencyResponse = { source: CurrencySource } & (
 )
 
 // Daily ECB reference rates, plus the euro base currency.
-const currencies = new Set([
+export const currencyCodes = [
   'EUR', 'USD', 'JPY', 'CZK', 'DKK', 'GBP', 'HUF', 'PLN', 'RON', 'SEK', 'CHF', 'ISK', 'NOK', 'TRY', 'AUD',
   'BRL', 'CAD', 'CNY', 'HKD', 'IDR', 'ILS', 'INR', 'KRW', 'MXN', 'MYR', 'NZD', 'PHP', 'SGD', 'THB', 'ZAR',
-])
+]
+const currencies = new Set(currencyCodes)
 const currencyNames = new Map([
   ['euro', 'EUR'], ['euros', 'EUR'], ['€', 'EUR'],
   ['us dollar', 'USD'], ['us dollars', 'USD'], ['u.s. dollar', 'USD'], ['u.s. dollars', 'USD'],

@@ -29,11 +29,23 @@ export interface SearchResult {
   publishedAt?: string
 }
 
+export interface SearchKnowledge {
+  title: string
+  summary: string
+  url: string
+  facts: Array<{ label: string; value: string }>
+}
+
 export interface SearchResults {
   results: SearchResult[]
   hasMore?: boolean
   related?: string[]
   answer?: { title: string; snippet: string; url?: string }
+  knowledge?: SearchKnowledge
+}
+
+export function searchQueryTokens(query: string): string[] {
+  return query.match(/(?:[^\s"]+|"(?:\\.|[^"\\])*(?:"|$))+/g) ?? []
 }
 
 const entities = new Map([
@@ -89,7 +101,10 @@ export function resultSnippet(value: unknown, limit = 245): string {
     else paragraphs.push(text)
   }
 
-  const text = resultText((paragraphs.length ? paragraphs : headings).join(' '), maxResultTextLength)
+  return shortenResultText(resultText((paragraphs.length ? paragraphs : headings).join(' '), maxResultTextLength), limit)
+}
+
+export function shortenResultText(text: string, limit: number): string {
   if (text.length <= limit) return text
   const prefix = text.slice(0, limit - 1).replace(/[\uD800-\uDBFF]$/, '')
   const space = prefix.lastIndexOf(' ')

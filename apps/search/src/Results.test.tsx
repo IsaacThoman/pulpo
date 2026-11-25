@@ -81,4 +81,23 @@ describe('search result presentation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'octopus habitat' }))
     expect(onQuery).toHaveBeenCalledWith('octopus habitat')
   })
+
+  it('shows sourced knowledge facts and respects the result source preference', () => {
+    const featured = { ...data, knowledge: {
+      title: 'Octopus', summary: 'A marine mollusc.', url: 'https://en.wikipedia.org/wiki/Octopus',
+      facts: [{ label: 'Class', value: 'Cephalopoda' }],
+    } }
+    const location = { ...homeLocation, query: 'octopus' }
+    const preferences = loadPreferences()
+    const { rerender } = render(<Results data={featured} location={location}
+      preferences={preferences} setDomain={vi.fn()} onQuery={vi.fn()} />)
+    const knowledge = screen.getByRole('complementary', { name: 'About Octopus' })
+    expect(knowledge.textContent).toContain('Cephalopoda')
+    expect(knowledge.querySelector('a')?.getAttribute('href')).toBe(featured.knowledge.url)
+    expect(screen.getByRole('link', { name: 'CC BY-SA 4.0' })).toBeDefined()
+    expect(firstVisibleResultUrl(featured, preferences)?.hostname).toBe('github.com')
+    rerender(<Results data={featured} location={location}
+      preferences={{ ...preferences, domains: { 'en.wikipedia.org': 'hide' } }} setDomain={vi.fn()} onQuery={vi.fn()} />)
+    expect(screen.queryByRole('complementary', { name: 'About Octopus' })).toBeNull()
+  })
 })

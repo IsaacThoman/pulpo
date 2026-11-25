@@ -33,11 +33,19 @@ export interface SearchResult {
   publishedAt?: string
 }
 
+export interface Knowledge {
+  title: string
+  summary: string
+  url: string
+  facts: Array<{ label: string; value: string }>
+}
+
 export interface SearchResponse {
   provider: Provider
   results: SearchResult[]
   related?: string[]
   answer?: { title: string; snippet: string; url?: string }
+  knowledge?: Knowledge
   hasMore?: boolean
 }
 
