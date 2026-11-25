@@ -62,7 +62,10 @@ describe('Pulpo Search', () => {
     streamQuickAnswer.mockImplementation(async (_id, onText) => { onText('An answer.') })
     cancelQuickAnswer.mockResolvedValue()
     reusableImages.mockResolvedValue({ provider: 'openverse', results: [] })
-    account.mockResolvedValue({ billing: true, balanceMicros: 12_340_000, poolBalanceMicros: null, weeklyRemainingPercentage: 64.4 })
+    account.mockResolvedValue({ billing: true, balanceMicros: 12_340_000, poolBalanceMicros: null, limits: [
+      { id: 'weekly', label: 'Weekly usage', remainingPercentage: 64, availableBarPercentage: 64, pendingBarPercentage: 2 },
+      { id: 'five_hour', label: '5-hour usage', remainingPercentage: 90, availableBarPercentage: 90, pendingBarPercentage: 0 },
+    ] })
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
     const preferences = new Map<string, string>()
     vi.stubGlobal('localStorage', {
@@ -900,7 +903,8 @@ describe('Pulpo Search', () => {
     fireEvent.click(summary)
     const menu = summary.closest('details')!
     await within(menu).findByText('$12.34')
-    expect(within(menu).getByText('64% left')).toBeTruthy()
+    expect(within(menu).getByRole('progressbar', { name: 'Weekly usage' }).getAttribute('aria-valuenow')).toBe('64')
+    expect(within(menu).getByRole('progressbar', { name: '5-hour usage' }).getAttribute('aria-valuetext')).toBe('90% left')
     expect(within(menu).queryByText('Pool')).toBeNull()
     expect(within(menu).getByRole('link', { name: 'Credits and billing' }).getAttribute('href')).toBe(pulpoOrigin + '/billing')
   })

@@ -1,4 +1,4 @@
-import type { SearchAccountSummary } from '@pulpo/contracts/search'
+import type { SearchAccountSummary, SearchUsageLimit } from '@pulpo/contracts/search'
 import { useState } from 'react'
 import { formatCredits, initials, limitDestination } from './account'
 import type { SearchApiError, SearchUser } from './api'
@@ -17,10 +17,26 @@ export function AccountAvatar({ user }: { user: SearchUser }) {
   )
 }
 
+/** Mirrors Pulpo's compact SubscriptionUsageBar: label, percentage left, and an available/reserved bar. */
+function UsageBar({ limit }: { limit: SearchUsageLimit }) {
+  return (
+    <div className="usage-limit">
+      <div className="usage-limit-label">
+        <span>{limit.label}</span>
+        <span>{limit.remainingPercentage}% left</span>
+      </div>
+      <div className="usage-limit-track" role="progressbar" aria-label={limit.label} aria-valuenow={limit.remainingPercentage}
+        aria-valuetext={`${limit.remainingPercentage}% left`} aria-valuemin={0} aria-valuemax={100}>
+        <div className="usage-limit-available" style={{ width: `${limit.availableBarPercentage}%` }} />
+        <div className="usage-limit-pending" style={{ width: `${limit.pendingBarPercentage}%` }} />
+      </div>
+    </div>
+  )
+}
+
 export function AccountCredits({ account }: { account: SearchAccountSummary | undefined }) {
   if (!account) return <div className="account-credits" aria-busy="true"><span>Credits</span><span className="account-credits-value">…</span></div>
-  const weekly = account.weeklyRemainingPercentage
-  return (
+  return <>
     <div className="account-credits">
       <span>Credits</span>
       <span className="account-credits-value">{formatCredits(account.balanceMicros)}</span>
@@ -28,12 +44,11 @@ export function AccountCredits({ account }: { account: SearchAccountSummary | un
         <span>Pool</span>
         <span className="account-credits-value">{formatCredits(account.poolBalanceMicros)}</span>
       </>}
-      {weekly !== null && <>
-        <span>Weekly plan</span>
-        <span className="account-credits-value">{Math.round(weekly)}% left</span>
-      </>}
     </div>
-  )
+    {account.limits.length > 0 && <div className="usage-limits">
+      {account.limits.map(limit => <UsageBar key={limit.id} limit={limit} />)}
+    </div>}
+  </>
 }
 
 export function LimitAction({ error, account }: { error: Pick<SearchApiError, 'code'>; account: SearchAccountSummary | undefined }) {

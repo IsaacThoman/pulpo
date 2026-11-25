@@ -238,7 +238,7 @@ describe.skipIf(!enabled)('Search sessions and Pulpo account handoff', () => {
     const session = await app.inject({ url: searchSessionUrl, headers: { ...searchHeaders, cookie: searchCookie } })
     expect(session.json().user.avatarUrl).toBe('/api/search/avatar?v=4')
     expect(await searchAccountSummary(testUser.id)).toEqual({
-      billing: false, balanceMicros: 7_250_000, poolBalanceMicros: null, weeklyRemainingPercentage: null,
+      billing: false, balanceMicros: 7_250_000, poolBalanceMicros: null, limits: [],
     })
 
     await db.update(users).set({ avatarObjectKey: null }).where(eq(users.id, testUser.id))
