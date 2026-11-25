@@ -1,10 +1,18 @@
 import { truncateUtf8 } from './output.js'
-import { normalizeResult, resultSnippet, resultText, resultUrl, uniqueResults, type ProviderSearchInput, type SearchResults } from './search-results.js'
+import { normalizeResult, resultSnippet, resultText, resultUrl, uniqueResults, type ProviderSearchInput, type SearchCategory, type SearchResults } from './search-results.js'
 
 const KAGI_API_BASE = 'https://kagi.com/api/v1'
 
 export const KAGI_SEARCH_COST_MICROS = 12_000
 export const KAGI_EXTRACT_COST_MICROS = 4_000
+export const KAGI_MAX_SEARCH_PAGE = 10
+const resultGroups: Record<SearchCategory, string> = {
+  web: 'search',
+  news: 'news',
+  images: 'image',
+  videos: 'video',
+  podcasts: 'podcast',
+}
 
 type KagiMeta = { trace?: string; ms?: number }
 type KagiSearchResult = {
@@ -12,8 +20,14 @@ type KagiSearchResult = {
   title: string
   snippet?: string
   time?: string
-  image?: { url?: string }
-  props?: { question?: string; query?: string }
+  image?: { url?: string; width?: number; height?: number }
+  props?: {
+    question?: string
+    query?: string
+    duration?: string
+    creator_name?: string
+    thumbnail?: { url?: string }
+  }
 }
 type KagiSearchResponse = { meta?: KagiMeta; data?: Record<string, KagiSearchResult[]>; error?: Array<{ message?: string }> }
 type KagiExtractResponse = { meta?: KagiMeta; data?: Array<{ url: string; markdown?: string | null; error?: string }>; error?: Array<{ message?: string }> }
@@ -76,7 +90,7 @@ export class KagiClient {
   constructor(private readonly apiKey: string, private readonly timeoutMs = 15_000) {}
 
   private async post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
-    const response = await fetch(`${KAGI_API_BASE}${path}`, {
+    const response = await fetch(KAGI_API_BASE + path, {
       method: 'POST',
       headers: { authorization: `Bearer ${this.apiKey}`, 'content-type': 'application/json', accept: 'application/json' },
       body: JSON.stringify(body),
@@ -105,30 +119,38 @@ export class KagiClient {
 
   async searchResults(input: ProviderSearchInput, signal?: AbortSignal): Promise<SearchResults> {
     const category = input.category ?? 'web'
+    const page = input.page ?? 1
     const limit = Math.min(20, Math.max(1, Math.floor(input.limit ?? 10)))
     const payload = await this.querySearch(input, limit, signal)
     if (!payload.data || typeof payload.data !== 'object' || Array.isArray(payload.data)) {
       throw new Error('Kagi search response did not contain a result set')
     }
     const group = (key: string) => Array.isArray(payload.data?.[key]) ? payload.data[key] : []
-    const rows = category === 'web' ? group('search') : category === 'news' ? group('news') : group('image')
+    const rows = group(resultGroups[category])
     const results = uniqueResults(rows.map((row) => normalizeResult({
       url: row?.url,
       title: row?.title,
       snippet: row?.snippet,
       imageUrl: row?.image?.url,
+      thumbnailUrl: category === 'images' ? row?.props?.thumbnail?.url : undefined,
+      imageWidth: category === 'images' ? row?.image?.width : undefined,
+      imageHeight: category === 'images' ? row?.image?.height : undefined,
+      duration: category === 'videos' || category === 'podcasts' ? row?.props?.duration : undefined,
+      creatorName: category === 'videos' || category === 'podcasts' ? row?.props?.creator_name : undefined,
       publishedAt: row?.time,
     })), limit, category)
-    const related = [...new Set([
+    const related = page > 1 ? [] : [...new Set([
       ...group('related_search').map((row) => resultText(row?.props?.query ?? row?.title, 200)),
       ...group('adjacent_question').map((row) => resultText(row?.props?.question ?? row?.title, 200)),
     ].filter(Boolean))].slice(0, 8)
-    const directAnswer = group('direct_answer')[0]
+    const directAnswer = category === 'web' && page === 1 ? group('direct_answer')[0] : undefined
     const title = resultText(directAnswer?.title, 300)
     const snippet = resultSnippet(directAnswer?.snippet, 500)
     const url = resultUrl(directAnswer?.url)
     return {
       results,
+      // The API supplies no total or cursor, but can accept an additional page after a full result group.
+      hasMore: page < KAGI_MAX_SEARCH_PAGE && rows.length >= limit,
       ...(related.length ? { related } : {}),
       ...(title && snippet ? { answer: { title, snippet, ...(url ? { url } : {}) } } : {}),
     }
@@ -144,6 +166,7 @@ export class KagiClient {
       workflow: input.category && input.category !== 'web' ? input.category : 'search',
       format: 'json',
       limit,
+      ...(input.page && input.page > 1 ? { page: input.page } : {}),
       filters: { safe_search: true, ...(input.region ? { region: input.region } : {}), ...(after ? { after } : {}) },
       ...((sitesIncluded || sitesExcluded || timeRelative) ? { lens: {
         ...(sitesIncluded ? { sites_included: sitesIncluded } : {}),

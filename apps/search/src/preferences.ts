@@ -12,11 +12,12 @@ export interface Preferences {
   limit: 10 | 20
   newTab: boolean
   keyboardShortcuts: boolean
+  rememberRecentQueries: boolean
   domains: Record<string, DomainRule>
   bangs: CustomBang[]
 }
 
-const key = 'pulpo-search-settings-v1'
+export const preferencesStorageKey = 'pulpo-search-settings-v1'
 const defaults: Preferences = {
   theme: 'pulpo',
   defaultProvider: '',
@@ -24,6 +25,7 @@ const defaults: Preferences = {
   limit: 10,
   newTab: false,
   keyboardShortcuts: true,
+  rememberRecentQueries: false,
   domains: {},
   bangs: [],
 }
@@ -44,7 +46,7 @@ function isCustomBang(value: unknown): value is CustomBang {
 
 export function loadPreferences(): Preferences {
   try {
-    const saved = JSON.parse(window.localStorage.getItem(key) ?? 'null')
+    const saved = JSON.parse(window.localStorage.getItem(preferencesStorageKey) ?? 'null')
     if (!saved || typeof saved !== 'object') return defaults
     const domains = Object.entries(saved.domains ?? {})
       .filter((entry): entry is [string, DomainRule] => entry[1] === 'pin' || entry[1] === 'hide')
@@ -56,6 +58,7 @@ export function loadPreferences(): Preferences {
       limit: saved.limit === 20 ? 20 : 10,
       newTab: saved.newTab === true,
       keyboardShortcuts: saved.keyboardShortcuts !== false,
+      rememberRecentQueries: saved.rememberRecentQueries === true,
       domains: Object.fromEntries(domains),
       bangs: Array.isArray(saved.bangs) ? saved.bangs.filter(isCustomBang).slice(0, 30) : [],
     }
@@ -66,7 +69,7 @@ export function loadPreferences(): Preferences {
 
 export function savePreferences(prefs: Preferences) {
   try {
-    window.localStorage.setItem(key, JSON.stringify({ ...prefs, appearanceVersion: 1 }))
+    window.localStorage.setItem(preferencesStorageKey, JSON.stringify({ ...prefs, appearanceVersion: 1 }))
   } catch {
     // Preferences can still be used for the current page when storage is unavailable.
   }
@@ -86,6 +89,7 @@ export function providerOrder(prefs: Preferences, config: SearchConfig): Provide
 export function compatibleProviders(config: SearchConfig, order: Provider[], input: SearchLocation) {
   return config.providers.filter(provider => order.includes(provider.id)
     && provider.categories.includes(input.category)
+    && (provider.maxPage ?? 1) >= (input.page ?? 1)
     && (!input.date || provider.dates.includes(input.date))
     && (!input.region || provider.region))
 }

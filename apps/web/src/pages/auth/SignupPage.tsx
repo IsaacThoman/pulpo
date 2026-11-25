@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/stores/auth'
 import { ui } from '@/i18n/ui'
-import { searchConnectLoginState } from '@/lib/search-connect'
+import { authReturnLoginState } from '@/lib/auth-return'
 import { AuthFormError, PasswordVisibilityToggle } from './auth-form'
 import { errorFieldProps } from './error-field-props'
 
@@ -20,7 +20,7 @@ export function SignupPage() {
   const signupEnabled = useAuth((s) => s.signupEnabled)
   const setupRequired = useAuth((s) => s.setupRequired)
   const navigate = useNavigate()
-  const loginState = searchConnectLoginState(useLocation().state)
+  const loginState = authReturnLoginState(useLocation().state)
   const returnTo = loginState?.from ?? '/'
 
   const [name, setName] = useState('')

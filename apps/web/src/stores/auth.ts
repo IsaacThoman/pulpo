@@ -8,7 +8,7 @@ import { apiRequest, ApiError } from '@/lib/api'
 import { clearLocalUserData, indexedDbPersister } from '@/lib/local-first/database'
 import { clearRuntimeComposerDrafts } from '@/lib/local-first/composer-drafts'
 import { queryClient } from '@/lib/query-client'
-import { searchConnectReturn } from '@/lib/search-connect'
+import { authReturn } from '@/lib/auth-return'
 import { DEFAULT_MAX_INLINE_IMAGES, DEFAULT_MAX_ATTACHMENT_BYTES, DEFAULT_USAGE_VISIBILITY, type MobileConfig, type NativeAuthResponse, type PasskeyCeremony, type SignedInAccount, type UsageVisibility } from '@pulpo/contracts'
 import { authenticateWithPasskey, passkeyErrorMessage } from '@/lib/passkeys'
 import { normalizeInstanceUrl } from '@pulpo/client-core'
@@ -575,7 +575,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
     invalidateBootstrap()
     cacheProfile(user)
     await forgetActiveAccountQueries()
-    window.location.assign(searchConnectReturn(returnTo) ?? '/')
+    window.location.assign(authReturn(returnTo) ?? '/')
   },
 
   signOutAccount: async (userId) => {

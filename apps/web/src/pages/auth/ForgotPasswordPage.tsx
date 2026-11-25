@@ -6,12 +6,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { apiRequest } from '@/lib/api'
-import { searchConnectLoginState } from '@/lib/search-connect'
+import { authReturnLoginState } from '@/lib/auth-return'
 import { ui } from '@/i18n/ui'
 
 export function ForgotPasswordPage() {
   const { t } = useTranslation()
-  const loginState = searchConnectLoginState(useLocation().state)
+  const loginState = authReturnLoginState(useLocation().state)
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)

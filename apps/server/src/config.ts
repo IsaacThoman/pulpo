@@ -39,6 +39,10 @@ const configSchema = z.object({
     }
     return url.origin
   })),
+  // Setting a contact opts this deployment into MET Norway's weather service.
+  SEARCH_WEATHER_MET_CONTACT: optionalEnvironmentValue(z.string().trim().max(250).pipe(z.union([
+    z.email(), z.url({ protocol: /^https$/ }).refine(value => /^[!-~]+$/.test(value)),
+  ]))),
   PULPO_ANDROID_CERTIFICATE_FINGERPRINTS: z.string().default('').refine((value) => { try { androidCertificateFingerprints(value); return true } catch { return false } }, 'Use comma-separated SHA-256 signing certificate fingerprints'),
   INSTANCE_NAME: z.string().trim().min(1).default('Pulpo'),
   PULPO_VERSION: z.string().trim().min(1).default('0.1.0'),

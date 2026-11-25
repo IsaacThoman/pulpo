@@ -3,7 +3,8 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { webToolProviderSchema, type WebToolProvider } from '@pulpo/contracts'
 import { releaseMeteredBudget, reserveMeteredBudget, settleMeteredBudget } from '../accounting/service.js'
-import type { ProviderSearchInput, SearchResults } from '../agent/search-results.js'
+import { KAGI_MAX_SEARCH_PAGE } from '../agent/kagi.js'
+import { basicSearchCategories, searchCategories, type ProviderSearchInput, type SearchCategory, type SearchResults } from '../agent/search-results.js'
 import { availableWebSearchProviders, billedPrice, createWebProviderClients } from '../agent/web-tools.js'
 import { requireUser } from '../auth/service.js'
 import { getConfig } from '../config.js'
@@ -12,8 +13,13 @@ import { applicationSettings } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { parseWebToolsSettings } from '../settings/application-settings.js'
 import { fetchSearchFavicon } from './favicon.js'
+import { filterSearchHosts, searchHostFilters, searchScopes } from './scope.js'
+import { registerSearchWeatherRoute } from './weather/routes.js'
 
-const categories = ['web', 'news', 'images'] as const
+const providerCapabilities: Record<WebToolProvider, { categories: readonly SearchCategory[]; maxPage: number }> = {
+  kagi: { categories: searchCategories, maxPage: KAGI_MAX_SEARCH_PAGE },
+  firecrawl: { categories: basicSearchCategories, maxPage: 1 },
+}
 const dates = ['day', 'week', 'month', 'year'] as const
 const searchInputSchema = z.object({
   query: z.string().trim().min(1).max(500),
@@ -21,10 +27,14 @@ const searchInputSchema = z.object({
     .refine((providers) => new Set(providers).size === providers.length, 'Choose different primary and fallback providers')
     .optional(),
   limit: z.number().int().min(1).max(20).default(10),
-  category: z.enum(categories).default('web'),
+  page: z.number().int().min(1).max(KAGI_MAX_SEARCH_PAGE).default(1),
+  category: z.enum(searchCategories).default('web'),
+  scope: z.enum(searchScopes).optional(),
   region: z.string().regex(/^[a-z]{2}$/i, 'Choose a two-letter country code').toUpperCase().optional(),
   date: z.enum(dates).optional(),
-}).strict()
+}).strict().refine(input => !input.scope || input.category === 'web', {
+  path: ['scope'], message: 'Search focus applies to web results',
+})
 
 async function readSearchSettings() {
   const [row] = await db.select({ value: applicationSettings.value }).from(applicationSettings)
@@ -45,6 +55,8 @@ function searchUser(request: FastifyRequest, reply: FastifyReply) {
 }
 
 export function registerSearchRoutes(app: FastifyInstance) {
+  registerSearchWeatherRoute(app, searchUser)
+
   app.get<{ Params: { host: string } }>('/api/search/favicon/:host', {
     config: { rateLimit: { max: 160, timeWindow: '1 minute' } },
   }, async (request, reply) => {
@@ -74,8 +86,9 @@ export function registerSearchRoutes(app: FastifyInstance) {
     const defaultOrder = availableWebSearchProviders(settings)
     return {
       defaultOrder,
+      weather: true,
       providers: defaultOrder.map((id) => ({
-        id, categories, dates, region: true, priceMicros: billedPrice(id, 'search', settings),
+        id, ...providerCapabilities[id], dates, region: true, priceMicros: billedPrice(id, 'search', settings),
       })),
     }
   })
@@ -83,14 +96,26 @@ export function registerSearchRoutes(app: FastifyInstance) {
   app.post('/api/search/query', { bodyLimit: 4096, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (request, reply) => {
     const user = searchUser(request, reply)
     const input = searchInputSchema.parse(request.body)
+    const filters = searchHostFilters(input.query, input.scope)
+    if (filters.includeDomains.length > 20 || filters.excludeDomains.length > 20) {
+      throw new AppError(400, 'too_many_search_domains', 'Use up to 20 included and 20 excluded sites.')
+    }
     const settings = await readSearchSettings()
     const available = availableWebSearchProviders(settings)
-    const providers = input.providers?.filter((provider) => available.includes(provider)) ?? available
-    if (!providers.length) throw new AppError(503, 'search_provider_unavailable', 'No selected search provider is available', 'server_error')
+    const selected = input.providers?.filter((provider) => available.includes(provider)) ?? available
+    if (!selected.length) throw new AppError(503, 'search_provider_unavailable', 'No selected search provider is available', 'server_error')
+    const providers = selected.filter((provider) => {
+      const capabilities = providerCapabilities[provider]
+      return capabilities.categories.includes(input.category) && input.page <= capabilities.maxPage
+    })
+    if (!providers.length) throw new AppError(400, 'search_not_supported', 'No selected provider supports this search type or page')
+    if (filters.matchesNothing) return { provider: providers[0], results: [] }
 
     const clients = createWebProviderClients(settings, getConfig().ENCRYPTION_KEY)
     const providerInput: ProviderSearchInput = {
-      query: input.query, limit: input.limit, category: input.category, region: input.region, timeRelative: input.date,
+      query: filters.query, limit: input.limit, page: input.page, category: input.category, region: input.region, timeRelative: input.date,
+      ...(filters.includeDomains.length ? { includeDomains: filters.includeDomains } : {}),
+      ...(filters.excludeDomains.length ? { excludeDomains: filters.excludeDomains } : {}),
     }
     const controller = new AbortController()
     const onClose = () => {
@@ -120,7 +145,7 @@ export function registerSearchRoutes(app: FastifyInstance) {
           try {
             const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(8000)])
             signal.throwIfAborted()
-            result = await clients[provider]!.searchResults(providerInput, signal)
+            result = filterSearchHosts(await clients[provider]!.searchResults(providerInput, signal), filters)
             signal.throwIfAborted()
           } catch {
             controller.signal.throwIfAborted()

@@ -1,7 +1,13 @@
-import type { Category, SearchDate } from './api'
+import type { Category, Provider, SearchDate, SearchScope } from './api'
 
 export const MAX_QUERY_LENGTH = 500
-export const categories = ['web', 'images', 'news'] as const
+export const categories = ['web', 'images', 'news', 'videos', 'podcasts'] as const
+export const searchScopes = [
+  ['', 'All sites'],
+  ['developer', 'Developer'],
+  ['discussions', 'Discussions'],
+  ['academic', 'Academic'],
+] as const
 export const dateOptions = [
   ['', 'Any time'],
   ['day', 'Past day'],
@@ -31,6 +37,10 @@ export interface SearchLocation {
   category: Category
   date: SearchDate | ''
   region: string
+  scope?: SearchScope
+  web?: true
+  provider?: Provider
+  page?: number
 }
 
 export const homeLocation: SearchLocation = { query: '', category: 'web', date: '', region: '' }
@@ -41,7 +51,16 @@ export function parseSearchLocation(url: URL): SearchLocation {
   const category = categories.find(value => value === url.searchParams.get('type')) ?? 'web'
   const date = dateOptions.find(([value]) => value === url.searchParams.get('date'))?.[0] ?? ''
   const region = regions.find(([value]) => value === url.searchParams.get('region'))?.[0] ?? ''
-  return { query, category, date, region }
+  const scope = searchScopes.find(([value]) => value === url.searchParams.get('scope'))?.[0] || undefined
+  const provider = url.searchParams.get('provider')
+  const page = Number(url.searchParams.get('page'))
+  return {
+    query, category, date, region,
+    ...(category === 'web' && scope ? { scope } : {}),
+    ...(url.searchParams.get('web') === '1' ? { web: true as const } : {}),
+    ...(provider === 'kagi' || provider === 'firecrawl' ? { provider } : {}),
+    ...(Number.isInteger(page) && page >= 2 && page <= 10 ? { page } : {}),
+  }
 }
 
 export function searchPath(input: SearchLocation) {
@@ -50,7 +69,26 @@ export function searchPath(input: SearchLocation) {
   if (input.category !== 'web') params.set('type', input.category)
   if (input.date) params.set('date', input.date)
   if (input.region) params.set('region', input.region)
+  if (input.scope && input.category === 'web') params.set('scope', input.scope)
+  if (input.web) params.set('web', '1')
+  if (input.provider) params.set('provider', input.provider)
+  if (input.page && input.page > 1) params.set('page', String(input.page))
   return '/search?' + params.toString()
+}
+
+export function withoutSiteOperators(query: string) {
+  const tokens = query.match(/(?:[^\s"]+|"(?:\\.|[^"\\])*(?:"|$))+/g) ?? []
+  const remaining = tokens.filter(token => !/^-?site:[a-z\d-]+(?:\.[a-z\d-]+)+\.?$/i.test(token))
+  return remaining.length && remaining.length < tokens.length ? remaining.join(' ') : ''
+}
+
+export function localMapSearch(query: string) {
+  const intent = /^(?:directions to|map of)\s+/i.test(query)
+    || /\b(?:restaurants?|coffee shops?|caf[eé]s?|bookstores?|pharmac(?:y|ies)|grocery stores?|museums?|hotels?|parks?)\s+(?:near|around|in)\s+\S/i.test(query)
+  if (!intent) return
+  const destination = new URL('https://maps.apple.com/search')
+  destination.searchParams.set('query', query.replace(/^(?:directions to|map of)\s+/i, ''))
+  return destination.href
 }
 
 export function safeHttpUrl(value: string | undefined): URL | undefined {

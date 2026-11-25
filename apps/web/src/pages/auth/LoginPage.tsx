@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { browserSupportsWebAuthn, browserSupportsWebAuthnAutofill, cancelPasskeyCeremony } from '@/lib/passkeys'
 import { useAuth } from '@/stores/auth'
 import { isDesktopRuntime } from '@/lib/runtime'
-import { searchConnectLoginState } from '@/lib/search-connect'
+import { authReturnLoginState } from '@/lib/auth-return'
 import { ui } from '@/i18n/ui'
 import { SignedInAccountChooser } from '@/components/layout/AccountSwitcher'
 import { AuthFormError, PasswordVisibilityToggle } from './auth-form'
@@ -26,7 +26,7 @@ export function LoginPage() {
   const instanceUrl = useAuth((s) => s.instanceUrl)
   const chooseInstance = useAuth((s) => s.chooseInstance)
   const navigate = useNavigate()
-  const loginState = searchConnectLoginState(useLocation().state)
+  const loginState = authReturnLoginState(useLocation().state)
   const returnTo = loginState?.from ?? '/'
 
   const [email, setEmail] = useState('')

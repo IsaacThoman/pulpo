@@ -1,21 +1,27 @@
-import { ChevronDown, Globe2, Image, Keyboard, Newspaper, Settings2 } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { ChevronDown, ExternalLink, Globe2, Image, Keyboard, MapPin, Newspaper, Podcast, Settings2, Sparkles, Video } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, providerNames, SearchApiError, type SearchConfig, type SearchUser } from './api'
 import { useSearchAppearance } from './appearance'
+import { buildAskPulpoUrl } from './ask-pulpo'
 import { consumeCallback, pulpoOrigin, startSignIn } from './auth'
 import { firstResultQuery, resolveBang, type CustomBang } from './bangs'
-import { categories, homeLocation, MAX_QUERY_LENGTH, parseSearchLocation, searchPath, type SearchLocation } from './navigation'
-import { compatibleProviders, loadPreferences, providerOrder, savePreferences, type DomainRule, type Preferences } from './preferences'
+import { Calculator } from './Calculator'
+import { instantAnswer } from './instant-answer'
+import { categories, homeLocation, localMapSearch, MAX_QUERY_LENGTH, parseSearchLocation, searchPath, searchScopes, withoutSiteOperators, type SearchLocation } from './navigation'
+import { compatibleProviders, loadPreferences, preferencesStorageKey, providerOrder, savePreferences, type DomainRule, type Preferences } from './preferences'
 import { firstVisibleResultUrl } from './result-order'
+import { useRecentQueries } from './recent-queries'
 import { Results } from './Results'
 import { SearchBox } from './SearchBox'
 import { SearchFilters } from './SearchFilters'
 import { Bangs, BrowserSetup, Modal, Settings, Shortcuts, type Panel } from './Settings'
 import { useSearch } from './use-search'
+import { WeatherAnswer } from './WeatherAnswer'
+import { useWeatherAnswer, weatherLocation } from './weather'
 
 const smiley = new URL('../../web/public/pulpo-smiley.png', import.meta.url).href
-const labels = { web: 'Web', images: 'Images', news: 'News' } as const
-const icons = { web: Globe2, images: Image, news: Newspaper }
+const labels = { web: 'Web', images: 'Images', news: 'News', videos: 'Videos', podcasts: 'Podcasts' } as const
+const icons = { web: Globe2, images: Image, news: Newspaper, videos: Video, podcasts: Podcast }
 const isBangDiscovery = (query: string) => /^[!\s]+$/u.test(query)
 
 function PulpoMark({ size }: { size: number }) {
@@ -55,12 +61,14 @@ export function App({ callback }: { callback: Callback }) {
   const [config, setConfig] = useState<SearchConfig>()
   const [configError, setConfigError] = useState('')
   const [configAttempt, setConfigAttempt] = useState(0)
+  const [, refreshInstantAnswer] = useState(0)
   const input = useRef<HTMLInputElement>(null)
   const activePreferences = useRef(preferences)
   const callbackRef = useRef(callback && 'code' in callback ? callback : null)
   const accountMenu = useRef<HTMLDetailsElement>(null)
   const luckyRedirect = useRef('')
   useSearchAppearance(user?.id, preferences.theme)
+  const { recentQueries, rememberQuery, clearRecentQueries } = useRecentQueries(user?.id, preferences.rememberRecentQueries)
 
   useEffect(() => {
     function onPopState() {
@@ -71,6 +79,17 @@ export function App({ callback }: { callback: Callback }) {
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  useEffect(() => {
+    function syncPreferences(event: StorageEvent) {
+      if (event.key !== null && event.key !== preferencesStorageKey) return
+      const next = loadPreferences()
+      activePreferences.current = next
+      setPreferences(next)
+    }
+    window.addEventListener('storage', syncPreferences)
+    return () => window.removeEventListener('storage', syncPreferences)
   }, [])
 
   useEffect(() => {
@@ -107,22 +126,50 @@ export function App({ callback }: { callback: Callback }) {
   const bang = location.query ? resolveBang(location.query, preferences.bangs) : null
   const luckyQuery = bang ? null : firstResultQuery(location.query)
   const bangDiscovery = isBangDiscovery(location.query)
-  const view = bangDiscovery ? homeLocation : luckyQuery ? { ...location, query: luckyQuery, category: 'web' as const } : location
-  const order = config ? providerOrder(searchPreferences, config) : []
+  const view = useMemo(() => bangDiscovery ? homeLocation
+    : luckyQuery ? { ...location, query: luckyQuery, category: 'web' as const, page: undefined } : location,
+  [bangDiscovery, luckyQuery, location])
+  const localAnswer = !bang && !luckyQuery && view.category === 'web' && !view.scope && !view.region && !view.date && !view.web && !view.page
+    ? instantAnswer(view.query) : undefined
+  const forecastLocation = config?.weather && !bang && !luckyQuery && !localAnswer && view.category === 'web'
+    && !view.scope && !view.region && !view.date && !view.web && !view.page && !view.provider
+    ? weatherLocation(view.query) : undefined
+  const forecast = useWeatherAnswer(forecastLocation, user?.id)
+  const forecastPending = !!(user && forecastLocation && forecast === undefined)
+  const showForecast = forecast?.status === 'forecast' || forecast?.status === 'ambiguous'
+  const mapSearch = view.category === 'web' && !view.scope && !luckyQuery && !localAnswer && !showForecast
+    ? localMapSearch(view.query) : undefined
+  const refreshAt = localAnswer?.refreshAt
+  useEffect(() => {
+    if (!refreshAt) return
+    const timer = window.setTimeout(() => refreshInstantAnswer(value => value + 1), Math.max(0, refreshAt - Date.now()) + 25)
+    return () => window.clearTimeout(timer)
+  }, [refreshAt])
+  const order = !config ? [] : view.provider
+    ? config.providers.filter(provider => provider.id === view.provider).map(provider => provider.id)
+    : providerOrder(searchPreferences, config)
+  const alternatives = config?.providers.filter(provider => provider.categories.includes(view.category)
+    && (provider.maxPage ?? 1) >= (view.page ?? 1)
+    && (!view.date || provider.dates.includes(view.date)) && (!view.region || provider.region)) ?? []
   const chosen = config?.providers.filter(provider => order.includes(provider.id)) ?? []
   const compatible = config ? compatibleProviders(config, order, view) : []
   const categoryProviders = chosen.filter(provider => provider.categories.includes(view.category))
   const enabledCategories = categories.filter(category => chosen.some(provider => provider.categories.includes(category)))
+  const mediaCategories = enabledCategories.filter(category => category === 'videos' || category === 'podcasts')
   const filterDates = [...new Set(categoryProviders.flatMap(provider => provider.dates))]
   const filterRegion = categoryProviders.some(provider => provider.region)
-  const { state, refresh } = useSearch(user?.id, view.query && compatible.length && !bang ? {
+  const { state, refresh } = useSearch(user?.id, view.query && compatible.length && !bang && !localAnswer && !forecastPending && !showForecast ? {
     query: view.query,
     providers: order.filter(id => compatible.some(provider => provider.id === id)),
     category: view.category,
     date: view.date || undefined,
     region: view.region || undefined,
+    scope: view.category === 'web' ? view.scope : undefined,
+    page: view.page,
     limit: searchPreferences.limit,
   } : null)
+  const askUrl = state.status === 'success' && view.category === 'web' && !luckyQuery
+    ? buildAskPulpoUrl(pulpoOrigin, view.query, state.data.results) : undefined
   const waitingForSession = user === undefined
   const isResults = Boolean(view.query)
 
@@ -147,7 +194,7 @@ export function App({ callback }: { callback: Callback }) {
     const destination = firstVisibleResultUrl(state.data, preferences)
     if (!destination) {
       // Keep the settled request (and any direct answer) while removing the shortcut.
-      const next = { ...location, query: luckyQuery, category: 'web' as const }
+      const next = { ...view, query: luckyQuery }
       window.history.replaceState(null, '', searchPath(next))
       setLocation(next)
       return
@@ -156,7 +203,7 @@ export function App({ callback }: { callback: Callback }) {
     if (luckyRedirect.current === path) return
     luckyRedirect.current = path
     window.location.replace(destination.href)
-  }, [location, luckyQuery, preferences, state])
+  }, [location, luckyQuery, preferences, state, view])
 
   const bangUrl = bang?.url
   useEffect(() => {
@@ -184,6 +231,7 @@ export function App({ callback }: { callback: Callback }) {
     function onKeyDown(event: KeyboardEvent) {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey || event.isComposing || panel) return
       const target = event.target
+      if (target instanceof HTMLElement && target.closest('dialog[open]')) return
       const browsingFromSearch = event.key === 'ArrowDown' && target === input.current
         && input.current?.getAttribute('aria-expanded') !== 'true'
       if (!browsingFromSearch && target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select, summary, button'))) return
@@ -247,6 +295,8 @@ export function App({ callback }: { callback: Callback }) {
     go({
       ...view,
       category,
+      page: undefined,
+      scope: category === 'web' ? view.scope : undefined,
       date: matchingDate.length ? date : '',
       region: (matchingDate.length ? matchingDate : providers).some(provider => provider.region) ? view.region : '',
     })
@@ -268,9 +318,10 @@ export function App({ callback }: { callback: Callback }) {
       setPanel('bangs')
       return
     }
+    rememberQuery(firstResultQuery(trimmed) ?? trimmed)
     const restoreInput = !isResults && input.current === document.activeElement
       && window.matchMedia?.('(pointer: fine)').matches
-    go({ ...view, query: trimmed, category: firstResultQuery(trimmed) ? 'web' : view.category })
+    go({ ...view, query: trimmed, category: firstResultQuery(trimmed) ? 'web' : view.category, web: undefined, provider: undefined, page: undefined })
     if (restoreInput) requestAnimationFrame(() => input.current?.focus())
   }
 
@@ -309,7 +360,8 @@ export function App({ callback }: { callback: Callback }) {
     requestAnimationFrame(() => input.current?.focus())
   }
 
-  const searchBox = <SearchBox value={draft} setValue={setDraft} onSearch={onSearch} customBangs={preferences.bangs} input={input} />
+  const searchBox = <SearchBox value={draft} setValue={setDraft} onSearch={onSearch} customBangs={preferences.bangs}
+    recentQueries={recentQueries} input={input} />
   const signInButton = <button className="button" onClick={signIn} disabled={authBusy}>Sign in with Pulpo</button>
   const titles = {
     settings: 'Search settings',
@@ -367,15 +419,55 @@ export function App({ callback }: { callback: Callback }) {
               <div className="categories" aria-label="Search type">
                 {(enabledCategories.length ? enabledCategories : [view.category]).map(category => {
                   const Icon = icons[category]
-                  return <button key={category} className="category-button" aria-pressed={category === view.category}
+                  return <button key={category} className={'category-button' + (category === 'videos' || category === 'podcasts' ? ' desktop-media-tab' : '')} aria-pressed={category === view.category}
                     onClick={() => changeCategory(category)}><Icon size={16} aria-hidden="true" /> {labels[category]}</button>
                 })}
+                {mediaCategories.length > 0 && <details className="provider-menu mobile-media-tabs" key={view.category}>
+                  <summary className="category-button" aria-label="Media search types" data-active={view.category === 'videos' || view.category === 'podcasts'}>
+                    {view.category === 'videos' || view.category === 'podcasts' ? labels[view.category] : 'Media'}
+                    <ChevronDown size={13} aria-hidden="true" />
+                  </summary>
+                  <div className="provider-options">
+                    {mediaCategories.map(category => <button key={category} onClick={event => {
+                      event.currentTarget.closest('details')?.removeAttribute('open')
+                      changeCategory(category)
+                    }}>{labels[category]}</button>)}
+                  </div>
+                </details>}
               </div>
-              <SearchFilters date={view.date} region={view.region} dates={filterDates} allowRegion={filterRegion}
-                onApply={filters => go({ ...view, ...filters })} />
+              <div className="result-controls">
+                {mapSearch && <a className="map-search" href={mapSearch} target="_blank" rel="noreferrer">
+                  <MapPin size={15} aria-hidden="true" /> Apple Maps <ExternalLink size={12} aria-hidden="true" />
+                </a>}
+                {view.category === 'web' && !localAnswer && !showForecast && !forecastPending && user && config && <label className="scope-select">
+                  <span className="sr-only">Search focus</span>
+                  <select value={view.scope ?? ''} onChange={event => {
+                    const scope = searchScopes.find(([id]) => id === event.target.value)?.[0] || undefined
+                    go({ ...view, scope, page: undefined })
+                  }}>
+                    {searchScopes.map(([id, name]) => <option value={id} key={id}>{name}</option>)}
+                  </select>
+                  <ChevronDown size={13} aria-hidden="true" />
+                </label>}
+                <SearchFilters date={view.date} region={view.region} dates={filterDates} allowRegion={filterRegion}
+                  onApply={filters => go({ ...view, ...filters, page: undefined })} />
+              </div>
             </div>
             {authError && <p className="form-error results-auth-error" role="alert">{authError}</p>}
-            {bang || waitingForSession ? <LoadingResults firstResult={Boolean(luckyQuery)} /> : user === null ? (
+            {localAnswer?.label === 'Calculator' ? (
+              <Calculator key={view.query} initialExpression={localAnswer.expression}
+                onSearchWeb={query => go({ ...view, query, web: true })} />
+            ) : localAnswer ? (
+              <section className="answer instant-answer" aria-label={localAnswer.label}>
+                <h2>{localAnswer.label}</h2>
+                <p>{localAnswer.expression}</p>
+                <output>{localAnswer.result}</output>
+                <button className="text-button" onClick={() => go({ ...view, web: true })}>Search the web</button>
+              </section>
+            ) : showForecast ? (
+              <WeatherAnswer response={forecast} onLocation={place => onSearch('weather in ' + place)}
+                onWeb={() => go({ ...view, web: true })} />
+            ) : bang || waitingForSession || forecastPending ? <LoadingResults firstResult={Boolean(luckyQuery)} /> : user === null ? (
               <section className="search-message">
                 <h2>Sign in to search</h2>
                 <p>Use your Pulpo account and shared credits.</p>
@@ -393,20 +485,68 @@ export function App({ callback }: { callback: Callback }) {
                 <button className="secondary-button" onClick={() => { setConfigError(''); setConfigAttempt(value => value + 1) }}>Try again</button>
               </section>
             ) : !config || state.status === 'loading' ? <LoadingResults firstResult={Boolean(luckyQuery)} /> : !order.length ? (
-              <section className="search-message"><h2>No search providers available</h2><p>Ask your Pulpo administrator to enable a search provider.</p></section>
+              <section className="search-message"><h2>No search providers available</h2>
+                {view.provider ? <button className="secondary-button" onClick={() => go({ ...view, provider: undefined })}>Use default providers</button>
+                  : <p>Ask your Pulpo administrator to enable a search provider.</p>}
+              </section>
             ) : !compatible.length ? (
               <section className="search-message"><h2>These filters are unavailable</h2><p>Try Web results with no filters.</p>
-                <button className="secondary-button" onClick={() => go({ ...view, category: 'web', date: '', region: '' })}>Reset filters</button>
+                <button className="secondary-button" onClick={() => go({ ...view, category: 'web', date: '', region: '', page: undefined })}>Reset filters</button>
               </section>
             ) : state.status === 'success' && luckyQuery ? <LoadingResults firstResult /> : state.status === 'success' ? (
               <>
                 <div className="results-summary">
-                  <button className="text-button provider-indicator" onClick={() => setPanel('settings')} title="Search providers">
-                    {providerNames[state.data.provider]} <ChevronDown size={13} aria-hidden="true" />
-                  </button>
+                  {askUrl && <a className="text-button ask-pulpo-link" href={askUrl} target="_blank" rel="noopener noreferrer">
+                    <Sparkles size={14} aria-hidden="true" /> Ask Pulpo <ExternalLink size={12} aria-hidden="true" />
+                  </a>}
+                  <details className="provider-menu" key={searchPath(view)} onKeyDown={event => {
+                    if (event.key !== 'Escape' || !event.currentTarget.open) return
+                    event.currentTarget.open = false
+                    event.currentTarget.querySelector('summary')?.focus()
+                  }}>
+                    <summary className="text-button provider-indicator" aria-label="Search providers">
+                      {providerNames[state.data.provider]} <ChevronDown size={13} aria-hidden="true" />
+                    </summary>
+                    <div className="provider-options">
+                      {alternatives.filter(provider => provider.id !== state.data.provider).map(provider => (
+                        <button key={provider.id} onClick={() => go({ ...view, provider: provider.id })}>Search with {providerNames[provider.id]}</button>
+                      ))}
+                      {view.provider && <button onClick={() => go({ ...view, provider: undefined })}>Use default providers</button>}
+                      <button onClick={event => {
+                        const menu = event.currentTarget.closest('details')
+                        menu?.removeAttribute('open')
+                        menu?.querySelector('summary')?.focus()
+                        setPanel('settings')
+                      }}>Provider settings</button>
+                    </div>
+                  </details>
                 </div>
-                <Results key={searchPath(view)} data={state.data} location={view} preferences={preferences}
-                  setDomain={setDomain} onQuery={onSearch} />
+                {!state.data.results.length && !state.data.answer ? (
+                  <section className="search-message">
+                    <h2>No results found</h2>
+                    <p>Try fewer words or change your filters.</p>
+                    <div className="empty-actions">
+                      {/"[^"]+"/.test(view.query) && <button className="secondary-button"
+                        onClick={() => onSearch(view.query.replace(/"([^"]+)"/g, '$1'))}>Search without quotes</button>}
+                      {withoutSiteOperators(view.query) && <button className="secondary-button"
+                        onClick={() => onSearch(withoutSiteOperators(view.query))}>Remove site operators</button>}
+                      {view.scope && <button className="secondary-button"
+                        onClick={() => go({ ...view, scope: undefined, page: undefined })}>Search all sites</button>}
+                      {(view.date || view.region) && <button className="secondary-button"
+                        onClick={() => go({ ...view, date: '', region: '', page: undefined })}>Clear date and region</button>}
+                      {view.category !== 'web' && <button className="secondary-button" onClick={() => changeCategory('web')}>Try Web results</button>}
+                    </div>
+                  </section>
+                ) : <Results key={searchPath(view)} data={state.data} location={view} preferences={preferences}
+                  setDomain={setDomain} onQuery={onSearch} />}
+                {(view.page || state.data.hasMore) && (
+                  <nav className="page-actions" aria-label="Result pages">
+                    <button className="secondary-button" disabled={!view.page} onClick={() => go({ ...view, page: view.page && view.page > 2 ? view.page - 1 : undefined })}>Previous</button>
+                    <span>Page {view.page ?? 1}</span>
+                    <button className="secondary-button" disabled={!state.data.hasMore || (view.page ?? 1) >= 10}
+                      onClick={() => go({ ...view, page: (view.page ?? 1) + 1 })}>Next</button>
+                  </nav>
+                )}
               </>
             ) : state.status === 'error' && state.error.status !== 401 ? (
               <section className="search-message" role="alert">
@@ -430,7 +570,8 @@ export function App({ callback }: { callback: Callback }) {
       </footer>
       {panel && (
         <Modal title={titles[panel]} close={() => setPanel(null)}>
-          {panel === 'settings' && <Settings config={config} preferences={preferences} update={update} />}
+          {panel === 'settings' && <Settings config={config} preferences={preferences} update={update}
+            recentQueryCount={recentQueries.length} clearRecentQueries={clearRecentQueries} />}
           {panel === 'bangs' && <Bangs customBangs={preferences.bangs} update={bangs => update({ ...preferences, bangs })} onChooseBang={handleBang} />}
           {panel === 'shortcuts' && <Shortcuts singleKeys={preferences.keyboardShortcuts} />}
           {panel === 'browser' && <BrowserSetup />}

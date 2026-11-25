@@ -20,6 +20,7 @@ describe('Pulpo Search', () => {
   const exchange = vi.spyOn(api, 'exchange')
   const logout = vi.spyOn(api, 'logout')
   const appearance = vi.spyOn(api, 'appearance')
+  const weather = vi.spyOn(api, 'weather')
 
   beforeEach(() => {
     session.mockResolvedValue({ user })
@@ -34,6 +35,7 @@ describe('Pulpo Search', () => {
     }))
     logout.mockResolvedValue()
     appearance.mockResolvedValue({ theme: 'system', colorTheme: 'pulpo' })
+    weather.mockResolvedValue({ status: 'not-found', sources: [] })
     vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined)
     const preferences = new Map<string, string>()
     vi.stubGlobal('localStorage', {
@@ -136,6 +138,89 @@ describe('Pulpo Search', () => {
     fireEvent.click(wikipedia)
     expect((combobox as HTMLInputElement).value).toBe('!w ')
     expect(search).not.toHaveBeenCalled()
+  })
+
+  it('answers exact math signed out without a provider request and offers ordinary web results', async () => {
+    session.mockResolvedValue({ user: null })
+    window.history.replaceState(null, '', '/search?q=18.5%25+of+249')
+    render(<App callback={null} />)
+    expect(await screen.findByText('46.065')).toBeDefined()
+    expect(search).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Search the web' }))
+    await screen.findByRole('heading', { name: 'Sign in to search' })
+    expect(window.location.search).toContain('web=1')
+    expect(search).not.toHaveBeenCalled()
+  })
+
+  it('shows a local forecast in place of a paid web search and allows a unit change', async () => {
+    getConfig.mockResolvedValue({ ...config, weather: true })
+    weather.mockResolvedValue({
+      status: 'forecast', place: { name: 'Seattle', admin: 'Washington', country: 'United States', timeZone: 'America/Los_Angeles' },
+      forecast: {
+        temperatureC: 10, condition: 'Cloudy', validAt: '2026-11-24T12:00:00Z', updatedAt: '2026-11-24T10:00:00Z',
+        daily: [{ date: '2026-11-24', highC: 12, lowC: 4 }],
+      },
+      sources: [{ name: 'National Weather Service', url: 'https://www.weather.gov/', license: 'https://www.weather.gov/disclaimer' }],
+    })
+    window.history.replaceState(null, '', '/search?q=Seattle+weather')
+    render(<App callback={null} />)
+    const card = await screen.findByRole('region', { name: 'Weather forecast' })
+    expect(weather).toHaveBeenCalledExactlyOnceWith('Seattle', expect.any(AbortSignal))
+    expect(search).not.toHaveBeenCalled()
+    fireEvent.click(within(card).getByRole('button', { name: '°C' }))
+    expect(within(card).getByText('10°C')).toBeDefined()
+    fireEvent.click(within(card).getByRole('button', { name: 'Search the web' }))
+    await screen.findByRole('link', { name: 'Seattle weather field guide' })
+    expect(search).toHaveBeenCalledTimes(1)
+  })
+
+  it('paginates only through a capable provider and restores a cached first page', async () => {
+    getConfig.mockResolvedValue({
+      ...config, providers: config.providers.map(provider => ({ ...provider, maxPage: provider.id === 'kagi' ? 10 : 1 })),
+    })
+    search.mockImplementation(async ({ page }) => ({
+      provider: 'kagi', hasMore: !page,
+      results: [{ url: 'https://example.com/page-' + (page ?? 1), title: 'Result page ' + (page ?? 1), snippet: '' }],
+    }))
+    window.history.replaceState(null, '', '/search?q=tides')
+    render(<App callback={null} />)
+    const first = await screen.findByRole('link', { name: 'Result page 1' })
+    expect(first).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    await screen.findByRole('link', { name: 'Result page 2' })
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ providers: ['kagi'], page: 2 }), expect.any(AbortSignal))
+    expect(window.location.search).toContain('page=2')
+    fireEvent.click(screen.getByRole('button', { name: 'Previous' }))
+    await screen.findByRole('link', { name: 'Result page 1' })
+    expect(search).toHaveBeenCalledTimes(2)
+  })
+
+  it('applies a shareable focus and can clear an empty scope', async () => {
+    window.history.replaceState(null, '', '/search?q=tides')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'tides field guide' })
+    search.mockResolvedValueOnce({ provider: 'kagi', results: [] })
+    fireEvent.change(screen.getByLabelText('Search focus'), { target: { value: 'academic' } })
+    await screen.findByRole('heading', { name: 'No results found' })
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ query: 'tides', scope: 'academic' }), expect.any(AbortSignal))
+    expect(window.location.search).toContain('scope=academic')
+    fireEvent.click(screen.getByRole('button', { name: 'Search all sites' }))
+    await screen.findByRole('link', { name: 'tides field guide' })
+    expect(search).toHaveBeenCalledTimes(2)
+  })
+
+  it('can use a different provider for one search without changing the default for the next query', async () => {
+    window.history.replaceState(null, '', '/search?q=tides')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'tides field guide' })
+    fireEvent.click(screen.getByLabelText('Search providers'))
+    fireEvent.click(screen.getByRole('button', { name: 'Search with Firecrawl' }))
+    await screen.findByRole('link', { name: 'tides field guide' })
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ providers: ['firecrawl'] }), expect.any(AbortSignal))
+    expect(window.location.search).toContain('provider=firecrawl')
+    submit('kelp')
+    await screen.findByRole('link', { name: 'kelp field guide' })
+    expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ providers: ['kagi', 'firecrawl'] }), expect.any(AbortSignal))
   })
 
   it('handles bare bang discovery from the address bar without starting a paid search', async () => {

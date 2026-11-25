@@ -2,8 +2,12 @@ import { isSearchFaviconHost } from '@pulpo/contracts/search'
 import { Ellipsis, Globe2, Image, Pin, Search } from 'lucide-react'
 import { useState } from 'react'
 import type { SearchResponse } from './api'
+import { ImageResultFilters } from './ImageResultFilters'
+import { ImageViewer } from './ImageViewer'
+import { defaultImageRefinements, hasImageRefinements, matchesImageRefinements, type ImageRefinements } from './image-refinements'
 import { safeHttpUrl, type SearchLocation } from './navigation'
 import type { DomainRule, Preferences } from './preferences'
+import { ResultImage } from './ResultImage'
 import { resultEntries, visibleEntries, type ResultWithUrl } from './result-order'
 
 const wordPattern = /[\p{L}\p{N}][\p{L}\p{M}\p{N}]*/gu
@@ -27,7 +31,8 @@ function formatDate(value: string | undefined) {
   const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value)
   const date = /^\d{4}-\d{2}-\d{2}(?:$|T)/.test(value) ? new Date(value) : undefined
   if (date && !Number.isNaN(date.getTime())) {
-    const formatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', ...(dateOnly ? { timeZone: 'UTC' } : {}) })
+    // Search timestamps may represent calendar dates stored at midnight UTC.
+    const formatter = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' })
     return { label: formatter.format(date), iso: dateOnly ? value : date.toISOString() }
   }
   return { label: value, iso: undefined }
@@ -52,32 +57,42 @@ function SiteIcon({ host }: { host: string }) {
   </span>
 }
 
-function ImagePreview({ image, url, target }: { image: string | undefined; url: URL; target?: '_blank' }) {
-  const [failed, setFailed] = useState(false)
-  const src = safeHttpUrl(image)
-  return <a className="image-preview" href={url.href} target={target} rel="noreferrer" aria-hidden="true" tabIndex={-1}>
-    {src && !failed
-      ? <img src={src.href} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(true)} />
-      : <Image size={26} />}
-  </a>
+function ImageThumbnail({ image, thumbnail, title, open }: {
+  image: string | undefined
+  thumbnail: string | undefined
+  title: string
+  open: (opener: HTMLButtonElement) => void
+}) {
+  return <button type="button" className="image-preview" aria-label={'Preview image: ' + title} aria-haspopup="dialog"
+    onClick={event => open(event.currentTarget)}>
+    <ResultImage sources={[thumbnail, image]} alt="" lazy fallback={<Image size={26} aria-hidden="true" />} />
+  </button>
 }
 
-function ResultItem({ entry, images, newTab, setDomain, showHidden, terms }: {
+function ResultItem({ entry, preview, media, newTab, setDomain, showHidden, searchSite, terms }: {
   entry: ResultWithUrl
-  images: boolean
+  preview?: (opener: HTMLButtonElement) => void
+  media: boolean
   newTab: boolean
   setDomain: (host: string, rule: DomainRule | undefined) => void
   showHidden: boolean
+  searchSite?: (host: string) => void
   terms: Set<string>
 }) {
   const { result, url, host, rule } = entry
   const date = formatDate(result.publishedAt)
   const target = newTab ? '_blank' : undefined
-  const path = images ? '' : pathLabel(url)
+  const path = preview ? '' : pathLabel(url)
   const title = result.title || host
+  const thumbnail = media ? safeHttpUrl(result.thumbnailUrl) ?? safeHttpUrl(result.imageUrl) : undefined
+  const mediaDetails = media ? [result.creatorName, result.duration].filter(Boolean).join(' · ') : ''
   return (
     <li className="result">
-      {images && <ImagePreview key={result.imageUrl} image={result.imageUrl} url={url} target={target} />}
+      {preview && <ImageThumbnail key={result.imageUrl + ' ' + result.thumbnailUrl}
+        thumbnail={result.thumbnailUrl} image={result.imageUrl} title={title} open={preview} />}
+      {thumbnail && <a className="result-media" href={url.href} target={target} rel="noreferrer" tabIndex={-1} aria-hidden="true">
+        <ResultImage key={thumbnail.href} sources={[thumbnail.href, result.imageUrl]} alt="" lazy fallback={<Image size={24} aria-hidden="true" />} />
+      </a>}
       <div className="result-meta">
         <SiteIcon host={host} />
         <span className="site-path" title={path ? host + ' › ' + path : host}>{host}
@@ -96,6 +111,7 @@ function ResultItem({ entry, images, newTab, setDomain, showHidden, terms }: {
         }}>
           <summary className="icon-button" aria-label={`Options for ${host}`}><Ellipsis size={18} /></summary>
           <div className="result-menu-content">
+            {searchSite && isSearchFaviconHost(host) && <button onClick={() => searchSite(host)}>Search this site</button>}
             <button onClick={event => {
               const menu = event.currentTarget.closest('details')
               menu?.removeAttribute('open')
@@ -119,9 +135,13 @@ function ResultItem({ entry, images, newTab, setDomain, showHidden, terms }: {
         </details>
       </div>
       <h2><a className="result-link" href={url.href} target={target} rel="noreferrer">{title}</a></h2>
-      {(result.snippet || date) && (
+      {(result.snippet || date || mediaDetails) && (
         <p className="result-snippet">
-          {date && (date.iso ? <time className="result-date" dateTime={date.iso}>{date.label}</time> : <span className="result-date">{date.label}</span>)}
+          {mediaDetails && <span className="result-date">{mediaDetails}</span>}
+          {mediaDetails && (date || result.snippet) && ' · '}
+          {date && (date.iso
+            ? <time className="result-date" dateTime={date.iso} title="Date reported by the search provider">{date.label}</time>
+            : <span className="result-date" title="Date reported by the search provider">{date.label}</span>)}
           {date && result.snippet && ' · '}
           <Highlight text={result.snippet} terms={terms} />
         </p>
@@ -136,22 +156,35 @@ interface ResultsProps {
   preferences: Preferences
   setDomain: (host: string, rule: DomainRule | undefined) => void
   onQuery: (query: string) => void
+  onClearScope?: () => void
 }
 
-export function Results({ data, location, preferences, setDomain, onQuery }: ResultsProps) {
+export function Results({ data, location, preferences, setDomain, onQuery, onClearScope }: ResultsProps) {
   const [expandedQuery, setExpandedQuery] = useState<string | null>(null)
+  const [preview, setPreview] = useState<{ entries: ResultWithUrl[]; startIndex: number; opener: HTMLButtonElement }>()
+  const [imageRefinement, setImageRefinement] = useState<{ query: string; value: ImageRefinements }>()
   const showHidden = expandedQuery === location.query
+  const images = location.category === 'images'
+  const media = location.category === 'videos' || location.category === 'podcasts'
   const results = resultEntries(data, preferences)
   const hiddenCount = results.filter(item => item.rule === 'hide').length
   const visible = visibleEntries(results, showHidden)
+  const refinements = imageRefinement?.query === location.query ? imageRefinement.value : defaultImageRefinements
+  const refiningImages = images && hasImageRefinements(refinements)
+  const shown = refiningImages ? visible.filter(entry => matchesImageRefinements(entry.result, refinements)) : visible
+  const withoutDimensions = images ? visible.filter(entry => !entry.result.imageDimensions).length : 0
+  const noMatchingImages = refiningImages && visible.length > 0 && shown.length === 0
   const answerUrl = safeHttpUrl(data.answer?.url)
   const related = [...new Set(data.related)].filter(query => query !== location.query).slice(0, 8)
   const terms = queryTerms(location.query)
+  const searchSite = location.category === 'web' && location.query.length < 240 && !/\bsite:/i.test(location.query)
+    ? (host: string) => onQuery(location.query + ' site:' + host)
+    : undefined
 
   return (
     <div className="results-body">
       <div className="results-column" tabIndex={-1}>
-        <div className="sr-only" role="status" aria-live="polite">{visible.length} results for {location.query}</div>
+        <div className="sr-only" role="status" aria-live="polite">{shown.length} results for {location.query}</div>
         {data.answer && (
           <aside className="answer" aria-label="Quick answer">
             <h2>{data.answer.title}</h2>
@@ -161,17 +194,24 @@ export function Results({ data, location, preferences, setDomain, onQuery }: Res
             </a>}
           </aside>
         )}
-        {visible.length > 0 ? (
-          <ol className={location.category === 'images' ? 'results-list image-grid' : 'results-list'}>
-            {visible.map(entry => (
-              <ResultItem key={entry.url.href + (entry.result.imageUrl ?? '')} entry={entry} images={location.category === 'images'}
-                newTab={preferences.newTab} setDomain={setDomain} showHidden={showHidden} terms={terms} />
+        {images && (withoutDimensions < visible.length || refiningImages) && (
+          <ImageResultFilters value={refinements} update={value => setImageRefinement({ query: location.query, value })}
+            shown={shown.length} total={visible.length} withoutDimensions={withoutDimensions} />
+        )}
+        {shown.length > 0 ? (
+          <ol className={images ? 'results-list image-grid' : 'results-list'}>
+            {shown.map((entry, index) => (
+              <ResultItem key={entry.url.href + (entry.result.imageUrl ?? '')} entry={entry}
+                preview={images ? opener => setPreview({ entries: shown, startIndex: index, opener }) : undefined}
+                media={media}
+                newTab={preferences.newTab} setDomain={setDomain} showHidden={showHidden} searchSite={searchSite} terms={terms} />
             ))}
           </ol>
         ) : !data.answer && (
           <section className="search-message">
-            <h2>{hiddenCount ? 'All results are hidden' : 'No results found'}</h2>
-            {!hiddenCount && <p>Try fewer words or change your filters.</p>}
+            <h2>{noMatchingImages ? 'No images match these filters' : hiddenCount ? 'All results are hidden' : 'No results found'}</h2>
+            {!noMatchingImages && !hiddenCount && <p>Try fewer words or change your filters.</p>}
+            {!noMatchingImages && !hiddenCount && onClearScope && <button className="secondary-button" onClick={onClearScope}>Search all sites</button>}
           </section>
         )}
         {hiddenCount > 0 && <button className="text-button hidden-toggle" onClick={() => setExpandedQuery(showHidden ? null : location.query)}>
@@ -186,6 +226,7 @@ export function Results({ data, location, preferences, setDomain, onQuery }: Res
           </button></li>)}</ul>
         </aside>
       )}
+      {images && preview && <ImageViewer {...preview} newTab={preferences.newTab} close={() => setPreview(undefined)} />}
     </div>
   )
 }

@@ -43,13 +43,15 @@ interface SettingsProps {
   config: SearchConfig | undefined
   preferences: Preferences
   update: (next: Preferences) => void
+  recentQueryCount: number
+  clearRecentQueries: () => void
 }
 
 function formatPrice(micros: number) {
   return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 6 }).format(micros / 1_000_000)
 }
 
-export function Settings({ config, preferences, update }: SettingsProps) {
+export function Settings({ config, preferences, update, recentQueryCount, clearRecentQueries }: SettingsProps) {
   const activePrimary = config ? providerOrder(preferences, config)[0] : undefined
   const domainEntries = Object.entries(preferences.domains).sort(([a], [b]) => a.localeCompare(b))
   const available = config?.providers.map(provider => provider.id) ?? []
@@ -115,6 +117,15 @@ export function Settings({ config, preferences, update }: SettingsProps) {
           <input type="checkbox" checked={preferences.keyboardShortcuts}
             onChange={event => update({ ...preferences, keyboardShortcuts: event.target.checked })} />
         </label>
+      </fieldset>
+      <fieldset className="settings-group">
+        <legend>Search history</legend>
+        <label className="settings-row">
+          Remember recent searches on this browser
+          <input type="checkbox" checked={preferences.rememberRecentQueries}
+            onChange={event => update({ ...preferences, rememberRecentQueries: event.target.checked })} />
+        </label>
+        <button className="text-button" disabled={!recentQueryCount} onClick={clearRecentQueries}>Clear recent searches</button>
       </fieldset>
       <fieldset className="settings-group">
         <legend>Sites</legend>

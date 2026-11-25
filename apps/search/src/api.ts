@@ -1,6 +1,7 @@
 export type Provider = 'kagi' | 'firecrawl'
-export type Category = 'web' | 'news' | 'images'
+export type Category = 'web' | 'news' | 'images' | 'videos' | 'podcasts'
 export type SearchDate = 'day' | 'week' | 'month' | 'year'
+export type SearchScope = 'developer' | 'discussions' | 'academic'
 
 export const providerNames: Record<Provider, string> = {
   kagi: 'Kagi',
@@ -14,6 +15,8 @@ export interface SearchInput {
   category?: Category
   region?: string
   date?: SearchDate
+  scope?: SearchScope
+  page?: number
 }
 
 export interface SearchResult {
@@ -21,6 +24,10 @@ export interface SearchResult {
   title: string
   snippet: string
   imageUrl?: string
+  thumbnailUrl?: string
+  imageDimensions?: { width: number; height: number }
+  duration?: string
+  creatorName?: string
   publishedAt?: string
 }
 
@@ -29,6 +36,7 @@ export interface SearchResponse {
   results: SearchResult[]
   related?: string[]
   answer?: { title: string; snippet: string; url?: string }
+  hasMore?: boolean
 }
 
 export interface ProviderConfig {
@@ -37,12 +45,27 @@ export interface ProviderConfig {
   dates: SearchDate[]
   region: boolean
   priceMicros: number
+  maxPage?: number
 }
 
 export interface SearchConfig {
   defaultOrder: Provider[]
   providers: ProviderConfig[]
+  weather?: boolean
 }
+
+export interface WeatherPlace { name: string; admin?: string; country: string; timeZone: string }
+export interface WeatherSource { name: string; url: string; license: string }
+export type WeatherResponse = { sources: WeatherSource[] } & (
+  | { status: 'forecast'; place: WeatherPlace; forecast: {
+    updatedAt: string; validAt: string; temperatureC: number; condition?: string; windKph?: number
+    precipitationMm?: number; precipitationChance?: number
+    daily: Array<{ date: string; lowC: number; highC: number; condition?: string }>
+  } }
+  | { status: 'ambiguous'; places: Array<WeatherPlace & { query: string }> }
+  | { status: 'not-found' }
+  | { status: 'unavailable'; place?: WeatherPlace }
+)
 
 export interface SearchUser {
   id: string
@@ -101,6 +124,7 @@ function post<T>(path: string, body?: object, signal?: AbortSignal) {
 }
 
 export const api = {
+  weather: (location: string, signal?: AbortSignal) => request<WeatherResponse>('/weather?' + new URLSearchParams({ location }), { signal }),
   appearance: (signal?: AbortSignal) => request<SearchAppearance>('/appearance', { signal }),
   session: (signal?: AbortSignal) => request<{ user: SearchUser | null }>('/auth/session', { signal }),
   exchange: (code: string, codeVerifier: string) => post<{ user: SearchUser }>('/auth/exchange', { code, codeVerifier }),

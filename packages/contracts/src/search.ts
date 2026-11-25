@@ -3,3 +3,49 @@ export function isSearchFaviconHost(host: string): boolean {
     && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}$/.test(host)
     && !/\.(?:arpa|example|internal|invalid|lan|local|localdomain|localhost|onion|test|ts\.net)$/.test(host)
 }
+
+export const SEARCH_HANDOFF_PATH = '/search/ask'
+
+const MAX_HANDOFF_QUERY_LENGTH = 500
+const MAX_HANDOFF_SOURCE_COUNT = 5
+const MAX_HANDOFF_SOURCE_LENGTH = 512
+const MAX_HANDOFF_FRAGMENT_LENGTH = 12_000
+
+export interface SearchHandoff {
+  query: string
+  sources: string[]
+}
+
+export function normalizeSearchHandoff(query: string, sources: Iterable<string>): SearchHandoff | undefined {
+  const question = query.trim()
+  if (!question || question.length > MAX_HANDOFF_QUERY_LENGTH) return undefined
+
+  const urls = new Set<string>()
+  for (const value of sources) {
+    if (value.length > MAX_HANDOFF_SOURCE_LENGTH) continue
+    try {
+      const url = new URL(value)
+      if (!['http:', 'https:'].includes(url.protocol)
+        || url.username || url.password || url.port || !isSearchFaviconHost(url.hostname)
+        || url.href.length > MAX_HANDOFF_SOURCE_LENGTH) continue
+      urls.add(url.href)
+      if (urls.size === MAX_HANDOFF_SOURCE_COUNT) break
+    } catch {
+      continue
+    }
+  }
+  if (!urls.size) return undefined
+  return { query: question, sources: [...urls] }
+}
+
+export function searchHandoffPath(handoff: SearchHandoff): string {
+  const params = new URLSearchParams({ q: handoff.query })
+  for (const url of handoff.sources) params.append('source', url)
+  return `${SEARCH_HANDOFF_PATH}#${params}`
+}
+
+export function readSearchHandoff(hash: string): SearchHandoff | undefined {
+  if (!hash.startsWith('#') || hash.length > MAX_HANDOFF_FRAGMENT_LENGTH) return undefined
+  const params = new URLSearchParams(hash.slice(1))
+  return normalizeSearchHandoff(params.get('q') ?? '', params.getAll('source'))
+}

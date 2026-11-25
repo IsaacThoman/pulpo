@@ -95,12 +95,30 @@ describe('Pulpo Search API', () => {
     expect(response.headers['cache-control']).toBe('no-store')
     expect(response.json()).toMatchObject({
       defaultOrder: ['kagi', 'firecrawl'],
+      weather: true,
       providers: [
-        { id: 'kagi', categories: ['web', 'news', 'images'], dates: ['day', 'week', 'month', 'year'], region: true, priceMicros: 12_000 },
-        { id: 'firecrawl', priceMicros: 7_000 },
+        { id: 'kagi', categories: ['web', 'news', 'images', 'videos', 'podcasts'], maxPage: 10, dates: ['day', 'week', 'month', 'year'], region: true, priceMicros: 12_000 },
+        { id: 'firecrawl', categories: ['web', 'news', 'images'], maxPage: 1, priceMicros: 7_000 },
       ],
     })
     expect(response.body).not.toContain('secret')
+  })
+
+  it('requires a session for weather and resolves places without a provider call until known and covered', async () => {
+    mocks.authenticated = false
+    expect((await app.inject('/api/search/weather?location=Paris')).statusCode).toBe(401)
+    mocks.authenticated = true
+    const ambiguous = await app.inject('/api/search/weather?location=Paris')
+    expect(ambiguous.json()).toMatchObject({
+      status: 'ambiguous', places: expect.arrayContaining([{ name: 'Paris', admin: 'Île-de-France', country: 'France', timeZone: 'Europe/Paris', query: 'Paris, Île-de-France, France' }]),
+      sources: [{ name: 'GeoNames' }],
+    })
+    expect((await app.inject('/api/search/weather?location=Paris%2C%20France')).json()).toMatchObject({
+      status: 'unavailable', place: { name: 'Paris', country: 'France' },
+    })
+    expect((await app.inject('/api/search/weather?location=near%20me')).json()).toMatchObject({ status: 'not-found' })
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    expect(mocks.reserve).not.toHaveBeenCalled()
   })
 
   it('releases a failed attempt before billing only the successful fallback provider', async () => {
@@ -132,6 +150,127 @@ describe('Pulpo Search API', () => {
     expect(mocks.reserve.mock.calls.map(([input]) => input.costMicros)).toEqual([7_000, 12_000])
     expect(mocks.release).toHaveBeenCalledTimes(2)
     expect(mocks.settle).not.toHaveBeenCalled()
+  })
+
+  it('keeps scoped provider attempts and fallback inside the same allowed domains', async () => {
+    mocks.fetch.mockResolvedValueOnce(Response.json({ data: {
+      search: [{ url: 'https://stackoverflow.com/reference', title: 'Outside explicit site', snippet: 'Outside' }],
+      direct_answer: [{ url: 'https://stackoverflow.com/reference', title: 'Outside site', snippet: 'Outside' }],
+    } }))
+    mocks.fetch.mockResolvedValueOnce(Response.json({ success: true, data: { web: [
+      { url: 'https://docs.python.org.evil.example/article', title: 'Wrong domain', snippet: 'Outside' },
+      { url: 'https://examples.docs.python.org/reference', title: 'Real subdomain', snippet: 'Content' },
+    ] } }))
+    const response = await query({ query: 'list comprehension SITE:Python.ORG.', scope: 'developer' })
+    expect(response.statusCode).toBe(200)
+    expect(JSON.parse(mocks.fetch.mock.calls[0]![1].body)).toMatchObject({
+      query: 'list comprehension', lens: { sites_included: ['docs.python.org'] },
+    })
+    expect(JSON.parse(mocks.fetch.mock.calls[1]![1].body)).toMatchObject({
+      query: 'list comprehension', includeDomains: ['docs.python.org'],
+    })
+    expect(response.json()).toEqual({
+      provider: 'firecrawl',
+      results: [{ url: 'https://examples.docs.python.org/reference', title: 'Real subdomain', snippet: 'Content' }],
+    })
+    expect(mocks.release).toHaveBeenCalledExactlyOnceWith('kagi-hold')
+    expect(mocks.settle).toHaveBeenCalledTimes(1)
+  })
+
+  it('preserves quoted operators and honors actual site exclusions on results and related content', async () => {
+    mocks.fetch.mockResolvedValueOnce(Response.json({ data: {
+      search: [
+        { url: 'https://forum.example.com/talk', title: 'Excluded subdomain', snippet: 'Hidden' },
+        { url: 'https://myexample.com/guide', title: 'Different domain', snippet: 'Visible' },
+      ],
+      direct_answer: [{ title: 'Unlinked', snippet: 'Unknown domain' }],
+      related_search: [{ title: 'Unscoped related query' }],
+    } }))
+    const response = await query({ query: '"literal site:docs.test" -site:example.com', providers: ['kagi'] })
+    expect(response.statusCode).toBe(200)
+    expect(JSON.parse(mocks.fetch.mock.calls[0]![1].body)).toMatchObject({
+      query: '"literal site:docs.test"', lens: { sites_excluded: ['example.com'] },
+    })
+    expect(response.json()).toEqual({
+      provider: 'kagi',
+      results: [{ url: 'https://myexample.com/guide', title: 'Different domain', snippet: 'Visible' }],
+      hasMore: false,
+    })
+  })
+
+  it('returns empty without charging for impossible filters or an out-of-focus site', async () => {
+    for (const payload of [
+      { query: 'climate site:reddit.com', scope: 'academic' },
+      { query: 'climate site:docs.example.com -site:example.com' },
+    ]) {
+      const response = await query(payload)
+      expect(response.statusCode).toBe(200)
+      expect(response.json()).toEqual({ provider: 'kagi', results: [] })
+    }
+    expect(mocks.reserve).not.toHaveBeenCalled()
+    expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+
+  it('validates the category for search focus while still allowing typed site restrictions on news', async () => {
+    expect((await query({ query: 'current events', category: 'news', scope: 'academic' })).statusCode).toBe(400)
+    mocks.fetch.mockResolvedValueOnce(Response.json({ data: {
+      news: [{ url: 'https://www.reuters.com/article', title: 'News', snippet: 'News text' }],
+    } }))
+    const response = await query({ query: 'current events site:reuters.com', category: 'news', providers: ['kagi'] })
+    expect(response.statusCode).toBe(200)
+    expect(response.json().results).toHaveLength(1)
+    expect(JSON.parse(mocks.fetch.mock.calls[0]![1].body)).toMatchObject({
+      workflow: 'news', query: 'current events', lens: { sites_included: ['reuters.com'] },
+    })
+  })
+
+  it.each([
+    { category: 'videos', group: 'video', url: 'https://www.youtube.com/watch?v=Tuw8hxrFBH8' },
+    { category: 'podcasts', group: 'podcast', url: 'https://open.spotify.com/episode/pulpo' },
+  ])('uses Kagi’s native $category workflow and consumes only its corresponding result group', async ({ category, group, url }) => {
+    const imageUrl = 'https://p.kagi.com/proxy/thumbnail'
+    mocks.fetch.mockResolvedValueOnce(Response.json({ data: {
+      [group]: [{ url, title: 'Playback source', snippet: 'Match', image: { url: imageUrl }, time: '2026-11-20' }],
+      search: [{ url: 'https://example.com/related', title: 'Unrelated page' }],
+      podcast_creator: [{ url: 'https://example.com/creator', title: 'Different result group' }],
+      direct_answer: [{ url: 'https://example.com/answer', title: 'Unrelated answer', snippet: 'Answer text' }],
+    } }))
+    const response = await query({ query: 'example media', category, providers: ['firecrawl', 'kagi'], limit: 1 })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      provider: 'kagi', results: [{ url, title: 'Playback source', snippet: 'Match', imageUrl, publishedAt: '2026-11-20' }], hasMore: true,
+    })
+    expect(mocks.fetch).toHaveBeenCalledExactlyOnceWith('https://kagi.com/api/v1/search', expect.objectContaining({
+      body: expect.stringContaining('"workflow":"' + category + '"'),
+    }))
+    expect(mocks.reserve).toHaveBeenCalledExactlyOnceWith({ userId: 'search-user', costMicros: 12_000 })
+  })
+
+  it('forwards the requested Kagi page and ends pagination at its supported cap', async () => {
+    mocks.fetch.mockResolvedValueOnce(Response.json({ data: {
+      search: [{ url: 'https://example.com/end', title: 'Last page', snippet: 'Content' }],
+      direct_answer: [{ title: 'First-page answer', snippet: 'Answer text' }],
+      related_search: [{ title: 'First-page suggestion' }],
+    } }))
+    const response = await query({ query: 'example', page: 10, limit: 1, providers: ['firecrawl', 'kagi'] })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      provider: 'kagi', results: [{ url: 'https://example.com/end', title: 'Last page', snippet: 'Content' }], hasMore: false,
+    })
+    expect(JSON.parse(mocks.fetch.mock.calls[0]![1].body)).toMatchObject({ page: 10, workflow: 'search' })
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+    expect((await query({ query: 'example', page: 11 })).statusCode).toBe(400)
+  })
+
+  it('rejects unsupported provider requests before charging and never substitutes generic web results', async () => {
+    expect((await query({ query: 'media', category: 'videos', providers: ['firecrawl'] })).statusCode).toBe(400)
+    expect((await query({ query: 'page', page: 2, providers: ['firecrawl'] })).statusCode).toBe(400)
+    expect(mocks.reserve).not.toHaveBeenCalled()
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    mocks.fetch.mockResolvedValueOnce(Response.json({ error: [{ message: 'Unavailable' }] }, { status: 503 }))
+    expect((await query({ query: 'media', category: 'podcasts', providers: ['kagi', 'firecrawl'] })).statusCode).toBe(502)
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+    expect(mocks.release).toHaveBeenCalledTimes(1)
   })
 
   it('avoids unfunded provider calls and never expands a one-provider selection', async () => {

@@ -30,6 +30,24 @@ describe('search result presentation', () => {
     expect(screen.queryByRole('link', { name: 'Unsafe' })).toBeNull()
   })
 
+  it('displays provider calendar dates in UTC and shows confirmed media metadata', () => {
+    const DateTimeFormat = Intl.DateTimeFormat
+    const formatter = vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(function (_locale, options) {
+      return new DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', ...options })
+    })
+    try {
+      const { container } = render(<Results data={{
+        ...data, results: [{ ...data.results[0], publishedAt: '2017-07-04T00:00:00.000Z', duration: '05:31', creatorName: 'Reef Research' }],
+      }} location={{ ...homeLocation, category: 'videos', query: 'octopus' }}
+        preferences={loadPreferences()} setDomain={vi.fn()} onQuery={vi.fn()} />)
+      expect(container.querySelector('time')?.textContent).toBe('Jul 4, 2017')
+      expect(screen.getByTitle('Date reported by the search provider')).toBeDefined()
+      expect(screen.getByText('Reef Research · 05:31')).toBeDefined()
+    } finally {
+      formatter.mockRestore()
+    }
+  })
+
   it('sends only a public hostname for lazy favicons and shows a local fallback on error', () => {
     const { container } = render(<Results data={data} location={{ ...homeLocation, query: 'octopus' }}
       preferences={loadPreferences()} setDomain={vi.fn()} onQuery={vi.fn()} />)

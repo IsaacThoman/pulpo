@@ -1,7 +1,9 @@
 import { publicHttpsUrl, webFetchOutput, type KagiSearchInput, type KagiResult, type WebPage } from './kagi.js'
-import { normalizeResult, uniqueResults, type ProviderSearchInput, type SearchCategory, type SearchResults } from './search-results.js'
+import { normalizeResult, uniqueResults, type BasicSearchCategory, type ProviderSearchInput, type SearchResults } from './search-results.js'
 
 export const FIRECRAWL_DEFAULT_API_BASE = 'https://api.firecrawl.dev/v2'
+
+type FirecrawlSearchInput = Omit<ProviderSearchInput, 'category' | 'page'> & { category?: BasicSearchCategory }
 
 type FirecrawlSearchResult = {
   title?: string
@@ -14,7 +16,7 @@ type FirecrawlSearchResult = {
 
 type FirecrawlSearchResponse = {
   success?: boolean
-  data?: Partial<Record<SearchCategory, FirecrawlSearchResult[]>>
+  data?: Partial<Record<BasicSearchCategory, FirecrawlSearchResult[]>>
   id?: string
   error?: string
   message?: string
@@ -111,8 +113,11 @@ export class FirecrawlClient {
 
   async searchResults(input: ProviderSearchInput, signal?: AbortSignal): Promise<SearchResults> {
     const category = input.category ?? 'web'
+    if (category === 'videos' || category === 'podcasts' || (input.page ?? 1) !== 1) {
+      throw new FirecrawlError('Firecrawl does not support this search type or page')
+    }
     const limit = Math.min(20, Math.max(1, Math.floor(input.limit ?? 10)))
-    const payload = await this.querySearch(input, limit, signal)
+    const payload = await this.querySearch({ ...input, category }, limit, signal)
     if (!payload.data || typeof payload.data !== 'object' || Array.isArray(payload.data)) {
       throw new FirecrawlError('Firecrawl search response did not contain a result set')
     }
@@ -129,7 +134,7 @@ export class FirecrawlClient {
     }
   }
 
-  private async querySearch(input: ProviderSearchInput, limit: number, signal?: AbortSignal): Promise<FirecrawlSearchResponse> {
+  private async querySearch(input: FirecrawlSearchInput, limit: number, signal?: AbortSignal): Promise<FirecrawlSearchResponse> {
     const includeDomains = cleanDomains(input.includeDomains)
     const excludeDomains = cleanDomains(input.excludeDomains)
     const query = includeDomains && excludeDomains

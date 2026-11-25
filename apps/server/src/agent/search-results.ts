@@ -1,11 +1,15 @@
 import { isIP } from 'node:net'
 
-export type SearchCategory = 'web' | 'news' | 'images'
+export const basicSearchCategories = ['web', 'news', 'images'] as const
+export const searchCategories = [...basicSearchCategories, 'videos', 'podcasts'] as const
+export type BasicSearchCategory = typeof basicSearchCategories[number]
+export type SearchCategory = typeof searchCategories[number]
 export type SearchDate = 'day' | 'week' | 'month' | 'year'
 
 export interface ProviderSearchInput {
   query: string
   limit?: number
+  page?: number
   includeDomains?: string[]
   excludeDomains?: string[]
   timeRelative?: SearchDate
@@ -18,11 +22,16 @@ export interface SearchResult {
   title: string
   snippet: string
   imageUrl?: string
+  thumbnailUrl?: string
+  imageDimensions?: { width: number; height: number }
+  duration?: string
+  creatorName?: string
   publishedAt?: string
 }
 
 export interface SearchResults {
   results: SearchResult[]
+  hasMore?: boolean
   related?: string[]
   answer?: { title: string; snippet: string; url?: string }
 }
@@ -98,15 +107,43 @@ export function resultUrl(value: unknown, image = false): string | undefined {
   return url.href
 }
 
-export function normalizeResult(row: { url?: unknown; title?: unknown; snippet?: unknown; imageUrl?: unknown; publishedAt?: unknown }): SearchResult | null {
+interface RawSearchResult {
+  url?: unknown
+  title?: unknown
+  snippet?: unknown
+  imageUrl?: unknown
+  thumbnailUrl?: unknown
+  imageWidth?: unknown
+  imageHeight?: unknown
+  duration?: unknown
+  creatorName?: unknown
+  publishedAt?: unknown
+}
+
+function isImageDimension(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= 100_000
+}
+
+export function normalizeResult(row: RawSearchResult): SearchResult | null {
   const url = resultUrl(row.url)
   const title = resultText(row.title, 300)
   if (!url || !title) return null
-  const imageUrl = resultUrl(row.imageUrl, true)
+  const originalImageUrl = resultUrl(row.imageUrl, true)
+  const thumbnailUrl = resultUrl(row.thumbnailUrl, true)
+  const imageUrl = originalImageUrl ?? thumbnailUrl
+  const imageDimensions = originalImageUrl && isImageDimension(row.imageWidth) && isImageDimension(row.imageHeight)
+    ? { width: row.imageWidth, height: row.imageHeight }
+    : undefined
+  const duration = typeof row.duration === 'string' && /^\d{1,4}:[0-5]\d(?::[0-5]\d)?$/.test(row.duration) ? row.duration : undefined
+  const creatorName = resultText(row.creatorName, 120)
   const publishedAt = resultText(row.publishedAt, 50)
   return {
     url, title, snippet: resultSnippet(row.snippet),
     ...(imageUrl ? { imageUrl } : {}),
+    ...(thumbnailUrl && thumbnailUrl !== imageUrl ? { thumbnailUrl } : {}),
+    ...(imageDimensions ? { imageDimensions } : {}),
+    ...(duration ? { duration } : {}),
+    ...(creatorName ? { creatorName } : {}),
     ...(publishedAt ? { publishedAt } : {}),
   }
 }
