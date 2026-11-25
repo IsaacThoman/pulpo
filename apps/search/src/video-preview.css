@@ -1,0 +1,44 @@
+.video-preview-trigger {
+  gap: .35rem;
+  margin-top: .5rem;
+}
+
+.dialog.video-preview {
+  width: min(calc(100% - 1.5rem), 52rem);
+  max-height: calc(100dvh - 1.5rem);
+  overscroll-behavior: contain;
+}
+
+.video-preview-header,
+.video-preview-footer {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  padding: .65rem 1rem;
+}
+
+.video-preview-header { justify-content: space-between; }
+.video-preview-header h2 {
+  min-width: 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.video-preview-header .icon-button {
+  flex-shrink: 0;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.video-preview-frame {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 200px;
+  max-height: max(200px, calc(100dvh - 8rem));
+  aspect-ratio: 16 / 9;
+  border: 0;
+  background: #000;
+}
+
+.video-preview-footer { justify-content: flex-end; }
+.video-preview-footer a { max-width: 100%; white-space: normal; }

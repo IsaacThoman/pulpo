@@ -9,6 +9,11 @@ describe('first-result bang', () => {
   it.each(['!', '! !', 'hello!', '!g hello', '"inside ! quotes"', 'C++ !important'])('preserves %s', query => {
     expect(firstResultQuery(query)).toBeNull()
   })
+
+  it('leaves a first-result bang inside an unfinished quoted phrase alone', () => {
+    expect(firstResultQuery('"literal exclamation !')).toBeNull()
+    expect(firstResultQuery('"literal ! text" !')).toBe('"literal ! text"')
+  })
 })
 
 describe('bangs', () => {
@@ -20,6 +25,12 @@ describe('bangs', () => {
 
   it('keeps unknown and subsequent bang tokens in the destination query', () => {
     expect(resolveBang('!noop !gh fetch !g')?.url).toBe('https://github.com/search?q=!noop%20fetch%20!g')
+  })
+
+  it('redirects only unquoted named bangs and preserves the text inside quotes', () => {
+    expect(resolveBang('"why !w matters"')).toBeNull()
+    expect(resolveBang('"why !w matters \\')).toBeNull()
+    expect(new URL(resolveBang('"why !w  matters" !w')!.url).searchParams.get('search')).toBe('"why !w  matters"')
   })
 
   it('finds bangs by exact shortcut first, prefix, or name', () => {

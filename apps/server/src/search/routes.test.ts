@@ -260,6 +260,17 @@ describe('Pulpo Search API', () => {
     })
   })
 
+  it('honors a requested image count and expands only an explicit Kagi gallery', async () => {
+    const image = { url: 'https://example.com/images', title: 'Photo', image: { url: 'https://cdn.example.com/photo.jpg' } }
+    mocks.fetch.mockResolvedValueOnce(Response.json({ data: { image: [image] } }))
+      .mockResolvedValueOnce(Response.json({ data: { image: [image] } }))
+    const options = { query: 'a photo', providers: ['kagi'], category: 'images', limit: 1 }
+    expect((await query(options)).statusCode).toBe(200)
+    expect((await query({ ...options, expandedImages: true })).statusCode).toBe(200)
+    expect(mocks.fetch.mock.calls.map(([, request]) => JSON.parse(request.body).limit)).toEqual([1, 120])
+    expect(mocks.settle).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps scoped provider attempts and fallback inside the same allowed domains', async () => {
     mocks.fetch.mockResolvedValueOnce(Response.json({ data: {
       search: [{ url: 'https://stackoverflow.com/reference', title: 'Outside explicit site', snippet: 'Outside' }],

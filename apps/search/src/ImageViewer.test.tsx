@@ -49,6 +49,7 @@ describe('image result viewer', () => {
     expect(source.getAttribute('rel')).toBe('noreferrer')
     const original = overlay.getByRole('link', { name: 'Open image' })
     expect(original.getAttribute('href')).toBe('https://cdn.example.com/giant.jpg')
+    expect(original.getAttribute('target')).toBe('_blank')
     expect(original.getAttribute('rel')).toBe('noreferrer')
     fireEvent.error(nextImage)
     expect(overlay.getByText('Image unavailable')).toBeDefined()

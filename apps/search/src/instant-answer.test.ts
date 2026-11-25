@@ -63,6 +63,10 @@ describe('editable calculator expressions', () => {
 
 describe('editable unit conversions', () => {
   it('shares canonical unit values when the query uses natural-language aliases', () => {
+    expect(instantAnswer('2.5 US gallons in liters')).toMatchObject({
+      label: 'Unit conversion', expression: '2.5 US gal', result: '9.46352946 L',
+    })
+    expect(instantAnswer('2.5 U.S. liquid gallons in liters')?.result).toBe('9.46352946 L')
     expect(instantAnswer('What is 5 miles in kilometers?')).toMatchObject({
       label: 'Unit conversion', expression: '5 mi', result: '8.04672 km',
       conversion: { amount: '5', from: 'mi', to: 'km' },

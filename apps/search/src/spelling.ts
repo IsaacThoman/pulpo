@@ -26,11 +26,14 @@ export function suggestedSpelling(query: string, data: SearchResponse) {
   if (!literalWords.test(query) || !data.related?.length) return
   const original = query.toLowerCase().split(/\s+/)
   const sources = data.results.slice(0, 8).flatMap(result => {
-    const host = safeHttpUrl(result.url)?.hostname.replace(/^www\./, '')
-    return host ? [{ host, title: new Set(result.title.toLowerCase().match(words)) }] : []
+    const url = safeHttpUrl(result.url)
+    return url ? [{
+      host: url.hostname.replace(/^www\./, ''), page: url.origin + url.pathname,
+      title: new Set(result.title.toLowerCase().match(words)),
+    }] : []
   })
 
-  for (const suggestion of data.related.slice(0, 4)) {
+  for (const [position, suggestion] of data.related.slice(0, 4).entries()) {
     if (!literalWords.test(suggestion)) continue
     const candidate = suggestion.toLowerCase().split(/\s+/)
     if (candidate.length !== original.length) continue
@@ -38,7 +41,8 @@ export function suggestedSpelling(query: string, data: SearchResponse) {
     if (differences.length !== 1) continue
     const [index] = differences
     if (!singleEdit(original[index], candidate[index]) || sources.some(source => source.title.has(original[index]))) continue
-    const agreeingHosts = new Set(sources.filter(source => source.title.has(candidate[index])).map(source => source.host))
-    if (agreeingHosts.size >= 2) return suggestion
+    const agreement = sources.filter(source => source.title.has(candidate[index]))
+    if (new Set(agreement.map(source => source.host)).size >= 2
+      || (position === 0 && agreement[0] === sources[0] && new Set(agreement.map(source => source.page)).size >= 2)) return suggestion
   }
 }

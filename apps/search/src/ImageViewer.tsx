@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Image, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ExternalLink, Image, X } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { safeHttpUrl } from './navigation'
 import { ResultImage } from './ResultImage'
@@ -94,7 +94,9 @@ export function ImageViewer({ entries, startIndex, opener, newTab, close }: Imag
             <span>{entry.host}{imageDimensions && ' · ' + imageDimensions.width + ' × ' + imageDimensions.height}</span>
           </div>
           <div className="image-viewer-actions">
-            {original && <a className="secondary-button" href={original.href} target={target} rel="noreferrer">Open image</a>}
+            {original && <a className="secondary-button" href={original.href} target="_blank" rel="noreferrer" title="Opens in a new tab">
+              Open image <ExternalLink size={13} aria-hidden="true" />
+            </a>}
             <a className="button" href={entry.url.href} target={target} rel="noreferrer">Visit site</a>
           </div>
         </footer>

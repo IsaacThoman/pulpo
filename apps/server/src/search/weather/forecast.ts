@@ -17,7 +17,12 @@ export function supportsNws(countryCode: string) {
 
 export const geonamesSource = { name: 'GeoNames', url: 'https://www.geonames.org/export/', license: 'https://creativecommons.org/licenses/by/4.0/' }
 const nwsSource = { name: 'National Weather Service', url: 'https://www.weather.gov/documentation/services-web-api', license: 'https://www.weather.gov/disclaimer' }
-const metSource = { name: 'MET Norway', url: 'https://api.met.no/weatherapi/locationforecast/2.0/documentation', license: 'https://creativecommons.org/licenses/by/4.0/' }
+const metSource = {
+  name: 'MET Norway',
+  url: 'https://api.met.no/weatherapi/locationforecast/2.0/documentation',
+  license: 'https://creativecommons.org/licenses/by/4.0/',
+  note: 'Forecast periods summarized and formatted by Pulpo.',
+}
 
 interface ForecastPoint {
   validAt: string

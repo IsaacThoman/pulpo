@@ -116,6 +116,7 @@ export function Settings({ config, preferences, update, recentQueryCount, clearR
             <option value="20">20</option>
           </select>
         </div>
+        {config?.providers.some(provider => provider.expandedImages) && <p className="hint">Kagi image galleries show more results in batches of 24.</p>}
         <label className="settings-row">
           Open links in a new tab
           <input type="checkbox" checked={preferences.newTab} onChange={event => update({ ...preferences, newTab: event.target.checked })} />

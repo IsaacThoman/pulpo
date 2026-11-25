@@ -1,3 +1,5 @@
+import { queryTokens } from './query-tokens'
+
 export interface CustomBang {
   trigger: string
   name: string
@@ -15,6 +17,7 @@ const builtIns: readonly CustomBang[] = [
   { trigger: 'bing', name: 'Bing', url: 'https://www.bing.com/search?q={query}' },
   { trigger: 'kagi', name: 'Kagi', url: 'https://kagi.com/search?q={query}' },
   { trigger: 'w', name: 'Wikipedia', url: 'https://en.wikipedia.org/w/index.php?search={query}' },
+  { trigger: 'wiki', name: 'Wikipedia', url: 'https://en.wikipedia.org/w/index.php?search={query}' },
   { trigger: 'wd', name: 'Wiktionary', url: 'https://en.wiktionary.org/w/index.php?search={query}' },
   { trigger: 'wa', name: 'WolframAlpha', url: 'https://www.wolframalpha.com/input?i={query}' },
   { trigger: 'yt', name: 'YouTube', url: 'https://www.youtube.com/results?search_query={query}' },
@@ -81,13 +84,14 @@ function allBangs(customBangs: readonly CustomBang[]): Map<string, CustomBang> {
 }
 
 export function resolveBang(query: string, customBangs: readonly CustomBang[] = []): CustomBang | null {
-  const words = query.trim().split(/\s+/)
+  const text = query.trim()
   const bangs = allBangs(customBangs)
-  for (const [index, word] of words.entries()) {
-    if (!word.startsWith('!')) continue
-    const bang = bangs.get(normalizeTrigger(word))
+  for (const token of queryTokens(text)) {
+    if (!token.text.startsWith('!')) continue
+    const bang = bangs.get(normalizeTrigger(token.text))
     if (!bang) continue
-    const terms = [...words.slice(0, index), ...words.slice(index + 1)].join(' ').replace(/[\uD800-\uDFFF]/gu, '\uFFFD')
+    const terms = [text.slice(0, token.start).trimEnd(), text.slice(token.end).trimStart()]
+      .filter(Boolean).join(' ').replace(/[\uD800-\uDFFF]/gu, '\uFFFD')
     const encoded = encodeURIComponent(terms)
     return { ...bang, url: bang.url.replaceAll(placeholder, encoded) }
   }
@@ -104,9 +108,13 @@ export function searchBangs(query: string, customBangs: readonly CustomBang[] = 
 
 /** A standalone exclamation mark opens the first result. Named bangs are resolved separately. */
 export function firstResultQuery(query: string): string | null {
-  const trimmed = query.trim()
-  const clean = trimmed.replace(/^(?:!\s+)+|(?:\s+!)+$/gu, '')
-  return clean !== trimmed && clean !== '!' ? clean : null
+  const tokens = queryTokens(query)
+  let first = 0
+  let last = tokens.length - 1
+  while (tokens[first]?.text === '!') first += 1
+  while (last >= first && tokens[last].text === '!') last -= 1
+  return first <= last && (first > 0 || last < tokens.length - 1)
+    ? query.slice(tokens[first].start, tokens[last].end) : null
 }
 
 function rank(trigger: string, value: string): number {

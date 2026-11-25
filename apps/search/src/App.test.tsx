@@ -146,6 +146,29 @@ describe('Pulpo Search', () => {
     expect(search).not.toHaveBeenCalled()
   })
 
+  it('keeps bangs typed inside an unfinished quote in the local search field', async () => {
+    render(<App callback={null} />)
+    await screen.findByLabelText('Pulpo account')
+    const combobox = screen.getByRole('combobox', { name: 'Search the web' })
+    fireEvent.change(combobox, { target: { value: '"what does !w' } })
+    fireEvent.keyDown(combobox, { key: 'ArrowDown' })
+    expect(screen.queryByRole('option', { name: '!w Wikipedia' })).toBeNull()
+    expect((combobox as HTMLInputElement).value).toBe('"what does !w')
+    expect(search).not.toHaveBeenCalled()
+  })
+
+  it('does not broaden a malformed date link into a paid search without approval', async () => {
+    window.history.replaceState(null, '', '/search?q=eclipse&from=2024-04-09&to=2024-04-08')
+    render(<App callback={null} />)
+    await screen.findByRole('heading', { name: 'Invalid date range' })
+    await screen.findByLabelText('Pulpo account')
+    expect(search).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Clear date range' }))
+    await screen.findByRole('link', { name: 'eclipse field guide' })
+    expect(search).toHaveBeenCalledTimes(1)
+    expect(window.location.search).toBe('?q=eclipse')
+  })
+
   it('answers exact math signed out without a provider request and offers ordinary web results', async () => {
     session.mockResolvedValue({ user: null })
     window.history.replaceState(null, '', '/search?q=18.5%25+of+249')
@@ -320,6 +343,26 @@ describe('Pulpo Search', () => {
     expect(screen.queryByRole('button', { name: 'Preview image: New small image' })).toBeNull()
     expect((screen.getByLabelText('Size') as HTMLSelectElement).value).toBe('large')
     expect(search).toHaveBeenCalledTimes(2)
+  })
+
+  it('reveals already downloaded images before allowing a new metered page', async () => {
+    getConfig.mockResolvedValue({ ...config, providers: [
+      { ...config.providers[0], categories: ['images'], expandedImages: true, maxPage: 10 },
+    ] })
+    search.mockResolvedValue({
+      provider: 'kagi', hasMore: true,
+      results: Array.from({ length: 26 }, (_, i) => ({
+        title: 'Photo ' + i, url: 'https://example.com/' + i, imageUrl: 'https://img.example.com/' + i, snippet: '',
+      })),
+    })
+    window.history.replaceState(null, '', '/search?q=tides&type=images')
+    render(<App callback={null} />)
+    const next = await screen.findByRole<HTMLButtonElement>('button', { name: 'Next' })
+    expect(next.disabled).toBe(true)
+    expect(search).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ expandedImages: true }), expect.any(AbortSignal))
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 more images on this page' }))
+    expect(next.disabled).toBe(false)
+    expect(search).toHaveBeenCalledTimes(1)
   })
 
   it('offers a supported spelling change without automatically running it', async () => {

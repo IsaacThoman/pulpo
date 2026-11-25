@@ -21,7 +21,8 @@ export type InstantAnswer = UnitConversionAnswer | (AnswerText & {
 
 const decimal = String.raw`(?:\d+(?:\.\d+)?|\.\d+)`
 const signedDecimal = `[+-]?${decimal}`
-const unitPattern = new RegExp(String.raw`^(?:(?:convert|what is)\s+)?(${signedDecimal})\s*([a-z°/]+)\s+(?:to|in)\s+([a-z°/]+)\??$`, 'i')
+const unitName = String.raw`[a-z°./]+(?:\s+[a-z°./]+){0,2}`
+const unitPattern = new RegExp(String.raw`^(?:(?:convert|what is)\s+)?(${signedDecimal})\s*(${unitName})\s+(?:to|in)\s+(${unitName})\??$`, 'i')
 const unitAmountPattern = new RegExp('^' + signedDecimal + '$')
 const instantAnswerMaxLength = 100
 const percentPattern = new RegExp(String.raw`^([+-]?${decimal})\s*%\s+of\s+([+-]?${decimal})$`, 'i')
@@ -266,7 +267,10 @@ unit('mass', .45359237, 'lb', ['lb', 'lbs', 'pound', 'pounds'])
 unit('mass', .028349523125, 'oz', ['oz', 'ounce', 'ounces'])
 unit('volume', .001, 'mL', ['ml', 'milliliter', 'milliliters'])
 unit('volume', 1, 'L', ['l', 'liter', 'liters', 'litre', 'litres'])
-unit('volume', 3.785411784, 'US gal', ['gal', 'gallon', 'gallons'])
+unit('volume', 3.785411784, 'US gal', [
+  'gal', 'gallon', 'gallons', 'us gal', 'us gallon', 'us gallons', 'us liquid gallon', 'us liquid gallons',
+  'u.s. gal', 'u.s. gallon', 'u.s. gallons', 'u.s. liquid gallon', 'u.s. liquid gallons',
+])
 unit('temperature', 1, '°C', ['c', '°c', 'celsius'])
 unit('temperature', 5 / 9, '°F', ['f', '°f', 'fahrenheit'], -160 / 9)
 unit('temperature', 1, 'K', ['k', 'kelvin'], -273.15)
@@ -476,7 +480,7 @@ export function instantAnswer(query: string, now = new Date()): InstantAnswer | 
   if (direct) return direct
   const conversion = unitPattern.exec(expression)
   if (conversion) {
-    return evaluateUnitConversion({ amount: conversion[1], from: conversion[2], to: conversion[3] })
+    return evaluateUnitConversion({ amount: conversion[1], from: conversion[2].replace(/\s+/g, ' '), to: conversion[3].replace(/\s+/g, ' ') })
   }
   return calculationAnswer(expression)
 }

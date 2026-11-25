@@ -19,8 +19,8 @@ import { placesCapability, placeSearchInput, searchPlaces } from './places.js'
 import { filterSearchHosts, searchHostFilters, searchScopes } from './scope.js'
 import { registerSearchWeatherRoute } from './weather/routes.js'
 
-const providerCapabilities: Record<WebToolProvider, { categories: readonly SearchCategory[]; maxPage: number }> = {
-  kagi: { categories: searchCategories, maxPage: KAGI_MAX_SEARCH_PAGE },
+const providerCapabilities: Record<WebToolProvider, { categories: readonly SearchCategory[]; maxPage: number; expandedImages?: true }> = {
+  kagi: { categories: searchCategories, maxPage: KAGI_MAX_SEARCH_PAGE, expandedImages: true },
   firecrawl: { categories: basicSearchCategories, maxPage: 1 },
 }
 const dates = ['day', 'week', 'month', 'year'] as const
@@ -33,6 +33,7 @@ const searchInputSchema = z.object({
     .refine((providers) => new Set(providers).size === providers.length, 'Choose different primary and fallback providers')
     .optional(),
   limit: z.number().int().min(1).max(20).default(10),
+  expandedImages: z.literal(true).optional(),
   page: z.number().int().min(1).max(KAGI_MAX_SEARCH_PAGE).default(1),
   category: z.enum(searchCategories).default('web'),
   scope: z.enum(searchScopes).optional(),
@@ -45,6 +46,8 @@ const searchInputSchema = z.object({
   path: ['dateRange'], message: 'Choose a preset or a custom date range.',
 }).refine(input => !input.dateRange || customDateRanges.includes(input.category), {
   path: ['dateRange'], message: 'Custom dates are available for Web and News.',
+}).refine(input => !input.expandedImages || input.category === 'images', {
+  path: ['expandedImages'], message: 'An expanded gallery requires an image search.',
 })
 
 async function readSearchSettings() {
@@ -204,7 +207,7 @@ export function registerSearchRoutes(app: FastifyInstance) {
           try {
             const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(8000)])
             signal.throwIfAborted()
-            const requestInput = provider === 'kagi' && input.category === 'images'
+            const requestInput = provider === 'kagi' && input.expandedImages
               ? { ...providerInput, limit: KAGI_IMAGE_RESULT_LIMIT }
               : providerInput
             result = filterSearchHosts(await clients[provider]!.searchResults(requestInput, signal), filters)

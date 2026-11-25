@@ -25,8 +25,10 @@ describe('search spelling suggestions', () => {
     expect(suggestedSpelling('interesting definition', sample)).toBeUndefined()
   })
 
-  it('does not infer a correction from repeated pages on the same host', () => {
+  it('uses a first-ranked suggestion backed by distinct pages on the leading site', () => {
     const sameHost = { ...sample, results: [sample.results[0], { ...sample.results[1], url: 'https://dictionary.example/facts' }] }
-    expect(suggestedSpelling('equidistnat definition', sameHost)).toBeUndefined()
+    expect(suggestedSpelling('equidistnat definition', sameHost)).toBe('equidistant definition')
+    const copy = { ...sameHost, results: [sample.results[0], { ...sample.results[0], url: sample.results[0].url + '#definition' }] }
+    expect(suggestedSpelling('equidistnat definition', copy)).toBeUndefined()
   })
 })

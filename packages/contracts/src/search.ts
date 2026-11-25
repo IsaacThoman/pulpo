@@ -31,23 +31,28 @@ export interface SearchHandoff {
   sources: string[]
 }
 
+export function normalizeSearchHandoffSource(value: string): URL | undefined {
+  if (value.length > MAX_HANDOFF_SOURCE_LENGTH) return
+  try {
+    const url = new URL(value)
+    if (['http:', 'https:'].includes(url.protocol)
+      && !url.username && !url.password && !url.port
+      && isSearchFaviconHost(url.hostname) && url.href.length <= MAX_HANDOFF_SOURCE_LENGTH) return url
+  } catch {
+    return
+  }
+}
+
 export function normalizeSearchHandoff(query: string, sources: Iterable<string>): SearchHandoff | undefined {
   const question = query.trim()
   if (!question || question.length > MAX_HANDOFF_QUERY_LENGTH) return undefined
 
   const urls = new Set<string>()
   for (const value of sources) {
-    if (value.length > MAX_HANDOFF_SOURCE_LENGTH) continue
-    try {
-      const url = new URL(value)
-      if (!['http:', 'https:'].includes(url.protocol)
-        || url.username || url.password || url.port || !isSearchFaviconHost(url.hostname)
-        || url.href.length > MAX_HANDOFF_SOURCE_LENGTH) continue
-      urls.add(url.href)
-      if (urls.size === MAX_HANDOFF_SOURCE_COUNT) break
-    } catch {
-      continue
-    }
+    const url = normalizeSearchHandoffSource(value)
+    if (!url) continue
+    urls.add(url.href)
+    if (urls.size === MAX_HANDOFF_SOURCE_COUNT) break
   }
   if (!urls.size) return undefined
   return { query: question, sources: [...urls] }

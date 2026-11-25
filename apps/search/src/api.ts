@@ -16,6 +16,7 @@ export interface SearchInput {
   query: string
   providers?: Provider[]
   limit?: number
+  expandedImages?: true
   category?: Category
   region?: string
   date?: SearchDate
@@ -60,6 +61,7 @@ export interface ProviderConfig {
   region: boolean
   priceMicros: number
   maxPage?: number
+  expandedImages?: true
 }
 
 export interface SearchConfig {
@@ -71,7 +73,7 @@ export interface SearchConfig {
 }
 
 export interface WeatherPlace { name: string; admin?: string; country: string; timeZone: string }
-export interface WeatherSource { name: string; url: string; license: string }
+export interface WeatherSource { name: string; url: string; license: string; note?: string }
 export type WeatherAlerts = { status: 'unavailable' } | {
   status: 'available'
   source: WeatherSource

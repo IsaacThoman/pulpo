@@ -79,7 +79,9 @@ export function WeatherAnswer({ response, alerts, onLocation, onWeb }: {
         <span>Sources {sources.map(source => {
           const url = safeHttpUrl(source.url)
           const license = safeHttpUrl(source.license)
-          return url && <span key={url.href}> · <a href={url.href} rel="noreferrer">{source.name}</a>{license && <> (<a href={license.href} rel="noreferrer">license</a>)</>}</span>
+          return url && <span key={url.href}> · <a href={url.href} rel="noreferrer">{source.name}</a>
+            {license && <> (<a href={license.href} rel="noreferrer">license</a>)</>}
+            {source.note && <> {source.note}</>}</span>
         })}</span>
         <button className="text-button weather-web" onClick={onWeb}>Search the web</button>
       </div>

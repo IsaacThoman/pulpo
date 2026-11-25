@@ -35,3 +35,13 @@ it('omits a link without a bounded query and usable sources', () => {
   expect(buildAskPulpoUrl('https://pulpo.baby', 'Mozilla', [])).toBeUndefined()
   expect(buildAskPulpoUrl('https://pulpo.baby', 'Mozilla', [{ url: 'https://private.example' }])).toBeUndefined()
 })
+
+it('prioritizes distinct sites and treats article and abstract links for the same paper as one source', () => {
+  const abstract = 'https://www.sciencedirect.com/science/article/abs/pii/S0166046220302581'
+  const paper = 'https://www.sciencedirect.com/science/article/pii/S0166046220302581'
+  const anotherPaper = 'https://www.sciencedirect.com/science/article/pii/S1123456789'
+  const agency = 'https://tfl.gov.uk/corporate/publications-and-reports/congestion-charge'
+  const independent = 'https://research.example.org/congestion-analysis'
+  const result = buildAskPulpoUrl('https://pulpo.baby', 'Traffic and emissions', [abstract, paper, anotherPaper, agency, independent].map(url => ({ url })))!
+  expect(readSearchHandoff(new URL(result).hash)?.sources).toEqual([abstract, agency, independent, anotherPaper])
+})

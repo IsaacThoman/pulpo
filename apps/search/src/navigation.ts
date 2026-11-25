@@ -1,5 +1,6 @@
 import { searchDateRange, type SearchDateRange } from '@pulpo/contracts/search'
 import type { Category, Provider, SearchDate, SearchScope } from './api'
+import { queryTokens } from './query-tokens'
 
 export const MAX_QUERY_LENGTH = 500
 export const categories = ['web', 'images', 'news', 'videos', 'podcasts'] as const
@@ -38,6 +39,7 @@ export interface SearchLocation {
   category: Category
   date: SearchDate | ''
   dateRange?: SearchDateRange
+  invalidDateRange?: true
   region: string
   scope?: SearchScope
   web?: true
@@ -53,6 +55,7 @@ export function parseSearchLocation(url: URL): SearchLocation {
   const category = categories.find(value => value === url.searchParams.get('type')) ?? 'web'
   const date = dateOptions.find(([value]) => value === url.searchParams.get('date'))?.[0] ?? ''
   const dateRange = !date && searchDateRange(url.searchParams.get('from') ?? '', url.searchParams.get('to') ?? '')
+  const invalidDateRange = !dateRange && (url.searchParams.has('from') || url.searchParams.has('to'))
   const region = regions.find(([value]) => value === url.searchParams.get('region'))?.[0] ?? ''
   const scope = searchScopes.find(([value]) => value === url.searchParams.get('scope'))?.[0] || undefined
   const provider = url.searchParams.get('provider')
@@ -60,6 +63,7 @@ export function parseSearchLocation(url: URL): SearchLocation {
   return {
     query, category, date, region,
     ...(dateRange ? { dateRange } : {}),
+    ...(invalidDateRange ? { invalidDateRange: true as const } : {}),
     ...(category === 'web' && scope ? { scope } : {}),
     ...(url.searchParams.get('web') === '1' ? { web: true as const } : {}),
     ...(provider === 'kagi' || provider === 'firecrawl' ? { provider } : {}),
@@ -85,7 +89,7 @@ export function searchPath(input: SearchLocation) {
 }
 
 export function withoutSiteOperators(query: string) {
-  const tokens = query.match(/(?:[^\s"]+|"(?:\\.|[^"\\])*(?:"|$))+/g) ?? []
+  const tokens = queryTokens(query).map(token => token.text)
   const remaining = tokens.filter(token => !/^-?site:[a-z\d-]+(?:\.[a-z\d-]+)+\.?$/i.test(token))
   return remaining.length && remaining.length < tokens.length ? remaining.join(' ') : ''
 }

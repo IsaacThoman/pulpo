@@ -139,7 +139,7 @@ export function App({ callback }: { callback: Callback }) {
     : luckyQuery ? { ...location, query: luckyQuery, category: 'web' as const, page: undefined } : location,
   [bangDiscovery, luckyQuery, location])
   const allowAnswers = !bang && !luckyQuery && view.category === 'web'
-    && !view.scope && !view.region && !view.date && !view.dateRange && !view.web && !view.page && !view.provider
+    && !view.scope && !view.region && !view.date && !view.dateRange && !view.invalidDateRange && !view.web && !view.page && !view.provider
   const localAnswer = allowAnswers ? instantAnswer(view.query) : undefined
   const currencyQuery = allowAnswers && !localAnswer && config?.currency ? parseCurrencyQuery(view.query) : undefined
   const currencyQuote = useCurrencyQuote(currencyQuery, user?.id)
@@ -184,7 +184,7 @@ export function App({ callback }: { callback: Callback }) {
   const filterCustomDates = categoryProviders.some(provider => provider.customDateRanges?.includes(view.category))
   const filterRegion = categoryProviders.some(provider => provider.region)
   const recoveryProviders = alternatives.filter(provider => !order.includes(provider.id))
-  const { state, refresh } = useSearch(user?.id, view.query && compatible.length && !bang && !showAnswer && !answerPending ? {
+  const { state, refresh } = useSearch(user?.id, view.query && compatible.length && !bang && !showAnswer && !answerPending && !view.invalidDateRange ? {
     query: view.query,
     providers: order.filter(id => compatible.some(provider => provider.id === id)),
     category: view.category,
@@ -194,6 +194,7 @@ export function App({ callback }: { callback: Callback }) {
     scope: view.category === 'web' ? view.scope : undefined,
     page: view.page,
     limit: searchPreferences.limit,
+    ...(view.category === 'images' && compatible.some(provider => provider.expandedImages) ? { expandedImages: true as const } : {}),
   } : null)
   const imageBrowse = useImageBrowse(view.category === 'images' && user
     ? JSON.stringify([user.id, searchPath({ ...view, page: undefined })]) : undefined,
@@ -335,6 +336,7 @@ export function App({ callback }: { callback: Callback }) {
       scope: category === 'web' ? view.scope : undefined,
       date: matchingDate.length ? date : '',
       dateRange: matchingDate.length ? view.dateRange : undefined,
+      invalidDateRange: undefined,
       region: (matchingDate.length ? matchingDate : providers).some(provider => provider.region) ? view.region : '',
     })
   }
@@ -358,8 +360,22 @@ export function App({ callback }: { callback: Callback }) {
     rememberQuery(firstResultQuery(trimmed) ?? trimmed)
     const restoreInput = !isResults && input.current === document.activeElement
       && window.matchMedia?.('(pointer: fine)').matches
-    go({ ...view, query: trimmed, category: firstResultQuery(trimmed) ? 'web' : view.category, web: undefined, provider: undefined, page: undefined })
+    go({ ...view, query: trimmed, category: firstResultQuery(trimmed) ? 'web' : view.category,
+      invalidDateRange: undefined, web: undefined, provider: undefined, page: undefined })
     if (restoreInput) requestAnimationFrame(() => input.current?.focus())
+  }
+
+  function renderPages(canAdvance = true) {
+    if (state.status !== 'success' || (!view.page && !state.data.hasMore)) return null
+    return (
+      <nav className="page-actions" aria-label="Result pages">
+        <button className="secondary-button" disabled={!view.page}
+          onClick={() => go({ ...view, page: view.page && view.page > 2 ? view.page - 1 : undefined })}>Previous</button>
+        <span>Page {view.page ?? 1}</span>
+        <button className="secondary-button" disabled={!canAdvance || !state.data.hasMore || (view.page ?? 1) >= 10}
+          onClick={() => go({ ...view, page: (view.page ?? 1) + 1 })}>Next</button>
+      </nav>
+    )
   }
 
   async function signIn() {
@@ -488,11 +504,17 @@ export function App({ callback }: { callback: Callback }) {
                 </label>}
                 {!showAnswer && !answerPending && <SearchFilters date={view.date} dateRange={view.dateRange} region={view.region}
                   dates={filterDates} allowCustomDates={filterCustomDates} allowRegion={filterRegion}
-                  onApply={filters => go({ ...view, ...filters, page: undefined })} />}
+                  onApply={filters => go({ ...view, ...filters, invalidDateRange: undefined, page: undefined })} />}
               </div>
             </div>
             {authError && <p className="form-error results-auth-error" role="alert">{authError}</p>}
-            {localAnswer?.label === 'Calculator' ? (
+            {view.invalidDateRange ? (
+              <section className="search-message" role="alert">
+                <h2>Invalid date range</h2>
+                <p>Choose a start and end date in order, or clear the range.</p>
+                <button className="secondary-button" onClick={() => go({ ...view, invalidDateRange: undefined, page: undefined })}>Clear date range</button>
+              </section>
+            ) : localAnswer?.label === 'Calculator' ? (
               <Calculator key={view.query} initialExpression={localAnswer.expression}
                 onSearchWeb={query => go({ ...view, query, web: true })} />
             ) : localAnswer?.label === 'Unit conversion' ? (
@@ -604,18 +626,11 @@ export function App({ callback }: { callback: Callback }) {
                 ) : imageBrowse.data?.results.length === 0 ? (
                   <section className="search-message">
                     <h2>No new images on this page</h2>
-                    <p>These images appeared on a previous page.</p>
+                    <p>These images are available on earlier pages.</p>
                   </section>
                 ) : <Results key={searchPath(view)} data={resultsData ?? state.data} location={view} preferences={preferences}
-                  setDomain={setDomain} onQuery={onSearch} imageRefinements={imageBrowse.refinements} />}
-                {(view.page || state.data.hasMore) && (
-                  <nav className="page-actions" aria-label="Result pages">
-                    <button className="secondary-button" disabled={!view.page} onClick={() => go({ ...view, page: view.page && view.page > 2 ? view.page - 1 : undefined })}>Previous</button>
-                    <span>Page {view.page ?? 1}</span>
-                    <button className="secondary-button" disabled={!state.data.hasMore || (view.page ?? 1) >= 10}
-                      onClick={() => go({ ...view, page: (view.page ?? 1) + 1 })}>Next</button>
-                  </nav>
-                )}
+                  setDomain={setDomain} onQuery={onSearch} imageRefinements={imageBrowse.refinements} imagePagination={renderPages} />}
+                {(!imageBrowse.data?.results.length) && renderPages()}
               </>
             ) : state.status === 'error' && state.error.status !== 401 ? (
               <section className="search-message" role="alert">

@@ -1,6 +1,6 @@
 import { isSearchFaviconHost } from '@pulpo/contracts/search'
 import { Ellipsis, Globe2, Image, Pin, Search } from 'lucide-react'
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import type { SearchResponse } from './api'
 import { ImageResultFilters } from './ImageResultFilters'
 import { ImageViewer } from './ImageViewer'
@@ -13,6 +13,7 @@ import { safeHttpUrl, type SearchLocation } from './navigation'
 import { domainRule, type DomainRule, type Preferences } from './preferences'
 import { ResultImage } from './ResultImage'
 import { consecutiveSiteResults, resultEntries, visibleEntries, type ResultWithUrl } from './result-order'
+import { VideoPreview } from './VideoPreview'
 
 const wordPattern = /[\p{L}\p{N}][\p{L}\p{M}\p{N}]*/gu
 const commonWords = new Set(['and', 'are', 'for', 'how', 'the', 'this', 'was', 'what', 'where', 'which', 'with'])
@@ -75,11 +76,12 @@ function ImageThumbnail({ image, thumbnail, title, contain, open }: {
   </button>
 }
 
-function ResultItem({ entry, additional, preview, media, newTab, setDomain, showHidden, searchSite, terms }: {
+function ResultItem({ entry, additional, preview, media, video, newTab, setDomain, showHidden, searchSite, terms }: {
   entry: ResultWithUrl
   additional: ResultWithUrl[]
   preview?: (opener: HTMLButtonElement) => void
   media: boolean
+  video: boolean
   newTab: boolean
   setDomain: (host: string, rule: DomainRule | undefined) => void
   showHidden: boolean
@@ -162,6 +164,7 @@ function ResultItem({ entry, additional, preview, media, newTab, setDomain, show
           </li>)}
         </ul>
       )}
+      {video && <VideoPreview url={url.href} title={title} newTab={newTab} />}
     </li>
   )
 }
@@ -174,9 +177,10 @@ interface ResultsProps {
   onQuery: (query: string) => void
   onClearScope?: () => void
   imageRefinements?: { value: ImageRefinements; update: (value: ImageRefinements) => void }
+  imagePagination?: (canAdvance: boolean) => ReactNode
 }
 
-export function Results({ data, location, preferences, setDomain, onQuery, onClearScope, imageRefinements }: ResultsProps) {
+export function Results({ data, location, preferences, setDomain, onQuery, onClearScope, imageRefinements, imagePagination }: ResultsProps) {
   const [expandedQuery, setExpandedQuery] = useState<string | null>(null)
   const [preview, setPreview] = useState<{ entries: ResultWithUrl[]; startIndex: number; opener: HTMLButtonElement }>()
   const [imageRefinement, setImageRefinement] = useState<{ query: string; value: ImageRefinements }>()
@@ -246,7 +250,7 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
               <ResultItem key={entry.url.href + (entry.result.imageUrl ?? '')} entry={entry}
                 additional={additional}
                 preview={images ? opener => setPreview({ entries: ordered, startIndex: index, opener }) : undefined}
-                media={media}
+                media={media} video={location.category === 'videos'}
                 newTab={preferences.newTab} setDomain={setDomain} showHidden={showHidden} searchSite={searchSite} terms={terms} />
             ))}
           </ol>
@@ -268,6 +272,7 @@ export function Results({ data, location, preferences, setDomain, onQuery, onCle
           {showHidden ? 'Hide filtered results' : `Show ${hiddenCount} hidden ${hiddenCount === 1 ? 'result' : 'results'}`}
         </button>}
       </div>
+      {images && imagePagination?.(imagesToReveal === 0)}
       {related.length > 0 && (
         <aside className="related" aria-label="Related searches">
           <h2>Related searches</h2>
