@@ -290,7 +290,6 @@ export function App({ callback }: { callback: Callback }) {
     next: nextProvider ? {
       provider: nextProvider,
       switching: nextProvider !== more.lastProvider,
-      priceMicros: config?.providers.find(provider => provider.id === nextProvider)?.priceMicros,
     } : undefined,
     loading: more.loading,
     error: more.error,
