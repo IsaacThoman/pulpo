@@ -774,7 +774,7 @@ describe('Pulpo Search', () => {
     window.history.replaceState(null, '', '/search?q=tides')
     render(<App callback={null} />)
     await screen.findByRole('link', { name: 'Shared result' })
-    expect(screen.getByText('Kagi continues these results for $0.002 per search.')).toBeDefined()
+    expect(screen.queryByText(/continues these results/)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Load more from Kagi' }))
     await screen.findByRole('link', { name: 'Kagi three' })
     expect(search).toHaveBeenLastCalledWith(expect.not.objectContaining({ page: expect.anything() }), expect.any(AbortSignal))

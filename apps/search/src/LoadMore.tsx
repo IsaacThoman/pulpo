@@ -1,10 +1,10 @@
-import { formatSearchPrice, providerNames, type SearchApiError, type SearchResponse } from './api'
+import { providerNames, type SearchApiError, type SearchResponse } from './api'
 import { pulpoOrigin } from './auth'
 import type { MoreNotice } from './use-more-results'
 
 export interface MoreResultsControl {
   /** The engine the next batch comes from, and whether it differs from the engine shown so far. */
-  next?: { provider: SearchResponse['provider']; switching: boolean; priceMicros?: number }
+  next?: { provider: SearchResponse['provider']; switching: boolean }
   loading: boolean
   error?: SearchApiError
   notice?: MoreNotice
@@ -40,9 +40,6 @@ export function LoadMore({ control, reveal, onLoad }: {
           control?.load()
         }}>{control?.loading ? 'Loading…' : switching ? `Load more from ${engine}` : 'Load more'}</button>
       )}
-      {switching && !control?.error && <p className="hint">
-        {engine} continues these results{next.priceMicros ? ` for ${formatSearchPrice(next.priceMicros)} per search` : ''}.
-      </p>}
       <p className="hint" role="status">{status}</p>
     </div>
   )
