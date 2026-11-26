@@ -123,7 +123,8 @@ const config: ExpoConfig = {
       microphonePermission: 'Allow Pulpo to use the microphone for dictation.',
       recordAudioAndroid: true,
       enableBackgroundRecording: false,
-      enableBackgroundPlayback: false,
+      // Reading aloud keeps going after switching apps, with lock-screen controls.
+      enableBackgroundPlayback: true,
     }],
     'expo-sqlite',
     [

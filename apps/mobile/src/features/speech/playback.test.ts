@@ -3,12 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   appState: 'active', onAppState: undefined as undefined | ((state: string) => void),
   onSession: undefined as undefined | ((state: unknown, previous: unknown) => void),
-  status: undefined as undefined | ((status: { didJustFinish?: boolean; playbackState?: string }) => void),
+  status: undefined as undefined | ((status: { didJustFinish?: boolean; playbackState?: string; playing?: boolean }) => void),
+  playing: false, lockScreen: vi.fn(), clearLockScreen: vi.fn(),
   play: vi.fn(), pause: vi.fn(), remove: vi.fn(), seekTo: vi.fn(async () => {}), setPlaybackRate: vi.fn(), deleteFile: vi.fn(), write: vi.fn(), audioMode: vi.fn(), audioActive: vi.fn(),
   preferences: { modelId: 'speech', models: {} } as SpeechPreferences, request: vi.fn(),
 }))
 vi.mock('react-native', () => ({ AppState: { get currentState() { return mocks.appState }, addEventListener: (_event: string, fn: typeof mocks.onAppState) => { mocks.onAppState = fn } } }))
-vi.mock('expo-audio', () => ({ setAudioModeAsync: mocks.audioMode, setIsAudioActiveAsync: mocks.audioActive, createAudioPlayer: () => ({ play: mocks.play, pause: mocks.pause, remove: mocks.remove, seekTo: mocks.seekTo, setPlaybackRate: mocks.setPlaybackRate, currentTime: 4, duration: 12, shouldCorrectPitch: false, addListener: (_event: string, listener: typeof mocks.status) => { mocks.status = listener; return { remove: vi.fn() } } }) }))
+vi.mock('expo-audio', () => ({ setAudioModeAsync: mocks.audioMode, setIsAudioActiveAsync: mocks.audioActive, createAudioPlayer: () => ({ play: mocks.play, pause: mocks.pause, remove: mocks.remove, setActiveForLockScreen: mocks.lockScreen, clearLockScreenControls: mocks.clearLockScreen, get playing() { return mocks.playing }, seekTo: mocks.seekTo, setPlaybackRate: mocks.setPlaybackRate, currentTime: 4, duration: 12, shouldCorrectPitch: false, addListener: (_event: string, listener: typeof mocks.status) => { mocks.status = listener; return { remove: vi.fn() } } }) }))
 vi.mock('expo-file-system', () => ({
   Paths: { cache: 'cache' }, Directory: class { exists = false; delete() {} create() {} },
   File: class { exists = true; uri = 'cache/speech/audio.wav'; write = mocks.write; delete = mocks.deleteFile },
@@ -21,31 +22,31 @@ import { speechPlayback, readAloud, previewSpeech } from './playback'
 const tick = () => new Promise(resolve => setTimeout(resolve, 0))
 beforeEach(() => {
   mocks.preferences = { modelId: 'speech', models: {} }
-  speechPlayback.stop(); vi.clearAllMocks(); mocks.appState = 'active'
+  speechPlayback.stop(); vi.clearAllMocks(); mocks.appState = 'active'; mocks.playing = false
   mocks.request.mockResolvedValue({ data: [{ id: 'speech', voices: [{ id: 'coral', label: 'Coral' }], defaultVoice: 'coral', responseFormat: 'wav', supportsInstructions: false, supportsSpeed: false, maxInputCharacters: 4096, maxInputTokens: null }] })
   vi.stubGlobal('fetch', vi.fn(async () => new Response(new Uint8Array([1, 2, 3]))))
 })
 describe('native speech lifecycle', () => {
-  it('generates previews through normal speech requests and stops on background', async () => {
+  it('generates previews through normal speech requests', async () => {
     const run = previewSpeech(); await tick()
     expect(fetch).toHaveBeenCalledWith('https://instance.example/api/speech', expect.objectContaining({ method: 'POST', headers: { authorization: 'Bearer session', 'content-type': 'application/json' } }))
     expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]?.body))).toMatchObject({ input: SPEECH_DEFAULT_PREVIEW_TEXT, voice: 'coral' })
-    expect(mocks.play).toHaveBeenCalledOnce()
-    mocks.onAppState?.('background'); await run
+    expect(mocks.play).toHaveBeenCalledOnce(); expect(mocks.lockScreen).toHaveBeenCalledWith(true, { title: 'Voice preview', artist: 'Pulpo' })
+    speechPlayback.stop(); await run
     expect(mocks.remove).toHaveBeenCalledOnce(); expect(mocks.deleteFile).toHaveBeenCalledOnce()
   })
   it('plays with the session token, keeps the finished audio for replay, and releases it when closed', async () => {
     const run = readAloud('chat:message', 'Hello')
     await tick(); expect(mocks.play).toHaveBeenCalledOnce()
     expect(fetch).toHaveBeenCalledWith('https://instance.example/api/speech', expect.objectContaining({ headers: { authorization: 'Bearer session', 'content-type': 'application/json' } }))
-    expect(mocks.audioMode).toHaveBeenCalledWith(expect.objectContaining({ shouldPlayInBackground: false, allowsRecording: false }))
+    expect(mocks.audioMode).toHaveBeenCalledWith(expect.objectContaining({ shouldPlayInBackground: true, allowsRecording: false }))
     expect(mocks.audioActive).toHaveBeenCalledWith(true)
     mocks.status?.({ didJustFinish: true }); await tick()
     expect(speechPlayback.getSnapshot()).toMatchObject({ key: 'chat:message', phase: 'ended' }); expect(mocks.remove).not.toHaveBeenCalled()
     void readAloud('chat:message', 'Hello'); await tick(); await tick()
     expect(mocks.seekTo).toHaveBeenLastCalledWith(0); expect(mocks.play).toHaveBeenCalledTimes(2); expect(fetch).toHaveBeenCalledOnce()
     speechPlayback.stop(); await run
-    expect(mocks.remove).toHaveBeenCalledOnce(); expect(mocks.deleteFile).toHaveBeenCalledOnce()
+    expect(mocks.clearLockScreen).toHaveBeenCalledOnce(); expect(mocks.remove).toHaveBeenCalledOnce(); expect(mocks.deleteFile).toHaveBeenCalledOnce()
   })
   it('keeps the generated audio and its format for saving', async () => {
     mocks.request.mockResolvedValue({ data: [{ id: 'speech', voices: [{ id: 'coral', label: 'Coral' }], defaultVoice: 'coral', responseFormat: 'mp3', supportsInstructions: false, supportsSpeed: false, maxInputCharacters: 4096, maxInputTokens: null }] })
@@ -63,13 +64,31 @@ describe('native speech lifecycle', () => {
     expect(fetch).toHaveBeenCalledTimes(2)
     expect(mocks.deleteFile).toHaveBeenCalledTimes(2)
   })
-  it('stops immediately on background and account changes', async () => {
+  it('keeps reading in the background, named on the lock screen', async () => {
+    const run = readAloud('chat:message', '**Hello** there'); await tick()
+    expect(mocks.lockScreen).toHaveBeenCalledWith(true, { title: 'Hello there', artist: 'Pulpo' })
+    mocks.appState = 'background'; mocks.onAppState?.('background'); await tick()
+    expect(speechPlayback.getSnapshot()).toMatchObject({ key: 'chat:message', phase: 'playing', paused: false }); expect(mocks.pause).not.toHaveBeenCalled()
+    speechPlayback.stop(); await run
+  })
+  it('follows pauses and plays made from the lock screen, ignoring brief stops', async () => {
+    vi.useFakeTimers()
+    try {
+      const run = readAloud('chat:message', 'Hello'); await vi.advanceTimersByTimeAsync(0)
+      mocks.playing = true; mocks.status?.({ playing: true })
+      mocks.playing = false; mocks.status?.({ playing: false }); mocks.playing = true; mocks.status?.({ playing: true })
+      await vi.advanceTimersByTimeAsync(1000); expect(speechPlayback.getSnapshot().paused).toBe(false)
+      mocks.playing = false; mocks.status?.({ playing: false }); await vi.advanceTimersByTimeAsync(1000)
+      expect(speechPlayback.getSnapshot().paused).toBe(true)
+      mocks.playing = true; mocks.status?.({ playing: true })
+      expect(speechPlayback.getSnapshot().paused).toBe(false)
+      speechPlayback.stop(); await run
+    } finally { vi.useRealTimers() }
+  })
+  it('stops immediately on account changes', async () => {
     const run = readAloud('chat:message', 'Hello'); await tick()
-    mocks.onAppState?.('background'); await run
+    mocks.onSession?.({ user: { id: 'new' }, instanceUrl: 'new', token: 'new' }, { user: { id: 'old' }, instanceUrl: 'old', token: 'old' }); await run
     expect(speechPlayback.getSnapshot().phase).toBe('idle'); expect(mocks.pause).toHaveBeenCalled(); expect(mocks.deleteFile).toHaveBeenCalledOnce()
-    const second = readAloud('chat:message', 'Hello'); await tick()
-    mocks.onSession?.({ user: { id: 'new' }, instanceUrl: 'new', token: 'new' }, { user: { id: 'old' }, instanceUrl: 'old', token: 'old' }); await second
-    expect(mocks.deleteFile).toHaveBeenCalledTimes(2)
   })
   it('never falls back to a different provider when the model is removed', async () => {
     mocks.request.mockResolvedValue({ data: [] })

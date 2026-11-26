@@ -1,8 +1,8 @@
 import { AppState } from 'react-native'
-import { createAudioPlayer, setAudioModeAsync, setIsAudioActiveAsync } from 'expo-audio'
+import { createAudioPlayer, setAudioModeAsync, setIsAudioActiveAsync, type AudioMetadata } from 'expo-audio'
 import { File, Paths, Directory } from 'expo-file-system'
 import { randomUUID } from 'expo-crypto'
-import { speechChunks, speechText } from '@pulpo/client-core'
+import { speechChunks, speechText, speechTitle } from '@pulpo/client-core'
 import { SPEECH_DEFAULT_PREVIEW_TEXT, SPEECH_DURATION_HEADER, type PublicSpeechModel, type SpeechCatalog } from '@pulpo/contracts'
 import { apiRequest, apiUrl, nativeAuthorizationHeaders } from '../../api/client'
 import { usePreferencesStore } from '../../store/preferences'
@@ -29,6 +29,7 @@ async function playSpeech(key: string, markdown?: string) {
   let model: PublicSpeechModel
   let settings: { voice?: string; instructions: string; speed: number } | undefined
   let instructions = ''
+  let metadata: AudioMetadata = {}
   await speechPlayback.start(key, async signal => {
     if (AppState.currentState !== 'active') throw new Error('Open the app to read aloud')
     const { data, defaultModelId } = await apiRequest<SpeechCatalog>('/api/speech-models', { signal })
@@ -43,7 +44,8 @@ async function playSpeech(key: string, markdown?: string) {
     const text = markdown === undefined ? voice?.previewText ?? SPEECH_DEFAULT_PREVIEW_TEXT : speechText(markdown)
     const chunks = speechChunks(text, model, instructions)
     if (!chunks.length) throw new Error('This message has no readable text')
-    await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true, shouldPlayInBackground: false })
+    metadata = { title: markdown === undefined ? 'Voice preview' : speechTitle(text), artist: 'Pulpo' }
+    await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true, shouldPlayInBackground: true })
     // Dictation hands audio back to other apps by deactivating it; reading aloud takes it again.
     await setIsAudioActiveAsync(true)
     return chunks
@@ -54,39 +56,54 @@ async function playSpeech(key: string, markdown?: string) {
     }) })
     if (!response.ok) { const body = await response.json().catch(() => null); throw new Error(body?.error?.message ?? 'Speech generation failed') }
     const bytes = new Uint8Array(await response.arrayBuffer())
-    return { ...nativeSpeechAudio(bytes, model.responseFormat, signal), durationSeconds: Number(response.headers.get(SPEECH_DURATION_HEADER)), format: model.responseFormat, bytes: () => bytes }
+    return { ...nativeSpeechAudio(bytes, model.responseFormat, signal, metadata), durationSeconds: Number(response.headers.get(SPEECH_DURATION_HEADER)), format: model.responseFormat, bytes: () => bytes }
   }, { retain: markdown !== undefined })
 }
-AppState.addEventListener('change', state => { if (state !== 'active') speechPlayback.stop() })
 useSessionStore.subscribe((state, previous) => {
   if (state.user?.id !== previous.user?.id || state.instanceUrl !== previous.instanceUrl || state.token !== previous.token) speechPlayback.stop()
 })
 
-function nativeSpeechAudio(bytes: Uint8Array, format: string, signal: AbortSignal) {
+function nativeSpeechAudio(bytes: Uint8Array, format: string, signal: AbortSignal, metadata: AudioMetadata) {
   if (signal.aborted) throw new Error('Cancelled')
   const file = new File(directory, `${randomUUID()}.${format}`)
   file.write(bytes)
   let player: ReturnType<typeof createAudioPlayer>
   try { player = createAudioPlayer(file.uri) } catch (error) { file.delete(); throw error }
   let disposed = false
+  // Whether reading aloud wants this chunk playing, to tell apart pauses made outside the app.
+  let wanted = false
+  let settle: ((error?: Error) => void) | undefined
+  let check: ReturnType<typeof setTimeout> | undefined
+  const subscription = player.addListener('playbackStatusUpdate', status => {
+    if (status.didJustFinish) { wanted = false; settle?.(); return }
+    if (status.playbackState === 'error') { settle?.(new Error('Unable to play speech audio')); return }
+    // Lock-screen controls, headphones, and interruptions such as calls play or pause the player directly.
+    if (status.playing && !wanted && settle) { wanted = true; speechPlayback.resume() }
+    else if (!status.playing && wanted) {
+      // The player also stops briefly while seeking and just before it finishes, so only a lasting stop counts.
+      clearTimeout(check)
+      check = setTimeout(() => { if (wanted && !disposed && !player.playing) speechPlayback.pause() }, 500)
+    }
+  })
   return {
-    dispose: () => { if (disposed) return; disposed = true; player.remove(); if (file.exists) file.delete() },
-    pause: () => player.pause(),
-    resume: () => player.play(),
+    dispose: () => { if (disposed) return; disposed = true; clearTimeout(check); subscription.remove(); player.clearLockScreenControls(); player.remove(); if (file.exists) file.delete() },
+    pause: () => { wanted = false; player.pause() },
+    resume: () => { wanted = true; player.play() },
     seek: (seconds: number) => player.seekTo(seconds),
     currentTime: () => player.currentTime,
     duration: () => player.duration,
     setRate: (rate: number) => { player.shouldCorrectPitch = true; player.setPlaybackRate(rate, 'high') },
     play: (signal: AbortSignal) => new Promise<void>((resolve, reject) => {
-      const subscription = player.addListener('playbackStatusUpdate', status => {
-        if (status.didJustFinish) { cleanup(); resolve() }
-        else if (status.playbackState === 'error') { cleanup(); reject(new Error('Unable to play speech audio')) }
-      })
-      const cleanup = () => { subscription.remove(); signal.removeEventListener('abort', abort) }
-      const abort = () => { player.pause(); cleanup(); resolve() }
+      const done = (error?: Error) => { settle = undefined; wanted = false; signal.removeEventListener('abort', abort); if (error) reject(error); else resolve() }
+      const abort = () => { player.pause(); done() }
       if (signal.aborted) { abort(); return }
       signal.addEventListener('abort', abort, { once: true })
-      try { player.play() } catch (error) { cleanup(); reject(error) }
+      settle = done; wanted = true
+      try {
+        // Shows the reading on the lock screen, which also keeps it playing while the app is in the background.
+        player.setActiveForLockScreen(true, metadata)
+        player.play()
+      } catch (error) { done(error instanceof Error ? error : new Error('Unable to play speech audio')) }
     }),
   }
 }
