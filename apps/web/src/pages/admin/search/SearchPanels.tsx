@@ -21,7 +21,7 @@ export function SearchKpiRow({ current, previous, loading }: { current: SearchKp
     return value === null ? null : relativeChange(value, pick(previous))
   }
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8 [&>*]:min-w-0">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 2xl:grid-cols-8 [&>*]:min-w-0">
       <KpiTile loading={!show} label={ui('Searches')} value={current ? formatCount(current.searches) : '—'} change={delta((k) => k.searches)} goodWhen="neutral" />
       <KpiTile loading={!show} label={ui('p50')} value={formatMs(current?.p50Ms)} change={delta((k) => k.p50Ms)} goodWhen="down" hint={ui('Median server time for searches that reached a provider')} />
       <KpiTile loading={!show} label={ui('p90')} value={formatMs(current?.p90Ms)} change={delta((k) => k.p90Ms)} goodWhen="down" />

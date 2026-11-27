@@ -37,7 +37,7 @@ export function Waterfall({ row, scaleMs }: { row: AdminSearchRequestRow; scaleM
   const description = items.map((item) => item.label).join(', ')
   return (
     <div className="relative h-3 w-full min-w-40" role="img" aria-label={description || ui('No timing recorded')} title={description}>
-      <div className="absolute inset-y-0 left-0 rounded-sm bg-muted" style={{ width: `${(row.durationMs / scale) * 100}%` }} />
+      <div className="absolute inset-y-0 left-0 rounded-sm bg-muted-foreground/25" style={{ width: `${(row.durationMs / scale) * 100}%` }} />
       {items.map((item) => (
         <div
           key={item.key}
@@ -72,7 +72,7 @@ export function WaterfallLegend({ providers }: { providers: string[] }) {
         {ui('Failed or timed out')}
       </li>
       <li className="flex items-center gap-1.5">
-        <span className="inline-block size-2.5 rounded-sm bg-muted" aria-hidden />
+        <span className="inline-block size-2.5 rounded-sm bg-muted-foreground/25" aria-hidden />
         {ui('Credit holds, billing and other overhead')}
       </li>
     </ul>
