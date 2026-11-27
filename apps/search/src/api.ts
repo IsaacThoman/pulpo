@@ -94,6 +94,8 @@ export interface SearchResponse {
   knowledge?: Knowledge
   podcastShows?: SearchResult[]
   hasMore?: boolean
+  /** Set when an engine failed or was refused for budget and the engine that answered found nothing. */
+  degraded?: { failed?: Provider[]; budget?: true }
 }
 
 export interface QuickAnswerSession {

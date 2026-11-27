@@ -367,6 +367,9 @@ summary::-webkit-details-marker { display: none; }
 .media-toolbar-slot:empty { display: none; }
 .standalone-media-filters { margin-bottom: .8rem; }
 .filtered-video-count { margin: 0 0 .85rem; color: var(--muted); font-size: .8125rem; }
+.result-stats { margin: 0 0 1.1rem; color: var(--faint); font-size: .8125rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+/* Sits just under the search type row, like the result counts older engines showed. */
+.search-tools + .results-body .result-stats { margin-top: -.6rem; }
 .empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: .45rem; }
 .category-button {
   position: relative;
@@ -449,6 +452,7 @@ summary::-webkit-details-marker { display: none; }
 .filter-actions { display: flex; align-items: center; justify-content: flex-end; gap: .85rem; }
 .filter-actions .button { min-height: 2.15rem; }
 .clear-filters { flex: none; width: 2.15rem; height: 2.15rem; }
+.answer-notice { margin: .1rem 0 .75rem; color: var(--muted); font-size: .875rem; overflow-wrap: anywhere; }
 .spelling-suggestion { margin: .1rem 0 .75rem; color: var(--muted); font-size: .875rem; overflow-wrap: anywhere; }
 .spelling-suggestion button { color: var(--link); font-weight: 650; text-decoration: underline; text-align: start; }
 .quick-answer { min-width: 0; }
@@ -821,6 +825,7 @@ summary::-webkit-details-marker { display: none; }
 .image-show-more { display: flex; justify-content: center; margin-top: 1.25rem; }
 .load-more { display: grid; justify-items: center; gap: .45rem; margin-top: 1.5rem; text-align: center; }
 .load-more > .secondary-button { min-width: 9rem; max-width: 100%; white-space: normal; }
+.load-more > .secondary-button[aria-disabled="true"] { cursor: default; opacity: .55; }
 .load-more .hint { margin: 0; }
 .load-more-error { display: grid; justify-items: center; gap: .55rem; }
 .load-more-error p { margin: 0; color: var(--muted); font-size: .875rem; }
