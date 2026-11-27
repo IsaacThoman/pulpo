@@ -330,3 +330,99 @@ export interface InsightsEngagement {
   concentration: { top1PctShare: number; top10PctShare: number; top10UsersShare: number }
   topUsers: Array<{ userId: string; name: string; requests: number; costMicros: number; activeDays: number }>
 }
+
+/** What a Search request ended as. Only `success`, `empty` and `error` count toward latency. */
+export const searchRequestOutcomes = ['success', 'empty', 'error', 'cancelled', 'budget', 'unsupported', 'unavailable', 'filtered'] as const
+export type SearchRequestOutcome = typeof searchRequestOutcomes[number]
+/** `skipped_unhealthy`: passed over after repeated failures while another provider could answer. */
+export const searchAttemptOutcomes = ['success', 'empty', 'error', 'timeout', 'cancelled', 'skipped_budget', 'skipped_unhealthy'] as const
+export type SearchAttemptOutcome = typeof searchAttemptOutcomes[number]
+
+/** One provider tried for a Search request; `startMs` is the offset from when the server received it. */
+export interface SearchRequestAttempt {
+  provider: string
+  outcome: SearchAttemptOutcome
+  startMs: number
+  durationMs: number
+  resultCount?: number
+}
+
+/**
+ * Time spent per phase of a Search request, summed over attempts. `requestMs` is
+ * auth and body parsing before the handler runs; all of them fall within `durationMs`.
+ */
+export interface SearchRequestPhases {
+  requestMs?: number
+  settingsMs?: number
+  reserveMs?: number
+  providerMs?: number
+  settleMs?: number
+  releaseMs?: number
+}
+
+export const searchAnalyticsFiltersSchema = z.object({
+  kind: z.enum(['query', 'places']).optional(),
+  category: csvFilter,
+  provider: csvFilter,
+  outcome: csvFilter,
+})
+export type SearchAnalyticsFilters = z.infer<typeof searchAnalyticsFiltersSchema>
+
+export interface SearchKpis {
+  searches: number
+  /** Searches that reached a provider and finished (success, empty or error). */
+  timed: number
+  p50Ms: number | null
+  p90Ms: number | null
+  p95Ms: number | null
+  /** Shares of timed searches. */
+  failureRate: number
+  emptyRate: number
+  fallbackRate: number
+  /** Share of provider attempts that hit the route's timeout. */
+  timeoutRate: number
+  users: number
+}
+
+export interface SearchProviderLatency {
+  provider: string
+  category: string
+  attempts: number
+  successes: number
+  empty: number
+  errors: number
+  timeouts: number
+  p50Ms: number | null
+  p90Ms: number | null
+  p95Ms: number | null
+}
+
+export interface AdminSearchRequestRow {
+  id: string
+  createdAt: string
+  user: { id: string; name: string; email: string } | null
+  kind: 'query' | 'places'
+  category: string
+  page: number
+  outcome: SearchRequestOutcome
+  provider: string | null
+  fallback: boolean
+  resultCount: number
+  durationMs: number
+  phases: SearchRequestPhases
+  attempts: SearchRequestAttempt[]
+  queryLength: number
+  filters: string[]
+}
+
+export interface AdminSearchOverview {
+  window: AnalyticsWindow
+  kpis: { current: SearchKpis; previous: SearchKpis | null }
+  outcomes: NamedCount[]
+  providers: SearchProviderLatency[]
+  /** Mean milliseconds per phase over timed searches; `otherMs` is the rest of `totalMs`. */
+  phases: Required<SearchRequestPhases> & { otherMs: number; totalMs: number }
+  series: Array<{ bucket: string; searches: number; p50Ms: number | null; p90Ms: number | null }>
+  providerSeries: Array<{ bucket: string; provider: string; attempts: number; p50Ms: number | null; p90Ms: number | null }>
+  recent: AdminSearchRequestRow[]
+}

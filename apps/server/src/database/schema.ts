@@ -1318,6 +1318,32 @@ export const signupPromoClaims = pgTable('signup_promo_claims', {
   check('signup_promo_claims_amount_check', sql`${table.amountMicros} > 0`),
 ])
 
+/**
+ * Timing for each Pulpo Search request, for the admin Search dashboard. The query
+ * text is never stored; only its length and which filters were used. Kept 30 days.
+ */
+export const searchRequests = pgTable('search_requests', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  category: text('category').notNull(),
+  page: integer('page').notNull().default(1),
+  outcome: text('outcome').notNull(),
+  // The provider that answered, if any.
+  provider: text('provider'),
+  fallback: boolean('fallback').notNull().default(false),
+  resultCount: integer('result_count').notNull().default(0),
+  durationMs: integer('duration_ms').notNull(),
+  phases: jsonb('phases').$type<import('@pulpo/contracts').SearchRequestPhases>().notNull().default({}),
+  attempts: jsonb('attempts').$type<import('@pulpo/contracts').SearchRequestAttempt[]>().notNull().default([]),
+  queryLength: integer('query_length').notNull().default(0),
+  filters: jsonb('filters').$type<string[]>().notNull().default([]),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('search_requests_created_idx').on(table.createdAt),
+  index('search_requests_user_idx').on(table.userId),
+])
+
 export const usageEvents = pgTable('usage_events', {
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
