@@ -63,7 +63,7 @@ export function NativePersonRow({ profile, detail, owner = false, trailing, onOp
   </SwiftUIHStack>
 }
 
-/** A person in a Material card; with `onOpen`, pressing the row opens their profile. */
+/** A person in a card, on Android and on the profile both platforms share; with `onOpen`, pressing the row opens their profile. */
 export function MaterialPersonRow({ profile, detail, owner = false, last, onOpen, children }: {
   profile: FriendProfile
   detail?: string

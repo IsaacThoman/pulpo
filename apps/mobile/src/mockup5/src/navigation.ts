@@ -14,8 +14,10 @@ export type RootStackParamList = {
   SettingsDetail: { section: SettingsSection };
   /** Friends, friend requests, and the Pool (features/friends). */
   Friends: undefined;
-  /** Anyone's profile by username, opened from Friends (features/friends). */
+  /** Anyone's profile by username, the viewer's own included (features/friends). */
   FriendProfile: { username: string };
+  /** Usage ranked across the viewer's friends or Pool (features/usage). */
+  Leaderboard: { scope?: 'friends' | 'pool' } | undefined;
   /** A Files folder; null is the top of My files, and trash references (features/trash/folder.ts) the trash. */
   FilesFolder: { folderId: string | null; name?: string };
   /** A collaborative document; `created` opens a new one ready to type in. */
