@@ -59,15 +59,16 @@ type KpiRecord = {
   attempts: number; timeouts: number; p50: unknown; p90: unknown; p95: unknown
 }
 
-async function loadKpis(from: Date | null, to: Date, filters: SQL[]): Promise<SearchKpis> {
+async function loadKpis(from: Date | null, to: Date, filters: SQL[], attemptFilters: SQL[]): Promise<SearchKpis> {
+  const attemptWhere = sql.join(attemptFilters, sql` and `)
   const [row] = await db.execute<KpiRecord>(sql`select count(*)::int as searches,
       (count(*) filter (where ${TIMED}))::int as timed,
       (count(*) filter (where s.outcome = 'error'))::int as errors,
       (count(*) filter (where s.outcome = 'empty'))::int as empty,
       (count(*) filter (where ${TIMED} and s.fallback))::int as fallbacks,
       count(distinct s.user_id)::int as users,
-      coalesce(sum((select count(*) from jsonb_array_elements(s.attempts) a where ${CALLED})), 0)::int as attempts,
-      coalesce(sum((select count(*) from jsonb_array_elements(s.attempts) a where a->>'outcome' = 'timeout')), 0)::int as timeouts,
+      coalesce(sum((select count(*) from jsonb_array_elements(s.attempts) a where ${attemptWhere})), 0)::int as attempts,
+      coalesce(sum((select count(*) from jsonb_array_elements(s.attempts) a where ${attemptWhere} and a->>'outcome' = 'timeout')), 0)::int as timeouts,
       percentile_cont(0.5) within group (order by s.duration_ms) filter (where ${TIMED}) as p50,
       percentile_cont(0.9) within group (order by s.duration_ms) filter (where ${TIMED}) as p90,
       percentile_cont(0.95) within group (order by s.duration_ms) filter (where ${TIMED}) as p95
@@ -109,11 +110,12 @@ export async function registerAdminSearchAnalyticsRoutes(app: FastifyInstance): 
     const filters = searchAnalyticsFiltersSchema.parse(request.query)
     const searchFilters = searchConditions(filters)
     const current = [inWindow(sql`s.created_at`, window.from, window.to), ...searchFilters]
-    const attempts = [...current, ...attemptConditions(filters)]
+    const attemptFilters = attemptConditions(filters)
+    const attempts = [...current, ...attemptFilters]
     const bucket = bucketLabel(sql`s.created_at`, window.bucket, window.timeZone)
     const [kpis, previous, outcomes, providers, phases, series, providerSeries, buckets, recent] = await Promise.all([
-      loadKpis(window.from, window.to, searchFilters),
-      window.previousFrom && window.from ? loadKpis(window.previousFrom, window.from, searchFilters) : Promise.resolve(null),
+      loadKpis(window.from, window.to, searchFilters, attemptFilters),
+      window.previousFrom && window.from ? loadKpis(window.previousFrom, window.from, searchFilters, attemptFilters) : Promise.resolve(null),
       db.execute<{ id: string; count: number }>(sql`select s.outcome as id, count(*)::int as count
         from search_requests s ${where(current)} group by 1 order by 2 desc`),
       db.execute<{ provider: string; category: string; attempts: number; successes: number; empty: number; errors: number; timeouts: number; p50: unknown; p90: unknown; p95: unknown }>(sql`select a->>'provider' as provider, s.category,

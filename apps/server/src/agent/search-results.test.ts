@@ -70,6 +70,10 @@ describe('search result excerpts', () => {
     )
   })
 
+  it('returns an empty snippet for a flattened table of symbols only', () => {
+    expect(resultSnippet('| ✓ | ✗ | | --- | --- | | ✓ | ✗ |')).toBe('')
+  })
+
   it('reads a multi-line Markdown table between paragraphs', () => {
     const snippet = 'Compare plans.\n\n| Plan | Price | Agent |\n|:---|---:|:-:|\n| Hobby | Free | ✗ |\n| Pro | **$20**/mo | ✓ |\n| Teams | | x |\n\nBilled yearly'
     expect(resultSnippet(snippet)).toBe('Compare plans. Plan, Price, Agent ; Hobby, Free ; Pro, $20/mo ; Teams ; Billed yearly')

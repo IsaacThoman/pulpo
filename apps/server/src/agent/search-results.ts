@@ -188,7 +188,8 @@ function gapTable(parts: string[], start: number, end: number): string {
 }
 
 function tableParts(prefix: string, rows: string[], suffix = ''): string {
-  return [prefix.trim(), rows.filter(Boolean).join(' ; '), suffix].filter(Boolean).reduce(joinTable)
+  const kept = [prefix.trim(), rows.filter(Boolean).join(' ; '), suffix].filter(Boolean)
+  return kept.length ? kept.reduce(joinTable) : ''
 }
 
 function joinTable(before: string, after: string): string {

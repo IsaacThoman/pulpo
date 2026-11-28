@@ -105,6 +105,10 @@ describe.skipIf(!enabled)('admin Search analytics', () => {
     const firecrawl = (await app.inject('/api/admin/analytics/search?range=24h&provider=firecrawl')).json<AdminSearchOverview>()
     expect(firecrawl.kpis.current.searches).toBe(2)
     expect(new Set(firecrawl.providers.map((row) => row.provider))).toEqual(new Set(['firecrawl']))
+    // Kagi timed out before Firecrawl answered; that timeout belongs to Kagi alone.
+    expect(firecrawl.kpis.current.timeoutRate).toBe(0)
+    const kagi = (await app.inject('/api/admin/analytics/search?range=24h&provider=kagi')).json<AdminSearchOverview>()
+    expect(kagi.kpis.current.timeoutRate).toBe(1 / 3)
     const places = (await app.inject('/api/admin/analytics/search?range=24h&kind=places')).json<AdminSearchOverview>()
     expect(places.recent.map((row) => row.provider)).toEqual(['brave'])
     const errors = (await app.inject('/api/admin/analytics/search?range=7d&outcome=error,empty')).json<AdminSearchOverview>()
