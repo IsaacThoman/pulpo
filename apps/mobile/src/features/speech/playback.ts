@@ -79,6 +79,8 @@ function nativeSpeechAudio(bytes: Uint8Array, format: string, signal: AbortSigna
     if (status.playbackState === 'error') { settle?.(new Error('Unable to play speech audio')); return }
     // Lock-screen controls, headphones, and interruptions such as calls play or pause the player directly.
     if (status.playing && !wanted && settle) { wanted = true; speechPlayback.resume() }
+    // A finished reading still shows on the lock screen; playing it there replays the whole message, not just this chunk.
+    else if (status.playing && !wanted && !disposed && speechPlayback.getSnapshot().phase === 'ended') { player.pause(); speechPlayback.resume() }
     else if (!status.playing && wanted) {
       // The player also stops briefly while seeking and just before it finishes, so only a lasting stop counts.
       clearTimeout(check)

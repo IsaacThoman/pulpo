@@ -85,6 +85,15 @@ describe('native speech lifecycle', () => {
       speechPlayback.stop(); await run
     } finally { vi.useRealTimers() }
   })
+  it('replays the whole message when a finished reading is played from the lock screen', async () => {
+    const run = readAloud('chat:message', 'Hello'); await tick()
+    mocks.status?.({ didJustFinish: true }); await tick()
+    expect(speechPlayback.getSnapshot().phase).toBe('ended')
+    mocks.playing = true; mocks.status?.({ playing: true }); await tick(); await tick()
+    expect(mocks.pause).toHaveBeenCalledOnce(); expect(mocks.seekTo).toHaveBeenLastCalledWith(0)
+    expect(speechPlayback.getSnapshot()).toMatchObject({ key: 'chat:message', phase: 'playing', paused: false }); expect(fetch).toHaveBeenCalledOnce()
+    speechPlayback.stop(); await run
+  })
   it('stops immediately on account changes', async () => {
     const run = readAloud('chat:message', 'Hello'); await tick()
     mocks.onSession?.({ user: { id: 'new' }, instanceUrl: 'new', token: 'new' }, { user: { id: 'old' }, instanceUrl: 'old', token: 'old' }); await run
