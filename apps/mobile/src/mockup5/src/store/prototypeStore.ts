@@ -55,7 +55,7 @@ type PrototypeActions = {
   updateMessage: (chatId: string, messageId: string, patch: Partial<PrototypeMessage>) => void;
   deleteMessageCascade: (chatId: string, messageId: string) => void;
   setDefaultModel: (id: string) => void;
-  toggleFavoriteModel: (id: string) => void;
+  setFavoriteModel: (id: string, favorite: boolean) => void;
 };
 
 export type PrototypeStore = PersistedPrototypeState & PrototypeActions;
@@ -363,21 +363,20 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
     return index < 0 ? chat : { ...chat, messages: chat.messages.slice(0, index), updatedAt: Date.now() };
   }) })),
   setDefaultModel: (defaultModelId) => {
-    const previous = get().defaultModelId;
+    const previous = usePreferencesStore.getState().defaultModelId;
+    if (previous === defaultModelId) return;
+    const previousDisplayId = get().defaultModelId;
     set({ defaultModelId });
     runOptimisticAction('preference:defaultModelId', productionActions.setPreference('defaultModelId', defaultModelId), () => {
-      set({ defaultModelId: previous });
+      set({ defaultModelId: previousDisplayId });
       void usePreferencesStore.getState().setPreference('defaultModelId', previous);
     });
   },
-  toggleFavoriteModel: (modelId) => {
-    const previous = get().models.find((model) => model.id === modelId)?.favorite;
+  setFavoriteModel: (modelId, favorite) => {
     const previousIds = usePreferencesStore.getState().favoriteModelIds;
-    const favorite = !previous;
-    set((state) => ({ models: state.models.map((model) => model.id === modelId ? { ...model, favorite: !model.favorite } : model) }));
-    runOptimisticAction(`model:${modelId}:favorite`, productionActions.toggleFavoriteModel(modelId, favorite), () => {
-      if (previous === undefined) return;
-      set((state) => ({ models: state.models.map((model) => model.id === modelId ? { ...model, favorite: previous } : model) }));
+    if (previousIds.includes(modelId) === favorite) return;
+    const nextIds = favorite ? [...previousIds, modelId] : previousIds.filter((id) => id !== modelId);
+    runOptimisticAction('preference:favoriteModelIds', productionActions.setPreference('favoriteModelIds', nextIds), () => {
       void usePreferencesStore.getState().setPreference('favoriteModelIds', previousIds);
     });
   },
