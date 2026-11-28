@@ -170,6 +170,8 @@
 
 * {
   border-color: var(--color-border);
+  /* No rubber-band bounce on the page or on any scroll container. */
+  overscroll-behavior: none;
 }
 
 html,
@@ -183,7 +185,6 @@ body {
   color: var(--color-foreground);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
-  overscroll-behavior: none;
 }
 
 .mobile-sidebar-opener {
