@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { SPEECH_REQUEST_MAX_INPUT_LENGTH, speechRequestSchema } from '@pulpo/contracts'
-import { SpeechPlayback, nextSpeechRate, speechBytes, speechChunks, speechClock, speechRateLabel, speechText, speechTimeLabel, type SpeechAudio } from './speech.js'
+import { SpeechPlayback, nextSpeechRate, speechBytes, speechChunks, speechClock, speechRateLabel, speechText, speechTimeLabel, speechTitle, type SpeechAudio } from './speech.js'
 const tick = () => new Promise(resolve => setTimeout(resolve, 0))
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (error: Error) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 
@@ -38,6 +38,11 @@ describe('speech text', () => {
     expect(speechChunks('世界', { maxInputCharacters: 10, maxInputTokens: 7 }, 'calm')).toEqual(['世', '界'])
     expect(() => speechChunks('👋', { maxInputCharacters: 10, maxInputTokens: 7 }, 'calm')).toThrow('too small')
   })
+})
+it('names a reading by the start of its text on one line', () => {
+  expect(speechTitle('  Hello\n\nthere  world ')).toBe('Hello there world')
+  expect(speechTitle('word '.repeat(30))).toBe(`${'word '.repeat(16).trimEnd()}…`)
+  expect(speechTitle('word '.repeat(30)).length).toBeLessThanOrEqual(80)
 })
 describe('speech playback', () => {
   it('starts after one chunk, prefetches only the next, and disposes every audio', async () => {
