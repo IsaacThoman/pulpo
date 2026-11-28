@@ -271,7 +271,8 @@ export class BasetenDecisionJudge implements SearchJudge {
       throw new Error(`Baseten decision judge HTTP ${response.status}: ${body.slice(0, 300)}`)
     }
     const data = await response.json() as BasetenDecideResponse
-    return { data, latencyMs: data.latency_ms ?? latencyMs }
+    // Report end-to-end client wall-clock latency so comparisons with remote judges stay apples-to-apples.
+    return { data, latencyMs }
   }
 
   async judgeResult(input: {

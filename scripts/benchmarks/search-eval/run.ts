@@ -420,34 +420,48 @@ export async function fetchLiveSnapshots(options: {
   const queries = GOLDEN_QUERIES.filter(q => q.bucket !== 'instant').slice(0, options.limit)
   const snapshots: EvalSerpSnapshot[] = []
   for (const item of queries) {
-    const started = performance.now()
     const category = item.category ?? 'web'
-    let response: Response
-    try {
-      response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...baseHeaders },
-        body: JSON.stringify({
-          query: item.query,
-          category,
-          limit: 10,
-          ...(options.providers?.length ? { providers: options.providers } : {}),
-        }),
-        signal: AbortSignal.timeout(20_000),
-      })
-    } catch {
+    let response: Response | undefined
+    let latencyMs = 0
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const started = performance.now()
+      try {
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...baseHeaders },
+          body: JSON.stringify({
+            query: item.query,
+            category,
+            limit: 10,
+            ...(options.providers?.length ? { providers: options.providers } : {}),
+          }),
+          signal: AbortSignal.timeout(20_000),
+        })
+      } catch {
+        latencyMs = performance.now() - started
+        response = undefined
+        break
+      }
+      latencyMs = performance.now() - started
+      if (response.status !== 429 || attempt === 2) break
+      const retryAfterHeader = Number(response.headers.get('retry-after'))
+      const waitMs = Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
+        ? Math.min(retryAfterHeader * 1000, 65_000)
+        : 1_500 * (attempt + 1)
+      await new Promise(resolveWait => setTimeout(resolveWait, waitMs))
+    }
+    if (!response) {
       snapshots.push({
         queryId: item.id,
         query: item.query,
         bucket: item.bucket,
         provider: 'error',
-        latencyMs: performance.now() - started,
+        latencyMs,
         costMicros: 0,
         results: [],
       })
       continue
     }
-    const latencyMs = performance.now() - started
     if (!response.ok) {
       snapshots.push({
         queryId: item.id,
@@ -473,7 +487,7 @@ export async function fetchLiveSnapshots(options: {
         query: item.query,
         bucket: item.bucket,
         provider: 'error',
-        latencyMs: performance.now() - started,
+        latencyMs,
         costMicros: 0,
         results: [],
       })
