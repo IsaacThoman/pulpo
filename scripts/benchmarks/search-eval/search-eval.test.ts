@@ -13,7 +13,7 @@ import {
   spearmanCorrelation,
   summarizeLatencies,
 } from './metrics.ts'
-import { compareJudges, deriveLiveQueryCostMicros, evaluateInstantAnswerQuery, evaluateLocalIntentQuery, runScorecard } from './run.ts'
+import { compareJudges, deriveLiveQueryCostMicros, evaluateInstantAnswerQuery, evaluateLocalIntentQuery, fetchLiveSnapshots, runScorecard } from './run.ts'
 
 describe('search-eval golden dataset', () => {
   it('contains at least 250 unique queries spanning all 8 buckets', () => {
@@ -145,6 +145,116 @@ describe('search-eval judges & scorecard', () => {
     assert.equal(deriveLiveQueryCostMicros({ provider: 'kagi', category: 'web', resultCount: 0, pricingByProvider: pricing }), 0)
     assert.equal(deriveLiveQueryCostMicros({ provider: 'kagi', category: 'web', resultCount: 10, cache: 'hit', pricingByProvider: pricing }), 0)
     assert.equal(deriveLiveQueryCostMicros({ provider: 'unknown', category: 'web', resultCount: 10, pricingByProvider: pricing }), null)
+  })
+
+  it('accumulates token cost across invalid-JSON retries and preserves live snapshots on fetch errors', async () => {
+    const originalFetch = globalThis.fetch
+    let chatCalls = 0
+    let queryCalls = 0
+    try {
+      globalThis.fetch = (async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/chat/completions')) {
+          chatCalls += 1
+          return new Response(JSON.stringify({
+            choices: [{
+              message: {
+                content: chatCalls === 1 ? 'not json at all' : '{"relevance": 2, "is_slop": false, "slop_prob": 0.1}',
+              },
+            }],
+            usage: { prompt_tokens: 1000, completion_tokens: 100 },
+          }), { status: 200, headers: { 'content-type': 'application/json' } })
+        }
+        if (url.endsWith('/api/search/config')) {
+          return new Response(JSON.stringify({ providers: [{ id: 'kagi', priceMicros: 12_000 }] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        queryCalls += 1
+        if (queryCalls === 1) throw new Error('network timeout')
+        return new Response(JSON.stringify({
+          provider: 'kagi',
+          results: [{ url: 'https://github.com', title: 'GitHub', snippet: 'GitHub' }],
+        }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }) as typeof fetch
+
+      const haiku = new OpenAICompatibleJudge({ baseUrl: 'https://pulpo.baby/v1', apiKey: 'test-key', model: 'claude-haiku-5.5' })
+      const judgment = await haiku.judgeResult({
+        query: 'github',
+        bucket: 'navigational',
+        intentNote: 'Official GitHub',
+        result: { url: 'https://github.com', title: 'GitHub', snippet: 'GitHub' },
+      })
+      assert.equal(chatCalls, 2)
+      assert.equal(judgment.inputTokens, 2000)
+      assert.equal(judgment.outputTokens, 200)
+      assert.equal(Number((judgment.costUsd ?? 0).toFixed(4)), 0.003)
+
+      const liveSnapshots = await fetchLiveSnapshots({ targetUrl: 'https://search.pulpo.baby', limit: 2 })
+      assert.equal(liveSnapshots.length, 2)
+      assert.equal(liveSnapshots[0]?.provider, 'error')
+      assert.equal(liveSnapshots[0]?.results.length, 0)
+      assert.equal(liveSnapshots[1]?.provider, 'kagi')
+      assert.equal(liveSnapshots[1]?.costMicros, 12_000)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('accumulates token cost across invalid-JSON retries and preserves live snapshots on fetch errors', async () => {
+    const originalFetch = globalThis.fetch
+    let chatCalls = 0
+    let queryCalls = 0
+    try {
+      globalThis.fetch = (async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/chat/completions')) {
+          chatCalls += 1
+          return new Response(JSON.stringify({
+            choices: [{
+              message: {
+                content: chatCalls === 1 ? 'not json at all' : '{"relevance": 2, "is_slop": false, "slop_prob": 0.1}',
+              },
+            }],
+            usage: { prompt_tokens: 1000, completion_tokens: 100 },
+          }), { status: 200, headers: { 'content-type': 'application/json' } })
+        }
+        if (url.endsWith('/api/search/config')) {
+          return new Response(JSON.stringify({ providers: [{ id: 'kagi', priceMicros: 12_000 }] }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        queryCalls += 1
+        if (queryCalls === 1) throw new Error('network timeout')
+        return new Response(JSON.stringify({
+          provider: 'kagi',
+          results: [{ url: 'https://github.com', title: 'GitHub', snippet: 'GitHub' }],
+        }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }) as typeof fetch
+
+      const haiku = new OpenAICompatibleJudge({ baseUrl: 'https://pulpo.baby/v1', apiKey: 'test-key', model: 'claude-haiku-5.5' })
+      const judgment = await haiku.judgeResult({
+        query: 'github',
+        bucket: 'navigational',
+        intentNote: 'Official GitHub',
+        result: { url: 'https://github.com', title: 'GitHub', snippet: 'GitHub' },
+      })
+      assert.equal(chatCalls, 2)
+      assert.equal(judgment.inputTokens, 2000)
+      assert.equal(judgment.outputTokens, 200)
+      assert.equal(Number((judgment.costUsd ?? 0).toFixed(4)), 0.003)
+
+      const liveSnapshots = await fetchLiveSnapshots({ targetUrl: 'https://search.pulpo.baby', limit: 2 })
+      assert.equal(liveSnapshots.length, 2)
+      assert.equal(liveSnapshots[0]?.provider, 'error')
+      assert.equal(liveSnapshots[0]?.results.length, 0)
+      assert.equal(liveSnapshots[1]?.provider, 'kagi')
+      assert.equal(liveSnapshots[1]?.costMicros, 12_000)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 
   it('parses BasetenDecisionJudge and OpenAICompatibleJudge payloads cleanly', async () => {

@@ -102,8 +102,10 @@ export class OpenAICompatibleJudge implements SearchJudge {
 
   private async callJson(systemPrompt: string, userPrompt: string) {
     let lastError: unknown
+    const loopStarted = performance.now()
+    let totalInputTokens = 0
+    let totalOutputTokens = 0
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const started = performance.now()
       const response = await fetch(this.endpoint, {
         method: 'POST',
         headers: {
@@ -121,7 +123,6 @@ export class OpenAICompatibleJudge implements SearchJudge {
         }),
         signal: AbortSignal.timeout(this.timeoutMs),
       })
-      const latencyMs = performance.now() - started
       if (!response.ok) {
         const body = await response.text().catch(() => '')
         lastError = new Error(`Judge HTTP ${response.status}: ${body.slice(0, 300)}`)
@@ -132,13 +133,14 @@ export class OpenAICompatibleJudge implements SearchJudge {
         choices?: Array<{ message?: { content?: string | null } }>
         usage?: { prompt_tokens?: number; completion_tokens?: number }
       }
+      totalInputTokens += payload.usage?.prompt_tokens ?? 0
+      totalOutputTokens += payload.usage?.completion_tokens ?? 0
       const content = payload.choices?.[0]?.message?.content ?? ''
       try {
         const parsed = extractJsonObject(content)
-        const inputTokens = payload.usage?.prompt_tokens ?? 0
-        const outputTokens = payload.usage?.completion_tokens ?? 0
-        const costUsd = (inputTokens * this.inputPricePerMillionUsd + outputTokens * this.outputPricePerMillionUsd) / 1_000_000
-        return { parsed, latencyMs, inputTokens, outputTokens, costUsd }
+        const latencyMs = performance.now() - loopStarted
+        const costUsd = (totalInputTokens * this.inputPricePerMillionUsd + totalOutputTokens * this.outputPricePerMillionUsd) / 1_000_000
+        return { parsed, latencyMs, inputTokens: totalInputTokens, outputTokens: totalOutputTokens, costUsd }
       } catch (err) {
         lastError = err
       }

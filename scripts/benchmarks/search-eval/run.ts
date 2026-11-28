@@ -381,7 +381,7 @@ export function deriveLiveQueryCostMicros(input: {
   return pricing.priceMicros
 }
 
-async function fetchLiveSnapshots(options: {
+export async function fetchLiveSnapshots(options: {
   targetUrl: string
   cookie?: string
   origin?: string
@@ -422,17 +422,31 @@ async function fetchLiveSnapshots(options: {
   for (const item of queries) {
     const started = performance.now()
     const category = item.category ?? 'web'
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...baseHeaders },
-      body: JSON.stringify({
+    let response: Response
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...baseHeaders },
+        body: JSON.stringify({
+          query: item.query,
+          category,
+          limit: 10,
+          ...(options.providers?.length ? { providers: options.providers } : {}),
+        }),
+        signal: AbortSignal.timeout(20_000),
+      })
+    } catch {
+      snapshots.push({
+        queryId: item.id,
         query: item.query,
-        category,
-        limit: 10,
-        ...(options.providers?.length ? { providers: options.providers } : {}),
-      }),
-      signal: AbortSignal.timeout(20_000),
-    })
+        bucket: item.bucket,
+        provider: 'error',
+        latencyMs: performance.now() - started,
+        costMicros: 0,
+        results: [],
+      })
+      continue
+    }
     const latencyMs = performance.now() - started
     if (!response.ok) {
       snapshots.push({
@@ -446,10 +460,24 @@ async function fetchLiveSnapshots(options: {
       })
       continue
     }
-    const data = await response.json() as {
+    let data: {
       provider?: string
       cache?: 'hit' | 'stale' | 'miss'
       results?: Array<{ url: string; title: string; snippet: string; publishedAt?: string }>
+    }
+    try {
+      data = await response.json() as typeof data
+    } catch {
+      snapshots.push({
+        queryId: item.id,
+        query: item.query,
+        bucket: item.bucket,
+        provider: 'error',
+        latencyMs: performance.now() - started,
+        costMicros: 0,
+        results: [],
+      })
+      continue
     }
     const results = (data.results ?? []).map(r => ({
       url: r.url,
