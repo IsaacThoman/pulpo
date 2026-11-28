@@ -48,8 +48,13 @@ export async function publishResponseEvent(event: ResponseEvent): Promise<void> 
   await pipeline.exec()
 }
 
+/**
+ * Events after `afterSequence`, oldest first. The stream is trimmed only approximately, so it can
+ * hold more than the replay window; reading newest-first keeps the latest events instead of the
+ * oldest, and stops at the first event the reader already has.
+ */
 export async function readResponseEvents(responseId: string, afterSequence: number): Promise<ResponseEvent[]> {
-  const entries = await redis.xrange(eventKey(responseId), '-', '+', 'COUNT', 10_000)
+  const entries = await redis.xrevrange(eventKey(responseId), '+', '-', 'COUNT', 10_000)
   const events: ResponseEvent[] = []
   for (const [, fields] of entries) {
     let storedSequence: string | undefined
@@ -58,17 +63,16 @@ export async function readResponseEvents(responseId: string, afterSequence: numb
       if (fields[index] === 'sequence') storedSequence = fields[index + 1]
       if (fields[index] === 'event') serialized = fields[index + 1]
     }
-    // Streams use timestamp IDs, so XRANGE still reads retained history. Avoid
-    // decoding acknowledged payloads; legacy entries without a valid sequence
-    // field continue through the original payload-based filter.
+    // Sequences grow with the stream, so everything older is acknowledged too. Legacy entries
+    // without a valid sequence field continue through the original payload-based filter.
     if (storedSequence !== undefined && /^(0|[1-9]\d*)$/.test(storedSequence)) {
       const sequence = Number(storedSequence)
-      if (Number.isSafeInteger(sequence) && sequence <= afterSequence) continue
+      if (Number.isSafeInteger(sequence) && sequence <= afterSequence) break
     }
     const event = JSON.parse(serialized ?? 'null') as ResponseEvent | null
     if (event !== null && event.sequence > afterSequence) events.push(event)
   }
-  return events
+  return events.reverse()
 }
 
 export async function publishSnapshot(snapshot: ResponseSnapshot): Promise<void> {

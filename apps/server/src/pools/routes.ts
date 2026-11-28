@@ -153,13 +153,17 @@ export async function registerPoolRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/api/pools/invitations/:id', async (request, reply) => {
     const user = requireUser(request)
     const { id } = z.object({ id: z.uuid() }).parse(request.params)
-    const [invite] = await db.select().from(poolInvitations).where(and(eq(poolInvitations.id, id), eq(poolInvitations.status, 'pending'))).limit(1)
-    if (!invite) throw notFound('Pool invitation')
-    const membership = await db.transaction((tx) => activePoolMembership(tx, user.id))
-    if (!membership || membership.pool.id !== invite.poolId || membership.pool.ownerUserId !== user.id) throw new AppError(403, 'pool_owner_required', 'Only the Pool owner can cancel invitations')
-    const dissolved = await db.transaction(async (tx) => {
-      await tx.update(poolInvitations).set({ status: 'canceled', respondedAt: new Date(), updatedAt: new Date() }).where(eq(poolInvitations.id, id))
-      return dissolveSingletonPool(tx, invite.poolId, { keepWhileInvited: true })
+    const { invite, dissolved } = await db.transaction(async (tx) => {
+      const [pending] = await tx.select().from(poolInvitations).where(and(eq(poolInvitations.id, id), eq(poolInvitations.status, 'pending'))).limit(1)
+      if (!pending) throw notFound('Pool invitation')
+      // Accepting locks the pool too, so the invitation cannot be accepted between this check and the update.
+      await lockPool(tx, pending.poolId)
+      const membership = await activePoolMembership(tx, user.id)
+      if (!membership || membership.pool.id !== pending.poolId || membership.pool.ownerUserId !== user.id) throw new AppError(403, 'pool_owner_required', 'Only the Pool owner can cancel invitations')
+      const [canceled] = await tx.update(poolInvitations).set({ status: 'canceled', respondedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(poolInvitations.id, id), eq(poolInvitations.status, 'pending'))).returning()
+      if (!canceled) throw notFound('Pool invitation')
+      return { invite: canceled, dissolved: await dissolveSingletonPool(tx, canceled.poolId, { keepWhileInvited: true }) }
     })
     await publishPoolChanges([...new Set([user.id, invite.inviteeUserId, ...dissolved])])
     reply.code(204).send()

@@ -124,7 +124,8 @@ export function classifyGenerationError(error: unknown): GenerationErrorCategory
   if (message.includes('compaction')) return 'worker'
   if (
     status === 429
-    || message.includes('rate')
+    // Not a bare "rate": generate, deprecated, moderation and accurate all contain it.
+    || /\brate[\s_-]?limit|\bratelimit|\brate exceeded/.test(message)
     || message.includes('429')
     || message.includes('too many requests')
     || message.includes('try again later')

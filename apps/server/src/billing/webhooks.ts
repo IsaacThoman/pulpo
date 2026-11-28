@@ -845,6 +845,22 @@ export async function commitBillingChanges(tx: Transaction, changedUsers: Set<st
 }
 
 /** Tells clients about committed billing changes. */
+/**
+ * Publishes after the webhook transaction committed. A failure here must not mark the event failed:
+ * the retry would find it processed and skip it, so log it instead. Clients catch up on their next
+ * revision check, and the auto top-up sweep covers a missed top-up check.
+ */
+export async function publishCommittedBillingChanges(changes: Array<{ userId: string; revision: number }>, source: string): Promise<void> {
+  try {
+    await publishBillingChanges(changes)
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: 'billing.publish_failed', source,
+      error: error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+    }))
+  }
+}
+
 export async function publishBillingChanges(changes: Array<{ userId: string; revision: number }>): Promise<void> {
   await Promise.all(changes.map((change) => publishStateChange({
     ...change,
@@ -862,8 +878,9 @@ export async function processStripeWebhookEvent(event: Stripe.Event): Promise<vo
   const providerEventId = event.id
   const context = await hydrateEvent(event)
   const changedUsers = new Set<string>()
+  let changes: Array<{ userId: string; revision: number }>
   try {
-    const changes = await db.transaction(async (tx) => {
+    changes = await db.transaction(async (tx) => {
       await tx.insert(billingWebhookEvents).values({
         providerEventId,
         provider: 'stripe',
@@ -882,7 +899,6 @@ export async function processStripeWebhookEvent(event: Stripe.Event): Promise<vo
       }).where(eq(billingWebhookEvents.providerEventId, providerEventId))
       return revisions
     })
-    await publishBillingChanges(changes)
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 2_000) : String(error).slice(0, 2_000)
     await db.insert(billingWebhookEvents).values({
@@ -898,4 +914,5 @@ export async function processStripeWebhookEvent(event: Stripe.Event): Promise<vo
     })
     throw error
   }
+  await publishCommittedBillingChanges(changes, 'stripe')
 }

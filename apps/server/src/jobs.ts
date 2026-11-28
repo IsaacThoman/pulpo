@@ -44,7 +44,12 @@ export const codexLoginQueue = new Queue<CodexLoginJob>('codex-login', {
   defaultJobOptions: { attempts: 1, removeOnComplete: 1_000, removeOnFail: 5_000 },
 })
 
-export const maintenanceQueue = new Queue<MaintenanceJob>('maintenance', { connection })
+// Schedulers add a cleanup every 15 minutes and a backup check every minute; without a cap the
+// finished jobs would stay in Redis (which runs with noeviction) forever.
+export const maintenanceQueue = new Queue<MaintenanceJob>('maintenance', {
+  connection,
+  defaultJobOptions: { removeOnComplete: 1_000, removeOnFail: 5_000 },
+})
 
 /**
  * Purges the account's trash now: chats marked for purging, and chats and Files items past the
