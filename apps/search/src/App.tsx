@@ -3,11 +3,12 @@ import { ArrowUpRight, ChevronDown, CreditCard, ExternalLink, Keyboard, LogOut, 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { pulpoUrl, useAccountSummary } from './account'
 import { AccountAvatar, AccountCredits, LimitAction } from './AccountParts'
-import { api, providerNames, SearchApiError, type Category, type SearchConfig, type SearchRequest, type SearchUser } from './api'
+import { api, providerNames, SearchApiError, type Category, type SearchConfig, type SearchRequest, type SearchResponse, type SearchUser } from './api'
 import { useSearchAppearance } from './appearance'
 import { consumeCallback, pulpoOrigin, startSignIn } from './auth'
 import { firstResultQuery, resolveBang, unknownBang, type CustomBang } from './bangs'
 import { Calculator } from './Calculator'
+import { CoinFlip } from './CoinFlip'
 import { CurrencyAnswer } from './CurrencyAnswer'
 import { parseCurrencyQuery } from './currency'
 import { instantAnswer } from './instant-answer'
@@ -39,6 +40,8 @@ const smiley = new URL('../../web/public/pulpo-smiley.png', import.meta.url).hre
 const labels = { web: 'Web', images: 'Images', news: 'News', videos: 'Videos', podcasts: 'Podcasts' } as const
 const isBangDiscovery = (query: string) => /^[!\s]+$/u.test(query)
 const answerPath = (location: SearchLocation) => searchPath({ ...location, provider: undefined })
+// Web results start once a weather, currency or places lookup takes longer than this; its answer joins them when it arrives.
+const answerDeadlineMs = 2_000
 
 /** Pulpo's settings link to Search panels with `#settings`, `#bangs`, or `#browser`. */
 function linkedPanel(): SearchLinkedPanel | null {
@@ -58,9 +61,10 @@ function Logo({ onHome }: { onHome: () => void }) {
   }}><PulpoMark size={27} /> <span>Pulpo Search</span></a>
 }
 
-function LoadingResults({ firstResult = false, images = false }: { firstResult?: boolean; images?: boolean }) {
+/** Placeholder rows only; the page's live region says what is loading. */
+function LoadingResults({ images = false }: { images?: boolean }) {
   return (
-    <div className={images ? 'results-list image-grid image-loading-grid' : 'skeleton-list'} role="status" aria-label={firstResult ? 'Opening first result' : 'Searching'}>
+    <div className={images ? 'results-list image-grid image-loading-grid' : 'skeleton-list'} aria-hidden="true">
       {Array.from({ length: images ? 12 : 4 }, (_, index) => (
         <div className="skeleton" key={index} aria-hidden="true"><span /><span /><span /></div>
       ))}
@@ -69,6 +73,15 @@ function LoadingResults({ firstResult = false, images = false }: { firstResult?:
 }
 
 type Callback = ReturnType<typeof consumeCallback>
+
+const engineList = new Intl.ListFormat('en', { type: 'conjunction' })
+
+/** Why a search came back empty when an engine couldn't take part. */
+function degradedMessage(degraded: NonNullable<SearchResponse['degraded']>) {
+  const failed = degraded.failed?.length ? engineList.format(degraded.failed.map(provider => providerNames[provider])) + ' couldn’t complete this search.' : ''
+  const budget = degraded.budget ? 'Your search limit kept another engine from running.' : ''
+  return [failed, budget].filter(Boolean).join(' ')
+}
 
 function returningNavigation() {
   try {
@@ -100,7 +113,7 @@ export function App({ callback }: { callback: Callback }) {
   const [configAttempt, setConfigAttempt] = useState(0)
   const [submittedQuestion, setSubmittedQuestion] = useState<string>()
   const consumeSubmittedQuestion = useCallback(() => setSubmittedQuestion(undefined), [])
-  const [answerWithWeb, setAnswerWithWeb] = useState<{ userId: string; path: string; expanded: boolean }>()
+  const [answerWithWeb, setAnswerWithWeb] = useState<{ userId: string; path: string; expanded: boolean; late?: true }>()
   const [, refreshInstantAnswer] = useState(0)
   const input = useRef<HTMLInputElement>(null)
   const preferenceSnapshot = preferencesReady ? { userId, preferences } : undefined
@@ -187,36 +200,51 @@ export function App({ callback }: { callback: Callback }) {
     : luckyQuery ? { ...location, query: luckyQuery, category: 'web' as const, reusableImages: undefined } : location,
   [bangDiscovery, luckyQuery, location])
   const companion = answerWithWeb?.userId === user?.id && answerWithWeb?.path === answerPath(view) ? answerWithWeb : undefined
+  // The answer lookup missed its deadline, so web results run without it.
+  const lateAnswer = companion?.late === true
   const allowAnswers = !bang && !unrecognizedBang && !luckyQuery && view.category === 'web'
     && !view.scope && !view.region && !view.date && !view.dateRange && !view.invalidDateRange && !view.web
     && (companion?.expanded || !view.provider)
   const localAnswer = allowAnswers ? instantAnswer(view.query) : undefined
   const currencyQuery = allowAnswers && !localAnswer && config?.currency ? parseCurrencyQuery(view.query) : undefined
   const currencyQuote = useCurrencyQuote(currencyQuery, user?.id)
-  const currencyPending = !!(user && currencyQuery && currencyQuote === undefined)
+  const currencyLookup = !!(user && currencyQuery && currencyQuote === undefined)
+  const currencyPending = currencyLookup && !lateAnswer
   const showCurrency = currencyQuote?.status === 'converted'
   const forecastLocation = allowAnswers && !localAnswer && !currencyQuery && config?.weather ? weatherLocation(view.query) : undefined
   const forecast = useWeatherAnswer(forecastLocation, user?.id)
-  const forecastPending = !!(user && forecastLocation && forecast === undefined)
+  const forecastLookup = !!(user && forecastLocation && forecast === undefined)
+  const forecastPending = forecastLookup && !lateAnswer
   const showForecast = forecast?.status === 'forecast' || forecast?.status === 'ambiguous'
-  const alerts = useWeatherAlerts(forecast?.status === 'forecast' ? forecastLocation : undefined, user?.id)
+  // The alerts endpoint resolves the place itself, so alerts load alongside the forecast.
+  const alerts = useWeatherAlerts(forecastLocation, user?.id)
   const localIntent = preferencesReady && allowAnswers && config?.places && searchPreferences.localPlaces && !forecastLocation && !localAnswer && !currencyQuery
     ? placeIntent(view.query) : undefined
   const choosePlaceLocation = user ? localIntent?.needsLocation : undefined
   const { result: placeResult, retry: retryPlaces } = usePlaces(choosePlaceLocation ? undefined : localIntent, user?.id)
   const placesError = placeResult instanceof SearchApiError ? placeResult : undefined
-  const placesUnavailable = placesError && placesError.status >= 500
+  // Rate limits, a disabled Places and provider failures all leave ordinary web results as the useful answer.
+  const placesUnavailable = placesError && (placesError.status >= 500 || placesError.status === 429 || placesError.status === 404)
   const places = placeResult instanceof SearchApiError ? undefined : placeResult
-  const placesPending = !!(user && localIntent && !choosePlaceLocation && placeResult === undefined)
+  const placesLookup = !!(user && localIntent && !choosePlaceLocation && placeResult === undefined)
+  const placesPending = placesLookup && !lateAnswer
   const showPlaces = !!(places && (places.results.length || localIntent?.openNow))
   const showUnavailableForecast = forecast?.status === 'unavailable'
+  const answerLookup = forecastLookup || currencyLookup || placesLookup
   const answerPending = forecastPending || currencyPending || placesPending
-  const showAnswer = !!localAnswer || showForecast || showCurrency || showPlaces || !!choosePlaceLocation || showUnavailableForecast || (!!placesError && !placesUnavailable)
-  const keepCompanionLookup = !!companion && (showPlaces || forecast?.status === 'forecast')
+  const showAnswer = !!localAnswer || showForecast || showCurrency || showPlaces || !!choosePlaceLocation || (!!placesError && !placesUnavailable)
+  const keepCompanionLookup = !!companion && (showPlaces || forecast?.status === 'forecast' || (lateAnswer && showAnswer))
   const webAlongsideAnswer = keepCompanionLookup && companion?.expanded === true
   const showWebResults = !view.invalidDateRange && (webAlongsideAnswer || (!showAnswer && !forecastPending && !placesPending))
   const mapSearch = view.category === 'web' && !view.scope && !luckyQuery && (!showAnswer || placesError) && !answerPending
     ? localMapSearch(view.query) : undefined
+  const lookupPath = answerLookup && userId ? answerPath(view) : ''
+  useEffect(() => {
+    if (!lookupPath || !userId) return
+    const timer = window.setTimeout(() => setAnswerWithWeb(previous => previous?.userId === userId && previous.path === lookupPath
+      ? { ...previous, late: true } : { userId, path: lookupPath, expanded: true, late: true }), answerDeadlineMs)
+    return () => window.clearTimeout(timer)
+  }, [lookupPath, userId])
   const refreshAt = localAnswer?.refreshAt
   useEffect(() => {
     if (!refreshAt) return
@@ -263,7 +291,7 @@ export function App({ callback }: { callback: Callback }) {
     limit: searchPreferences.limit,
     ...(view.category === 'images' && compatible.some(provider => provider.expandedImages) ? { expandedImages: true as const } : {}),
   } : null
-  const { state, refresh } = useSearch(userId, searchRequest)
+  const { state, refresh } = useSearch(userId, searchRequest, restoreScroll.current)
   const searchKey = user && searchRequest ? JSON.stringify([user.id, searchRequest]) : ''
   const imageRefinements = useImageRefinements(view.category === 'images' && user ? JSON.stringify([user.id, searchPath(view)]) : undefined)
   // Engines that can continue these results, most preferred first.
@@ -296,7 +324,16 @@ export function App({ callback }: { callback: Callback }) {
     notice: more.notice,
     loadedMore: more.loadedMore,
     load: more.load,
+    account,
   } : undefined
+  const resultStats = state.status === 'success' ? {
+    elapsedMs: state.elapsedMs === undefined || more.loadedMs === undefined ? undefined : state.elapsedMs + more.loadedMs,
+    providers: more.providers,
+  } : undefined
+  const noResults = state.status === 'success' && !state.data.results.length && !state.data.answer && !state.data.knowledge
+    && !state.data.podcastShows?.length
+  const degraded = noResults && state.data.degraded && (state.data.degraded.budget || state.data.degraded.failed?.length)
+    ? state.data.degraded : undefined
   const savedScroll = more.savedScroll
   const saveScroll = more.saveScroll
   const resultsReady = state.status === 'success' && !luckyQuery
@@ -321,6 +358,12 @@ export function App({ callback }: { callback: Callback }) {
   }, [])
   const waitingForSession = user === undefined
   const isResults = Boolean(view.query)
+  const resultsPath = searchPath(view)
+  const [shownCount, setShownCount] = useState<{ path: string; count: number }>()
+  const reportShown = useCallback((count: number) => setShownCount(previous => (
+    previous?.path === resultsPath && previous.count === count ? previous : { path: resultsPath, count }
+  )), [resultsPath])
+  const shown = shownCount?.path === resultsPath ? shownCount.count : undefined
 
   useEffect(() => {
     document.title = view.query ? view.query + ' · Pulpo Search' : 'Pulpo Search'
@@ -359,6 +402,37 @@ export function App({ callback }: { callback: Callback }) {
     // Address-bar searches and shared bang links use the same redirect as submissions.
     if (bangUrl) window.location.replace(bangUrl)
   }, [bangUrl])
+
+  // An engine that stopped working or no longer supports this search usually means the config changed:
+  // reload it once for this search and try again, rather than ending at an error.
+  const configRetried = useRef('')
+  const [reloadingConfig, setReloadingConfig] = useState('')
+  const latestSearch = useRef({ config, refresh, searchKey })
+  latestSearch.current = { config, refresh, searchKey }
+  const staleConfig = state.status === 'error' && !!searchKey
+    && (state.error.code === 'search_provider_unavailable' || state.error.code === 'search_not_supported')
+  const searchRetrying = staleConfig && (configRetried.current !== searchKey || reloadingConfig === searchKey)
+  useEffect(() => {
+    if (!staleConfig || configRetried.current === searchKey) return
+    configRetried.current = searchKey
+    setReloadingConfig(searchKey)
+    api.config().then(next => {
+      const latest = latestSearch.current
+      if (latest.searchKey !== searchKey) return
+      // The same config means the same request, which has to be asked again; a new one starts its own search.
+      if (JSON.stringify(next) === JSON.stringify(latest.config)) latest.refresh()
+      setConfig(next)
+    }).catch(() => {}).finally(() => setReloadingConfig(current => current === searchKey ? '' : current))
+  }, [searchKey, staleConfig])
+  // One live region that stays mounted, so screen readers hear each change instead of regions that appear already filled.
+  const announcement = !isResults || !showWebResults || unrecognizedBang || user === null || configError || view.invalidDateRange ? ''
+    : bang || waitingForSession || currencyPending || !config || !preferencesReady || state.status === 'loading' || searchRetrying
+      ? (luckyQuery ? 'Opening first result…' : 'Searching…')
+    : state.status === 'error' ? (state.error.status === 401 ? '' : state.error.status === 402 ? 'Search limit reached.' : 'Couldn’t complete the search. ' + state.error.message)
+    : state.status !== 'success' ? ''
+    : luckyQuery ? 'Opening first result…'
+    : noResults ? 'No results found.'
+    : shown === undefined ? '' : `${shown} ${shown === 1 ? 'result' : 'results'} for ${view.query}`
 
   useEffect(() => {
     if (user && (placesError?.status === 401 || (state.status === 'error' && state.error.status === 401) || more.error?.status === 401)) {
@@ -545,6 +619,7 @@ export function App({ callback }: { callback: Callback }) {
 
   return (
     <div className={isResults ? 'app results-page' : 'app home-page'}>
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announcement}</div>
       <a className="skip-link" href="#main-content">{isResults ? 'Skip to search results' : 'Skip to search'}</a>
       <header className="app-header">
         <div className="app-header-inner">
@@ -676,6 +751,8 @@ export function App({ callback }: { callback: Callback }) {
             ) : localAnswer?.label === 'Calculator' ? (
               <Calculator key={view.query} initialExpression={localAnswer.expression}
                 onSearchWeb={query => go({ ...view, query, web: true })} />
+            ) : localAnswer?.label === 'Coin flip' ? (
+              <CoinFlip key={view.query} coins={localAnswer.coins} onSearchWeb={() => go({ ...view, web: true })} />
             ) : localAnswer?.label === 'Unit conversion' ? (
               <UnitConversion key={view.query} initialConversion={localAnswer.conversion}
                 onConvert={onSearch} onSearchWeb={query => go({ ...view, query, web: true })} />
@@ -693,26 +770,27 @@ export function App({ callback }: { callback: Callback }) {
             ) : showCurrency ? (
               <CurrencyAnswer key={view.query} quote={currencyQuote} onConvert={onSearch} onWeb={() => go({ ...view, web: true })} />
             ) : showUnavailableForecast ? (
-              <section className="search-message">
-                <h2>Forecast unavailable</h2>
-                {forecast.place && <p>{[forecast.place.name, forecast.place.admin, forecast.place.country].filter(Boolean).join(', ')}</p>}
-                <button className="secondary-button" onClick={() => go({ ...view, web: true })}>Search the web</button>
-              </section>
+              <p className="answer-notice">
+                {forecast.place ? `No forecast is available for ${[forecast.place.name, forecast.place.admin, forecast.place.country].filter(Boolean).join(', ')}`
+                  : 'No forecast is available'}, so these are web results.
+              </p>
             ) : choosePlaceLocation ? (
               <PlacesLocation onLocation={area => onSearch([choosePlaceLocation.term, choosePlaceLocation.connector, area,
                 localIntent?.openNow ? 'open now' : ''].filter(Boolean).join(' '))} onWeb={() => go({ ...view, web: true })} />
             ) : showPlaces && places ? (
               <PlacesAnswer key={view.query} response={places} openNow={!!localIntent?.openNow}
                 webExpanded={webAlongsideAnswer} onWeb={toggleAnswerWeb} />
+            ) : placesUnavailable ? (
+              <p className="answer-notice">Showing web results while Places is unavailable.</p>
             ) : placesError && placesError.status !== 401 ? (
               <section className="search-message" role="alert">
                 <h2>{placesError.status === 402 ? 'Places search limit reached' : 'Couldn’t load places'}</h2>
-                <p>{placesUnavailable ? 'Showing web results while Places is unavailable.' : placesError.message}</p>
+                <p>{placesError.message}</p>
                 <div className="empty-actions">
                   {placesError.status === 402
                     ? <LimitAction error={placesError} account={account} />
                     : <button className="secondary-button" onClick={retryPlaces}>Try again</button>}
-                  {!placesUnavailable && <button className="secondary-button" onClick={() => go({ ...view, web: true })}>Search the web</button>}
+                  <button className="secondary-button" onClick={() => go({ ...view, web: true })}>Search the web</button>
                 </div>
               </section>
             ) : forecastPending || placesPending ? (
@@ -721,7 +799,7 @@ export function App({ callback }: { callback: Callback }) {
                 <button className="secondary-button" onClick={() => go({ ...view, web: true })}>Search the web</button>
               </section>
             ) : null}
-            {!unrecognizedBang && showWebResults && (bang || waitingForSession || currencyPending ? <LoadingResults firstResult={Boolean(luckyQuery)} /> : user === null ? (
+            {!unrecognizedBang && showWebResults && (bang || waitingForSession || currencyPending ? <LoadingResults /> : user === null ? (
               <section className="search-message">
                 <h2>Sign in to search</h2>
                 <p>Use your Pulpo account and shared credits.</p>
@@ -738,7 +816,7 @@ export function App({ callback }: { callback: Callback }) {
                 <p>{configError}</p>
                 <button className="secondary-button" onClick={() => { setConfigError(''); setConfigAttempt(value => value + 1) }}>Try again</button>
               </section>
-            ) : !config || !preferencesReady || state.status === 'loading' ? <LoadingResults firstResult={Boolean(luckyQuery)} images={view.category === 'images'} /> : reuse && (!config.reusableImages || view.query.length > 200) ? (
+            ) : !config || !preferencesReady || state.status === 'loading' || searchRetrying ? <LoadingResults images={view.category === 'images'} /> : reuse && (!config.reusableImages || view.query.length > 200) ? (
               <section className="search-message">
                 <h2>{config.reusableImages ? 'Shorten your image query' : 'Reusable images are unavailable'}</h2>
                 {config.reusableImages && <p>Reusable images supports up to 200 characters.</p>}
@@ -755,16 +833,20 @@ export function App({ callback }: { callback: Callback }) {
                   ...view, category: 'web', date: '', dateRange: undefined, region: '',
                 })}>Reset filters</button>
               </section>
-            ) : state.status === 'success' && luckyQuery ? <LoadingResults firstResult /> : state.status === 'success' ? (
+            ) : state.status === 'success' && luckyQuery ? <LoadingResults /> : state.status === 'success' ? (
               <>
                 {spelling && <p className="spelling-suggestion">
                   Did you mean <button className="text-button" onClick={() => onSearch(spelling)}>{spelling}</button>?
                 </p>}
-                {!state.data.results.length && !state.data.answer && !state.data.knowledge && !state.data.podcastShows?.length ? (
+                {noResults ? (
                   <section className="search-message">
                     <h2>No results found</h2>
-                    <p>Try fewer words or change your filters.</p>
+                    <p>{degraded ? degradedMessage(degraded) : 'Try fewer words or change your filters.'}</p>
                     <div className="empty-actions">
+                      {degraded?.budget && <LimitAction error={{}} account={account} />}
+                      {!!degraded?.failed?.length && <button className="secondary-button" onClick={refresh}>Try again</button>}
+                      {!!degraded?.failed?.length && !reuse && recoveryProviders.map(provider => <button key={provider.id} className="secondary-button"
+                        onClick={() => go({ ...location, provider: provider.id })}>Try {providerNames[provider.id]}</button>)}
                       {shorterImageQuery && <button className="secondary-button"
                         onClick={() => onSearch(shorterImageQuery)}>Search for “{shorterImageQuery}”</button>}
                       {/"[^"]+"/.test(view.query) && <button className="secondary-button"
@@ -782,10 +864,10 @@ export function App({ callback }: { callback: Callback }) {
                       {!reuse && view.category !== 'web' && <button className="secondary-button" onClick={() => changeCategory('web')}>Try Web results</button>}
                     </div>
                   </section>
-                ) : <Results key={searchPath(view)} data={resultsData ?? state.data} location={{ ...view, date: effectiveDate }} preferences={preferences}
+                ) : <Results key={resultsPath} onShown={reportShown} data={resultsData ?? state.data} location={{ ...view, date: effectiveDate }} preferences={preferences}
                   pageColor={pageColor} setDomain={setDomain} onQuery={onSearch} imageRefinements={imageRefinements} imageToolbar={imageToolbar}
                   mediaToolbar={mediaToolbar} batchOf={more.batchOf} more={moreControl}
-                  gallery={{ limit: more.galleryLimit, setLimit: more.setGalleryLimit }} />}
+                  gallery={{ limit: more.galleryLimit, setLimit: more.setGalleryLimit }} stats={resultStats} />}
                 {!!state.data.results.length && shorterImageQuery && <div className="image-show-more">
                   <button className="secondary-button" onClick={() => onSearch(shorterImageQuery)}>Search for “{shorterImageQuery}”</button>
                 </div>}

@@ -15,7 +15,12 @@ interface UnitConversionAnswer extends AnswerText {
   conversion: UnitConversionInput
 }
 
-export type InstantAnswer = UnitConversionAnswer | (AnswerText & {
+interface CoinFlipAnswer extends AnswerText {
+  label: 'Coin flip'
+  coins: number
+}
+
+export type InstantAnswer = UnitConversionAnswer | CoinFlipAnswer | (AnswerText & {
   label: 'Calculator' | 'Local time' | 'Time difference' | 'Time conversion' | 'Calendar' | 'Number conversion'
 })
 
@@ -474,10 +479,22 @@ function numericConversion(expression: string): InstantAnswer | undefined {
   if (result) return { label: 'Number conversion', expression, result }
 }
 
+export const maxCoins = 20
+const coinFlip = /^(?:please |let'?s )?(?:(?:flip|toss) (?:a |one |the )?coin(?: online| for me)?|coin (?:flip|toss)(?:per|ping|ing)?|heads or tails)[?!.]?$/i
+const coinsFlip = /^(?:flip|toss) (?:(\d{1,2}) coins|(?:a )?coin (\d{1,2}) times)$/i
+
+// Faces are chosen when the coins are shown, so detection stays a pure function of the query.
+function coinFlipAnswer(expression: string): InstantAnswer | undefined {
+  const query = expression.replace(/\s+/g, ' ')
+  const many = coinsFlip.exec(query)
+  const coins = coinFlip.test(query) ? 1 : Number(many?.[1] ?? many?.[2])
+  if (coins >= 1 && coins <= maxCoins) return { label: 'Coin flip', expression, result: '', coins }
+}
+
 export function instantAnswer(query: string, now = new Date()): InstantAnswer | undefined {
   const expression = query.trim()
   if (!expression || expression.length > instantAnswerMaxLength) return
-  const direct = timeAnswer(expression, now) ?? calendarAnswer(expression) ?? numericConversion(expression)
+  const direct = coinFlipAnswer(expression) ?? timeAnswer(expression, now) ?? calendarAnswer(expression) ?? numericConversion(expression)
   if (direct) return direct
   const conversion = unitPattern.exec(expression)
   if (conversion) {

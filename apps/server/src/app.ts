@@ -32,6 +32,7 @@ import { registerAdminSettingsRoutes } from './admin/settings-routes.js'
 import { registerAdminUsageRoutes } from './admin/usage-routes.js'
 import { registerAdminRequestAnalyticsRoutes } from './analytics/request-routes.js'
 import { registerAdminInsightsRoutes } from './analytics/insights-routes.js'
+import { registerAdminSearchAnalyticsRoutes } from './analytics/search-routes.js'
 import { registerAdminChatAccess } from './admin/chat-access.js'
 import { registerMessageRoutes } from './messages/routes.js'
 import { registerAttachmentRoutes } from './attachments/routes.js'
@@ -222,6 +223,7 @@ export async function buildApp() {
   await registerAdminUsageRoutes(app)
   await registerAdminRequestAnalyticsRoutes(app)
   await registerAdminInsightsRoutes(app)
+  await registerAdminSearchAnalyticsRoutes(app)
   await registerAdminBillingRoutes(app)
   await registerBillingRoutes(app)
   await registerMessageRoutes(app)

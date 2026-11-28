@@ -6,8 +6,6 @@ export const imageBatchSize = 24
 const storageKey = 'pulpo-search-more-v1'
 const storedSearches = 5
 const storedFor = 30 * 60_000
-// Repeated results are common when one engine continues another's list, so a nearly empty batch fetches once more.
-const enoughNewResults = 3
 
 export type MoreNotice = 'none-new' | 'exhausted'
 
@@ -132,22 +130,19 @@ export function useMoreResults({ key, request, first, category, pagers, restore 
     const signal = (controller.current = new AbortController()).signal
     const searchRequest = request
     update(() => ({ loading: true, error: undefined, notice: undefined }))
-    let added = 0
-    const appended = [...active.batches]
-    let target: NextBatch | undefined = next
+    const target = next
     try {
-      for (let attempt = 0; target && attempt < 2 && added < enoughNewResults; attempt += 1) {
-        const expandedImages = category === 'images' && pagers.some(pager => pager.id === target!.provider && pager.expandedImages)
-        const data = await fetchBatch(searchRequest, target, expandedImages, signal)
-        if (signal.aborted) return
-        appended.push({ provider: data.provider, page: target.page, hasMore: data.hasMore ?? false, results: data.results })
-        const all = [firstBatch, ...appended]
-        added += mergeBatches(all, category).added.at(-1) ?? 0
-        target = nextBatch(all, pagerPages)
-        const saved = [...appended]
-        update(() => ({ batches: saved }))
-      }
-      update(() => ({ loading: false, notice: added ? undefined : target ? 'none-new' : 'exhausted' }))
+      // Each click is one paid request. A batch of repeats says so, and the reader decides whether to try the next one.
+      const expandedImages = category === 'images' && pagers.some(pager => pager.id === target.provider && pager.expandedImages)
+      const started = performance.now()
+      const data = await fetchBatch(searchRequest, target, expandedImages, signal)
+      if (signal.aborted) return
+      const batches = [...active.batches, {
+        provider: data.provider, page: target.page, hasMore: data.hasMore ?? false, results: data.results, elapsedMs: performance.now() - started,
+      }]
+      const all = [firstBatch, ...batches]
+      const added = mergeBatches(all, category).added.at(-1) ?? 0
+      update(() => ({ batches, loading: false, notice: added ? undefined : nextBatch(all, pagerPages) ? 'none-new' : 'exhausted' }))
     } catch (error) {
       if (signal.aborted) return
       update(() => ({
@@ -166,6 +161,12 @@ export function useMoreResults({ key, request, first, category, pagers, restore 
     next,
     /** The engine whose results were added last. */
     lastProvider: batches.at(-1)?.provider,
+    /** Engines that added results, in the order they were loaded. */
+    providers: [...new Set(batches.filter((_, index) => merged.added[index] > 0).map(batch => batch.provider))],
+    /** Time spent fetching Load more batches, unless a restored batch didn't record it. */
+    loadedMs: active.batches.reduce<number | undefined>((total, batch) => (
+      total === undefined || batch.elapsedMs === undefined ? undefined : total + batch.elapsedMs
+    ), 0),
     loadedMore: active.batches.length > 0,
     loading: active.loading,
     error: active.error,

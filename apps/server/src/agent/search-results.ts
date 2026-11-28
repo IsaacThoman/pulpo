@@ -19,6 +19,8 @@ export interface ProviderSearchInput {
   region?: string
   safeSearch?: boolean
   includePublisherMetadata?: true
+  /** How long the caller will wait, so a provider that supports it can stop work sooner. */
+  timeoutMs?: number
 }
 
 export interface SearchResult {
@@ -91,6 +93,7 @@ export function resultSnippet(value: unknown, limit = 245, query?: string): stri
 
   const paragraphs: string[] = []
   const headings: string[] = []
+  let tableOpen = false
   for (const line of lines) {
     const block = line.trim()
     if (!block || /^(?:\[[^\]]+\]:|[-=*_]{3,}\s*$)/.test(block)) continue
@@ -104,27 +107,115 @@ export function resultSnippet(value: unknown, limit = 245, query?: string): stri
       .replace(/\*\*([^*\r\n]+)\*\*|__([^_\r\n]+)__|~~([^~\r\n]+)~~|`{1,3}([^`]+)`{1,3}/g,
         (_match, a: string, b: string, c: string, d: string) => a ?? b ?? c ?? d)
       .replace(/\\([\\`*_[\]#~])/g, '$1')
+    const table = heading ? undefined : tableText(text)
+    if (table === '') continue
     if (heading) headings.push(text)
-    else paragraphs.push(text)
+    // Rows of a multi-line table read as one block, like "cell, cell ; cell, cell".
+    else if (paragraphs.length && (table || tableOpen)) paragraphs.push(joinTable(paragraphs.pop()!, table ?? text))
+    else paragraphs.push(table ?? text)
+    tableOpen = Boolean(table)
   }
 
   const text = resultText((paragraphs.length ? paragraphs : headings).join(' '), maxResultTextLength)
-    .replace(/`{3,}|¶/g, '').replace(/\s+/g, ' ').trim()
+    .replace(/`{3,}|¶/g, '')
+    .replace(/\s*\|(?:\s+\|)+\s*/g, ' | ').replace(/^\s*\|\s*|\s*\|\s*$/g, '')
+    // Provider-truncated highlights start or end with "...", often right after a cell's comma.
+    .replace(/^(?:\.{3}|…)\s*/, '… ').replace(/[\s,;]*(?:\.{3}|…)$/, '…')
+    .replace(/\s+/g, ' ').trim()
   const leading = shortenResultText(text, limit)
   return query && text.length > limit ? relevantExcerpt(text, query, leading, limit) : leading
+}
+
+const tableRule = /^\s*:?-+:?\s*$/
+// Check marks, dashes, bullets and lone x cells carry meaning only beside their column headers.
+const symbolCell = /^[\s\p{P}\p{S}xX]*$/u
+
+function tableRow(cells: string[]): string {
+  return cells.map(cell => cell.trim()).filter(cell => !symbolCell.test(cell)).join(', ')
+}
+
+/** Read a Markdown table line as "cell, cell" rows; undefined when the line is not part of a table. */
+function tableText(line: string): string | undefined {
+  if (!line.includes('|')) return
+  const parts = line.split('|')
+  if (parts.every(part => !part.trim() || tableRule.test(part))) return ''
+  const flattened = flatTable(parts)
+  if (flattened !== undefined) return flattened
+  if (line.startsWith('|') && line.endsWith('|') && parts.length > 2) return tableRow(parts)
+}
+
+/** Rebuild a table a provider flattened onto one line, where each row's closing pipe meets the next row's opening one. */
+function flatTable(parts: string[]): string | undefined {
+  const start = parts.findIndex((part, index) => index > 0 && tableRule.test(part) && !parts[index - 1]!.trim())
+  if (start < 0) return
+  let end = start
+  while (end < parts.length && tableRule.test(parts[end]!)) end++
+  const columns = end - start
+  if (columns < 2) return
+  return strideTable(parts, start, end, columns) ?? gapTable(parts, start, end)
+}
+
+// The rule row's column count finds row boundaries even when a row has empty cells.
+function strideTable(parts: string[], start: number, end: number, columns: number): string | undefined {
+  const headerStart = Math.max(0, start - 1 - columns)
+  const rows = [tableRow(parts.slice(headerStart, start - 1))]
+  let suffix = ''
+  for (let index = end + 1; index < parts.length; index += columns + 1) {
+    rows.push(tableRow(parts.slice(index, index + columns)))
+    const next = parts[index + columns]
+    if (next === undefined || !next.trim()) continue
+    if (index + columns !== parts.length - 1) return
+    suffix = next.trim()
+  }
+  return tableParts(parts.slice(0, headerStart).join('|'), rows, suffix)
+}
+
+// Rule rows do not always match the header, so fall back to treating each empty cell as a row boundary.
+function gapTable(parts: string[], start: number, end: number): string {
+  const blank = parts.slice(0, start - 1).findLastIndex(part => !part.trim())
+  const headerStart = blank < 0 ? 1 : blank + 1
+  const rows = [tableRow(parts.slice(headerStart, start - 1))]
+  let row: string[] = []
+  for (const part of parts.slice(end)) {
+    if (part.trim()) row.push(part)
+    else if (row.length) {
+      rows.push(tableRow(row))
+      row = []
+    }
+  }
+  rows.push(tableRow(row))
+  return tableParts(parts.slice(0, headerStart).join('|'), rows)
+}
+
+function tableParts(prefix: string, rows: string[], suffix = ''): string {
+  const kept = [prefix.trim(), rows.filter(Boolean).join(' ; '), suffix].filter(Boolean)
+  return kept.length ? kept.reduce(joinTable) : ''
+}
+
+function joinTable(before: string, after: string): string {
+  return before + (/[.!?:…]$/.test(before) ? ' ' : ' ; ') + after
 }
 
 const excerptWord = /[\p{L}\p{N}]+(?:[._-][\p{L}\p{N}]+)*/gu
 const weakTerms = new Set(['and', 'are', 'can', 'does', 'for', 'from', 'how', 'near', 'not', 'the', 'this', 'was', 'what', 'when', 'where', 'which', 'with'])
 
-function relevantExcerpt(text: string, query: string, leading: string, limit: number): string {
+/** Distinctive words from a search query, ignoring operators such as site: and short or common words. */
+export function searchTerms(query: string): Set<string> {
   const terms = searchQueryTokens(query).filter(term => !/^-?[a-z][a-z-]*:/i.test(term))
     .join(' ').toLowerCase().match(excerptWord) ?? []
-  const wanted = new Set(terms.filter(word => word.length > 2 && !weakTerms.has(word)).slice(0, 14))
+  return new Set(terms.filter(word => word.length > 2 && !weakTerms.has(word)).slice(0, 14))
+}
+
+export function textTerms(text: string): Set<string> {
+  return new Set(text.toLowerCase().match(excerptWord))
+}
+
+function relevantExcerpt(text: string, query: string, leading: string, limit: number): string {
+  const wanted = searchTerms(query)
   if (!wanted.size) return leading
 
   function score(candidate: string) {
-    const matches = new Set(candidate.toLowerCase().match(excerptWord))
+    const matches = textTerms(candidate)
     return [...wanted].reduce((total, word) => matches.has(word) ? total + (/[._]/.test(word) ? 2 : 1) : total, 0)
   }
 
@@ -135,7 +226,7 @@ function relevantExcerpt(text: string, query: string, leading: string, limit: nu
   for (const hit of text.slice(0, 8_000).matchAll(excerptWord)) {
     if (!wanted.has(hit[0].toLowerCase()) || hit.index < limit / 2 || hit.index - previous < 36) continue
     const start = text.lastIndexOf(' ', hit.index - 42) + 1
-    const candidate = '… ' + shortenResultText(text.slice(start), limit - 2)
+    const candidate = '… ' + shortenResultText(text.slice(start).replace(/^[;,]\s*/, ''), limit - 2)
     const candidateScore = score(candidate)
     if (candidateScore > bestScore) {
       best = candidate
@@ -183,9 +274,26 @@ function isImageDimension(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= 100_000
 }
 
+/** Providers sometimes title a Reddit thread with just its subreddit; recover the thread title from the URL slug. */
+export function redditThreadTitle(title: string, url: string): string {
+  const subreddit = /^r\/([a-z0-9_]{2,21})$/i.exec(title)?.[1]
+  const parsed = subreddit && URL.parse(url)
+  if (!parsed || !/(?:^|\.)reddit\.com$/i.test(parsed.hostname)) return title
+  const path = /^\/r\/([^/]+)\/comments\/[a-z0-9]+\/([^/]+)/i.exec(parsed.pathname)
+  if (path?.[1]?.toLowerCase() !== subreddit.toLowerCase()) return title
+  let slug: string
+  try {
+    slug = decodeURIComponent(path[2]!)
+  } catch {
+    return title
+  }
+  const words = slug.replace(/[_-]+/g, ' ').trim()
+  return /[\p{L}\p{N}]/u.test(words) ? `${words[0]!.toUpperCase()}${words.slice(1)} : ${title}` : title
+}
+
 export function normalizeResult(row: RawSearchResult, query?: string): SearchResult | null {
   const url = resultUrl(row.url)
-  const title = resultText(row.title, 300)
+  const title = url ? redditThreadTitle(resultText(row.title, 300), url) : ''
   if (!url || !title) return null
   const originalImageUrl = resultUrl(row.imageUrl, true)
   const thumbnailUrl = resultUrl(row.thumbnailUrl, true)

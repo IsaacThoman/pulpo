@@ -1,5 +1,6 @@
+import type { SearchAccountSummary } from '@pulpo/contracts/search'
+import { LimitAction } from './AccountParts'
 import { providerNames, type SearchApiError, type SearchResponse } from './api'
-import { pulpoOrigin } from './auth'
 import type { MoreNotice } from './use-more-results'
 
 export interface MoreResultsControl {
@@ -10,6 +11,8 @@ export interface MoreResultsControl {
   notice?: MoreNotice
   loadedMore: boolean
   load: () => void
+  /** Decides where a search limit sends the reader, as it does for the first page. */
+  account?: SearchAccountSummary
 }
 
 export function LoadMore({ control, reveal, onLoad }: {
@@ -28,13 +31,15 @@ export function LoadMore({ control, reveal, onLoad }: {
     <div className="load-more">
       {control?.error ? (
         <div className="load-more-error" role="alert">
-          <p>{control.error.status === 402 ? 'Search limit reached. Add credits in Pulpo to load more.' : control.error.message}</p>
+          <p>{control.error.status === 402 ? 'Search limit reached.' : control.error.message}</p>
           {control.error.status === 402
-            ? <a className="secondary-button" href={pulpoOrigin}>Open Pulpo</a>
+            ? <LimitAction error={control.error} account={control.account} />
             : <button type="button" className="secondary-button" onClick={() => { onLoad?.(); control.load() }}>Try again</button>}
         </div>
       ) : (reveal || next) && (
-        <button type="button" className="secondary-button" aria-busy={control?.loading || undefined} disabled={control?.loading} onClick={() => {
+        // aria-disabled rather than disabled keeps keyboard focus on the button while the batch loads.
+        <button type="button" className="secondary-button" aria-busy={control?.loading || undefined} aria-disabled={control?.loading || undefined} onClick={() => {
+          if (control?.loading) return
           if (reveal) return reveal()
           onLoad?.()
           control?.load()

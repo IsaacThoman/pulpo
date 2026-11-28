@@ -68,6 +68,26 @@ describe('Search account preferences', () => {
     expect(result.current.initialAccountPreferences).toMatchObject({ limit: 20, defaultRegion: 'jp' })
   })
 
+  it('starts from this account\'s confirmed copy while the sync is slow, then takes the synced preferences', async () => {
+    window.localStorage.setItem('pulpo-search-account-settings-v1:first', JSON.stringify({
+      confirmed: { ...defaultSearchAccountPreferences, defaultRegion: 'jp' }, pending: {},
+    }))
+    let resolve!: (value: { preferences: SearchAccountPreferences }) => void
+    vi.spyOn(api, 'preferences').mockReturnValue(new Promise(done => { resolve = done }))
+    const { result } = renderHook(() => useSearchPreferences('first'))
+    expect(result.current.syncStatus).toBe('syncing')
+    expect(result.current.initialAccountPreferences).toMatchObject({ defaultRegion: 'jp' })
+    await act(async () => resolve({ preferences: { ...defaultSearchAccountPreferences, defaultRegion: 'ca' } }))
+    expect(result.current.syncStatus).toBe('synced')
+    expect(result.current.initialAccountPreferences).toMatchObject({ defaultRegion: 'ca' })
+  })
+
+  it('waits for the first sync when this account has no confirmed copy', () => {
+    vi.spyOn(api, 'preferences').mockReturnValue(new Promise(() => {}))
+    const { result } = renderHook(() => useSearchPreferences('first'))
+    expect(result.current.initialAccountPreferences).toBeUndefined()
+  })
+
   it('preserves edits made while a preference update is in flight', async () => {
     vi.spyOn(api, 'preferences').mockResolvedValue({ preferences: null })
     let resolveFirst!: (value: { preferences: SearchAccountPreferences }) => void
