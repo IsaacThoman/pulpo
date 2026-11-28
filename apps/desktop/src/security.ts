@@ -58,6 +58,11 @@ export function isTrustedRendererUrl(value: string, developmentOrigin?: string):
   }
 }
 
+/** IPC is for the app's own top-level page: never a subframe, and never the opaque-origin code preview sandbox. */
+export function isTrustedIpcSender(frameUrl: string, isMainFrame: boolean, developmentOrigin?: string): boolean {
+  return isMainFrame && isTrustedRendererUrl(frameUrl, developmentOrigin) && !isSandboxUrl(frameUrl)
+}
+
 export function desktopPermissionAllowed(
   rendererUrl: string,
   permission: string,
@@ -76,6 +81,21 @@ export function validatedExternalUrl(value: string, allowLocalhost: boolean): st
     throw new Error('Pulpo can only open secure web addresses.')
   }
   return url.toString()
+}
+
+export type NavigationTarget = { kind: 'internal' } | { kind: 'external'; url: string } | { kind: 'blocked' }
+
+/**
+ * Where a link or navigation away from the renderer should go. Never throws: it runs inside Electron's
+ * window-open and will-navigate handlers, where model-written chat links (http:, mailto:, garbage) arrive.
+ */
+export function navigationTarget(value: string, rendererOrigin: string, allowLocalhost: boolean): NavigationTarget {
+  try {
+    if (new URL(value).origin === rendererOrigin) return { kind: 'internal' }
+    return { kind: 'external', url: validatedExternalUrl(value, allowLocalhost) }
+  } catch {
+    return { kind: 'blocked' }
+  }
 }
 
 export function validatedProtocolUrl(value: string): string {
