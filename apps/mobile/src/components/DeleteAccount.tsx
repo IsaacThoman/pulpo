@@ -10,6 +10,7 @@ import { useSessionStore } from '../store/session'
 import { cacheNamespace } from '../data/database'
 import { APP_STORE_SUBSCRIPTIONS_URL } from '../features/app-store/availability'
 import { storeKit } from '../features/app-store/storeKit'
+import { useCreditsAvailable } from '../features/credits/useCredits'
 
 function manageAppStoreSubscription() {
   const open = () => Linking.openURL(APP_STORE_SUBSCRIPTIONS_URL)
@@ -25,6 +26,7 @@ export function DeleteAccountForm({ onClose }: { onClose: () => void }) {
   const user = useSessionStore((state) => state.user)
   const instanceUrl = useSessionStore((state) => state.instanceUrl)
   const queryClient = useQueryClient()
+  const credits = useCreditsAvailable()
   const [settings, setSettings] = useState<{ accountDeletionEnabled?: boolean; adminEmail?: string } | null>(null)
   const [requirements, setRequirements] = useState<AccountDeletionRequirements | null>(null)
   const [checking, setChecking] = useState(false)
@@ -93,7 +95,7 @@ export function DeleteAccountForm({ onClose }: { onClose: () => void }) {
     {settings?.accountDeletionEnabled && !requirements && !error ? <Text style={{ color: theme.secondary }}>Loading…</Text> : null}
     {!requirements && error ? <Button title="Retry" disabled={checking} onPress={() => { setError(''); void loadRequirements() }} /> : null}
     {settings?.accountDeletionEnabled && requirements ? <>
-      <Text style={{ color: theme.secondary }}>Deletion is permanent. Your chats, files, memories, and shared links will be removed. Subscriptions billed by Pulpo will be canceled, with no automatic refunds. Access ends immediately; background cleanup may take time. Backups and payment records follow existing retention policies.</Text>
+      <Text style={{ color: theme.secondary }}>{`Deletion is permanent. Your chats, files, memories, and shared links will be removed. Subscriptions billed by Pulpo will be canceled${credits ? ' and unused credits forfeited' : ''}, with no automatic refunds. Access ends immediately; background cleanup may take time. Backups and payment records follow existing retention policies.`}</Text>
       {requirements.appStoreSubscriptionRenews ? <View accessibilityRole="alert" style={{ gap: 8, padding: 12, borderRadius: 8, borderWidth: 1, borderColor: theme.orange }}>
         <Text style={{ color: theme.text }}>Your App Store subscription keeps renewing after you delete your account. Cancel it in your Apple Account to stop being charged.</Text>
         <Button title="Manage Subscription" onPress={manageAppStoreSubscription} />

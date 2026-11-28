@@ -4,7 +4,9 @@ import { saveSpeechToFiles, shareSpeechAudio } from '../features/speech/save';
 import { SPEECH_SEEK_SECONDS, nextSpeechRate, speechRateLabel, speechText, speechTimeLabel, type SpeechProgress } from '@pulpo/client-core';
 import { INITIAL_TRANSCRIPT_ROWS, hasLargeInitialMessage, transcriptListMessages, usesBottomAnchoredTranscript } from '../features/chat/transcriptWindow';
 import { hasChatSelectionObserver, recordChatSelection, hasTranscriptPositionObserver, recordTranscriptPosition } from '../features/chat/selectionTiming';
-import { isUsageLimitMessage, isUsageLimitRejection, responseErrorMessage, usageLimitNoticeText } from '../features/usage-limits/errors';
+import { isOutOfUsageMessage, isUsageLimitMessage, isUsageLimitRejection, responseErrorMessage, usageLimitNoticeText } from '../features/usage-limits/errors';
+import { SignupPromoChatAction } from '../features/credits/SignupPromoChatAction';
+import { useCreditsAvailable } from '../features/credits/useCredits';
 import { prepareChatSelection } from '../data/prepareChat';
 import { createDrawerTransition } from '../features/chat/drawerTransition';
 import { protectTranscript } from '../data/transcriptResidency';
@@ -4202,12 +4204,16 @@ function AssistantFrame({ children, model, sideRail, time, spokenTime = time, he
   );
 }
 
-/** A failed response's error with Try again, plus View Usage when a plan's usage limit stopped it. */
+/**
+ * A failed response's error with Try again, plus View Usage when a plan's usage limit stopped it, and
+ * Claim when the signup promo would let it continue (only where the app shows credits).
+ */
 function ResponseErrorNotice({ message, onRetry }: { message: Message; onRetry: (message: Message) => void }) {
   const { styles, COLORS } = useChatStyles();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const credits = useCreditsAvailable();
   const limited = isUsageLimitMessage(message.error);
-  const errorText = limited && message.error ? usageLimitNoticeText(message.error) : message.error;
+  const errorText = limited && message.error ? usageLimitNoticeText(message.error, credits) : message.error;
   return <View style={styles.responseError}>
     <Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} />
     <View style={styles.responseErrorBody}>
@@ -4216,6 +4222,7 @@ function ResponseErrorNotice({ message, onRetry }: { message: Message; onRetry: 
         {limited ? <Pressable accessibilityRole="button" hitSlop={TEXT_BUTTON_HIT_SLOP} onPress={() => { Keyboard.dismiss(); navigation.navigate('SettingsDetail', { section: 'usage' }); }}>
           <Text style={styles.tryAgainText}>View Usage</Text>
         </Pressable> : null}
+        {credits && isOutOfUsageMessage(message.error) ? <SignupPromoChatAction textStyle={styles.tryAgainText} hitSlop={TEXT_BUTTON_HIT_SLOP} /> : null}
         <Pressable accessibilityRole="button" hitSlop={TEXT_BUTTON_HIT_SLOP} onPress={() => onRetry(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable>
       </View>
     </View>

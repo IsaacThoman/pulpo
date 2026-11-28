@@ -1,6 +1,6 @@
 import { protectTranscriptRequest } from '../data/transcriptResidency'
 import { nativeUsageErrorMessage } from '../features/usage-limits/errors'
-import { CLIENT_FEATURES_HEADER, CLIENT_FEATURES_HEADER_VALUE, CLIENT_PLATFORM_HEADER, usageLimitsSchema } from '@pulpo/contracts'
+import { CLIENT_FEATURES_HEADER, CLIENT_FEATURES_HEADER_VALUE, CLIENT_PLATFORM_HEADER, creditSummarySchema, signupPromoResponseSchema, usageLimitsSchema } from '@pulpo/contracts'
 import type { NativeDevice, DeviceSessionList, MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, UsageVisibility, User } from '@pulpo/contracts'
 import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 
@@ -189,8 +189,12 @@ export const mobileApi = {
   disableTwoFactor: (currentPassword: string, verificationCode: string) => apiRequest<void>('/api/me/two-factor', {
     method: 'DELETE', verifySessionOnUnauthorized: true, body: { currentPassword, verificationCode },
   }),
-  /** Plan usage limits as percentages; the app never shows balances or prices. */
+  /** Plan usage limits as percentages, without balances or prices. */
   usageLimits: () => apiRequest<unknown>('/api/billing/limits').then((value) => usageLimitsSchema.parse(value)),
+  /** Credit balances and recent payments; shown only where `capabilities.credits` allows (features/credits). */
+  creditSummary: () => apiRequest<unknown>('/api/billing/summary').then((value) => creditSummarySchema.parse(value)),
+  signupPromo: () => apiRequest<unknown>('/api/billing/signup-promo').then((value) => signupPromoResponseSchema.parse(value).offer),
+  claimSignupPromo: () => apiRequest<{ amountMicros: number; balanceMicros: number }>('/api/billing/signup-promo/claim', { method: 'POST', body: {} }),
   /** The UUID StoreKit attaches to purchases so Apple's records name this account. */
   appStoreAccountToken: () => apiRequest<{ token: string }>('/api/billing/app-store/account-token').then((value) => value.token),
   /** Reports a StoreKit transaction; the server verifies it with Apple before changing the plan. */

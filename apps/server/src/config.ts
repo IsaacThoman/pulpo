@@ -60,6 +60,9 @@ const configSchema = z.object({
   }, 'Use an HTTPS origin or a local HTTP origin')),
   PULPO_DICTATION_WHISPER_TOKEN: optionalEnvironmentValue(z.string().regex(/^[!-~]{32,}$/)),
   PULPO_BILLING_ENABLED: booleanString,
+  // Lets the iOS app show credit balances and link to web Billing on the US App Store storefront.
+  // On by default; set false to hide credits in the app without shipping a build.
+  NATIVE_CREDITS_ENABLED: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
   STRIPE_SECRET_KEY: optionalEnvironmentValue(z.string().regex(/^sk_(?:test|live)_/)),
   STRIPE_WEBHOOK_SECRET: optionalEnvironmentValue(z.string().startsWith('whsec_')),
   STRIPE_CREDIT_PRODUCT_ID: optionalEnvironmentValue(z.string().startsWith('prod_')),

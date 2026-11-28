@@ -344,7 +344,8 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
     }
   })
 
-  // The native apps show plan limits from here: it carries no balances, prices, or payments.
+  // The native apps show plan limits from here: it carries no balances, prices, or payments. Where the
+  // mobile config's `credits` capability allows, the iOS app also reads balances from /summary.
   app.get('/api/billing/limits', async (request) => {
     const user = requireUser(request)
     const [entitlements, subscriptions, [billingSetting]] = await Promise.all([
@@ -431,7 +432,7 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
     return { url: await createCustomerPortalUrl(user.id) }
   })
 
-  // Web and desktop only: the native apps never show credits.
+  // The iOS app claims this too, on the US storefront when the `credits` capability is on.
   app.get('/api/billing/signup-promo', async (request) => {
     const user = requireUser(request)
     if (request.adminChatAccess) return { offer: null }

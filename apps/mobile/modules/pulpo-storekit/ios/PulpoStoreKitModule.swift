@@ -68,6 +68,11 @@ public final class PulpoStoreKitModule: Module {
       return receipt.lastPathComponent == "sandboxReceipt" ? "sandbox" : "production"
     }
 
+    // The App Store country as ISO 3166-1 alpha-3 ("USA"); nil when StoreKit can't tell.
+    AsyncFunction("storefront") { () async -> String? in
+      await Storefront.current?.countryCode
+    }
+
     AsyncFunction("products") { (ids: [String]) async throws -> [[String: Any]] in
       let products = try await Product.products(for: ids)
       return products.map { product in

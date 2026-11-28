@@ -1,6 +1,6 @@
 # App Store billing operations
 
-The iOS app sells Eight and Fat as App Store auto-renewable subscriptions. Pulpo's server stays the source of truth: it verifies every signed transaction and notification against Apple Root CA - G3, stores App Store subscriptions and payments in the same billing tables as Stripe, and applies the same plans, usage tiers, and billing holds. Credits, top-ups, and payment history are never shown in the iOS app.
+The iOS app sells Eight and Fat as App Store auto-renewable subscriptions. Pulpo's server stays the source of truth: it verifies every signed transaction and notification against Apple Root CA - G3, stores App Store subscriptions and payments in the same billing tables as Stripe, and applies the same plans, usage tiers, and billing holds. Credits are never sold through the App Store; on the US storefront only, the app shows the credit balance and links to web Billing to add credits (see [Credits in the iOS app](#credits-in-the-ios-app)).
 
 ## App Store Connect
 
@@ -49,6 +49,18 @@ An account on Pulpo Baby or with an App Store subscription sees a card for each 
 The app reports every transaction it sees to `POST /api/billing/app-store/transactions` and finishes it only once the server settles it, either by applying it or by refusing it for good (another account's subscription, sandbox purchases not allowed, an unknown product). If the server can't be reached, the transaction stays unfinished and the app reports it again on its next launch. The app also listens for renewals and purchases approved later (Ask to Buy) while it is open. **Restore Purchases** syncs with the App Store and reports the Apple Account's active Pulpo subscriptions.
 
 Plan limit errors in the native apps never show balances or dollar amounts: the app rewords `insufficient_balance` and `daily_spend_limit_reached` as reaching the plan's or today's usage limit.
+
+### Credits in the iOS app
+
+App Review lets apps on the United States storefront link to other ways to pay (guideline 3.1.1(a)), with no entitlement. Elsewhere, credits bought on the web may be used in the app only if they're also sold as in-app purchases (3.1.3(b)), which Pulpo doesn't do. So the app shows credits only when all of these hold:
+
+- the app is on iOS and signed in to `https://pulpo.baby` or `https://dev.pulpo.baby`;
+- `/api/mobile/config` has `capabilities.credits`, which is `PULPO_BILLING_ENABLED` and `NATIVE_CREDITS_ENABLED` (on by default);
+- StoreKit's `Storefront.current` is `USA`. Builds from before this check never show credits.
+
+Then **Settings → Usage** adds a Credits section (balance, amount reserved by running responses, Pool balance, auto top-up, the signup promo's **Claim** button) with **Add Credits**, which opens `/billing?topup=1` in the browser, and **Billing on the Web**. Payment history lists the latest ten payments. On the App Store plans screen, Credits sits above the plans and Payment history below the terms. In chat, an out-of-usage error reads "You've run out of usage and credits." and offers **Claim** while the promo can be claimed, and account deletion warns that unused credits are forfeited. The app reads `/api/billing/summary`, `/api/billing/signup-promo`, and `POST /api/billing/signup-promo/claim`, as the web does.
+
+To hide credits in the app without shipping a build, set `NATIVE_CREDITS_ENABLED=false` and redeploy the server.
 
 ## How purchases map to plans
 

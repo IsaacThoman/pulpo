@@ -2,7 +2,7 @@
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-const mocks = vi.hoisted(() => ({ request: vi.fn(), deleteAccount: vi.fn(), logout: vi.fn(), alert: vi.fn(), cancelQueries: vi.fn(), removeQueries: vi.fn(), manage: vi.fn() }))
+const mocks = vi.hoisted(() => ({ request: vi.fn(), deleteAccount: vi.fn(), logout: vi.fn(), alert: vi.fn(), cancelQueries: vi.fn(), removeQueries: vi.fn(), manage: vi.fn(), credits: vi.fn(() => false) }))
 vi.mock('react-native', () => ({
   Platform: { OS: 'ios' },
   KeyboardAvoidingView: ({ children }: { children: import('react').ReactNode }) => createElement('div', null, children),
@@ -20,6 +20,7 @@ vi.mock('../mockup5/src/theme', () => ({ useAppTheme: () => ({ background: '#fff
 vi.mock('../api/client', () => ({ apiRequest: mocks.request, mobileApi: { deleteAccount: mocks.deleteAccount } }))
 vi.mock('../data/database', () => ({ cacheNamespace: () => 'instance|user' }))
 vi.mock('../features/app-store/storeKit', () => ({ storeKit: { showManageSubscriptions: mocks.manage } }))
+vi.mock('../features/credits/useCredits', () => ({ useCreditsAvailable: mocks.credits }))
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ cancelQueries: mocks.cancelQueries, removeQueries: mocks.removeQueries }) }))
 vi.mock('../store/session', () => ({ useSessionStore: Object.assign((select: (state: unknown) => unknown) => select({ user: { id: 'user', email: 'me@example.test' }, instanceUrl: 'https://instance.test' }), { getState: () => ({ logout: mocks.logout }) }) }))
 import { DeleteAccountForm } from './DeleteAccount'
@@ -93,6 +94,11 @@ describe('mobile account deletion', () => {
     const manage = Array.from(container.querySelectorAll('button')).find((value) => value.textContent === 'Manage Subscription')!
     await act(async () => manage.click())
     expect(mocks.manage).toHaveBeenCalled()
+  })
+  it('warns that unused credits are forfeited only where the app shows credits', async () => {
+    mocks.credits.mockReturnValue(true)
+    await mount({ accountDeletionEnabled: true })
+    expect(container.textContent).toContain('Subscriptions billed by Pulpo will be canceled and unused credits forfeited, with no automatic refunds.')
   })
   it('shows no App Store warning without a renewing App Store subscription', async () => {
     await mount({ accountDeletionEnabled: true })

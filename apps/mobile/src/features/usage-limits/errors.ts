@@ -1,6 +1,6 @@
 /**
  * Plan limit errors in the app's own words. The server's messages can mention balances and dollar
- * amounts, which the native apps never show.
+ * amounts, which the native apps show only where features/credits allows.
  */
 const USAGE_LIMIT_MESSAGE = 'You’ve reached your plan’s usage limit. See Settings › Usage for when it resets.'
 const DAILY_LIMIT_MESSAGE = 'You’ve reached today’s usage limit. It resets at midnight UTC.'
@@ -18,9 +18,18 @@ export function isUsageLimitMessage(message: string | undefined): boolean {
   return message === USAGE_LIMIT_MESSAGE || message === DAILY_LIMIT_MESSAGE
 }
 
-/** A plan limit error shown beside a View Usage button, which makes "See Settings › Usage" redundant. */
-export function usageLimitNoticeText(message: string): string {
-  return message === USAGE_LIMIT_MESSAGE ? 'You’ve reached your plan’s usage limit.' : message
+/** Whether a stored error is the out-of-usage one (`insufficient_balance`), which credits can lift. */
+export function isOutOfUsageMessage(message: string | undefined): boolean {
+  return message === USAGE_LIMIT_MESSAGE
+}
+
+/**
+ * A plan limit error shown beside a View Usage button, which makes "See Settings › Usage" redundant.
+ * Where the app shows credits, running out means both the plan's usage and the balance are spent.
+ */
+export function usageLimitNoticeText(message: string, credits = false): string {
+  if (message !== USAGE_LIMIT_MESSAGE) return message
+  return credits ? 'You’ve run out of usage and credits.' : 'You’ve reached your plan’s usage limit.'
 }
 
 export function nativeUsageErrorMessage(code: string | undefined, message: string): string {

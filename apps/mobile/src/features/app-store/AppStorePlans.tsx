@@ -5,6 +5,8 @@ import type { UsageLimits } from '@pulpo/contracts'
 import { useAppTheme, type AppTheme } from '../../mockup5/src/theme'
 import { UsageLimitCard } from '../usage-limits/UsageLimitsSettings'
 import { usageLimitRows } from '../usage-limits/format'
+import { CreditsCard, PaymentHistoryCard } from '../credits/CreditsSettings'
+import { useCreditsAvailable } from '../credits/useCredits'
 import { PRIVACY_POLICY_URL, TERMS_OF_USE_URL, type AppStoreProductIds } from './availability'
 import { periodLabel, planBenefits, planButtonColors, planFillColor, planTintColor, planTitleColor, priceLabel, SUBSCRIPTION_TERMS, subscriptionStatusLabel } from './format'
 import { useAppStoreActions, useAppStoreProducts, type PaidPlan, type StoreKit } from './useAppStoreActions'
@@ -16,7 +18,7 @@ const SHORT_NAMES: Record<PaidPlan, string> = { eight: 'Eight', fat: 'Fat' }
  * The Usage screen for an account that can subscribe in the App Store (iOS, hosted Pulpo): a card for
  * each plan with the App Store's price, the web's selling points, and a button that buys it. App Store
  * subscribers also see their usage limits, and their plan's card shows its renewal and opens Manage
- * Subscription.
+ * Subscription. On the US App Store storefront, credits come first and payment history comes last.
  */
 export function AppStorePlans({ kit, offer, limits, onChanged }: {
   kit: StoreKit
@@ -30,6 +32,7 @@ export function AppStorePlans({ kit, offer, limits, onChanged }: {
   const { products, product } = useAppStoreProducts(kit, offer)
   const { busy, buy, restore, manage } = useAppStoreActions({ kit, offer, current: subscription?.plan ?? null, onChanged })
   const [choosing, setChoosing] = useState<PaidPlan | null>(null)
+  const credits = useCreditsAvailable()
   const choose = async (plan: PaidPlan) => {
     setChoosing(plan)
     try { await buy(plan) } finally { setChoosing(null) }
@@ -94,7 +97,8 @@ export function AppStorePlans({ kit, offer, limits, onChanged }: {
         {rows.map((row, index) => <UsageLimitCard key={row.key} row={row} last={index === rows.length - 1} />)}
       </View>
     </View> : null}
-    {subscription ? <Text accessibilityRole="header" style={[styles.heading, { color: theme.secondary }]}>Plans</Text> : null}
+    {credits ? <CreditsCard surface={surface} /> : null}
+    {subscription || credits ? <Text accessibilityRole="header" style={[styles.heading, { color: theme.secondary }]}>Plans</Text> : null}
     {products.isPending ? <ActivityIndicator style={styles.loading} /> : null}
     {products.isError ? <Pressable accessibilityRole="button" onPress={() => void products.refetch()} style={styles.retry}>
       <Text style={[styles.terms, { color: theme.secondary, fontSize: 15 }]}>Subscriptions couldn’t be loaded.</Text>
@@ -115,6 +119,8 @@ export function AppStorePlans({ kit, offer, limits, onChanged }: {
         </Pressable>
       </View>
     </View>
+    {/* After the plans' renewal terms, which belong beside the subscribe buttons. */}
+    {credits ? <PaymentHistoryCard surface={surface} /> : null}
   </ScrollView>
 }
 
