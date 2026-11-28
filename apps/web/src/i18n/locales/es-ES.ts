@@ -177,7 +177,7 @@ const esES = {
     createFolder: 'Crear carpeta',
     expand: 'Expandir barra lateral',
     files: 'Archivos',
-    friends: 'Personas',
+    friends: 'Uso',
     logout: 'Cerrar sesión',
     newFolder: 'Nueva carpeta',
     pinned: 'Fijados',
