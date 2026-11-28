@@ -1,0 +1,57 @@
+{
+  "commit": "acac21d87",
+  "recordedAt": "2026-11-28T04:50:54Z",
+  "datasetSize": 260,
+  "buckets": {
+    "navigational": 35,
+    "factual": 35,
+    "technical": 40,
+    "academic": 30,
+    "news": 30,
+    "local": 30,
+    "instant": 30,
+    "adversarial_slop": 30
+  },
+  "deterministicBaseline": {
+    "instantAnswerAccuracy": 0.6333,
+    "instantAnswerPassed": 19,
+    "instantAnswerTotal": 30,
+    "localIntentRecall": 0.5333,
+    "localIntentMatched": 16,
+    "localIntentTotal": 30,
+    "fixtureNavigationalTop1Rate": 1.0,
+    "fixtureCanonicalDuplicateRate": 0.0313,
+    "fixtureKnownSlopAt10Rate": 0.3871,
+    "fixtureNdcgAt10": 0.9234,
+    "fixtureAdversarialSlopNdcgAt10": 0.7957,
+    "fixtureAdversarialSlopMrr": 0.6667
+  },
+  "judgeCalibration": {
+    "baselineJudge": "openai:claude-haiku-5.5",
+    "candidateJudge": "baseten:baselabs/joey-1",
+    "candidateHardware": "Apple M5 Pro (MPS, bfloat16)",
+    "resultPairs": 31,
+    "citationPairs": 8,
+    "relevance": {
+      "exactAgreement": 0.6452,
+      "withinOneAgreement": 0.9355,
+      "spearmanRho": 0.8571,
+      "weightedKappa": 0.8333,
+      "mae": 0.4194,
+      "slopAgreement": 0.871
+    },
+    "citations": {
+      "agreement": 0.875,
+      "baselineAccuracy": 1.0,
+      "candidateAccuracy": 0.875
+    },
+    "performance": {
+      "baselineP50Ms": 1555.79,
+      "baselineP90Ms": 2812.79,
+      "candidateP50Ms": 169.24,
+      "candidateP90Ms": 183.84,
+      "baselineCostPer1000Usd": 1.0722,
+      "candidateCostPer1000Usd": 0.0
+    }
+  }
+}
