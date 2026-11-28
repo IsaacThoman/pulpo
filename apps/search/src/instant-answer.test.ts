@@ -33,6 +33,20 @@ describe('local instant answers', () => {
   )
 })
 
+describe('coin flip', () => {
+  it.each(['coin flip', 'Flip a coin', 'flip  coin', 'toss a coin', 'coin toss', 'heads or tails?', 'coin flipper', 'flip a coin online'])(
+    'flips a coin for %s', query => expect(instantAnswer(query)).toMatchObject({ label: 'Coin flip' }),
+  )
+
+  it.each([['flip 3 coins', 3], ['toss a coin 10 times', 10], ['flip 20 coins', 20], ['coin flip', 1]])(
+    'flips %s', (query, coins) => expect(instantAnswer(query)).toMatchObject({ label: 'Coin flip', coins }),
+  )
+
+  it.each(['coin flip probability', 'bitcoin flip', 'flip 21 coins', 'flip 0 coins', 'coin', 'heads or tails song'])(
+    'leaves %s as a web search', query => expect(instantAnswer(query)?.label).not.toBe('Coin flip'),
+  )
+})
+
 describe('editable calculator expressions', () => {
   it('can open a basic or scientific calculator without an expression', () => {
     expect(instantAnswer('calculator')).toMatchObject({ label: 'Calculator', expression: 'calculator' })

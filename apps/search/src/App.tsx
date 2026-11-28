@@ -8,6 +8,7 @@ import { useSearchAppearance } from './appearance'
 import { consumeCallback, pulpoOrigin, startSignIn } from './auth'
 import { firstResultQuery, resolveBang, unknownBang, type CustomBang } from './bangs'
 import { Calculator } from './Calculator'
+import { CoinFlip } from './CoinFlip'
 import { CurrencyAnswer } from './CurrencyAnswer'
 import { parseCurrencyQuery } from './currency'
 import { instantAnswer } from './instant-answer'
@@ -750,6 +751,8 @@ export function App({ callback }: { callback: Callback }) {
             ) : localAnswer?.label === 'Calculator' ? (
               <Calculator key={view.query} initialExpression={localAnswer.expression}
                 onSearchWeb={query => go({ ...view, query, web: true })} />
+            ) : localAnswer?.label === 'Coin flip' ? (
+              <CoinFlip key={view.query} coins={localAnswer.coins} onSearchWeb={() => go({ ...view, web: true })} />
             ) : localAnswer?.label === 'Unit conversion' ? (
               <UnitConversion key={view.query} initialConversion={localAnswer.conversion}
                 onConvert={onSearch} onSearchWeb={query => go({ ...view, query, web: true })} />
