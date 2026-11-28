@@ -13,7 +13,7 @@ import {
   spearmanCorrelation,
   summarizeLatencies,
 } from './metrics.ts'
-import { compareJudges, evaluateInstantAnswerQuery, evaluateLocalIntentQuery, runScorecard } from './run.ts'
+import { compareJudges, deriveLiveQueryCostMicros, evaluateInstantAnswerQuery, evaluateLocalIntentQuery, runScorecard } from './run.ts'
 
 describe('search-eval golden dataset', () => {
   it('contains at least 250 unique queries spanning all 8 buckets', () => {
@@ -36,6 +36,10 @@ describe('search-eval golden dataset', () => {
     const instantResults = GOLDEN_QUERIES.filter(q => q.bucket === 'instant').map(evaluateInstantAnswerQuery)
     const passed = instantResults.filter(r => r.passed).length
     assert.ok(passed >= 10, `Expected existing widgets to pass >=10 instant queries, got ${passed}`)
+
+    // Value patterns match ans.result directly so anchored results like sin(pi / 2) => "1" pass.
+    const sinQuery = GOLDEN_QUERIES.find(q => q.id === 'inst-04')!
+    assert.equal(evaluateInstantAnswerQuery(sinQuery).passed, true)
 
     const localMatched = GOLDEN_QUERIES.filter(q => q.bucket === 'local').filter(evaluateLocalIntentQuery).length
     assert.ok(localMatched >= 10, `Expected existing regex to match >=10 local queries, got ${localMatched}`)
@@ -93,6 +97,54 @@ describe('search-eval judges & scorecard', () => {
     assert.equal(scorecard.deterministic.navigationalTop1Rate, 1)
     assert.ok(scorecard.deterministic.canonicalDuplicateRate > 0)
     assert.ok(scorecard.deterministic.knownSlopAt10Rate > 0)
+  })
+
+  it('includes empty snapshots as zero in aggregate and per-bucket NDCG/MRR averages', async () => {
+    const scorecard = await runScorecard({
+      mode: 'fixtures',
+      snapshots: [
+        {
+          queryId: 'nav-03',
+          query: 'mdn fetch api',
+          bucket: 'navigational',
+          provider: 'kagi',
+          latencyMs: 100,
+          costMicros: 12_000,
+          results: [{
+            url: 'https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API',
+            title: 'MDN Fetch API',
+            snippet: 'MDN Fetch API reference',
+          }],
+        },
+        {
+          queryId: 'nav-01',
+          query: 'github',
+          bucket: 'navigational',
+          provider: 'kagi',
+          latencyMs: 100,
+          costMicros: 0,
+          results: [],
+        },
+      ],
+      judge: new HeuristicJudge(),
+    })
+    assert.equal(scorecard.deterministic.zeroResultRate, 0.5)
+    assert.equal(scorecard.quality?.ndcgAt10, 0.5)
+    assert.equal(scorecard.quality?.mrr, 0.5)
+    assert.equal(scorecard.quality?.byBucket.navigational?.queries, 2)
+    assert.equal(scorecard.quality?.byBucket.navigational?.ndcgAt10, 0.5)
+  })
+
+  it('derives live query cost from provider pricing, cache hits, and empty outcomes', () => {
+    const pricing = new Map([
+      ['kagi', { priceMicros: 12_000 }],
+      ['firecrawl', { priceMicros: 4_000, newsPriceMicros: 8_000 }],
+    ])
+    assert.equal(deriveLiveQueryCostMicros({ provider: 'kagi', category: 'web', resultCount: 10, pricingByProvider: pricing }), 12_000)
+    assert.equal(deriveLiveQueryCostMicros({ provider: 'firecrawl', category: 'news', resultCount: 5, pricingByProvider: pricing }), 8_000)
+    assert.equal(deriveLiveQueryCostMicros({ provider: 'kagi', category: 'web', resultCount: 0, pricingByProvider: pricing }), 0)
+    assert.equal(deriveLiveQueryCostMicros({ provider: 'kagi', category: 'web', resultCount: 10, cache: 'hit', pricingByProvider: pricing }), 0)
+    assert.equal(deriveLiveQueryCostMicros({ provider: 'unknown', category: 'web', resultCount: 10, pricingByProvider: pricing }), null)
   })
 
   it('parses BasetenDecisionJudge and OpenAICompatibleJudge payloads cleanly', async () => {

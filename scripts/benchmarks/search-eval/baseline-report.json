@@ -13,8 +13,8 @@
     "adversarial_slop": 30
   },
   "deterministicBaseline": {
-    "instantAnswerAccuracy": 0.6,
-    "instantAnswerPassed": 18,
+    "instantAnswerAccuracy": 0.6333,
+    "instantAnswerPassed": 19,
     "instantAnswerTotal": 30,
     "localIntentRecall": 0.5333,
     "localIntentMatched": 16,

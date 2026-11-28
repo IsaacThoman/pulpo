@@ -30,8 +30,10 @@ export interface GoldenQuery {
   slopDomains?: string[]
   /** For instant-answer queries: expected widget/answer type. */
   expectedInstantType?: ExpectedInstantType
-  /** Optional regex string expected to match the instant answer display/value. */
+  /** Optional regex string expected to match the instant answer value (`result`). */
   expectedInstantPattern?: string
+  /** Optional regex string expected to match the instant answer label/expression (e.g. resolved city for world clock). */
+  expectedInstantExpressionPattern?: string
   /** For local queries: whether the local places intent detector should fire. */
   expectLocalIntent?: boolean
   /** For news queries: whether recent results (< 30d) are expected. */
@@ -54,7 +56,8 @@ export interface EvalSerpSnapshot {
   bucket: EvalBucket
   provider: string
   latencyMs: number
-  costMicros: number
+  /** Actual billed cost in micro-dollars, or null when provider pricing was unavailable. */
+  costMicros: number | null
   cache?: 'hit' | 'stale' | 'miss'
   results: EvalSerpResult[]
 }
@@ -140,7 +143,8 @@ export interface EvalScorecard {
     canonicalDuplicateRate: number
     knownSlopAt10Rate: number
     latency: LatencyStats
-    costPer1000QueriesUsd: number
+    /** Average cost per 1,000 queries in USD, or null when live pricing was unavailable. */
+    costPer1000QueriesUsd: number | null
   }
   quality?: {
     ndcgAt10: number

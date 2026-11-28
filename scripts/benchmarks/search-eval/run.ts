@@ -53,8 +53,15 @@ export function evaluateInstantAnswerQuery(query: GoldenQuery): { passed: boolea
   }
   if (query.expectedInstantPattern) {
     const regex = new RegExp(query.expectedInstantPattern, 'i')
-    const combined = `${ans.expression} ${ans.result}`
-    return { passed: regex.test(combined), actualLabel: ans.label, actualText: ans.result }
+    if (!regex.test(ans.result)) {
+      return { passed: false, actualLabel: ans.label, actualText: ans.result }
+    }
+  }
+  if (query.expectedInstantExpressionPattern) {
+    const regex = new RegExp(query.expectedInstantExpressionPattern, 'i')
+    if (!regex.test(ans.expression)) {
+      return { passed: false, actualLabel: ans.label, actualText: ans.result }
+    }
   }
   return { passed: true, actualLabel: ans.label, actualText: ans.result }
 }
@@ -118,10 +125,10 @@ export async function runScorecard(options: {
   }
 
   const latencies = options.snapshots.map(s => s.latencyMs)
-  const totalCostMicros = options.snapshots.reduce((acc, s) => acc + s.costMicros, 0)
-  const costPer1000QueriesUsd = options.snapshots.length
-    ? ((totalCostMicros / options.snapshots.length) * 1000) / 1_000_000
-    : 0
+  const pricedSnapshots = options.snapshots.filter((s): s is EvalSerpSnapshot & { costMicros: number } => s.costMicros !== null)
+  const costPer1000QueriesUsd = options.snapshots.length && pricedSnapshots.length === options.snapshots.length
+    ? Number((((pricedSnapshots.reduce((acc, s) => acc + s.costMicros, 0) / pricedSnapshots.length) * 1000) / 1_000_000).toFixed(4))
+    : null
 
   const scorecard: EvalScorecard = {
     generatedAt: new Date().toISOString(),
@@ -141,7 +148,7 @@ export async function runScorecard(options: {
       canonicalDuplicateRate: Number(avgDupRate.toFixed(4)),
       knownSlopAt10Rate: top10Slots ? Number((knownSlopSlots / top10Slots).toFixed(4)) : 0,
       latency: summarizeLatencies(latencies),
-      costPer1000QueriesUsd: Number(costPer1000QueriesUsd.toFixed(4)),
+      costPer1000QueriesUsd,
     },
   }
 
@@ -168,7 +175,11 @@ export async function runScorecard(options: {
       return { task, judgment }
     })
 
+    // Seed every snapshot so empty/zero-result queries contribute 0 to NDCG@10 and MRR instead of being omitted.
     const gradesByQuery = new Map<string, { bucket: string; grades: number[]; slopCount: number }>()
+    for (const snap of options.snapshots) {
+      gradesByQuery.set(snap.queryId, { bucket: snap.bucket, grades: [], slopCount: 0 })
+    }
     const judgeLatencies: number[] = []
     let totalJudgeCostUsd = 0
     let totalJudgedSlop = 0
@@ -177,10 +188,9 @@ export async function runScorecard(options: {
       judgeLatencies.push(judgment.latencyMs)
       totalJudgeCostUsd += judgment.costUsd ?? 0
       if (judgment.isSlop) totalJudgedSlop += 1
-      const entry = gradesByQuery.get(task.snap.queryId) ?? { bucket: task.snap.bucket, grades: [], slopCount: 0 }
+      const entry = gradesByQuery.get(task.snap.queryId)!
       entry.grades[task.rank] = judgment.relevance
       if (judgment.isSlop) entry.slopCount += 1
-      gradesByQuery.set(task.snap.queryId, entry)
     }
 
     const byBucketAcc: Record<string, { ndcgs: number[]; mrrs: number[]; slop: number; total: number }> = {}
@@ -348,6 +358,29 @@ export async function compareJudges(options: {
   return { report, details }
 }
 
+interface LiveProviderPrice {
+  priceMicros: number
+  newsPriceMicros?: number
+}
+
+export function deriveLiveQueryCostMicros(input: {
+  provider?: string
+  category: string
+  resultCount: number
+  cache?: 'hit' | 'stale' | 'miss'
+  pricingByProvider: ReadonlyMap<string, LiveProviderPrice>
+}): number | null {
+  // Cache hits and empty results do not settle metered search billing in apps/server/src/search/routes.ts.
+  if (input.cache === 'hit' || input.resultCount === 0) return 0
+  if (!input.provider) return null
+  const pricing = input.pricingByProvider.get(input.provider)
+  if (!pricing) return null
+  if (input.category === 'news' && pricing.newsPriceMicros !== undefined) {
+    return pricing.newsPriceMicros
+  }
+  return pricing.priceMicros
+}
+
 async function fetchLiveSnapshots(options: {
   targetUrl: string
   cookie?: string
@@ -355,20 +388,46 @@ async function fetchLiveSnapshots(options: {
   limit: number
   providers?: string[]
 }): Promise<EvalSerpSnapshot[]> {
-  const endpoint = `${options.targetUrl.replace(/\/+$/, '')}/api/search/query`
+  const baseUrl = options.targetUrl.replace(/\/+$/, '')
+  const endpoint = `${baseUrl}/api/search/query`
+  const baseHeaders: Record<string, string> = {}
+  if (options.cookie) baseHeaders.cookie = options.cookie
+  if (options.origin) baseHeaders.origin = options.origin
+
+  const pricingByProvider = new Map<string, LiveProviderPrice>()
+  try {
+    const configRes = await fetch(`${baseUrl}/api/search/config`, {
+      headers: baseHeaders,
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (configRes.ok) {
+      const cfg = await configRes.json() as {
+        providers?: Array<{ id?: string; priceMicros?: number; newsPriceMicros?: number }>
+      }
+      for (const provider of cfg.providers ?? []) {
+        if (typeof provider.id === 'string' && typeof provider.priceMicros === 'number') {
+          pricingByProvider.set(provider.id, {
+            priceMicros: provider.priceMicros,
+            ...(typeof provider.newsPriceMicros === 'number' ? { newsPriceMicros: provider.newsPriceMicros } : {}),
+          })
+        }
+      }
+    }
+  } catch {
+    // Keep pricingByProvider empty so live cost is reported as null rather than fabricated.
+  }
+
   const queries = GOLDEN_QUERIES.filter(q => q.bucket !== 'instant').slice(0, options.limit)
   const snapshots: EvalSerpSnapshot[] = []
   for (const item of queries) {
     const started = performance.now()
-    const headers: Record<string, string> = { 'content-type': 'application/json' }
-    if (options.cookie) headers.cookie = options.cookie
-    if (options.origin) headers.origin = options.origin
+    const category = item.category ?? 'web'
     const response = await fetch(endpoint, {
       method: 'POST',
-      headers,
+      headers: { 'content-type': 'application/json', ...baseHeaders },
       body: JSON.stringify({
         query: item.query,
-        category: item.category ?? 'web',
+        category,
         limit: 10,
         ...(options.providers?.length ? { providers: options.providers } : {}),
       }),
@@ -392,20 +451,27 @@ async function fetchLiveSnapshots(options: {
       cache?: 'hit' | 'stale' | 'miss'
       results?: Array<{ url: string; title: string; snippet: string; publishedAt?: string }>
     }
+    const results = (data.results ?? []).map(r => ({
+      url: r.url,
+      title: r.title,
+      snippet: r.snippet,
+      publishedAt: r.publishedAt,
+    }))
     snapshots.push({
       queryId: item.id,
       query: item.query,
       bucket: item.bucket,
       provider: data.provider ?? 'unknown',
       latencyMs,
-      costMicros: data.cache === 'hit' ? 0 : 12_000,
+      costMicros: deriveLiveQueryCostMicros({
+        provider: data.provider,
+        category,
+        resultCount: results.length,
+        cache: data.cache,
+        pricingByProvider,
+      }),
       cache: data.cache,
-      results: (data.results ?? []).map(r => ({
-        url: r.url,
-        title: r.title,
-        snippet: r.snippet,
-        publishedAt: r.publishedAt,
-      })),
+      results,
     })
   }
   return snapshots

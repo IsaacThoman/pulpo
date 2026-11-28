@@ -50,7 +50,7 @@ Measured head-to-head on 31 SERP result judgments + 8 Quick Answer citation-fait
 
 | Metric | Phase 0 Baseline | Target After Overhaul |
 |---|---:|---:|
-| **Instant Answer Accuracy** (30 queries) | **60.0%** (18/30) | ≥ 95% (Sprint 3) |
+| **Instant Answer Accuracy** (30 queries) | **63.3%** (19/30) | ≥ 95% (Sprint 3) |
 | **Local Places Intent Recall** (30 queries) | **53.3%** (16/30) | ≥ 95% (Sprint 4) |
 | **Adversarial Slop Fixture NDCG@10** | **0.7957** (MRR 0.6667) | ≥ 0.95 (Sprint 2) |
 | **Fixture Canonical Duplicate Rate** | **3.13%** | 0.00% (Sprint 2) |
