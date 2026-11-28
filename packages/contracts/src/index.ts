@@ -227,6 +227,12 @@ export const mobileConfigSchema = z.object({
     /** Whether the instance bills usage, so accounts can have plan usage limits. Older servers omit it. */
     usageLimits: z.boolean().optional().default(false),
     /**
+     * Whether native apps may show the account's credit balance, claim the signup promo, and link to
+     * Billing on the web to add credits. The iOS app does so only on the United States App Store
+     * storefront, where App Review allows links to other ways to pay. Older servers omit it.
+     */
+    credits: z.boolean().optional().default(false),
+    /**
      * Files and its collaborative documents. Older servers omit it; clients then hide Files.
      * `docSchemaVersion` is the document schema the server accepts edits in, so a client whose
      * bundled editor speaks another version can open documents read only instead of failing to join.
@@ -313,6 +319,55 @@ export const usageLimitsSchema = z.object({
   custom: z.array(customUsageLimitSchema),
 })
 export type UsageLimits = z.infer<typeof usageLimitsSchema>
+
+/**
+ * The parts of GET /api/billing/summary the native apps show where `capabilities.credits` allows:
+ * balances in micros of a US dollar, and recent payments.
+ */
+export const creditSummarySchema = z.object({
+  balanceMicros: z.number().int(),
+  /** Held by responses still running. */
+  balancePendingMicros: z.number().int().nonnegative(),
+  availableBalanceMicros: z.number().int(),
+  /** Null outside a Pool. */
+  poolBalanceMicros: z.number().int().nullable(),
+  poolBalancePendingMicros: z.number().int().nullable(),
+  availablePoolBalanceMicros: z.number().int().nullable(),
+  /** Billable usage is paused while a payment reversal is reviewed. */
+  onHold: z.boolean(),
+  autoTopUp: z.object({
+    enabled: z.boolean(),
+    thresholdCents: z.number().int().nullable(),
+    amountCents: z.number().int().nullable(),
+  }),
+  payments: z.array(z.object({
+    id: z.string(),
+    /** Older servers omit it; their payments are all Stripe. */
+    provider: z.enum(['stripe', 'app_store']).optional().default('stripe'),
+    kind: z.enum(['credits', 'subscription']),
+    automatic: z.boolean(),
+    plan: z.enum(['eight', 'fat']).nullable(),
+    requestedCreditCents: z.number().int().nullable(),
+    amountCents: z.number().int(),
+    status: z.string(),
+    createdAt: isoDateSchema,
+  })),
+})
+export type CreditSummary = z.infer<typeof creditSummarySchema>
+
+/** GET /api/billing/signup-promo: free credits a new account can claim once, or null. */
+export const signupPromoResponseSchema = z.object({
+  offer: z.object({
+    amountMicros: z.number().int().nonnegative(),
+    /** The administrator's banner copy; empty uses the client's default. */
+    message: z.string(),
+    eligibleUntil: isoDateSchema,
+    /** False while the instance budget for this period is used up. */
+    available: z.boolean(),
+    resetsAt: isoDateSchema,
+  }).nullable(),
+})
+export type SignupPromoOffer = NonNullable<z.infer<typeof signupPromoResponseSchema>['offer']>
 
 export const twoFactorStatusSchema = z.object({
   enabled: z.boolean(),

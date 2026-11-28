@@ -7,6 +7,8 @@ import { useSessionStore } from '../../store/session'
 import { useAppTheme } from '../../mockup5/src/theme'
 import { Card, ListRow, SectionTitle } from '../../mockup5/src/components/PrototypeUI'
 import { AppStoreSubscriptionSection } from '../app-store/AppStoreSubscriptionSection'
+import { NativeCreditsSections } from '../credits/CreditsSettings'
+import { useCreditsAvailable } from '../credits/useCredits'
 import { usageLimitsQuery } from './api'
 import { planName, remainingLabel, usageLimitRows, type UsageLimitRow } from './format'
 
@@ -40,7 +42,10 @@ export function UsageLimitCard({ row, last }: { row: UsageLimitRow; last: boolea
   </View>
 }
 
-/** Plan and usage limit sections, embedded in the Usage settings form (iOS) or screen (Android). */
+/**
+ * Plan and usage limit sections, embedded in the Usage settings form (iOS) or screen (Android). On the
+ * US App Store storefront the iOS form also shows credits (features/credits).
+ */
 export function UsageLimitsSettings() {
   const theme = useAppTheme()
   const instanceUrl = useSessionStore(s => s.instanceUrl)
@@ -49,6 +54,7 @@ export function UsageLimitsSettings() {
   const limits = useQuery({ ...usageLimitsQuery(namespace), enabled: Boolean(namespace) })
   const rows = limits.data ? usageLimitRows(limits.data) : []
   const plan = limits.data ? planName(limits.data.plan) : limits.isError ? 'Unavailable' : 'Loading…'
+  const credits = useCreditsAvailable()
 
   if (Platform.OS === 'ios') return <>
     <Section title="Plan">
@@ -59,6 +65,7 @@ export function UsageLimitsSettings() {
     {rows.length ? <Section title="Usage limits">
       {rows.map(row => <NativeUsageLimit key={row.key} row={row} />)}
     </Section> : null}
+    {credits ? <NativeCreditsSections /> : null}
   </>
 
   return <>

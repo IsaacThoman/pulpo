@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   api: { appStoreAccountToken: vi.fn(), syncAppStoreTransaction: vi.fn() },
   insets: { top: 0, bottom: 0, left: 0, right: 0 },
   scrollContent: [] as unknown[],
+  credits: vi.fn(() => false),
 }))
 vi.mock('react-native', () => {
   type Props = { children?: ReactNode; onPress?: () => void; disabled?: boolean; accessibilityLabel?: string }
@@ -41,6 +42,11 @@ vi.mock('../usage-limits/UsageLimitsSettings', () => ({
   UsageLimitCard: ({ row }: { row: { label: string } }) => createElement('div', null, row.label),
 }))
 vi.mock('../../api/client', () => ({ mobileApi: mocks.api, ApiError: class extends Error {} }))
+vi.mock('../credits/useCredits', () => ({ useCreditsAvailable: mocks.credits }))
+vi.mock('../credits/CreditsSettings', () => ({
+  CreditsCard: () => createElement('div', null, 'Credits card'),
+  PaymentHistoryCard: () => createElement('div', null, 'Payment history card'),
+}))
 import { AppStorePlans } from './AppStorePlans'
 
 const offer = { eight: 'pulpoEight', fat: 'pulpoFat' }
@@ -150,6 +156,16 @@ describe('App Store plan cards', () => {
     mount()
     fireEvent.click(await screen.findByText('Try Again'))
     expect(await screen.findByText('Choose Eight')).toBeTruthy()
+  })
+
+  it('adds credits above the plans and payment history below them on the US storefront', async () => {
+    mocks.credits.mockReturnValue(true)
+    mount()
+    await screen.findByText('Choose Eight')
+    const text = document.body.textContent ?? ''
+    expect(text.indexOf('Credits card')).toBeLessThan(text.indexOf('Plans'))
+    expect(text.indexOf('Plans')).toBeLessThan(text.indexOf('Choose Eight'))
+    expect(text.indexOf('Restore Purchases')).toBeLessThan(text.indexOf('Payment history card'))
   })
 
   it('keeps the plans clear of a side safe area, like iPhone Duo’s vertical bar', async () => {

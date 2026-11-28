@@ -1,6 +1,6 @@
 import type { UsageLimitPercentages, UsageLimits } from '@pulpo/contracts'
 
-/** One plan usage limit as the settings screen shows it. Percentages only: no amounts of money. */
+/** One plan usage limit as the settings screen shows it, as percentages. */
 export interface UsageLimitRow {
   key: string
   label: string

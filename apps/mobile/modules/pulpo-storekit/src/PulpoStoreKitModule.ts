@@ -30,6 +30,8 @@ type PulpoStoreKitEvents = {
 declare class PulpoStoreKitModule extends NativeModule<PulpoStoreKitEvents> {
   /** `production`, `sandbox` (TestFlight and development builds), or `xcode`; null when unknown. */
   environment(): Promise<string | null>
+  /** The App Store storefront's country, ISO 3166-1 alpha-3 (`USA`); null when unknown. */
+  storefront(): Promise<string | null>
   products(ids: string[]): Promise<StoreKitProduct[]>
   purchase(productId: string, appAccountToken: string): Promise<StoreKitPurchaseResult>
   finish(transactionId: string): Promise<void>

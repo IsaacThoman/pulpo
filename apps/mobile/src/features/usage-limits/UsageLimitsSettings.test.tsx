@@ -4,7 +4,7 @@ import { createElement, type ReactNode } from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { UsageLimits } from '@pulpo/contracts'
-const mocks = vi.hoisted(() => ({ platform: 'ios', usageLimits: vi.fn() }))
+const mocks = vi.hoisted(() => ({ platform: 'ios', usageLimits: vi.fn(), credits: vi.fn(() => false) }))
 const { passthrough } = vi.hoisted(() => ({ passthrough: ({ children }: { children?: unknown }) => children }))
 vi.mock('react-native', () => ({
   Platform: { get OS() { return mocks.platform } },
@@ -30,6 +30,8 @@ vi.mock('../../mockup5/src/components/PrototypeUI', () => ({
   ListRow: ({ title, value, detail, onPress }: { title: string; value?: string; detail?: string; onPress?: () => void }) => createElement(onPress ? 'button' : 'div', { onClick: onPress }, ...[title, value, detail].filter(Boolean).map(text => createElement('span', { key: text }, text))),
 }))
 vi.mock('../app-store/AppStoreSubscriptionSection', () => ({ AppStoreSubscriptionSection: () => null }))
+vi.mock('../credits/useCredits', () => ({ useCreditsAvailable: mocks.credits }))
+vi.mock('../credits/CreditsSettings', () => ({ NativeCreditsSections: () => createElement('section', null, 'Credits sections') }))
 import { UsageLimitsSettings } from './UsageLimitsSettings'
 
 const limits: UsageLimits = {
@@ -41,7 +43,7 @@ const limits: UsageLimits = {
   custom: [],
 }
 const mount = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><UsageLimitsSettings /></QueryClientProvider>)
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+afterEach(() => { cleanup(); vi.clearAllMocks(); mocks.credits.mockReturnValue(false) })
 
 it.each(['ios', 'android'])('shows the plan and remaining usage without amounts on %s', async platform => {
   mocks.platform = platform
@@ -71,4 +73,13 @@ it.each(['ios', 'android'])('retries after a failed load on %s', async platform 
   fireEvent.click(await screen.findByText(/Usage limits could not be loaded/))
   await screen.findByText('Pulpo Eight')
   expect(mocks.usageLimits).toHaveBeenCalledTimes(2)
+})
+
+it('adds credits to the iOS form where the app shows them', async () => {
+  mocks.platform = 'ios'
+  mocks.credits.mockReturnValue(true)
+  mocks.usageLimits.mockResolvedValue(limits)
+  mount()
+  await screen.findByText('Pulpo Eight')
+  expect(screen.getByText('Credits sections')).toBeTruthy()
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isUsageLimitMessage, isUsageLimitRejection, nativeUsageErrorMessage, responseErrorMessage, usageLimitNoticeText } from './errors'
+import { isOutOfUsageMessage, isUsageLimitMessage, isUsageLimitRejection, nativeUsageErrorMessage, responseErrorMessage, usageLimitNoticeText } from './errors'
 
 describe('plan limit errors', () => {
   it('never shows balances or dollar amounts', () => {
@@ -27,5 +27,14 @@ describe('plan limit errors', () => {
     expect(isUsageLimitMessage('Upstream failed')).toBe(false)
     expect(usageLimitNoticeText(nativeUsageErrorMessage('insufficient_balance', 'x'))).toBe('You’ve reached your plan’s usage limit.')
     expect(usageLimitNoticeText(nativeUsageErrorMessage('daily_spend_limit_reached', 'x'))).toMatch(/midnight UTC/)
+  })
+
+  it('mentions credits only where the app shows them, and only for running out', () => {
+    const outOfUsage = nativeUsageErrorMessage('insufficient_balance', 'x')
+    const daily = nativeUsageErrorMessage('daily_spend_limit_reached', 'x')
+    expect(usageLimitNoticeText(outOfUsage, true)).toBe('You’ve run out of usage and credits.')
+    expect(usageLimitNoticeText(daily, true)).toBe(daily)
+    expect(isOutOfUsageMessage(outOfUsage)).toBe(true)
+    expect(isOutOfUsageMessage(daily)).toBe(false)
   })
 })

@@ -129,6 +129,34 @@ describe('mobile usage limits capability', () => {
   })
 })
 
+describe('mobile credits capability', () => {
+  afterEach(() => {
+    mocks.billingEnabled = undefined
+    mocks.config = {}
+  })
+
+  it.each([
+    { billingEnabled: true, nativeCredits: true, expected: true },
+    { billingEnabled: true, nativeCredits: false, expected: false },
+    { billingEnabled: false, nativeCredits: true, expected: false },
+  ])('lets the app show credits only with billing and the native switch on (%o)', async ({ billingEnabled, nativeCredits, expected }) => {
+    mocks.billingEnabled = billingEnabled
+    mocks.config = { NATIVE_CREDITS_ENABLED: nativeCredits }
+    const values = [[{ id: 'user' }], [{ value: {} }], [], []]
+    mocks.select.mockImplementation(() => {
+      const rows = values.shift()
+      const chain = { from: () => chain, where: () => chain, limit: async () => rows }
+      return chain
+    })
+    let handler!: () => Promise<unknown>
+    await registerMobileRoutes({
+      get: (path: string, callback: () => Promise<unknown>) => { if (path === '/api/mobile/config') handler = callback },
+      post: vi.fn(),
+    } as unknown as FastifyInstance)
+    expect(await handler()).toMatchObject({ capabilities: { credits: expected } })
+  })
+})
+
 describe('mobile App Store billing capability', () => {
   async function capabilities() {
     const values = [[{ id: 'user' }], [{ value: {} }], [], []]

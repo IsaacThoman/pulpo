@@ -84,6 +84,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         passkeys: true,
         messageReports: auth.messageReportsEnabled,
         usageLimits: config.PULPO_BILLING_ENABLED,
+        credits: config.PULPO_BILLING_ENABLED && config.NATIVE_CREDITS_ENABLED,
         files: {
           enabled: auth.filesEnabled,
           docSchemaVersion: DOC_SCHEMA_VERSION,
