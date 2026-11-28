@@ -45,6 +45,16 @@ export interface SearchCustomBang {
 }
 
 export type SearchProvider = 'kagi' | 'firecrawl'
+
+/**
+ * Sent with an empty Search response when other providers could not answer:
+ * `failed` errored, timed out or was skipped as unhealthy, and `budget` means one
+ * was refused for lack of credits. The empty result may not be the whole story.
+ */
+export interface SearchDegraded {
+  failed?: SearchProvider[]
+  budget?: true
+}
 /** Search types that can use their own engines instead of following the Web choice. */
 export const searchProviderCategories = ['news', 'images', 'videos', 'podcasts'] as const
 export type SearchProviderCategory = (typeof searchProviderCategories)[number]

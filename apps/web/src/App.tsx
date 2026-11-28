@@ -43,6 +43,7 @@ const AdminModelsPage = lazy(() => import('@/pages/admin/AdminModelsPage').then(
 const AdminUsagePage = lazy(() => import('@/pages/admin/AdminUsagePage').then((module) => ({ default: module.AdminUsagePage })))
 const AdminUsageLayout = lazy(() => import('@/pages/admin/AdminUsageLayout').then((module) => ({ default: module.AdminUsageLayout })))
 const AdminInsightsPage = lazy(() => import('@/pages/admin/AdminInsightsPage').then((module) => ({ default: module.AdminInsightsPage })))
+const AdminSearchPage = lazy(() => import('@/pages/admin/AdminSearchPage').then((module) => ({ default: module.AdminSearchPage })))
 const AdminWorkspacesPage = lazy(() => import('@/pages/admin/AdminWorkspacesPage').then((module) => ({ default: module.AdminWorkspacesPage })))
 const AdminSettingsPage = lazy(() => import('@/pages/admin/settings/AdminSettingsPage').then((module) => ({ default: module.AdminSettingsPage })))
 const AdminBillingPage = lazy(() => import('@/pages/admin/AdminBillingPage').then((module) => ({ default: module.AdminBillingPage })))
@@ -183,6 +184,7 @@ export default function App() {
                   <Route index element={<LocalizedRoute><LeaderboardPage scope="instance" /></LocalizedRoute>} />
                   <Route path="requests" element={<LocalizedRoute><AdminUsagePage /></LocalizedRoute>} />
                   <Route path="insights" element={<LocalizedRoute><AdminInsightsPage /></LocalizedRoute>} />
+                  <Route path="search" element={<LocalizedRoute><AdminSearchPage /></LocalizedRoute>} />
                   <Route path="workspaces" element={<LocalizedRoute><AdminWorkspacesPage /></LocalizedRoute>} />
                 </Route>
                 <Route path="billing" element={<LocalizedRoute><RequireBilling><AdminBillingPage /></RequireBilling></LocalizedRoute>} />

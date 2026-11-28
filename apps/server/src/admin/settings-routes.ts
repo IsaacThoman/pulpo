@@ -35,6 +35,7 @@ import { B2BackupStore, backupConnectionError } from './b2-backup-store.js'
 import { createOffsiteBackup } from './backup-scheduler.js'
 import { isAgeEncryptedBackup } from './backup-encryption.js'
 import { reconcileDetailedPayloadRetention, type DetailedPayloadLoggingSettings } from '../logging/detailed-payload-retention.js'
+import { invalidateSearchSettings } from '../search/settings.js'
 
 function validatedB2Endpoint(value: string): { endpoint: string; region: string } {
   try {
@@ -409,6 +410,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
       })
       return next
     })
+    invalidateSearchSettings()
     return publicWebToolsSettings(value)
   })
 

@@ -4,7 +4,7 @@ import { reconcileWorkspaceLeases } from './agent/controller.js'
 import { db } from './database/client.js'
 import {
   applicationSettings, attachments, backupJobs, chats, dailyUsageRollups, exportJobs, idempotencyRecords,
-  passwordResetTokens, responses, sessions, usageEvents, users,
+  passwordResetTokens, responses, searchRequests, sessions, usageEvents, users,
   ocrCacheEntries,
 } from './database/schema.js'
 import { getBlobStore } from './storage/index.js'
@@ -23,6 +23,8 @@ import { backupSettingsForExport } from './admin/backup-settings.js'
 import { sweepComputerTransfers } from './computer/transfers.js'
 
 const RESPONSE_CONTEXT_SCRUB_BATCH_SIZE = 100
+/** Search timing only feeds the admin dashboard, so it is kept briefly. */
+export const SEARCH_REQUEST_RETENTION_MS = 30 * 86_400_000
 
 export async function scrubPersistedResponseBinaryContext(): Promise<{ scanned: number; updated: number }> {
   let cursor: string | undefined
@@ -133,6 +135,7 @@ export async function runCleanup(): Promise<void> {
   await db.delete(passwordResetTokens).where(lt(passwordResetTokens.expiresAt, now))
   await db.delete(idempotencyRecords).where(lt(idempotencyRecords.expiresAt, now))
   await db.delete(ocrCacheEntries).where(lt(ocrCacheEntries.expiresAt, now))
+  await db.delete(searchRequests).where(lt(searchRequests.createdAt, new Date(now.getTime() - SEARCH_REQUEST_RETENTION_MS)))
   await purgeExpiredMemoryDocumentRevisions(now)
   const expiredExports = await db.select().from(exportJobs).where(lt(exportJobs.expiresAt, now))
   for (const job of expiredExports) if (job.objectKey) await getBlobStore().delete(job.objectKey).catch(() => undefined)

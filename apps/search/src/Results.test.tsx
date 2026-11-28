@@ -88,6 +88,41 @@ describe('search result presentation', () => {
       .toEqual(['First A', 'Other', 'Pinned later', 'Other more'])
   })
 
+  it('shows a quiet result count and search time above result lists, but not over image grids or runtime filters', () => {
+    const stats = { elapsedMs: 1823, providers: ['kagi' as const] }
+    const { container, rerender } = render(<Results data={data} location={{ ...homeLocation, query: 'octopus' }}
+      preferences={loadPreferences()} setDomain={vi.fn()} onQuery={vi.fn()} stats={stats} />)
+    const line = container.querySelector('.result-stats')
+    expect(line?.textContent).toBe('3 results from Kagi in 1.82 seconds')
+    expect(line?.compareDocumentPosition(container.querySelector('.results-list')!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+
+    rerender(<Results data={data} location={{ ...homeLocation, query: 'octopus' }} stats={stats}
+      preferences={{ ...loadPreferences(), domains: { 'github.com': 'hide', 'en.wikipedia.org': 'hide', '100.64.0.2': 'hide' } }} setDomain={vi.fn()} onQuery={vi.fn()} />)
+    expect(container.querySelector('.result-stats')).toBeNull()
+
+    rerender(<Results data={{ ...data, results: [{ ...data.results[0], imageUrl: 'https://images.example.org/a.jpg' }] }} stats={stats}
+      location={{ ...homeLocation, category: 'images', query: 'octopus' }} preferences={loadPreferences()} setDomain={vi.fn()} onQuery={vi.fn()} />)
+    expect(container.querySelector('.result-stats')).toBeNull()
+
+    rerender(<Results data={{ ...data, results: [
+      { url: 'https://video.example.org/short', title: 'Short', snippet: '', duration: '04:59' },
+      { url: 'https://video.example.org/long', title: 'Long', snippet: '', duration: '0:20:00' },
+    ] }} stats={stats} location={{ ...homeLocation, category: 'videos', query: 'octopus' }} preferences={loadPreferences()} setDomain={vi.fn()} onQuery={vi.fn()} />)
+    expect(container.querySelector('.result-stats')?.textContent).toBe('2 results from Kagi in 1.82 seconds')
+    fireEvent.change(screen.getByRole('combobox', { name: 'Duration' }), { target: { value: 'short' } })
+    expect(container.querySelector('.result-stats')).toBeNull()
+    expect(screen.getByText('1 of 2 videos')).toBeDefined()
+  })
+
+  it('labels a provider\'s direct answer apart from Quick Answer and reports the shown count instead of announcing it', () => {
+    const onShown = vi.fn()
+    render(<Results data={{ ...data, answer: { title: 'Octopus', snippet: 'Eight arms.' } }} location={{ ...homeLocation, query: 'octopus' }}
+      preferences={loadPreferences()} setDomain={vi.fn()} onQuery={vi.fn()} onShown={onShown} />)
+    expect(screen.getByRole('complementary', { name: 'Direct answer' })).toBeDefined()
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(onShown).toHaveBeenLastCalledWith(3)
+  })
+
   it('filters confirmed video runtimes and preserves ranking within each range', () => {
     const videos: SearchResponse = { ...data, results: [
       { url: 'https://video.example.org/short', title: 'Short tutorial', snippet: '', duration: '04:59' },

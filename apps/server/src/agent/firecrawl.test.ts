@@ -26,6 +26,18 @@ describe('Firecrawl client', () => {
     })
   })
 
+  it('asks Firecrawl to stop just before the caller gives up', async () => {
+    const fetch = vi.fn().mockImplementation(async () => Response.json({ success: true, data: { web: [] } }))
+    vi.stubGlobal('fetch', fetch)
+    const client = new FirecrawlClient('https://api.firecrawl.dev/v2', 'secret')
+    await client.searchResults({ query: 'pulpo', timeoutMs: 7_000 })
+    expect(JSON.parse(fetch.mock.calls[0]![1].body)).toMatchObject({ timeout: 6_500 })
+    await client.searchResults({ query: 'pulpo', timeoutMs: 1_200 })
+    expect(JSON.parse(fetch.mock.calls[1]![1].body)).toMatchObject({ timeout: 1_000 })
+    await client.searchResults({ query: 'pulpo' })
+    expect(JSON.parse(fetch.mock.calls[2]![1].body)).not.toHaveProperty('timeout')
+  })
+
   it('prefers a concise provider description to a scraped page preview for Search', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({
       success: true,
@@ -38,6 +50,25 @@ describe('Firecrawl client', () => {
     })))
     const result = await new FirecrawlClient('https://api.firecrawl.dev/v2', 'secret').searchResults({ query: 'octopus' })
     expect(result.results[0]?.snippet).toBe('An overview of octopus behavior and habitat.')
+  })
+
+  it('chooses prose over a table-heavy or very short preview, and adds relevant page detail to a short summary', async () => {
+    const table = '| Plan | Agent | Tab | Chat |\n|-|-|-|-|\n| Hobby | ✓ | ✓ | — |\n| Pro | ✓ | ✓ | ✓ |\n| Teams | ✓ | ✓ | ✓ |'
+    const prose = 'Every Cursor plan includes Tab completions. Paid plans include frontier models at API prices, and Teams adds pooled usage.'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({
+      success: true,
+      data: { web: [
+        { title: 'Table', url: 'https://example.com/table', description: 'Compare the Cursor plans and what each includes.', snippet: table },
+        { title: 'Short', url: 'https://example.com/short', description: 'Pricing', snippet: prose },
+        { title: 'Both', url: 'https://example.com/both', description: 'Included and metered LLM usage for code completion and chat.', snippet: prose },
+      ] },
+    })))
+    const result = await new FirecrawlClient('https://api.firecrawl.dev/v2', 'secret').searchResults({ query: 'cursor plans included models' })
+    expect(result.results.map(row => row.snippet)).toEqual([
+      'Compare the Cursor plans and what each includes.',
+      prose,
+      `Included and metered LLM usage for code completion and chat. ${prose}`,
+    ])
   })
 
   it('supports an unauthenticated custom endpoint and fresh truncated scrapes', async () => {

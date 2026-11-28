@@ -1,8 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
-import { eq } from 'drizzle-orm'
 import { z } from 'zod'
-import { webToolProviderSchema, type WebToolProvider } from '@pulpo/contracts'
-import { searchDateRange } from '@pulpo/contracts/search'
+import { webToolProviderSchema, type SearchRequestOutcome, type WebToolProvider } from '@pulpo/contracts'
+import { searchDateRange, type SearchDegraded } from '@pulpo/contracts/search'
 import { releaseMeteredBudget, reserveMeteredBudget, settleMeteredBudget } from '../accounting/service.js'
 import { FIRECRAWL_DEFAULT_API_BASE } from '../agent/firecrawl.js'
 import { KAGI_IMAGE_RESULT_LIMIT, KAGI_MAX_SEARCH_PAGE, KAGI_RESULT_LIMIT } from '../agent/kagi.js'
@@ -10,11 +9,9 @@ import { basicSearchCategories, searchCategories, type ProviderSearchInput, type
 import { availableWebSearchProviders, billedPrice, createWebProviderClients } from '../agent/web-tools.js'
 import { requireUser } from '../auth/service.js'
 import { getConfig } from '../config.js'
-import { db } from '../database/client.js'
-import { applicationSettings } from '../database/schema.js'
 import { decryptSecret } from '../lib/crypto.js'
 import { AppError } from '../lib/errors.js'
-import { parseWebToolsSettings, type StoredWebToolsSettings } from '../settings/application-settings.js'
+import type { StoredWebToolsSettings } from '../settings/application-settings.js'
 import { registerSearchAccountRoute } from './account.js'
 import { registerSearchCurrencyRoute } from './currency.js'
 import { fetchSearchFavicon } from './favicon.js'
@@ -22,7 +19,10 @@ import { placesCapability, placeSearchInput, searchFirecrawlPlaces, searchPlaces
 import { quickAnswerInput, quickAnswerParams } from './quick-answer-policy.js'
 import { cancelQuickAnswer, quickAnswerCapability, startQuickAnswer, streamQuickAnswer } from './quick-answer.js'
 import { ReusableImagesProviderError, ReusableImagesRateLimitError, reusableImagesInput, searchReusableImages } from './reusable-images.js'
+import { createProviderHealth } from './provider-health.js'
 import { filterSearchHosts, searchHostFilters, searchScopes } from './scope.js'
+import { readSearchSettings } from './settings.js'
+import { isTimeoutError, recordSearchRequest, SearchTimer } from './timing.js'
 import { registerSearchWeatherRoute } from './weather/routes.js'
 
 const providerCapabilities: Record<WebToolProvider, { categories: readonly SearchCategory[]; maxPage: number; expandedImages?: true }> = {
@@ -57,10 +57,29 @@ const searchInputSchema = z.object({
   path: ['expandedImages'], message: 'An expanded gallery requires an image search.',
 })
 
-async function readSearchSettings() {
-  const [row] = await db.select({ value: applicationSettings.value }).from(applicationSettings)
-    .where(eq(applicationSettings.key, 'webTools')).limit(1)
-  return parseWebToolsSettings(row?.value)
+function hasResults(result: SearchResults) {
+  return Boolean(result.results.length || result.answer || result.knowledge || result.podcastShows?.length)
+}
+
+const isFilter = (value: unknown): value is string => typeof value === 'string'
+
+/** Which options shaped a search, recorded in place of the query text. */
+function queryFilters(input: z.infer<typeof searchInputSchema>, sites: boolean): string[] {
+  return [
+    input.scope && 'scope', sites && 'sites', input.region && 'region', input.date && 'date', input.dateRange && 'date_range',
+    input.safeSearch === false && 'safe_search_off', input.providers && 'providers', input.expandedImages && 'expanded_images',
+  ].filter(isFilter)
+}
+
+/**
+ * How long one provider call may take. With a fallback left, give up near the
+ * provider's usual slow tail (prod p90: Kagi 2.1 s, Firecrawl 5.7 s) so the next
+ * one still has time; the last provider gets longer, since nothing else can answer.
+ * Publisher metadata scrapes each article, so it gets more in both cases.
+ */
+function providerDeadlineMs(provider: WebToolProvider, last: boolean, publisherMetadata: boolean): number {
+  if (publisherMetadata) return last ? 15_000 : 10_000
+  return last ? 12_000 : { kagi: 4_500, firecrawl: 7_000 }[provider]
 }
 
 function defaultNewsOrder(providers: WebToolProvider[]): WebToolProvider[] {
@@ -100,6 +119,7 @@ function searchUser(request: FastifyRequest, reply: FastifyReply) {
 
 export function registerSearchRoutes(app: FastifyInstance) {
   let openverseRetryAt = 0
+  const providerHealth = createProviderHealth()
   registerSearchAccountRoute(app, searchUser)
   registerSearchCurrencyRoute(app, searchUser)
   registerSearchWeatherRoute(app, searchUser)
@@ -129,11 +149,10 @@ export function registerSearchRoutes(app: FastifyInstance) {
 
   app.get('/api/search/config', async (request, reply) => {
     const user = searchUser(request, reply)
-    const settings = await readSearchSettings()
+    const [settings, quickAnswer] = await Promise.all([readSearchSettings(), quickAnswerCapability(user.id)])
     const defaultOrder = availableWebSearchProviders(settings)
     const places = await configuredPlaces(settings)
     const newsPriceMicros = defaultOrder.includes('firecrawl') ? firecrawlNewsPrice(settings) : undefined
-    const quickAnswer = await quickAnswerCapability(user.id)
     return {
       defaultOrder,
       newsDefaultOrder: defaultNewsOrder(defaultOrder),
@@ -235,91 +254,138 @@ export function registerSearchRoutes(app: FastifyInstance) {
       keyGenerator: (request: FastifyRequest) => request.user?.id ?? request.ip,
     } },
   }, async (request, reply) => {
+    const timer = new SearchTimer(request.requestReceivedAt)
     const user = searchUser(request, reply)
-    const places = await configuredPlaces()
+    const places = await timer.time('settingsMs', () => configuredPlaces())
     if (!places) throw new AppError(404, 'places_disabled', 'Place search is unavailable')
     const input = placeSearchInput.parse(request.body)
     const { provider, priceMicros: costMicros } = places
     const controller = new AbortController()
     const onClose = () => { if (!reply.raw.writableFinished) controller.abort() }
     reply.raw.on('close', onClose)
+    const outcome: { outcome: SearchRequestOutcome; provider?: string; resultCount?: number } = { outcome: 'error' }
     let reservationId: string | undefined
     let settled = false
     try {
-      reservationId = await reserveMeteredBudget({ userId: user.id, costMicros })
+      try {
+        reservationId = await timer.time('reserveMs', () => reserveMeteredBudget({ userId: user.id, costMicros }))
+      } catch (error) {
+        if (error instanceof AppError && error.statusCode === 402) {
+          outcome.outcome = 'budget'
+          timer.attempt(provider)('skipped_budget')
+        }
+        throw error
+      }
       let result
+      const finish = timer.attempt(provider)
       try {
         result = places.provider === 'firecrawl'
           ? await searchFirecrawlPlaces(input, decryptSecret(places.encryptedApiKey, getConfig().ENCRYPTION_KEY), controller.signal)
           : await searchPlaces(input, places.apiKey, controller.signal)
         controller.signal.throwIfAborted()
-      } catch {
-        if (controller.signal.aborted) throw new AppError(408, 'search_cancelled', 'Search was cancelled')
+        finish(result.results.length ? 'success' : 'empty', result.results.length)
+      } catch (error) {
+        if (controller.signal.aborted) {
+          finish('cancelled')
+          outcome.outcome = 'cancelled'
+          throw new AppError(408, 'search_cancelled', 'Search was cancelled')
+        }
+        finish(isTimeoutError(error) ? 'timeout' : 'error')
         request.log.warn({ provider }, 'Place search provider failed')
         throw new AppError(502, 'places_unavailable', 'Place search is temporarily unavailable. Try again.', 'server_error')
       }
+      Object.assign(outcome, { outcome: result.results.length ? 'success' : 'empty', provider, resultCount: result.results.length })
       if (result.results.length) {
-        await settleMeteredBudget({
-          reservationId, costMicros, type: 'web_search',
+        await timer.time('settleMs', () => settleMeteredBudget({
+          reservationId: reservationId!, costMicros, type: 'web_search',
           metadata: { provider, category: 'places', resultCount: result.results.length },
-        })
+        }))
         settled = true
       }
       return result
     } finally {
       reply.raw.off('close', onClose)
-      if (reservationId && !settled) await releaseMeteredBudget(reservationId).catch(() => {
-        request.log.warn({ provider, reservationId }, 'Search reservation cleanup failed')
+      if (reservationId && !settled) {
+        const held = reservationId
+        await timer.time('releaseMs', () => releaseMeteredBudget(held)).catch(() => {
+          request.log.warn({ provider, reservationId }, 'Search reservation cleanup failed')
+        })
+      }
+      const durationMs = timer.elapsed()
+      reply.header('server-timing', timer.serverTiming(durationMs))
+      recordSearchRequest(request.log, {
+        userId: user.id, kind: 'places', category: 'places', ...outcome, durationMs, timer,
+        queryLength: input.query.length, filters: [input.location && 'location', input.openNow && 'open_now'].filter(isFilter),
       })
     }
   })
 
   app.post('/api/search/query', { bodyLimit: 4096, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (request, reply) => {
+    const timer = new SearchTimer(request.requestReceivedAt)
     const user = searchUser(request, reply)
     const input = searchInputSchema.parse(request.body)
     const filters = searchHostFilters(input.query, input.scope)
     if (filters.includeDomains.length > 20 || filters.excludeDomains.length > 20) {
       throw new AppError(400, 'too_many_search_domains', 'Use up to 20 included and 20 excluded sites.')
     }
-    const settings = await readSearchSettings()
-    const available = availableWebSearchProviders(settings)
-    const newsPriceMicros = input.category === 'news' ? firecrawlNewsPrice(settings) : undefined
-    const selected = input.providers?.filter((provider) => available.includes(provider))
-      ?? (input.category === 'news' ? defaultNewsOrder(available) : available)
-    if (!selected.length) throw new AppError(503, 'search_provider_unavailable', 'No selected search provider is available', 'server_error')
-    const providers = selected.filter((provider) => {
-      const capabilities = providerCapabilities[provider]
-      return capabilities.categories.includes(input.category) && input.page <= capabilities.maxPage
-    })
-    if (!providers.length) throw new AppError(400, 'search_not_supported', 'No selected provider supports this search type or page')
-    if (filters.matchesNothing) return { provider: providers[0], results: [] }
-
-    const clients = createWebProviderClients(settings, getConfig().ENCRYPTION_KEY)
-    const providerInput: ProviderSearchInput = {
-      query: filters.query, limit: input.limit, page: input.page, category: input.category, region: input.region, timeRelative: input.date,
-      safeSearch: input.safeSearch ?? true,
-      ...(input.dateRange ? { dateRange: input.dateRange } : {}),
-      ...(filters.includeDomains.length ? { includeDomains: filters.includeDomains } : {}),
-      ...(filters.excludeDomains.length ? { excludeDomains: filters.excludeDomains } : {}),
-    }
+    const outcome: { outcome: SearchRequestOutcome; provider?: string; resultCount?: number } = { outcome: 'error' }
     const controller = new AbortController()
     const onClose = () => {
       if (!reply.raw.writableFinished) controller.abort()
     }
-    reply.raw.on('close', onClose)
-    let empty: (SearchResults & { provider: WebToolProvider }) | undefined
-    let budgetError: AppError | undefined
     try {
-      for (const provider of providers) {
+      const settings = await timer.time('settingsMs', () => readSearchSettings())
+      const available = availableWebSearchProviders(settings)
+      const newsPriceMicros = input.category === 'news' ? firecrawlNewsPrice(settings) : undefined
+      // A client can hold a provider list from before an admin disabled one; then use today's default order.
+      const requested = input.providers?.filter((provider) => available.includes(provider))
+      const selected = requested?.length ? requested : input.category === 'news' ? defaultNewsOrder(available) : available
+      if (!selected.length) {
+        outcome.outcome = 'unavailable'
+        throw new AppError(503, 'search_provider_unavailable', 'No selected search provider is available', 'server_error')
+      }
+      const providers = selected.filter((provider) => {
+        const capabilities = providerCapabilities[provider]
+        return capabilities.categories.includes(input.category) && input.page <= capabilities.maxPage
+      })
+      if (!providers.length) {
+        outcome.outcome = 'unsupported'
+        throw new AppError(400, 'search_not_supported', 'No selected provider supports this search type or page')
+      }
+      if (filters.matchesNothing) {
+        outcome.outcome = 'filtered'
+        return { provider: providers[0], results: [] }
+      }
+
+      const clients = createWebProviderClients(settings, getConfig().ENCRYPTION_KEY)
+      const providerInput: ProviderSearchInput = {
+        query: filters.query, limit: input.limit, page: input.page, category: input.category, region: input.region, timeRelative: input.date,
+        safeSearch: input.safeSearch ?? true,
+        ...(input.dateRange ? { dateRange: input.dateRange } : {}),
+        ...(filters.includeDomains.length ? { includeDomains: filters.includeDomains } : {}),
+        ...(filters.excludeDomains.length ? { excludeDomains: filters.excludeDomains } : {}),
+      }
+      reply.raw.on('close', onClose)
+      let empty: (SearchResults & { provider: WebToolProvider }) | undefined
+      let budgetError: AppError | undefined
+      const failed: WebToolProvider[] = []
+      for (const [index, provider] of providers.entries()) {
         controller.signal.throwIfAborted()
+        const last = index === providers.length - 1
+        if (!last && providerHealth.unhealthy(provider)) {
+          timer.attempt(provider)('skipped_unhealthy')
+          failed.push(provider)
+          continue
+        }
         const publisherPrice = provider === 'firecrawl' ? newsPriceMicros : undefined
         const costMicros = publisherPrice ?? billedPrice(provider, 'search', settings)
         let reservationId: string | undefined
         if (costMicros > 0) {
           try {
-            reservationId = await reserveMeteredBudget({ userId: user.id, costMicros })
+            reservationId = await timer.time('reserveMs', () => reserveMeteredBudget({ userId: user.id, costMicros }))
           } catch (error) {
             if (!(error instanceof AppError) || error.statusCode !== 402) throw error
+            timer.attempt(provider)('skipped_budget')
             budgetError ??= error
             continue
           }
@@ -328,46 +394,80 @@ export function registerSearchRoutes(app: FastifyInstance) {
         let settled = false
         try {
           let result: SearchResults
+          const timeoutMs = providerDeadlineMs(provider, last, Boolean(publisherPrice))
+          const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(timeoutMs)])
+          const finish = timer.attempt(provider)
+          const startedAt = performance.now()
           try {
-            const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(publisherPrice ? 12_000 : 8000)])
             signal.throwIfAborted()
-            const requestInput: ProviderSearchInput = publisherPrice ? { ...providerInput, includePublisherMetadata: true }
-              : provider === 'kagi' && input.expandedImages ? { ...providerInput, limit: KAGI_IMAGE_RESULT_LIMIT } : providerInput
+            const limit = provider === 'kagi' && input.expandedImages ? KAGI_IMAGE_RESULT_LIMIT : providerInput.limit
+            const requestInput: ProviderSearchInput = { ...providerInput, limit, timeoutMs, ...(publisherPrice ? { includePublisherMetadata: true } : {}) }
             result = filterSearchHosts(await clients[provider]!.searchResults(requestInput, signal), filters)
             signal.throwIfAborted()
-          } catch {
-            controller.signal.throwIfAborted()
-            request.log.warn({ provider }, 'Search provider failed')
+            finish(hasResults(result) ? 'success' : 'empty', result.results.length)
+            providerHealth.succeeded(provider)
+          } catch (error) {
+            if (controller.signal.aborted) {
+              finish('cancelled')
+              throw controller.signal.reason
+            }
+            // Firecrawl ends its own search just before our deadline, so its error that late is a timeout too.
+            const timedOut = isTimeoutError(error, signal) || (provider === 'firecrawl' && performance.now() - startedAt >= timeoutMs - 1_000)
+            finish(timedOut ? 'timeout' : 'error')
+            providerHealth.failed(provider)
+            failed.push(provider)
+            request.log.warn({ provider, timedOut }, 'Search provider failed')
             continue
           }
-          if (!result.results.length && !result.answer && !result.knowledge && !result.podcastShows?.length) {
+          if (!hasResults(result)) {
             empty ??= { provider, ...result }
             continue
           }
           if (reservationId) {
-            await settleMeteredBudget({
-              reservationId, costMicros, type: 'web_search',
+            const held = reservationId
+            await timer.time('settleMs', () => settleMeteredBudget({
+              reservationId: held, costMicros, type: 'web_search',
               metadata: { provider, category: input.category, resultCount: result.results.length },
-            })
+            }))
             settled = true
           }
+          Object.assign(outcome, { outcome: 'success', provider, resultCount: result.results.length })
           return { provider, ...result }
         } finally {
           if (reservationId && !settled) {
-            await releaseMeteredBudget(reservationId).catch(() => {
+            const held = reservationId
+            await timer.time('releaseMs', () => releaseMeteredBudget(held)).catch(() => {
               request.log.warn({ provider, reservationId }, 'Search reservation cleanup failed')
             })
           }
         }
       }
-      if (empty) return empty
-      if (budgetError) throw budgetError
+      if (empty) {
+        Object.assign(outcome, { outcome: 'empty', provider: empty.provider, resultCount: 0 })
+        // An empty answer may only mean the providers that could have answered did not.
+        if (!failed.length && !budgetError) return empty
+        const degraded: SearchDegraded = { ...(failed.length ? { failed } : {}), ...(budgetError ? { budget: true as const } : {}) }
+        return { ...empty, degraded }
+      }
+      if (budgetError) {
+        outcome.outcome = 'budget'
+        throw budgetError
+      }
       throw new AppError(502, 'search_failed', 'Search is temporarily unavailable. Try again.', 'server_error')
     } catch (error) {
-      if (controller.signal.aborted) throw new AppError(408, 'search_cancelled', 'Search was cancelled')
+      if (controller.signal.aborted) {
+        outcome.outcome = 'cancelled'
+        throw new AppError(408, 'search_cancelled', 'Search was cancelled')
+      }
       throw error
     } finally {
       reply.raw.off('close', onClose)
+      const durationMs = timer.elapsed()
+      reply.header('server-timing', timer.serverTiming(durationMs))
+      recordSearchRequest(request.log, {
+        userId: user.id, kind: 'query', category: input.category, page: input.page, ...outcome, durationMs, timer,
+        queryLength: input.query.length, filters: queryFilters(input, filters.explicit),
+      })
     }
   })
 }

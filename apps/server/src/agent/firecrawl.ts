@@ -1,8 +1,10 @@
 import { searchDateRange } from '@pulpo/contracts/search'
 import { publicHttpsUrl, webFetchOutput, type KagiSearchInput, type KagiResult, type WebPage } from './kagi.js'
-import { normalizeResult, uniqueResults, type BasicSearchCategory, type ProviderSearchInput, type SearchResults } from './search-results.js'
+import { normalizeResult, resultSnippet, searchTerms, textTerms, uniqueResults, type BasicSearchCategory, type ProviderSearchInput, type SearchResults } from './search-results.js'
 
 export const FIRECRAWL_DEFAULT_API_BASE = 'https://api.firecrawl.dev/v2'
+/** Firecrawl's own search timeout ends this much before the caller's deadline. */
+const FIRECRAWL_TIMEOUT_MARGIN_MS = 500
 
 type FirecrawlSearchInput = Omit<ProviderSearchInput, 'category' | 'page'> & { category?: BasicSearchCategory }
 
@@ -69,10 +71,37 @@ function apiError(payload: FirecrawlSearchResponse | FirecrawlScrapeResponse | n
   return payload?.error || payload?.message || `Firecrawl API returned ${status}`
 }
 
-function searchPreview(row: FirecrawlSearchResult | undefined) {
-  const snippet = typeof row?.snippet === 'string' ? row.snippet.trim() : ''
-  const description = typeof row?.description === 'string' ? row.description.trim() : ''
-  return !snippet || (snippet.length > 300 && description && description.length < snippet.length) ? description : snippet
+const previewLimit = 245
+
+// 0: too short or mostly symbols, 1: mostly table rows, 2: prose.
+function previewQuality(text: string) {
+  const visible = text.replace(/\s/g, '')
+  if (text.length < 20 || (visible.match(/\p{L}/gu)?.length ?? 0) < visible.length * 0.6) return 0
+  return (text.match(/ ; /g)?.length ?? 0) >= 2 ? 1 : 2
+}
+
+// Web results carry query highlights (Markdown that may include tables) in description; news results use snippet.
+function searchPreview(row: FirecrawlSearchResult | undefined, query?: string) {
+  const rawSnippet = typeof row?.snippet === 'string' ? row.snippet.trim() : ''
+  const snippet = resultSnippet(rawSnippet, previewLimit, query)
+  const description = resultSnippet(row?.description, previewLimit, query)
+  if (!snippet || !description || snippet === description) return snippet || description
+  const snippetQuality = previewQuality(snippet)
+  const descriptionQuality = previewQuality(description)
+  if (snippetQuality !== descriptionQuality) return snippetQuality > descriptionQuality ? snippet : description
+  const combined = descriptionQuality === 2 && query && combinedPreview(description, rawSnippet, query)
+  if (combined) return combined
+  return rawSnippet.length > 300 ? description : snippet
+}
+
+// A one-line summary plus the part of the page that mentions what the summary leaves out.
+function combinedPreview(description: string, rawSnippet: string, query: string) {
+  if (description.length > 140 || description.endsWith('…')) return
+  const room = previewLimit - description.length - 1
+  const excerpt = resultSnippet(rawSnippet, room, query)
+  const known = textTerms(description)
+  const adds = [...textTerms(excerpt)].some(term => searchTerms(query).has(term) && !known.has(term))
+  if (excerpt.length >= 40 && previewQuality(excerpt) && adds) return `${description} ${excerpt}`
 }
 
 function publisherPreview(row: FirecrawlSearchResult) {
@@ -160,7 +189,7 @@ export class FirecrawlClient {
       results: uniqueResults(rows.map((row) => normalizeResult({
         url: row?.url,
         title: row?.title,
-        snippet: includePublisherMetadata && row ? publisherPreview(row) : searchPreview(row),
+        snippet: includePublisherMetadata && row ? publisherPreview(row) : searchPreview(row, category === 'images' ? undefined : input.query),
         imageUrl: row?.imageUrl || row?.metadata?.ogImage,
         imageWidth: category === 'images' ? row?.imageWidth : undefined,
         imageHeight: category === 'images' ? row?.imageHeight : undefined,
@@ -188,6 +217,8 @@ export class FirecrawlClient {
       ...(!includeDomains && excludeDomains ? { excludeDomains } : {}),
       ...(tbs ? { tbs } : {}),
       ...(input.region ? { country: input.region } : {}),
+      // Stop just before the caller gives up, so Firecrawl ends the work (and its credit use) too.
+      ...(input.timeoutMs ? { timeout: Math.max(1_000, Math.floor(input.timeoutMs - FIRECRAWL_TIMEOUT_MARGIN_MS)) } : {}),
       ...(input.category === 'news' && input.includePublisherMetadata ? {
         scrapeOptions: { formats: ['markdown'], onlyMainContent: true },
       } : {}),
