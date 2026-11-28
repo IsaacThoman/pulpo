@@ -51,10 +51,11 @@ remain separate from persistent dev. Local development still uses `compose.yaml`
 Each preview also gets Pulpo Search at `search-pulpo-dev-pr-<n>.deathgrips.org`. As in
 production, Search is a separate Dockerfile application (`Dockerfile.search`) on the
 `dev` branch. Its preview URL template is `search-pulpo-dev-pr-{{pr_id}}.deathgrips.org`,
-force HTTPS is off, and Coolify's own PR previews stay **disabled**. Instead, the preview
-job deploys it with `coolify deploy uuid <uuid> --pull-request-id <n>` once the
-preview stack is healthy, so pull requests from before Search existed never try to
-build it. Closing a pull request deletes both previews.
+force HTTPS is off, and Coolify's own PR previews stay **disabled**. Instead, once the
+preview stack is healthy, the preview job calls `POST /api/v1/applications/<uuid>/previews`
+with the pull request number, URL and head commit. That registers the preview and
+deploys it, so pull requests from before Search existed never try to build it.
+Closing a pull request deletes both previews.
 
 The preview stack serves the rest. Labels on the `api` service in `compose.yaml` route
 the Search host's `/api/search` to that pull request's API. Coolify loads the Compose

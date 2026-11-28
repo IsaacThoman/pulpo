@@ -933,16 +933,27 @@ jobs:
       - name: Validate preview edge health
         run: bash .github/scripts/wait-http-health.sh "${PREVIEW_URL}/health" preview
 
-      # Search is a separate Dockerfile application, as in production. Coolify does not deploy its
-      # previews by itself, so pull requests from before Search existed never try to build it.
+      # Search is a separate Dockerfile application, as in production. Its automatic Coolify
+      # previews stay off, so pull requests from before Search existed never try to build it.
+      # Creating the preview through the API registers this pull request and deploys its head.
       - name: Deploy Search preview
         id: search
         if: env.COOLIFY_SEARCH_APP_UUID != ''
+        env:
+          PULL_REQUEST_URL: ${{ github.event.pull_request.html_url }}
         run: |
           set -euo pipefail
-          response="$(coolify deploy uuid "${COOLIFY_SEARCH_APP_UUID}" --pull-request-id "${PULL_REQUEST_ID}" --format json)"
-          deployment_uuid="$(jq -r '.deployments[0].deployment_uuid // .[0].deployment_uuid // .deployment_uuid // empty' <<< "${response}")"
-          [[ -n "${deployment_uuid}" ]] || { jq -r '.deployments[0].message // .message // "Coolify did not queue a Search preview."' <<< "${response}" >&2; exit 1; }
+          coolify_api_url="${COOLIFY_URL%/}"
+          if [[ "${coolify_api_url}" != */api/v1 ]]; then coolify_api_url="${coolify_api_url}/api/v1"; fi
+          response="$(
+            jq -cn --argjson id "${PULL_REQUEST_ID}" --arg url "${PULL_REQUEST_URL}" --arg commit "${PULL_REQUEST_SHA}" \
+              '{pull_request_id: $id, pull_request_html_url: $url, commit: $commit}' \
+              | curl --fail-with-body --silent --show-error --request POST \
+                  --header "Authorization: Bearer ${COOLIFY_TOKEN}" --header 'Content-Type: application/json' \
+                  --data @- "${coolify_api_url}/applications/${COOLIFY_SEARCH_APP_UUID}/previews"
+          )"
+          deployment_uuid="$(jq -r '.deployment_uuid // empty' <<< "${response}")"
+          [[ -n "${deployment_uuid}" ]] || { jq -r '.message // "Coolify did not queue a Search preview."' <<< "${response}" >&2; exit 1; }
           echo "deployment_uuid=${deployment_uuid}" >> "${GITHUB_OUTPUT}"
 
       - name: Wait for Search preview
