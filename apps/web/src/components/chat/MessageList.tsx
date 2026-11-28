@@ -6,6 +6,8 @@ import { HISTORY_PREFETCH_MESSAGES } from '@/lib/chat-history'
 import { useChatHistory } from '@/features/chat/use-chat-history'
 import { ui } from '@/i18n/ui'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
+import { ArrowDown } from 'lucide-react'
 import { MessageItem } from './MessageItem'
 
 const EMPTY_MESSAGES: Message[] = []
@@ -47,6 +49,30 @@ function HistoryList({ context, style, ...props }: ListProps & { context?: Histo
   return <div {...props} style={context?.ready ? { ...style, visibility: undefined } : style} />
 }
 const historyComponents = { Header: HistoryHeader, List: HistoryList }
+/** Distance from the tail before offering a jump back to the latest message (matches mobile). */
+const SCROLL_TO_BOTTOM_THRESHOLD = 240
+
+function ScrollToBottomButton({ visible, onClick }: { visible: boolean; onClick: () => void }) {
+  // Sticky inside the transcript so it rests just above the composer without measuring it.
+  return <div className="pointer-events-none sticky bottom-0 z-10 h-0">
+    <div className="absolute inset-x-0 bottom-3 flex justify-center">
+      <Button
+        variant="outline"
+        size="icon"
+        inert={!visible}
+        aria-label={ui('Scroll to bottom')}
+        data-testid="chat-scroll-to-bottom"
+        onClick={onClick}
+        className={cn(
+          'rounded-full bg-card shadow-md transition-[opacity,scale,translate,background-color] duration-200 motion-reduce:transition-none hover:bg-accent dark:bg-card dark:hover:bg-accent',
+          visible ? 'pointer-events-auto opacity-100' : 'translate-y-3 scale-60 opacity-0',
+        )}
+      >
+        <ArrowDown />
+      </Button>
+    </div>
+  </div>
+}
 
 function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: HTMLDivElement }) {
   const ids = useChat(state => messageIds(props.chat.id, state.chats.find(chat => chat.id === props.chat.id)?.messages ?? EMPTY_MESSAGES))
@@ -71,16 +97,51 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
   const { history, loading, error, load } = historyState
   const context = { ...historyState, ready }
   const bottomFrame = useRef<number | null>(null)
+  // A smooth jump to the tail owns the scroll position until it lands or the reader takes over.
+  const jumping = useRef(false)
+  const jumpTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const [showJump, setShowJump] = useState(false)
+  const updateJump = useCallback(() => {
+    const gap = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight
+    setShowJump(!stickToBottom.current && !jumping.current && gap > SCROLL_TO_BOTTOM_THRESHOLD)
+  }, [viewport])
   // Follow changing estimates during opening too. Waiting for ready here can leave the
   // newest row outside the viewport forever, since seeing that row is what marks it ready.
   const settleBottom = useCallback(() => {
-    if (!stickToBottom.current) return
+    if (!stickToBottom.current || jumping.current) return
     if (bottomFrame.current !== null) cancelAnimationFrame(bottomFrame.current)
     bottomFrame.current = requestAnimationFrame(() => {
       bottomFrame.current = null
       if (stickToBottom.current) viewport.scrollTop = viewport.scrollHeight
     })
   }, [viewport])
+  const endJump = useCallback(() => {
+    clearTimeout(jumpTimer.current)
+    if (!jumping.current) return
+    jumping.current = false
+    settleBottom()
+  }, [settleBottom])
+  const jumpToBottom = useCallback(() => {
+    stickToBottom.current = true
+    setShowJump(false)
+    clearTimeout(jumpTimer.current)
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      jumping.current = false
+      viewport.scrollTop = viewport.scrollHeight
+      return
+    }
+    // Animate only the last stretch; gliding through a long virtualized history measures every row.
+    const lastStretch = viewport.scrollHeight - viewport.clientHeight * 3
+    if (viewport.scrollTop < lastStretch) viewport.scrollTop = lastStretch
+    jumping.current = true
+    viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' })
+    // Not every browser emits scrollend; row measurements can also move the tail mid-flight.
+    jumpTimer.current = setTimeout(endJump, 800)
+  }, [viewport, endJump])
+  const onHeightChanged = useCallback(() => {
+    settleBottom()
+    updateJump()
+  }, [settleBottom, updateJump])
   const confirmBottom = useRef(() => {})
   const currentIds = useRef(ids)
   currentIds.current = ids
@@ -130,7 +191,9 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
       // Measurement corrections also emit scroll events; they are not an instruction to stop following.
       // A reader rejoins only by reaching the end: re-arming within a tolerance snaps the last stretch.
       if (bottomGap <= 1 && viewport.scrollTop > previousTop) stickToBottom.current = true
+      if (bottomGap <= 1 && jumping.current) endJump()
       if (bottomGap > 1) settleBottom()
+      updateJump()
       previousTop = viewport.scrollTop
       cancelAnimationFrame(captureFrame)
       captureFrame = requestAnimationFrame(captureAnchor)
@@ -139,8 +202,11 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     // corrections. Release bottom following on reader input, before those corrections run.
     const stopFollowing = () => {
       stickToBottom.current = false
+      jumping.current = false
+      clearTimeout(jumpTimer.current)
       previousTop = viewport.scrollTop
     }
+    const onScrollEnd = () => { if (jumping.current) endJump() }
     const onWheel = (event: WheelEvent) => {
       if (event.deltaY < 0) stopFollowing()
     }
@@ -162,6 +228,7 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     }
     viewport.addEventListener('scroll', onScroll, { passive: true, capture: true })
     viewport.addEventListener('wheel', onWheel, { passive: true, capture: true })
+    viewport.addEventListener('scrollend', onScrollEnd)
     viewport.addEventListener('keydown', onKeyDown)
     viewport.addEventListener('touchstart', onTouchStart, { passive: true })
     viewport.addEventListener('touchmove', onTouchMove, { passive: true })
@@ -203,9 +270,11 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     captureAnchor()
     confirmBottom.current = markInitialBottom
     markInitialBottom()
+    updateJump()
     return () => {
       viewport.removeEventListener('scroll', onScroll, true)
       viewport.removeEventListener('wheel', onWheel, true)
+      viewport.removeEventListener('scrollend', onScrollEnd)
       viewport.removeEventListener('keydown', onKeyDown)
       viewport.removeEventListener('touchstart', onTouchStart)
       viewport.removeEventListener('touchmove', onTouchMove)
@@ -214,9 +283,11 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
       rows.disconnect()
       cancelAnimationFrame(captureFrame)
       clearTimeout(resizeTimer)
+      clearTimeout(jumpTimer.current)
+      jumping.current = false
       if (bottomFrame.current !== null) cancelAnimationFrame(bottomFrame.current)
     }
-  }, [viewport, hasMessages, lineage.current.version, settleBottom])
+  }, [viewport, hasMessages, lineage.current.version, settleBottom, endJump, updateJump])
   useEffect(settleBottom, [ids.length, settleBottom])
   const firstIndex = 1 + (history?.offset ?? 0) * 2
   // endReached also fires for the probe row, so it only triggers the geometry check.
@@ -228,9 +299,9 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
   }, [ready, firstIndex, history?.hasMore, loading, error, load])
   if (!ids.length) return null
   // Resolve the end again after a prepend; measure the initial row before estimating other heights.
-  return <Virtuoso
+  return <><Virtuoso
     ref={list}
-    totalListHeightChanged={settleBottom}
+    totalListHeightChanged={onHeightChanged}
     data={ids}
     customScrollParent={viewport}
     firstItemIndex={firstIndex}
@@ -245,6 +316,8 @@ function VirtualMessages({ viewport, ...props }: MessageListProps & { viewport: 
     context={context}
     itemContent={(_index, id) => <div className={id === ids.at(-1) ? "pb-[53px]" : "pb-7"} data-message-id={id}><MessageRow {...props} editDrafts={editState.current.drafts} id={id} /></div>}
   />
+  <ScrollToBottomButton visible={ready && showJump} onClick={jumpToBottom} />
+  </>
 }
 
 /** Rows subscribe by ID; token updates do not reconcile the complete transcript. */
