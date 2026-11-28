@@ -74,8 +74,9 @@ name or publish a host port, since those prevent rolling replacement.
    `Dockerfile.search`. Set its domain to `search.pulpo.baby`, its exposed port to
    `80`, and its readiness probe to `/ready`. Add the hostname to the existing DNS
    and Cloudflare ingress. Apply the health, shutdown, and
-   deployment settings above. Set the `VITE_PULPO_PUBLIC_URL` build argument to
-   the Pulpo login origin if it differs from `https://pulpo.baby`.
+   deployment settings above. The page asks the API for the Pulpo sign-in origin.
+   The `VITE_PULPO_PUBLIC_URL` build argument is only a fallback for older APIs,
+   so set it to that origin if it differs from `https://pulpo.baby`.
 2. On the API application, set `SEARCH_PUBLIC_URL=https://search.pulpo.baby`.
    Add a Traefik router on that host matching
    `` Path(`/api/search`) || PathPrefix(`/api/search/`) `` with priority above the
@@ -88,7 +89,8 @@ name or publish a host port, since those prevent rolling replacement.
    and checks that both Search routes respond. For development, use the
    corresponding `COOLIFY_PULPO_DEV_SEARCH_APP_UUID` and
    `PULPO_SEARCH_DEVELOPMENT_URL`, with a distinct Search hostname and the
-   development Pulpo login origin.
+   development Pulpo login origin. Pull request previews are described in
+   [development deployments](development-deployments.md#search-previews).
 4. Configure Kagi or Firecrawl in Pulpo under **Admin → Web tools**. Search uses
    those provider keys, search prices, and each user's existing Pulpo balance
    and limits. Users can change provider order in Search settings.

@@ -5,7 +5,7 @@ import { pulpoUrl, useAccountSummary } from './account'
 import { AccountAvatar, AccountCredits, LimitAction } from './AccountParts'
 import { api, providerNames, SearchApiError, type Category, type SearchConfig, type SearchRequest, type SearchResponse, type SearchUser } from './api'
 import { useSearchAppearance } from './appearance'
-import { consumeCallback, pulpoOrigin, startSignIn } from './auth'
+import { consumeCallback, pulpoOrigin, setPulpoOrigin, startSignIn } from './auth'
 import { firstResultQuery, resolveBang, unknownBang, type CustomBang } from './bangs'
 import { Calculator } from './Calculator'
 import { CoinFlip } from './CoinFlip'
@@ -166,7 +166,9 @@ export function App({ callback }: { callback: Callback }) {
     const controller = new AbortController()
     const session = current ? api.exchange(current.code, current.codeVerifier) : api.session(controller.signal)
     session.then(result => {
-      if (!controller.signal.aborted) setUser(result.user)
+      if (controller.signal.aborted) return
+      setPulpoOrigin(result.pulpoUrl)
+      setUser(result.user)
     }).catch(error => {
       if (controller.signal.aborted) return
       setUser(null)

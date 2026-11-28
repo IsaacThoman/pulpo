@@ -79,6 +79,23 @@ services:
     command: ["sh", "-c", "node apps/server/dist/database/migrate.js && npm run start:api -w @pulpo/server"]
     expose:
       - "3000"
+    labels:
+      # Pull request previews serve Pulpo Search at search-<preview host> from a separate Coolify
+      # application that CI deploys. As in production, Traefik sends that host's Search API
+      # straight to this stack's API. SERVICE_NAME_API carries the pull request number, which
+      # keeps each preview's router names distinct. Outside Coolify these labels are inert.
+      - traefik.enable=true
+      - "traefik.http.routers.${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_API:-api}-search-http.entryPoints=http"
+      - "traefik.http.routers.${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_API:-api}-search-http.rule=Host(`search-${SERVICE_FQDN_WEB:-localhost}`) && (Path(`/api/search`) || PathPrefix(`/api/search/`))"
+      - "traefik.http.routers.${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_API:-api}-search-http.service=${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_API:-api}-search"
+      - "traefik.http.routers.${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_API:-api}-search-http.priority=210"
+      - "traefik.http.routers.${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_API:-api}-search-https.entryPoints=https"
+      - "traefik.http.routers.${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_API:-api}-search-https.rule=Host(`search-${SERVICE_FQDN_WEB:-localhost}`) && (Path(`/api/search`) || PathPrefix(`/api/search/`))"
+      - "traefik.http.routers.${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_API:-api}-search-https.service=${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_API:-api}-search"
+      - "traefik.http.routers.${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_API:-api}-search-https.priority=210"
+      - "traefik.http.routers.${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_API:-api}-search-https.tls=true"
+      - "traefik.http.routers.${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_API:-api}-search-https.tls.certresolver=letsencrypt"
+      - "traefik.http.services.${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_API:-api}-search.loadbalancer.server.port=3000"
 
   worker:
     <<: *server

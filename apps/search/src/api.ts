@@ -280,8 +280,8 @@ export const api = {
     request<SearchPreferencesResponse>('/preferences', {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accountId, patch, initial }), signal,
     }),
-  session: (signal?: AbortSignal) => request<{ user: SearchUser | null }>('/auth/session', { signal }),
-  exchange: (code: string, codeVerifier: string) => post<{ user: SearchUser }>('/auth/exchange', { code, codeVerifier }),
+  session: (signal?: AbortSignal) => request<{ user: SearchUser | null; pulpoUrl?: string }>('/auth/session', { signal }),
+  exchange: (code: string, codeVerifier: string) => post<{ user: SearchUser; pulpoUrl?: string }>('/auth/exchange', { code, codeVerifier }),
   logout: () => post<void>('/auth/logout'),
   config: (signal?: AbortSignal) => request<SearchConfig>('/config', { signal }),
   search: (input: SearchInput, signal?: AbortSignal) => post<SearchResponse>('/query', input, signal),

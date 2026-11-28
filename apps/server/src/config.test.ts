@@ -102,6 +102,13 @@ describe('server configuration', () => {
     })
   })
 
+  it('serves Search beside each Coolify preview unless one is configured', () => {
+    const preview = { COOLIFY_BRANCH: 'pull/48/head', PUBLIC_URL: 'https://pulpo-dev-pr-48.example.com', SERVICE_FQDN_WEB: 'pulpo-dev-pr-48.example.com' }
+    expect(parseConfig(preview).SEARCH_PUBLIC_URL).toBe('https://search-pulpo-dev-pr-48.example.com')
+    expect(parseConfig({ ...preview, SEARCH_PUBLIC_URL: 'https://search.example.com' }).SEARCH_PUBLIC_URL).toBe('https://search.example.com')
+    expect(parseConfig({ ...preview, COOLIFY_BRANCH: 'dev' }).SEARCH_PUBLIC_URL).toBeUndefined()
+  })
+
   it('preserves an explicit external Ollama URL in Coolify previews', () => {
     expect(parseConfig({
       COOLIFY_BRANCH: 'pull/48/head',

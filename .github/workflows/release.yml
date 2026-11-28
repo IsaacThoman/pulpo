@@ -895,10 +895,12 @@ jobs:
       COOLIFY_URL: ${{ vars.COOLIFY_URL }}
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
       COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_PREVIEW_APP_UUID }}
+      COOLIFY_SEARCH_APP_UUID: ${{ vars.COOLIFY_PULPO_PREVIEW_SEARCH_APP_UUID }}
       PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
       PULL_REQUEST_SHA: ${{ github.event.pull_request.head.sha }}
       PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
       PREVIEW_URL: ${{ format('https://pulpo-dev-pr-{0}.deathgrips.org', github.event.pull_request.number) }}
+      SEARCH_PREVIEW_URL: ${{ format('https://search-pulpo-dev-pr-{0}.deathgrips.org', github.event.pull_request.number) }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -930,6 +932,37 @@ jobs:
 
       - name: Validate preview edge health
         run: bash .github/scripts/wait-http-health.sh "${PREVIEW_URL}/health" preview
+
+      # Search is a separate Dockerfile application, as in production. Coolify does not deploy its
+      # previews by itself, so pull requests from before Search existed never try to build it.
+      - name: Deploy Search preview
+        id: search
+        if: env.COOLIFY_SEARCH_APP_UUID != ''
+        run: |
+          set -euo pipefail
+          response="$(coolify deploy uuid "${COOLIFY_SEARCH_APP_UUID}" --pull-request-id "${PULL_REQUEST_ID}" --format json)"
+          deployment_uuid="$(jq -r '.deployments[0].deployment_uuid // .[0].deployment_uuid // .deployment_uuid // empty' <<< "${response}")"
+          [[ -n "${deployment_uuid}" ]] || { jq -r '.deployments[0].message // .message // "Coolify did not queue a Search preview."' <<< "${response}" >&2; exit 1; }
+          echo "deployment_uuid=${deployment_uuid}" >> "${GITHUB_OUTPUT}"
+
+      - name: Wait for Search preview
+        if: steps.search.outputs.deployment_uuid != ''
+        run: bash .github/scripts/wait-coolify-deployment.sh "${{ steps.search.outputs.deployment_uuid }}"
+
+      # The Search API route comes from compose.yaml, which Coolify reads from dev. A pull request
+      # that changes compose.yaml can only show that the Search frontend serves.
+      - name: Validate Search preview routing
+        if: steps.search.outputs.deployment_uuid != ''
+        env:
+          TOPOLOGY_SUPPORTED: ${{ steps.topology.outputs.supported }}
+        run: |
+          set -euo pipefail
+          if [[ "${TOPOLOGY_SUPPORTED}" == true ]]; then
+            bash .github/scripts/check-search-edge.sh "${SEARCH_PREVIEW_URL}"
+          else
+            curl --fail --silent --show-error --retry 5 --retry-all-errors --max-time 10 "${SEARCH_PREVIEW_URL}/ready" | grep -qx ready
+          fi
+          echo "Pulpo Search preview: ${SEARCH_PREVIEW_URL}" >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Smoke-test preview bootstrap
         if: steps.topology.outputs.supported == 'true'
@@ -971,6 +1004,7 @@ jobs:
       COOLIFY_URL: ${{ vars.COOLIFY_URL }}
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
       COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_PREVIEW_APP_UUID }}
+      COOLIFY_SEARCH_APP_UUID: ${{ vars.COOLIFY_PULPO_PREVIEW_SEARCH_APP_UUID }}
       COOLIFY_PREVIEW_MAINTENANCE_APP_UUID: ${{ vars.COOLIFY_PULPO_PREVIEW_MAINTENANCE_APP_UUID }}
       COOLIFY_PREVIEW_MAINTENANCE_TASK_UUID: ${{ vars.COOLIFY_PULPO_PREVIEW_MAINTENANCE_TASK_UUID }}
       PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
@@ -986,14 +1020,17 @@ jobs:
           set -euo pipefail
           : "${COOLIFY_APP_UUID:?selected Coolify application UUID is required}"
           : "${PULL_REQUEST_ID:?pull request id is required}"
-          if output="$(coolify app previews delete "${COOLIFY_APP_UUID}" "${PULL_REQUEST_ID}" --force --format json 2>&1)"; then
-            echo "Deleted Coolify preview for PR ${PULL_REQUEST_ID}."
-          elif grep -Eqi 'not found|404|does not exist' <<< "${output}"; then
-            echo "Coolify preview for PR ${PULL_REQUEST_ID} was already absent."
-          else
-            printf '%s\n' "${output}" >&2
-            exit 1
-          fi
+          # The Search preview is a separate application and is absent for older pull requests.
+          for application_uuid in "${COOLIFY_APP_UUID}" ${COOLIFY_SEARCH_APP_UUID:+"${COOLIFY_SEARCH_APP_UUID}"}; do
+            if output="$(coolify app previews delete "${application_uuid}" "${PULL_REQUEST_ID}" --force --format json 2>&1)"; then
+              echo "Deleted Coolify preview ${application_uuid} for PR ${PULL_REQUEST_ID}."
+            elif grep -Eqi 'not found|404|does not exist' <<< "${output}"; then
+              echo "Coolify preview ${application_uuid} for PR ${PULL_REQUEST_ID} was already absent."
+            else
+              printf '%s\n' "${output}" >&2
+              exit 1
+            fi
+          done
 
       - name: Reconcile closed preview containers and volumes
         if: always()

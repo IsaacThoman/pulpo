@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
-import { consumeCallback } from './auth'
+import * as auth from './auth'
+import { consumeCallback, setPulpoOrigin } from './auth'
 
 const state = 's'.repeat(43)
 const verifier = 'v'.repeat(43)
@@ -37,5 +38,16 @@ describe('search sign-in handoff', () => {
     expect(consumeCallback()).toHaveProperty('error')
     expect(window.location.pathname + window.location.search).toBe('/')
     expect(sessionStorage.length).toBe(0)
+  })
+})
+
+describe('Pulpo origin', () => {
+  it('follows the origin the API names and ignores unusable values', () => {
+    setPulpoOrigin('https://pulpo-dev-pr-12.example.org/ignored/path')
+    expect(auth.pulpoOrigin).toBe('https://pulpo-dev-pr-12.example.org')
+    setPulpoOrigin(undefined)
+    setPulpoOrigin('javascript:alert(1)')
+    setPulpoOrigin('not a url')
+    expect(auth.pulpoOrigin).toBe('https://pulpo-dev-pr-12.example.org')
   })
 })

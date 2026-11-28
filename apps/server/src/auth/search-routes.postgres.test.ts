@@ -104,11 +104,11 @@ describe.skipIf(!enabled)('Search sessions and Pulpo account handoff', () => {
     expect((await exchange(payload, pulpoHeaders)).statusCode).toBe(404)
     expect((await exchange({ ...payload, codeVerifier: randomToken() })).statusCode).toBe(401)
     const mainSession = await app.inject({ url: searchSessionUrl, headers: { ...searchHeaders, cookie: sourceCookie } })
-    expect(mainSession.json()).toEqual({ user: null })
+    expect(mainSession.json()).toEqual({ user: null, pulpoUrl: 'https://pulpo.test' })
 
     const response = await exchange(payload)
     expect(response.statusCode).toBe(200)
-    expect(response.json()).toEqual({ user: { ...testUser, avatarUrl: null } })
+    expect(response.json()).toEqual({ user: { ...testUser, avatarUrl: null }, pulpoUrl: 'https://pulpo.test' })
     expect(response.headers['cache-control']).toBe('no-store')
     const setCookie = response.headers['set-cookie'] as string
     expect(setCookie).toMatch(new RegExp(`^${searchCookieName}=`))
@@ -119,7 +119,7 @@ describe.skipIf(!enabled)('Search sessions and Pulpo account handoff', () => {
     const searchCookie = setCookie.split(';')[0]!
     const token = searchCookie.split('=')[1]!
     const browserSession = await app.inject({ url: searchSessionUrl, headers: { host: searchHeaders.host, cookie: searchCookie } })
-    expect(browserSession.json()).toEqual({ user: { ...testUser, avatarUrl: null } })
+    expect(browserSession.json()).toEqual({ user: { ...testUser, avatarUrl: null }, pulpoUrl: 'https://pulpo.test' })
     expect((await app.inject({ url: searchSessionUrl, headers: { ...pulpoHeaders, cookie: searchCookie } })).statusCode).toBe(404)
     expect((await app.inject({ url: '/api/test-account', headers: { ...pulpoHeaders, authorization: `Bearer ${token}` } })).statusCode).toBe(401)
     expect((await app.inject({ url: '/api/test-account', headers: { ...pulpoHeaders, cookie: `${mainCookieName}=${token}` } })).statusCode).toBe(401)
@@ -134,7 +134,7 @@ describe.skipIf(!enabled)('Search sessions and Pulpo account handoff', () => {
     const searchCookies = { ...searchHeaders, cookie: searchCookie }
     expect((await app.inject({ method: 'POST', url: logoutUrl, headers: { host: searchHeaders.host, cookie: searchCookie } })).statusCode).toBe(403)
     expect((await app.inject({ method: 'POST', url: logoutUrl, headers: searchCookies })).statusCode).toBe(204)
-    expect((await app.inject({ url: searchSessionUrl, headers: searchCookies })).json()).toEqual({ user: null })
+    expect((await app.inject({ url: searchSessionUrl, headers: searchCookies })).json()).toEqual({ user: null, pulpoUrl: 'https://pulpo.test' })
     expect((await app.inject({ url: '/api/test-account', headers: { ...pulpoHeaders, cookie: sourceCookie } })).statusCode).toBe(200)
     expect((await exchange(payload)).statusCode).toBe(401)
   })
@@ -236,7 +236,7 @@ describe.skipIf(!enabled)('Search sessions and Pulpo account handoff', () => {
     await db.update(users).set({ avatarObjectKey: `users/${testUser.id}/avatar/test.webp`, avatarVersion: 4, balanceMicros: 7_250_000 })
       .where(eq(users.id, testUser.id))
     const response = await exchange(await authorize())
-    expect(response.json()).toEqual({ user: { ...testUser, avatarUrl: `/api/search/avatar/${testUser.id}?v=4` } })
+    expect(response.json()).toEqual({ user: { ...testUser, avatarUrl: `/api/search/avatar/${testUser.id}?v=4` }, pulpoUrl: 'https://pulpo.test' })
     const searchCookie = (response.headers['set-cookie'] as string).split(';')[0]!
     const session = await app.inject({ url: searchSessionUrl, headers: { ...searchHeaders, cookie: searchCookie } })
     expect(session.json().user.avatarUrl).toBe(`/api/search/avatar/${testUser.id}?v=4`)
