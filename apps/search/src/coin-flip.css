@@ -1,0 +1,98 @@
+.coin-flip {
+  width: min(100%, var(--reading-width));
+  margin-top: 1rem;
+}
+
+.coin-flip-body {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .75rem 1.1rem;
+  margin-top: .85rem;
+}
+
+.coin-flip-body[data-many] {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.coin-flip-coins {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .45rem;
+  perspective: 40rem;
+}
+
+.coin {
+  --coin-size: 4.25rem;
+  position: relative;
+  display: block;
+  width: var(--coin-size);
+  height: var(--coin-size);
+  transform-style: preserve-3d;
+  transform: rotateY(0deg);
+}
+
+.coin-flip-body[data-many] .coin { --coin-size: 2.6rem; }
+.coin[data-face="tails"] { transform: rotateY(180deg); }
+
+.coin-face {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, var(--surface), color-mix(in oklab, var(--surface) 86%, var(--ink)));
+  box-shadow: inset 0 0 0 calc(var(--coin-size) * .07) var(--surface), inset 0 0 0 calc(var(--coin-size) * .07 + 1px) var(--line);
+  color: var(--muted);
+  font-size: calc(var(--coin-size) * .36);
+  font-weight: 650;
+  line-height: 1;
+  backface-visibility: hidden;
+}
+
+.coin-tails { transform: rotateY(180deg); }
+
+.coin-flip-text { min-width: 0; }
+
+.coin-flip-result {
+  display: block;
+  font-size: clamp(1.7rem, 6vw, 2.6rem);
+  font-weight: 650;
+  line-height: 1.15;
+}
+
+.coin-flip-body[data-many] .coin-flip-result { font-size: clamp(1.25rem, 4vw, 1.6rem); }
+
+.coin-flip-result > span { display: inline-block; }
+
+.coin-flip-tally {
+  margin: .3rem 0 0;
+  color: var(--faint);
+  font-size: .8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.coin-flip-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .5rem .75rem;
+  margin-top: .9rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .coin { animation: coin-spin 560ms cubic-bezier(.25, .7, .3, 1) var(--coin-delay, 0ms) backwards; }
+  .coin-flip-result > span { animation: coin-reveal 160ms ease-out 420ms backwards; }
+}
+
+/* Only the start is given, so each coin lands on the face its data-face sets. */
+@keyframes coin-spin {
+  from { transform: rotateY(-1080deg); }
+  45% { translate: 0 -.55rem; }
+}
+
+@keyframes coin-reveal {
+  from { opacity: 0; translate: 0 .2rem; }
+}
