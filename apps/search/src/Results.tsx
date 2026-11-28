@@ -1,6 +1,6 @@
 import { isSearchFaviconHost } from '@pulpo/contracts/search'
 import { ChevronDown, CircleHelp, Ellipsis, Globe2, Image, Pin } from 'lucide-react'
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { SearchResponse, SearchResult } from './api'
 import { faviconBackdrop, sampleFavicon } from './favicon-contrast'
@@ -17,6 +17,7 @@ import { recentNewsQuery, safeHttpUrl, searchPath, type SearchLocation } from '.
 import { domainRule, type DomainRule, type Preferences } from './preferences'
 import { ResultImage } from './ResultImage'
 import { groupResults, resultEntries, visibleEntries, type ResultWithUrl } from './result-order'
+import { formatResultStats, type ResultStats } from './result-stats'
 import { licenseLabel } from './reusable-images'
 import { imageBatchSize } from './use-more-results'
 import { VideoPreview } from './VideoPreview'
@@ -264,6 +265,10 @@ interface ResultsProps {
   batchOf?: ReadonlyMap<SearchResult, number>
   more?: MoreResultsControl
   gallery?: { limit: number; setLimit: (value: number | ((current: number) => number)) => void }
+  /** How many results came back and how long they took, shown above result lists. */
+  stats?: ResultStats
+  /** Reports how many results are shown, for the page's announcement. */
+  onShown?: (count: number) => void
 }
 
 function withinBatches<T extends { result: SearchResult }, U>(entries: T[], batchOf: ResultsProps['batchOf'], arrange: (entries: T[]) => U[]): U[] {
@@ -276,7 +281,7 @@ function withinBatches<T extends { result: SearchResult }, U>(entries: T[], batc
   return [...batches].sort(([left], [right]) => left - right).flatMap(([, items]) => arrange(items))
 }
 
-export function Results({ data, location, preferences, pageColor, setDomain, onQuery, onClearScope, imageRefinements, imageToolbar, mediaToolbar, batchOf, more, gallery }: ResultsProps) {
+export function Results({ data, location, preferences, pageColor, setDomain, onQuery, onClearScope, imageRefinements, imageToolbar, mediaToolbar, batchOf, more, gallery, stats, onShown }: ResultsProps) {
   const [expandedQuery, setExpandedQuery] = useState<string | null>(null)
   const [preview, setPreview] = useState<{ entries: ResultWithUrl[]; startIndex: number; opener: HTMLButtonElement }>()
   const [imageRefinement, setImageRefinement] = useState<{ query: string; value: ImageRefinements }>()
@@ -342,6 +347,8 @@ export function Results({ data, location, preferences, pageColor, setDomain, onQ
     ? (host: string) => onQuery(location.query + ' site:' + host)
     : undefined
 
+  useEffect(() => { onShown?.(shown.length) }, [onShown, shown.length])
+
   useLayoutEffect(() => {
     const index = firstRevealed.current
     if (index === undefined) return
@@ -404,9 +411,9 @@ export function Results({ data, location, preferences, pageColor, setDomain, onQ
       {knowledge && knowledgeUrl && <KnowledgeCard knowledge={knowledge} url={knowledgeUrl} newTab={preferences.newTab}
         thumbnail={knowledgeImage?.origin === 'https://p.kagi.com' ? knowledgeImage.href : undefined} />}
       <div className="results-column" tabIndex={-1}>
-        <div className="sr-only" role="status" aria-live="polite">{shown.length} results for {location.query}</div>
+        {stats && !images && shown.length > 0 && duration === 'any' && <p className="result-stats">{formatResultStats(shown.length, stats)}</p>}
         {data.answer && (
-          <aside className="answer" aria-label="Quick answer">
+          <aside className="answer" aria-label="Direct answer">
             <h2>{data.answer.title}</h2>
             <p>{data.answer.snippet}</p>
             {answerUrl && <a href={answerUrl.href} rel="noreferrer" target={preferences.newTab ? '_blank' : undefined}>

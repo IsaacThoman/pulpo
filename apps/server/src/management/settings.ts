@@ -26,6 +26,7 @@ import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { assertSafeProviderUrl } from '../lib/url-security.js'
 import { publishStateChange } from '../responses/events.js'
+import { invalidateSearchSettings } from '../search/settings.js'
 import {
   parseAgentSettings,
   parseAuthSettings,
@@ -294,6 +295,7 @@ export async function applyManagementSettings(
       metadata: { changedPaths },
     })
   })
+  if (mode !== 'account') invalidateSearchSettings()
   if (publishedRevision !== undefined) await publishStateChange({ userId, revision: publishedRevision })
   await publishScopedStateChanges(friendChanges, ['friends'])
   await publishScopedStateChanges(poolChanges, ['pool'])

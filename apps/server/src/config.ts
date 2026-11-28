@@ -160,6 +160,9 @@ export function parseConfig(environment: NodeJS.ProcessEnv): Config {
   )
     ? `http://${environment.SERVICE_NAME_OLLAMA?.trim() || `ollama-pr-${previewId}`}:11434`
     : undefined
+  // compose.yaml routes this host's /api/search to the preview API, and CI deploys the Search
+  // frontend preview there.
+  const previewWebHost = previewId && !environment.SEARCH_PUBLIC_URL?.trim() ? fqdnHostname(environment.SERVICE_FQDN_WEB) : undefined
   const config = configSchema.parse({
     ...environment,
     ...(previewId ? {
@@ -167,6 +170,7 @@ export function parseConfig(environment: NodeJS.ProcessEnv): Config {
       REDIS_URL: `redis://redis-pr-${previewId}:6379`,
       S3_ENDPOINT: `http://seaweed-s3-pr-${previewId}:8333`,
       ...(previewOllamaUrl ? { PULPO_OLLAMA_URL: previewOllamaUrl } : {}),
+      ...(previewWebHost ? { SEARCH_PUBLIC_URL: `https://search-${previewWebHost}` } : {}),
     } : {}),
   })
   if (config.SEARCH_PUBLIC_URL === new URL(config.PUBLIC_URL).origin) {

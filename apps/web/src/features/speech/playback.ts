@@ -1,4 +1,4 @@
-import { SPEECH_SEEK_SECONDS, speechChunks, speechText } from '@pulpo/client-core'
+import { SPEECH_SEEK_SECONDS, speechChunks, speechText, speechTitle } from '@pulpo/client-core'
 import { SPEECH_DEFAULT_PREVIEW_TEXT, SPEECH_DURATION_HEADER, type PublicSpeechModel, type SpeechCatalog } from '@pulpo/contracts'
 import { apiRequest, fetchApiBlobResponse } from '@/lib/api'
 import { useSettings } from '@/stores/settings'
@@ -37,6 +37,8 @@ async function playSpeech(key: string, markdown?: string) {
     const text = markdown === undefined ? voice?.previewText ?? SPEECH_DEFAULT_PREVIEW_TEXT : speechText(markdown)
     const chunks = speechChunks(text, model, instructions)
     if (!chunks.length) throw new Error('This message has no readable text')
+    // Names the reading in the browser's and system's media controls, which stay usable from other tabs and apps.
+    if (typeof MediaMetadata !== 'undefined' && 'mediaSession' in navigator) navigator.mediaSession.metadata = new MediaMetadata({ title: markdown === undefined ? 'Voice preview' : speechTitle(text), artist: 'Pulpo' })
     return chunks
   }, async (input, signal, offsetSeconds) => {
     const response = await fetchApiBlobResponse('/api/speech', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({
@@ -52,7 +54,6 @@ export async function speechAudioBlob(): Promise<{ blob: Blob; name: string }> {
   const file = await speechPlayback.audioFile()
   return { blob: new Blob([file.bytes], { type: file.mimeType }), name: file.name }
 }
-document.addEventListener('visibilitychange', () => { if (document.hidden) speechPlayback.stop() })
 useAuth.subscribe((state, previous) => { if (state.user?.id !== previous.user?.id) speechPlayback.stop() })
 useChat.subscribe((state, previous) => { if (state.activeChatId !== previous.activeChatId) speechPlayback.stop() })
 // Hardware media keys and the browser's media controls drive message playback.
@@ -64,6 +65,7 @@ if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
   for (const [action, handler] of handlers) {
     try { navigator.mediaSession.setActionHandler(action, handler) } catch { /* Unsupported action. */ }
   }
+  speechPlayback.subscribe(() => { if (!speechPlayback.getSnapshot().key) navigator.mediaSession.metadata = null })
 }
 
 export function browserSpeechAudio(blob: Blob) {

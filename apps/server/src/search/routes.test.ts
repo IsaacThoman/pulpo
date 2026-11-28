@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppError, unauthorized } from '../lib/errors.js'
 import { registerSearchRoutes } from './routes.js'
+import { invalidateSearchSettings } from './settings.js'
 
 const mocks = vi.hoisted(() => ({
   authenticated: true,
@@ -20,6 +21,8 @@ const mocks = vi.hoisted(() => ({
   reserve: vi.fn(),
   settle: vi.fn(),
   release: vi.fn(),
+  record: vi.fn(),
+  settingsReads: 0,
 }))
 
 vi.mock('../config.js', () => ({
@@ -45,7 +48,13 @@ vi.mock('../accounting/service.js', () => ({
   releaseMeteredBudget: mocks.release,
 }))
 vi.mock('../database/client.js', () => ({
-  db: { select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ value: mocks.settings }] }) }) }) },
+  db: {
+    select: () => ({ from: () => ({ where: () => ({ limit: async () => {
+      mocks.settingsReads += 1
+      return [{ value: mocks.settings }]
+    } }) }) }),
+    insert: () => ({ values: mocks.record }),
+  },
 }))
 vi.mock('./quick-answer.js', () => ({
   quickAnswerCapability: mocks.quickCapability, startQuickAnswer: mocks.quickStart,
@@ -83,6 +92,9 @@ beforeEach(async () => {
   mocks.reserve.mockReset().mockResolvedValueOnce('kagi-hold').mockResolvedValueOnce('firecrawl-hold')
   mocks.settle.mockReset().mockResolvedValue(7000)
   mocks.release.mockReset().mockResolvedValue(undefined)
+  mocks.record.mockReset().mockResolvedValue(undefined)
+  mocks.settingsReads = 0
+  invalidateSearchSettings()
   vi.stubGlobal('fetch', mocks.fetch)
   app = Fastify()
   app.setErrorHandler((error, _request, reply) => {
@@ -111,7 +123,7 @@ describe('Pulpo Search API', () => {
     expect(response.statusCode).toBe(200)
     expect(response.headers['cache-control']).toBe('private, max-age=86400')
     expect(response.headers['content-type']).toBe('image/x-icon')
-    expect(mocks.fetch).toHaveBeenLastCalledWith('https://icons.duckduckgo.com/ip3/github.com.ico', expect.objectContaining({ redirect: 'error' }))
+    expect(mocks.fetch).toHaveBeenLastCalledWith('https://t1.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://github.com&size=32', expect.objectContaining({ redirect: 'error' }))
     expect((await app.inject('/api/search/favicon/private.local')).statusCode).toBe(404)
     expect((await app.inject('/api/search/favicon/node.tailnet.ts.net')).statusCode).toBe(404)
     expect(mocks.fetch).toHaveBeenCalledTimes(1)
@@ -305,6 +317,7 @@ describe('Pulpo Search API', () => {
     expect((await places({ query: 'coffee' })).statusCode).toBe(404)
     mocks.settings.firecrawl = { baseUrl: 'https://api.firecrawl.dev/v2' }
     mocks.settings.encryptedFirecrawlApiKey = null
+    invalidateSearchSettings()
     expect((await app.inject('/api/search/config')).json()).not.toHaveProperty('places')
     expect((await places({ query: 'coffee' })).statusCode).toBe(404)
     expect(mocks.reserve).not.toHaveBeenCalled()
@@ -646,5 +659,185 @@ describe('Pulpo Search API', () => {
     expect((await query({ query: 'something', limit: 41 })).statusCode).toBe(400)
     expect((await query({ query: 'something', providers: ['kagi', 'kagi'] })).statusCode).toBe(400)
     expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+})
+
+describe('Search timing', () => {
+  const recorded = async () => {
+    await vi.waitFor(() => expect(mocks.record).toHaveBeenCalledTimes(1))
+    return mocks.record.mock.calls[0]![0]
+  }
+  const timing = (header: unknown) => String(header).split(', ').map((entry) => entry.replace(/dur=\d+/, 'dur=N'))
+
+  it('reports each phase and attempt in Server-Timing and records the request without its query', async () => {
+    mocks.fetch.mockResolvedValueOnce(Response.json({ error: [{ message: 'Unavailable' }] }, { status: 503 }))
+    mocks.fetch.mockResolvedValueOnce(Response.json({
+      success: true, data: { news: [{ url: 'https://example.com/article', title: 'Article', snippet: 'Some news' }] },
+    }))
+    const response = await query({ query: 'secret topic', category: 'news', providers: ['kagi', 'firecrawl'], region: 'ca', date: 'year' })
+    expect(response.statusCode).toBe(200)
+    expect(timing(response.headers['server-timing'])).toEqual([
+      'settings;dur=N', 'reserve;dur=N', 'release;dur=N', 'settle;dur=N',
+      'kagi;dur=N;desc="error"', 'firecrawl;dur=N;desc="success"', 'total;dur=N',
+    ])
+    const row = await recorded()
+    expect(row).toMatchObject({
+      userId: 'search-user', kind: 'query', category: 'news', page: 1, outcome: 'success', provider: 'firecrawl',
+      fallback: true, resultCount: 1, queryLength: 12, filters: ['region', 'date', 'providers'],
+      attempts: [
+        { provider: 'kagi', outcome: 'error', startMs: expect.any(Number), durationMs: expect.any(Number) },
+        { provider: 'firecrawl', outcome: 'success', resultCount: 1, startMs: expect.any(Number), durationMs: expect.any(Number) },
+      ],
+      phases: { settingsMs: expect.any(Number), reserveMs: expect.any(Number), providerMs: expect.any(Number), settleMs: expect.any(Number), releaseMs: expect.any(Number) },
+    })
+    expect(row.durationMs).toBeGreaterThanOrEqual(row.phases.providerMs)
+    expect(JSON.stringify(row)).not.toContain('secret')
+  })
+
+  it('tells provider timeouts apart from failures and records empty and unfunded searches', async () => {
+    mocks.fetch.mockRejectedValueOnce(new DOMException('The operation timed out.', 'TimeoutError'))
+    mocks.fetch.mockResolvedValueOnce(Response.json({ success: true, data: { web: [] } }))
+    const response = await query({ query: 'slow', providers: ['kagi', 'firecrawl'] })
+    expect(response.json()).toEqual({ provider: 'firecrawl', results: [], degraded: { failed: ['kagi'] } })
+    expect(response.headers['server-timing']).toContain('kagi;dur=')
+    expect(response.headers['server-timing']).toContain('desc="timeout"')
+    expect(await recorded()).toMatchObject({
+      outcome: 'empty', provider: 'firecrawl', resultCount: 0, fallback: true,
+      attempts: [{ provider: 'kagi', outcome: 'timeout' }, { provider: 'firecrawl', outcome: 'empty', resultCount: 0 }],
+    })
+
+    mocks.record.mockClear()
+    mocks.reserve.mockReset().mockRejectedValue(new AppError(402, 'insufficient_balance', 'Insufficient balance'))
+    expect((await query({ query: 'something', providers: ['kagi'] })).statusCode).toBe(402)
+    expect(await recorded()).toMatchObject({ outcome: 'budget', provider: null, fallback: false, attempts: [{ provider: 'kagi', outcome: 'skipped_budget' }] })
+  })
+
+  it('records unsupported searches but not invalid ones', async () => {
+    expect((await query({ query: 'example', page: 2, providers: ['firecrawl'] })).statusCode).toBe(400)
+    expect(await recorded()).toMatchObject({ outcome: 'unsupported', page: 2, attempts: [] })
+    mocks.record.mockClear()
+    expect((await query({ query: 'example', limit: 41 })).statusCode).toBe(400)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(mocks.record).not.toHaveBeenCalled()
+  })
+
+  it('never fails a search when its timing cannot be stored', async () => {
+    const warn = vi.fn()
+    mocks.record.mockRejectedValue(new Error('database unavailable'))
+    app.addHook('onRequest', async (request) => { request.log.warn = warn })
+    mocks.fetch.mockResolvedValueOnce(Response.json({ data: { search: [{ url: 'https://example.com', title: 'Example', snippet: 'Hi' }] } }))
+    const response = await query({ query: 'still works', providers: ['kagi'] })
+    expect(response.statusCode).toBe(200)
+    expect(response.json().provider).toBe('kagi')
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledWith(expect.objectContaining({ kind: 'query' }), 'Search timing could not be recorded'))
+  })
+
+  it('records place searches with their provider attempt', async () => {
+    mocks.placeKey = 'brave-test-secret'
+    mocks.fetch.mockResolvedValueOnce(Response.json({ type: 'locations', results: [
+      { type: 'location_result', title: 'Coffee Shop', postal_address: { displayAddress: '12 Main St, Boston' } },
+    ] }))
+    const response = await places({ query: 'coffee', location: 'Boston' })
+    expect(response.statusCode).toBe(200)
+    expect(timing(response.headers['server-timing'])).toEqual(['settings;dur=N', 'reserve;dur=N', 'settle;dur=N', 'brave;dur=N;desc="success"', 'total;dur=N'])
+    expect(await recorded()).toMatchObject({
+      kind: 'places', category: 'places', outcome: 'success', provider: 'brave', resultCount: 1, fallback: false,
+      queryLength: 6, filters: ['location'], attempts: [{ provider: 'brave', outcome: 'success', resultCount: 1 }],
+    })
+  })
+})
+
+describe('Search provider chain', () => {
+  const kagiFailure = () => Response.json({ error: [{ message: 'Unavailable' }] }, { status: 503 })
+  const kagiResults = () => Response.json({ data: { search: [{ url: 'https://example.com', title: 'Example', snippet: 'Hi' }] } })
+  const firecrawlResults = () => Response.json({ success: true, data: { web: [{ url: 'https://example.com', title: 'Example', description: 'Hi' }] } })
+  const firecrawlEmpty = () => Response.json({ success: true, data: { web: [] } })
+  const firecrawlBody = (call: number) => JSON.parse(mocks.fetch.mock.calls[call]![1].body)
+
+  it('gives a provider with a fallback a shorter deadline than the last one, and tells Firecrawl when to stop', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout')
+    try {
+      mocks.fetch.mockResolvedValueOnce(Response.json({ success: false, error: 'Busy' }, { status: 503 })).mockResolvedValueOnce(kagiResults())
+      expect((await query({ query: 'chain', providers: ['firecrawl', 'kagi'] })).json().provider).toBe('kagi')
+      expect(timeout).toHaveBeenCalledWith(7_000)
+      expect(timeout).toHaveBeenCalledWith(12_000)
+      expect(firecrawlBody(0)).toMatchObject({ timeout: 6_500 })
+
+      timeout.mockClear()
+      mocks.fetch.mockResolvedValueOnce(kagiResults())
+      await query({ query: 'chain', providers: ['kagi', 'firecrawl'] })
+      expect(timeout).toHaveBeenCalledWith(4_500)
+      expect(timeout).not.toHaveBeenCalledWith(12_000)
+
+      timeout.mockClear()
+      mocks.firecrawlNewsPrice = 15_000
+      mocks.reserve.mockResolvedValue('hold')
+      mocks.fetch.mockResolvedValueOnce(Response.json({ success: true, data: { news: [] } })).mockResolvedValueOnce(Response.json({ data: { search: [] } }))
+      await query({ query: 'chain', category: 'news' })
+      expect(timeout).toHaveBeenCalledWith(10_000)
+      expect(timeout).toHaveBeenCalledWith(12_000)
+      timeout.mockClear()
+      mocks.fetch.mockResolvedValueOnce(Response.json({ success: true, data: { news: [] } }))
+      await query({ query: 'chain', category: 'news', providers: ['firecrawl'] })
+      expect(timeout).toHaveBeenCalledWith(15_000)
+    } finally {
+      timeout.mockRestore()
+    }
+  })
+
+  it('skips a provider after three failures in a row while another can answer, but never the last one', async () => {
+    mocks.reserve.mockReset().mockResolvedValue('hold')
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      mocks.fetch.mockResolvedValueOnce(kagiFailure()).mockResolvedValueOnce(firecrawlResults())
+      expect((await query({ query: 'flaky', providers: ['kagi', 'firecrawl'] })).json().provider).toBe('firecrawl')
+    }
+    mocks.fetch.mockClear().mockResolvedValueOnce(firecrawlResults())
+    mocks.record.mockClear()
+    const skipped = await query({ query: 'flaky', providers: ['kagi', 'firecrawl'] })
+    expect(skipped.json().provider).toBe('firecrawl')
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+    expect(mocks.fetch.mock.calls[0]![0]).toContain('firecrawl')
+    expect(skipped.headers['server-timing']).toContain('kagi;dur=0;desc="skipped_unhealthy"')
+    await vi.waitFor(() => expect(mocks.record).toHaveBeenCalled())
+    expect(mocks.record.mock.calls[0]![0]).toMatchObject({ fallback: true, attempts: [{ provider: 'kagi', outcome: 'skipped_unhealthy' }, { provider: 'firecrawl', outcome: 'success' }] })
+
+    mocks.fetch.mockClear().mockResolvedValueOnce(kagiResults())
+    expect((await query({ query: 'flaky', providers: ['kagi'] })).json().provider).toBe('kagi')
+    expect(mocks.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports providers that failed or ran out of credits alongside an empty answer', async () => {
+    mocks.fetch.mockResolvedValueOnce(kagiFailure()).mockResolvedValueOnce(firecrawlEmpty())
+    expect((await query({ query: 'nothing', providers: ['kagi', 'firecrawl'] })).json()).toEqual({
+      provider: 'firecrawl', results: [], degraded: { failed: ['kagi'] },
+    })
+
+    mocks.reserve.mockReset().mockRejectedValueOnce(new AppError(402, 'insufficient_balance', 'Insufficient balance')).mockResolvedValueOnce('firecrawl-hold')
+    mocks.fetch.mockResolvedValueOnce(firecrawlEmpty())
+    const budget = await query({ query: 'nothing', providers: ['kagi', 'firecrawl'] })
+    expect(budget.statusCode).toBe(200)
+    expect(budget.json()).toEqual({ provider: 'firecrawl', results: [], degraded: { budget: true } })
+    expect(mocks.release).toHaveBeenCalledWith('firecrawl-hold')
+  })
+
+  it('falls back to the available providers when a client asks only for disabled ones', async () => {
+    mocks.settings.kagi = { searchEnabled: false, billSearches: true, searchPriceMicros: 12_000 }
+    mocks.fetch.mockResolvedValueOnce(firecrawlResults())
+    const response = await query({ query: 'stale', providers: ['kagi'] })
+    expect(response.statusCode).toBe(200)
+    expect(response.json().provider).toBe('firecrawl')
+    mocks.settings.searchEnabled = false
+    invalidateSearchSettings()
+    expect((await query({ query: 'stale', providers: ['kagi'] })).statusCode).toBe(503)
+  })
+
+  it('reads settings once for a burst of searches until they are saved', async () => {
+    mocks.quickCapability.mockResolvedValue(undefined)
+    await app.inject('/api/search/config')
+    await app.inject('/api/search/config')
+    expect(mocks.settingsReads).toBe(1)
+    invalidateSearchSettings()
+    await app.inject('/api/search/config')
+    expect(mocks.settingsReads).toBe(2)
   })
 })

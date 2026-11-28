@@ -146,6 +146,35 @@ describe('Pulpo Search', () => {
     expect(search.mock.lastCall?.[0]).not.toHaveProperty('region')
   })
 
+  it('starts the first search from the account\'s confirmed preferences while the sync is slow', async () => {
+    window.localStorage.setItem('pulpo-search-account-settings-v1:' + user.id, JSON.stringify({
+      confirmed: { ...defaultSearchAccountPreferences, defaultRegion: 'ca' }, pending: {},
+    }))
+    let resolve!: (value: Awaited<ReturnType<typeof api.preferences>>) => void
+    readPreferences.mockReturnValue(new Promise(done => { resolve = done }))
+    window.history.replaceState(null, '', '/search?q=tides')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'tides field guide' })
+    expect(search).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ region: 'ca' }), expect.any(AbortSignal))
+    // The synced copy matches, so the request is the same and doesn't run again.
+    await act(async () => resolve({ preferences: { ...defaultSearchAccountPreferences, defaultRegion: 'ca' } }))
+    expect(search).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs the first search again when the synced preferences change it', async () => {
+    window.localStorage.setItem('pulpo-search-account-settings-v1:' + user.id, JSON.stringify({
+      confirmed: { ...defaultSearchAccountPreferences, defaultRegion: 'ca' }, pending: {},
+    }))
+    let resolve!: (value: Awaited<ReturnType<typeof api.preferences>>) => void
+    readPreferences.mockReturnValue(new Promise(done => { resolve = done }))
+    window.history.replaceState(null, '', '/search?q=tides')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'tides field guide' })
+    await act(async () => resolve({ preferences: { ...defaultSearchAccountPreferences, defaultRegion: 'jp' } }))
+    await waitFor(() => expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ region: 'jp' }), expect.any(AbortSignal)))
+    expect(search).toHaveBeenCalledTimes(2)
+  })
+
   it('uses provider and fallback changes on the next search and shows compatible filters', async () => {
     window.history.replaceState(null, '', '/search?q=tides')
     render(<App callback={null} />)
@@ -606,6 +635,57 @@ describe('Pulpo Search', () => {
     expect(search).toHaveBeenCalledTimes(1)
   })
 
+  it('reloads the search options once and tries again when an engine is no longer available', async () => {
+    search.mockRejectedValueOnce(new SearchApiError('Pulpo Search is temporarily unavailable. Try again in a moment.', 503, 'search_provider_unavailable'))
+    window.history.replaceState(null, '', '/search?q=tides')
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'tides field guide' })
+    expect(getConfig).toHaveBeenCalledTimes(2)
+    expect(search).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('heading', { name: 'Couldn’t complete the search' })).toBeNull()
+  })
+
+  it('shows the error when the search still fails after reloading the search options', async () => {
+    search.mockRejectedValue(new SearchApiError('This search type is not supported.', 400, 'search_not_supported'))
+    window.history.replaceState(null, '', '/search?q=tides')
+    render(<App callback={null} />)
+    await screen.findByRole('heading', { name: 'Couldn’t complete the search' })
+    expect(getConfig).toHaveBeenCalledTimes(2)
+    expect(search).toHaveBeenCalledTimes(2)
+    expect(document.querySelector('[role="status"][aria-atomic="true"]')?.textContent)
+      .toBe('Couldn’t complete the search. This search type is not supported.')
+  })
+
+  it('offers a retry and the limit page when an engine couldn\'t take part in an empty search', async () => {
+    search.mockResolvedValue({ provider: 'kagi', results: [], degraded: { failed: ['firecrawl'], budget: true } })
+    window.history.replaceState(null, '', '/search?q=tides')
+    render(<App callback={null} />)
+    await screen.findByRole('heading', { name: 'No results found' })
+    expect(screen.getByText('Firecrawl couldn’t complete this search. Your search limit kept another engine from running.')).toBeDefined()
+    expect(screen.getByRole('link', { name: 'View limits in Pulpo' })).toBeDefined()
+    search.mockResolvedValueOnce({ provider: 'kagi', results: [{ url: 'https://example.com/', title: 'Recovered', snippet: '' }] })
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    await screen.findByRole('link', { name: 'Recovered' })
+    expect(search).toHaveBeenCalledTimes(2)
+  })
+
+  it('announces searching, the result count and empty results in one lasting live region', async () => {
+    let resolve!: (value: Awaited<ReturnType<typeof api.search>>) => void
+    search.mockReturnValueOnce(new Promise(done => { resolve = done }))
+    window.history.replaceState(null, '', '/search?q=tides')
+    render(<App callback={null} />)
+    const live = document.querySelector('[role="status"][aria-atomic="true"]')!
+    await waitFor(() => expect(live.textContent).toBe('Searching…'))
+    await act(async () => resolve({ provider: 'kagi', results: [{ url: 'https://example.com/', title: 'Tide tables', snippet: '' }] }))
+    expect(live.textContent).toBe('1 result for tides')
+    expect(document.querySelector('[role="status"][aria-atomic="true"]')).toBe(live)
+    expect(screen.queryByText(/results? for tides/, { selector: '.results-column *' })).toBeNull()
+    search.mockResolvedValueOnce({ provider: 'kagi', results: [] })
+    submit('kelp')
+    await screen.findByRole('heading', { name: 'No results found' })
+    expect(live.textContent).toBe('No results found.')
+  })
+
   it('recovers from a media provider error using Web results', async () => {
     search.mockRejectedValueOnce(new SearchApiError('Try again in a moment.', 502))
     window.history.replaceState(null, '', '/search?q=tide+pools&type=images')
@@ -616,17 +696,45 @@ describe('Pulpo Search', () => {
     expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ category: 'web' }), expect.any(AbortSignal))
   })
 
-  it('offers a Web search explicitly when a known weather location has no forecast', async () => {
+  it('shows web results with a short note when a known weather location has no forecast', async () => {
     getConfig.mockResolvedValue({ ...config, weather: true })
     weather.mockResolvedValue({ status: 'unavailable', sources: [],
       place: { name: 'Portland', admin: 'Maine', country: 'United States', timeZone: 'America/New_York' } })
     window.history.replaceState(null, '', '/search?q=weather+in+Portland+ME')
     render(<App callback={null} />)
-    await screen.findByRole('heading', { name: 'Forecast unavailable' })
-    expect(search).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Search the web' }))
     await screen.findByRole('link', { name: 'weather in Portland ME field guide' })
+    expect(screen.getByText('No forecast is available for Portland, Maine, United States, so these are web results.')).toBeDefined()
     expect(search).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts web results when a forecast is slow and adds the forecast above them when it arrives', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      getConfig.mockResolvedValue({ ...config, weather: true })
+      let resolve!: (value: Awaited<ReturnType<typeof api.weather>>) => void
+      weather.mockReturnValue(new Promise(done => { resolve = done }))
+      weatherAlerts.mockResolvedValue({ status: 'unavailable' })
+      window.history.replaceState(null, '', '/search?q=Seattle+weather')
+      render(<App callback={null} />)
+      await act(async () => { await vi.advanceTimersByTimeAsync(100) })
+      expect(screen.getByText('Checking forecast…')).toBeDefined()
+      expect(search).not.toHaveBeenCalled()
+      // Alerts don't wait for the forecast, since their endpoint finds the place itself.
+      expect(weatherAlerts).toHaveBeenCalledWith('Seattle', expect.any(AbortSignal))
+      await act(async () => { await vi.advanceTimersByTimeAsync(2_000) })
+      expect(screen.getByRole('link', { name: 'Seattle weather field guide' })).toBeDefined()
+      expect(screen.queryByText('Checking forecast…')).toBeNull()
+      expect(search).toHaveBeenCalledTimes(1)
+      await act(async () => resolve({
+        status: 'forecast', sources: [], place: { name: 'Seattle', country: 'United States', timeZone: 'America/Los_Angeles' },
+        forecast: { updatedAt: '2026-11-27T10:00:00Z', validAt: '2026-11-27T10:00:00Z', temperatureC: 10, daily: [] },
+      }))
+      expect(screen.getByRole('link', { name: 'Seattle weather field guide' })).toBeDefined()
+      expect(screen.getByRole('button', { name: 'Hide web results' })).toBeDefined()
+      expect(search).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it.each(['brave', 'firecrawl'] as const)('asks for a typed location and filters reported open %s places without a second request', async provider => {
@@ -682,9 +790,9 @@ describe('Pulpo Search', () => {
     expect(search).toHaveBeenCalledTimes(1)
   })
 
-  it('falls back to Web after a Places provider failure', async () => {
+  it.each([502, 429, 404])('falls back to Web when Places answers %i', async status => {
     getConfig.mockResolvedValue({ ...config, places: { provider: 'firecrawl', priceMicros: 5000 } })
-    places.mockRejectedValueOnce(new SearchApiError('Places lookup failed.', 502))
+    places.mockRejectedValueOnce(new SearchApiError('Places lookup failed.', status))
     window.history.replaceState(null, '', '/search?q=coffee+shops+near+Grand+Central')
     render(<App callback={null} />)
     await screen.findByRole('link', { name: 'coffee shops near Grand Central field guide' })
@@ -742,7 +850,15 @@ describe('Pulpo Search', () => {
     window.history.replaceState(null, '', '/search?q=tides')
     render(<App callback={null} />)
     await screen.findByRole('link', { name: 'Result 1.0' })
-    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    const loadMore = screen.getByRole<HTMLButtonElement>('button', { name: 'Load more' })
+    loadMore.focus()
+    fireEvent.click(loadMore)
+    // The busy button stays focusable so keyboard focus isn't dropped while the batch loads.
+    expect(loadMore.textContent).toBe('Loading…')
+    expect(loadMore.disabled).toBe(false)
+    expect(loadMore.getAttribute('aria-disabled')).toBe('true')
+    expect(document.activeElement).toBe(loadMore)
+    fireEvent.click(loadMore)
     await screen.findByRole('link', { name: 'Result 2.0' })
     expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ providers: ['kagi'], page: 2 }), expect.any(AbortSignal))
     expect([...document.querySelectorAll('.results-list .result-link')].map(link => link.textContent))
@@ -774,13 +890,16 @@ describe('Pulpo Search', () => {
     window.history.replaceState(null, '', '/search?q=tides')
     render(<App callback={null} />)
     await screen.findByRole('link', { name: 'Shared result' })
-    expect(screen.getByText('Kagi continues these results for $0.002 per search.')).toBeDefined()
+    expect(document.querySelector('.result-stats')?.textContent).toMatch(/^1 result from Firecrawl in \d+\.\d\d seconds$/)
+    expect(screen.queryByText(/continues these results/)).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Load more from Kagi' }))
     await screen.findByRole('link', { name: 'Kagi three' })
     expect(search).toHaveBeenLastCalledWith(expect.not.objectContaining({ page: expect.anything() }), expect.any(AbortSignal))
     expect(search).toHaveBeenLastCalledWith(expect.objectContaining({ providers: ['kagi'] }), expect.any(AbortSignal))
     expect(screen.queryByRole('link', { name: 'Shared result from Kagi' })).toBeNull()
     expect(search).toHaveBeenCalledTimes(2)
+    // The count covers every batch shown, and the time adds up each fetch.
+    expect(document.querySelector('.result-stats')?.textContent).toMatch(/^4 results from Firecrawl and Kagi in \d+\.\d\d seconds$/)
 
     fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
     await screen.findByRole('link', { name: 'Kagi second page' })
@@ -788,13 +907,13 @@ describe('Pulpo Search', () => {
     expect(search).toHaveBeenCalledTimes(3)
   })
 
-  it('fetches once more when a batch only repeats results, and keeps results when loading more fails', async () => {
+  it('makes one request per Load more, says when a batch only repeated results, and keeps results when loading more fails', async () => {
     getConfig.mockResolvedValue({ ...config, providers: [{ ...config.providers[0], maxPage: 10 }, config.providers[1]] })
     search.mockImplementation(async ({ page }) => {
-      if (page === 3) throw new SearchApiError('You have reached your search limit.', 402)
+      if (page === 4) throw new SearchApiError('You have reached your search limit.', 402)
       return {
         provider: 'kagi', hasMore: true,
-        results: page === 2 ? [{ url: 'https://example.com/second', title: 'Second page', snippet: '' }]
+        results: page === 3 ? [{ url: 'https://example.com/third', title: 'Third page', snippet: '' }]
           : [{ url: 'https://example.com/first', title: 'First page', snippet: '' }],
       }
     })
@@ -802,12 +921,21 @@ describe('Pulpo Search', () => {
     render(<App callback={null} />)
     await screen.findByRole('link', { name: 'First page' })
     fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
-    await screen.findByRole('alert')
+    await screen.findByText('Those results were already shown.')
+    expect(search).toHaveBeenCalledTimes(2)
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    await screen.findByRole('link', { name: 'Third page' })
     expect(search).toHaveBeenCalledTimes(3)
+    expect(screen.queryByText('Those results were already shown.')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Load more' }))
+    await screen.findByRole('alert')
+    expect(search).toHaveBeenCalledTimes(4)
     expect(screen.getByRole('link', { name: 'First page' })).toBeDefined()
-    expect(screen.getByRole('link', { name: 'Second page' })).toBeDefined()
-    expect(screen.getByText('Search limit reached. Add credits in Pulpo to load more.')).toBeDefined()
-    expect(within(screen.getByRole('alert')).getByRole('link', { name: 'Open Pulpo' })).toBeDefined()
+    expect(screen.getByRole('link', { name: 'Third page' })).toBeDefined()
+    expect(screen.getByText('Search limit reached.')).toBeDefined()
+    // The same destination as a refused first page: this account has billing, so it goes to its limits.
+    expect(within(screen.getByRole('alert')).getByRole('link', { name: 'View limits in Pulpo' }).getAttribute('href'))
+      .toBe(new URL('/billing', pulpoOrigin).href)
   })
 
   it('restores loaded results and the scroll position after the page reloads', async () => {
@@ -831,7 +959,8 @@ describe('Pulpo Search', () => {
     const navigation = vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type: 'reload' } as PerformanceNavigationTiming])
     const reloaded = render(<App callback={null} />)
     await screen.findByRole('link', { name: 'Result 2.2' })
-    expect(search).toHaveBeenCalledTimes(3)
+    // The first page comes back from this tab's storage too, so reloading runs no paid search.
+    expect(search).toHaveBeenCalledTimes(2)
     await waitFor(() => expect(window.scrollTo).toHaveBeenCalledWith({ top: 640, behavior: 'instant' }))
     reloaded.unmount()
 
@@ -840,9 +969,70 @@ describe('Pulpo Search', () => {
     vi.mocked(window.scrollTo).mockClear()
     render(<App callback={null} />)
     await screen.findByRole('link', { name: 'Result 1.2' })
+    expect(search).toHaveBeenCalledTimes(3)
     expect(screen.queryByRole('link', { name: 'Result 2.0' })).toBeNull()
     expect(window.scrollTo).not.toHaveBeenCalledWith({ top: 640, behavior: 'instant' })
     Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 })
+  })
+
+  it('shows the first page again after Back without another paid search, and only while it is recent', async () => {
+    const navigation = vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type: 'navigate' } as PerformanceNavigationTiming])
+    window.history.replaceState(null, '', '/search?q=tides')
+    const first = render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'tides field guide' })
+    const stats = document.querySelector('.result-stats')?.textContent
+    expect(stats).toMatch(/^2 results from Kagi in \d+\.\d\d seconds$/)
+    first.unmount()
+
+    // The browser didn't keep the page in its back-forward cache, so Search loads again.
+    navigation.mockReturnValue([{ type: 'back_forward' } as PerformanceNavigationTiming])
+    const back = render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'tides field guide' })
+    expect(search).toHaveBeenCalledTimes(1)
+    // The line keeps the time the search took rather than how fast the saved copy appeared.
+    expect(document.querySelector('.result-stats')?.textContent).toBe(stats)
+    back.unmount()
+
+    const now = Date.now()
+    const later = vi.spyOn(Date, 'now').mockReturnValue(now + 31 * 60_000)
+    render(<App callback={null} />)
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(2))
+    await screen.findByRole('link', { name: 'tides field guide' })
+    later.mockRestore()
+    navigation.mockRestore()
+  })
+
+  it('keeps an earlier search for Back within Search, while searching it again from the box fetches fresh results', async () => {
+    render(<App callback={null} />)
+    await screen.findByLabelText('Pulpo account')
+    submit('tide pools')
+    await screen.findByRole('link', { name: 'tide pools field guide' })
+    submit('kelp forests')
+    await screen.findByRole('link', { name: 'kelp forests field guide' })
+    const now = Date.now()
+    const later = vi.spyOn(Date, 'now').mockReturnValue(now + 10 * 60_000)
+    await act(async () => { window.history.back() })
+    await screen.findByRole('link', { name: 'tide pools field guide' })
+    expect(search).toHaveBeenCalledTimes(2)
+
+    submit('kelp forests')
+    await screen.findByRole('link', { name: 'kelp forests field guide' })
+    expect(search).toHaveBeenCalledTimes(3)
+    later.mockRestore()
+  })
+
+  it('searches as usual when this tab cannot save results', async () => {
+    const navigation = vi.spyOn(performance, 'getEntriesByType').mockReturnValue([{ type: 'back_forward' } as PerformanceNavigationTiming])
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Full', 'QuotaExceededError') })
+    window.history.replaceState(null, '', '/search?q=tides')
+    const first = render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'tides field guide' })
+    first.unmount()
+    render(<App callback={null} />)
+    await screen.findByRole('link', { name: 'tides field guide' })
+    expect(search).toHaveBeenCalledTimes(2)
+    setItem.mockRestore()
+    navigation.mockRestore()
   })
 
   it('starts a search over when it is opened again from Search', async () => {

@@ -15,6 +15,11 @@ export function speechText(markdown: string): string {
   return walk(Lexer.lex(markdown)).replace(/https?:\/\/[^\s<>]+/gi, '').replace(/\n{3,}/g, '\n\n').trim()
 }
 
+/** The start of the spoken text on one line, to name a reading in the system's now-playing controls. */
+export function speechTitle(text: string, limit = 80): string {
+  const line = text.trim().split(/\s+/).join(' ')
+  return line.length > limit ? `${line.slice(0, limit - 1).trimEnd()}…` : line
+}
 export function speechBytes(text: string): number {
   // A UTF-8 byte bound is a conservative token bound for byte-level tokenizers.
   return Array.from(text).reduce((n, c) => n + (c.codePointAt(0)! <= 0x7f ? 1 : c.codePointAt(0)! <= 0x7ff ? 2 : c.codePointAt(0)! <= 0xffff ? 3 : 4), 0)

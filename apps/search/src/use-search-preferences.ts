@@ -98,6 +98,10 @@ export function useSearchPreferences(userId: string | undefined) {
     const latestCache = () => (storageAvailable ? loadCache(key) : undefined) ?? entry
     const persist = () => { storageAvailable = saveCache(key, entry) }
     const readPreferences = () => ({ ...(entry.confirmed ?? legacy ?? defaultSearchAccountPreferences), ...entry.pending })
+    // A copy this account confirmed earlier lets the first search start now. The first sync still replaces it,
+    // and the search only runs again if that changes what it asks for.
+    let provisional = Boolean(entry.confirmed)
+    if (provisional) initial = readPreferences()
     const publish = () => setAccount({ userId: accountId, preferences: readPreferences(), initial, status })
 
     async function sync() {
@@ -127,6 +131,8 @@ export function useSearchPreferences(userId: string | undefined) {
         window.clearTimeout(timeout)
         request = undefined
         if (!disposed) {
+          if (provisional && status === 'synced') initial = readPreferences()
+          provisional = false
           initial ??= readPreferences()
           publish()
           if (followUp) {

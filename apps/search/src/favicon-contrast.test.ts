@@ -17,6 +17,12 @@ describe('favicon contrast', () => {
     expect(faviconBackdrop(multicolorMark, '#101012')).toBeUndefined()
   })
 
+  it('leaves filled tiles alone, since they carry their own background', () => {
+    const whiteTile = new Uint8ClampedArray(16 * 16 * 4).fill(255)
+    whiteTile.set([0, 0, 0, 0], 0)
+    expect(faviconBackdrop(whiteTile, '#fff')).toBeUndefined()
+  })
+
   it('accounts for opacity and skips backdrops that cannot make a mark readable', () => {
     expect(faviconBackdrop(new Uint8ClampedArray([255, 255, 255, 0]), '#fff')).toBeUndefined()
     expect(faviconBackdrop(new Uint8ClampedArray([24, 24, 24, 20]), '#101012')).toBeUndefined()

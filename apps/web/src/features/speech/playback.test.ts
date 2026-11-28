@@ -27,6 +27,16 @@ it('sends cumulative duration with one-chunk prefetch and stops all audio', asyn
   speechPlayback.stop(); await run
   expect(mocks.audio).toHaveBeenCalledTimes(2); expect(mocks.revoke).toHaveBeenCalledTimes(2)
 })
+it('keeps reading after the tab is hidden', async () => {
+  const run = readAloud('message', 'Hello')
+  await tick(); await tick()
+  Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+  try {
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(speechPlayback.getSnapshot()).toMatchObject({ key: 'message', phase: 'playing' }); expect(mocks.pause).not.toHaveBeenCalled()
+  } finally { Reflect.deleteProperty(document, 'hidden') }
+  speechPlayback.stop(); await run
+})
 it('keeps old servers playable when duration is absent', async () => {
   mocks.audio.mockImplementation(async () => new Response(new Uint8Array([1, 2])))
   const run = readAloud('message', 'Hello world again')

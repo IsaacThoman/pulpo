@@ -1,8 +1,22 @@
 import { parseSearchLocation, searchPath } from './navigation'
 
-export const pulpoOrigin = new URL(
+/**
+ * Where this deployment's Pulpo lives. The build value is a fallback: the session response names
+ * the right origin, so one Search build serves production, dev and pull request previews.
+ */
+export let pulpoOrigin = new URL(
   import.meta.env.VITE_PULPO_PUBLIC_URL || (import.meta.env.DEV ? 'http://localhost:5173' : 'https://pulpo.baby'),
 ).origin
+
+export function setPulpoOrigin(url: string | undefined) {
+  if (!url) return
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') pulpoOrigin = parsed.origin
+  } catch {
+    // Keep the build's origin when the server sends something unusable.
+  }
+}
 
 const storageKey = 'pulpo-search-sign-in'
 const maxAgeMs = 15 * 60_000

@@ -8,6 +8,8 @@ export interface ResultBatch {
   page: number
   hasMore: boolean
   results: SearchResult[]
+  /** How long the batch took to fetch, in milliseconds. */
+  elapsedMs?: number
 }
 
 export interface NextBatch {
