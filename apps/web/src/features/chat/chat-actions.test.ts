@@ -50,4 +50,11 @@ describe('chat actions', () => {
     expect(toasts()).toEqual([expect.objectContaining({ message: 'Copied share link' })])
     vi.unstubAllGlobals()
   })
+
+  it('reports a share link the clipboard refused', async () => {
+    vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn(async () => { throw new DOMException('Denied', 'NotAllowedError') }) } })
+    await copyChatShareLink('a')
+    expect(toasts()).toEqual([expect.objectContaining({ message: 'Could not copy to the clipboard.', tone: 'error' })])
+    vi.unstubAllGlobals()
+  })
 })

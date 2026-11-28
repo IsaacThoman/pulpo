@@ -52,8 +52,8 @@ import { PresetIcon } from '@/components/chat/PresetIcon'
 import { AgentMenu } from '@/components/chat/AgentMenu'
 import { useComputerControls } from '@/features/computer/use-computer-controls'
 import { PendingAttachmentChip } from '@/components/chat/AttachmentImage'
+import { downloadPendingAttachment } from '@/components/chat/attachment-actions'
 import { cn } from '@/lib/utils'
-import { downloadAttachment } from '@/lib/local-first/attachment-cache'
 import {
   collectImageFiles,
   collectUploadFiles,
@@ -111,25 +111,6 @@ function persistedDraftAttachments(
     error: item.error,
     file: item.status === 'ready' ? undefined : item.file,
   }))
-}
-
-function downloadComposerAttachment(attachment: UploadRecord): void {
-  if (attachment.file) {
-    const url = URL.createObjectURL(attachment.file)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = attachment.file.name
-    anchor.click()
-    setTimeout(() => URL.revokeObjectURL(url), 0)
-    return
-  }
-  const userId = useAuth.getState().user?.id
-  if (userId && attachment.id) void downloadAttachment(userId, {
-    id: attachment.id,
-    originalName: attachment.name,
-    mimeType: attachment.mimeType,
-    sizeBytes: attachment.size,
-  }, useSettings.getState().localAttachmentCacheMb)
 }
 
 function referenceOf(node: Pick<FileNode, 'id' | 'name' | 'kind'>): FileReference {
@@ -1302,7 +1283,7 @@ export function Composer({
                   sourceFile={attachment.file}
                   uploading={attachment.status === 'uploading'}
                   error={attachment.status === 'error' ? attachment.error : null}
-                  onDownload={() => downloadComposerAttachment(attachment)}
+                  onDownload={() => downloadPendingAttachment(attachment)}
                   onRetry={attachment.status === 'error' && attachment.file
                     ? () => retryUpload(attachment.localId)
                     : undefined}

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SaveBar, Section, Toggle } from '@/components/admin/kit'
 import { apiRequest } from '@/lib/api'
+import { writeClipboardText } from '@/lib/clipboard'
 import { useAuth } from '@/stores/auth'
 import { formatDate } from '@/lib/format'
 import { ui, uit } from '@/i18n/ui'
@@ -58,7 +59,7 @@ export function InviteCodesSection() {
   }
 
   const copy = async (code: AdminInviteCode) => {
-    await navigator.clipboard.writeText(code.code)
+    if (!await writeClipboardText(code.code)) return
     setCopiedId(code.id)
     window.setTimeout(() => setCopiedId((current) => current === code.id ? null : current), 1_500)
   }

@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { InviteCodeList } from '@pulpo/contracts'
 import { Check, Copy, Plus, Trash2 } from 'lucide-react'
 import { ApiError, apiRequest } from '@/lib/api'
+import { writeClipboardText } from '@/lib/clipboard'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/stores/auth'
 import { ui } from '@/i18n/ui'
@@ -38,7 +39,7 @@ export function InviteCodesCard() {
   }
 
   const copy = async (id: string, code: string) => {
-    await navigator.clipboard.writeText(code)
+    if (!await writeClipboardText(code)) return
     setCopiedId(id)
     window.setTimeout(() => setCopiedId((current) => current === id ? null : current), 1_500)
   }

@@ -6,6 +6,7 @@ import type { ClientToServerEvents, ServerToClientEvents } from '@pulpo/contract
 import { Copy, DoorOpen, Loader2, Pin, PinOff, Share2, Trash2 } from 'lucide-react'
 import { ChatPage } from '@/pages/ChatPage'
 import { apiRequest, ApiError } from '@/lib/api'
+import { writeClipboardText } from '@/lib/clipboard'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -204,8 +205,7 @@ export function AdminChatPage() {
     if (!confirm(ui('Create a public link to this user chat? Anyone with the link can view the shared content.'))) return
     const result = await apiRequest<{ token: string }>('/api/chat-shares', { method: 'POST', body: { chatId, expiresAt: null }, idempotencyKey: crypto.randomUUID() })
     const url = `${location.origin}/share/${result.token}`
-    await navigator.clipboard?.writeText(url)
-    setNotice(ui('Public share link copied.'))
+    setNotice(await writeClipboardText(url) ? ui('Public share link copied.') : ui('Public share link created: {{url}}', { url }))
     await load()
   }
   const revokeShares = async () => {
