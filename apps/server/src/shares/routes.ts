@@ -13,6 +13,11 @@ import { getConfig } from '../config.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
 import { responseDisplayModelId } from '../chats/modelIdentity.js'
 
+/** A share as its owner sees it; the token hash stays on the server. */
+function ownedShare({ tokenHash: _tokenHash, ...share }: typeof chatShares.$inferSelect) {
+  return share
+}
+
 function publicOutput(output: unknown[]): unknown[] {
   return output.filter((item) => (item as { type?: string }).type !== 'reasoning')
 }
@@ -23,14 +28,15 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/chat-shares', async (request) => {
     const user = requireUser(request)
     const scopedChatId = request.adminChatAccess?.chatId
-    return { data: await db.select({ share: chatShares, title: chats.title }).from(chatShares)
+    const rows = await db.select({ share: chatShares, title: chats.title }).from(chatShares)
       .innerJoin(chats, eq(chats.id, chatShares.chatId))
       .where(and(
         eq(chatShares.userId, user.id),
         scopedChatId ? eq(chatShares.chatId, scopedChatId) : undefined,
         isNull(chats.deletedAt),
         accessibleChatCondition(),
-      )).orderBy(desc(chatShares.createdAt)) }
+      )).orderBy(desc(chatShares.createdAt))
+    return { data: rows.map(({ share, title }) => ({ share: ownedShare(share), title })) }
   })
 
   app.post('/api/chat-shares', async (request, reply) => {
@@ -55,7 +61,7 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
       id: newId(), chatId: chat.id, userId: user.id, tokenHash: hashToken(token),
       expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
     }).returning()
-    const result = { ...created, token }
+    const result = { ...ownedShare(created!), token }
     if (redisKey) await redis.set(redisKey, encryptSecret(JSON.stringify(result), getConfig().ENCRYPTION_KEY), 'EX', 86_400, 'NX')
     reply.code(201)
     return result

@@ -22,6 +22,7 @@ import { attachmentReferenceIsLive } from './references.js'
 import { AttachmentSizeMismatchError, exactSizeStream, inspectAttachmentStream } from './streams.js'
 import { parseFileInput, requireFilesUser } from '../files/request.js'
 import { saveAttachmentToFiles } from '../files/save-attachment.js'
+import { fileContentDisposition } from '../files/upload-routes.js'
 
 function accessibleAttachmentCondition() {
   return or(
@@ -145,16 +146,23 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     if (!attachment) throw notFound('Attachment')
     if (attachment.status === 'ready') return attachment
     if (attachment.status !== 'pending') throw new AppError(409, 'attachment_not_pending', 'Attachment is not awaiting upload')
+    let inspected: Awaited<ReturnType<typeof inspectAttachmentStream>>
     try {
-      const inspected = await inspectAttachmentStream(await getBlobStore().getStream(attachment.objectKey), attachment.sizeBytes)
-      const checksum = inspected.checksum
-      const mimeType = canonicalUploadedMimeType(attachment.mimeType, inspected.prefix)
-      const [ready] = await db.update(attachments).set({ status: 'ready', checksum, mimeType, updatedAt: new Date() }).where(eq(attachments.id, id)).returning()
-      return ready
+      inspected = await inspectAttachmentStream(await getBlobStore().getStream(attachment.objectKey), attachment.sizeBytes)
     } catch (cause) {
-      await db.update(attachments).set({ status: 'failed', error: cause instanceof Error ? cause.message : 'Validation failed', updatedAt: new Date() }).where(eq(attachments.id, id))
+      await db.update(attachments).set({ status: 'failed', error: cause instanceof Error ? cause.message : 'Validation failed', updatedAt: new Date() })
+        .where(and(eq(attachments.id, id), eq(attachments.status, 'pending')))
       throw new AppError(400, 'attachment_validation_failed', 'Attachment validation failed')
     }
+    const mimeType = canonicalUploadedMimeType(attachment.mimeType, inspected.prefix)
+    // A delete racing the inspection wins; a deleted attachment never comes back as ready.
+    const [ready] = await db.update(attachments).set({ status: 'ready', checksum: inspected.checksum, mimeType, updatedAt: new Date() })
+      .where(and(eq(attachments.id, id), eq(attachments.status, 'pending'))).returning()
+    if (ready) return ready
+    // A concurrent confirm may have finished first; that is still a successful confirm.
+    const [current] = await db.select().from(attachments).where(eq(attachments.id, id)).limit(1)
+    if (current?.status === 'ready') return current
+    throw new AppError(409, 'attachment_not_pending', 'Attachment is not awaiting upload')
   }))
 
   /** What a preview needs to show an attachment opened from a link or a reload, without its message. */
@@ -193,7 +201,11 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     const { id } = request.params as { id: string }
     const attachment = await readyAttachment(user.id, id)
     if (!attachment) throw notFound('Attachment')
-    return { url: await getBlobStore().createDownloadUrl(attachment.objectKey, 300) }
+    return {
+      url: await getBlobStore().createDownloadUrl(attachment.objectKey, 300, {
+        contentDisposition: fileContentDisposition('attachment', attachment.originalName),
+      }),
+    }
   })
 
   const thumbnails = new ThumbnailCache()
@@ -230,7 +242,9 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
       )).limit(1)
     const attachment = result?.attachment
     if (!attachment) throw notFound('Attachment')
-    reply.type(attachment.mimeType).header('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(attachment.originalName)}`)
+    reply.type(attachment.mimeType)
+      .header('content-disposition', fileContentDisposition('attachment', attachment.originalName))
+      .header('x-content-type-options', 'nosniff')
     return reply.send(await getBlobStore().getStream(key))
   })
 
