@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { updateFileFolderLayoutSchema, copyFileNodesSchema, createFileDocSchema, createFileFolderSchema, fileNodeIdsSchema, importFileUrlSchema, moveFileNodesSchema, updateFileNodeSchema, type FileChangeConflictBody } from '@pulpo/contracts'
+import { FILE_SEARCH_MAX_RESULTS, FILE_SEARCH_QUERY_MAX_LENGTH, updateFileFolderLayoutSchema, copyFileNodesSchema, createFileDocSchema, createFileFolderSchema, fileNodeIdsSchema, importFileUrlSchema, moveFileNodesSchema, updateFileNodeSchema, type FileChangeConflictBody, type FileSearchResults } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { getBlobStore } from '../storage/index.js'
@@ -20,6 +20,7 @@ import {
   moveFileNodes,
   restoreFileNode,
   restoreFileNodes,
+  searchFileNodes,
   trashFileNode,
   trashFileNodes,
   toFileNode,
@@ -85,6 +86,17 @@ export async function registerFileRoutes(app: FastifyInstance): Promise<void> {
     // My files always shows the built-in Chats and Archive folders, even on a new account.
     if (!parentId) await ensureSystemFolders(user.id)
     return listFolder(user.id, parentId ?? null)
+  })
+
+  // Finds items by name, e.g. for mentioning one by typing @ in a message; without q, recent ones.
+  const searchQuery = z.object({
+    q: z.string().max(FILE_SEARCH_QUERY_MAX_LENGTH).optional(),
+    limit: z.coerce.number().int().min(1).max(FILE_SEARCH_MAX_RESULTS).optional(),
+  })
+  app.get('/api/files/search', { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (request): Promise<FileSearchResults> => {
+    const user = await requireFilesUser(request)
+    const { q, limit } = searchQuery.parse(request.query)
+    return { items: await searchFileNodes(user.id, q ?? '', limit ?? 8) }
   })
 
   // Grid view arrangement of a folder (omit folderId for My files).

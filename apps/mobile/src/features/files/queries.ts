@@ -10,6 +10,7 @@ export const filesQueryKeys = {
   folder: (namespace: string, folderId: string | null) => ['files', namespace, 'folder', folderId ?? 'root'] as const,
   node: (namespace: string, id: string) => ['files', namespace, 'node', id.toLowerCase()] as const,
   changes: (namespace: string) => ['files', namespace, 'changes'] as const,
+  search: (namespace: string, query: string, limit: number) => ['files', namespace, 'search', query, limit] as const,
   responseChanges: (namespace: string, responseId: string) => ['files', namespace, 'changes', responseId] as const,
 }
 

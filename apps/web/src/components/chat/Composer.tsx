@@ -70,6 +70,7 @@ import { FileScopePicker, FilesAccessDialog } from '@/features/files/FileScope'
 import { useWorkspaceScreenOffered } from '@/features/workspace-screen/offered'
 import { WorkspaceScreenDialog } from '@/features/workspace-screen/WorkspaceScreenDialog'
 import { FileReferenceCard } from '@/features/files/FileReferenceCard'
+import { useFileMention } from '@/features/files/FileMentions'
 import { addComposerReferences, composerMessageText, composerReferences, referencePreviewText, removeComposerReference, withComposerReferences } from '@pulpo/client-core/files'
 import { takePendingReferences, usePendingReferences } from '@/features/side-panel/agent'
 import { fetchFileNode, fileNodeQueryKey } from '@/features/files/api'
@@ -419,6 +420,22 @@ export function Composer({
     }
     requestAnimationFrame(() => autosize())
   }, [autosize, canUseAgent, messageEdit])
+  // Typing @ suggests Files items; choosing one writes its name and adds it like the picker does.
+  const composerCardRef = useRef<HTMLDivElement>(null)
+  const fileMention = useFileMention({
+    enabled: canScopeFiles,
+    text: draftText,
+    references,
+    anchorRef: composerCardRef,
+    onChoose: (next, reference) => {
+      setValue((current) => withComposerReferences(next.text, composerReferences(current).references))
+      addReferences([reference])
+      requestAnimationFrame(() => {
+        ref.current?.focus()
+        ref.current?.setSelectionRange(next.caret, next.caret)
+      })
+    },
+  })
   // Items sent here from Files ("Add to chat", "Open in new chat").
   const pendingReferences = usePendingReferences((state) => state.ids)
   useEffect(() => {
@@ -1274,6 +1291,7 @@ export function Composer({
         </ComposerTray>
       )}
       <div
+        ref={composerCardRef}
         className={cn(
           'relative rounded-2xl border bg-card shadow-sm transition-[background-color,box-shadow,border-color] duration-200 focus-within:shadow-md',
           (queuedMessages.length > 0 || showShelf && shelfRows.length > 0 || messageEdit || recovery) && '-mt-px rounded-t-xl',
@@ -1339,11 +1357,15 @@ export function Composer({
             aria-label={ui('Message')}
             readOnly={handoffBusy || shelfBusy}
             value={draftText}
+            {...fileMention.inputProps}
             onChange={(e) => {
               setValue(withComposerReferences(e.target.value, references))
+              fileMention.track(e.target)
               autosize()
             }}
             onKeyDown={(e) => {
+              // While Files suggestions show, Up, Down, Enter, Tab, and Escape belong to them.
+              if (fileMention.onKeyDown(e)) return
               if (dictationState !== 'idle' && !e.nativeEvent.isComposing) {
                 if (e.key === 'Escape') {
                   e.preventDefault()
@@ -1385,6 +1407,7 @@ export function Composer({
             placeholder={attachments.length ? t('chat.addCaption') : temporary ? t('chat.temporaryMessage') : t('chat.message')}
             className="max-h-[220px] min-w-0 flex-1 resize-none select-text bg-transparent px-4 pt-3.5 text-[15px] leading-6 outline-none placeholder:select-none placeholder:text-muted-foreground"
           />
+          {fileMention.list}
           {showShelf && <Tooltip><TooltipTrigger asChild><button type="button"
             disabled={!hasDraft || shelfBusy || submitting || dictationState !== 'idle' || !draftHydrated}
             onClick={() => { void transferShelf() }} aria-label={ui('Shelve draft')}
