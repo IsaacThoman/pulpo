@@ -29,6 +29,11 @@ function searchOrigin(): string {
   return origin
 }
 
+/** Search builds are shared across environments, so the API tells each page where its Pulpo lives. */
+function pulpoUrl(): string {
+  return new URL(getConfig().PUBLIC_URL).origin
+}
+
 function searchCookie(origin: string) {
   const secure = origin.startsWith('https:')
   const prefix = secure ? '__Host-' : ''
@@ -139,13 +144,13 @@ export function registerSearchAuthRoutes(app: FastifyInstance) {
 
     reply.setCookie(cookie.name, result.token, { ...cookie.options, expires: result.expires })
     reply.header('cache-control', 'no-store')
-    return { user: result.user }
+    return { user: result.user, pulpoUrl: pulpoUrl() }
   })
 
   app.get('/api/search/auth/session', async (request, reply) => {
     reply.header('cache-control', 'no-store')
     const user = request.user
-    return { user: user && user.role !== 'pending' ? sessionUser(user, avatarVersion(user.avatarUrl)) : null }
+    return { user: user && user.role !== 'pending' ? sessionUser(user, avatarVersion(user.avatarUrl)) : null, pulpoUrl: pulpoUrl() }
   })
 
   app.get('/api/search/avatar/:userId', async (request, reply) => {
